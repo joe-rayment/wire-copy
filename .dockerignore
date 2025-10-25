@@ -1,0 +1,14 @@
+**/.git
+**/.gitignore
+**/.vscode
+**/.vs
+**/bin
+**/obj
+**/output
+**/logs
+**/*.md
+**/Dockerfile*
+**/docker-compose*
+**/.DS_Store
+**/*.user
+**/*.suo
