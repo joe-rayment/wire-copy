@@ -1,32 +1,92 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
+using NYTAudioScraper.Infrastructure.Configuration;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
 
-/// <summary>
-/// Stub implementation of IAudioGenerator
-/// </summary>
 public class AudioGenerator : IAudioGenerator
 {
+    private readonly HttpClient _httpClient;
+    private readonly ElevenLabsConfiguration _config;
     private readonly ILogger<AudioGenerator> _logger;
-    private const decimal CostPerCharacter = 0.0003m;
 
-    public AudioGenerator(ILogger<AudioGenerator> logger)
+    public AudioGenerator(
+        IOptions<ElevenLabsConfiguration> config,
+        ILogger<AudioGenerator> logger,
+        IHttpClientFactory httpClientFactory)
     {
+        _config = config.Value;
         _logger = logger;
+        _httpClient = httpClientFactory.CreateClient("ElevenLabs");
+
+        if (string.IsNullOrEmpty(_config.ApiKey))
+        {
+            _logger.LogWarning("ElevenLabs API key is not configured!");
+        }
     }
 
-    public Task<byte[]> GenerateAudioAsync(
+    public async Task<byte[]> GenerateAudioAsync(
         string text,
         string voiceId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("GenerateAudioAsync called for {CharCount} characters (stub implementation)", text.Length);
-        return Task.FromResult(Array.Empty<byte>());
+        try
+        {
+            _logger.LogInformation("Generating audio for text length={Length} with voice={VoiceId}", text.Length, voiceId);
+
+            var estimatedCost = EstimateCost(text);
+            _logger.LogInformation("Estimated cost: ${Cost:F4}", estimatedCost);
+
+            var requestBody = new
+            {
+                text,
+                model_id = _config.Model,
+                voice_settings = new
+                {
+                    stability = 0.5,
+                    similarity_boost = 0.75,
+                    style = 0.0,
+                    use_speaker_boost = true
+                }
+            };
+
+            var jsonContent = JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+            // ElevenLabs API v1 endpoint
+            var url = $"v1/text-to-speech/{voiceId}";
+            var response = await _httpClient.PostAsync(url, content, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var audioData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+
+            _logger.LogInformation("Successfully generated audio: {Size} bytes", audioData.Length);
+            return audioData;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP error generating audio: {StatusCode}", ex.StatusCode);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating audio for text length={Length}", text.Length);
+            throw;
+        }
     }
 
     public decimal EstimateCost(string text)
     {
-        return text.Length * CostPerCharacter;
+        var characterCount = text.Length;
+        var estimatedCost = characterCount * _config.CostPerCharacter;
+
+        _logger.LogDebug("Estimated cost for {CharacterCount} characters: ${Cost:F4}",
+            characterCount, estimatedCost);
+
+        return estimatedCost;
     }
 }

@@ -1,9 +1,11 @@
+using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
+using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
+using NYTAudioScraper.Infrastructure.Audio;
 using Serilog;
 
 namespace NYTAudioScraper.API;
@@ -19,15 +21,13 @@ public class Program
 
         try
         {
-            Log.Information("Starting NYT Audio Scraper");
+            // Parse command line arguments
+            var parser = new Parser(with => with.HelpWriter = Console.Error);
+            var result = parser.ParseArguments<CommandOptions>(args);
 
-            var host = CreateHostBuilder(args).Build();
-
-            // Demonstrate DI resolution and logging
-            await RunApplicationAsync(host.Services);
-
-            Log.Information("Application completed successfully");
-            return 0;
+            return await result.MapResult(
+                async (CommandOptions opts) => await RunWithOptionsAsync(opts),
+                errs => Task.FromResult(1)); // Return error code 1 for parsing errors
         }
         catch (Exception ex)
         {
@@ -40,57 +40,459 @@ public class Program
         }
     }
 
-    public static IHostBuilder CreateHostBuilder(string[] args) =>
-        Host.CreateDefaultBuilder(args)
+    private static async Task<int> RunWithOptionsAsync(CommandOptions options)
+    {
+        Log.Information("Starting NYT Audio Scraper");
+        Log.Information("Options: {@Options}", options);
+
+        var host = CreateHostBuilder(options).Build();
+
+        if (options.TestMode)
+        {
+            // Run existing test workflow
+            await RunApplicationAsync(host.Services);
+        }
+        else
+        {
+            // Run production workflow with options
+            await RunProductionWorkflowAsync(host.Services, options);
+        }
+
+        Log.Information("Application completed successfully");
+        return 0;
+    }
+
+    public static IHostBuilder CreateHostBuilder(CommandOptions options) =>
+        Host.CreateDefaultBuilder()
             .UseSerilog()
+            .ConfigureAppConfiguration((context, config) =>
+            {
+                // Add secrets.json to the configuration
+                var projectRoot = Directory.GetCurrentDirectory();
+                var secretsPath = Path.Combine(projectRoot, "secrets.json");
+
+                if (File.Exists(secretsPath))
+                {
+                    config.AddJsonFile(secretsPath, optional: true, reloadOnChange: true);
+                    Log.Information("Loaded configuration from: {SecretsPath}", secretsPath);
+                }
+                else
+                {
+                    Log.Warning("secrets.json not found at: {SecretsPath}", secretsPath);
+                }
+            })
             .ConfigureServices((context, services) =>
             {
                 // Register infrastructure services
                 services.AddInfrastructure(context.Configuration);
+
+                // Register command options as singleton so services can access them
+                services.AddSingleton(options);
             });
 
     private static async Task RunApplicationAsync(IServiceProvider services)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
+        Log.Information("Starting NYT Audio Scraper Test Workflow");
+        Log.Information("========================================");
 
-        logger.LogInformation("Resolving services from DI container...");
+        try
+        {
+            // Get required services
+            var scraper = services.GetRequiredService<IScraperService>();
+            var audioGenerator = services.GetRequiredService<IAudioGenerator>();
+            var audioProcessor = services.GetRequiredService<IAudioProcessor>();
+            var chapterMarker = services.GetRequiredService<IChapterMarker>();
+            var fileStorage = services.GetRequiredService<IFileStorage>();
+            var budgetService = services.GetRequiredService<BudgetService>();
 
-        // Resolve all services to verify DI is working
-        var scraperService = services.GetRequiredService<IScraperService>();
+            Log.Information("✓ All services resolved successfully");
+
+            // Set budget for testing
+            budgetService.MaxBudget = 5.0m; // $5 limit for testing
+            Log.Information("Budget set to ${MaxBudget:F2}", budgetService.MaxBudget);
+
+            // Step 1: Scrape articles
+            Log.Information("");
+            Log.Information("Step 1: Scraping NYT articles...");
+            var articles = await scraper.ScrapeArticlesAsync(maxArticles: 2);
+            var articleList = articles.ToList();
+
+            if (articleList.Count == 0)
+            {
+                Log.Warning("No articles scraped. This may be due to:");
+                Log.Warning("  - Missing or invalid NYT credentials (check user secrets)");
+                Log.Warning("  - NYT login page changed (scraper needs updating)");
+                Log.Warning("  - Network issues or rate limiting");
+                Log.Information("");
+                Log.Information("Testing with mock article data instead...");
+
+                // Create mock article for testing
+                articleList.Add(new Article
+                {
+                    Id = "test-article-1",
+                    Title = "Test Article: The Future of AI",
+                    Url = "https://www.nytimes.com/test",
+                    Author = "Test Author",
+                    Section = "Technology",
+                    Content = "This is a test article about artificial intelligence. " +
+                             "Artificial intelligence is transforming the world in unprecedented ways. " +
+                             "From healthcare to transportation, AI is making an impact. " +
+                             "This test content is long enough to generate a meaningful audio file.",
+                    PublishedDate = DateTime.UtcNow,
+                    ScrapedDate = DateTime.UtcNow
+                });
+            }
+
+            Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
+            foreach (var article in articleList)
+            {
+                Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
+            }
+
+            // Step 2: Generate audio for each article
+            Log.Information("");
+            Log.Information("Step 2: Generating audio files...");
+
+            var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "output");
+            Directory.CreateDirectory(outputDir);
+
+            var audioFiles = new List<string>();
+            var chapters = new List<AudioChapter>();
+            var currentTimeMs = 0;
+
+            foreach (var article in articleList)
+            {
+                try
+                {
+                    var estimatedCost = audioGenerator.EstimateCost(article.Content);
+                    Log.Information("  Processing: {Title}", article.Title);
+                    Log.Information("    Estimated cost: ${Cost:F4}", estimatedCost);
+
+                    if (!budgetService.CanAfford(estimatedCost))
+                    {
+                        Log.Warning("    ⚠ Skipping - would exceed budget");
+                        continue;
+                    }
+
+                    // Generate audio
+                    var audioData = await audioGenerator.GenerateAudioAsync(
+                        article.Content,
+                        "21m00Tcm4TlvDq8ikWAM"); // Default voice ID from config
+
+                    // Save audio file
+                    var audioFilePath = Path.Combine(outputDir, $"{article.Id}.mp3");
+                    await File.WriteAllBytesAsync(audioFilePath, audioData);
+                    audioFiles.Add(audioFilePath);
+
+                    Log.Information("    ✓ Generated audio: {Size:N0} bytes", audioData.Length);
+                    Log.Information("    ✓ Saved to: {Path}", audioFilePath);
+
+                    // Get audio metadata for chapter timing
+                    var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
+                    var durationMs = metadata.DurationMs;
+
+                    // Create chapter entry
+                    var chapter = new AudioChapter
+                    {
+                        Title = article.Title,
+                        ArticleId = article.Id,
+                        StartTimeMs = currentTimeMs,
+                        DurationMs = durationMs,
+                        AudioFilePath = audioFilePath
+                    };
+                    chapters.Add(chapter);
+                    currentTimeMs += durationMs;
+
+                    Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
+                        chapter.StartTimeMs / 1000.0,
+                        chapter.EndTimeMs / 1000.0);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "    ✗ Error processing article: {Title}", article.Title);
+                }
+            }
+
+            if (audioFiles.Count == 0)
+            {
+                Log.Warning("No audio files generated. Cannot create audiobook.");
+                Log.Information("");
+                Log.Information("Budget Summary: {Summary}", budgetService.GetSummary());
+                return;
+            }
+
+            // Step 3: Create M4B audiobook
+            Log.Information("");
+            Log.Information("Step 3: Creating M4B audiobook...");
+            var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{DateTime.Now:yyyyMMdd-HHmmss}.m4b");
+
+            try
+            {
+                var createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+                Log.Information("✓ Audiobook created: {Path}", createdPath);
+
+                var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
+                Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "✗ Error creating audiobook");
+                Log.Warning("This may be due to FFmpeg not being installed.");
+                Log.Warning("Install FFmpeg: brew install ffmpeg");
+                return;
+            }
+
+            // Step 4: Add chapter markers
+            Log.Information("");
+            Log.Information("Step 4: Adding chapter markers...");
+            try
+            {
+                await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+                Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
+                foreach (var chapter in chapters)
+                {
+                    Log.Information("  - {Title} @ {Time:F1}s",
+                        chapter.Title,
+                        chapter.StartTimeMs / 1000.0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "✗ Error adding chapter markers");
+            }
+
+            // Final summary
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Test Workflow Complete!");
+            Log.Information("========================================");
+            Log.Information("Output directory: {Dir}", outputDir);
+            Log.Information("Audiobook file: {File}", Path.GetFileName(audiobookPath));
+            Log.Information("Budget used: {Summary}", budgetService.GetSummary());
+            Log.Information("");
+            Log.Information("You can now play the audiobook in any M4B-compatible player.");
+            Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Fatal error in test workflow");
+            throw;
+        }
+    }
+
+    private static async Task RunProductionWorkflowAsync(IServiceProvider services, CommandOptions options)
+    {
+        var scraper = services.GetRequiredService<IScraperService>();
         var audioGenerator = services.GetRequiredService<IAudioGenerator>();
         var audioProcessor = services.GetRequiredService<IAudioProcessor>();
         var chapterMarker = services.GetRequiredService<IChapterMarker>();
-        var fileStorage = services.GetRequiredService<IFileStorage>();
+        var budgetService = services.GetRequiredService<BudgetService>();
 
-        logger.LogInformation("All services resolved successfully!");
-        logger.LogInformation("ScraperService: {Service}", scraperService.GetType().Name);
-        logger.LogInformation("AudioGenerator: {Service}", audioGenerator.GetType().Name);
-        logger.LogInformation("AudioProcessor: {Service}", audioProcessor.GetType().Name);
-        logger.LogInformation("ChapterMarker: {Service}", chapterMarker.GetType().Name);
-        logger.LogInformation("FileStorage: {Service}", fileStorage.GetType().Name);
+        // Set budget from command line
+        budgetService.MaxBudget = options.Budget;
+        Log.Information("Budget set to ${MaxBudget:F2}", budgetService.MaxBudget);
 
-        // Test services
-        logger.LogInformation("Testing service methods...");
-        await scraperService.AuthenticateAsync();
-        var articles = await scraperService.ScrapeArticlesAsync(maxArticles: 5);
-        logger.LogInformation("Scraper returned {Count} articles", articles.Count());
+        // Determine output directory
+        var outputDir = !string.IsNullOrEmpty(options.OutputPath)
+            ? options.OutputPath
+            : Path.Combine(Directory.GetCurrentDirectory(), "output");
+        Directory.CreateDirectory(outputDir);
 
-        var cost = audioGenerator.EstimateCost("This is a test text for cost estimation.");
-        logger.LogInformation("Estimated audio cost: ${Cost:F4}", cost);
+        // Step 1: Get articles
+        Log.Information("");
+        Log.Information("Step 1: Scraping articles...");
+        IEnumerable<Article> articles;
 
-        var outputDir = fileStorage.GetOutputDirectory();
-        logger.LogInformation("Output directory: {Directory}", outputDir);
+        if (!string.IsNullOrEmpty(options.ArticleUrl))
+        {
+            Log.Information("Single article mode not yet implemented");
+            Log.Information("Scraping {Count} articles from homepage instead", options.ArticleCount);
+            articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
+        }
+        else
+        {
+            Log.Information("Scraping {Count} articles", options.ArticleCount);
+            articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
+        }
 
-        logger.LogInformation("All tests passed! Application scaffolding is working correctly.");
+        var articleList = articles.ToList();
+        if (articleList.Count == 0)
+        {
+            Log.Warning("No articles found to process");
+            return;
+        }
+
+        Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
+        foreach (var article in articleList)
+        {
+            Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
+        }
+
+        // Step 2: Generate audio for each article
+        Log.Information("");
+        Log.Information("Step 2: Generating audio files...");
+
+        var audioFiles = new List<string>();
+        var chapters = new List<AudioChapter>();
+        var currentTimeMs = 0;
+
+        var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
+
+        foreach (var article in articleList)
+        {
+            try
+            {
+                var estimatedCost = audioGenerator.EstimateCost(article.Content);
+                Log.Information("  Processing: {Title}", article.Title);
+                Log.Information("    Estimated cost: ${Cost:F4}", estimatedCost);
+
+                if (!budgetService.CanAfford(estimatedCost))
+                {
+                    Log.Warning("    ⚠ Skipping - would exceed budget");
+                    continue;
+                }
+
+                // Generate audio
+                var audioData = await audioGenerator.GenerateAudioAsync(article.Content, voiceId);
+
+                // Save audio file
+                var audioFilePath = Path.Combine(outputDir, $"{article.Id}.mp3");
+                await File.WriteAllBytesAsync(audioFilePath, audioData);
+                audioFiles.Add(audioFilePath);
+
+                Log.Information("    ✓ Generated audio: {Size:N0} bytes", audioData.Length);
+                Log.Information("    ✓ Saved to: {Path}", audioFilePath);
+
+                // Get audio metadata for chapter timing
+                var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
+                var durationMs = metadata.DurationMs;
+
+                // Create chapter entry
+                var chapter = new AudioChapter
+                {
+                    Title = article.Title,
+                    ArticleId = article.Id,
+                    StartTimeMs = currentTimeMs,
+                    DurationMs = durationMs,
+                    AudioFilePath = audioFilePath
+                };
+                chapters.Add(chapter);
+                currentTimeMs += durationMs;
+
+                Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
+                    chapter.StartTimeMs / 1000.0,
+                    chapter.EndTimeMs / 1000.0);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "    ✗ Error processing article: {Title}", article.Title);
+            }
+        }
+
+        if (audioFiles.Count == 0)
+        {
+            Log.Warning("No audio files generated. Cannot create audiobook.");
+            Log.Information("");
+            Log.Information("Budget Summary: {Summary}", budgetService.GetSummary());
+            return;
+        }
+
+        // Step 3: Create M4B audiobook
+        Log.Information("");
+        Log.Information("Step 3: Creating M4B audiobook...");
+        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+
+        try
+        {
+            var createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+            Log.Information("✓ Audiobook created: {Path}", createdPath);
+
+            var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+            Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
+            Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "✗ Error creating audiobook");
+            Log.Warning("This may be due to FFmpeg not being installed.");
+            Log.Warning("Install FFmpeg: brew install ffmpeg");
+            return;
+        }
+
+        // Step 4: Add chapter markers
+        Log.Information("");
+        Log.Information("Step 4: Adding chapter markers...");
+        try
+        {
+            await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+            Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
+            foreach (var chapter in chapters)
+            {
+                Log.Information("  - {Title} @ {Time:F1}s",
+                    chapter.Title,
+                    chapter.StartTimeMs / 1000.0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "✗ Error adding chapter markers");
+        }
+
+        // Clean up individual MP3 files
+        foreach (var file in audioFiles)
+        {
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to delete temporary file: {File}", file);
+            }
+        }
+
+        // Final summary
+        Log.Information("");
+        Log.Information("========================================");
+        Log.Information("Audiobook Created Successfully!");
+        Log.Information("========================================");
+        Log.Information("Output: {Path}", audiobookPath);
+        Log.Information("Budget used: {Summary}", budgetService.GetSummary());
+        Log.Information("");
+        Log.Information("You can now play the audiobook in any M4B-compatible player.");
+        Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
     }
 
     private static IConfiguration GetConfiguration()
     {
-        return new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
+        // Get the directory where the application assembly is located
+        var basePath = AppContext.BaseDirectory;
+
+        // Find the project root directory (where secrets.json should be)
+        var projectRoot = Directory.GetCurrentDirectory();
+        var secretsPath = Path.Combine(projectRoot, "secrets.json");
+
+        var builder = new ConfigurationBuilder()
+            .SetBasePath(basePath)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>(optional: true)
-            .Build();
+            .AddEnvironmentVariables();
+
+        // Add secrets.json if it exists
+        if (File.Exists(secretsPath))
+        {
+            Log.Debug("Loading secrets from: {SecretsPath}", secretsPath);
+            builder.AddJsonFile(secretsPath, optional: true, reloadOnChange: true);
+        }
+        else
+        {
+            Log.Warning("secrets.json not found at: {SecretsPath}", secretsPath);
+        }
+
+        // User secrets (for backwards compatibility)
+        builder.AddUserSecrets<Program>(optional: true);
+
+        return builder.Build();
     }
 }

@@ -128,6 +128,8 @@ ScaffoldingReadMe.txt
 **/appsettings.*.json
 !**/appsettings.json
 **/appsettings.Development.json
+secrets.json
+**/secrets.json
 
 # Output
 output/
