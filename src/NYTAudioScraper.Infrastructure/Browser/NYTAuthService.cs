@@ -1,0 +1,237 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NYTAudioScraper.Infrastructure.Configuration;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Support.UI;
+using System.Text.Json;
+
+namespace NYTAudioScraper.Infrastructure.Browser;
+
+public class NYTAuthService
+{
+    private readonly NYTConfiguration _config;
+    private readonly ILogger<NYTAuthService> _logger;
+    private readonly string _cookieFilePath;
+
+    public NYTAuthService(IOptions<NYTConfiguration> config, ILogger<NYTAuthService> logger)
+    {
+        _config = config.Value;
+        _logger = logger;
+        _cookieFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NYTAudioScraper", "cookies.json");
+    }
+
+    public async Task<bool> AuthenticateAsync(IWebDriver driver, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Check if credentials are configured
+            if (string.IsNullOrEmpty(_config.Email) || string.IsNullOrEmpty(_config.Password))
+            {
+                _logger.LogWarning("NYT credentials not configured - skipping authentication");
+                return false;
+            }
+
+            if (_config.SkipLogin)
+            {
+                _logger.LogInformation("SkipLogin is enabled - skipping authentication");
+                return false;
+            }
+
+            _logger.LogInformation("Attempting to authenticate with NYT");
+
+            // Try loading existing cookies first
+            if (await TryLoadCookiesAsync(driver, cancellationToken))
+            {
+                _logger.LogInformation("Successfully authenticated using saved cookies");
+                return true;
+            }
+
+            // Navigate to login page
+            _logger.LogInformation("Navigating to NYT login page");
+            driver.Navigate().GoToUrl("https://myaccount.nytimes.com/auth/login");
+            await Task.Delay(3000, cancellationToken);
+
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
+
+            // Wait for and fill email field (try multiple selectors)
+            IWebElement? emailField = null;
+            try
+            {
+                emailField = wait.Until(d =>
+                    d.FindElement(By.Name("email")) ??
+                    d.FindElement(By.Id("email")) ??
+                    d.FindElement(By.CssSelector("input[type='email']")));
+            }
+            catch
+            {
+                _logger.LogError("Could not find email input field");
+                return false;
+            }
+
+            emailField.Clear();
+            emailField.SendKeys(_config.Email);
+            _logger.LogInformation("Entered email");
+            await Task.Delay(1000, cancellationToken);
+
+            // Click continue/submit button
+            var continueButton = driver.FindElement(By.CssSelector("button[type='submit']"));
+            continueButton.Click();
+            await Task.Delay(3000, cancellationToken);
+
+            // Wait for and fill password field
+            IWebElement? passwordField = null;
+            try
+            {
+                passwordField = wait.Until(d =>
+                    d.FindElement(By.Name("password")) ??
+                    d.FindElement(By.Id("password")) ??
+                    d.FindElement(By.CssSelector("input[type='password']")));
+            }
+            catch
+            {
+                _logger.LogError("Could not find password input field");
+                return false;
+            }
+
+            passwordField.Clear();
+            passwordField.SendKeys(_config.Password);
+            _logger.LogInformation("Entered password");
+            await Task.Delay(1000, cancellationToken);
+
+            // Click login button
+            var loginButton = driver.FindElement(By.CssSelector("button[type='submit']"));
+            loginButton.Click();
+            _logger.LogInformation("Clicked login button, waiting for authentication...");
+            await Task.Delay(5000, cancellationToken);
+
+            // Verify login was successful
+            if (IsAuthenticated(driver))
+            {
+                await SaveCookiesAsync(driver, cancellationToken);
+                _logger.LogInformation("Successfully authenticated with NYT and saved cookies");
+                return true;
+            }
+
+            _logger.LogWarning("Authentication failed - unable to verify login");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during NYT authentication");
+            return false;
+        }
+    }
+
+    private bool IsAuthenticated(IWebDriver driver)
+    {
+        try
+        {
+            // Check for authentication indicators
+            var cookies = driver.Manage().Cookies.AllCookies;
+            return cookies.Any(c => c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
+                                   c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> TryLoadCookiesAsync(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!File.Exists(_cookieFilePath))
+            {
+                _logger.LogDebug("No saved cookies found at {CookieFilePath}", _cookieFilePath);
+                return false;
+            }
+
+            var json = await File.ReadAllTextAsync(_cookieFilePath, cancellationToken);
+            var cookies = JsonSerializer.Deserialize<List<CookieData>>(json);
+
+            if (cookies == null || cookies.Count == 0)
+            {
+                _logger.LogDebug("Cookie file is empty or invalid");
+                return false;
+            }
+
+            // Navigate to the domain first to set cookies
+            driver.Navigate().GoToUrl(_config.BaseUrl);
+            await Task.Delay(1000, cancellationToken);
+
+            // Load cookies into the browser
+            foreach (var cookieData in cookies)
+            {
+                try
+                {
+                    var cookie = new Cookie(
+                        cookieData.Name,
+                        cookieData.Value,
+                        cookieData.Domain,
+                        cookieData.Path,
+                        cookieData.Expiry
+                    );
+                    driver.Manage().Cookies.AddCookie(cookie);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to add cookie {CookieName}", cookieData.Name);
+                }
+            }
+
+            // Refresh to apply cookies
+            driver.Navigate().Refresh();
+            await Task.Delay(2000, cancellationToken);
+
+            return IsAuthenticated(driver);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load cookies from {CookieFilePath}", _cookieFilePath);
+            return false;
+        }
+    }
+
+    private async Task SaveCookiesAsync(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cookies = driver.Manage().Cookies.AllCookies
+                .Select(c => new CookieData
+                {
+                    Name = c.Name,
+                    Value = c.Value,
+                    Domain = c.Domain,
+                    Path = c.Path,
+                    Expiry = c.Expiry
+                })
+                .ToList();
+
+            var directory = Path.GetDirectoryName(_cookieFilePath);
+            if (directory != null && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var json = JsonSerializer.Serialize(cookies, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_cookieFilePath, json, cancellationToken);
+
+            _logger.LogDebug("Saved {Count} cookies to {CookieFilePath}", cookies.Count, _cookieFilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save cookies to {CookieFilePath}", _cookieFilePath);
+        }
+    }
+
+    private class CookieData
+    {
+        public required string Name { get; init; }
+        public required string Value { get; init; }
+        public required string Domain { get; init; }
+        public required string Path { get; init; }
+        public DateTime? Expiry { get; init; }
+    }
+}
