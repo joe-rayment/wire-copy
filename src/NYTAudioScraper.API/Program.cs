@@ -306,13 +306,20 @@ public class Program
 
         if (!string.IsNullOrEmpty(options.ArticleUrl))
         {
-            Log.Information("Single article mode not yet implemented");
-            Log.Information("Scraping {Count} articles from homepage instead", options.ArticleCount);
-            articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
+            Log.Information("Single article mode: {Url}", options.ArticleUrl);
+            var article = await scraper.ScrapeArticleByUrlAsync(options.ArticleUrl);
+            articles = article != null ? new[] { article } : Enumerable.Empty<Article>();
+        }
+        else if (!string.IsNullOrEmpty(options.Section))
+        {
+            var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            Log.Information("Scraping {Count} articles from sections: {Sections}",
+                options.ArticleCount, string.Join(", ", sections));
+            articles = await scraper.ScrapeArticlesBySectionsAsync(options.ArticleCount, sections);
         }
         else
         {
-            Log.Information("Scraping {Count} articles", options.ArticleCount);
+            Log.Information("Scraping {Count} articles from default sections", options.ArticleCount);
             articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
         }
 

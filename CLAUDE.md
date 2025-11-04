@@ -4,51 +4,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NYT Audio Scraper - A C# .NET 8 application that scrapes articles from NYT Today's Paper, generates high-quality audio using Eleven Labs, and creates audiobook-style M4B files with chapter markers for mobile playback.
+NYT Audio Scraper - A C# .NET 9 application that scrapes articles from NYT Today's Paper, generates high-quality audio using Eleven Labs, and creates audiobook-style M4B files with chapter markers for mobile playback.
 
 **Critical Legal Notice**: NYT explicitly prohibits automated scraping in both robots.txt and Terms of Service. This project is for educational purposes and personal subscriber use only.
 
 ## Architecture
 
-**Pattern**: Clean Architecture with Vertical Slices
-- Clean Architecture for core domain logic (article parsing, audio processing)
-- Vertical Slices for feature workflows (scrape → generate → package)
+**Pattern**: Clean Architecture
+- Clean Architecture for separation of concerns
+- Domain-driven design for core business logic
+- Dependency injection for service composition
 
 ### Project Structure
 
 ```
 src/
-├── Domain/                      # Core business logic
+├── NYTAudioScraper.Domain/      # Core business logic
 │   ├── Entities/               # Article, AudioChapter, ScrapingSession
 │   └── ValueObjects/           # ArticleContent, AudioMetadata
-├── Application/                 # Use cases & features
+├── NYTAudioScraper.Application/ # Application layer
 │   ├── Interfaces/             # IScraperService, IAudioGenerator, etc.
-│   ├── Features/               # ScrapeArticles/, GenerateAudio/, CreateAudiobook/
-│   └── DTOs/
-├── Infrastructure/              # External integrations
+│   └── DTOs/                   # Data transfer objects
+├── NYTAudioScraper.Infrastructure/  # External integrations
 │   ├── Browser/                # Selenium scraper with anti-detection
-│   ├── Audio/                  # ElevenLabs, FFmpeg, ATL.NET
-│   ├── Storage/                # File management
-│   └── Authentication/         # NYT authentication
-└── API/                        # Entry point (Program.cs)
+│   ├── Audio/                  # ElevenLabs, FFmpeg, ATL.NET, BudgetService
+│   ├── Storage/                # File management (LocalFileStorage)
+│   ├── Parsing/                # HTML parsing (ArticleParser)
+│   └── Configuration/          # Configuration models
+└── NYTAudioScraper.API/        # Entry point (Console app)
 
 tests/
-├── Domain.UnitTests/
-├── Application.UnitTests/
-├── Infrastructure.UnitTests/
-│   └── Fixtures/               # sample-nyt-page.html, mock data
-└── Integration.Tests/
+└── NYTAudioScraper.Tests/      # Unit and integration tests
+    ├── DependencyInjectionTests.cs
+    ├── ArticleParserTests.cs
+    ├── BudgetServiceTests.cs
+    ├── LocalFileStorageTests.cs
+    └── AudioGeneratorTests.cs
 ```
 
 ## Technology Stack
 
 ### Core
-- .NET 8.0 (C# 12)
-- MediatR (CQRS/command handling)
-- FluentValidation (input validation)
+- .NET 9.0 (C# 12)
+- Microsoft.Extensions.* (Configuration, DependencyInjection, Logging, Hosting)
+- CommandLineParser (CLI argument parsing)
 
 ### Browser Automation
-- **Selenium.WebDriver** with UndetectedChromeDriver (anti-detection measures)
+- **Selenium.WebDriver** with standard ChromeDriver and manual anti-detection measures
 - Run in headed mode with human-like delays (2-5 seconds between actions)
 - Respectful rate limiting: max 1 request per 3-5 seconds
 
@@ -66,7 +68,7 @@ tests/
 - xUnit (test framework)
 - NSubstitute (mocking)
 - FluentAssertions (readable assertions)
-- Bogus (test data generation)
+- Coverlet (code coverage collection)
 
 ## Common Commands
 
@@ -125,11 +127,12 @@ docker-compose up
 ## Key Implementation Considerations
 
 ### Anti-Detection Measures
-- Use Selenium with UndetectedChromeDriver (Playwright easily detected via CDP signatures)
-- Run in headed mode when possible (not headless)
-- Random delays between actions (2-5 seconds)
-- Human-like typing speed with variation
-- Cookie persistence between sessions
+- Use Selenium with standard ChromeDriver plus manual anti-detection techniques
+- Disable automation flags: `--disable-blink-features=AutomationControlled`
+- JavaScript execution to mask webdriver property
+- Run in headed mode when possible (configurable via Browser:Headless setting)
+- Fixed delays between actions (3-5 seconds, configurable via RateLimitDelayMs)
+- Cookie persistence in AppData directory for session reuse
 - Realistic user agent strings
 
 ### Audio Processing
@@ -146,9 +149,10 @@ docker-compose up
 
 ### Security
 - Never commit credentials (use environment variables or user secrets)
-- Validate all inputs with FluentValidation
+- Validate all inputs with appropriate validation logic
 - Run Docker containers as non-root user
-- Encrypt cookie storage for session persistence
+- Sanitize file names to prevent path traversal attacks
+- Disk space validation before file writes
 
 ### Error Handling
 - Implement retry logic with exponential backoff (3 attempts)
