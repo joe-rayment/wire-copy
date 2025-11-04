@@ -13,4 +13,6 @@ services:
     volumes:
       - ./output:/app/output
       - ./logs:/app/logs
+    # Increase shared memory size to prevent Chrome crashes
+    shm_size: '2gb'
     restart: "no"

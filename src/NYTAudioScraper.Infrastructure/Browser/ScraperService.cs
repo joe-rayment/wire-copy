@@ -57,7 +57,69 @@ public class ScraperService : IScraperService
         int maxArticles = 10,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting scrape for up to {MaxArticles} articles", maxArticles);
+        // Use default sections (Front Page and Business)
+        return await ScrapeArticlesBySectionsAsync(
+            maxArticles,
+            new[] { "Front Page", "The Front Page", "Business" },
+            cancellationToken);
+    }
+
+    public async Task<Article?> ScrapeArticleByUrlAsync(
+        string url,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Scraping single article: {Url}", url);
+
+        IWebDriver? driver = null;
+        try
+        {
+            driver = CreateWebDriver();
+
+            // Authenticate first
+            var authenticated = await _authService.AuthenticateAsync(driver, cancellationToken);
+            if (!authenticated)
+            {
+                _logger.LogWarning("Authentication failed, continuing without authentication");
+            }
+
+            // Navigate to article URL
+            _logger.LogInformation("Navigating to {Url}", url);
+            driver.Navigate().GoToUrl(url);
+            await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
+
+            var pageSource = driver.PageSource;
+            var article = _articleParser.ParseArticle(pageSource, url);
+
+            if (article != null)
+            {
+                _logger.LogInformation("Successfully scraped article: {Title}", article.Title);
+            }
+            else
+            {
+                _logger.LogWarning("Failed to parse article from {Url}", url);
+            }
+
+            return article;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error scraping article {Url}", url);
+            return null;
+        }
+        finally
+        {
+            driver?.Quit();
+            driver?.Dispose();
+        }
+    }
+
+    public async Task<IEnumerable<Article>> ScrapeArticlesBySectionsAsync(
+        int maxArticles,
+        string[] sections,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Starting scrape for up to {MaxArticles} articles from sections: {Sections}",
+            maxArticles, string.Join(", ", sections));
 
         IWebDriver? driver = null;
         try
@@ -77,9 +139,9 @@ public class ScraperService : IScraperService
             driver.Navigate().GoToUrl(todaysPaperUrl);
             await Task.Delay(3000, cancellationToken);
 
-            // Extract article URLs
-            var articleUrls = ExtractArticleUrls(driver, maxArticles);
-            _logger.LogInformation("Found {Count} article URLs", articleUrls.Count);
+            // Extract article URLs from specified sections
+            var articleUrls = ExtractArticleUrlsFromSections(driver, maxArticles, sections);
+            _logger.LogInformation("Found {Count} article URLs from specified sections", articleUrls.Count);
 
             var articles = new List<Article>();
 
@@ -170,13 +232,16 @@ public class ScraperService : IScraperService
         return driver;
     }
 
-    private List<string> ExtractArticleUrls(IWebDriver driver, int maxArticles)
+    private List<string> ExtractArticleUrlsFromSections(IWebDriver driver, int maxArticles, string[] targetSections)
     {
         try
         {
-            _logger.LogInformation("Extracting article URLs from Front Page and Business sections");
+            _logger.LogInformation("Extracting article URLs from sections: {Sections}",
+                string.Join(", ", targetSections));
 
             var articleUrls = new List<string>();
+            var currentYear = DateTime.UtcNow.Year;
+            var previousYear = currentYear - 1;
 
             // Find all sections on the page
             var sections = driver.FindElements(By.CssSelector("section, div[data-testid*='section'], div.css-13y0vf2"));
@@ -195,27 +260,17 @@ public class ScraperService : IScraperService
 
                     var sectionTitle = headers[0].Text.Trim();
 
-                    // Check if this is a section we want
-                    bool isFrontPage = sectionTitle.Equals("The Front Page", StringComparison.OrdinalIgnoreCase) ||
-                                      sectionTitle.Equals("Front Page", StringComparison.OrdinalIgnoreCase);
+                    // Check if this section matches any of the target sections
+                    bool isTargetSection = targetSections.Any(targetSection =>
+                        sectionTitle.Equals(targetSection, StringComparison.OrdinalIgnoreCase) ||
+                        sectionTitle.Contains(targetSection, StringComparison.OrdinalIgnoreCase));
 
-                    bool isBusinessSection = sectionTitle.Contains("Business", StringComparison.OrdinalIgnoreCase);
-
-                    bool isInternational = sectionTitle.Equals("International", StringComparison.OrdinalIgnoreCase);
-
-                    // If we hit International section, we've passed The Front Page
-                    if (isInternational)
-                    {
-                        _logger.LogDebug("Reached International section, stopping Front Page collection");
-                        continue;
-                    }
-
-                    if (isFrontPage || isBusinessSection)
+                    if (isTargetSection)
                     {
                         _logger.LogInformation("Processing section: {SectionTitle}", sectionTitle);
 
-                        // Find all article links in this section
-                        var links = section.FindElements(By.CssSelector("a[href*='/2024/'], a[href*='/2025/']"))
+                        // Find all article links in this section with dynamic year detection
+                        var links = section.FindElements(By.CssSelector($"a[href*='/{currentYear}/'], a[href*='/{previousYear}/']"))
                             .Select(e => e.GetAttribute("href"))
                             .Where(url => !string.IsNullOrWhiteSpace(url) &&
                                         (url.Contains("/article/", StringComparison.OrdinalIgnoreCase) ||
@@ -242,10 +297,10 @@ public class ScraperService : IScraperService
             // Fallback: If no sections found, try a simpler approach
             if (articleUrls.Count == 0)
             {
-                _logger.LogWarning("No sections found, using fallback article extraction");
+                _logger.LogWarning("No matching sections found, using fallback article extraction");
 
                 // Get all article links on the page
-                var allLinks = driver.FindElements(By.CssSelector("a[href*='/2024/'], a[href*='/2025/']"))
+                var allLinks = driver.FindElements(By.CssSelector($"a[href*='/{currentYear}/'], a[href*='/{previousYear}/']"))
                     .Select(e => e.GetAttribute("href"))
                     .Where(url => !string.IsNullOrWhiteSpace(url) &&
                                 (url.Contains("/article/", StringComparison.OrdinalIgnoreCase) ||
@@ -253,7 +308,7 @@ public class ScraperService : IScraperService
                     .Distinct()
                     .ToList();
 
-                // Take only from the beginning of the page (likely Front Page)
+                // Take only from the beginning of the page
                 articleUrls = allLinks.Take(maxArticles).ToList();
             }
 
