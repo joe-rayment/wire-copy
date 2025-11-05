@@ -12,6 +12,7 @@ public class ArticleCache : IArticleCache
 {
     private readonly IMemoryCache _memoryCache;
     private readonly IArticleRepository _articleRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ArticleCache> _logger;
     private readonly TimeSpan _defaultExpiration = TimeSpan.FromDays(7);
 
@@ -22,10 +23,12 @@ public class ArticleCache : IArticleCache
     public ArticleCache(
         IMemoryCache memoryCache,
         IArticleRepository articleRepository,
+        IUnitOfWork unitOfWork,
         ILogger<ArticleCache> logger)
     {
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _articleRepository = articleRepository ?? throw new ArgumentNullException(nameof(articleRepository));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -67,7 +70,7 @@ public class ArticleCache : IArticleCache
         if (existing == null)
         {
             await _articleRepository.AddAsync(value, cancellationToken);
-            await _articleRepository.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         _logger.LogInformation("Article cached: {Key} (expires in {Expiration})", key, exp);
@@ -83,7 +86,7 @@ public class ArticleCache : IArticleCache
         if (article != null)
         {
             await _articleRepository.DeleteAsync(article, cancellationToken);
-            await _articleRepository.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         _logger.LogInformation("Article removed from cache: {Key}", key);
