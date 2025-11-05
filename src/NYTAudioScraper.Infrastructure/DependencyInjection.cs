@@ -3,11 +3,14 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Caching;
 using NYTAudioScraper.Infrastructure.Configuration;
+using NYTAudioScraper.Infrastructure.Configuration.Validation;
+using NYTAudioScraper.Infrastructure.Http;
 using NYTAudioScraper.Infrastructure.Parsing;
 using NYTAudioScraper.Infrastructure.Persistence;
 using NYTAudioScraper.Infrastructure.Persistence.Repositories;
@@ -15,6 +18,7 @@ using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
+using System.Net.Http;
 
 namespace NYTAudioScraper.Infrastructure;
 
@@ -37,6 +41,18 @@ public static class DependencyInjection
         services.Configure<BrowserConfiguration>(options =>
             configuration.GetSection(BrowserConfiguration.SectionName).Bind(options));
 
+        // Register configuration validators
+        services.AddSingleton<IValidateOptions<NYTConfiguration>, NYTConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<ElevenLabsConfiguration>, ElevenLabsConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<AudioConfiguration>, AudioConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
+
+        // Validate options on startup
+        services.AddOptions<NYTConfiguration>().ValidateOnStart();
+        services.AddOptions<ElevenLabsConfiguration>().ValidateOnStart();
+        services.AddOptions<AudioConfiguration>().ValidateOnStart();
+        services.AddOptions<BrowserConfiguration>().ValidateOnStart();
+
         // Register database
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NYTAudioScraper", "nytaudioscraper.db");
@@ -52,6 +68,9 @@ public static class DependencyInjection
         // Register HTTP client factory
         services.AddHttpClient();
 
+        // Register HTTP resilience logger
+        services.AddSingleton<HttpResilienceLogger>();
+
         // Register ElevenLabs HTTP client with configuration and resilience policies
         services.AddHttpClient("ElevenLabs", (serviceProvider, client) =>
         {
@@ -64,47 +83,49 @@ public static class DependencyInjection
                 client.DefaultRequestHeaders.Add("xi-api-key", config.ApiKey);
             }
         })
-        .AddTransientHttpErrorPolicy(policyBuilder =>
-            policyBuilder.WaitAndRetryAsync(
+        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        {
+            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
+            return policyBuilder.WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                 onRetry: (outcome, timespan, retryCount, context) =>
                 {
-                    Console.WriteLine(
-                        $"Retry {retryCount} after {timespan.TotalSeconds}s due to {outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown"}");
-                }))
-        .AddTransientHttpErrorPolicy(policyBuilder =>
-            policyBuilder.CircuitBreakerAsync(
+                    resilienceLogger.LogRetry(outcome, timespan, retryCount, "ElevenLabs API");
+                });
+        })
+        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        {
+            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
+            return policyBuilder.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromSeconds(30),
                 onBreak: (outcome, breakDuration) =>
                 {
-                    // Log circuit breaker opened
-                    Console.WriteLine($"Circuit breaker opened for {breakDuration.TotalSeconds}s due to {outcome.Exception?.Message ?? "repeated failures"}");
+                    resilienceLogger.LogCircuitBreakerOpen(outcome, breakDuration, "ElevenLabs API");
                 },
                 onReset: () =>
                 {
-                    // Log circuit breaker closed
-                    Console.WriteLine("Circuit breaker reset - service is healthy again");
+                    resilienceLogger.LogCircuitBreakerReset("ElevenLabs API");
                 },
                 onHalfOpen: () =>
                 {
-                    // Log circuit breaker testing
-                    Console.WriteLine("Circuit breaker half-open - testing if service recovered");
-                }));
+                    resilienceLogger.LogCircuitBreakerHalfOpen("ElevenLabs API");
+                });
+        });
 
         // Register browser automation services
-        services.AddSingleton<NYTAuthService>();
-        services.AddSingleton<ArticleParser>();
+        services.AddSingleton<INYTAuthService, NYTAuthService>();
+        services.AddSingleton<IArticleParser, ArticleParser>();
 
         // Register audio services with resilience
-        services.AddSingleton<BudgetService>();
+        services.AddSingleton<IBudgetService, BudgetService>();
         services.AddSingleton<AudioGenerator>();
         services.AddSingleton<IAudioGenerator, ResilientAudioGenerator>();
 
         // Register rate limiter for parallel processing
         // Max 3 concurrent requests, 1000ms minimum delay between requests
-        services.AddSingleton(serviceProvider =>
+        services.AddSingleton<IRateLimiter>(serviceProvider =>
         {
             var logger = serviceProvider.GetRequiredService<ILogger<RateLimiter>>();
             return new RateLimiter(
@@ -114,7 +135,7 @@ public static class DependencyInjection
         });
 
         // Register parallel audio generator
-        services.AddSingleton<ParallelAudioGenerator>();
+        services.AddSingleton<IParallelAudioGenerator, ParallelAudioGenerator>();
 
         // Register caching
         services.AddMemoryCache();

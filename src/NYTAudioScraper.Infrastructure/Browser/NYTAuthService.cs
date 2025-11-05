@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
@@ -7,7 +8,7 @@ using System.Text.Json;
 
 namespace NYTAudioScraper.Infrastructure.Browser;
 
-public class NYTAuthService
+public class NYTAuthService : INYTAuthService
 {
     private readonly NYTConfiguration _config;
     private readonly ILogger<NYTAuthService> _logger;
@@ -63,9 +64,19 @@ public class NYTAuthService
                     d.FindElement(By.Id("email")) ??
                     d.FindElement(By.CssSelector("input[type='email']")));
             }
-            catch
+            catch (WebDriverTimeoutException ex)
             {
-                _logger.LogError("Could not find email input field");
+                _logger.LogError(ex, "Timeout waiting for email input field");
+                return false;
+            }
+            catch (NoSuchElementException ex)
+            {
+                _logger.LogError(ex, "Could not find email input field");
+                return false;
+            }
+            catch (WebDriverException ex)
+            {
+                _logger.LogError(ex, "WebDriver error while locating email input field");
                 return false;
             }
 
@@ -88,9 +99,19 @@ public class NYTAuthService
                     d.FindElement(By.Id("password")) ??
                     d.FindElement(By.CssSelector("input[type='password']")));
             }
-            catch
+            catch (WebDriverTimeoutException ex)
             {
-                _logger.LogError("Could not find password input field");
+                _logger.LogError(ex, "Timeout waiting for password input field");
+                return false;
+            }
+            catch (NoSuchElementException ex)
+            {
+                _logger.LogError(ex, "Could not find password input field");
+                return false;
+            }
+            catch (WebDriverException ex)
+            {
+                _logger.LogError(ex, "WebDriver error while locating password input field");
                 return false;
             }
 
@@ -132,8 +153,9 @@ public class NYTAuthService
             return cookies.Any(c => c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
                                    c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Error checking authentication status");
             return false;
         }
     }

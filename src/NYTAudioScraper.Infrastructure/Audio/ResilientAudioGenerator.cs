@@ -8,13 +8,13 @@ namespace NYTAudioScraper.Infrastructure.Audio;
 public class ResilientAudioGenerator : IAudioGenerator
 {
     private readonly AudioGenerator _innerGenerator;
-    private readonly BudgetService _budgetService;
+    private readonly IBudgetService _budgetService;
     private readonly ILogger<ResilientAudioGenerator> _logger;
     private readonly AsyncRetryPolicy _retryPolicy;
 
     public ResilientAudioGenerator(
         AudioGenerator innerGenerator,
-        BudgetService budgetService,
+        IBudgetService budgetService,
         ILogger<ResilientAudioGenerator> logger)
     {
         _innerGenerator = innerGenerator;

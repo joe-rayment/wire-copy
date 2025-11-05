@@ -1,10 +1,11 @@
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
+using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
 
 namespace NYTAudioScraper.Infrastructure.Parsing;
 
-public class ArticleParser
+public class ArticleParser : IArticleParser
 {
     private readonly ILogger<ArticleParser> _logger;
 
