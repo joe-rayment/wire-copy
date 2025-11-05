@@ -3,8 +3,13 @@ namespace NYTAudioScraper.Application.Interfaces;
 /// <summary>
 /// Unit of Work pattern for managing database transactions and coordinating changes across multiple repositories
 /// </summary>
-public interface IUnitOfWork : IDisposable
+public interface IUnitOfWork : IDisposable, IAsyncDisposable
 {
+    /// <summary>
+    /// Gets whether a transaction is currently active
+    /// </summary>
+    bool HasActiveTransaction { get; }
+
     /// <summary>
     /// Saves all pending changes to the database
     /// </summary>
