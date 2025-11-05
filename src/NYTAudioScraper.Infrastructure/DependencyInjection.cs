@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Browser;
@@ -69,12 +70,8 @@ public static class DependencyInjection
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                 onRetry: (outcome, timespan, retryCount, context) =>
                 {
-                    var logger = context.GetLogger();
-                    logger?.LogWarning(
-                        "Retry {RetryCount} after {Delay}s due to {Exception}",
-                        retryCount,
-                        timespan.TotalSeconds,
-                        outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown");
+                    Console.WriteLine(
+                        $"Retry {retryCount} after {timespan.TotalSeconds}s due to {outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown"}");
                 }))
         .AddTransientHttpErrorPolicy(policyBuilder =>
             policyBuilder.CircuitBreakerAsync(

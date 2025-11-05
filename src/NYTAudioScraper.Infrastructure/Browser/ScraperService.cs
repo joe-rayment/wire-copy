@@ -57,10 +57,10 @@ public class ScraperService : IScraperService
         int maxArticles = 10,
         CancellationToken cancellationToken = default)
     {
-        // Use default sections (Front Page and Business)
+        // Use default sections (The Front Page and Business)
         return await ScrapeArticlesBySectionsAsync(
             maxArticles,
-            new[] { "Front Page", "The Front Page", "Business" },
+            new[] { "The Front Page", "Business" },
             cancellationToken);
     }
 
@@ -246,6 +246,8 @@ public class ScraperService : IScraperService
             // Find all sections on the page
             var sections = driver.FindElements(By.CssSelector("section, div[data-testid*='section'], div.css-13y0vf2"));
 
+            bool hitInternationalSection = false;
+
             foreach (var section in sections)
             {
                 try
@@ -259,6 +261,19 @@ public class ScraperService : IScraperService
                     }
 
                     var sectionTitle = headers[0].Text.Trim();
+                    var headerElement = headers[0];
+
+                    // Check if we've hit the International section (stop signal for Front Page)
+                    if (sectionTitle.Equals("International", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var headerClass = headerElement.GetAttribute("class");
+                        if (headerClass != null && headerClass.Contains("css-1k2d5zc"))
+                        {
+                            _logger.LogInformation("Reached International section - stopping Front Page collection");
+                            hitInternationalSection = true;
+                            break;
+                        }
+                    }
 
                     // Check if this section matches any of the target sections
                     bool isTargetSection = targetSections.Any(targetSection =>
@@ -280,11 +295,6 @@ public class ScraperService : IScraperService
 
                         _logger.LogInformation("Found {Count} article(s) in {Section}", links.Count, sectionTitle);
                         articleUrls.AddRange(links);
-
-                        if (articleUrls.Count >= maxArticles)
-                        {
-                            break;
-                        }
                     }
                 }
                 catch (Exception ex)
@@ -312,7 +322,7 @@ public class ScraperService : IScraperService
                 articleUrls = allLinks.Take(maxArticles).ToList();
             }
 
-            var finalUrls = articleUrls.Distinct().Take(maxArticles).ToList();
+            var finalUrls = articleUrls.Distinct().ToList();
             _logger.LogInformation("Total articles selected: {Count}", finalUrls.Count);
 
             return finalUrls;

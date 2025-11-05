@@ -10,7 +10,7 @@ public class CommandOptions
     [Option('s', "section", Required = false, HelpText = "NYT section to scrape (e.g., technology, politics)")]
     public string? Section { get; set; }
 
-    [Option('c', "count", Required = false, Default = 5, HelpText = "Number of articles to process")]
+    [Option('c', "count", Required = false, Default = 100, HelpText = "Number of articles to process (default: 100, collects all from specified sections)")]
     public int ArticleCount { get; set; }
 
     [Option('v', "voice", Required = false, HelpText = "ElevenLabs voice ID to use")]

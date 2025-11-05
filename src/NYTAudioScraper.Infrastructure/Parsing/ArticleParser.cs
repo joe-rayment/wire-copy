@@ -91,11 +91,39 @@ public class ArticleParser
 
     private string? ExtractAuthor(HtmlDocument doc)
     {
-        var authorNode = doc.DocumentNode.SelectSingleNode("//meta[@name='author']") ??
-                        doc.DocumentNode.SelectSingleNode("//span[@itemprop='author']") ??
-                        doc.DocumentNode.SelectSingleNode("//a[@rel='author']");
+        // Try multiple selectors for author/byline
+        // First try meta tag
+        var authorNode = doc.DocumentNode.SelectSingleNode("//meta[@name='author']");
+        if (authorNode != null)
+        {
+            var authorContent = authorNode.GetAttributeValue("content", string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(authorContent))
+            {
+                return authorContent;
+            }
+        }
 
-        return authorNode?.GetAttributeValue("content", authorNode.InnerText).Trim();
+        // Try to find byline links (e.g., <a class="last-byline" itemprop="name">)
+        var bylineNodes = doc.DocumentNode.SelectNodes("//a[contains(@class, 'byline') and @itemprop='name']") ??
+                         doc.DocumentNode.SelectNodes("//a[@itemprop='name' and contains(@href, '/by/')]") ??
+                         doc.DocumentNode.SelectNodes("//span[@itemprop='author']//a") ??
+                         doc.DocumentNode.SelectNodes("//a[@rel='author']");
+
+        if (bylineNodes != null && bylineNodes.Count > 0)
+        {
+            var authors = bylineNodes
+                .Select(node => CleanText(node.InnerText))
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Distinct()
+                .ToList();
+
+            if (authors.Count > 0)
+            {
+                return string.Join(", ", authors);
+            }
+        }
+
+        return null;
     }
 
     private string? ExtractSection(HtmlDocument doc)
