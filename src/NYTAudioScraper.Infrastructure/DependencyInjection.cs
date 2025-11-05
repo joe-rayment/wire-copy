@@ -1,10 +1,15 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Browser;
+using NYTAudioScraper.Infrastructure.Caching;
 using NYTAudioScraper.Infrastructure.Configuration;
 using NYTAudioScraper.Infrastructure.Parsing;
+using NYTAudioScraper.Infrastructure.Persistence;
+using NYTAudioScraper.Infrastructure.Persistence.Repositories;
 using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
 using Polly.CircuitBreaker;
@@ -30,6 +35,18 @@ public static class DependencyInjection
             configuration.GetSection(AudioConfiguration.SectionName).Bind(options));
         services.Configure<BrowserConfiguration>(options =>
             configuration.GetSection(BrowserConfiguration.SectionName).Bind(options));
+
+        // Register database
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NYTAudioScraper", "nytaudioscraper.db");
+
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseSqlite($"Data Source={connectionString}"));
+
+        // Register repositories
+        services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+        services.AddScoped<IArticleRepository, ArticleRepository>();
+        services.AddScoped<IScrapingSessionRepository, ScrapingSessionRepository>();
 
         // Register HTTP client factory
         services.AddHttpClient();
@@ -87,6 +104,34 @@ public static class DependencyInjection
         services.AddSingleton<BudgetService>();
         services.AddSingleton<AudioGenerator>();
         services.AddSingleton<IAudioGenerator, ResilientAudioGenerator>();
+
+        // Register rate limiter for parallel processing
+        // Max 3 concurrent requests, 1000ms minimum delay between requests
+        services.AddSingleton(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<RateLimiter>>();
+            return new RateLimiter(
+                maxConcurrency: 3,
+                minDelayMs: 1000,
+                logger);
+        });
+
+        // Register parallel audio generator
+        services.AddSingleton<ParallelAudioGenerator>();
+
+        // Register caching
+        services.AddMemoryCache();
+        services.AddScoped<IArticleCache, ArticleCache>();
+        services.AddSingleton<IAudioCache>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<AudioCache>>();
+            var cacheDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "NYTAudioScraper",
+                "cache",
+                "audio");
+            return new AudioCache(cacheDirectory, logger);
+        });
 
         // Register services
         services.AddSingleton<IScraperService, ScraperService>();
