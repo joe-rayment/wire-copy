@@ -45,6 +45,18 @@ public class Program
         Log.Information("Starting NYT Audio Scraper");
         Log.Information("Options: {@Options}", options);
 
+        // Validate command options
+        var validationErrors = options.Validate();
+        if (validationErrors.Any())
+        {
+            Log.Error("Command validation failed:");
+            foreach (var error in validationErrors)
+            {
+                Log.Error("  - {Error}", error);
+            }
+            return 1; // Return error code for validation failure
+        }
+
         var host = CreateHostBuilder(options).Build();
 
         if (options.TestMode)
@@ -103,7 +115,7 @@ public class Program
             var audioProcessor = services.GetRequiredService<IAudioProcessor>();
             var chapterMarker = services.GetRequiredService<IChapterMarker>();
             var fileStorage = services.GetRequiredService<IFileStorage>();
-            var budgetService = services.GetRequiredService<BudgetService>();
+            var budgetService = services.GetRequiredService<IBudgetService>();
 
             Log.Information("✓ All services resolved successfully");
 

@@ -1,8 +1,9 @@
 using Microsoft.Extensions.Logging;
+using NYTAudioScraper.Application.Interfaces;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
 
-public class BudgetService
+public class BudgetService : IBudgetService
 {
     private readonly ILogger<BudgetService> _logger;
     private decimal _totalSpent;

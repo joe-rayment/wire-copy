@@ -1,11 +1,12 @@
 using Microsoft.Extensions.Logging;
+using NYTAudioScraper.Application.Interfaces;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
 
 /// <summary>
 /// Rate limiter using semaphore to control concurrent operations
 /// </summary>
-public class RateLimiter : IDisposable
+public class RateLimiter : IRateLimiter
 {
     private readonly SemaphoreSlim _semaphore;
     private readonly int _minDelayMs;
