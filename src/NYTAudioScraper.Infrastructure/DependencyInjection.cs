@@ -15,6 +15,7 @@ using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
+using System.Net.Http;
 
 namespace NYTAudioScraper.Infrastructure;
 
@@ -66,7 +67,8 @@ public static class DependencyInjection
         })
         .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
         {
-            var logger = serviceProvider.GetRequiredService<ILogger<AsyncRetryPolicy<HttpResponseMessage>>>();
+            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("NYTAudioScraper.Infrastructure.Http.RetryPolicy");
             return policyBuilder.WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
@@ -82,7 +84,8 @@ public static class DependencyInjection
         })
         .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
         {
-            var logger = serviceProvider.GetRequiredService<ILogger<AsyncCircuitBreakerPolicy<HttpResponseMessage>>>();
+            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("NYTAudioScraper.Infrastructure.Http.CircuitBreaker");
             return policyBuilder.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromSeconds(30),
