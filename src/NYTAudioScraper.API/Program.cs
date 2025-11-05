@@ -350,7 +350,15 @@ public class Program
         {
             try
             {
-                var estimatedCost = audioGenerator.EstimateCost(article.Content);
+                // Prepare narration text with title and author
+                var narrationText = article.Title;
+                if (!string.IsNullOrEmpty(article.Author))
+                {
+                    narrationText += $". By {article.Author}.";
+                }
+                narrationText += $"\n\n{article.Content}";
+
+                var estimatedCost = audioGenerator.EstimateCost(narrationText);
                 Log.Information("  Processing: {Title}", article.Title);
                 Log.Information("    Estimated cost: ${Cost:F4}", estimatedCost);
 
@@ -361,7 +369,7 @@ public class Program
                 }
 
                 // Generate audio
-                var audioData = await audioGenerator.GenerateAudioAsync(article.Content, voiceId);
+                var audioData = await audioGenerator.GenerateAudioAsync(narrationText, voiceId);
 
                 // Save audio file
                 var audioFilePath = Path.Combine(outputDir, $"{article.Id}.mp3");
