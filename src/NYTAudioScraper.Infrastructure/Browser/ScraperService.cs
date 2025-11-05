@@ -13,15 +13,15 @@ public class ScraperService : IScraperService
 {
     private readonly NYTConfiguration _nytConfig;
     private readonly BrowserConfiguration _browserConfig;
-    private readonly NYTAuthService _authService;
-    private readonly ArticleParser _articleParser;
+    private readonly INYTAuthService _authService;
+    private readonly IArticleParser _articleParser;
     private readonly ILogger<ScraperService> _logger;
 
     public ScraperService(
         IOptions<NYTConfiguration> nytConfig,
         IOptions<BrowserConfiguration> browserConfig,
-        NYTAuthService authService,
-        ArticleParser articleParser,
+        INYTAuthService authService,
+        IArticleParser articleParser,
         ILogger<ScraperService> logger)
     {
         _nytConfig = nytConfig.Value;
