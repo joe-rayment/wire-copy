@@ -64,47 +64,58 @@ public static class DependencyInjection
                 client.DefaultRequestHeaders.Add("xi-api-key", config.ApiKey);
             }
         })
-        .AddTransientHttpErrorPolicy(policyBuilder =>
-            policyBuilder.WaitAndRetryAsync(
+        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<AsyncRetryPolicy<HttpResponseMessage>>>();
+            return policyBuilder.WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                 onRetry: (outcome, timespan, retryCount, context) =>
                 {
-                    Console.WriteLine(
-                        $"Retry {retryCount} after {timespan.TotalSeconds}s due to {outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown"}");
-                }))
-        .AddTransientHttpErrorPolicy(policyBuilder =>
-            policyBuilder.CircuitBreakerAsync(
+                    var reason = outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown";
+                    logger.LogWarning(
+                        "ElevenLabs API retry {RetryCount} after {Delay}s due to {Reason}",
+                        retryCount,
+                        timespan.TotalSeconds,
+                        reason);
+                });
+        })
+        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<AsyncCircuitBreakerPolicy<HttpResponseMessage>>>();
+            return policyBuilder.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromSeconds(30),
                 onBreak: (outcome, breakDuration) =>
                 {
-                    // Log circuit breaker opened
-                    Console.WriteLine($"Circuit breaker opened for {breakDuration.TotalSeconds}s due to {outcome.Exception?.Message ?? "repeated failures"}");
+                    var reason = outcome.Exception?.Message ?? "repeated failures";
+                    logger.LogError(
+                        "ElevenLabs API circuit breaker opened for {Duration}s due to {Reason}",
+                        breakDuration.TotalSeconds,
+                        reason);
                 },
                 onReset: () =>
                 {
-                    // Log circuit breaker closed
-                    Console.WriteLine("Circuit breaker reset - service is healthy again");
+                    logger.LogInformation("ElevenLabs API circuit breaker reset - service is healthy again");
                 },
                 onHalfOpen: () =>
                 {
-                    // Log circuit breaker testing
-                    Console.WriteLine("Circuit breaker half-open - testing if service recovered");
-                }));
+                    logger.LogInformation("ElevenLabs API circuit breaker half-open - testing if service recovered");
+                });
+        });
 
         // Register browser automation services
-        services.AddSingleton<NYTAuthService>();
-        services.AddSingleton<ArticleParser>();
+        services.AddSingleton<INYTAuthService, NYTAuthService>();
+        services.AddSingleton<IArticleParser, ArticleParser>();
 
         // Register audio services with resilience
-        services.AddSingleton<BudgetService>();
+        services.AddSingleton<IBudgetService, BudgetService>();
         services.AddSingleton<AudioGenerator>();
         services.AddSingleton<IAudioGenerator, ResilientAudioGenerator>();
 
         // Register rate limiter for parallel processing
         // Max 3 concurrent requests, 1000ms minimum delay between requests
-        services.AddSingleton(serviceProvider =>
+        services.AddSingleton<IRateLimiter>(serviceProvider =>
         {
             var logger = serviceProvider.GetRequiredService<ILogger<RateLimiter>>();
             return new RateLimiter(
@@ -114,7 +125,7 @@ public static class DependencyInjection
         });
 
         // Register parallel audio generator
-        services.AddSingleton<ParallelAudioGenerator>();
+        services.AddSingleton<IParallelAudioGenerator, ParallelAudioGenerator>();
 
         // Register caching
         services.AddMemoryCache();
