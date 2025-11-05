@@ -3,11 +3,14 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Caching;
 using NYTAudioScraper.Infrastructure.Configuration;
+using NYTAudioScraper.Infrastructure.Configuration.Validation;
+using NYTAudioScraper.Infrastructure.Http;
 using NYTAudioScraper.Infrastructure.Parsing;
 using NYTAudioScraper.Infrastructure.Persistence;
 using NYTAudioScraper.Infrastructure.Persistence.Repositories;
@@ -38,6 +41,18 @@ public static class DependencyInjection
         services.Configure<BrowserConfiguration>(options =>
             configuration.GetSection(BrowserConfiguration.SectionName).Bind(options));
 
+        // Register configuration validators
+        services.AddSingleton<IValidateOptions<NYTConfiguration>, NYTConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<ElevenLabsConfiguration>, ElevenLabsConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<AudioConfiguration>, AudioConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
+
+        // Validate options on startup
+        services.AddOptions<NYTConfiguration>().ValidateOnStart();
+        services.AddOptions<ElevenLabsConfiguration>().ValidateOnStart();
+        services.AddOptions<AudioConfiguration>().ValidateOnStart();
+        services.AddOptions<BrowserConfiguration>().ValidateOnStart();
+
         // Register database
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NYTAudioScraper", "nytaudioscraper.db");
@@ -53,6 +68,9 @@ public static class DependencyInjection
         // Register HTTP client factory
         services.AddHttpClient();
 
+        // Register HTTP resilience logger
+        services.AddSingleton<HttpResilienceLogger>();
+
         // Register ElevenLabs HTTP client with configuration and resilience policies
         services.AddHttpClient("ElevenLabs", (serviceProvider, client) =>
         {
@@ -67,43 +85,32 @@ public static class DependencyInjection
         })
         .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
         {
-            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("NYTAudioScraper.Infrastructure.Http.RetryPolicy");
+            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
             return policyBuilder.WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
                 onRetry: (outcome, timespan, retryCount, context) =>
                 {
-                    var reason = outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown";
-                    logger.LogWarning(
-                        "ElevenLabs API retry {RetryCount} after {Delay}s due to {Reason}",
-                        retryCount,
-                        timespan.TotalSeconds,
-                        reason);
+                    resilienceLogger.LogRetry(outcome, timespan, retryCount, "ElevenLabs API");
                 });
         })
         .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
         {
-            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("NYTAudioScraper.Infrastructure.Http.CircuitBreaker");
+            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
             return policyBuilder.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromSeconds(30),
                 onBreak: (outcome, breakDuration) =>
                 {
-                    var reason = outcome.Exception?.Message ?? "repeated failures";
-                    logger.LogError(
-                        "ElevenLabs API circuit breaker opened for {Duration}s due to {Reason}",
-                        breakDuration.TotalSeconds,
-                        reason);
+                    resilienceLogger.LogCircuitBreakerOpen(outcome, breakDuration, "ElevenLabs API");
                 },
                 onReset: () =>
                 {
-                    logger.LogInformation("ElevenLabs API circuit breaker reset - service is healthy again");
+                    resilienceLogger.LogCircuitBreakerReset("ElevenLabs API");
                 },
                 onHalfOpen: () =>
                 {
-                    logger.LogInformation("ElevenLabs API circuit breaker half-open - testing if service recovered");
+                    resilienceLogger.LogCircuitBreakerHalfOpen("ElevenLabs API");
                 });
         });
 

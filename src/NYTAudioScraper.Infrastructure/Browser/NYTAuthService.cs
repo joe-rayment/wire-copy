@@ -74,6 +74,11 @@ public class NYTAuthService : INYTAuthService
                 _logger.LogError(ex, "Could not find email input field");
                 return false;
             }
+            catch (WebDriverException ex)
+            {
+                _logger.LogError(ex, "WebDriver error while locating email input field");
+                return false;
+            }
 
             emailField.Clear();
             emailField.SendKeys(_config.Email);
@@ -102,6 +107,11 @@ public class NYTAuthService : INYTAuthService
             catch (NoSuchElementException ex)
             {
                 _logger.LogError(ex, "Could not find password input field");
+                return false;
+            }
+            catch (WebDriverException ex)
+            {
+                _logger.LogError(ex, "WebDriver error while locating password input field");
                 return false;
             }
 
