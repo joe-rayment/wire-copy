@@ -62,34 +62,82 @@ public class ArticleCache : IArticleCache
     {
         var exp = expiration ?? _defaultExpiration;
 
-        // Set in L1 cache (memory)
-        _memoryCache.Set(key, value, exp);
+        // Use transaction to ensure atomicity between L2 cache and subsequent operations
+        var needsTransaction = !_unitOfWork.HasActiveTransaction;
 
-        // Set in L2 cache (database)
-        var existing = await _articleRepository.GetByUrlAsync(key, cancellationToken);
-        if (existing == null)
+        try
         {
-            await _articleRepository.AddAsync(value, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
+            if (needsTransaction)
+            {
+                await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            }
 
-        _logger.LogInformation("Article cached: {Key} (expires in {Expiration})", key, exp);
+            // Set in L2 cache (database) first
+            var existing = await _articleRepository.GetByUrlAsync(key, cancellationToken);
+            if (existing == null)
+            {
+                await _articleRepository.AddAsync(value, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            if (needsTransaction)
+            {
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+
+            // Only update L1 cache (memory) if database operation succeeded
+            _memoryCache.Set(key, value, exp);
+
+            _logger.LogInformation("Article cached: {Key} (expires in {Expiration})", key, exp);
+        }
+        catch
+        {
+            if (needsTransaction && _unitOfWork.HasActiveTransaction)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
-        // Remove from L1 cache
-        _memoryCache.Remove(key);
+        // Use transaction to ensure atomicity between L2 cache and subsequent operations
+        var needsTransaction = !_unitOfWork.HasActiveTransaction;
 
-        // Remove from L2 cache
-        var article = await _articleRepository.GetByUrlAsync(key, cancellationToken);
-        if (article != null)
+        try
         {
-            await _articleRepository.DeleteAsync(article, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
+            if (needsTransaction)
+            {
+                await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            }
 
-        _logger.LogInformation("Article removed from cache: {Key}", key);
+            // Remove from L2 cache (database) first
+            var article = await _articleRepository.GetByUrlAsync(key, cancellationToken);
+            if (article != null)
+            {
+                await _articleRepository.DeleteAsync(article, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            if (needsTransaction)
+            {
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            }
+
+            // Only remove from L1 cache (memory) if database operation succeeded
+            _memoryCache.Remove(key);
+
+            _logger.LogInformation("Article removed from cache: {Key}", key);
+        }
+        catch
+        {
+            if (needsTransaction && _unitOfWork.HasActiveTransaction)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+            throw;
+        }
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)

@@ -12,7 +12,7 @@ namespace NYTAudioScraper.Tests;
 /// <summary>
 /// Tests for IUnitOfWork interface and UnitOfWork implementation
 /// </summary>
-public class UnitOfWorkTests : IDisposable
+public class UnitOfWorkTests : IAsyncDisposable
 {
     private readonly AppDbContext _context;
     private readonly IUnitOfWork _unitOfWork;
@@ -215,6 +215,66 @@ public class UnitOfWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task DisposeAsync_DisposesResourcesAsynchronously()
+    {
+        // Arrange
+        await _unitOfWork.BeginTransactionAsync();
+        var article = CreateTestArticle("article-1", "Test Article");
+        _context.Articles.Add(article);
+
+        // Act - DisposeAsync should properly clean up transaction
+        await _unitOfWork.DisposeAsync();
+
+        // Assert - Should not throw and transaction should be cleaned up
+        _context.Database.CurrentTransaction.Should().BeNull();
+    }
+
+    [Fact]
+    public void HasActiveTransaction_ReturnsFalse_WhenNoTransaction()
+    {
+        // Assert
+        _unitOfWork.HasActiveTransaction.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasActiveTransaction_ReturnsTrue_WhenTransactionActive()
+    {
+        // Act
+        await _unitOfWork.BeginTransactionAsync();
+
+        // Assert
+        _unitOfWork.HasActiveTransaction.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasActiveTransaction_ReturnsFalse_AfterCommit()
+    {
+        // Arrange
+        await _unitOfWork.BeginTransactionAsync();
+        var article = CreateTestArticle("article-1", "Test Article");
+        _context.Articles.Add(article);
+
+        // Act
+        await _unitOfWork.CommitTransactionAsync();
+
+        // Assert
+        _unitOfWork.HasActiveTransaction.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasActiveTransaction_ReturnsFalse_AfterRollback()
+    {
+        // Arrange
+        await _unitOfWork.BeginTransactionAsync();
+
+        // Act
+        await _unitOfWork.RollbackTransactionAsync();
+
+        // Assert
+        _unitOfWork.HasActiveTransaction.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SaveChangesAsync_WithCancellation_ThrowsOperationCanceledException()
     {
         // Arrange
@@ -244,9 +304,12 @@ public class UnitOfWorkTests : IDisposable
         };
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _unitOfWork?.Dispose();
+        if (_unitOfWork != null)
+        {
+            await _unitOfWork.DisposeAsync();
+        }
         _context?.Dispose();
     }
 }

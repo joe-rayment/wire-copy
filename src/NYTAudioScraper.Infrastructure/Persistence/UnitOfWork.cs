@@ -20,6 +20,8 @@ public class UnitOfWork : IUnitOfWork
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    public bool HasActiveTransaction => _transaction != null;
+
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -101,7 +103,27 @@ public class UnitOfWork : IUnitOfWork
     {
         if (!_disposed && disposing)
         {
+            // Synchronous disposal - transaction should already be cleaned up by async methods
+            // If not, dispose synchronously as a fallback (not ideal but prevents leaks)
             _transaction?.Dispose();
+            _disposed = true;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
+        if (!_disposed && _transaction != null)
+        {
+            // Properly dispose transaction asynchronously
+            await _transaction.DisposeAsync().ConfigureAwait(false);
+            _transaction = null;
             _disposed = true;
         }
     }
