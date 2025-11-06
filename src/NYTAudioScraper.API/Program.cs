@@ -304,6 +304,7 @@ public class Program
         // Get services
         var scraper = services.GetRequiredService<IScraperService>();
         var audioGenerator = services.GetRequiredService<IAudioGenerator>();
+        var parallelAudioGenerator = services.GetRequiredService<IParallelAudioGenerator>();
         var audioProcessor = services.GetRequiredService<IAudioProcessor>();
         var chapterMarker = services.GetRequiredService<IChapterMarker>();
         var budgetService = services.GetRequiredService<BudgetService>();
@@ -372,9 +373,9 @@ public class Program
             Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
         }
 
-        // Step 2: Generate audio for each article
+        // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
-        Log.Information("Step 2: Generating audio files...");
+        Log.Information("Step 2: Generating audio files (parallel processing)...");
 
         var audioFiles = new List<string>();
         var chapters = new List<AudioChapter>();
@@ -382,63 +383,63 @@ public class Program
 
         var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
 
-        foreach (var article in articleList)
+        // Start timer for performance measurement
+        var audioGenStart = DateTime.UtcNow;
+
+        // Use parallel audio generator for concurrent processing
+        var result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
+            articleList,
+            voiceId,
+            cancellationToken: default);
+
+        var audioGenElapsed = DateTime.UtcNow - audioGenStart;
+
+        // Log results
+        Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenElapsed.TotalSeconds);
+        Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
+        if (result.FailureCount > 0)
         {
-            try
+            Log.Warning("  Failed: {FailureCount}/{Total} articles", result.FailureCount, result.TotalProcessed);
+        }
+
+        // Process successful generations
+        foreach (var (articleId, audioData) in result.SuccessfulGenerations)
+        {
+            var article = articleList.First(a => a.Id == articleId);
+
+            // Save audio file
+            var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
+            await File.WriteAllBytesAsync(audioFilePath, audioData);
+            audioFiles.Add(audioFilePath);
+
+            Log.Information("  ✓ Saved: {Title} ({Size:N0} bytes)", article.Title, audioData.Length);
+
+            // Get audio metadata for chapter timing
+            var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
+            var durationMs = metadata.DurationMs;
+
+            // Create chapter entry
+            var chapter = new AudioChapter
             {
-                // Prepare narration text with title and author
-                var narrationText = article.Title;
-                if (!string.IsNullOrEmpty(article.Author))
-                {
-                    narrationText += $". By {article.Author}.";
-                }
-                narrationText += $"\n\n{article.Content}";
+                Title = article.Title,
+                ArticleId = article.Id,
+                StartTimeMs = currentTimeMs,
+                DurationMs = durationMs,
+                AudioFilePath = audioFilePath
+            };
+            chapters.Add(chapter);
+            currentTimeMs += durationMs;
 
-                var estimatedCost = audioGenerator.EstimateCost(narrationText);
-                Log.Information("  Processing: {Title}", article.Title);
-                Log.Information("    Estimated cost: ${Cost:F4}", estimatedCost);
+            Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
+                chapter.StartTimeMs / 1000.0,
+                chapter.EndTimeMs / 1000.0);
+        }
 
-                if (!budgetService.CanAfford(estimatedCost))
-                {
-                    Log.Warning("    ⚠ Skipping - would exceed budget");
-                    continue;
-                }
-
-                // Generate audio
-                var audioData = await audioGenerator.GenerateAudioAsync(narrationText, voiceId);
-
-                // Save audio file
-                var audioFilePath = Path.Combine(outputDir, $"{article.Id}.mp3");
-                await File.WriteAllBytesAsync(audioFilePath, audioData);
-                audioFiles.Add(audioFilePath);
-
-                Log.Information("    ✓ Generated audio: {Size:N0} bytes", audioData.Length);
-                Log.Information("    ✓ Saved to: {Path}", audioFilePath);
-
-                // Get audio metadata for chapter timing
-                var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
-                var durationMs = metadata.DurationMs;
-
-                // Create chapter entry
-                var chapter = new AudioChapter
-                {
-                    Title = article.Title,
-                    ArticleId = article.Id,
-                    StartTimeMs = currentTimeMs,
-                    DurationMs = durationMs,
-                    AudioFilePath = audioFilePath
-                };
-                chapters.Add(chapter);
-                currentTimeMs += durationMs;
-
-                Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
-                    chapter.StartTimeMs / 1000.0,
-                    chapter.EndTimeMs / 1000.0);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "    ✗ Error processing article: {Title}", article.Title);
-            }
+        // Log failures
+        foreach (var (articleId, errorMessage) in result.FailedGenerations)
+        {
+            var article = articleList.First(a => a.Id == articleId);
+            Log.Error("  ✗ Failed: {Title} - {Error}", article.Title, errorMessage);
         }
 
         if (audioFiles.Count == 0)
