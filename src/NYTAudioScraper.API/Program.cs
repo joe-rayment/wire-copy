@@ -7,6 +7,7 @@ using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
 using NYTAudioScraper.Infrastructure.Audio;
+using NYTAudioScraper.Infrastructure.Metrics;
 using NYTAudioScraper.Infrastructure.Persistence;
 using Serilog;
 
@@ -353,6 +354,9 @@ public class Program
         }
         Log.Information("");
 
+        // Initialize performance metrics
+        var metrics = new PerformanceMetrics();
+
         // Get services
         var scraper = services.GetRequiredService<IScraperService>();
         var audioGenerator = services.GetRequiredService<IAudioGenerator>();
@@ -391,28 +395,32 @@ public class Program
             // Step 1: Get articles
             Log.Information("");
             Log.Information("Step 1: Scraping articles...");
-        IEnumerable<Article> articles;
+            IEnumerable<Article> articles;
 
-        if (!string.IsNullOrEmpty(options.ArticleUrl))
-        {
-            Log.Information("Single article mode: {Url}", options.ArticleUrl);
-            var article = await scraper.ScrapeArticleByUrlAsync(options.ArticleUrl);
-            articles = article != null ? new[] { article } : Enumerable.Empty<Article>();
-        }
-        else if (!string.IsNullOrEmpty(options.Section))
-        {
-            var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            Log.Information("Scraping {Count} articles from sections: {Sections}",
-                options.ArticleCount, string.Join(", ", sections));
-            articles = await scraper.ScrapeArticlesBySectionsAsync(options.ArticleCount, sections);
-        }
-        else
-        {
-            Log.Information("Scraping {Count} articles from default sections", options.ArticleCount);
-            articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
-        }
+            using (metrics.Measure("scraping"))
+            {
+                if (!string.IsNullOrEmpty(options.ArticleUrl))
+                {
+                    Log.Information("Single article mode: {Url}", options.ArticleUrl);
+                    var article = await scraper.ScrapeArticleByUrlAsync(options.ArticleUrl);
+                    articles = article != null ? new[] { article } : Enumerable.Empty<Article>();
+                }
+                else if (!string.IsNullOrEmpty(options.Section))
+                {
+                    var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    Log.Information("Scraping {Count} articles from sections: {Sections}",
+                        options.ArticleCount, string.Join(", ", sections));
+                    articles = await scraper.ScrapeArticlesBySectionsAsync(options.ArticleCount, sections);
+                }
+                else
+                {
+                    Log.Information("Scraping {Count} articles from default sections", options.ArticleCount);
+                    articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
+                }
+            }
 
-        var articleList = articles.ToList();
+            var articleList = articles.ToList();
+            metrics.Increment("articles_scraped", articleList.Count);
         if (articleList.Count == 0)
         {
             Log.Warning("No articles found to process");
@@ -435,19 +443,22 @@ public class Program
 
         var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
 
-        // Start timer for performance measurement
-        var audioGenStart = DateTime.UtcNow;
+        AudioGenerationResult result;
+        using (metrics.Measure("audio_generation"))
+        {
+            // Use parallel audio generator for concurrent processing
+            result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
+                articleList,
+                voiceId,
+                cancellationToken: default);
+        }
 
-        // Use parallel audio generator for concurrent processing
-        var result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
-            articleList,
-            voiceId,
-            cancellationToken: default);
-
-        var audioGenElapsed = DateTime.UtcNow - audioGenStart;
+        metrics.Increment("audio_generated", result.SuccessCount);
+        metrics.Increment("audio_failed", result.FailureCount);
 
         // Log results
-        Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenElapsed.TotalSeconds);
+        var audioGenMetrics = metrics.GetSummary().Operations["audio_generation"];
+        Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenMetrics.Average.TotalSeconds);
         Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
         if (result.FailureCount > 0)
         {
@@ -510,7 +521,12 @@ public class Program
 
         try
         {
-            var createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+            string createdPath;
+            using (metrics.Measure("audiobook_creation"))
+            {
+                createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+            }
+
             Log.Information("✓ Audiobook created: {Path}", createdPath);
 
             var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
@@ -530,7 +546,11 @@ public class Program
         Log.Information("Step 4: Adding chapter markers...");
         try
         {
-            await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+            using (metrics.Measure("chapter_markers"))
+            {
+                await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+            }
+
             Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
             foreach (var chapter in chapters)
             {
@@ -556,6 +576,31 @@ public class Program
                 Log.Warning(ex, "Failed to delete temporary file: {File}", file);
             }
         }
+
+            // Performance summary
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Performance Summary");
+            Log.Information("========================================");
+
+            var summary = metrics.GetSummary();
+            foreach (var (operation, stats) in summary.Operations.OrderBy(x => x.Key))
+            {
+                Log.Information("{Operation}:", operation);
+                Log.Information("  Average: {Avg:F1}s", stats.Average.TotalSeconds);
+                if (stats.Count > 1)
+                {
+                    Log.Information("  Min/Max: {Min:F1}s / {Max:F1}s", stats.Min.TotalSeconds, stats.Max.TotalSeconds);
+                    Log.Information("  P95: {P95:F1}s", stats.P95.TotalSeconds);
+                }
+            }
+
+            Log.Information("");
+            Log.Information("Counters:");
+            foreach (var (counter, value) in summary.Counters.OrderBy(x => x.Key))
+            {
+                Log.Information("  {Counter}: {Value}", counter, value);
+            }
 
             // Final summary
             Log.Information("");
