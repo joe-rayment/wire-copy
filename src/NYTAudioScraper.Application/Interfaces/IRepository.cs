@@ -37,9 +37,4 @@ public interface IRepository<T> where T : class
     /// Deletes an entity
     /// </summary>
     Task DeleteAsync(T entity, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Saves all pending changes
-    /// </summary>
-    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
