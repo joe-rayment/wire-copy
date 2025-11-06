@@ -28,6 +28,12 @@ public class CommandOptions
     [Option("test", Required = false, Default = false, HelpText = "Run with test/mock data")]
     public bool TestMode { get; set; }
 
+    [Option("cookie-info", Required = false, Default = false, HelpText = "Display information about stored cookies")]
+    public bool CookieInfo { get; set; }
+
+    [Option("clear-cookies", Required = false, Default = false, HelpText = "Clear all stored cookies")]
+    public bool ClearCookies { get; set; }
+
     /// <summary>
     /// Validates the command options and returns validation errors if any
     /// </summary>
