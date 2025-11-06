@@ -1,6 +1,7 @@
 using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
@@ -300,6 +301,57 @@ public class Program
         var dbContext = services.GetRequiredService<AppDbContext>();
         await dbContext.InitializeDatabaseAsync();
         Log.Information("✓ Database initialized");
+
+        // Run health checks
+        Log.Information("");
+        Log.Information("Running health checks...");
+        var healthCheckService = services.GetRequiredService<HealthCheckService>();
+        var healthReport = await healthCheckService.CheckHealthAsync();
+
+        foreach (var entry in healthReport.Entries)
+        {
+            var icon = entry.Value.Status switch
+            {
+                HealthStatus.Healthy => "✓",
+                HealthStatus.Degraded => "⚠",
+                HealthStatus.Unhealthy => "✗",
+                _ => "?"
+            };
+
+            var level = entry.Value.Status switch
+            {
+                HealthStatus.Healthy => "Information",
+                HealthStatus.Degraded => "Warning",
+                HealthStatus.Unhealthy => "Error",
+                _ => "Information"
+            };
+
+            if (entry.Value.Status == HealthStatus.Healthy)
+                Log.Information("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+            else if (entry.Value.Status == HealthStatus.Degraded)
+                Log.Warning("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+            else
+                Log.Error("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+        }
+
+        if (healthReport.Status == HealthStatus.Unhealthy)
+        {
+            Log.Error("");
+            Log.Error("Health checks failed. Cannot proceed with workflow.");
+            Log.Error("Please fix the issues above and try again.");
+            return;
+        }
+
+        if (healthReport.Status == HealthStatus.Degraded)
+        {
+            Log.Warning("");
+            Log.Warning("Some health checks reported warnings. Proceeding anyway...");
+        }
+        else
+        {
+            Log.Information("All health checks passed ✓");
+        }
+        Log.Information("");
 
         // Get services
         var scraper = services.GetRequiredService<IScraperService>();
