@@ -12,14 +12,17 @@ public class AudioGenerator : IAudioGenerator
 {
     private readonly HttpClient _httpClient;
     private readonly ElevenLabsConfiguration _config;
+    private readonly IAudioCache _audioCache;
     private readonly ILogger<AudioGenerator> _logger;
 
     public AudioGenerator(
         IOptions<ElevenLabsConfiguration> config,
+        IAudioCache audioCache,
         ILogger<AudioGenerator> logger,
         IHttpClientFactory httpClientFactory)
     {
         _config = config.Value;
+        _audioCache = audioCache;
         _logger = logger;
         _httpClient = httpClientFactory.CreateClient("ElevenLabs");
 
@@ -34,6 +37,20 @@ public class AudioGenerator : IAudioGenerator
         string voiceId,
         CancellationToken cancellationToken = default)
     {
+        // Check cache first
+        var contentHash = _audioCache.ComputeHash(text + voiceId);
+        var cachedAudio = await _audioCache.GetAsync(contentHash);
+
+        if (cachedAudio != null)
+        {
+            var estimatedCost = EstimateCost(text);
+            _logger.LogInformation("🎵 Audio cache HIT ({Size:N0} bytes) - saved ${Cost:F4} and ~30s",
+                cachedAudio.Length, estimatedCost);
+            return cachedAudio;
+        }
+
+        _logger.LogDebug("Audio cache MISS");
+
         try
         {
             _logger.LogInformation("Generating audio for text length={Length} with voice={VoiceId}", text.Length, voiceId);
@@ -65,6 +82,11 @@ public class AudioGenerator : IAudioGenerator
             var audioData = await response.Content.ReadAsByteArrayAsync(cancellationToken);
 
             _logger.LogInformation("Successfully generated audio: {Size} bytes", audioData.Length);
+
+            // Cache the generated audio
+            await _audioCache.SetAsync(contentHash, audioData);
+            _logger.LogInformation("🎵 Cached audio ({Size:N0} bytes)", audioData.Length);
+
             return audioData;
         }
         catch (HttpRequestException ex)

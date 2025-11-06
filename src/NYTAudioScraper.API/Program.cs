@@ -1,11 +1,14 @@
 using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
 using NYTAudioScraper.Infrastructure.Audio;
+using NYTAudioScraper.Infrastructure.Metrics;
+using NYTAudioScraper.Infrastructure.Persistence;
 using Serilog;
 
 namespace NYTAudioScraper.API;
@@ -295,47 +298,129 @@ public class Program
 
     private static async Task RunProductionWorkflowAsync(IServiceProvider services, CommandOptions options)
     {
+        // Initialize database
+        var dbContext = services.GetRequiredService<AppDbContext>();
+        await dbContext.InitializeDatabaseAsync();
+        Log.Information("✓ Database initialized");
+
+        // Run health checks
+        Log.Information("");
+        Log.Information("Running health checks...");
+        var healthCheckService = services.GetRequiredService<HealthCheckService>();
+        var healthReport = await healthCheckService.CheckHealthAsync();
+
+        foreach (var entry in healthReport.Entries)
+        {
+            var icon = entry.Value.Status switch
+            {
+                HealthStatus.Healthy => "✓",
+                HealthStatus.Degraded => "⚠",
+                HealthStatus.Unhealthy => "✗",
+                _ => "?"
+            };
+
+            var level = entry.Value.Status switch
+            {
+                HealthStatus.Healthy => "Information",
+                HealthStatus.Degraded => "Warning",
+                HealthStatus.Unhealthy => "Error",
+                _ => "Information"
+            };
+
+            if (entry.Value.Status == HealthStatus.Healthy)
+                Log.Information("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+            else if (entry.Value.Status == HealthStatus.Degraded)
+                Log.Warning("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+            else
+                Log.Error("{Icon} {Name}: {Description}", icon, entry.Key, entry.Value.Description);
+        }
+
+        if (healthReport.Status == HealthStatus.Unhealthy)
+        {
+            Log.Error("");
+            Log.Error("Health checks failed. Cannot proceed with workflow.");
+            Log.Error("Please fix the issues above and try again.");
+            return;
+        }
+
+        if (healthReport.Status == HealthStatus.Degraded)
+        {
+            Log.Warning("");
+            Log.Warning("Some health checks reported warnings. Proceeding anyway...");
+        }
+        else
+        {
+            Log.Information("All health checks passed ✓");
+        }
+        Log.Information("");
+
+        // Initialize performance metrics
+        var metrics = new PerformanceMetrics();
+
+        // Get services
         var scraper = services.GetRequiredService<IScraperService>();
         var audioGenerator = services.GetRequiredService<IAudioGenerator>();
+        var parallelAudioGenerator = services.GetRequiredService<IParallelAudioGenerator>();
         var audioProcessor = services.GetRequiredService<IAudioProcessor>();
         var chapterMarker = services.GetRequiredService<IChapterMarker>();
         var budgetService = services.GetRequiredService<BudgetService>();
+        var sessionRepo = services.GetRequiredService<IScrapingSessionRepository>();
+        var unitOfWork = services.GetRequiredService<IUnitOfWork>();
 
         // Set budget from command line
         budgetService.MaxBudget = options.Budget;
         Log.Information("Budget set to ${MaxBudget:F2}", budgetService.MaxBudget);
 
-        // Determine output directory
-        var outputDir = !string.IsNullOrEmpty(options.OutputPath)
-            ? options.OutputPath
-            : Path.Combine(Directory.GetCurrentDirectory(), "output");
-        Directory.CreateDirectory(outputDir);
-
-        // Step 1: Get articles
-        Log.Information("");
-        Log.Information("Step 1: Scraping articles...");
-        IEnumerable<Article> articles;
-
-        if (!string.IsNullOrEmpty(options.ArticleUrl))
+        // Create scraping session
+        var session = new ScrapingSession
         {
-            Log.Information("Single article mode: {Url}", options.ArticleUrl);
-            var article = await scraper.ScrapeArticleByUrlAsync(options.ArticleUrl);
-            articles = article != null ? new[] { article } : Enumerable.Empty<Article>();
-        }
-        else if (!string.IsNullOrEmpty(options.Section))
-        {
-            var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            Log.Information("Scraping {Count} articles from sections: {Sections}",
-                options.ArticleCount, string.Join(", ", sections));
-            articles = await scraper.ScrapeArticlesBySectionsAsync(options.ArticleCount, sections);
-        }
-        else
-        {
-            Log.Information("Scraping {Count} articles from default sections", options.ArticleCount);
-            articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
-        }
+            Id = Guid.NewGuid().ToString(),
+            StartedAt = DateTime.UtcNow,
+            Status = ScrapingStatus.InProgress,
+            Articles = new List<Article>()
+        };
 
-        var articleList = articles.ToList();
+        await sessionRepo.AddAsync(session);
+        await unitOfWork.SaveChangesAsync();
+        Log.Information("✓ Created scraping session: {SessionId}", session.Id);
+
+        try
+        {
+            // Determine output directory
+            var outputDir = !string.IsNullOrEmpty(options.OutputPath)
+                ? options.OutputPath
+                : Path.Combine(Directory.GetCurrentDirectory(), "output");
+            Directory.CreateDirectory(outputDir);
+
+            // Step 1: Get articles
+            Log.Information("");
+            Log.Information("Step 1: Scraping articles...");
+            IEnumerable<Article> articles;
+
+            using (metrics.Measure("scraping"))
+            {
+                if (!string.IsNullOrEmpty(options.ArticleUrl))
+                {
+                    Log.Information("Single article mode: {Url}", options.ArticleUrl);
+                    var article = await scraper.ScrapeArticleByUrlAsync(options.ArticleUrl);
+                    articles = article != null ? new[] { article } : Enumerable.Empty<Article>();
+                }
+                else if (!string.IsNullOrEmpty(options.Section))
+                {
+                    var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    Log.Information("Scraping {Count} articles from sections: {Sections}",
+                        options.ArticleCount, string.Join(", ", sections));
+                    articles = await scraper.ScrapeArticlesBySectionsAsync(options.ArticleCount, sections);
+                }
+                else
+                {
+                    Log.Information("Scraping {Count} articles from default sections", options.ArticleCount);
+                    articles = await scraper.ScrapeArticlesAsync(options.ArticleCount);
+                }
+            }
+
+            var articleList = articles.ToList();
+            metrics.Increment("articles_scraped", articleList.Count);
         if (articleList.Count == 0)
         {
             Log.Warning("No articles found to process");
@@ -348,9 +433,9 @@ public class Program
             Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
         }
 
-        // Step 2: Generate audio for each article
+        // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
-        Log.Information("Step 2: Generating audio files...");
+        Log.Information("Step 2: Generating audio files (parallel processing)...");
 
         var audioFiles = new List<string>();
         var chapters = new List<AudioChapter>();
@@ -358,63 +443,66 @@ public class Program
 
         var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
 
-        foreach (var article in articleList)
+        AudioGenerationResult result;
+        using (metrics.Measure("audio_generation"))
         {
-            try
+            // Use parallel audio generator for concurrent processing
+            result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
+                articleList,
+                voiceId,
+                cancellationToken: default);
+        }
+
+        metrics.Increment("audio_generated", result.SuccessCount);
+        metrics.Increment("audio_failed", result.FailureCount);
+
+        // Log results
+        var audioGenMetrics = metrics.GetSummary().Operations["audio_generation"];
+        Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenMetrics.Average.TotalSeconds);
+        Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
+        if (result.FailureCount > 0)
+        {
+            Log.Warning("  Failed: {FailureCount}/{Total} articles", result.FailureCount, result.TotalProcessed);
+        }
+
+        // Process successful generations
+        foreach (var (articleId, audioData) in result.SuccessfulGenerations)
+        {
+            var article = articleList.First(a => a.Id == articleId);
+
+            // Save audio file
+            var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
+            await File.WriteAllBytesAsync(audioFilePath, audioData);
+            audioFiles.Add(audioFilePath);
+
+            Log.Information("  ✓ Saved: {Title} ({Size:N0} bytes)", article.Title, audioData.Length);
+
+            // Get audio metadata for chapter timing
+            var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
+            var durationMs = metadata.DurationMs;
+
+            // Create chapter entry
+            var chapter = new AudioChapter
             {
-                // Prepare narration text with title and author
-                var narrationText = article.Title;
-                if (!string.IsNullOrEmpty(article.Author))
-                {
-                    narrationText += $". By {article.Author}.";
-                }
-                narrationText += $"\n\n{article.Content}";
+                Title = article.Title,
+                ArticleId = article.Id,
+                StartTimeMs = currentTimeMs,
+                DurationMs = durationMs,
+                AudioFilePath = audioFilePath
+            };
+            chapters.Add(chapter);
+            currentTimeMs += durationMs;
 
-                var estimatedCost = audioGenerator.EstimateCost(narrationText);
-                Log.Information("  Processing: {Title}", article.Title);
-                Log.Information("    Estimated cost: ${Cost:F4}", estimatedCost);
+            Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
+                chapter.StartTimeMs / 1000.0,
+                chapter.EndTimeMs / 1000.0);
+        }
 
-                if (!budgetService.CanAfford(estimatedCost))
-                {
-                    Log.Warning("    ⚠ Skipping - would exceed budget");
-                    continue;
-                }
-
-                // Generate audio
-                var audioData = await audioGenerator.GenerateAudioAsync(narrationText, voiceId);
-
-                // Save audio file
-                var audioFilePath = Path.Combine(outputDir, $"{article.Id}.mp3");
-                await File.WriteAllBytesAsync(audioFilePath, audioData);
-                audioFiles.Add(audioFilePath);
-
-                Log.Information("    ✓ Generated audio: {Size:N0} bytes", audioData.Length);
-                Log.Information("    ✓ Saved to: {Path}", audioFilePath);
-
-                // Get audio metadata for chapter timing
-                var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
-                var durationMs = metadata.DurationMs;
-
-                // Create chapter entry
-                var chapter = new AudioChapter
-                {
-                    Title = article.Title,
-                    ArticleId = article.Id,
-                    StartTimeMs = currentTimeMs,
-                    DurationMs = durationMs,
-                    AudioFilePath = audioFilePath
-                };
-                chapters.Add(chapter);
-                currentTimeMs += durationMs;
-
-                Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
-                    chapter.StartTimeMs / 1000.0,
-                    chapter.EndTimeMs / 1000.0);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "    ✗ Error processing article: {Title}", article.Title);
-            }
+        // Log failures
+        foreach (var (articleId, errorMessage) in result.FailedGenerations)
+        {
+            var article = articleList.First(a => a.Id == articleId);
+            Log.Error("  ✗ Failed: {Title} - {Error}", article.Title, errorMessage);
         }
 
         if (audioFiles.Count == 0)
@@ -433,7 +521,12 @@ public class Program
 
         try
         {
-            var createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+            string createdPath;
+            using (metrics.Measure("audiobook_creation"))
+            {
+                createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+            }
+
             Log.Information("✓ Audiobook created: {Path}", createdPath);
 
             var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
@@ -453,7 +546,11 @@ public class Program
         Log.Information("Step 4: Adding chapter markers...");
         try
         {
-            await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+            using (metrics.Measure("chapter_markers"))
+            {
+                await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+            }
+
             Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
             foreach (var chapter in chapters)
             {
@@ -480,16 +577,66 @@ public class Program
             }
         }
 
-        // Final summary
-        Log.Information("");
-        Log.Information("========================================");
-        Log.Information("Audiobook Created Successfully!");
-        Log.Information("========================================");
-        Log.Information("Output: {Path}", audiobookPath);
-        Log.Information("Budget used: {Summary}", budgetService.GetSummary());
-        Log.Information("");
-        Log.Information("You can now play the audiobook in any M4B-compatible player.");
-        Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+            // Performance summary
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Performance Summary");
+            Log.Information("========================================");
+
+            var summary = metrics.GetSummary();
+            foreach (var (operation, stats) in summary.Operations.OrderBy(x => x.Key))
+            {
+                Log.Information("{Operation}:", operation);
+                Log.Information("  Average: {Avg:F1}s", stats.Average.TotalSeconds);
+                if (stats.Count > 1)
+                {
+                    Log.Information("  Min/Max: {Min:F1}s / {Max:F1}s", stats.Min.TotalSeconds, stats.Max.TotalSeconds);
+                    Log.Information("  P95: {P95:F1}s", stats.P95.TotalSeconds);
+                }
+            }
+
+            Log.Information("");
+            Log.Information("Counters:");
+            foreach (var (counter, value) in summary.Counters.OrderBy(x => x.Key))
+            {
+                Log.Information("  {Counter}: {Value}", counter, value);
+            }
+
+            // Final summary
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Audiobook Created Successfully!");
+            Log.Information("========================================");
+            Log.Information("Output: {Path}", audiobookPath);
+            Log.Information("Budget used: {Summary}", budgetService.GetSummary());
+            Log.Information("");
+            Log.Information("You can now play the audiobook in any M4B-compatible player.");
+            Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+
+            // Update session on successful completion
+            session.Status = ScrapingStatus.Completed;
+            session.CompletedAt = DateTime.UtcNow;
+            session.OutputFilePath = audiobookPath;
+            session.TotalCharactersProcessed = articleList.Sum(a => a.Content.Length);
+            session.EstimatedCost = budgetService.TotalSpent;
+
+            await sessionRepo.UpdateAsync(session);
+            await unitOfWork.SaveChangesAsync();
+            Log.Information("✓ Session completed successfully: {SessionId}", session.Id);
+        }
+        catch (Exception ex)
+        {
+            // Update session on failure
+            session.Status = ScrapingStatus.Failed;
+            session.ErrorMessage = ex.Message;
+            session.CompletedAt = DateTime.UtcNow;
+
+            await sessionRepo.UpdateAsync(session);
+            await unitOfWork.SaveChangesAsync();
+            Log.Error("✗ Session failed: {SessionId} - {Error}", session.Id, ex.Message);
+
+            throw; // Re-throw to maintain existing error handling
+        }
     }
 
     private static IConfiguration GetConfiguration()

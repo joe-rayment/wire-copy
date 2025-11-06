@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
@@ -10,6 +11,7 @@ using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Caching;
 using NYTAudioScraper.Infrastructure.Configuration;
 using NYTAudioScraper.Infrastructure.Configuration.Validation;
+using NYTAudioScraper.Infrastructure.Health;
 using NYTAudioScraper.Infrastructure.Http;
 using NYTAudioScraper.Infrastructure.Parsing;
 using NYTAudioScraper.Infrastructure.Persistence;
@@ -153,6 +155,12 @@ public static class DependencyInjection
                 "audio");
             return new AudioCache(cacheDirectory, logger);
         });
+
+        // Register health checks
+        services.AddHealthChecks()
+            .AddCheck<FFmpegHealthCheck>("ffmpeg", tags: new[] { "ready" })
+            .AddCheck<DiskSpaceHealthCheck>("disk_space", tags: new[] { "ready" })
+            .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
 
         // Register services
         services.AddSingleton<IScraperService, ScraperService>();
