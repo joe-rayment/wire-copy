@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
+using NYTAudioScraper.Infrastructure.Browser.Models;
 using NYTAudioScraper.Infrastructure.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
@@ -12,12 +13,18 @@ public class NYTAuthService : INYTAuthService
 {
     private readonly NYTConfiguration _config;
     private readonly ILogger<NYTAuthService> _logger;
+    private readonly ICookieEncryptionService _encryptionService;
     private readonly string _cookieFilePath;
+    private const int CookieExpirationDays = 30;
 
-    public NYTAuthService(IOptions<NYTConfiguration> config, ILogger<NYTAuthService> logger)
+    public NYTAuthService(
+        IOptions<NYTConfiguration> config,
+        ILogger<NYTAuthService> logger,
+        ICookieEncryptionService encryptionService)
     {
         _config = config.Value;
         _logger = logger;
+        _encryptionService = encryptionService;
         _cookieFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NYTAudioScraper", "cookies.json");
     }
@@ -171,11 +178,90 @@ public class NYTAuthService : INYTAuthService
             }
 
             var json = await File.ReadAllTextAsync(_cookieFilePath, cancellationToken);
-            var cookies = JsonSerializer.Deserialize<List<CookieData>>(json);
+            CookieStorage? storage;
 
-            if (cookies == null || cookies.Count == 0)
+            try
+            {
+                storage = JsonSerializer.Deserialize<CookieStorage>(json);
+            }
+            catch (JsonException)
+            {
+                // Try to deserialize as old format (List<CookieData>)
+                _logger.LogInformation("Detected v1 cookie format, migrating to v2 with encryption");
+                var oldCookies = JsonSerializer.Deserialize<List<CookieData>>(json);
+                if (oldCookies != null)
+                {
+                    storage = new CookieStorage
+                    {
+                        Version = 1,
+                        CreatedAt = DateTime.UtcNow,
+                        Cookies = oldCookies
+                    };
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to deserialize cookies in any format");
+                    return false;
+                }
+            }
+
+            if (storage == null)
             {
                 _logger.LogDebug("Cookie file is empty or invalid");
+                return false;
+            }
+
+            // Check expiration
+            if (storage.ExpiresAt.HasValue && storage.ExpiresAt < DateTime.UtcNow)
+            {
+                _logger.LogInformation("Cookies expired on {ExpiryDate}, will re-authenticate",
+                    storage.ExpiresAt.Value);
+                return false;
+            }
+
+            List<CookieData> cookies;
+
+            // Handle version migration
+            if (storage.Version == 1)
+            {
+                _logger.LogInformation("Migrating cookies from v1 (plain text) to v2 (encrypted)");
+                cookies = storage.Cookies ?? new List<CookieData>();
+
+                // Re-save with encryption after successful authentication
+                // This will be triggered automatically by SaveCookiesAsync
+            }
+            else if (storage.Version == 2)
+            {
+                // Decrypt cookie data
+                if (storage.EncryptedData == null || storage.EncryptedData.Length == 0)
+                {
+                    _logger.LogWarning("Cookie storage v2 has no encrypted data");
+                    return false;
+                }
+
+                try
+                {
+                    var decrypted = _encryptionService.Decrypt(storage.EncryptedData);
+                    var cookieContainer = JsonSerializer.Deserialize<CookieDataContainer>(decrypted);
+                    cookies = cookieContainer?.Cookies ?? new List<CookieData>();
+
+                    _logger.LogDebug("Successfully decrypted {Count} cookies", cookies.Count);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to decrypt cookies - data may be corrupted");
+                    return false;
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Unknown cookie storage version: {Version}", storage.Version);
+                return false;
+            }
+
+            if (cookies.Count == 0)
+            {
+                _logger.LogDebug("No cookies found in storage");
                 return false;
             }
 
@@ -231,29 +317,43 @@ public class NYTAuthService : INYTAuthService
                 })
                 .ToList();
 
+            var cookieContainer = new CookieDataContainer
+            {
+                Cookies = cookies,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["user_agent"] = _config.UserAgent ?? "Unknown",
+                    ["last_used"] = DateTime.UtcNow.ToString("O"),
+                    ["saved_by"] = "NYTAudioScraper"
+                }
+            };
+
+            var json = JsonSerializer.Serialize(cookieContainer);
+            var encrypted = _encryptionService.Encrypt(json);
+
+            var storage = new CookieStorage
+            {
+                Version = 2,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(CookieExpirationDays),
+                EncryptedData = encrypted
+            };
+
             var directory = Path.GetDirectoryName(_cookieFilePath);
             if (directory != null && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            var json = JsonSerializer.Serialize(cookies, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(_cookieFilePath, json, cancellationToken);
+            var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
 
-            _logger.LogDebug("Saved {Count} cookies to {CookieFilePath}", cookies.Count, _cookieFilePath);
+            _logger.LogInformation("Saved {Count} encrypted cookies (expires: {ExpiryDate})",
+                cookies.Count, storage.ExpiresAt);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save cookies to {CookieFilePath}", _cookieFilePath);
         }
-    }
-
-    private class CookieData
-    {
-        public required string Name { get; init; }
-        public required string Value { get; init; }
-        public required string Domain { get; init; }
-        public required string Path { get; init; }
-        public DateTime? Expiry { get; init; }
     }
 }

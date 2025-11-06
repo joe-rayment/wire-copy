@@ -62,6 +62,17 @@ public class Program
 
         var host = CreateHostBuilder(options).Build();
 
+        // Handle cookie management commands (these are standalone commands that exit after execution)
+        if (options.CookieInfo)
+        {
+            return await HandleCookieInfoAsync(host.Services);
+        }
+
+        if (options.ClearCookies)
+        {
+            return await HandleClearCookiesAsync(host.Services);
+        }
+
         if (options.TestMode)
         {
             // Run existing test workflow
@@ -75,6 +86,99 @@ public class Program
 
         Log.Information("Application completed successfully");
         return 0;
+    }
+
+    private static async Task<int> HandleCookieInfoAsync(IServiceProvider services)
+    {
+        try
+        {
+            var cookieManager = services.GetRequiredService<ICookieManager>();
+            var info = await cookieManager.GetCookieInfoAsync();
+
+            if (info == null || !info.Exists)
+            {
+                Log.Information("No cookies found");
+                Log.Information("Cookie file path: {Path}", info?.FilePath ?? "Unknown");
+                return 0;
+            }
+
+            Console.WriteLine("\n╔═══════════════════════════════════════╗");
+            Console.WriteLine("║        Cookie Information             ║");
+            Console.WriteLine("╚═══════════════════════════════════════╝\n");
+
+            Console.WriteLine($"File Path:    {info.FilePath}");
+            Console.WriteLine($"Version:      v{info.Version} ({(info.IsEncrypted ? "Encrypted" : "Plain Text")})");
+            Console.WriteLine($"Created At:   {info.CreatedAt:yyyy-MM-dd HH:mm:ss UTC}");
+
+            if (info.ExpiresAt.HasValue)
+            {
+                var expiryStatus = info.IsExpired ? "EXPIRED" : "Valid";
+                var expiryColor = info.IsExpired ? "❌" : "✓";
+                Console.WriteLine($"Expires At:   {info.ExpiresAt:yyyy-MM-dd HH:mm:ss UTC} ({expiryColor} {expiryStatus})");
+
+                if (!info.IsExpired)
+                {
+                    var timeRemaining = info.ExpiresAt.Value - DateTime.UtcNow;
+                    Console.WriteLine($"Time Remaining: {timeRemaining.Days} days, {timeRemaining.Hours} hours");
+                }
+            }
+
+            if (info.CookieCount.HasValue)
+            {
+                Console.WriteLine($"Cookie Count: {info.CookieCount}");
+            }
+
+            Console.WriteLine();
+
+            if (!info.IsEncrypted)
+            {
+                Log.Warning("⚠️  Cookies are stored in plain text (v1 format)");
+                Log.Warning("   They will be automatically migrated to encrypted format (v2) on next authentication");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get cookie information");
+            return 1;
+        }
+    }
+
+    private static async Task<int> HandleClearCookiesAsync(IServiceProvider services)
+    {
+        try
+        {
+            var cookieManager = services.GetRequiredService<ICookieManager>();
+
+            Console.Write("Are you sure you want to clear all stored cookies? (y/N): ");
+            var response = Console.ReadLine();
+
+            if (response?.Trim().ToLowerInvariant() != "y")
+            {
+                Log.Information("Cookie clearing cancelled");
+                return 0;
+            }
+
+            var cleared = await cookieManager.ClearCookiesAsync();
+
+            if (cleared)
+            {
+                Log.Information("✓ Cookies cleared successfully");
+                Log.Information("  You will need to re-authenticate on the next run");
+            }
+            else
+            {
+                Log.Information("No cookies to clear");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to clear cookies");
+            return 1;
+        }
     }
 
     public static IHostBuilder CreateHostBuilder(CommandOptions options) =>
