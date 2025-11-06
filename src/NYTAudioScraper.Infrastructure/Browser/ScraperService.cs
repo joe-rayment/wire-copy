@@ -15,6 +15,7 @@ public class ScraperService : IScraperService
     private readonly BrowserConfiguration _browserConfig;
     private readonly INYTAuthService _authService;
     private readonly IArticleParser _articleParser;
+    private readonly IArticleCache _articleCache;
     private readonly ILogger<ScraperService> _logger;
 
     public ScraperService(
@@ -22,12 +23,14 @@ public class ScraperService : IScraperService
         IOptions<BrowserConfiguration> browserConfig,
         INYTAuthService authService,
         IArticleParser articleParser,
+        IArticleCache articleCache,
         ILogger<ScraperService> logger)
     {
         _nytConfig = nytConfig.Value;
         _browserConfig = browserConfig.Value;
         _authService = authService;
         _articleParser = articleParser;
+        _articleCache = articleCache;
         _logger = logger;
     }
 
@@ -68,7 +71,16 @@ public class ScraperService : IScraperService
         string url,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Scraping single article: {Url}", url);
+        // Check cache first
+        var cachedArticle = await _articleCache.GetAsync(url, cancellationToken);
+        if (cachedArticle != null)
+        {
+            _logger.LogInformation("📦 Cache HIT: {Title} (saved ~3s scraping time)", cachedArticle.Title);
+            return cachedArticle;
+        }
+
+        _logger.LogDebug("Cache MISS: {Url}", url);
+        _logger.LogInformation("Scraping article: {Url}", url);
 
         IWebDriver? driver = null;
         try
@@ -93,6 +105,10 @@ public class ScraperService : IScraperService
             if (article != null)
             {
                 _logger.LogInformation("Successfully scraped article: {Title}", article.Title);
+
+                // Cache the article
+                await _articleCache.SetAsync(url, article, cancellationToken: cancellationToken);
+                _logger.LogInformation("📦 Cached article: {Title}", article.Title);
             }
             else
             {
