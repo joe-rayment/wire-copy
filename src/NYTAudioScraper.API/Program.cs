@@ -6,6 +6,7 @@ using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
 using NYTAudioScraper.Infrastructure.Audio;
+using NYTAudioScraper.Infrastructure.Persistence;
 using Serilog;
 
 namespace NYTAudioScraper.API;
@@ -295,25 +296,48 @@ public class Program
 
     private static async Task RunProductionWorkflowAsync(IServiceProvider services, CommandOptions options)
     {
+        // Initialize database
+        var dbContext = services.GetRequiredService<AppDbContext>();
+        await dbContext.InitializeDatabaseAsync();
+        Log.Information("✓ Database initialized");
+
+        // Get services
         var scraper = services.GetRequiredService<IScraperService>();
         var audioGenerator = services.GetRequiredService<IAudioGenerator>();
         var audioProcessor = services.GetRequiredService<IAudioProcessor>();
         var chapterMarker = services.GetRequiredService<IChapterMarker>();
         var budgetService = services.GetRequiredService<BudgetService>();
+        var sessionRepo = services.GetRequiredService<IScrapingSessionRepository>();
+        var unitOfWork = services.GetRequiredService<IUnitOfWork>();
 
         // Set budget from command line
         budgetService.MaxBudget = options.Budget;
         Log.Information("Budget set to ${MaxBudget:F2}", budgetService.MaxBudget);
 
-        // Determine output directory
-        var outputDir = !string.IsNullOrEmpty(options.OutputPath)
-            ? options.OutputPath
-            : Path.Combine(Directory.GetCurrentDirectory(), "output");
-        Directory.CreateDirectory(outputDir);
+        // Create scraping session
+        var session = new ScrapingSession
+        {
+            Id = Guid.NewGuid().ToString(),
+            StartedAt = DateTime.UtcNow,
+            Status = ScrapingStatus.InProgress,
+            Articles = new List<Article>()
+        };
 
-        // Step 1: Get articles
-        Log.Information("");
-        Log.Information("Step 1: Scraping articles...");
+        await sessionRepo.AddAsync(session);
+        await unitOfWork.SaveChangesAsync();
+        Log.Information("✓ Created scraping session: {SessionId}", session.Id);
+
+        try
+        {
+            // Determine output directory
+            var outputDir = !string.IsNullOrEmpty(options.OutputPath)
+                ? options.OutputPath
+                : Path.Combine(Directory.GetCurrentDirectory(), "output");
+            Directory.CreateDirectory(outputDir);
+
+            // Step 1: Get articles
+            Log.Information("");
+            Log.Information("Step 1: Scraping articles...");
         IEnumerable<Article> articles;
 
         if (!string.IsNullOrEmpty(options.ArticleUrl))
@@ -480,16 +504,41 @@ public class Program
             }
         }
 
-        // Final summary
-        Log.Information("");
-        Log.Information("========================================");
-        Log.Information("Audiobook Created Successfully!");
-        Log.Information("========================================");
-        Log.Information("Output: {Path}", audiobookPath);
-        Log.Information("Budget used: {Summary}", budgetService.GetSummary());
-        Log.Information("");
-        Log.Information("You can now play the audiobook in any M4B-compatible player.");
-        Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+            // Final summary
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Audiobook Created Successfully!");
+            Log.Information("========================================");
+            Log.Information("Output: {Path}", audiobookPath);
+            Log.Information("Budget used: {Summary}", budgetService.GetSummary());
+            Log.Information("");
+            Log.Information("You can now play the audiobook in any M4B-compatible player.");
+            Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+
+            // Update session on successful completion
+            session.Status = ScrapingStatus.Completed;
+            session.CompletedAt = DateTime.UtcNow;
+            session.OutputFilePath = audiobookPath;
+            session.TotalCharactersProcessed = articleList.Sum(a => a.Content.Length);
+            session.EstimatedCost = budgetService.TotalSpent;
+
+            await sessionRepo.UpdateAsync(session);
+            await unitOfWork.SaveChangesAsync();
+            Log.Information("✓ Session completed successfully: {SessionId}", session.Id);
+        }
+        catch (Exception ex)
+        {
+            // Update session on failure
+            session.Status = ScrapingStatus.Failed;
+            session.ErrorMessage = ex.Message;
+            session.CompletedAt = DateTime.UtcNow;
+
+            await sessionRepo.UpdateAsync(session);
+            await unitOfWork.SaveChangesAsync();
+            Log.Error("✗ Session failed: {SessionId} - {Error}", session.Id, ex.Message);
+
+            throw; // Re-throw to maintain existing error handling
+        }
     }
 
     private static IConfiguration GetConfiguration()
