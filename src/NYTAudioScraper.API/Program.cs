@@ -534,8 +534,19 @@ public class Program
         Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
         foreach (var article in articleList)
         {
-            Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
+            Log.Information("  - [{ArticleId}] {Title} ({Words} words, {Url})",
+                article.Id, article.Title, article.EstimatedWordCount, article.Url);
         }
+
+        // Link articles to session for complete audit trail
+        Log.Information("");
+        Log.Information("Linking articles to session {SessionId}...", session.Id);
+        foreach (var article in articleList)
+        {
+            session.Articles.Add(article);
+        }
+        await unitOfWork.SaveChangesAsync();
+        Log.Information("✓ Linked {Count} articles to session", articleList.Count);
 
         // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
@@ -579,7 +590,11 @@ public class Program
             await File.WriteAllBytesAsync(audioFilePath, audioData);
             audioFiles.Add(audioFilePath);
 
-            Log.Information("  ✓ Saved: {Title} ({Size:N0} bytes)", article.Title, audioData.Length);
+            // Update article with audio file path in database
+            article.AudioFilePath = audioFilePath;
+
+            Log.Information("  ✓ [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
+                article.Id, article.Title, audioData.Length);
 
             // Get audio metadata for chapter timing
             var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
@@ -606,7 +621,16 @@ public class Program
         foreach (var (articleId, errorMessage) in result.FailedGenerations)
         {
             var article = articleList.First(a => a.Id == articleId);
-            Log.Error("  ✗ Failed: {Title} - {Error}", article.Title, errorMessage);
+            Log.Error("  ✗ [{ArticleId}] Failed: {Title} - {Error}",
+                article.Id, article.Title, errorMessage);
+        }
+
+        // Persist audio file paths to database
+        if (result.SuccessCount > 0)
+        {
+            await unitOfWork.SaveChangesAsync();
+            Log.Information("✓ Updated {Count} articles with audio file paths in database",
+                result.SuccessCount);
         }
 
         if (audioFiles.Count == 0)
@@ -726,6 +750,22 @@ public class Program
 
             await sessionRepo.UpdateAsync(session);
             await unitOfWork.SaveChangesAsync();
+
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Session Summary");
+            Log.Information("========================================");
+            Log.Information("Session ID: {SessionId}", session.Id);
+            Log.Information("Articles in session: {Count}", session.Articles.Count);
+            Log.Information("Articles with audio: {Count}",
+                session.Articles.Count(a => !string.IsNullOrEmpty(a.AudioFilePath)));
+            Log.Information("Total characters: {Total:N0}", session.TotalCharactersProcessed);
+            Log.Information("Total cost: ${Cost:F4}", session.EstimatedCost);
+            Log.Information("Duration: {Duration:F1} minutes",
+                (session.CompletedAt.Value - session.StartedAt).TotalMinutes);
+            Log.Information("");
+            Log.Information("💾 Database contains full article content and session history");
+            Log.Information("   Use session ID to query article details from database");
             Log.Information("✓ Session completed successfully: {SessionId}", session.Id);
         }
         catch (Exception ex)

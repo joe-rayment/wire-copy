@@ -42,6 +42,9 @@ public class ArticleConfiguration : IEntityTypeConfiguration<Article>
         builder.Property(a => a.ScrapedDate)
             .IsRequired();
 
+        builder.Property(a => a.AudioFilePath)
+            .HasMaxLength(1000);
+
         // Create index on URL for faster lookups
         builder.HasIndex(a => a.Url);
 
