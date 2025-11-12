@@ -62,6 +62,17 @@ public class Program
 
         var host = CreateHostBuilder(options).Build();
 
+        // Handle cookie management commands (these are standalone commands that exit after execution)
+        if (options.CookieInfo)
+        {
+            return await HandleCookieInfoAsync(host.Services);
+        }
+
+        if (options.ClearCookies)
+        {
+            return await HandleClearCookiesAsync(host.Services);
+        }
+
         if (options.TestMode)
         {
             // Run existing test workflow
@@ -75,6 +86,99 @@ public class Program
 
         Log.Information("Application completed successfully");
         return 0;
+    }
+
+    private static async Task<int> HandleCookieInfoAsync(IServiceProvider services)
+    {
+        try
+        {
+            var cookieManager = services.GetRequiredService<ICookieManager>();
+            var info = await cookieManager.GetCookieInfoAsync();
+
+            if (info == null || !info.Exists)
+            {
+                Log.Information("No cookies found");
+                Log.Information("Cookie file path: {Path}", info?.FilePath ?? "Unknown");
+                return 0;
+            }
+
+            Console.WriteLine("\n╔═══════════════════════════════════════╗");
+            Console.WriteLine("║        Cookie Information             ║");
+            Console.WriteLine("╚═══════════════════════════════════════╝\n");
+
+            Console.WriteLine($"File Path:    {info.FilePath}");
+            Console.WriteLine($"Version:      v{info.Version} ({(info.IsEncrypted ? "Encrypted" : "Plain Text")})");
+            Console.WriteLine($"Created At:   {info.CreatedAt:yyyy-MM-dd HH:mm:ss UTC}");
+
+            if (info.ExpiresAt.HasValue)
+            {
+                var expiryStatus = info.IsExpired ? "EXPIRED" : "Valid";
+                var expiryColor = info.IsExpired ? "❌" : "✓";
+                Console.WriteLine($"Expires At:   {info.ExpiresAt:yyyy-MM-dd HH:mm:ss UTC} ({expiryColor} {expiryStatus})");
+
+                if (!info.IsExpired)
+                {
+                    var timeRemaining = info.ExpiresAt.Value - DateTime.UtcNow;
+                    Console.WriteLine($"Time Remaining: {timeRemaining.Days} days, {timeRemaining.Hours} hours");
+                }
+            }
+
+            if (info.CookieCount.HasValue)
+            {
+                Console.WriteLine($"Cookie Count: {info.CookieCount}");
+            }
+
+            Console.WriteLine();
+
+            if (!info.IsEncrypted)
+            {
+                Log.Warning("⚠️  Cookies are stored in plain text (v1 format)");
+                Log.Warning("   They will be automatically migrated to encrypted format (v2) on next authentication");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get cookie information");
+            return 1;
+        }
+    }
+
+    private static async Task<int> HandleClearCookiesAsync(IServiceProvider services)
+    {
+        try
+        {
+            var cookieManager = services.GetRequiredService<ICookieManager>();
+
+            Console.Write("Are you sure you want to clear all stored cookies? (y/N): ");
+            var response = Console.ReadLine();
+
+            if (response?.Trim().ToLowerInvariant() != "y")
+            {
+                Log.Information("Cookie clearing cancelled");
+                return 0;
+            }
+
+            var cleared = await cookieManager.ClearCookiesAsync();
+
+            if (cleared)
+            {
+                Log.Information("✓ Cookies cleared successfully");
+                Log.Information("  You will need to re-authenticate on the next run");
+            }
+            else
+            {
+                Log.Information("No cookies to clear");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to clear cookies");
+            return 1;
+        }
     }
 
     public static IHostBuilder CreateHostBuilder(CommandOptions options) =>
@@ -430,8 +534,19 @@ public class Program
         Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
         foreach (var article in articleList)
         {
-            Log.Information("  - {Title} ({Words} words)", article.Title, article.EstimatedWordCount);
+            Log.Information("  - [{ArticleId}] {Title} ({Words} words, {Url})",
+                article.Id, article.Title, article.EstimatedWordCount, article.Url);
         }
+
+        // Link articles to session for complete audit trail
+        Log.Information("");
+        Log.Information("Linking articles to session {SessionId}...", session.Id);
+        foreach (var article in articleList)
+        {
+            session.Articles.Add(article);
+        }
+        await unitOfWork.SaveChangesAsync();
+        Log.Information("✓ Linked {Count} articles to session", articleList.Count);
 
         // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
@@ -475,7 +590,11 @@ public class Program
             await File.WriteAllBytesAsync(audioFilePath, audioData);
             audioFiles.Add(audioFilePath);
 
-            Log.Information("  ✓ Saved: {Title} ({Size:N0} bytes)", article.Title, audioData.Length);
+            // Update article with audio file path in database
+            article.AudioFilePath = audioFilePath;
+
+            Log.Information("  ✓ [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
+                article.Id, article.Title, audioData.Length);
 
             // Get audio metadata for chapter timing
             var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
@@ -502,7 +621,16 @@ public class Program
         foreach (var (articleId, errorMessage) in result.FailedGenerations)
         {
             var article = articleList.First(a => a.Id == articleId);
-            Log.Error("  ✗ Failed: {Title} - {Error}", article.Title, errorMessage);
+            Log.Error("  ✗ [{ArticleId}] Failed: {Title} - {Error}",
+                article.Id, article.Title, errorMessage);
+        }
+
+        // Persist audio file paths to database
+        if (result.SuccessCount > 0)
+        {
+            await unitOfWork.SaveChangesAsync();
+            Log.Information("✓ Updated {Count} articles with audio file paths in database",
+                result.SuccessCount);
         }
 
         if (audioFiles.Count == 0)
@@ -622,6 +750,22 @@ public class Program
 
             await sessionRepo.UpdateAsync(session);
             await unitOfWork.SaveChangesAsync();
+
+            Log.Information("");
+            Log.Information("========================================");
+            Log.Information("Session Summary");
+            Log.Information("========================================");
+            Log.Information("Session ID: {SessionId}", session.Id);
+            Log.Information("Articles in session: {Count}", session.Articles.Count);
+            Log.Information("Articles with audio: {Count}",
+                session.Articles.Count(a => !string.IsNullOrEmpty(a.AudioFilePath)));
+            Log.Information("Total characters: {Total:N0}", session.TotalCharactersProcessed);
+            Log.Information("Total cost: ${Cost:F4}", session.EstimatedCost);
+            Log.Information("Duration: {Duration:F1} minutes",
+                (session.CompletedAt.Value - session.StartedAt).TotalMinutes);
+            Log.Information("");
+            Log.Information("💾 Database contains full article content and session history");
+            Log.Information("   Use session ID to query article details from database");
             Log.Information("✓ Session completed successfully: {SessionId}", session.Id);
         }
         catch (Exception ex)

@@ -9,6 +9,7 @@
     <PackageReference Include="ElevenLabs-DotNet" Version="3.6.0" />
     <PackageReference Include="FFMpegCore" Version="5.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.67" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
