@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,7 @@ using NYTAudioScraper.Infrastructure.Http;
 using NYTAudioScraper.Infrastructure.Parsing;
 using NYTAudioScraper.Infrastructure.Persistence;
 using NYTAudioScraper.Infrastructure.Persistence.Repositories;
+using NYTAudioScraper.Infrastructure.Security;
 using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
 using Polly.CircuitBreaker;
@@ -118,6 +120,19 @@ public static class DependencyInjection
                     resilienceLogger.LogCircuitBreakerHalfOpen("ElevenLabs API");
                 });
         });
+
+        // Register Data Protection for cookie encryption
+        var dataProtectionPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NYTAudioScraper",
+            "keys");
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+            .SetApplicationName("NYTAudioScraper");
+
+        // Register security services
+        services.AddSingleton<ICookieEncryptionService, DpapiCookieEncryptionService>();
+        services.AddSingleton<ICookieManager, CookieManager>();
 
         // Register browser automation services
         services.AddSingleton<INYTAuthService, NYTAuthService>();

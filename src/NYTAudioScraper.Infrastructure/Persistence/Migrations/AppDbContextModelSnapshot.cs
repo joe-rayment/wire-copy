@@ -20,6 +20,10 @@ namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AudioFilePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Author")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");

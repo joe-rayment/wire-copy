@@ -13,5 +13,6 @@ public class Article
     public required string Content { get; init; }
     public DateTime PublishedDate { get; init; }
     public DateTime ScrapedDate { get; init; }
+    public string? AudioFilePath { get; set; }
     public int EstimatedWordCount => Content.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
 }
