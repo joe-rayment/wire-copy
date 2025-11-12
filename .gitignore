@@ -131,6 +131,25 @@ ScaffoldingReadMe.txt
 secrets.json
 **/secrets.json
 
+# Database files (SQLite)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+nytaudioscraper.db*
+
+# Cookies and authentication
+cookies.json
+**/cookies.json
+
+# Data Protection keys (cookie encryption)
+**/keys/
+**/DataProtection-Keys/
+
+# Cache directories
+**/cache/
+cache/
+
 # Output
 output/
 logs/
