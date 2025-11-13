@@ -69,16 +69,3 @@ public class BudgetService : IBudgetService
         }
     }
 }
-
-public class BudgetSummary
-{
-    public decimal MaxBudget { get; init; }
-    public decimal TotalSpent { get; init; }
-    public decimal RemainingBudget { get; init; }
-    public decimal PercentageUsed { get; init; }
-
-    public override string ToString()
-    {
-        return $"Budget: ${TotalSpent:F2}/${MaxBudget:F2} ({PercentageUsed:F1}% used)";
-    }
-}
