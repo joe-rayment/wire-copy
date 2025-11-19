@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Polly;
 using Polly.CircuitBreaker;
 
 namespace NYTAudioScraper.Infrastructure.Http;
@@ -19,7 +20,7 @@ public class HttpResilienceLogger
     /// <summary>
     /// Logs retry attempts for HTTP requests
     /// </summary>
-    public void LogRetry(DelegateResult<HttpResponseMessage> outcome, TimeSpan delay, int retryCount, string? endpoint = null)
+    public void LogRetry(Outcome<HttpResponseMessage> outcome, TimeSpan delay, int retryCount, string? endpoint = null)
     {
         var reason = outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "Unknown";
         var statusCode = outcome.Result?.StatusCode;
@@ -48,7 +49,7 @@ public class HttpResilienceLogger
     /// <summary>
     /// Logs circuit breaker opening (too many failures detected)
     /// </summary>
-    public void LogCircuitBreakerOpen(DelegateResult<HttpResponseMessage> outcome, TimeSpan breakDuration, string? endpoint = null)
+    public void LogCircuitBreakerOpen(Outcome<HttpResponseMessage> outcome, TimeSpan breakDuration, string? endpoint = null)
     {
         var reason = outcome.Exception?.Message ?? outcome.Result?.StatusCode.ToString() ?? "repeated failures";
 
