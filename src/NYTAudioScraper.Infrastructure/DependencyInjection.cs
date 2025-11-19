@@ -1,3 +1,8 @@
+// <copyright file="DependencyInjection.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
+using System.Net.Http;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -22,7 +27,6 @@ using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
-using System.Net.Http;
 
 namespace NYTAudioScraper.Infrastructure;
 

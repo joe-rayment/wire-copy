@@ -1,3 +1,7 @@
+// <copyright file="RateLimiter.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 
@@ -97,8 +101,17 @@ public class RateLimiter : IRateLimiter
     /// </summary>
     public int AvailableSlots => _semaphore.CurrentCount;
 
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _semaphore?.Dispose();
+        }
+    }
+
     public void Dispose()
     {
-        _semaphore?.Dispose();
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }

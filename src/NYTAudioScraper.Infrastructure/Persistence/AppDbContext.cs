@@ -1,3 +1,7 @@
+// <copyright file="AppDbContext.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure.Persistence.Configurations;

@@ -1,3 +1,7 @@
+// <copyright file="ArticleParser.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -52,7 +56,7 @@ public class ArticleParser : IArticleParser
         }
     }
 
-    private string ExtractTitle(HtmlDocument doc)
+    private static string ExtractTitle(HtmlDocument doc)
     {
         // Try multiple selectors for title
         var titleNode = doc.DocumentNode.SelectSingleNode("//h1[@data-testid='headline']") ??
@@ -127,7 +131,7 @@ public class ArticleParser : IArticleParser
         return null;
     }
 
-    private string? ExtractSection(HtmlDocument doc)
+    private static string? ExtractSection(HtmlDocument doc)
     {
         var sectionNode = doc.DocumentNode.SelectSingleNode("//meta[@property='article:section']") ??
                          doc.DocumentNode.SelectSingleNode("//nav[@data-testid='mini-navigation']//a");
@@ -135,7 +139,7 @@ public class ArticleParser : IArticleParser
         return sectionNode?.GetAttributeValue("content", sectionNode.InnerText).Trim();
     }
 
-    private DateTime ExtractPublishedDate(HtmlDocument doc)
+    private static DateTime ExtractPublishedDate(HtmlDocument doc)
     {
         var dateNode = doc.DocumentNode.SelectSingleNode("//meta[@property='article:published_time']") ??
                       doc.DocumentNode.SelectSingleNode("//time[@datetime]");
@@ -152,7 +156,7 @@ public class ArticleParser : IArticleParser
         return DateTime.UtcNow;
     }
 
-    private string CleanText(string text)
+    private static string CleanText(string text)
     {
         // Remove excessive whitespace and decode HTML entities
         return HtmlEntity.DeEntitize(text)
@@ -163,7 +167,7 @@ public class ArticleParser : IArticleParser
             .Replace("  ", " ");
     }
 
-    private string GenerateArticleId(string url)
+    private static string GenerateArticleId(string url)
     {
         // Extract article ID from NYT URL pattern: /YYYY/MM/DD/section/article-slug.html
         var uri = new Uri(url);

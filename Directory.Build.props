@@ -2,34 +2,12 @@
   <!-- Global MSBuild properties applied to all projects in the solution -->
 
   <PropertyGroup>
-    <!-- Ensure warnings never fail the build across all projects -->
+    <!-- Warnings should not fail the build, but we want to see all of them -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
 
-    <!--
-      Disable code style enforcement in build
-      Analyzers will still run and show warnings in IDE, but won't block compilation
-    -->
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-
-    <!--
-      Suppress StyleCop rules with high violation counts
-      These are formatting issues that can be fixed incrementally
-    -->
-    <NoWarn>$(NoWarn);SA0001;SA1101;SA1116;SA1309;SA1413</NoWarn>
+    <!-- Enable code style enforcement in build to show all analyzer warnings -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
-
-  <!--
-    Configuration Notes:
-    - SA0001: XML comment analysis disabled (informational)
-    - SA1101: Prefix local calls with 'this' (conflicts with .editorconfig)
-    - SA1116: Parameter formatting across multiple lines
-    - SA1309: Field names beginning with underscore
-    - SA1413: Trailing comma in multi-line initializers
-
-    These suppressions allow the build to succeed while keeping analyzers
-    active for quality feedback in the IDE. Violations can be addressed
-    incrementally in future cleanup commits.
-  -->
 
 </Project>

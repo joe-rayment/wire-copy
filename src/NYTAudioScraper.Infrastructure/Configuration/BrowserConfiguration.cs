@@ -1,3 +1,7 @@
+// <copyright file="BrowserConfiguration.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 namespace NYTAudioScraper.Infrastructure.Configuration;
 
 public class BrowserConfiguration

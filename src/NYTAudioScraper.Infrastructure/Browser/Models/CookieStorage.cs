@@ -1,3 +1,7 @@
+// <copyright file="CookieStorage.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 namespace NYTAudioScraper.Infrastructure.Browser.Models;
 
 /// <summary>
@@ -35,32 +39,4 @@ public class CookieStorage
     /// Plain text cookies (Version 1 only - for migration)
     /// </summary>
     public List<CookieData>? Cookies { get; set; }
-}
-
-/// <summary>
-/// Cookie data wrapper with metadata
-/// </summary>
-public class CookieDataContainer
-{
-    /// <summary>
-    /// List of cookies
-    /// </summary>
-    public required List<CookieData> Cookies { get; set; }
-
-    /// <summary>
-    /// Additional metadata
-    /// </summary>
-    public Dictionary<string, string> Metadata { get; set; } = new();
-}
-
-/// <summary>
-/// Represents an individual cookie
-/// </summary>
-public class CookieData
-{
-    public required string Name { get; init; }
-    public required string Value { get; init; }
-    public required string Domain { get; init; }
-    public required string Path { get; init; }
-    public DateTime? Expiry { get; init; }
 }

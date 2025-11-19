@@ -1,3 +1,7 @@
+// <copyright file="NYTAuthService.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
@@ -57,7 +61,9 @@ public class NYTAuthService : INYTAuthService
 
             // Navigate to login page
             _logger.LogInformation("Navigating to NYT login page");
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl("https://myaccount.nytimes.com/auth/login");
+#pragma warning restore S6966
             await Task.Delay(3000, cancellationToken);
 
             var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
@@ -266,7 +272,9 @@ public class NYTAuthService : INYTAuthService
             }
 
             // Navigate to the domain first to set cookies
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl(_config.BaseUrl);
+#pragma warning restore S6966
             await Task.Delay(1000, cancellationToken);
 
             // Load cookies into the browser
@@ -290,7 +298,9 @@ public class NYTAuthService : INYTAuthService
             }
 
             // Refresh to apply cookies
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().Refresh();
+#pragma warning restore S6966
             await Task.Delay(2000, cancellationToken);
 
             return IsAuthenticated(driver);

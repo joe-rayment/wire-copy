@@ -1,3 +1,7 @@
+// <copyright file="ArticleRepository.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;

@@ -1,3 +1,7 @@
+// <copyright file="DpapiCookieEncryptionService.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

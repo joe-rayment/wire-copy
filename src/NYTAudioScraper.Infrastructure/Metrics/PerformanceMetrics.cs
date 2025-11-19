@@ -1,3 +1,7 @@
+// <copyright file="PerformanceMetrics.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -69,8 +73,8 @@ public class PerformanceMetrics
             {
                 Count = sorted.Count,
                 Average = TimeSpan.FromMilliseconds(sorted.Average(t => t.TotalMilliseconds)),
-                Min = sorted.First(),
-                Max = sorted.Last(),
+                Min = sorted[0],
+                Max = sorted[^1],
                 P95 = sorted[p95Index]
             };
         }
@@ -82,7 +86,7 @@ public class PerformanceMetrics
         };
     }
 
-    private class MetricScope : IDisposable
+    private sealed class MetricScope : IDisposable
     {
         private readonly PerformanceMetrics _metrics;
         private readonly string _operation;
@@ -101,25 +105,4 @@ public class PerformanceMetrics
             _metrics.RecordTiming(_operation, _stopwatch.Elapsed);
         }
     }
-}
-
-/// <summary>
-/// Summary of all performance metrics
-/// </summary>
-public class MetricsSummary
-{
-    public Dictionary<string, OperationMetrics> Operations { get; init; } = new();
-    public Dictionary<string, long> Counters { get; init; } = new();
-}
-
-/// <summary>
-/// Metrics for a single operation
-/// </summary>
-public class OperationMetrics
-{
-    public int Count { get; init; }
-    public TimeSpan Average { get; init; }
-    public TimeSpan Min { get; init; }
-    public TimeSpan Max { get; init; }
-    public TimeSpan P95 { get; init; }
 }
