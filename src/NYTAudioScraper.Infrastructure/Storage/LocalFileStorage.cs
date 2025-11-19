@@ -1,3 +1,7 @@
+// <copyright file="LocalFileStorage.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 

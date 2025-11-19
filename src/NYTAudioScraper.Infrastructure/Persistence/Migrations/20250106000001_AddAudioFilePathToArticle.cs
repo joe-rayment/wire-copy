@@ -1,3 +1,7 @@
+// <copyright file="20250106000001_AddAudioFilePathToArticle.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable

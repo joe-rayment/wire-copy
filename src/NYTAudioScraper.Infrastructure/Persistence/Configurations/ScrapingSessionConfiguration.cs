@@ -1,3 +1,7 @@
+// <copyright file="ScrapingSessionConfiguration.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NYTAudioScraper.Domain.Entities;

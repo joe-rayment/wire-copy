@@ -1,3 +1,7 @@
+// <copyright file="DependencyInjection.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Net.Http;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;

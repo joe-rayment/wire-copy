@@ -1,3 +1,7 @@
+// <copyright file="MetricsSummary.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 namespace NYTAudioScraper.Infrastructure.Metrics;
 
 /// <summary>

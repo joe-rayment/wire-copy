@@ -1,3 +1,7 @@
+// <copyright file="IBudgetService.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 namespace NYTAudioScraper.Application.Interfaces;
 
 /// <summary>

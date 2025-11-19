@@ -1,3 +1,7 @@
+// <copyright file="LocalFileStorageTests.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;

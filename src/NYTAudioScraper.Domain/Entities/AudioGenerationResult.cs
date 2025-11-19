@@ -1,3 +1,7 @@
+// <copyright file="AudioGenerationResult.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 namespace NYTAudioScraper.Domain.Entities;
 
 /// <summary>

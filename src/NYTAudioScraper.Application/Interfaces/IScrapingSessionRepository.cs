@@ -1,3 +1,7 @@
+// <copyright file="IScrapingSessionRepository.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using NYTAudioScraper.Domain.Entities;
 
 namespace NYTAudioScraper.Application.Interfaces;

@@ -1,3 +1,7 @@
+// <copyright file="PerformanceMetrics.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
