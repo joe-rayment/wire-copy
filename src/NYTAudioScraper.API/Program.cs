@@ -94,9 +94,12 @@ public class Program
 
     private static async Task<int> HandleCookieInfoAsync(IServiceProvider services)
     {
+        using var scope = services.CreateScope();
+        var scopedServices = scope.ServiceProvider;
+
         try
         {
-            var cookieManager = services.GetRequiredService<ICookieManager>();
+            var cookieManager = scopedServices.GetRequiredService<ICookieManager>();
             var info = await cookieManager.GetCookieInfoAsync();
 
             if (info == null || !info.Exists)
@@ -151,9 +154,12 @@ public class Program
 
     private static async Task<int> HandleClearCookiesAsync(IServiceProvider services)
     {
+        using var scope = services.CreateScope();
+        var scopedServices = scope.ServiceProvider;
+
         try
         {
-            var cookieManager = services.GetRequiredService<ICookieManager>();
+            var cookieManager = scopedServices.GetRequiredService<ICookieManager>();
 
             Console.Write("Are you sure you want to clear all stored cookies? (y/N): ");
             var response = Console.ReadLine();
@@ -215,18 +221,21 @@ public class Program
 
     private static async Task RunApplicationAsync(IServiceProvider services)
     {
+        using var scope = services.CreateScope();
+        var scopedServices = scope.ServiceProvider;
+
         Log.Information("Starting NYT Audio Scraper Test Workflow");
         Log.Information("========================================");
 
         try
         {
             // Get required services
-            var scraper = services.GetRequiredService<IScraperService>();
-            var audioGenerator = services.GetRequiredService<IAudioGenerator>();
-            var audioProcessor = services.GetRequiredService<IAudioProcessor>();
-            var chapterMarker = services.GetRequiredService<IChapterMarker>();
-            var fileStorage = services.GetRequiredService<IFileStorage>();
-            var budgetService = services.GetRequiredService<IBudgetService>();
+            var scraper = scopedServices.GetRequiredService<IScraperService>();
+            var audioGenerator = scopedServices.GetRequiredService<IAudioGenerator>();
+            var audioProcessor = scopedServices.GetRequiredService<IAudioProcessor>();
+            var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
+            var fileStorage = scopedServices.GetRequiredService<IFileStorage>();
+            var budgetService = scopedServices.GetRequiredService<IBudgetService>();
 
             Log.Information("✓ All services resolved successfully");
 
@@ -406,15 +415,19 @@ public class Program
 
     private static async Task RunProductionWorkflowAsync(IServiceProvider services, CommandOptions options)
     {
+        // Create a scope for scoped services (AppDbContext, etc.)
+        using var scope = services.CreateScope();
+        var scopedServices = scope.ServiceProvider;
+
         // Initialize database
-        var dbContext = services.GetRequiredService<AppDbContext>();
+        var dbContext = scopedServices.GetRequiredService<AppDbContext>();
         await dbContext.InitializeDatabaseAsync();
         Log.Information("✓ Database initialized");
 
         // Run health checks
         Log.Information("");
         Log.Information("Running health checks...");
-        var healthCheckService = services.GetRequiredService<HealthCheckService>();
+        var healthCheckService = scopedServices.GetRequiredService<HealthCheckService>();
         var healthReport = await healthCheckService.CheckHealthAsync();
 
         foreach (var entry in healthReport.Entries)
@@ -466,14 +479,14 @@ public class Program
         var metrics = new PerformanceMetrics();
 
         // Get services
-        var scraper = services.GetRequiredService<IScraperService>();
-        var audioGenerator = services.GetRequiredService<IAudioGenerator>();
-        var parallelAudioGenerator = services.GetRequiredService<IParallelAudioGenerator>();
-        var audioProcessor = services.GetRequiredService<IAudioProcessor>();
-        var chapterMarker = services.GetRequiredService<IChapterMarker>();
-        var budgetService = services.GetRequiredService<BudgetService>();
-        var sessionRepo = services.GetRequiredService<IScrapingSessionRepository>();
-        var unitOfWork = services.GetRequiredService<IUnitOfWork>();
+        var scraper = scopedServices.GetRequiredService<IScraperService>();
+        var audioGenerator = scopedServices.GetRequiredService<IAudioGenerator>();
+        var parallelAudioGenerator = scopedServices.GetRequiredService<IParallelAudioGenerator>();
+        var audioProcessor = scopedServices.GetRequiredService<IAudioProcessor>();
+        var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
+        var budgetService = scopedServices.GetRequiredService<BudgetService>();
+        var sessionRepo = scopedServices.GetRequiredService<IScrapingSessionRepository>();
+        var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
 
         // Set budget from command line
         budgetService.MaxBudget = options.Budget;
