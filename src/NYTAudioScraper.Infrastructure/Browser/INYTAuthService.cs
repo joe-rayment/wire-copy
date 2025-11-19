@@ -1,3 +1,7 @@
+// <copyright file="INYTAuthService.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using OpenQA.Selenium;
 
 namespace NYTAudioScraper.Infrastructure.Browser;

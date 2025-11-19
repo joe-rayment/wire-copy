@@ -1,3 +1,7 @@
+// <copyright file="AudioGenerator.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;

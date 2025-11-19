@@ -1,3 +1,7 @@
+// <copyright file="ArticleCache.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

@@ -1,3 +1,7 @@
+// <copyright file="ChapterMarker.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using ATL;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

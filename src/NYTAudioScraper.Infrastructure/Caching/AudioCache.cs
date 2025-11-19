@@ -1,3 +1,7 @@
+// <copyright file="AudioCache.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;

@@ -1,3 +1,7 @@
+// <copyright file="LocalFileStorage.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 
@@ -176,7 +180,7 @@ public class LocalFileStorage : IFileStorage
         }
     }
 
-    private string SanitizeFileName(string fileName)
+    private static string SanitizeFileName(string fileName)
     {
         // Remove path traversal attempts
         var sanitized = Path.GetFileName(fileName);

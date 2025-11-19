@@ -1,3 +1,7 @@
+// <copyright file="AudioProcessor.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using FFMpegCore;
 using FFMpegCore.Enums;
 using Microsoft.Extensions.Logging;

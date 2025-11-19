@@ -1,3 +1,7 @@
+// <copyright file="CookieManager.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Browser.Models;
@@ -112,24 +116,24 @@ public class CookieManager : ICookieManager
         }
     }
 
-    public async Task<bool> ClearCookiesAsync()
+    public Task<bool> ClearCookiesAsync()
     {
         try
         {
             if (!File.Exists(_cookieFilePath))
             {
                 _logger.LogInformation("No cookie file to clear");
-                return false;
+                return Task.FromResult(false);
             }
 
             File.Delete(_cookieFilePath);
             _logger.LogInformation("Cleared cookies from {Path}", _cookieFilePath);
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to clear cookies");
-            return false;
+            return Task.FromResult(false);
         }
     }
 }
