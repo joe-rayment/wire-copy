@@ -90,35 +90,17 @@ public static class DependencyInjection
                 client.DefaultRequestHeaders.Add("xi-api-key", config.ApiKey);
             }
         })
-        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        .AddTransientHttpErrorPolicy(policyBuilder =>
         {
-            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
             return policyBuilder.WaitAndRetryAsync(
                 retryCount: 3,
-                sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-                onRetry: (outcome, timespan, retryCount, context) =>
-                {
-                    resilienceLogger.LogRetry(outcome, timespan, retryCount, "ElevenLabs API");
-                });
+                sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
         })
-        .AddTransientHttpErrorPolicy((serviceProvider, policyBuilder) =>
+        .AddTransientHttpErrorPolicy(policyBuilder =>
         {
-            var resilienceLogger = serviceProvider.GetRequiredService<HttpResilienceLogger>();
             return policyBuilder.CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
-                durationOfBreak: TimeSpan.FromSeconds(30),
-                onBreak: (outcome, breakDuration) =>
-                {
-                    resilienceLogger.LogCircuitBreakerOpen(outcome, breakDuration, "ElevenLabs API");
-                },
-                onReset: () =>
-                {
-                    resilienceLogger.LogCircuitBreakerReset("ElevenLabs API");
-                },
-                onHalfOpen: () =>
-                {
-                    resilienceLogger.LogCircuitBreakerHalfOpen("ElevenLabs API");
-                });
+                durationOfBreak: TimeSpan.FromSeconds(30));
         });
 
         // Register Data Protection for cookie encryption
