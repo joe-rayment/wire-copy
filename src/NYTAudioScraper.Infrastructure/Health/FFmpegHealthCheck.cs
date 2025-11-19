@@ -1,12 +1,10 @@
 // <copyright file="FFmpegHealthCheck.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-using System.Diagnostics;
 // </copyright>
 
-
+using System.Diagnostics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 
 namespace NYTAudioScraper.Infrastructure.Health;
 

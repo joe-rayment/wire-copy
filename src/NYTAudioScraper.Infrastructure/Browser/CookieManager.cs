@@ -1,13 +1,11 @@
 // <copyright file="CookieManager.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-using System.Text.Json;
 // </copyright>
 
-
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Browser.Models;
-using System.Text.Json;
 
 namespace NYTAudioScraper.Infrastructure.Browser;
 
