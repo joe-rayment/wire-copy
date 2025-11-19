@@ -1,6 +1,7 @@
-// <copyright file="CookieInfo.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="CookieInfo.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 namespace NYTAudioScraper.Application.Interfaces;
 

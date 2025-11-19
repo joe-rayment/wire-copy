@@ -1,6 +1,7 @@
-// <copyright file="PerformanceMetrics.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="PerformanceMetrics.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using System.Collections.Concurrent;
 using System.Diagnostics;

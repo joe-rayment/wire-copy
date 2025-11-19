@@ -1,6 +1,7 @@
-// <copyright file="IAudioProcessor.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="IAudioProcessor.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using NYTAudioScraper.Domain.ValueObjects;
 

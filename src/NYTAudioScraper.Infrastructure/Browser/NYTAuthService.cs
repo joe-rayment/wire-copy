@@ -1,6 +1,7 @@
-// <copyright file="NYTAuthService.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="NYTAuthService.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

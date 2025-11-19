@@ -1,6 +1,7 @@
-// <copyright file="ScrapingSessionConfiguration.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ScrapingSessionConfiguration.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;

@@ -1,6 +1,7 @@
-// <copyright file="ArticleRepository.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ArticleRepository.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;

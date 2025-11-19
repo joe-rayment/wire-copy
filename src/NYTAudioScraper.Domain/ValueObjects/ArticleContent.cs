@@ -1,6 +1,7 @@
-// <copyright file="ArticleContent.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ArticleContent.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 namespace NYTAudioScraper.Domain.ValueObjects;
 
