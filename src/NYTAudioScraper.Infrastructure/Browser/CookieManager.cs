@@ -1,5 +1,6 @@
 // <copyright file="CookieManager.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
+using System.Text.Json;
 // </copyright>
 
 
