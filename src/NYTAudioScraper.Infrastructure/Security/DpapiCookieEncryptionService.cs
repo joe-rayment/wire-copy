@@ -1,5 +1,6 @@
 // <copyright file="DpapiCookieEncryptionService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
+using System.Text;
 // </copyright>
 
 
