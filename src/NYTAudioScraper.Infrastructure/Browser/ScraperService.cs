@@ -1,6 +1,7 @@
-// <copyright file="ScraperService.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ScraperService.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -299,7 +300,7 @@ public class ScraperService : IScraperService
                     }
 
                     // Check if this section matches any of the target sections
-                    bool isTargetSection = targetSections.Any(targetSection =>
+                    bool isTargetSection = targetSections.Exists(targetSection =>
                         sectionTitle.Equals(targetSection, StringComparison.OrdinalIgnoreCase) ||
                         sectionTitle.Contains(targetSection, StringComparison.OrdinalIgnoreCase));
 

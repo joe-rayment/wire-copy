@@ -1,6 +1,7 @@
-// <copyright file="DependencyInjectionTests.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="DependencyInjectionTests.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;

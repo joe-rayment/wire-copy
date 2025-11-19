@@ -1,6 +1,8 @@
-// <copyright file="FFmpegHealthCheck.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="FFmpegHealthCheck.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
+using System.Diagnostics;
 // </copyright>
+
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -45,7 +47,7 @@ public class FFmpegHealthCheck : IHealthCheck
 
             if (process.ExitCode == 0)
             {
-                var version = output.Split('\n')[0].Replace("ffmpeg version ", "");
+                var version = output.Split('\n')[0].Replace("ffmpeg version ", string.Empty);
                 return HealthCheckResult.Healthy(
                     "FFmpeg is available",
                     new Dictionary<string, object>

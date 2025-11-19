@@ -1,6 +1,7 @@
-// <copyright file="ScrapingSession.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ScrapingSession.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 namespace NYTAudioScraper.Domain.Entities;
 

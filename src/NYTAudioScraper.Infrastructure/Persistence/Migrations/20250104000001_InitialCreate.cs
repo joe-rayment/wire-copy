@@ -1,6 +1,7 @@
-// <copyright file="20250104000001_InitialCreate.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="20250104000001_InitialCreate.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.EntityFrameworkCore.Migrations;
 

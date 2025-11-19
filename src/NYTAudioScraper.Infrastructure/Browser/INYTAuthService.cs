@@ -1,6 +1,7 @@
-// <copyright file="INYTAuthService.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="INYTAuthService.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using OpenQA.Selenium;
 

@@ -1,6 +1,7 @@
-// <copyright file="AudioCacheTests.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="AudioCacheTests.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
