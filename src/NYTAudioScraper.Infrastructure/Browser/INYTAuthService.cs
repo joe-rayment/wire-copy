@@ -1,6 +1,6 @@
 using OpenQA.Selenium;
 
-namespace NYTAudioScraper.Application.Interfaces;
+namespace NYTAudioScraper.Infrastructure.Browser;
 
 /// <summary>
 /// Service for authenticating with New York Times website
