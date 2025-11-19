@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="stylecop.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ElevenLabs-DotNet" Version="3.6.0" />
     <PackageReference Include="FFMpegCore" Version="5.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.67" />

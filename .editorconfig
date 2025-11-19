@@ -152,3 +152,25 @@ dotnet_naming_style.begins_with_i.required_prefix = I
 dotnet_naming_style.begins_with_i.required_suffix =
 dotnet_naming_style.begins_with_i.word_separator =
 dotnet_naming_style.begins_with_i.capitalization = pascal_case
+
+# Analyzer rule severity adjustments
+# SA1101: Conflicts with dotnet_style_qualification_for_field = false
+dotnet_diagnostic.SA1101.severity = none
+
+# SA0001: XML comment analysis disabled - informational only
+dotnet_diagnostic.SA0001.severity = suggestion
+
+# SA1116: Parameter formatting - reduce to warning
+dotnet_diagnostic.SA1116.severity = warning
+
+# SA1413: Trailing comma - reduce to warning
+dotnet_diagnostic.SA1413.severity = warning
+
+# SA1309: Field names should not begin with underscore - allow for private fields
+dotnet_diagnostic.SA1309.severity = none
+
+# S1854: Dead store - keep as warning, fix case-by-case
+dotnet_diagnostic.S1854.severity = warning
+
+# S2325: Methods should be static when possible - keep as warning
+dotnet_diagnostic.S2325.severity = warning
