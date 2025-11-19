@@ -97,8 +97,17 @@ public class RateLimiter : IRateLimiter
     /// </summary>
     public int AvailableSlots => _semaphore.CurrentCount;
 
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _semaphore?.Dispose();
+        }
+    }
+
     public void Dispose()
     {
-        _semaphore?.Dispose();
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }
