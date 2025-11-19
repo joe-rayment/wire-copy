@@ -160,7 +160,7 @@ public static class DependencyInjection
             .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
 
         // Register services
-        services.AddSingleton<IScraperService, ScraperService>();
+        services.AddScoped<IScraperService, ScraperService>(); // Scoped because it depends on IArticleCache (which uses DbContext)
         services.AddSingleton<IAudioProcessor, AudioProcessor>();
         services.AddSingleton<IChapterMarker, ChapterMarker>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
