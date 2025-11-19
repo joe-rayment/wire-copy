@@ -176,7 +176,7 @@ public class LocalFileStorage : IFileStorage
         }
     }
 
-    private string SanitizeFileName(string fileName)
+    private static string SanitizeFileName(string fileName)
     {
         // Remove path traversal attempts
         var sanitized = Path.GetFileName(fileName);
