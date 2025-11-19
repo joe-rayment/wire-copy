@@ -38,8 +38,7 @@ public class AudioGenerator : IAudioGenerator
         CancellationToken cancellationToken = default)
     {
         // Check cache first
-        var contentHash = _audioCache.ComputeHash(text + voiceId);
-        var cachedAudio = await _audioCache.GetAsync(contentHash);
+        var cachedAudio = await _audioCache.GetAsync(text, voiceId, cancellationToken);
 
         if (cachedAudio != null)
         {
@@ -84,7 +83,7 @@ public class AudioGenerator : IAudioGenerator
             _logger.LogInformation("Successfully generated audio: {Size} bytes", audioData.Length);
 
             // Cache the generated audio
-            await _audioCache.SetAsync(contentHash, audioData);
+            await _audioCache.SetAsync(text, voiceId, audioData, cancellationToken);
             _logger.LogInformation("🎵 Cached audio ({Size:N0} bytes)", audioData.Length);
 
             return audioData;

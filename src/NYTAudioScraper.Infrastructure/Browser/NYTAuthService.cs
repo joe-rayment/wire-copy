@@ -322,7 +322,7 @@ public class NYTAuthService : INYTAuthService
                 Cookies = cookies,
                 Metadata = new Dictionary<string, string>
                 {
-                    ["user_agent"] = _config.UserAgent ?? "Unknown",
+                    ["user_agent"] = "NYTAudioScraper/1.0",
                     ["last_used"] = DateTime.UtcNow.ToString("O"),
                     ["saved_by"] = "NYTAudioScraper"
                 }
