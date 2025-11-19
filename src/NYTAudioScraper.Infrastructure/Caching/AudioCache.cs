@@ -122,7 +122,7 @@ public class AudioCache : IAudioCache
     /// <summary>
     /// Generates a cache key from content and voice ID using SHA256
     /// </summary>
-    private string GenerateCacheKey(string content, string voiceId)
+    private static string GenerateCacheKey(string content, string voiceId)
     {
         var input = $"{content}:{voiceId}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
