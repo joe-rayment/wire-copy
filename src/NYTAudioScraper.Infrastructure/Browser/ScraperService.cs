@@ -300,7 +300,7 @@ public class ScraperService : IScraperService
                     }
 
                     // Check if this section matches any of the target sections
-                    bool isTargetSection = targetSections.Exists(targetSection =>
+                    bool isTargetSection = Array.Exists(targetSections, targetSection =>
                         sectionTitle.Equals(targetSection, StringComparison.OrdinalIgnoreCase) ||
                         sectionTitle.Contains(targetSection, StringComparison.OrdinalIgnoreCase));
 

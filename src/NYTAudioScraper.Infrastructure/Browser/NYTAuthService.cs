@@ -1,9 +1,8 @@
 // <copyright file="NYTAuthService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-using System.Text.Json;
 // </copyright>
 
-
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
@@ -11,7 +10,6 @@ using NYTAudioScraper.Infrastructure.Browser.Models;
 using NYTAudioScraper.Infrastructure.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
-using System.Text.Json;
 
 namespace NYTAudioScraper.Infrastructure.Browser;
 
