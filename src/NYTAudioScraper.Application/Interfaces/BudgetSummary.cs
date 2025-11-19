@@ -1,6 +1,7 @@
-// <copyright file="BudgetSummary.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="BudgetSummary.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 namespace NYTAudioScraper.Application.Interfaces;
 

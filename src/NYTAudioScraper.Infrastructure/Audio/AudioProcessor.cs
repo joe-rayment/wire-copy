@@ -1,6 +1,7 @@
-// <copyright file="AudioProcessor.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="AudioProcessor.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using FFMpegCore;
 using FFMpegCore.Enums;

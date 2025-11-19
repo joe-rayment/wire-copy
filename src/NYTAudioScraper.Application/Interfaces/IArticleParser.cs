@@ -1,6 +1,7 @@
-// <copyright file="IArticleParser.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="IArticleParser.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using NYTAudioScraper.Domain.Entities;
 

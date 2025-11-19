@@ -1,6 +1,7 @@
-// <copyright file="ElevenLabsConfigurationValidator.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ElevenLabsConfigurationValidator.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.Extensions.Options;
 

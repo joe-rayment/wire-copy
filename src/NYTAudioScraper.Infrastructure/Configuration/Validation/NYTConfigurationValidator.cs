@@ -1,6 +1,7 @@
-// <copyright file="NYTConfigurationValidator.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="NYTConfigurationValidator.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.Extensions.Options;
 

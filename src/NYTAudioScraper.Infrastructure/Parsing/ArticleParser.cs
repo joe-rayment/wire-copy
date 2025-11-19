@@ -1,6 +1,7 @@
-// <copyright file="ArticleParser.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="ArticleParser.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
@@ -72,7 +73,7 @@ public class ArticleParser : IArticleParser
         return string.Empty;
     }
 
-    private string ExtractContent(HtmlDocument doc)
+    private static string ExtractContent(HtmlDocument doc)
     {
         // Try multiple selectors for article body
         var contentNode = doc.DocumentNode.SelectSingleNode("//section[@name='articleBody']") ??
@@ -94,7 +95,7 @@ public class ArticleParser : IArticleParser
         return string.Join("\n\n", paragraphs.Select(p => CleanText(p.InnerText)));
     }
 
-    private string? ExtractAuthor(HtmlDocument doc)
+    private static string? ExtractAuthor(HtmlDocument doc)
     {
         // Try multiple selectors for author/byline
         // First try meta tag

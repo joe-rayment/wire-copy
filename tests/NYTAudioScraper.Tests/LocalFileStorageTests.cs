@@ -1,6 +1,7 @@
-// <copyright file="LocalFileStorageTests.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="LocalFileStorageTests.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using FluentAssertions;
 using Microsoft.Extensions.Logging;

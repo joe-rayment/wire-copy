@@ -1,6 +1,7 @@
-// <copyright file="UnitOfWork.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="UnitOfWork.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
