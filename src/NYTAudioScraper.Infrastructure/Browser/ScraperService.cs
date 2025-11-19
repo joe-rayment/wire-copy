@@ -262,8 +262,6 @@ public class ScraperService : IScraperService
             // Find all sections on the page
             var sections = driver.FindElements(By.CssSelector("section, div[data-testid*='section'], div.css-13y0vf2"));
 
-            bool hitInternationalSection = false;
-
             foreach (var section in sections)
             {
                 try
@@ -286,7 +284,6 @@ public class ScraperService : IScraperService
                         if (headerClass != null && headerClass.Contains("css-1k2d5zc"))
                         {
                             _logger.LogInformation("Reached International section - stopping Front Page collection");
-                            hitInternationalSection = true;
                             break;
                         }
                     }
