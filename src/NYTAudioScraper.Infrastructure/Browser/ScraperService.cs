@@ -96,7 +96,9 @@ public class ScraperService : IScraperService
 
             // Navigate to article URL
             _logger.LogInformation("Navigating to {Url}", url);
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl(url);
+#pragma warning restore S6966
             await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
 
             var pageSource = driver.PageSource;
@@ -152,7 +154,9 @@ public class ScraperService : IScraperService
             // Navigate to Today's Paper
             var todaysPaperUrl = $"{_nytConfig.BaseUrl}/section/todayspaper";
             _logger.LogInformation("Navigating to {Url}", todaysPaperUrl);
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl(todaysPaperUrl);
+#pragma warning restore S6966
             await Task.Delay(3000, cancellationToken);
 
             // Extract article URLs from specified sections
@@ -172,7 +176,9 @@ public class ScraperService : IScraperService
                 try
                 {
                     _logger.LogInformation("Scraping article: {Url}", url);
+#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
                     driver.Navigate().GoToUrl(url);
+#pragma warning restore S6966
                     await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
 
                     var pageSource = driver.PageSource;
