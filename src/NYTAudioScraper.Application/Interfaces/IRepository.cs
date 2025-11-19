@@ -1,6 +1,7 @@
-// <copyright file="IRepository.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="IRepository.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using System.Linq.Expressions;
 

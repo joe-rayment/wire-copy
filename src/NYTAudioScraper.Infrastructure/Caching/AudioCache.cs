@@ -1,6 +1,7 @@
-// <copyright file="AudioCache.cs" company="NYTAudioScraper">
-// Copyright (c) NYTAudioScraper. All rights reserved.
+// <copyright file="AudioCache.cs" company="NYT Audio Scraper">
+// Educational and personal use only.
 // </copyright>
+
 
 using System.Security.Cryptography;
 using System.Text;
