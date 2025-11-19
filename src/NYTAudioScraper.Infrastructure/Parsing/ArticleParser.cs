@@ -1,3 +1,7 @@
+// <copyright file="ArticleParser.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

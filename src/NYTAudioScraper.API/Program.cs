@@ -1,3 +1,7 @@
+// <copyright file="Program.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

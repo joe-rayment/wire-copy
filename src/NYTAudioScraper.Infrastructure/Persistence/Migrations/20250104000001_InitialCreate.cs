@@ -1,3 +1,7 @@
+// <copyright file="20250104000001_InitialCreate.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable

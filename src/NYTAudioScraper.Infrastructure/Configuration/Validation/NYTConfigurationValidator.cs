@@ -1,3 +1,7 @@
+// <copyright file="NYTConfigurationValidator.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using Microsoft.Extensions.Options;
 
 namespace NYTAudioScraper.Infrastructure.Configuration.Validation;

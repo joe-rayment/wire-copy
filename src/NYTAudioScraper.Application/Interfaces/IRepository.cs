@@ -1,3 +1,7 @@
+// <copyright file="IRepository.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using System.Linq.Expressions;
 
 namespace NYTAudioScraper.Application.Interfaces;

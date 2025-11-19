@@ -1,3 +1,7 @@
+// <copyright file="IAudioProcessor.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using NYTAudioScraper.Domain.ValueObjects;
 
 namespace NYTAudioScraper.Application.Interfaces;

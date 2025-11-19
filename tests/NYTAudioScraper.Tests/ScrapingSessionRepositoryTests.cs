@@ -1,3 +1,7 @@
+// <copyright file="ScrapingSessionRepositoryTests.cs" company="NYTAudioScraper">
+// Copyright (c) NYTAudioScraper. All rights reserved.
+// </copyright>
+
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Domain.Entities;
