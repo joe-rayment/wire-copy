@@ -8,6 +8,8 @@ public class BrowserConfiguration
 {
     public const string SectionName = "Browser";
 
+    public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
+    public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
     public bool Headless { get; init; } = true;
     public int ImplicitWaitSeconds { get; init; } = 10;
     public int PageLoadTimeoutSeconds { get; init; } = 30;
