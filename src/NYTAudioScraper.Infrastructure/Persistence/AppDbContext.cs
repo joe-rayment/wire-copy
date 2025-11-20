@@ -38,6 +38,19 @@ public class AppDbContext : DbContext
     /// </summary>
     public async Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)
     {
+        // Create database directory if it doesn't exist
+        var connectionString = Database.GetConnectionString();
+        if (!string.IsNullOrEmpty(connectionString) && connectionString.Contains("Data Source="))
+        {
+            var dbPath = connectionString.Split("Data Source=")[1].Split(';')[0];
+            var directory = Path.GetDirectoryName(dbPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+
+        // Apply migrations
         await Database.MigrateAsync(cancellationToken);
     }
 }

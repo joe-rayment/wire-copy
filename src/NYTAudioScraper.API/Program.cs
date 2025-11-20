@@ -485,7 +485,7 @@ public class Program
         var parallelAudioGenerator = scopedServices.GetRequiredService<IParallelAudioGenerator>();
         var audioProcessor = scopedServices.GetRequiredService<IAudioProcessor>();
         var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
-        var budgetService = scopedServices.GetRequiredService<BudgetService>();
+        var budgetService = scopedServices.GetRequiredService<IBudgetService>();
         var sessionRepo = scopedServices.GetRequiredService<IScrapingSessionRepository>();
         var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
 
