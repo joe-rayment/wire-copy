@@ -23,16 +23,6 @@ public class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        // Parse args early to check for --verbose flag
-        var verbose = args.Any(arg => arg == "--verbose");
-        var isAlreadyFiltered = Environment.GetEnvironmentVariable("FILTERED_OUTPUT") == "1";
-
-        // If not verbose and not already filtered, re-execute through bash with filtering
-        if (!verbose && !isAlreadyFiltered)
-        {
-            return ReExecuteWithFiltering(args);
-        }
-
         // Configure Serilog
         Log.Logger = new LoggerConfiguration()
             .ReadFrom.Configuration(GetConfiguration())
@@ -57,79 +47,6 @@ public class Program
         {
             await Log.CloseAndFlushAsync();
         }
-    }
-
-    private static int ReExecuteWithFiltering(string[] args)
-    {
-        // Build the grep filter chain
-        var grepFilters = new[]
-        {
-            "console.error:",
-            "NS_ERROR_CONTENT_BLOCKED",
-            "geckodriver",
-            "You are running in headless mode",
-            "Read port:",
-            "RenderCompositorSWGL",
-            "AVCaptureDeviceTypeExternal",
-            "FaviconLoader.sys.mjs",
-            "getpocket.com",
-            "OHTTP was configured",
-            "ContextId.sys.mjs",
-            "^\\[GFX",
-            "^[0-9]*[[:space:]]*firefox\\[",
-            "TypeError.*NetworkError",
-            "Failed to fetch"
-        };
-
-        var grepChain = string.Join(" | ", grepFilters.Select(f => $"grep -v \"{f}\""));
-
-        // Build the command arguments - escape them properly for shell
-        var argsString = string.Join(" ", args.Select(a =>
-        {
-            // Escape single quotes and wrap in single quotes for shell safety
-            var escaped = a.Replace("'", "'\\''");
-            return $"'{escaped}'";
-        }));
-
-        // Get the assembly location - handle both dotnet run and direct execution
-        var assemblyLocation = System.Reflection.Assembly.GetExecutingAssembly().Location;
-
-        // Build command - if running through dotnet run, just re-run the DLL with dotnet exec
-        var bashCommand = $"FILTERED_OUTPUT=1 dotnet exec '{assemblyLocation}' {argsString} 2>&1 | {grepChain}";
-
-        var processInfo = new System.Diagnostics.ProcessStartInfo
-        {
-            FileName = "/bin/bash",
-            Arguments = $"-c \"{bashCommand.Replace("\"", "\\\"")}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        using var process = System.Diagnostics.Process.Start(processInfo);
-        if (process == null)
-        {
-            Console.Error.WriteLine("Failed to start filtered process");
-            return 1;
-        }
-
-        // Forward output to console
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (e.Data != null)
-                Console.WriteLine(e.Data);
-        };
-        process.ErrorDataReceived += (sender, e) =>
-        {
-            if (e.Data != null)
-                Console.Error.WriteLine(e.Data);
-        };
-
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        process.WaitForExit();
-
-        return process.ExitCode;
     }
 
     private static async Task<int> RunWithOptionsAsync(CommandOptions options)

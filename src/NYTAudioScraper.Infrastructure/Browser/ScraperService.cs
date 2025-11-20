@@ -22,7 +22,11 @@ public class ScraperService : IScraperService
     private readonly IArticleParser _articleParser;
     private readonly IArticleCache _articleCache;
     private readonly ILogger<ScraperService> _logger;
+    private readonly Random _random = new Random();
     private string? _currentBrowserType;
+
+    // Minimum page source length to consider valid (not a blocking page)
+    private const int MinimumPageSourceLength = 500;
 
     public ScraperService(
         IOptions<NYTConfiguration> nytConfig,
@@ -57,7 +61,6 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
@@ -132,7 +135,6 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
@@ -148,7 +150,6 @@ public class ScraperService : IScraperService
             string.Join(", ", sections));
 
         IWebDriver? driver = null;
-        bool usedFallback = false;
 
         try
         {
@@ -176,12 +177,10 @@ public class ScraperService : IScraperService
                     _currentBrowserType,
                     _browserConfig.FallbackBrowserType);
 
-                driver?.Quit();
                 driver?.Dispose();
 
                 // Try with fallback browser
                 driver = CreateWebDriver(useFallback: true);
-                usedFallback = true;
 
                 // Re-authenticate with new browser
                 authenticated = await _authService.AuthenticateAsync(driver, cancellationToken);
@@ -230,8 +229,7 @@ public class ScraperService : IScraperService
 #pragma warning restore S6966
 
                     // Human-like behavior: random delay 3-7 seconds
-                    var random = new Random();
-                    var humanDelay = random.Next(3000, 7000);
+                    var humanDelay = _random.Next(3000, 7000);
                     _logger.LogDebug("Waiting {DelayMs}ms before parsing (simulating reading)", humanDelay);
                     await Task.Delay(humanDelay, cancellationToken);
 
@@ -239,9 +237,9 @@ public class ScraperService : IScraperService
                     try
                     {
                         ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, 500);");
-                        await Task.Delay(random.Next(500, 1500), cancellationToken);
+                        await Task.Delay(_random.Next(500, 1500), cancellationToken);
                         ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, document.body.scrollHeight / 2);");
-                        await Task.Delay(random.Next(800, 2000), cancellationToken);
+                        await Task.Delay(_random.Next(800, 2000), cancellationToken);
                     }
                     catch (Exception scrollEx)
                     {
@@ -277,7 +275,6 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
@@ -307,8 +304,8 @@ public class ScraperService : IScraperService
     {
         try
         {
-            var pageSource = driver.PageSource.ToLowerInvariant();
-            var currentUrl = driver.Url.ToLowerInvariant();
+            var pageSource = driver.PageSource;
+            var currentUrl = driver.Url;
 
             // Check for common blocking indicators
             var blockingIndicators = new[]
@@ -330,7 +327,8 @@ public class ScraperService : IScraperService
 
             foreach (var indicator in blockingIndicators)
             {
-                if (pageSource.Contains(indicator) || currentUrl.Contains(indicator))
+                if (pageSource.Contains(indicator, StringComparison.OrdinalIgnoreCase) ||
+                    currentUrl.Contains(indicator, StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Bot detection triggered: Found '{Indicator}' in page", indicator);
                     return true;
@@ -338,14 +336,15 @@ public class ScraperService : IScraperService
             }
 
             // Check for redirect to challenge pages
-            if (currentUrl.Contains("/challenge") || currentUrl.Contains("/verify"))
+            if (currentUrl.Contains("/challenge", StringComparison.OrdinalIgnoreCase) ||
+                currentUrl.Contains("/verify", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Bot detection triggered: Redirected to challenge/verify page");
                 return true;
             }
 
             // Check if page is mostly empty (common with blocking)
-            if (pageSource.Length < 500)
+            if (pageSource.Length < MinimumPageSourceLength)
             {
                 _logger.LogWarning("Bot detection triggered: Page source too short ({Length} chars)", pageSource.Length);
                 return true;

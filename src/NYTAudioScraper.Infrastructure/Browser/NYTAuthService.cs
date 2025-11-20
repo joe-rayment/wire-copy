@@ -61,96 +61,9 @@ public class NYTAuthService : INYTAuthService
                 return true;
             }
 
-            // Navigate to login page
-            _logger.LogInformation("Navigating to NYT login page");
-#pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
-            driver.Navigate().GoToUrl("https://myaccount.nytimes.com/auth/login");
-#pragma warning restore S6966
-            await Task.Delay(3000, cancellationToken);
-
-            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(15));
-
-            // Wait for and fill email field (try multiple selectors)
-            IWebElement? emailField = null;
-            try
-            {
-                emailField = wait.Until(d =>
-                    d.FindElement(By.Name("email")) ??
-                    d.FindElement(By.Id("email")) ??
-                    d.FindElement(By.CssSelector("input[type='email']")));
-            }
-            catch (WebDriverTimeoutException ex)
-            {
-                _logger.LogError(ex, "Timeout waiting for email input field");
-                return false;
-            }
-            catch (NoSuchElementException ex)
-            {
-                _logger.LogError(ex, "Could not find email input field");
-                return false;
-            }
-            catch (WebDriverException ex)
-            {
-                _logger.LogError(ex, "WebDriver error while locating email input field");
-                return false;
-            }
-
-            emailField.Clear();
-            emailField.SendKeys(_config.Email);
-            _logger.LogInformation("Entered email");
-            await Task.Delay(1000, cancellationToken);
-
-            // Click continue/submit button
-            var continueButton = driver.FindElement(By.CssSelector("button[type='submit']"));
-            continueButton.Click();
-            await Task.Delay(3000, cancellationToken);
-
-            // Wait for and fill password field
-            IWebElement? passwordField = null;
-            try
-            {
-                passwordField = wait.Until(d =>
-                    d.FindElement(By.Name("password")) ??
-                    d.FindElement(By.Id("password")) ??
-                    d.FindElement(By.CssSelector("input[type='password']")));
-            }
-            catch (WebDriverTimeoutException ex)
-            {
-                _logger.LogError(ex, "Timeout waiting for password input field");
-                return false;
-            }
-            catch (NoSuchElementException ex)
-            {
-                _logger.LogError(ex, "Could not find password input field");
-                return false;
-            }
-            catch (WebDriverException ex)
-            {
-                _logger.LogError(ex, "WebDriver error while locating password input field");
-                return false;
-            }
-
-            passwordField.Clear();
-            passwordField.SendKeys(_config.Password);
-            _logger.LogInformation("Entered password");
-            await Task.Delay(1000, cancellationToken);
-
-            // Click login button
-            var loginButton = driver.FindElement(By.CssSelector("button[type='submit']"));
-            loginButton.Click();
-            _logger.LogInformation("Clicked login button, waiting for authentication...");
-            await Task.Delay(5000, cancellationToken);
-
-            // Verify login was successful
-            if (IsAuthenticated(driver))
-            {
-                await SaveCookiesAsync(driver, cancellationToken);
-                _logger.LogInformation("Successfully authenticated with NYT and saved cookies");
-                return true;
-            }
-
-            _logger.LogWarning("Authentication failed - unable to verify login");
-            return false;
+            // Saved cookies not found or expired - prompt for manual login
+            _logger.LogInformation("No saved cookies found or cookies expired");
+            return await PromptManualLoginAsync(driver, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -165,8 +78,30 @@ public class NYTAuthService : INYTAuthService
         {
             // Check for authentication indicators
             var cookies = driver.Manage().Cookies.AllCookies;
-            return cookies.Any(c => c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
-                                   c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
+
+            // Log all cookies for debugging
+            _logger.LogDebug("Checking authentication. Current URL: {Url}", driver.Url);
+            _logger.LogDebug("Found {Count} cookies:", cookies.Count);
+            foreach (var cookie in cookies)
+            {
+                _logger.LogDebug("  Cookie: {Name} = {Value}", cookie.Name, cookie.Value?.Substring(0, Math.Min(20, cookie.Value?.Length ?? 0)) + "...");
+            }
+
+            // Check for NYT authentication cookies
+            var hasAuthCookie = cookies.Any(c =>
+                c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
+                c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
+
+            if (hasAuthCookie)
+            {
+                _logger.LogInformation("✓ Found NYT authentication cookie");
+            }
+            else
+            {
+                _logger.LogWarning("✗ No NYT authentication cookies found (looking for 'NYT-S' or 'nyt-auth-method')");
+            }
+
+            return hasAuthCookie;
         }
         catch (Exception ex)
         {
@@ -367,6 +302,114 @@ public class NYTAuthService : INYTAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save cookies to {CookieFilePath}", _cookieFilePath);
+        }
+    }
+
+    private async Task<bool> PromptManualLoginAsync(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            Console.WriteLine();
+            Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║          NYT Authentication Required                                  ║");
+            Console.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
+            Console.WriteLine();
+            Console.WriteLine("To avoid bot detection, please export your auth cookie from Chrome:");
+            Console.WriteLine();
+            Console.WriteLine("STEPS:");
+            Console.WriteLine("  1. Open Chrome and go to https://www.nytimes.com");
+            Console.WriteLine("  2. Make sure you're logged in");
+            Console.WriteLine("  3. Press F12 or CMD+Option+I to open DevTools");
+            Console.WriteLine("  4. Click the 'Application' tab (may be under >> menu)");
+            Console.WriteLine("  5. In left sidebar: Expand 'Cookies' → Click 'https://www.nytimes.com'");
+            Console.WriteLine("  6. Find the cookie named 'NYT-S' in the table");
+            Console.WriteLine("  7. Double-click its Value to select, then copy it (CMD+C)");
+            Console.WriteLine();
+            Console.WriteLine("────────────────────────────────────────────────────────────────────────");
+            Console.WriteLine();
+            Console.Write("Paste the NYT-S cookie value here: ");
+
+            var cookieValue = Console.ReadLine()?.Trim();
+
+            if (string.IsNullOrWhiteSpace(cookieValue))
+            {
+                Console.WriteLine();
+                Console.WriteLine("✗ No cookie value provided. Continuing without authentication.");
+                Console.WriteLine();
+                return false;
+            }
+
+            // Create cookie structure and save
+            var cookies = new List<CookieData>
+            {
+                new CookieData
+                {
+                    Name = "NYT-S",
+                    Value = cookieValue,
+                    Domain = ".nytimes.com",
+                    Path = "/",
+                    Expiry = DateTime.UtcNow.AddDays(CookieExpirationDays)
+                },
+                new CookieData
+                {
+                    Name = "nyt-auth-method",
+                    Value = "username",
+                    Domain = ".nytimes.com",
+                    Path = "/",
+                    Expiry = DateTime.UtcNow.AddDays(CookieExpirationDays)
+                }
+            };
+
+            // Save cookies
+            var cookieContainer = new CookieDataContainer
+            {
+                Cookies = cookies,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["user_agent"] = "NYTAudioScraper/1.0",
+                    ["last_used"] = DateTime.UtcNow.ToString("O"),
+                    ["saved_by"] = "Interactive Prompt"
+                }
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(cookieContainer);
+            var encrypted = _encryptionService.Encrypt(json);
+
+            var storage = new CookieStorage
+            {
+                Version = 2,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(CookieExpirationDays),
+                EncryptedData = encrypted
+            };
+
+            var directory = Path.GetDirectoryName(_cookieFilePath);
+            if (directory != null && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var storageJson = System.Text.Json.JsonSerializer.Serialize(storage,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
+
+            Console.WriteLine();
+            Console.WriteLine("✓ Cookie saved successfully!");
+            Console.WriteLine($"  Expires: {storage.ExpiresAt:yyyy-MM-dd}");
+            Console.WriteLine("  Future runs will use this cookie automatically.");
+            Console.WriteLine();
+
+            _logger.LogInformation("Cookie saved via interactive prompt (expires: {ExpiryDate})", storage.ExpiresAt);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during interactive cookie prompt");
+            Console.WriteLine();
+            Console.WriteLine("✗ Error saving cookie. Please try again.");
+            Console.WriteLine();
+            return false;
         }
     }
 }

@@ -42,9 +42,6 @@ public class CommandOptions
     [Option("import-cookies", Required = false, HelpText = "Import cookies from a JSON file (e.g., --import-cookies ~/nyt-cookies.json)")]
     public string? ImportCookiesPath { get; set; }
 
-    [Option("verbose", Required = false, Default = false, HelpText = "Show all browser console output (default: suppressed)")]
-    public bool Verbose { get; set; }
-
     /// <summary>
     /// Validates the command options and returns validation errors if any
     /// </summary>
