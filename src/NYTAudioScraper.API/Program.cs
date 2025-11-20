@@ -487,6 +487,7 @@ public class Program
         var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
         var budgetService = scopedServices.GetRequiredService<IBudgetService>();
         var sessionRepo = scopedServices.GetRequiredService<IScrapingSessionRepository>();
+        var articleRepo = scopedServices.GetRequiredService<IArticleRepository>();
         var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
 
         // Set budget from command line
@@ -559,12 +560,37 @@ public class Program
         // Link articles to session for complete audit trail
         Log.Information("");
         Log.Information("Linking articles to session {SessionId}...", session.Id);
+        var newArticleCount = 0;
+        var existingArticleCount = 0;
+
         foreach (var article in articleList)
         {
-            session.Articles.Add(article);
+            // Check if article already exists in database
+            var existingArticle = await articleRepo.GetByIdAsync(article.Id);
+
+            if (existingArticle != null)
+            {
+                // Use existing article from database
+                session.Articles.Add(existingArticle);
+                existingArticleCount++;
+                Log.Debug("Using existing article: {Title}", existingArticle.Title);
+            }
+            else
+            {
+                // Add new article
+                await articleRepo.AddAsync(article);
+                session.Articles.Add(article);
+                newArticleCount++;
+                Log.Debug("Adding new article: {Title}", article.Title);
+            }
         }
+
         await unitOfWork.SaveChangesAsync();
-        Log.Information("✓ Linked {Count} articles to session", articleList.Count);
+        Log.Information(
+            "✓ Linked {Total} articles to session ({New} new, {Existing} existing)",
+            articleList.Count,
+            newArticleCount,
+            existingArticleCount);
 
         // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
