@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using OpenQA.Selenium;
 
 namespace NYTAudioScraper.Infrastructure.Browser;

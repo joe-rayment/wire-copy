@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -64,11 +63,15 @@ public class PerformanceMetrics
             var sorted = timings.OrderBy(t => t.TotalMilliseconds).ToList();
 
             if (sorted.Count == 0)
+            {
                 continue;
+            }
 
             var p95Index = (int)(sorted.Count * 0.95);
             if (p95Index >= sorted.Count)
+            {
                 p95Index = sorted.Count - 1;
+            }
 
             operations[operation] = new OperationMetrics
             {

@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 
@@ -14,14 +13,14 @@ public class BudgetService : IBudgetService
     private decimal _totalSpent;
     private readonly object _lock = new();
 
-    public decimal MaxBudget { get; set; } = 10.0m; // Default $10 budget
-    public decimal TotalSpent => _totalSpent;
-    public decimal RemainingBudget => MaxBudget - _totalSpent;
-
     public BudgetService(ILogger<BudgetService> logger)
     {
         _logger = logger;
     }
+
+    public decimal MaxBudget { get; set; } = 10.0m; // Default $10 budget
+    public decimal TotalSpent => _totalSpent;
+    public decimal RemainingBudget => MaxBudget - _totalSpent;
 
     public bool CanAfford(decimal estimatedCost)
     {
@@ -33,7 +32,8 @@ public class BudgetService : IBudgetService
             {
                 _logger.LogWarning(
                     "Budget exceeded: Estimated cost ${EstimatedCost:F4} would exceed remaining budget ${RemainingBudget:F4}",
-                    estimatedCost, RemainingBudget);
+                    estimatedCost,
+                    RemainingBudget);
             }
 
             return canAfford;
@@ -47,7 +47,9 @@ public class BudgetService : IBudgetService
             _totalSpent += amount;
             _logger.LogInformation(
                 "Recorded expense: ${Amount:F4} | Total spent: ${TotalSpent:F4} | Remaining: ${Remaining:F4}",
-                amount, _totalSpent, RemainingBudget);
+                amount,
+                _totalSpent,
+                RemainingBudget);
         }
     }
 

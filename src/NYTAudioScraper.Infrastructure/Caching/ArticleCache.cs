@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

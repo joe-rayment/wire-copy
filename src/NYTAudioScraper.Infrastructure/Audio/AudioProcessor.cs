@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using FFMpegCore;
 using FFMpegCore.Enums;
 using Microsoft.Extensions.Logging;
@@ -105,11 +104,12 @@ public class AudioProcessor : IAudioProcessor
                 SampleRate: sampleRate,
                 Channels: channels,
                 DurationMs: durationMs,
-                FileSizeBytes: fileSizeBytes
-            );
+                FileSizeBytes: fileSizeBytes);
 
-            _logger.LogInformation("Retrieved metadata: Duration={Duration}s, Codec={Codec}",
-                metadata.DurationSeconds, metadata.Codec);
+            _logger.LogInformation(
+                "Retrieved metadata: Duration={Duration}s, Codec={Codec}",
+                metadata.DurationSeconds,
+                metadata.Codec);
 
             return metadata;
         }
