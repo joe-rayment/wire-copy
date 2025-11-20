@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using ATL;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -50,8 +49,11 @@ public class ChapterMarker : IChapterMarker
                 };
 
                 track.Chapters.Add(atlChapter);
-                _logger.LogDebug("Added chapter: {Title} ({Start}ms - {End}ms)",
-                    chapter.Title, chapter.StartTimeMs, chapter.EndTimeMs);
+                _logger.LogDebug(
+                    "Added chapter: {Title} ({Start}ms - {End}ms)",
+                    chapter.Title,
+                    chapter.StartTimeMs,
+                    chapter.EndTimeMs);
             }
 
             // Save the changes
@@ -59,8 +61,10 @@ public class ChapterMarker : IChapterMarker
 
             if (result)
             {
-                _logger.LogInformation("Successfully added {ChapterCount} chapters to {FilePath}",
-                    chapterList.Count, audioFilePath);
+                _logger.LogInformation(
+                    "Successfully added {ChapterCount} chapters to {FilePath}",
+                    chapterList.Count,
+                    audioFilePath);
             }
             else
             {

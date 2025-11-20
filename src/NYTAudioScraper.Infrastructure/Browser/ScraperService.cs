@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NYTAudioScraper.Application.Interfaces;
@@ -141,8 +140,10 @@ public class ScraperService : IScraperService
         string[] sections,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting scrape for up to {MaxArticles} articles from sections: {Sections}",
-            maxArticles, string.Join(", ", sections));
+        _logger.LogInformation(
+            "Starting scrape for up to {MaxArticles} articles from sections: {Sections}",
+            maxArticles,
+            string.Join(", ", sections));
 
         IWebDriver? driver = null;
         try

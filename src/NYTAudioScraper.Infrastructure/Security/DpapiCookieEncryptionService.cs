@@ -15,9 +15,9 @@ namespace NYTAudioScraper.Infrastructure.Security;
 /// </summary>
 public class DpapiCookieEncryptionService : ICookieEncryptionService
 {
+    private const string Purpose = "NYTAudioScraper.CookieProtection";
     private readonly IDataProtector _protector;
     private readonly ILogger<DpapiCookieEncryptionService> _logger;
-    private const string Purpose = "NYTAudioScraper.CookieProtection";
 
     public DpapiCookieEncryptionService(
         IDataProtectionProvider dataProtectionProvider,
