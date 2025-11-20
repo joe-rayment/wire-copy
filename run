@@ -1,0 +1,36 @@
+#!/bin/bash
+# Wrapper script to run NYT Audio Scraper with clean console output by default
+# Use --verbose flag to see all browser console output
+
+# Check if --verbose is in the arguments
+verbose=false
+for arg in "$@"; do
+    if [ "$arg" = "--verbose" ]; then
+        verbose=true
+        break
+    fi
+done
+
+# Run with or without filtering
+if [ "$verbose" = true ]; then
+    # Verbose mode: show everything
+    dotnet run --project src/NYTAudioScraper.API --configuration Release -- "$@"
+else
+    # Default mode: filter browser noise
+    dotnet run --project src/NYTAudioScraper.API --configuration Release -- "$@" 2>&1 | \
+      grep -v "console.error:" | \
+      grep -v "NS_ERROR_CONTENT_BLOCKED" | \
+      grep -v "geckodriver" | \
+      grep -v "You are running in headless mode" | \
+      grep -v "Read port:" | \
+      grep -v "RenderCompositorSWGL" | \
+      grep -v "AVCaptureDeviceTypeExternal" | \
+      grep -v "FaviconLoader.sys.mjs" | \
+      grep -v "getpocket.com" | \
+      grep -v "OHTTP was configured" | \
+      grep -v "ContextId.sys.mjs" | \
+      grep -v "^\[GFX" | \
+      grep -v "^[0-9]*[[:space:]]*firefox\[" | \
+      grep -v "TypeError.*NetworkError" | \
+      grep -v "Failed to fetch"
+fi
