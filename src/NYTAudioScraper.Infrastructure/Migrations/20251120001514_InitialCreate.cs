@@ -1,13 +1,9 @@
-// <copyright file="20250104000001_InitialCreate.cs" company="NYT Audio Scraper">
-// Educational and personal use only.
-// </copyright>
-
-
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
+namespace NYTAudioScraper.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -26,11 +22,27 @@ namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
                     Section = table.Column<string>(type: "TEXT", maxLength: 100, nullable: true),
                     Content = table.Column<string>(type: "TEXT", nullable: false),
                     PublishedDate = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    ScrapedDate = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    ScrapedDate = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    AudioFilePath = table.Column<string>(type: "TEXT", maxLength: 1000, nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Articles", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "AudioChapters",
+                columns: table => new
+                {
+                    ArticleId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
+                    StartTimeMs = table.Column<int>(type: "INTEGER", nullable: false),
+                    Title = table.Column<string>(type: "TEXT", maxLength: 500, nullable: false),
+                    DurationMs = table.Column<int>(type: "INTEGER", nullable: false),
+                    AudioFilePath = table.Column<string>(type: "TEXT", maxLength: 1000, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AudioChapters", x => new { x.ArticleId, x.StartTimeMs });
                 });
 
             migrationBuilder.CreateTable(
@@ -52,30 +64,15 @@ namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "AudioChapters",
-                columns: table => new
-                {
-                    ArticleId = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
-                    StartTimeMs = table.Column<int>(type: "INTEGER", nullable: false),
-                    Title = table.Column<string>(type: "TEXT", maxLength: 500, nullable: false),
-                    DurationMs = table.Column<int>(type: "INTEGER", nullable: false),
-                    AudioFilePath = table.Column<string>(type: "TEXT", maxLength: 1000, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AudioChapters", x => new { x.ArticleId, x.StartTimeMs });
-                });
-
-            migrationBuilder.CreateTable(
                 name: "ScrapingSessionArticle",
                 columns: table => new
                 {
-                    SessionId = table.Column<string>(type: "TEXT", nullable: false),
-                    ArticleId = table.Column<string>(type: "TEXT", nullable: false)
+                    ArticleId = table.Column<string>(type: "TEXT", nullable: false),
+                    SessionId = table.Column<string>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ScrapingSessionArticle", x => new { x.SessionId, x.ArticleId });
+                    table.PrimaryKey("PK_ScrapingSessionArticle", x => new { x.ArticleId, x.SessionId });
                     table.ForeignKey(
                         name: "FK_ScrapingSessionArticle_Articles_ArticleId",
                         column: x => x.ArticleId,
@@ -106,6 +103,11 @@ namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
                 column: "ArticleId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ScrapingSessionArticle_SessionId",
+                table: "ScrapingSessionArticle",
+                column: "SessionId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ScrapingSessions_StartedAt",
                 table: "ScrapingSessions",
                 column: "StartedAt");
@@ -114,11 +116,6 @@ namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
                 name: "IX_ScrapingSessions_Status",
                 table: "ScrapingSessions",
                 column: "Status");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ScrapingSessionArticle_ArticleId",
-                table: "ScrapingSessionArticle",
-                column: "ArticleId");
         }
 
         /// <inheritdoc />

@@ -7,7 +7,7 @@ using NYTAudioScraper.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace NYTAudioScraper.Infrastructure.Persistence.Migrations
+namespace NYTAudioScraper.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     partial class AppDbContextModelSnapshot : ModelSnapshot

@@ -11,8 +11,8 @@ using NYTAudioScraper.Infrastructure.Persistence;
 namespace NYTAudioScraper.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251119051236_UpdatedModel")]
-    partial class UpdatedModel
+    [Migration("20251120001514_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
