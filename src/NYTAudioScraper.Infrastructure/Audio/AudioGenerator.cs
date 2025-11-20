@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -48,8 +47,10 @@ public class AudioGenerator : IAudioGenerator
         if (cachedAudio != null)
         {
             var estimatedCost = EstimateCost(text);
-            _logger.LogInformation("🎵 Audio cache HIT ({Size:N0} bytes) - saved ${Cost:F4} and ~30s",
-                cachedAudio.Length, estimatedCost);
+            _logger.LogInformation(
+                "🎵 Audio cache HIT ({Size:N0} bytes) - saved ${Cost:F4} and ~30s",
+                cachedAudio.Length,
+                estimatedCost);
             return cachedAudio;
         }
 
@@ -110,8 +111,10 @@ public class AudioGenerator : IAudioGenerator
         var characterCount = text.Length;
         var estimatedCost = characterCount * _config.CostPerCharacter;
 
-        _logger.LogDebug("Estimated cost for {CharacterCount} characters: ${Cost:F4}",
-            characterCount, estimatedCost);
+        _logger.LogDebug(
+            "Estimated cost for {CharacterCount} characters: ${Cost:F4}",
+            characterCount,
+            estimatedCost);
 
         return estimatedCost;
     }

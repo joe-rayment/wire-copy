@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;

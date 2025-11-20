@@ -15,11 +15,11 @@ namespace NYTAudioScraper.Infrastructure.Browser;
 
 public class NYTAuthService : INYTAuthService
 {
+    private const int CookieExpirationDays = 30;
     private readonly NYTConfiguration _config;
     private readonly ILogger<NYTAuthService> _logger;
     private readonly ICookieEncryptionService _encryptionService;
     private readonly string _cookieFilePath;
-    private const int CookieExpirationDays = 30;
 
     public NYTAuthService(
         IOptions<NYTConfiguration> config,
@@ -29,8 +29,10 @@ public class NYTAuthService : INYTAuthService
         _config = config.Value;
         _logger = logger;
         _encryptionService = encryptionService;
-        _cookieFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NYTAudioScraper", "cookies.json");
+        _cookieFilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NYTAudioScraper",
+            "cookies.json");
     }
 
     public async Task<bool> AuthenticateAsync(IWebDriver driver, CancellationToken cancellationToken = default)
@@ -287,8 +289,7 @@ public class NYTAuthService : INYTAuthService
                         cookieData.Value,
                         cookieData.Domain,
                         cookieData.Path,
-                        cookieData.Expiry
-                    );
+                        cookieData.Expiry);
                     driver.Manage().Cookies.AddCookie(cookie);
                 }
                 catch (Exception ex)
@@ -358,8 +359,10 @@ public class NYTAuthService : INYTAuthService
             var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
 
-            _logger.LogInformation("Saved {Count} encrypted cookies (expires: {ExpiryDate})",
-                cookies.Count, storage.ExpiresAt);
+            _logger.LogInformation(
+                "Saved {Count} encrypted cookies (expires: {ExpiryDate})",
+                cookies.Count,
+                storage.ExpiresAt);
         }
         catch (Exception ex)
         {

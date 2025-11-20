@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;

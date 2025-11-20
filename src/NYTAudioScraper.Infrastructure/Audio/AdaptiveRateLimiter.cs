@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
@@ -27,6 +26,20 @@ public class AdaptiveRateLimiter
         _maxDelayMs = maxDelayMs;
         _currentDelayMs = minDelayMs;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Gets the current delay in milliseconds
+    /// </summary>
+    public int CurrentDelayMs
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _currentDelayMs;
+            }
+        }
     }
 
     /// <summary>
@@ -99,19 +112,5 @@ public class AdaptiveRateLimiter
         }
 
         _logger.LogInformation("Rate limiter reset to minimum delay: {Delay}ms", _minDelayMs);
-    }
-
-    /// <summary>
-    /// Gets the current delay in milliseconds
-    /// </summary>
-    public int CurrentDelayMs
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _currentDelayMs;
-            }
-        }
     }
 }

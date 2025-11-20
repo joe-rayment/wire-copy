@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
