@@ -31,6 +31,5 @@ else
       grep -v "ContextId.sys.mjs" | \
       grep -v "^\[GFX" | \
       grep -v "^[0-9]*[[:space:]]*firefox\[" | \
-      grep -v "TypeError.*NetworkError" | \
-      grep -v "Failed to fetch"
+      grep -v "TypeError.*NetworkError.*Failed to fetch"
 fi
