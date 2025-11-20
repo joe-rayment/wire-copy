@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 using Polly;
 

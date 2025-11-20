@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure.Persistence.Configurations;
@@ -23,16 +22,6 @@ public class AppDbContext : DbContext
     public DbSet<ScrapingSession> ScrapingSessions => Set<ScrapingSession>();
     public DbSet<AudioChapter> AudioChapters => Set<AudioChapter>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-
-        // Apply all entity configurations
-        modelBuilder.ApplyConfiguration(new ArticleConfiguration());
-        modelBuilder.ApplyConfiguration(new ScrapingSessionConfiguration());
-        modelBuilder.ApplyConfiguration(new AudioChapterConfiguration());
-    }
-
     /// <summary>
     /// Ensures the database is created and migrations are applied
     /// </summary>
@@ -52,5 +41,15 @@ public class AppDbContext : DbContext
 
         // Apply migrations
         await Database.MigrateAsync(cancellationToken);
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Apply all entity configurations
+        modelBuilder.ApplyConfiguration(new ArticleConfiguration());
+        modelBuilder.ApplyConfiguration(new ScrapingSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new AudioChapterConfiguration());
     }
 }

@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 namespace NYTAudioScraper.Infrastructure.Configuration;
 
 public class BrowserConfiguration

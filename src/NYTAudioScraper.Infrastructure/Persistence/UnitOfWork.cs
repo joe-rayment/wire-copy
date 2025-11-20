@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -104,6 +103,13 @@ public class UnitOfWork : IUnitOfWork
         GC.SuppressFinalize(this);
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (!_disposed && disposing)
@@ -113,13 +119,6 @@ public class UnitOfWork : IUnitOfWork
             _transaction?.Dispose();
             _disposed = true;
         }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await DisposeAsyncCore().ConfigureAwait(false);
-        Dispose(false);
-        GC.SuppressFinalize(this);
     }
 
     protected virtual async ValueTask DisposeAsyncCore()

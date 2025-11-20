@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 
@@ -13,9 +12,9 @@ namespace NYTAudioScraper.Infrastructure.Storage;
 /// </summary>
 public class LocalFileStorage : IFileStorage
 {
+    private const long MinimumFreeDiskSpaceBytes = 100 * 1024 * 1024; // 100 MB minimum
     private readonly ILogger<LocalFileStorage> _logger;
     private readonly string _outputDirectory;
-    private const long MinimumFreeDiskSpaceBytes = 100 * 1024 * 1024; // 100 MB minimum
 
     public LocalFileStorage(ILogger<LocalFileStorage> logger)
     {
@@ -138,6 +137,29 @@ public class LocalFileStorage : IFileStorage
         }
     }
 
+    private static string SanitizeFileName(string fileName)
+    {
+        // Remove path traversal attempts
+        var sanitized = Path.GetFileName(fileName);
+
+        // Remove invalid characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        foreach (var c in invalidChars)
+        {
+            sanitized = sanitized.Replace(c, '_');
+        }
+
+        // Ensure filename is not too long (max 255 chars on most systems)
+        if (sanitized.Length > 255)
+        {
+            var extension = Path.GetExtension(sanitized);
+            var nameWithoutExtension = Path.GetFileNameWithoutExtension(sanitized);
+            sanitized = nameWithoutExtension.Substring(0, 255 - extension.Length) + extension;
+        }
+
+        return sanitized;
+    }
+
     private void EnsureDirectoryExists(string directoryPath)
     {
         try
@@ -171,36 +193,15 @@ public class LocalFileStorage : IFileStorage
                 throw new InvalidOperationException(errorMessage);
             }
 
-            _logger.LogDebug("Disk space check passed. Available: {AvailableSpace:N0} bytes, Required: {RequiredBytes:N0} bytes",
-                availableSpace, requiredBytes);
+            _logger.LogDebug(
+                "Disk space check passed. Available: {AvailableSpace:N0} bytes, Required: {RequiredBytes:N0} bytes",
+                availableSpace,
+                requiredBytes);
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
             // If we can't check disk space (e.g., on some platforms), log warning but continue
             _logger.LogWarning(ex, "Unable to validate disk space, continuing anyway");
         }
-    }
-
-    private static string SanitizeFileName(string fileName)
-    {
-        // Remove path traversal attempts
-        var sanitized = Path.GetFileName(fileName);
-
-        // Remove invalid characters
-        var invalidChars = Path.GetInvalidFileNameChars();
-        foreach (var c in invalidChars)
-        {
-            sanitized = sanitized.Replace(c, '_');
-        }
-
-        // Ensure filename is not too long (max 255 chars on most systems)
-        if (sanitized.Length > 255)
-        {
-            var extension = Path.GetExtension(sanitized);
-            var nameWithoutExtension = Path.GetFileNameWithoutExtension(sanitized);
-            sanitized = nameWithoutExtension.Substring(0, 255 - extension.Length) + extension;
-        }
-
-        return sanitized;
     }
 }

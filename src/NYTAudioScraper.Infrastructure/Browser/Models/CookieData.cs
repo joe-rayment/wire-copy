@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 namespace NYTAudioScraper.Infrastructure.Browser.Models;
 
 /// <summary>

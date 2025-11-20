@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;

@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
 
@@ -28,14 +27,24 @@ public class RateLimiter : IRateLimiter
     public RateLimiter(int maxConcurrency, int minDelayMs, ILogger<RateLimiter> logger)
     {
         if (maxConcurrency <= 0)
+        {
             throw new ArgumentException("Max concurrency must be greater than 0", nameof(maxConcurrency));
+        }
+
         if (minDelayMs < 0)
+        {
             throw new ArgumentException("Min delay cannot be negative", nameof(minDelayMs));
+        }
 
         _semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         _minDelayMs = minDelayMs;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// Gets the current number of available slots
+    /// </summary>
+    public int AvailableSlots => _semaphore.CurrentCount;
 
     /// <summary>
     /// Acquires the rate limiter, blocking until a slot is available
@@ -97,10 +106,11 @@ public class RateLimiter : IRateLimiter
         }
     }
 
-    /// <summary>
-    /// Gets the current number of available slots
-    /// </summary>
-    public int AvailableSlots => _semaphore.CurrentCount;
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
 
     protected virtual void Dispose(bool disposing)
     {
@@ -108,11 +118,5 @@ public class RateLimiter : IRateLimiter
         {
             _semaphore?.Dispose();
         }
-    }
-
-    public void Dispose()
-    {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
     }
 }

@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using System.Net.Http;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;

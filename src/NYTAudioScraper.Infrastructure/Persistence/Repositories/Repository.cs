@@ -2,7 +2,6 @@
 // Educational and personal use only.
 // </copyright>
 
-
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;
