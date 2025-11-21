@@ -655,9 +655,9 @@ public class Program
         if (options.ScrapeOnly)
         {
             Log.Information("");
-            Log.Information("📝 Scrape-only mode enabled - skipping audio generation");
-            Log.Information("   Articles successfully scraped and saved to database");
-            Log.Information("   Use without --scrape-only flag to generate audio");
+            Log.Information("Scrape-only mode enabled - skipping audio generation");
+            Log.Information("Articles successfully scraped and saved to database");
+            Log.Information("Use without --scrape-only flag to generate audio");
             return;
         }
 
