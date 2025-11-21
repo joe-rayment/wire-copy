@@ -651,6 +651,16 @@ public class Program
             newArticleCount,
             existingArticleCount);
 
+        // Check if user wants to skip audio generation (for testing scraping only)
+        if (options.ScrapeOnly)
+        {
+            Log.Information("");
+            Log.Information("📝 Scrape-only mode enabled - skipping audio generation");
+            Log.Information("   Articles successfully scraped and saved to database");
+            Log.Information("   Use without --scrape-only flag to generate audio");
+            return;
+        }
+
         // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
         Log.Information("Step 2: Generating audio files (parallel processing)...");

@@ -42,6 +42,9 @@ public class CommandOptions
     [Option("import-cookies", Required = false, HelpText = "Import cookies from a JSON file (e.g., --import-cookies ~/nyt-cookies.json)")]
     public string? ImportCookiesPath { get; set; }
 
+    [Option("scrape-only", Required = false, Default = false, HelpText = "Only scrape articles without generating audio (for testing)")]
+    public bool ScrapeOnly { get; set; }
+
     /// <summary>
     /// Validates the command options and returns validation errors if any
     /// </summary>

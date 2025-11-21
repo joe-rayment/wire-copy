@@ -23,11 +23,7 @@ public class ScraperService : IScraperService
     private readonly IArticleParser _articleParser;
     private readonly IArticleCache _articleCache;
     private readonly ILogger<ScraperService> _logger;
-    private readonly Random _random = new Random();
     private string? _currentBrowserType;
-
-    // Minimum page source length to consider valid (not a blocking page)
-    private const int MinimumPageSourceLength = 500;
 
     public ScraperService(
         IOptions<NYTConfiguration> nytConfig,
@@ -205,7 +201,7 @@ public class ScraperService : IScraperService
 #pragma warning restore S6966
 
                     // Human-like behavior: random delay 3-7 seconds
-                    var humanDelay = _random.Next(3000, 7000);
+                    var humanDelay = Random.Shared.Next(3000, 7000);
                     _logger.LogDebug("Waiting {DelayMs}ms before parsing (simulating reading)", humanDelay);
                     await Task.Delay(humanDelay, cancellationToken);
 
@@ -213,9 +209,9 @@ public class ScraperService : IScraperService
                     try
                     {
                         ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, 500);");
-                        await Task.Delay(_random.Next(500, 1500), cancellationToken);
+                        await Task.Delay(Random.Shared.Next(500, 1500), cancellationToken);
                         ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, document.body.scrollHeight / 2);");
-                        await Task.Delay(_random.Next(800, 2000), cancellationToken);
+                        await Task.Delay(Random.Shared.Next(800, 2000), cancellationToken);
                     }
                     catch (Exception scrollEx)
                     {
@@ -306,65 +302,6 @@ public class ScraperService : IScraperService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error waiting for page load, but continuing anyway");
-        }
-    }
-
-    private bool IsBlocked(IWebDriver driver)
-    {
-        try
-        {
-            var pageSource = driver.PageSource;
-            var currentUrl = driver.Url;
-
-            // Check for common blocking indicators
-            var blockingIndicators = new[]
-            {
-                "captcha",
-                "challenge",
-                "access denied",
-                "blocked",
-                "bot detection",
-                "unusual activity",
-                "automated access",
-                "datadome",
-                "perimeter", // PerimeterX
-                "cloudflare",
-                "security check",
-                "verify you are human",
-                "are you a robot"
-            };
-
-            foreach (var indicator in blockingIndicators)
-            {
-                if (pageSource.Contains(indicator, StringComparison.OrdinalIgnoreCase) ||
-                    currentUrl.Contains(indicator, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning("Bot detection triggered: Found '{Indicator}' in page", indicator);
-                    return true;
-                }
-            }
-
-            // Check for redirect to challenge pages
-            if (currentUrl.Contains("/challenge", StringComparison.OrdinalIgnoreCase) ||
-                currentUrl.Contains("/verify", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogWarning("Bot detection triggered: Redirected to challenge/verify page");
-                return true;
-            }
-
-            // Check if page is mostly empty (common with blocking)
-            if (pageSource.Length < MinimumPageSourceLength)
-            {
-                _logger.LogWarning("Bot detection triggered: Page source too short ({Length} chars)", pageSource.Length);
-                return true;
-            }
-
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error checking for blocking - assuming not blocked");
-            return false;
         }
     }
 
@@ -484,7 +421,9 @@ public class ScraperService : IScraperService
 
         // Set environment variables to suppress Firefox logging
         Environment.SetEnvironmentVariable("MOZ_LOG", "");
-        Environment.SetEnvironmentVariable("MOZ_LOG_FILE", "/dev/null");
+        // Use platform-specific null device: "NUL" on Windows, "/dev/null" on Unix
+        var nullDevice = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+        Environment.SetEnvironmentVariable("MOZ_LOG_FILE", nullDevice);
         Environment.SetEnvironmentVariable("NSPR_LOG_MODULES", "");
 
         // Redirect stderr to null to suppress console.error/console.warn from Firefox
