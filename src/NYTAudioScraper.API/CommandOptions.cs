@@ -136,6 +136,12 @@ public class CommandOptions
             }
         }
 
+        // Validate conflicting options
+        if (ScrapeOnly && TestMode)
+        {
+            errors.Add("Cannot use --scrape-only with --test. Test mode already skips audio generation.");
+        }
+
         return errors;
     }
 }
