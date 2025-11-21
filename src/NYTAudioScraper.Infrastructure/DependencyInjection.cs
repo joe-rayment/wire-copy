@@ -168,6 +168,7 @@ public static class DependencyInjection
         services.AddSingleton<IAudioProcessor, AudioProcessor>();
         services.AddSingleton<IChapterMarker, ChapterMarker>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<CookieImporter>(); // Singleton for cookie management
 
         return services;
     }
