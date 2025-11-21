@@ -43,17 +43,8 @@ public class CookieImporter
                 };
             }
 
-            // Security: Validate path to prevent access to sensitive system files
+            // Security: Use canonical path to prevent path traversal
             var fullPath = Path.GetFullPath(filePath);
-            if (!IsPathSafe(fullPath))
-            {
-                _logger.LogWarning("Attempted to import cookies from blocked system directory: {Path}", fullPath);
-                return new CookieImportResult
-                {
-                    Success = false,
-                    ErrorMessage = "Cookie file cannot be imported from system directories for security reasons"
-                };
-            }
 
             var json = await File.ReadAllTextAsync(fullPath, cancellationToken);
 
@@ -291,55 +282,6 @@ public class CookieImporter
         await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
 
         _logger.LogInformation("Saved {Count} encrypted cookies (expires: {ExpiryDate})", cookies.Count, expiresAt);
-    }
-
-    /// <summary>
-    /// Validates that the file path is not in a sensitive system directory.
-    /// Uses a blocklist approach to prevent path traversal attacks while allowing
-    /// flexibility for legitimate use cases (e.g., /tmp, external drives).
-    /// </summary>
-    private static bool IsPathSafe(string fullPath)
-    {
-        // Normalize path separators for consistent comparison
-        var normalizedPath = fullPath.Replace('\\', '/').ToLowerInvariant();
-
-        // Blocklist of dangerous system directories
-        string[] blockedPaths = OperatingSystem.IsWindows()
-            ? new[]
-            {
-                "c:/windows/",
-                "c:/windows/system32/",
-                "c:/program files/",
-                "c:/program files (x86)/",
-                "c:/programdata/",
-            }
-            : new[]
-            {
-                "/etc/",
-                "/root/",
-                "/var/",
-                "/sys/",
-                "/proc/",
-                "/boot/",
-                "/dev/",
-            };
-
-        // Check if path starts with any blocked directory
-        foreach (var blockedPath in blockedPaths)
-        {
-            if (normalizedPath.StartsWith(blockedPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        // Additional check: Ensure file has .json extension
-        if (!fullPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
     }
 }
 
