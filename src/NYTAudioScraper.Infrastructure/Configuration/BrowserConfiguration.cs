@@ -11,7 +11,18 @@ public class BrowserConfiguration
     public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
     public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
     public bool Headless { get; init; } = true;
+
+    /// <summary>
+    /// Implicit wait timeout in seconds. NYT pages with heavy JavaScript and dynamic content
+    /// require longer waits. Recommended: 30+ seconds for reliable element detection.
+    /// </summary>
     public int ImplicitWaitSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// Page load timeout in seconds. NYT pages can be very slow to fully load, especially with
+    /// images disabled and extensive JavaScript processing. Setting to 300 seconds (5 minutes)
+    /// prevents false timeouts while waiting for document.readyState to complete.
+    /// </summary>
     public int PageLoadTimeoutSeconds { get; init; } = 30;
     public bool DisableImages { get; init; } = true;
     public bool DisableJavaScript { get; init; } = false;

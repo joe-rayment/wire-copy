@@ -43,17 +43,16 @@ public class CookieImporter
                 };
             }
 
-            // Security: Validate path to prevent path traversal attacks
+            // Security: Validate path is in allowed directory and not a symlink
             var fullPath = Path.GetFullPath(filePath);
-            var userDirectory = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-
-            if (!fullPath.StartsWith(userDirectory, StringComparison.OrdinalIgnoreCase))
+            var pathValidation = ValidateCookieFilePath(fullPath);
+            if (!pathValidation.IsValid)
             {
-                _logger.LogWarning("Attempted to import cookies from outside user directory: {Path}", fullPath);
+                _logger.LogWarning("Rejected cookie import from disallowed path: {FilePath}", filePath);
                 return new CookieImportResult
                 {
                     Success = false,
-                    ErrorMessage = "Cookie file must be located in your user directory for security reasons"
+                    ErrorMessage = pathValidation.ErrorMessage ?? "Cookie file path is not allowed"
                 };
             }
 
@@ -256,6 +255,64 @@ public class CookieImporter
             _logger.LogError(ex, "Error clearing cookies");
             return Task.FromResult(false);
         }
+    }
+
+    private (bool IsValid, string? ErrorMessage) ValidateCookieFilePath(string fullPath)
+    {
+        // Security: Whitelist approach - only allow cookie imports from safe directories
+        // This prevents reading sensitive system files like /etc/passwd, /root/.ssh/*, etc.
+
+        // Check if file is a symlink (security risk - could point to sensitive files)
+        var fileInfo = new FileInfo(fullPath);
+        if (fileInfo.Exists && fileInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            return (false, "Symbolic links are not allowed for security reasons");
+        }
+
+        // Define allowed base directories (whitelist)
+        var allowedDirectories = new List<string>
+        {
+            // User's home directory and common subdirectories
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+
+            // Downloads folder (platform-specific handling)
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
+
+            // System temp directory (safe for temporary cookie exports)
+            Path.GetTempPath(),
+
+            // Current working directory (for development/testing)
+            Directory.GetCurrentDirectory(),
+        };
+
+        // On macOS/Linux, also allow common external mount points
+        if (!OperatingSystem.IsWindows())
+        {
+            allowedDirectories.Add("/Volumes"); // macOS external drives
+            allowedDirectories.Add("/media");   // Linux external drives
+            allowedDirectories.Add("/mnt");     // Linux mount points
+        }
+
+        // Normalize all paths for comparison (handles trailing slashes, etc.)
+        var normalizedPath = Path.GetFullPath(fullPath);
+        var normalizedAllowedDirs = allowedDirectories
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Select(Path.GetFullPath)
+            .ToList();
+
+        // Check if file path starts with any allowed directory
+        var isInAllowedDirectory = normalizedAllowedDirs.Any(allowedDir =>
+            normalizedPath.StartsWith(allowedDir, StringComparison.Ordinal));
+
+        if (!isInAllowedDirectory)
+        {
+            return (false, "Cookie file must be in user directories (Home, Downloads, Documents, Desktop, or /tmp). " +
+                           "For security, system directories are not allowed.");
+        }
+
+        return (true, null);
     }
 
     private async Task SaveCookiesAsync(List<CookieData> cookies, DateTime expiresAt, CancellationToken cancellationToken)

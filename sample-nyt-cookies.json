@@ -1,6 +1,5 @@
 [
   {
-    "_comment": "⚠️  SECURITY WARNING: This is a SAMPLE file. DO NOT commit real auth cookies!",
     "Name": "NYT-S",
     "Value": "sample-auth-token-12345-REPLACE-WITH-REAL-VALUE",
     "Domain": ".nytimes.com",
@@ -8,7 +7,6 @@
     "Expiry": "2026-01-01T00:00:00Z"
   },
   {
-    "_comment": "Real cookies grant access to your NYT account. Treat them like passwords!",
     "Name": "nyt-a",
     "Value": "sample-session-id-REPLACE-WITH-REAL-VALUE",
     "Domain": ".nytimes.com",
