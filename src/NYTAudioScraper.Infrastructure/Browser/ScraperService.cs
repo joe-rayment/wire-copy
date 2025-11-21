@@ -11,6 +11,7 @@ using NYTAudioScraper.Infrastructure.Parsing;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
+using OpenQA.Selenium.Support.UI;
 
 namespace NYTAudioScraper.Infrastructure.Browser;
 
@@ -168,44 +169,19 @@ public class ScraperService : IScraperService
 #pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl(todaysPaperUrl);
 #pragma warning restore S6966
-            await Task.Delay(3000, cancellationToken);
 
-            // Check if we're blocked
-            if (IsBlocked(driver))
-            {
-                _logger.LogWarning("🚫 Bot detection triggered with {Browser}. Switching to fallback browser: {Fallback}",
-                    _currentBrowserType,
-                    _browserConfig.FallbackBrowserType);
+            // Wait for page to fully load - be patient!
+            _logger.LogInformation("Waiting for page to fully load (this may take a while)...");
+            await WaitForPageLoad(driver, cancellationToken);
+            _logger.LogInformation("✓ Page loaded successfully");
 
-                driver?.Dispose();
-
-                // Try with fallback browser
-                driver = CreateWebDriver(useFallback: true);
-
-                // Re-authenticate with new browser
-                authenticated = await _authService.AuthenticateAsync(driver, cancellationToken);
-                if (!authenticated)
-                {
-                    _logger.LogWarning("Authentication failed with fallback browser, continuing without authentication");
-                }
-
-                _logger.LogInformation("Navigating to {Url} with fallback browser", todaysPaperUrl);
-#pragma warning disable S6966
-                driver.Navigate().GoToUrl(todaysPaperUrl);
-#pragma warning restore S6966
-                await Task.Delay(3000, cancellationToken);
-
-                // Check again if still blocked
-                if (IsBlocked(driver))
-                {
-                    _logger.LogError("🚫 Still blocked after fallback browser. Both {Primary} and {Fallback} browsers are blocked",
-                        _browserConfig.BrowserType,
-                        _browserConfig.FallbackBrowserType);
-                    return Enumerable.Empty<Article>();
-                }
-
-                _logger.LogInformation("✓ Successfully bypassed blocking with {Browser}", _currentBrowserType);
-            }
+            // DISABLED: Premature blocking detection was causing false positives
+            // The page takes time to load and we should be patient
+            // if (IsBlocked(driver))
+            // {
+            //     _logger.LogWarning("🚫 Bot detection triggered...");
+            //     ... fallback logic ...
+            // }
 
             // Extract article URLs from specified sections
             var articleUrls = ExtractArticleUrlsFromSections(driver, maxArticles, sections);
@@ -298,6 +274,39 @@ public class ScraperService : IScraperService
             "chrome" => CreateChromeDriver(),
             _ => throw new InvalidOperationException($"Unsupported browser type: {browserType}. Supported types: Chrome, Firefox")
         };
+    }
+
+    private async Task WaitForPageLoad(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Wait for document.readyState to be 'complete'
+            var wait = new WebDriverWait(driver, TimeSpan.FromMinutes(5));
+
+            _logger.LogDebug("Waiting for document.readyState = 'complete'...");
+            wait.Until(d =>
+            {
+                var readyState = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState")?.ToString();
+                return readyState == "complete";
+            });
+
+            // Give it an extra moment for any dynamic content to settle
+            _logger.LogDebug("Document ready, waiting for content to settle...");
+            await Task.Delay(5000, cancellationToken);
+
+            // Log page info for debugging
+            var pageSource = driver.PageSource;
+            var url = driver.Url;
+            _logger.LogDebug("Page loaded: URL={Url}, PageLength={Length} chars", url, pageSource.Length);
+        }
+        catch (WebDriverTimeoutException ex)
+        {
+            _logger.LogWarning(ex, "Timeout waiting for page load, but continuing anyway");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error waiting for page load, but continuing anyway");
+        }
     }
 
     private bool IsBlocked(IWebDriver driver)
