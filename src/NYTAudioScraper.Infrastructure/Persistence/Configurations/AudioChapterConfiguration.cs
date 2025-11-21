@@ -1,6 +1,4 @@
-// <copyright file="AudioChapterConfiguration.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -9,7 +7,7 @@ using NYTAudioScraper.Domain.Entities;
 namespace NYTAudioScraper.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// Entity Framework Core configuration for AudioChapter entity
+/// Entity Framework Core configuration for AudioChapter entity.
 /// </summary>
 public class AudioChapterConfiguration : IEntityTypeConfiguration<AudioChapter>
 {

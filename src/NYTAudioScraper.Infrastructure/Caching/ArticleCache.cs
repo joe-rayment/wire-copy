@@ -1,6 +1,4 @@
-// <copyright file="ArticleCache.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -10,7 +8,7 @@ using NYTAudioScraper.Domain.Entities;
 namespace NYTAudioScraper.Infrastructure.Caching;
 
 /// <summary>
-/// Two-tier article cache: Memory (L1) + Database (L2)
+/// Two-tier article cache: Memory (L1) + Database (L2).
 /// </summary>
 public class ArticleCache : IArticleCache
 {
@@ -100,6 +98,7 @@ public class ArticleCache : IArticleCache
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             }
+
             throw;
         }
     }
@@ -140,6 +139,7 @@ public class ArticleCache : IArticleCache
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             }
+
             throw;
         }
     }
@@ -180,6 +180,7 @@ public class ArticleCache : IArticleCache
         {
             HitCount = _hitCount,
             MissCount = _missCount,
+
             // Note: Cannot get accurate count from IMemoryCache without tracking separately
             MemoryCacheCount = 0,
             DatabaseCacheCount = 0 // Would require separate query

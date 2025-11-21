@@ -1,6 +1,4 @@
-// <copyright file="PerformanceMetrics.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -8,7 +6,7 @@ using System.Diagnostics;
 namespace NYTAudioScraper.Infrastructure.Metrics;
 
 /// <summary>
-/// Tracks performance metrics for operations
+/// Tracks performance metrics for operations.
 /// </summary>
 public class PerformanceMetrics
 {
@@ -16,17 +14,17 @@ public class PerformanceMetrics
     private readonly ConcurrentDictionary<string, long> _counters = new();
 
     /// <summary>
-    /// Measures the execution time of an operation
+    /// Measures the execution time of an operation.
     /// </summary>
-    /// <param name="operation">Operation name</param>
-    /// <returns>Disposable scope that records timing on disposal</returns>
+    /// <param name="operation">Operation name.</param>
+    /// <returns>Disposable scope that records timing on disposal.</returns>
     public IDisposable Measure(string operation)
     {
         return new MetricScope(this, operation);
     }
 
     /// <summary>
-    /// Records a timing manually
+    /// Records a timing manually.
     /// </summary>
     public void RecordTiming(string operation, TimeSpan duration)
     {
@@ -39,12 +37,13 @@ public class PerformanceMetrics
                 {
                     list.Add(duration);
                 }
+
                 return list;
             });
     }
 
     /// <summary>
-    /// Increments a counter
+    /// Increments a counter.
     /// </summary>
     public void Increment(string counter, long value = 1)
     {
@@ -52,8 +51,9 @@ public class PerformanceMetrics
     }
 
     /// <summary>
-    /// Gets a summary of all metrics
+    /// Gets a summary of all metrics.
     /// </summary>
+    /// <returns></returns>
     public MetricsSummary GetSummary()
     {
         var operations = new Dictionary<string, OperationMetrics>();

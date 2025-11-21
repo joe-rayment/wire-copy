@@ -1,6 +1,4 @@
-// <copyright file="AudioCache.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Security.Cryptography;
 using System.Text;
@@ -10,7 +8,7 @@ using NYTAudioScraper.Application.Interfaces;
 namespace NYTAudioScraper.Infrastructure.Caching;
 
 /// <summary>
-/// Disk-based audio cache using SHA256 content hashing
+/// Disk-based audio cache using SHA256 content hashing.
 /// </summary>
 public class AudioCache : IAudioCache
 {
@@ -124,7 +122,7 @@ public class AudioCache : IAudioCache
     }
 
     /// <summary>
-    /// Generates a cache key from content and voice ID using SHA256
+    /// Generates a cache key from content and voice ID using SHA256.
     /// </summary>
     private static string GenerateCacheKey(string content, string voiceId)
     {
@@ -134,7 +132,7 @@ public class AudioCache : IAudioCache
     }
 
     /// <summary>
-    /// Gets the full file path for a cache key
+    /// Gets the full file path for a cache key.
     /// </summary>
     private string GetCachePath(string cacheKey)
     {

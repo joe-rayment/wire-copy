@@ -1,13 +1,11 @@
-// <copyright file="BrowserConfigurationValidator.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Options;
 
 namespace NYTAudioScraper.Infrastructure.Configuration.Validation;
 
 /// <summary>
-/// Validates Browser configuration settings
+/// Validates Browser configuration settings.
 /// </summary>
 public class BrowserConfigurationValidator : IValidateOptions<BrowserConfiguration>
 {

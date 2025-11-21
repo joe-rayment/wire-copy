@@ -1,13 +1,11 @@
-// <copyright file="AdaptiveRateLimitHandler.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
 
 /// <summary>
-/// HTTP message handler that implements adaptive rate limiting
+/// HTTP message handler that implements adaptive rate limiting.
 /// </summary>
 public class AdaptiveRateLimitHandler : DelegatingHandler
 {

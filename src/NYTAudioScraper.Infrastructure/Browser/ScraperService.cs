@@ -1,6 +1,4 @@
-// <copyright file="ScraperService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -169,15 +167,7 @@ public class ScraperService : IScraperService
             // Wait for page to fully load - be patient!
             _logger.LogInformation("Waiting for page to fully load (this may take a while)...");
             await WaitForPageLoad(driver, cancellationToken);
-            _logger.LogInformation("✓ Page loaded successfully");
-
-            // DISABLED: Premature blocking detection was causing false positives
-            // The page takes time to load and we should be patient
-            // if (IsBlocked(driver))
-            // {
-            //     _logger.LogWarning("🚫 Bot detection triggered...");
-            //     ... fallback logic ...
-            // }
+            _logger.LogInformation("Page loaded successfully");
 
             // Extract article URLs from specified sections
             var articleUrls = ExtractArticleUrlsFromSections(driver, maxArticles, sections);
@@ -420,11 +410,12 @@ public class ScraperService : IScraperService
         service.HideCommandPromptWindow = true;
 
         // Set environment variables to suppress Firefox logging
-        Environment.SetEnvironmentVariable("MOZ_LOG", "");
+        Environment.SetEnvironmentVariable("MOZ_LOG", string.Empty);
+
         // Use platform-specific null device: "NUL" on Windows, "/dev/null" on Unix
         var nullDevice = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
         Environment.SetEnvironmentVariable("MOZ_LOG_FILE", nullDevice);
-        Environment.SetEnvironmentVariable("NSPR_LOG_MODULES", "");
+        Environment.SetEnvironmentVariable("NSPR_LOG_MODULES", string.Empty);
 
         // Redirect stderr to null to suppress console.error/console.warn from Firefox
         var originalError = Console.Error;
@@ -516,7 +507,6 @@ public class ScraperService : IScraperService
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "Error processing section");
-                    continue;
                 }
             }
 

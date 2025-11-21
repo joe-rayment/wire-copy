@@ -1,6 +1,4 @@
-// <copyright file="DpapiCookieEncryptionService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
@@ -11,7 +9,7 @@ namespace NYTAudioScraper.Infrastructure.Security;
 
 /// <summary>
 /// Cookie encryption service using ASP.NET Core Data Protection API
-/// This provides cross-platform encryption support (Windows, Linux, macOS)
+/// This provides cross-platform encryption support (Windows, Linux, macOS).
 /// </summary>
 public class DpapiCookieEncryptionService : ICookieEncryptionService
 {

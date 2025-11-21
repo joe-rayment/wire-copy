@@ -1,6 +1,4 @@
-// <copyright file="FFmpegHealthCheck.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Diagnostics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -9,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace NYTAudioScraper.Infrastructure.Health;
 
 /// <summary>
-/// Health check to verify FFmpeg is installed and accessible
+/// Health check to verify FFmpeg is installed and accessible.
 /// </summary>
 public class FFmpegHealthCheck : IHealthCheck
 {

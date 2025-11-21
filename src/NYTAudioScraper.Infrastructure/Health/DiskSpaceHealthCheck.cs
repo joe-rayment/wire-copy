@@ -1,6 +1,4 @@
-// <copyright file="DiskSpaceHealthCheck.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -8,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace NYTAudioScraper.Infrastructure.Health;
 
 /// <summary>
-/// Health check to verify sufficient disk space is available
+/// Health check to verify sufficient disk space is available.
 /// </summary>
 public class DiskSpaceHealthCheck : IHealthCheck
 {

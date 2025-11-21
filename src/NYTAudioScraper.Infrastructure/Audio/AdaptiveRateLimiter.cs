@@ -1,13 +1,11 @@
-// <copyright file="AdaptiveRateLimiter.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 
 namespace NYTAudioScraper.Infrastructure.Audio;
 
 /// <summary>
-/// Adaptive rate limiter that adjusts delays based on API response headers
+/// Adaptive rate limiter that adjusts delays based on API response headers.
 /// </summary>
 public class AdaptiveRateLimiter
 {
@@ -29,7 +27,7 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Gets the current delay in milliseconds
+    /// Gets the current delay in milliseconds.
     /// </summary>
     public int CurrentDelayMs
     {
@@ -43,8 +41,9 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Waits for the current delay period
+    /// Waits for the current delay period.
     /// </summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     public async Task WaitAsync(CancellationToken cancellationToken = default)
     {
         int delay;
@@ -58,9 +57,9 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Updates the delay based on Retry-After header
+    /// Updates the delay based on Retry-After header.
     /// </summary>
-    /// <param name="retryAfterSeconds">Retry-After header value in seconds</param>
+    /// <param name="retryAfterSeconds">Retry-After header value in seconds.</param>
     public void UpdateDelayFromRetryAfter(int retryAfterSeconds)
     {
         var newDelayMs = retryAfterSeconds * 1000;
@@ -76,7 +75,7 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Increases the delay when rate limited (exponential backoff)
+    /// Increases the delay when rate limited (exponential backoff).
     /// </summary>
     public void IncreaseDelay()
     {
@@ -89,7 +88,7 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Decreases the delay when successful (gradual recovery)
+    /// Decreases the delay when successful (gradual recovery).
     /// </summary>
     public void DecreaseDelay()
     {
@@ -102,7 +101,7 @@ public class AdaptiveRateLimiter
     }
 
     /// <summary>
-    /// Resets the delay to the minimum
+    /// Resets the delay to the minimum.
     /// </summary>
     public void Reset()
     {

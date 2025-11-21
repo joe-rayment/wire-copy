@@ -1,6 +1,4 @@
-// <copyright file="CookieImporter.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -98,7 +96,7 @@ public class CookieImporter
             }
 
             // Check for authentication cookies
-            var hasAuthCookie = nytCookies.Any(c =>
+            var hasAuthCookie = nytCookies.Exists(c =>
                 c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
                 c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
 
@@ -198,7 +196,7 @@ public class CookieImporter
                 };
             }
 
-            var hasAuthCookie = cookies.Any(c =>
+            var hasAuthCookie = cookies.Exists(c =>
                 c.Name.Contains("NYT-S", StringComparison.OrdinalIgnoreCase) ||
                 c.Name.Contains("nyt-auth-method", StringComparison.OrdinalIgnoreCase));
 
@@ -257,7 +255,7 @@ public class CookieImporter
         }
     }
 
-    private (bool IsValid, string? ErrorMessage) ValidateCookieFilePath(string fullPath)
+    private static (bool IsValid, string? ErrorMessage) ValidateCookieFilePath(string fullPath)
     {
         // Security: Whitelist approach - only allow cookie imports from safe directories
         // This prevents reading sensitive system files like /etc/passwd, /root/.ssh/*, etc.
@@ -303,7 +301,7 @@ public class CookieImporter
             .ToList();
 
         // Check if file path starts with any allowed directory
-        var isInAllowedDirectory = normalizedAllowedDirs.Any(allowedDir =>
+        var isInAllowedDirectory = normalizedAllowedDirs.Exists(allowedDir =>
             normalizedPath.StartsWith(allowedDir, StringComparison.Ordinal));
 
         if (!isInAllowedDirectory)
@@ -356,21 +354,33 @@ public class CookieImporter
 public class CookieImportResult
 {
     public bool Success { get; set; }
+
     public string? ErrorMessage { get; set; }
+
     public int CookieCount { get; set; }
+
     public bool HasAuthCookie { get; set; }
+
     public DateTime? ExpiresAt { get; set; }
+
     public int DaysUntilExpiration { get; set; }
 }
 
 public class CookieInfoResult
 {
     public bool HasCookies { get; set; }
+
     public int CookieCount { get; set; }
+
     public bool HasAuthCookie { get; set; }
+
     public DateTime? CreatedAt { get; set; }
+
     public DateTime? ExpiresAt { get; set; }
+
     public int DaysUntilExpiration { get; set; }
+
     public bool IsExpired { get; set; }
+
     public string? Message { get; set; }
 }

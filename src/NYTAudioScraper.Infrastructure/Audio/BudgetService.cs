@@ -1,6 +1,4 @@
-// <copyright file="BudgetService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -19,7 +17,9 @@ public class BudgetService : IBudgetService
     }
 
     public decimal MaxBudget { get; set; } = 10.0m; // Default $10 budget
+
     public decimal TotalSpent => _totalSpent;
+
     public decimal RemainingBudget => MaxBudget - _totalSpent;
 
     public bool CanAfford(decimal estimatedCost)

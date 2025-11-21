@@ -1,6 +1,4 @@
-// <copyright file="DatabaseHealthCheck.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -10,7 +8,7 @@ using NYTAudioScraper.Infrastructure.Persistence;
 namespace NYTAudioScraper.Infrastructure.Health;
 
 /// <summary>
-/// Health check to verify database connectivity and migrations
+/// Health check to verify database connectivity and migrations.
 /// </summary>
 public class DatabaseHealthCheck : IHealthCheck
 {
