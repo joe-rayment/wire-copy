@@ -39,6 +39,9 @@ public class CommandOptions
     [Option("clear-cookies", Required = false, Default = false, HelpText = "Clear all stored cookies")]
     public bool ClearCookies { get; set; }
 
+    [Option("import-cookies", Required = false, HelpText = "Import cookies from a JSON file (e.g., --import-cookies ~/nyt-cookies.json)")]
+    public string? ImportCookiesPath { get; set; }
+
     /// <summary>
     /// Validates the command options and returns validation errors if any
     /// </summary>
@@ -114,6 +117,19 @@ public class CommandOptions
             if (VoiceId.Length > 100 || VoiceId.Any(c => !char.IsLetterOrDigit(c) && c != '-' && c != '_'))
             {
                 errors.Add($"Invalid voice ID format: '{VoiceId}'. Must contain only alphanumeric characters, hyphens, and underscores.");
+            }
+        }
+
+        // Validate ImportCookiesPath if provided
+        if (!string.IsNullOrWhiteSpace(ImportCookiesPath))
+        {
+            if (!File.Exists(ImportCookiesPath))
+            {
+                errors.Add($"Cookie file not found: '{ImportCookiesPath}'");
+            }
+            else if (!ImportCookiesPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Cookie file must be a JSON file (.json): '{ImportCookiesPath}'");
             }
         }
 

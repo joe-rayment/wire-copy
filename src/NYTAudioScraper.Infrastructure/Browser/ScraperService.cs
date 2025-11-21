@@ -10,6 +10,8 @@ using NYTAudioScraper.Infrastructure.Configuration;
 using NYTAudioScraper.Infrastructure.Parsing;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
+using OpenQA.Selenium.Firefox;
+using OpenQA.Selenium.Support.UI;
 
 namespace NYTAudioScraper.Infrastructure.Browser;
 
@@ -21,6 +23,11 @@ public class ScraperService : IScraperService
     private readonly IArticleParser _articleParser;
     private readonly IArticleCache _articleCache;
     private readonly ILogger<ScraperService> _logger;
+    private readonly Random _random = new Random();
+    private string? _currentBrowserType;
+
+    // Minimum page source length to consider valid (not a blocking page)
+    private const int MinimumPageSourceLength = 500;
 
     public ScraperService(
         IOptions<NYTConfiguration> nytConfig,
@@ -55,7 +62,6 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
@@ -130,7 +136,6 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
@@ -146,6 +151,7 @@ public class ScraperService : IScraperService
             string.Join(", ", sections));
 
         IWebDriver? driver = null;
+
         try
         {
             driver = CreateWebDriver();
@@ -163,7 +169,19 @@ public class ScraperService : IScraperService
 #pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
             driver.Navigate().GoToUrl(todaysPaperUrl);
 #pragma warning restore S6966
-            await Task.Delay(3000, cancellationToken);
+
+            // Wait for page to fully load - be patient!
+            _logger.LogInformation("Waiting for page to fully load (this may take a while)...");
+            await WaitForPageLoad(driver, cancellationToken);
+            _logger.LogInformation("✓ Page loaded successfully");
+
+            // DISABLED: Premature blocking detection was causing false positives
+            // The page takes time to load and we should be patient
+            // if (IsBlocked(driver))
+            // {
+            //     _logger.LogWarning("🚫 Bot detection triggered...");
+            //     ... fallback logic ...
+            // }
 
             // Extract article URLs from specified sections
             var articleUrls = ExtractArticleUrlsFromSections(driver, maxArticles, sections);
@@ -185,7 +203,24 @@ public class ScraperService : IScraperService
 #pragma warning disable S6966 // Selenium WebDriver 4.26.1 does not provide async navigation methods
                     driver.Navigate().GoToUrl(url);
 #pragma warning restore S6966
-                    await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
+
+                    // Human-like behavior: random delay 3-7 seconds
+                    var humanDelay = _random.Next(3000, 7000);
+                    _logger.LogDebug("Waiting {DelayMs}ms before parsing (simulating reading)", humanDelay);
+                    await Task.Delay(humanDelay, cancellationToken);
+
+                    // Simulate scrolling behavior
+                    try
+                    {
+                        ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, 500);");
+                        await Task.Delay(_random.Next(500, 1500), cancellationToken);
+                        ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, document.body.scrollHeight / 2);");
+                        await Task.Delay(_random.Next(800, 2000), cancellationToken);
+                    }
+                    catch (Exception scrollEx)
+                    {
+                        _logger.LogDebug(scrollEx, "Error during scroll simulation (non-critical)");
+                    }
 
                     var pageSource = driver.PageSource;
                     var article = _articleParser.ParseArticle(pageSource, url);
@@ -216,12 +251,124 @@ public class ScraperService : IScraperService
         }
         finally
         {
-            driver?.Quit();
             driver?.Dispose();
         }
     }
 
-    private IWebDriver CreateWebDriver()
+    private IWebDriver CreateWebDriver(bool useFallback = false)
+    {
+        var browserType = useFallback
+            ? _browserConfig.FallbackBrowserType
+            : (_currentBrowserType ?? _browserConfig.BrowserType);
+
+        var browserTypeLower = browserType.ToLowerInvariant();
+        _currentBrowserType = browserType;
+
+        _logger.LogInformation("Creating WebDriver for browser: {BrowserType}{Fallback}",
+            browserType,
+            useFallback ? " (fallback)" : string.Empty);
+
+        return browserTypeLower switch
+        {
+            "firefox" => CreateFirefoxDriver(),
+            "chrome" => CreateChromeDriver(),
+            _ => throw new InvalidOperationException($"Unsupported browser type: {browserType}. Supported types: Chrome, Firefox")
+        };
+    }
+
+    private async Task WaitForPageLoad(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Wait for document.readyState to be 'complete'
+            var wait = new WebDriverWait(driver, TimeSpan.FromMinutes(5));
+
+            _logger.LogDebug("Waiting for document.readyState = 'complete'...");
+            wait.Until(d =>
+            {
+                var readyState = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState")?.ToString();
+                return readyState == "complete";
+            });
+
+            // Give it an extra moment for any dynamic content to settle
+            _logger.LogDebug("Document ready, waiting for content to settle...");
+            await Task.Delay(5000, cancellationToken);
+
+            // Log page info for debugging
+            var pageSource = driver.PageSource;
+            var url = driver.Url;
+            _logger.LogDebug("Page loaded: URL={Url}, PageLength={Length} chars", url, pageSource.Length);
+        }
+        catch (WebDriverTimeoutException ex)
+        {
+            _logger.LogWarning(ex, "Timeout waiting for page load, but continuing anyway");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error waiting for page load, but continuing anyway");
+        }
+    }
+
+    private bool IsBlocked(IWebDriver driver)
+    {
+        try
+        {
+            var pageSource = driver.PageSource;
+            var currentUrl = driver.Url;
+
+            // Check for common blocking indicators
+            var blockingIndicators = new[]
+            {
+                "captcha",
+                "challenge",
+                "access denied",
+                "blocked",
+                "bot detection",
+                "unusual activity",
+                "automated access",
+                "datadome",
+                "perimeter", // PerimeterX
+                "cloudflare",
+                "security check",
+                "verify you are human",
+                "are you a robot"
+            };
+
+            foreach (var indicator in blockingIndicators)
+            {
+                if (pageSource.Contains(indicator, StringComparison.OrdinalIgnoreCase) ||
+                    currentUrl.Contains(indicator, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Bot detection triggered: Found '{Indicator}' in page", indicator);
+                    return true;
+                }
+            }
+
+            // Check for redirect to challenge pages
+            if (currentUrl.Contains("/challenge", StringComparison.OrdinalIgnoreCase) ||
+                currentUrl.Contains("/verify", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Bot detection triggered: Redirected to challenge/verify page");
+                return true;
+            }
+
+            // Check if page is mostly empty (common with blocking)
+            if (pageSource.Length < MinimumPageSourceLength)
+            {
+                _logger.LogWarning("Bot detection triggered: Page source too short ({Length} chars)", pageSource.Length);
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking for blocking - assuming not blocked");
+            return false;
+        }
+    }
+
+    private IWebDriver CreateChromeDriver()
     {
         var options = new ChromeOptions();
 
@@ -231,9 +378,19 @@ public class ScraperService : IScraperService
         options.AddAdditionalOption("useAutomationExtension", false);
         options.AddArgument($"user-agent={_browserConfig.UserAgent}");
 
+        // Suppress Chrome logging
+        options.AddArgument("--log-level=3"); // Only fatal errors
+        options.AddArgument("--silent");
+
         if (_browserConfig.Headless)
         {
             options.AddArgument("--headless=new");
+            _logger.LogDebug("Running Chrome in headless mode");
+        }
+        else
+        {
+            options.AddArgument("--window-size=1400,900");
+            _logger.LogDebug("Running Chrome in headed mode");
         }
 
         if (_browserConfig.DisableImages)
@@ -241,12 +398,20 @@ public class ScraperService : IScraperService
             options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
         }
 
-        options.AddArgument("--no-sandbox");
-        options.AddArgument("--disable-dev-shm-usage");
-        options.AddArgument("--disable-gpu");
-        options.AddArgument("--window-size=1920,1080");
+        // Platform-specific flags (avoid flags that crash on macOS)
+        if (OperatingSystem.IsLinux())
+        {
+            options.AddArgument("--no-sandbox");
+            options.AddArgument("--disable-dev-shm-usage");
+            options.AddArgument("--disable-gpu");
+        }
 
-        var driver = new ChromeDriver(options);
+        // Create ChromeDriver service to suppress its output
+        var service = ChromeDriverService.CreateDefaultService();
+        service.SuppressInitialDiagnosticInformation = true;
+        service.HideCommandPromptWindow = true;
+
+        var driver = new ChromeDriver(service, options);
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
         driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
 
@@ -257,7 +422,94 @@ public class ScraperService : IScraperService
         ";
         ((IJavaScriptExecutor)driver).ExecuteScript(script);
 
+        _logger.LogDebug("Chrome driver created successfully");
         return driver;
+    }
+
+    private IWebDriver CreateFirefoxDriver()
+    {
+        var options = new FirefoxOptions();
+
+        // Anti-detection measures for Firefox
+        options.SetPreference("dom.webdriver.enabled", false);
+        options.SetPreference("useAutomationExtension", false);
+        options.SetPreference("general.useragent.override", _browserConfig.UserAgent);
+
+        // Suppress ALL console output from Firefox
+        options.SetPreference("devtools.console.stdout.content", false);
+        options.SetPreference("browser.dom.window.dump.enabled", false);
+        options.SetPreference("devtools.console.stderr.chrome", false);
+        options.SetPreference("browser.chrome.toolbar_tips", false);
+        options.SetPreference("browser.chrome.favicons", false);
+
+        // Additional logging suppression
+        options.SetPreference("extensions.logging.enabled", false);
+        options.SetPreference("network.cookie.cookieBehavior", 1); // Block third-party cookies to reduce noise
+        options.SetPreference("browser.safebrowsing.enabled", false);
+        options.SetPreference("browser.safebrowsing.malware.enabled", false);
+
+        // Suppress console errors from Firefox internals
+        options.SetPreference("devtools.console.log.level", "off");
+        options.SetPreference("browser.console.level", "off");
+        options.SetPreference("logging.console.enabled", false);
+
+        if (_browserConfig.Headless)
+        {
+            options.AddArgument("--headless");
+            _logger.LogDebug("Running Firefox in headless mode");
+        }
+        else
+        {
+            options.AddArgument("--width=1400");
+            options.AddArgument("--height=900");
+            _logger.LogDebug("Running Firefox in headed mode");
+        }
+
+        if (_browserConfig.DisableImages)
+        {
+            options.SetPreference("permissions.default.image", 2);
+        }
+
+        // Disable automation indicators
+        options.SetPreference("marionette", true);
+        options.SetPreference("dom.webnotifications.enabled", false);
+
+        // Suppress Firefox and geckodriver logging completely
+        options.LogLevel = FirefoxDriverLogLevel.Fatal;
+
+        // Create geckodriver service to suppress its output
+        var service = FirefoxDriverService.CreateDefaultService();
+        service.SuppressInitialDiagnosticInformation = true;
+        service.HideCommandPromptWindow = true;
+
+        // Set environment variables to suppress Firefox logging
+        Environment.SetEnvironmentVariable("MOZ_LOG", "");
+        Environment.SetEnvironmentVariable("MOZ_LOG_FILE", "/dev/null");
+        Environment.SetEnvironmentVariable("NSPR_LOG_MODULES", "");
+
+        // Redirect stderr to null to suppress console.error/console.warn from Firefox
+        var originalError = Console.Error;
+        try
+        {
+            Console.SetError(System.IO.TextWriter.Null);
+            var driver = new FirefoxDriver(service, options);
+
+            driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
+            driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
+
+            // Execute script to mask WebDriver detection
+            var script = @"
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            ";
+            ((IJavaScriptExecutor)driver).ExecuteScript(script);
+
+            _logger.LogDebug("Firefox driver created successfully");
+            return driver;
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
     }
 
     private List<string> ExtractArticleUrlsFromSections(IWebDriver driver, int maxArticles, string[] targetSections)

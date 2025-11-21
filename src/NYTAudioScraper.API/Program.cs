@@ -12,6 +12,7 @@ using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
 using NYTAudioScraper.Infrastructure.Audio;
+using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Metrics;
 using NYTAudioScraper.Infrastructure.Persistence;
 using Serilog;
@@ -78,6 +79,11 @@ public class Program
             return await HandleClearCookiesAsync(host.Services);
         }
 
+        if (!string.IsNullOrEmpty(options.ImportCookiesPath))
+        {
+            return await HandleImportCookiesAsync(host.Services, options.ImportCookiesPath);
+        }
+
         if (options.TestMode)
         {
             // Run existing test workflow
@@ -95,18 +101,18 @@ public class Program
 
     private static async Task<int> HandleCookieInfoAsync(IServiceProvider services)
     {
-        using var scope = services.CreateScope();
-        var scopedServices = scope.ServiceProvider;
-
         try
         {
-            var cookieManager = scopedServices.GetRequiredService<ICookieManager>();
-            var info = await cookieManager.GetCookieInfoAsync();
+            var cookieImporter = services.GetRequiredService<CookieImporter>();
+            var info = await cookieImporter.GetCookieInfoAsync();
 
-            if (info == null || !info.Exists)
+            if (!info.HasCookies)
             {
-                Log.Information("No cookies found");
-                Log.Information("Cookie file path: {Path}", info?.FilePath ?? "Unknown");
+                Log.Information("No cookies stored");
+                if (!string.IsNullOrEmpty(info.Message))
+                {
+                    Log.Information(info.Message);
+                }
                 return 0;
             }
 
@@ -114,34 +120,38 @@ public class Program
             Console.WriteLine("║        Cookie Information             ║");
             Console.WriteLine("╚═══════════════════════════════════════╝\n");
 
-            Console.WriteLine($"File Path:    {info.FilePath}");
-            Console.WriteLine($"Version:      v{info.Version} ({(info.IsEncrypted ? "Encrypted" : "Plain Text")})");
-            Console.WriteLine($"Created At:   {info.CreatedAt:yyyy-MM-dd HH:mm:ss UTC}");
+            Console.WriteLine($"Cookie Count:   {info.CookieCount}");
+            Console.WriteLine($"Auth Cookie:    {(info.HasAuthCookie ? "✓ Present" : "✗ Missing")}");
+
+            if (info.CreatedAt.HasValue)
+            {
+                Console.WriteLine($"Created At:     {info.CreatedAt:yyyy-MM-dd HH:mm:ss UTC}");
+            }
 
             if (info.ExpiresAt.HasValue)
             {
                 var expiryStatus = info.IsExpired ? "EXPIRED" : "Valid";
                 var expiryColor = info.IsExpired ? "❌" : "✓";
-                Console.WriteLine($"Expires At:   {info.ExpiresAt:yyyy-MM-dd HH:mm:ss UTC} ({expiryColor} {expiryStatus})");
+                Console.WriteLine($"Expires At:     {info.ExpiresAt:yyyy-MM-dd HH:mm:ss UTC} ({expiryColor} {expiryStatus})");
 
                 if (!info.IsExpired)
                 {
-                    var timeRemaining = info.ExpiresAt.Value - DateTime.UtcNow;
-                    Console.WriteLine($"Time Remaining: {timeRemaining.Days} days, {timeRemaining.Hours} hours");
+                    Console.WriteLine($"Time Remaining: {info.DaysUntilExpiration} days");
                 }
-            }
-
-            if (info.CookieCount.HasValue)
-            {
-                Console.WriteLine($"Cookie Count: {info.CookieCount}");
             }
 
             Console.WriteLine();
 
-            if (!info.IsEncrypted)
+            if (!info.HasAuthCookie)
             {
-                Log.Warning("⚠️  Cookies are stored in plain text (v1 format)");
-                Log.Warning("   They will be automatically migrated to encrypted format (v2) on next authentication");
+                Log.Warning("⚠️  No authentication cookies found");
+                Log.Warning("   You may need to re-import cookies to access subscriber content");
+            }
+
+            if (info.IsExpired)
+            {
+                Log.Warning("⚠️  Cookies have expired");
+                Log.Warning("   Please import fresh cookies using --import-cookies");
             }
 
             return 0;
@@ -155,12 +165,9 @@ public class Program
 
     private static async Task<int> HandleClearCookiesAsync(IServiceProvider services)
     {
-        using var scope = services.CreateScope();
-        var scopedServices = scope.ServiceProvider;
-
         try
         {
-            var cookieManager = scopedServices.GetRequiredService<ICookieManager>();
+            var cookieImporter = services.GetRequiredService<CookieImporter>();
 
             Console.Write("Are you sure you want to clear all stored cookies? (y/N): ");
             var response = Console.ReadLine();
@@ -171,12 +178,12 @@ public class Program
                 return 0;
             }
 
-            var cleared = await cookieManager.ClearCookiesAsync();
+            var cleared = await cookieImporter.ClearCookiesAsync();
 
             if (cleared)
             {
                 Log.Information("✓ Cookies cleared successfully");
-                Log.Information("  You will need to re-authenticate on the next run");
+                Log.Information("  You will need to import new cookies or re-authenticate on the next run");
             }
             else
             {
@@ -188,6 +195,58 @@ public class Program
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to clear cookies");
+            return 1;
+        }
+    }
+
+    private static async Task<int> HandleImportCookiesAsync(IServiceProvider services, string cookieFilePath)
+    {
+        try
+        {
+            var cookieImporter = services.GetRequiredService<CookieImporter>();
+
+            Log.Information("Importing cookies from: {FilePath}", cookieFilePath);
+
+            var result = await cookieImporter.ImportFromJsonAsync(cookieFilePath);
+
+            if (!result.Success)
+            {
+                Log.Error("Cookie import failed: {Error}", result.ErrorMessage);
+                return 1;
+            }
+
+            Console.WriteLine("\n╔═══════════════════════════════════════╗");
+            Console.WriteLine("║     Cookie Import Successful          ║");
+            Console.WriteLine("╚═══════════════════════════════════════╝\n");
+
+            Console.WriteLine($"Cookies Imported:  {result.CookieCount}");
+            Console.WriteLine($"Auth Cookie:       {(result.HasAuthCookie ? "✓ Present" : "✗ Missing")}");
+
+            if (result.ExpiresAt.HasValue)
+            {
+                Console.WriteLine($"Expires At:        {result.ExpiresAt:yyyy-MM-dd HH:mm:ss UTC}");
+                Console.WriteLine($"Time Remaining:    {result.DaysUntilExpiration} days");
+            }
+
+            Console.WriteLine();
+
+            if (result.HasAuthCookie)
+            {
+                Log.Information("✓ Authentication cookies found - you should be able to access subscriber content");
+                Log.Information("  Run the scraper with --skip-login to use these cookies without re-authenticating");
+            }
+            else
+            {
+                Log.Warning("⚠️  No authentication cookies detected");
+                Log.Warning("   Make sure you exported cookies after logging in to nytimes.com");
+                Log.Warning("   You may not be able to access subscriber-only content");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to import cookies");
             return 1;
         }
     }
@@ -487,6 +546,7 @@ public class Program
         var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
         var budgetService = scopedServices.GetRequiredService<IBudgetService>();
         var sessionRepo = scopedServices.GetRequiredService<IScrapingSessionRepository>();
+        var articleRepo = scopedServices.GetRequiredService<IArticleRepository>();
         var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
 
         // Set budget from command line
@@ -559,12 +619,37 @@ public class Program
         // Link articles to session for complete audit trail
         Log.Information("");
         Log.Information("Linking articles to session {SessionId}...", session.Id);
+        var newArticleCount = 0;
+        var existingArticleCount = 0;
+
         foreach (var article in articleList)
         {
-            session.Articles.Add(article);
+            // Check if article already exists in database
+            var existingArticle = await articleRepo.GetByIdAsync(article.Id);
+
+            if (existingArticle != null)
+            {
+                // Use existing article from database
+                session.Articles.Add(existingArticle);
+                existingArticleCount++;
+                Log.Debug("Using existing article: {Title}", existingArticle.Title);
+            }
+            else
+            {
+                // Add new article
+                await articleRepo.AddAsync(article);
+                session.Articles.Add(article);
+                newArticleCount++;
+                Log.Debug("Adding new article: {Title}", article.Title);
+            }
         }
+
         await unitOfWork.SaveChangesAsync();
-        Log.Information("✓ Linked {Count} articles to session", articleList.Count);
+        Log.Information(
+            "✓ Linked {Total} articles to session ({New} new, {Existing} existing)",
+            articleList.Count,
+            newArticleCount,
+            existingArticleCount);
 
         // Step 2: Generate audio for articles (parallel processing)
         Log.Information("");
