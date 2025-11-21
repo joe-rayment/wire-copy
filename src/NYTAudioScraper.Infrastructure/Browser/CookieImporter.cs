@@ -43,21 +43,7 @@ public class CookieImporter
                 };
             }
 
-            // Security: Validate path to prevent path traversal attacks
-            var fullPath = Path.GetFullPath(filePath);
-            var userDirectory = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-
-            if (!fullPath.StartsWith(userDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogWarning("Attempted to import cookies from outside user directory: {Path}", fullPath);
-                return new CookieImportResult
-                {
-                    Success = false,
-                    ErrorMessage = "Cookie file must be located in your user directory for security reasons"
-                };
-            }
-
-            var json = await File.ReadAllTextAsync(fullPath, cancellationToken);
+            var json = await File.ReadAllTextAsync(filePath, cancellationToken);
 
             // Try to parse as Chrome DevTools format (array of cookie objects)
             List<CookieData>? cookies;
