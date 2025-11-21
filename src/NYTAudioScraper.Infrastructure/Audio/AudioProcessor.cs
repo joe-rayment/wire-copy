@@ -1,6 +1,4 @@
-// <copyright file="AudioProcessor.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using FFMpegCore;
 using FFMpegCore.Enums;

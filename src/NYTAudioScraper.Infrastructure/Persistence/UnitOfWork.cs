@@ -1,6 +1,4 @@
-// <copyright file="UnitOfWork.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
@@ -9,7 +7,7 @@ using NYTAudioScraper.Application.Interfaces;
 namespace NYTAudioScraper.Infrastructure.Persistence;
 
 /// <summary>
-/// Unit of Work implementation for managing database transactions
+/// Unit of Work implementation for managing database transactions.
 /// </summary>
 public class UnitOfWork : IUnitOfWork
 {

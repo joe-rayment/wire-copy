@@ -1,13 +1,11 @@
-// <copyright file="NYTConfigurationValidator.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Options;
 
 namespace NYTAudioScraper.Infrastructure.Configuration.Validation;
 
 /// <summary>
-/// Validates NYT configuration settings
+/// Validates NYT configuration settings.
 /// </summary>
 public class NYTConfigurationValidator : IValidateOptions<NYTConfiguration>
 {

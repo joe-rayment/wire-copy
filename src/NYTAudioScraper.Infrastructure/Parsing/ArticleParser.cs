@@ -1,6 +1,4 @@
-// <copyright file="ArticleParser.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;

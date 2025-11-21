@@ -1,13 +1,11 @@
-// <copyright file="ElevenLabsConfigurationValidator.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Options;
 
 namespace NYTAudioScraper.Infrastructure.Configuration.Validation;
 
 /// <summary>
-/// Validates ElevenLabs configuration settings
+/// Validates ElevenLabs configuration settings.
 /// </summary>
 public class ElevenLabsConfigurationValidator : IValidateOptions<ElevenLabsConfiguration>
 {
