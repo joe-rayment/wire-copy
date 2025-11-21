@@ -331,10 +331,32 @@ public class NYTAuthService : INYTAuthService
 
             var cookieValue = Console.ReadLine()?.Trim();
 
+            // Validate input
             if (string.IsNullOrWhiteSpace(cookieValue))
             {
                 Console.WriteLine();
                 Console.WriteLine("✗ No cookie value provided. Continuing without authentication.");
+                Console.WriteLine();
+                return false;
+            }
+
+            // Security: Validate cookie length to prevent DoS
+            const int MaxCookieLength = 8192; // 8KB is reasonable for cookies
+            if (cookieValue.Length > MaxCookieLength)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"✗ Cookie value too long. Maximum {MaxCookieLength} characters allowed.");
+                Console.WriteLine("  This doesn't look like a valid NYT cookie.");
+                Console.WriteLine();
+                return false;
+            }
+
+            // Security: Validate cookie format (cookies should be base64/alphanumeric with some special chars)
+            if (!System.Text.RegularExpressions.Regex.IsMatch(cookieValue, @"^[a-zA-Z0-9\-_=.]+$"))
+            {
+                Console.WriteLine();
+                Console.WriteLine("✗ Invalid cookie format. Cookie should only contain alphanumeric characters, hyphens, underscores, equals signs, and periods.");
+                Console.WriteLine("  Please make sure you copied the cookie value correctly.");
                 Console.WriteLine();
                 return false;
             }

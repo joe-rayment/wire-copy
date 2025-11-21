@@ -43,7 +43,21 @@ public class CookieImporter
                 };
             }
 
-            var json = await File.ReadAllTextAsync(filePath, cancellationToken);
+            // Security: Validate path to prevent path traversal attacks
+            var fullPath = Path.GetFullPath(filePath);
+            var userDirectory = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+            if (!fullPath.StartsWith(userDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Attempted to import cookies from outside user directory: {Path}", fullPath);
+                return new CookieImportResult
+                {
+                    Success = false,
+                    ErrorMessage = "Cookie file must be located in your user directory for security reasons"
+                };
+            }
+
+            var json = await File.ReadAllTextAsync(fullPath, cancellationToken);
 
             // Try to parse as Chrome DevTools format (array of cookie objects)
             List<CookieData>? cookies;
@@ -215,23 +229,32 @@ public class CookieImporter
         }
     }
 
-    public async Task<bool> ClearCookiesAsync(CancellationToken cancellationToken = default)
+    public Task<bool> ClearCookiesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            if (File.Exists(_cookieFilePath))
+            // Directly attempt to delete - no need for existence check
+            // File.Delete doesn't throw if file doesn't exist
+            File.Delete(_cookieFilePath);
+
+            // Check if file was actually deleted (existed before)
+            if (!File.Exists(_cookieFilePath))
             {
-                File.Delete(_cookieFilePath);
                 _logger.LogInformation("Cleared stored cookies");
-                return true;
+                return Task.FromResult(true);
             }
 
-            return false;
+            return Task.FromResult(false);
+        }
+        catch (FileNotFoundException)
+        {
+            // File was already deleted or never existed - this is fine
+            return Task.FromResult(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error clearing cookies");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
