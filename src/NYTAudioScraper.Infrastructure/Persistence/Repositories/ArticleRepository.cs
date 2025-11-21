@@ -1,6 +1,4 @@
-// <copyright file="ArticleRepository.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;
@@ -9,11 +7,12 @@ using NYTAudioScraper.Domain.Entities;
 namespace NYTAudioScraper.Infrastructure.Persistence.Repositories;
 
 /// <summary>
-/// Repository implementation for Article operations
+/// Repository implementation for Article operations.
 /// </summary>
 public class ArticleRepository : Repository<Article>, IArticleRepository
 {
-    public ArticleRepository(AppDbContext context) : base(context)
+    public ArticleRepository(AppDbContext context)
+        : base(context)
     {
     }
 

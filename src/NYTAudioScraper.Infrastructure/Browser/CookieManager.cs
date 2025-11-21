@@ -1,6 +1,4 @@
-// <copyright file="CookieManager.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -10,7 +8,7 @@ using NYTAudioScraper.Infrastructure.Browser.Models;
 namespace NYTAudioScraper.Infrastructure.Browser;
 
 /// <summary>
-/// Manages stored authentication cookies
+/// Manages stored authentication cookies.
 /// </summary>
 public class CookieManager : ICookieManager
 {

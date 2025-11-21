@@ -603,220 +603,220 @@ public class Program
 
             var articleList = articles.ToList();
             metrics.Increment("articles_scraped", articleList.Count);
-        if (articleList.Count == 0)
-        {
-            Log.Warning("No articles found to process");
-            return;
-        }
-
-        Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
-        foreach (var article in articleList)
-        {
-            Log.Information("  - [{ArticleId}] {Title} ({Words} words, {Url})",
-                article.Id, article.Title, article.EstimatedWordCount, article.Url);
-        }
-
-        // Link articles to session for complete audit trail
-        Log.Information("");
-        Log.Information("Linking articles to session {SessionId}...", session.Id);
-        var newArticleCount = 0;
-        var existingArticleCount = 0;
-
-        foreach (var article in articleList)
-        {
-            // Check if article already exists in database
-            var existingArticle = await articleRepo.GetByIdAsync(article.Id);
-
-            if (existingArticle != null)
+            if (articleList.Count == 0)
             {
-                // Use existing article from database
-                session.Articles.Add(existingArticle);
-                existingArticleCount++;
-                Log.Debug("Using existing article: {Title}", existingArticle.Title);
+                Log.Warning("No articles found to process");
+                return;
             }
-            else
+
+            Log.Information("✓ Retrieved {Count} article(s)", articleList.Count);
+            foreach (var article in articleList)
             {
-                // Add new article
-                await articleRepo.AddAsync(article);
-                session.Articles.Add(article);
-                newArticleCount++;
-                Log.Debug("Adding new article: {Title}", article.Title);
+                Log.Information("  - [{ArticleId}] {Title} ({Words} words, {Url})",
+                    article.Id, article.Title, article.EstimatedWordCount, article.Url);
             }
-        }
 
-        await unitOfWork.SaveChangesAsync();
-        Log.Information(
-            "✓ Linked {Total} articles to session ({New} new, {Existing} existing)",
-            articleList.Count,
-            newArticleCount,
-            existingArticleCount);
-
-        // Check if user wants to skip audio generation (for testing scraping only)
-        if (options.ScrapeOnly)
-        {
+            // Link articles to session for complete audit trail
             Log.Information("");
-            Log.Information("Scrape-only mode enabled - skipping audio generation");
-            Log.Information("Articles successfully scraped and saved to database");
-            Log.Information("Use without --scrape-only flag to generate audio");
-            return;
-        }
+            Log.Information("Linking articles to session {SessionId}...", session.Id);
+            var newArticleCount = 0;
+            var existingArticleCount = 0;
 
-        // Step 2: Generate audio for articles (parallel processing)
-        Log.Information("");
-        Log.Information("Step 2: Generating audio files (parallel processing)...");
-
-        var audioFiles = new List<string>();
-        var chapters = new List<AudioChapter>();
-        var currentTimeMs = 0;
-
-        var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
-
-        AudioGenerationResult result;
-        using (metrics.Measure("audio_generation"))
-        {
-            // Use parallel audio generator for concurrent processing
-            result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
-                articleList,
-                voiceId,
-                cancellationToken: default);
-        }
-
-        metrics.Increment("audio_generated", result.SuccessCount);
-        metrics.Increment("audio_failed", result.FailureCount);
-
-        // Log results
-        var audioGenMetrics = metrics.GetSummary().Operations["audio_generation"];
-        Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenMetrics.Average.TotalSeconds);
-        Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
-        if (result.FailureCount > 0)
-        {
-            Log.Warning("  Failed: {FailureCount}/{Total} articles", result.FailureCount, result.TotalProcessed);
-        }
-
-        // Process successful generations
-        foreach (var (articleId, audioData) in result.SuccessfulGenerations)
-        {
-            var article = articleList.First(a => a.Id == articleId);
-
-            // Save audio file
-            var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
-            await File.WriteAllBytesAsync(audioFilePath, audioData);
-            audioFiles.Add(audioFilePath);
-
-            // Update article with audio file path in database
-            article.AudioFilePath = audioFilePath;
-
-            Log.Information("  ✓ [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
-                article.Id, article.Title, audioData.Length);
-
-            // Get audio metadata for chapter timing
-            var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
-            var durationMs = metadata.DurationMs;
-
-            // Create chapter entry
-            var chapter = new AudioChapter
+            foreach (var article in articleList)
             {
-                Title = article.Title,
-                ArticleId = article.Id,
-                StartTimeMs = currentTimeMs,
-                DurationMs = durationMs,
-                AudioFilePath = audioFilePath
-            };
-            chapters.Add(chapter);
-            currentTimeMs += durationMs;
+                // Check if article already exists in database
+                var existingArticle = await articleRepo.GetByIdAsync(article.Id);
 
-            Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
-                chapter.StartTimeMs / 1000.0,
-                chapter.EndTimeMs / 1000.0);
-        }
+                if (existingArticle != null)
+                {
+                    // Use existing article from database
+                    session.Articles.Add(existingArticle);
+                    existingArticleCount++;
+                    Log.Debug("Using existing article: {Title}", existingArticle.Title);
+                }
+                else
+                {
+                    // Add new article
+                    await articleRepo.AddAsync(article);
+                    session.Articles.Add(article);
+                    newArticleCount++;
+                    Log.Debug("Adding new article: {Title}", article.Title);
+                }
+            }
 
-        // Log failures
-        foreach (var (articleId, errorMessage) in result.FailedGenerations)
-        {
-            var article = articleList.First(a => a.Id == articleId);
-            Log.Error("  ✗ [{ArticleId}] Failed: {Title} - {Error}",
-                article.Id, article.Title, errorMessage);
-        }
-
-        // Persist audio file paths to database
-        if (result.SuccessCount > 0)
-        {
             await unitOfWork.SaveChangesAsync();
-            Log.Information("✓ Updated {Count} articles with audio file paths in database",
-                result.SuccessCount);
-        }
+            Log.Information(
+                "✓ Linked {Total} articles to session ({New} new, {Existing} existing)",
+                articleList.Count,
+                newArticleCount,
+                existingArticleCount);
 
-        if (audioFiles.Count == 0)
-        {
-            Log.Warning("No audio files generated. Cannot create audiobook.");
+            // Check if user wants to skip audio generation (for testing scraping only)
+            if (options.ScrapeOnly)
+            {
+                Log.Information("");
+                Log.Information("Scrape-only mode enabled - skipping audio generation");
+                Log.Information("Articles successfully scraped and saved to database");
+                Log.Information("Use without --scrape-only flag to generate audio");
+                return;
+            }
+
+            // Step 2: Generate audio for articles (parallel processing)
             Log.Information("");
-            Log.Information("Budget Summary: {Summary}", budgetService.GetSummary());
-            return;
-        }
+            Log.Information("Step 2: Generating audio files (parallel processing)...");
 
-        // Step 3: Create M4B audiobook
-        Log.Information("");
-        Log.Information("Step 3: Creating M4B audiobook...");
-        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+            var audioFiles = new List<string>();
+            var chapters = new List<AudioChapter>();
+            var currentTimeMs = 0;
 
-        try
-        {
-            string createdPath;
-            using (metrics.Measure("audiobook_creation"))
+            var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM"; // Default voice
+
+            AudioGenerationResult result;
+            using (metrics.Measure("audio_generation"))
             {
-                createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+                // Use parallel audio generator for concurrent processing
+                result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
+                    articleList,
+                    voiceId,
+                    cancellationToken: default);
             }
 
-            Log.Information("✓ Audiobook created: {Path}", createdPath);
+            metrics.Increment("audio_generated", result.SuccessCount);
+            metrics.Increment("audio_failed", result.FailureCount);
 
-            var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
-            Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
-            Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "✗ Error creating audiobook");
-            Log.Warning("This may be due to FFmpeg not being installed.");
-            Log.Warning("Install FFmpeg: brew install ffmpeg");
-            return;
-        }
-
-        // Step 4: Add chapter markers
-        Log.Information("");
-        Log.Information("Step 4: Adding chapter markers...");
-        try
-        {
-            using (metrics.Measure("chapter_markers"))
+            // Log results
+            var audioGenMetrics = metrics.GetSummary().Operations["audio_generation"];
+            Log.Information("✓ Audio generation completed in {Elapsed:F1}s", audioGenMetrics.Average.TotalSeconds);
+            Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
+            if (result.FailureCount > 0)
             {
-                await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+                Log.Warning("  Failed: {FailureCount}/{Total} articles", result.FailureCount, result.TotalProcessed);
             }
 
-            Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
-            foreach (var chapter in chapters)
+            // Process successful generations
+            foreach (var (articleId, audioData) in result.SuccessfulGenerations)
             {
-                Log.Information("  - {Title} @ {Time:F1}s",
-                    chapter.Title,
-                    chapter.StartTimeMs / 1000.0);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "✗ Error adding chapter markers");
-        }
+                var article = articleList.First(a => a.Id == articleId);
 
-        // Clean up individual MP3 files
-        foreach (var file in audioFiles)
-        {
+                // Save audio file
+                var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
+                await File.WriteAllBytesAsync(audioFilePath, audioData);
+                audioFiles.Add(audioFilePath);
+
+                // Update article with audio file path in database
+                article.AudioFilePath = audioFilePath;
+
+                Log.Information("  ✓ [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
+                    article.Id, article.Title, audioData.Length);
+
+                // Get audio metadata for chapter timing
+                var metadata = await audioProcessor.GetMetadataAsync(audioFilePath);
+                var durationMs = metadata.DurationMs;
+
+                // Create chapter entry
+                var chapter = new AudioChapter
+                {
+                    Title = article.Title,
+                    ArticleId = article.Id,
+                    StartTimeMs = currentTimeMs,
+                    DurationMs = durationMs,
+                    AudioFilePath = audioFilePath
+                };
+                chapters.Add(chapter);
+                currentTimeMs += durationMs;
+
+                Log.Information("    Chapter: {Start:F1}s - {End:F1}s",
+                    chapter.StartTimeMs / 1000.0,
+                    chapter.EndTimeMs / 1000.0);
+            }
+
+            // Log failures
+            foreach (var (articleId, errorMessage) in result.FailedGenerations)
+            {
+                var article = articleList.First(a => a.Id == articleId);
+                Log.Error("  ✗ [{ArticleId}] Failed: {Title} - {Error}",
+                    article.Id, article.Title, errorMessage);
+            }
+
+            // Persist audio file paths to database
+            if (result.SuccessCount > 0)
+            {
+                await unitOfWork.SaveChangesAsync();
+                Log.Information("✓ Updated {Count} articles with audio file paths in database",
+                    result.SuccessCount);
+            }
+
+            if (audioFiles.Count == 0)
+            {
+                Log.Warning("No audio files generated. Cannot create audiobook.");
+                Log.Information("");
+                Log.Information("Budget Summary: {Summary}", budgetService.GetSummary());
+                return;
+            }
+
+            // Step 3: Create M4B audiobook
+            Log.Information("");
+            Log.Information("Step 3: Creating M4B audiobook...");
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+
             try
             {
-                File.Delete(file);
+                string createdPath;
+                using (metrics.Measure("audiobook_creation"))
+                {
+                    createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+                }
+
+                Log.Information("✓ Audiobook created: {Path}", createdPath);
+
+                var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
+                Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to delete temporary file: {File}", file);
+                Log.Error(ex, "✗ Error creating audiobook");
+                Log.Warning("This may be due to FFmpeg not being installed.");
+                Log.Warning("Install FFmpeg: brew install ffmpeg");
+                return;
             }
-        }
+
+            // Step 4: Add chapter markers
+            Log.Information("");
+            Log.Information("Step 4: Adding chapter markers...");
+            try
+            {
+                using (metrics.Measure("chapter_markers"))
+                {
+                    await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+                }
+
+                Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
+                foreach (var chapter in chapters)
+                {
+                    Log.Information("  - {Title} @ {Time:F1}s",
+                        chapter.Title,
+                        chapter.StartTimeMs / 1000.0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "✗ Error adding chapter markers");
+            }
+
+            // Clean up individual MP3 files
+            foreach (var file in audioFiles)
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to delete temporary file: {File}", file);
+                }
+            }
 
             // Performance summary
             Log.Information("");

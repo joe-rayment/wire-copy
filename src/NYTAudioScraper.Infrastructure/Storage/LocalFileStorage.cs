@@ -1,6 +1,4 @@
-// <copyright file="LocalFileStorage.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -8,7 +6,7 @@ using NYTAudioScraper.Application.Interfaces;
 namespace NYTAudioScraper.Infrastructure.Storage;
 
 /// <summary>
-/// Implementation of IFileStorage with proper file operations, error handling, and disk space validation
+/// Implementation of IFileStorage with proper file operations, error handling, and disk space validation.
 /// </summary>
 public class LocalFileStorage : IFileStorage
 {

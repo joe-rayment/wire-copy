@@ -1,6 +1,4 @@
-// <copyright file="DependencyInjection.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Net.Http;
 using Microsoft.AspNetCore.DataProtection;
@@ -31,7 +29,7 @@ using Polly.Retry;
 namespace NYTAudioScraper.Infrastructure;
 
 /// <summary>
-/// Extension methods for registering infrastructure services
+/// Extension methods for registering infrastructure services.
 /// </summary>
 public static class DependencyInjection
 {

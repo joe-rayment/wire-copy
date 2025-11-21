@@ -1,6 +1,4 @@
-// <copyright file="ParallelAudioGenerator.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -9,7 +7,7 @@ using NYTAudioScraper.Domain.Entities;
 namespace NYTAudioScraper.Infrastructure.Audio;
 
 /// <summary>
-/// Parallel audio generator that processes multiple articles concurrently with rate limiting
+/// Parallel audio generator that processes multiple articles concurrently with rate limiting.
 /// </summary>
 public class ParallelAudioGenerator : IParallelAudioGenerator
 {
@@ -18,11 +16,12 @@ public class ParallelAudioGenerator : IParallelAudioGenerator
     private readonly ILogger<ParallelAudioGenerator> _logger;
 
     /// <summary>
-    /// Creates a new parallel audio generator
+    /// Initializes a new instance of the <see cref="ParallelAudioGenerator"/> class.
+    /// Creates a new parallel audio generator.
     /// </summary>
-    /// <param name="audioGenerator">The underlying audio generator</param>
-    /// <param name="rateLimiter">Rate limiter for controlling concurrency</param>
-    /// <param name="logger">Logger instance</param>
+    /// <param name="audioGenerator">The underlying audio generator.</param>
+    /// <param name="rateLimiter">Rate limiter for controlling concurrency.</param>
+    /// <param name="logger">Logger instance.</param>
     public ParallelAudioGenerator(
         IAudioGenerator audioGenerator,
         IRateLimiter rateLimiter,
@@ -34,12 +33,12 @@ public class ParallelAudioGenerator : IParallelAudioGenerator
     }
 
     /// <summary>
-    /// Generates audio for multiple articles in parallel
+    /// Generates audio for multiple articles in parallel.
     /// </summary>
-    /// <param name="articles">Articles to process</param>
-    /// <param name="voiceId">Voice ID to use for generation</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Result containing successful and failed audio generations</returns>
+    /// <param name="articles">Articles to process.</param>
+    /// <param name="voiceId">Voice ID to use for generation.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Result containing successful and failed audio generations.</returns>
     public async Task<AudioGenerationResult> GenerateAudioForArticlesAsync(
         IEnumerable<Article> articles,
         string voiceId,
@@ -113,16 +112,18 @@ public class ParallelAudioGenerator : IParallelAudioGenerator
     }
 
     /// <summary>
-    /// Estimates the total cost for generating audio for multiple articles
+    /// Estimates the total cost for generating audio for multiple articles.
     /// </summary>
+    /// <returns></returns>
     public decimal EstimateTotalCost(IEnumerable<Article> articles)
     {
         return articles.Sum(a => _audioGenerator.EstimateCost(a.Content));
     }
 
     /// <summary>
-    /// Estimates the total character count for multiple articles
+    /// Estimates the total character count for multiple articles.
     /// </summary>
+    /// <returns></returns>
     public int EstimateTotalCharacters(IEnumerable<Article> articles)
     {
         return articles.Sum(a => a.Content.Length);

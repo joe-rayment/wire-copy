@@ -1,6 +1,4 @@
-// <copyright file="RateLimiter.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using NYTAudioScraper.Application.Interfaces;
@@ -8,7 +6,7 @@ using NYTAudioScraper.Application.Interfaces;
 namespace NYTAudioScraper.Infrastructure.Audio;
 
 /// <summary>
-/// Rate limiter using semaphore to control concurrent operations
+/// Rate limiter using semaphore to control concurrent operations.
 /// </summary>
 public class RateLimiter : IRateLimiter
 {
@@ -19,11 +17,12 @@ public class RateLimiter : IRateLimiter
     private readonly object _lock = new();
 
     /// <summary>
-    /// Creates a new rate limiter
+    /// Initializes a new instance of the <see cref="RateLimiter"/> class.
+    /// Creates a new rate limiter.
     /// </summary>
-    /// <param name="maxConcurrency">Maximum number of concurrent operations</param>
-    /// <param name="minDelayMs">Minimum delay between operations in milliseconds</param>
-    /// <param name="logger">Logger instance</param>
+    /// <param name="maxConcurrency">Maximum number of concurrent operations.</param>
+    /// <param name="minDelayMs">Minimum delay between operations in milliseconds.</param>
+    /// <param name="logger">Logger instance.</param>
     public RateLimiter(int maxConcurrency, int minDelayMs, ILogger<RateLimiter> logger)
     {
         if (maxConcurrency <= 0)
@@ -42,13 +41,14 @@ public class RateLimiter : IRateLimiter
     }
 
     /// <summary>
-    /// Gets the current number of available slots
+    /// Gets the current number of available slots.
     /// </summary>
     public int AvailableSlots => _semaphore.CurrentCount;
 
     /// <summary>
-    /// Acquires the rate limiter, blocking until a slot is available
+    /// Acquires the rate limiter, blocking until a slot is available.
     /// </summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     public async Task AcquireAsync(CancellationToken cancellationToken = default)
     {
         await _semaphore.WaitAsync(cancellationToken);
@@ -75,7 +75,7 @@ public class RateLimiter : IRateLimiter
     }
 
     /// <summary>
-    /// Releases the rate limiter, allowing another operation to proceed
+    /// Releases the rate limiter, allowing another operation to proceed.
     /// </summary>
     public void Release()
     {
@@ -88,8 +88,9 @@ public class RateLimiter : IRateLimiter
     }
 
     /// <summary>
-    /// Executes an action with rate limiting
+    /// Executes an action with rate limiting.
     /// </summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     public async Task<T> ExecuteAsync<T>(
         Func<Task<T>> action,
         CancellationToken cancellationToken = default)

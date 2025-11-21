@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Educational and personal use only.
+
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable

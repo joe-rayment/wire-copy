@@ -3,6 +3,7 @@
 // </copyright>
 
 
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +13,6 @@ using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Browser.Models;
 using NYTAudioScraper.Infrastructure.Security;
-using System.Text.Json;
 using Xunit;
 
 namespace NYTAudioScraper.Tests;
