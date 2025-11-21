@@ -1,6 +1,4 @@
-// <copyright file="AppDbContextFactory.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -8,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace NYTAudioScraper.Infrastructure.Persistence;
 
 /// <summary>
-/// Design-time factory for AppDbContext to support EF Core migrations
+/// Design-time factory for AppDbContext to support EF Core migrations.
 /// </summary>
 public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
 {

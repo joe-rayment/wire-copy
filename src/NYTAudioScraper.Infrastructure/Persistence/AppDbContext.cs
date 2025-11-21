@@ -1,6 +1,4 @@
-// <copyright file="AppDbContext.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Domain.Entities;
@@ -9,7 +7,7 @@ using NYTAudioScraper.Infrastructure.Persistence.Configurations;
 namespace NYTAudioScraper.Infrastructure.Persistence;
 
 /// <summary>
-/// Application database context for NYT Audio Scraper
+/// Application database context for NYT Audio Scraper.
 /// </summary>
 public class AppDbContext : DbContext
 {
@@ -19,12 +17,15 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Article> Articles => Set<Article>();
+
     public DbSet<ScrapingSession> ScrapingSessions => Set<ScrapingSession>();
+
     public DbSet<AudioChapter> AudioChapters => Set<AudioChapter>();
 
     /// <summary>
-    /// Ensures the database is created and migrations are applied
+    /// Ensures the database is created and migrations are applied.
     /// </summary>
+    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
     public async Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)
     {
         // Create database directory if it doesn't exist

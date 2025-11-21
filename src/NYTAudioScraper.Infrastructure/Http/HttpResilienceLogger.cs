@@ -1,6 +1,4 @@
-// <copyright file="HttpResilienceLogger.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -10,7 +8,7 @@ namespace NYTAudioScraper.Infrastructure.Http;
 
 /// <summary>
 /// Dedicated logger for HTTP resilience policies (retry, circuit breaker)
-/// Provides centralized logging for all HTTP resilience events
+/// Provides centralized logging for all HTTP resilience events.
 /// </summary>
 public class HttpResilienceLogger
 {
@@ -22,7 +20,7 @@ public class HttpResilienceLogger
     }
 
     /// <summary>
-    /// Logs retry attempts for HTTP requests
+    /// Logs retry attempts for HTTP requests.
     /// </summary>
     public void LogRetry(Outcome<HttpResponseMessage> outcome, TimeSpan delay, int retryCount, string? endpoint = null)
     {
@@ -51,7 +49,7 @@ public class HttpResilienceLogger
     }
 
     /// <summary>
-    /// Logs circuit breaker opening (too many failures detected)
+    /// Logs circuit breaker opening (too many failures detected).
     /// </summary>
     public void LogCircuitBreakerOpen(Outcome<HttpResponseMessage> outcome, TimeSpan breakDuration, string? endpoint = null)
     {
@@ -67,7 +65,7 @@ public class HttpResilienceLogger
     }
 
     /// <summary>
-    /// Logs circuit breaker reset (service is healthy again)
+    /// Logs circuit breaker reset (service is healthy again).
     /// </summary>
     public void LogCircuitBreakerReset(string? endpoint = null)
     {
@@ -77,7 +75,7 @@ public class HttpResilienceLogger
     }
 
     /// <summary>
-    /// Logs circuit breaker half-open state (testing if service recovered)
+    /// Logs circuit breaker half-open state (testing if service recovered).
     /// </summary>
     public void LogCircuitBreakerHalfOpen(string? endpoint = null)
     {
@@ -87,7 +85,7 @@ public class HttpResilienceLogger
     }
 
     /// <summary>
-    /// Logs when circuit breaker rejects a request (circuit is open)
+    /// Logs when circuit breaker rejects a request (circuit is open).
     /// </summary>
     public void LogCircuitBreakerRejected(string? endpoint = null)
     {

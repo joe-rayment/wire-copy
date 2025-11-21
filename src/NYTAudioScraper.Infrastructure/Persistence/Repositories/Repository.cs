@@ -1,6 +1,4 @@
-// <copyright file="Repository.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
@@ -9,10 +7,11 @@ using NYTAudioScraper.Application.Interfaces;
 namespace NYTAudioScraper.Infrastructure.Persistence.Repositories;
 
 /// <summary>
-/// Generic repository implementation using Entity Framework Core
+/// Generic repository implementation using Entity Framework Core.
 /// </summary>
-/// <typeparam name="T">Entity type</typeparam>
-public class Repository<T> : IRepository<T> where T : class
+/// <typeparam name="T">Entity type.</typeparam>
+public class Repository<T> : IRepository<T>
+    where T : class
 {
     protected readonly AppDbContext _context;
     protected readonly DbSet<T> _dbSet;

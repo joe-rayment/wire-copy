@@ -1,6 +1,4 @@
-// <copyright file="PollyContextExtensions.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -8,7 +6,7 @@ using Polly;
 namespace NYTAudioScraper.Infrastructure.Resilience;
 
 /// <summary>
-/// Extension methods for Polly Context
+/// Extension methods for Polly Context.
 /// </summary>
 public static class PollyContextExtensions
 {

@@ -1,6 +1,4 @@
-// <copyright file="NYTAuthService.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -63,7 +61,7 @@ public class NYTAuthService : INYTAuthService
 
             // Saved cookies not found or expired - prompt for manual login
             _logger.LogInformation("No saved cookies found or cookies expired");
-            return await PromptManualLoginAsync(driver, cancellationToken);
+            return await PromptManualLoginAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -248,64 +246,7 @@ public class NYTAuthService : INYTAuthService
         }
     }
 
-    private async Task SaveCookiesAsync(IWebDriver driver, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var cookies = driver.Manage().Cookies.AllCookies
-                .Select(c => new CookieData
-                {
-                    Name = c.Name,
-                    Value = c.Value,
-                    Domain = c.Domain,
-                    Path = c.Path,
-                    Expiry = c.Expiry
-                })
-                .ToList();
-
-            var cookieContainer = new CookieDataContainer
-            {
-                Cookies = cookies,
-                Metadata = new Dictionary<string, string>
-                {
-                    ["user_agent"] = "NYTAudioScraper/1.0",
-                    ["last_used"] = DateTime.UtcNow.ToString("O"),
-                    ["saved_by"] = "NYTAudioScraper"
-                }
-            };
-
-            var json = JsonSerializer.Serialize(cookieContainer);
-            var encrypted = _encryptionService.Encrypt(json);
-
-            var storage = new CookieStorage
-            {
-                Version = 2,
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.AddDays(CookieExpirationDays),
-                EncryptedData = encrypted
-            };
-
-            var directory = Path.GetDirectoryName(_cookieFilePath);
-            if (directory != null && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
-
-            _logger.LogInformation(
-                "Saved {Count} encrypted cookies (expires: {ExpiryDate})",
-                cookies.Count,
-                storage.ExpiresAt);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to save cookies to {CookieFilePath}", _cookieFilePath);
-        }
-    }
-
-    private async Task<bool> PromptManualLoginAsync(IWebDriver driver, CancellationToken cancellationToken)
+    private async Task<bool> PromptManualLoginAsync(CancellationToken cancellationToken)
     {
         try
         {

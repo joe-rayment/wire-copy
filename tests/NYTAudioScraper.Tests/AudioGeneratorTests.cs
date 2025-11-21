@@ -3,13 +3,13 @@
 // </copyright>
 
 
+using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Configuration;
-using System.Net;
 using Xunit;
 
 namespace NYTAudioScraper.Tests;

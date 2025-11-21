@@ -1,6 +1,4 @@
-// <copyright file="ScrapingSessionRepository.cs" company="NYT Audio Scraper">
 // Educational and personal use only.
-// </copyright>
 
 using Microsoft.EntityFrameworkCore;
 using NYTAudioScraper.Application.Interfaces;
@@ -9,11 +7,12 @@ using NYTAudioScraper.Domain.Entities;
 namespace NYTAudioScraper.Infrastructure.Persistence.Repositories;
 
 /// <summary>
-/// Repository implementation for ScrapingSession operations
+/// Repository implementation for ScrapingSession operations.
 /// </summary>
 public class ScrapingSessionRepository : Repository<ScrapingSession>, IScrapingSessionRepository
 {
-    public ScrapingSessionRepository(AppDbContext context) : base(context)
+    public ScrapingSessionRepository(AppDbContext context)
+        : base(context)
     {
     }
 

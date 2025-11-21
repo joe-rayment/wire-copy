@@ -151,10 +151,10 @@ public class InterfaceIntegrationTests
         for (int i = 0; i < 5; i++)
         {
             var result = await mockRateLimiter.ExecuteAsync(
-                async () =>
+                () =>
                 {
                     operationCount++;
-                    return operationCount;
+                    return Task.FromResult(operationCount);
                 });
         }
 
