@@ -25,7 +25,7 @@ public class AppDbContext : DbContext
     /// <summary>
     /// Ensures the database is created and migrations are applied.
     /// </summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)
     {
         // Create database directory if it doesn't exist

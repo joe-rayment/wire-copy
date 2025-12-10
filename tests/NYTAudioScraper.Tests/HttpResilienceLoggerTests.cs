@@ -42,7 +42,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Network error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var delay = TimeSpan.FromSeconds(2);
         var retryCount = 1;
         var endpoint = "ElevenLabs API";
@@ -64,7 +64,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var response = new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable);
-        var outcome = new DelegateResult<HttpResponseMessage>(response);
+        var outcome = Outcome.FromResult(response);
         var delay = TimeSpan.FromSeconds(4);
         var retryCount = 2;
         var endpoint = "ElevenLabs API";
@@ -88,7 +88,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var delay = TimeSpan.FromSeconds(2);
         var retryCount = 1;
 
@@ -109,7 +109,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Repeated failures");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var breakDuration = TimeSpan.FromSeconds(30);
         var endpoint = "ElevenLabs API";
 
@@ -130,7 +130,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var breakDuration = TimeSpan.FromSeconds(30);
 
         // Act
@@ -204,7 +204,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
 
         // Act
         _logger.LogRetry(outcome, TimeSpan.FromSeconds(1), 1, null);
@@ -227,7 +227,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var delay = TimeSpan.FromMilliseconds(2500); // 2.5 seconds
 
         // Act
@@ -247,7 +247,7 @@ public class HttpResilienceLoggerTests
     {
         // Arrange
         var exception = new HttpRequestException("Error");
-        var outcome = new DelegateResult<HttpResponseMessage>(exception);
+        var outcome = Outcome.FromException<HttpResponseMessage>(exception);
         var breakDuration = TimeSpan.FromMilliseconds(45000); // 45 seconds
 
         // Act

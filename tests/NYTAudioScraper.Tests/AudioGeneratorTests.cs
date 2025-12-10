@@ -8,6 +8,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NYTAudioScraper.Application.Interfaces;
 using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Configuration;
 using Xunit;
@@ -18,16 +19,18 @@ public class AudioGeneratorTests
 {
     private readonly ILogger<AudioGenerator> _logger;
     private readonly IOptions<ElevenLabsConfiguration> _config;
+    private readonly IAudioCache _audioCache;
 
     public AudioGeneratorTests()
     {
         _logger = Substitute.For<ILogger<AudioGenerator>>();
+        _audioCache = Substitute.For<IAudioCache>();
         _config = Options.Create(new ElevenLabsConfiguration
         {
             ApiKey = "test-api-key",
             BaseUrl = "https://api.elevenlabs.io",
             Model = "eleven_multilingual_v2",
-            VoiceId = "test-voice-id",
+            DefaultVoiceId = "test-voice-id",
             CostPerCharacter = 0.0003m
         });
     }
@@ -37,7 +40,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = "Hello, world!"; // 13 characters
 
         // Act
@@ -52,7 +55,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = new string('a', 1000);
 
         // Act
@@ -67,7 +70,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = "";
 
         // Act
@@ -86,7 +89,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = new string('a', characterCount);
 
         // Act
@@ -105,11 +108,11 @@ public class AudioGeneratorTests
             ApiKey = "test-api-key",
             BaseUrl = "https://api.elevenlabs.io",
             Model = "test-model",
-            VoiceId = "test-voice",
+            DefaultVoiceId = "test-voice",
             CostPerCharacter = 0.0005m // Different cost
         });
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(customConfig, _logger, httpClientFactory);
+        var generator = new AudioGenerator(customConfig, _audioCache, _logger, httpClientFactory);
         var text = new string('a', 1000);
 
         // Act
@@ -128,13 +131,13 @@ public class AudioGeneratorTests
             ApiKey = "",
             BaseUrl = "https://api.elevenlabs.io",
             Model = "test-model",
-            VoiceId = "test-voice",
+            DefaultVoiceId = "test-voice",
             CostPerCharacter = 0.0003m
         });
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
 
         // Act
-        var generator = new AudioGenerator(configWithoutKey, _logger, httpClientFactory);
+        var generator = new AudioGenerator(configWithoutKey, _audioCache, _logger, httpClientFactory);
 
         // Assert
         _logger.Received(1).Log(
@@ -150,7 +153,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = "Hello 世界! 🌍"; // Mixed ASCII, Chinese, and emoji
 
         // Act
@@ -165,7 +168,7 @@ public class AudioGeneratorTests
     {
         // Arrange
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var generator = new AudioGenerator(_config, _logger, httpClientFactory);
+        var generator = new AudioGenerator(_config, _audioCache, _logger, httpClientFactory);
         var text = "Line 1\n\nLine 2\t\tLine 3";
 
         // Act

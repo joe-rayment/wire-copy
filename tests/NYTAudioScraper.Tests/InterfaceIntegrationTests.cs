@@ -55,7 +55,7 @@ public class InterfaceIntegrationTests
         };
 
         // Act - Check budget, then generate audio
-        var estimatedCost = mockBudgetService.EstimateCost(article.Content);
+        var estimatedCost = mockAudioGenerator.EstimateCost(article.Content);
         var canAfford = mockBudgetService.CanAfford(estimatedCost);
         canAfford.Should().BeTrue();
 

@@ -20,6 +20,7 @@ using NYTAudioScraper.Infrastructure.Http;
 using NYTAudioScraper.Infrastructure.Parsing;
 using NYTAudioScraper.Infrastructure.Persistence;
 using NYTAudioScraper.Infrastructure.Persistence.Repositories;
+using NYTAudioScraper.Infrastructure.Podcast;
 using NYTAudioScraper.Infrastructure.Security;
 using NYTAudioScraper.Infrastructure.Storage;
 using Polly;
@@ -46,6 +47,8 @@ public static class DependencyInjection
             configuration.GetSection(AudioConfiguration.SectionName).Bind(options));
         services.Configure<BrowserConfiguration>(options =>
             configuration.GetSection(BrowserConfiguration.SectionName).Bind(options));
+        services.Configure<InworldConfiguration>(options =>
+            configuration.GetSection(InworldConfiguration.SectionName).Bind(options));
 
         // Register configuration validators
         services.AddSingleton<IValidateOptions<NYTConfiguration>, NYTConfigurationValidator>();
@@ -122,9 +125,16 @@ public static class DependencyInjection
         services.AddSingleton<INYTAuthService, NYTAuthService>();
         services.AddSingleton<IArticleParser, ArticleParser>();
 
-        // Register audio services with resilience
+        // Register Inworld HTTP client (fallback TTS provider)
+        services.AddHttpClient("Inworld", client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(3);
+        });
+
+        // Register audio services with resilience and fallback
         services.AddSingleton<IBudgetService, BudgetService>();
         services.AddSingleton<AudioGenerator>();
+        services.AddSingleton<InworldAudioGenerator>();
         services.AddSingleton<IAudioGenerator, ResilientAudioGenerator>();
 
         // Register rate limiter for parallel processing
@@ -167,6 +177,11 @@ public static class DependencyInjection
         services.AddSingleton<IChapterMarker, ChapterMarker>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<CookieImporter>(); // Singleton for cookie management
+
+        // Register podcast services
+        services.AddSingleton<IMp3Tagger, Mp3Tagger>();
+        services.AddSingleton<IRssFeedGenerator, RssFeedGenerator>();
+        services.AddSingleton<IChaptersJsonGenerator, ChaptersJsonGenerator>();
 
         return services;
     }

@@ -43,7 +43,7 @@ public class AdaptiveRateLimiter
     /// <summary>
     /// Waits for the current delay period.
     /// </summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task WaitAsync(CancellationToken cancellationToken = default)
     {
         int delay;

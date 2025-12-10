@@ -94,7 +94,7 @@ public class ParallelAudioGeneratorTests
             .Returns(callInfo => callInfo.Arg<Func<Task<byte[]>>>()());
 
         _mockAudioGenerator.GenerateAudioAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("API error"));
+            .Returns<byte[]>(_ => throw new InvalidOperationException("API error"));
 
         // Act
         var result = await _parallelGenerator.GenerateAudioForArticlesAsync(articles, voiceId);
@@ -128,7 +128,7 @@ public class ParallelAudioGeneratorTests
             .Returns(audioData);
 
         _mockAudioGenerator.GenerateAudioAsync("Content 2", Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Generation failed"));
+            .Returns<byte[]>(_ => throw new InvalidOperationException("Generation failed"));
 
         // Act
         var result = await _parallelGenerator.GenerateAudioForArticlesAsync(articles, voiceId);

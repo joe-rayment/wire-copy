@@ -105,8 +105,7 @@ public class ScraperService : IScraperService
 #pragma warning restore S6966
             await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
 
-            var pageSource = driver.PageSource;
-            var article = _articleParser.ParseArticle(pageSource, url);
+            var article = await ParseWithRetryAsync(driver, url, cancellationToken);
 
             if (article != null)
             {
@@ -118,7 +117,7 @@ public class ScraperService : IScraperService
             }
             else
             {
-                _logger.LogWarning("Failed to parse article from {Url}", url);
+                _logger.LogWarning("Failed to parse article after retries: {Url}", url);
             }
 
             return article;
@@ -190,26 +189,24 @@ public class ScraperService : IScraperService
                     driver.Navigate().GoToUrl(url);
 #pragma warning restore S6966
 
-                    // Human-like behavior: random delay 3-7 seconds
-                    var humanDelay = Random.Shared.Next(3000, 7000);
+                    // Human-like behavior: random delay 5-12 seconds
+                    var humanDelay = Random.Shared.Next(5000, 12000);
+
+                    // 20% chance of extended "reading time" (simulates actually reading an article)
+                    if (Random.Shared.NextDouble() < 0.2)
+                    {
+                        var extraDelay = Random.Shared.Next(10000, 25000);
+                        humanDelay += extraDelay;
+                        _logger.LogDebug("Extended reading pause ({ExtraDelay}ms)", extraDelay);
+                    }
+
                     _logger.LogDebug("Waiting {DelayMs}ms before parsing (simulating reading)", humanDelay);
                     await Task.Delay(humanDelay, cancellationToken);
 
-                    // Simulate scrolling behavior
-                    try
-                    {
-                        ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, 500);");
-                        await Task.Delay(Random.Shared.Next(500, 1500), cancellationToken);
-                        ((IJavaScriptExecutor)driver).ExecuteScript("window.scrollTo(0, document.body.scrollHeight / 2);");
-                        await Task.Delay(Random.Shared.Next(800, 2000), cancellationToken);
-                    }
-                    catch (Exception scrollEx)
-                    {
-                        _logger.LogDebug(scrollEx, "Error during scroll simulation (non-critical)");
-                    }
+                    // Simulate realistic scrolling behavior with variation
+                    await SimulateHumanScrolling(driver, cancellationToken);
 
-                    var pageSource = driver.PageSource;
-                    var article = _articleParser.ParseArticle(pageSource, url);
+                    var article = await ParseWithRetryAsync(driver, url, cancellationToken);
 
                     if (article != null)
                     {
@@ -218,7 +215,7 @@ public class ScraperService : IScraperService
                     }
                     else
                     {
-                        _logger.LogWarning("Failed to parse article from {Url}", url);
+                        _logger.LogWarning("Failed to parse article after retries: {Url}", url);
                     }
                 }
                 catch (Exception ex)
@@ -239,6 +236,25 @@ public class ScraperService : IScraperService
         {
             driver?.Dispose();
         }
+    }
+
+    private static bool DetectChallengePage(string pageSource)
+    {
+        var lowerSource = pageSource.ToLowerInvariant();
+        var challengeIndicators = new[]
+        {
+            "verify you are human",
+            "checking your browser",
+            "datadome",
+            "captcha",
+            "please wait",
+            "access denied",
+            "enable javascript",
+            "one more step",
+            "security check",
+            "challenge-container"
+        };
+        return Array.Exists(challengeIndicators, indicator => lowerSource.Contains(indicator));
     }
 
     private IWebDriver CreateWebDriver(bool useFallback = false)
@@ -292,6 +308,129 @@ public class ScraperService : IScraperService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error waiting for page load, but continuing anyway");
+        }
+    }
+
+    private async Task<Article?> ParseWithRetryAsync(
+        IWebDriver driver,
+        string url,
+        CancellationToken cancellationToken,
+        int maxRetries = 3)
+    {
+        Article? article = null;
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            var pageSource = driver.PageSource;
+
+            // Check for challenge page before parsing
+            if (DetectChallengePage(pageSource))
+            {
+                _logger.LogWarning(
+                    "Challenge page detected on attempt {Attempt} for {Url}. Waiting longer before retry...",
+                    attempt,
+                    url);
+
+                if (attempt < maxRetries)
+                {
+                    // Much longer backoff for challenge pages: 30-60 seconds
+                    var challengeBackoff = Random.Shared.Next(30000, 60000);
+                    _logger.LogInformation("Challenge backoff: waiting {Delay}s before retry", challengeBackoff / 1000);
+                    await Task.Delay(challengeBackoff, cancellationToken);
+
+                    // Refresh and try again
+                    try
+                    {
+#pragma warning disable S6966
+                        driver.Navigate().Refresh();
+#pragma warning restore S6966
+                        await Task.Delay(Random.Shared.Next(5000, 10000), cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Error during challenge page refresh");
+                    }
+                }
+
+                continue;
+            }
+
+            article = _articleParser.ParseArticle(pageSource, url);
+
+            if (article != null)
+            {
+                if (attempt > 1)
+                {
+                    _logger.LogInformation("Successfully parsed article on attempt {Attempt}", attempt);
+                }
+
+                return article;
+            }
+
+            if (attempt < maxRetries)
+            {
+                // Wait progressively longer between retries
+                var retryDelay = (attempt * 3000) + Random.Shared.Next(1000, 3000);
+                _logger.LogDebug(
+                    "Parse attempt {Attempt} failed for {Url}, waiting {Delay}ms before retry",
+                    attempt,
+                    url,
+                    retryDelay);
+
+                await Task.Delay(retryDelay, cancellationToken);
+
+                // Try refreshing the page on retry
+                try
+                {
+                    _logger.LogDebug("Refreshing page for retry attempt {Attempt}", attempt + 1);
+#pragma warning disable S6966
+                    driver.Navigate().Refresh();
+#pragma warning restore S6966
+
+                    // Wait for content to load with some variation
+                    await Task.Delay(Random.Shared.Next(4000, 7000), cancellationToken);
+
+                    // Scroll to trigger any lazy-loaded content
+                    await SimulateHumanScrolling(driver, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Error during page refresh (non-critical)");
+                }
+            }
+        }
+
+        return article;
+    }
+
+    private async Task SimulateHumanScrolling(IWebDriver driver, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Variable number of scroll actions (1-4)
+            var scrollCount = Random.Shared.Next(1, 5);
+
+            for (int i = 0; i < scrollCount; i++)
+            {
+                // Random scroll position
+                var scrollPosition = Random.Shared.Next(200, 800);
+                ((IJavaScriptExecutor)driver).ExecuteScript($"window.scrollTo(0, {scrollPosition * (i + 1)});");
+
+                // Random pause between scrolls (500ms - 2500ms)
+                await Task.Delay(Random.Shared.Next(500, 2500), cancellationToken);
+
+                // 30% chance of a small scroll back up (human-like)
+                if (Random.Shared.NextDouble() < 0.3)
+                {
+                    var scrollBack = Random.Shared.Next(50, 200);
+                    ((IJavaScriptExecutor)driver).ExecuteScript($"window.scrollBy(0, -{scrollBack});");
+                    await Task.Delay(Random.Shared.Next(300, 800), cancellationToken);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error during scroll simulation (non-critical)");
         }
     }
 
@@ -469,18 +608,9 @@ public class ScraperService : IScraperService
                     }
 
                     var sectionTitle = headers[0].Text.Trim();
-                    var headerElement = headers[0];
 
-                    // Check if we've hit the International section (stop signal for Front Page)
-                    if (sectionTitle.Equals("International", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var headerClass = headerElement.GetAttribute("class");
-                        if (headerClass != null && headerClass.Contains("css-1k2d5zc"))
-                        {
-                            _logger.LogInformation("Reached International section - stopping Front Page collection");
-                            break;
-                        }
-                    }
+                    // Log all sections found for debugging
+                    _logger.LogDebug("Found section: {SectionTitle}", sectionTitle);
 
                     // Check if this section matches any of the target sections
                     bool isTargetSection = Array.Exists(targetSections, targetSection =>

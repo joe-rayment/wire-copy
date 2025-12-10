@@ -15,6 +15,7 @@ using NYTAudioScraper.Infrastructure.Audio;
 using NYTAudioScraper.Infrastructure.Browser;
 using NYTAudioScraper.Infrastructure.Metrics;
 using NYTAudioScraper.Infrastructure.Persistence;
+using NYTAudioScraper.Infrastructure.Podcast;
 using Serilog;
 
 namespace NYTAudioScraper.API;
@@ -88,6 +89,11 @@ public class Program
         {
             // Run existing test workflow
             await RunApplicationAsync(host.Services);
+        }
+        else if (options.AudioOnly)
+        {
+            // Run audio-only workflow (skip scraping, use database articles)
+            await RunAudioOnlyWorkflowAsync(host.Services, options);
         }
         else
         {
@@ -473,6 +479,463 @@ public class Program
         }
     }
 
+    private static async Task RunAudioOnlyWorkflowAsync(IServiceProvider services, CommandOptions options)
+    {
+        using var scope = services.CreateScope();
+        var scopedServices = scope.ServiceProvider;
+
+        // Initialize database
+        var dbContext = scopedServices.GetRequiredService<AppDbContext>();
+        await dbContext.InitializeDatabaseAsync();
+        Log.Information("Database initialized");
+
+        Log.Information("");
+        Log.Information("========================================");
+        Log.Information("Audio-Only Mode");
+        Log.Information("========================================");
+        Log.Information("Generating audio from previously scraped articles");
+        Log.Information("");
+
+        // Get services
+        var articleRepo = scopedServices.GetRequiredService<IArticleRepository>();
+        var parallelAudioGenerator = scopedServices.GetRequiredService<IParallelAudioGenerator>();
+        var audioProcessor = scopedServices.GetRequiredService<IAudioProcessor>();
+        var chapterMarker = scopedServices.GetRequiredService<IChapterMarker>();
+        var budgetService = scopedServices.GetRequiredService<IBudgetService>();
+        var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
+        var mp3Tagger = scopedServices.GetRequiredService<IMp3Tagger>();
+        var rssFeedGenerator = scopedServices.GetRequiredService<IRssFeedGenerator>();
+        var chaptersJsonGenerator = scopedServices.GetRequiredService<IChaptersJsonGenerator>();
+        var metrics = new PerformanceMetrics();
+
+        // Set budget from command line
+        budgetService.MaxBudget = options.Budget;
+        Log.Information("Budget set to ${MaxBudget:F2}", budgetService.MaxBudget);
+
+        // Step 1: Query articles from database
+        Log.Information("");
+        Log.Information("Step 1: Querying articles from database...");
+
+        IEnumerable<Article> articles;
+
+        if (options.PublishedToday)
+        {
+            var today = DateTime.UtcNow.Date;
+            Log.Information("Filtering by scraped date: Today ({Date:yyyy-MM-dd})", today);
+            articles = await articleRepo.GetByScrapedDateAsync(
+                today,
+                options.Section,
+                options.ArticleCount);
+        }
+        else
+        {
+            // No date filter - get recent articles
+            Log.Information("No date filter specified - using recently scraped articles");
+            articles = await articleRepo.GetRecentlyScrapedAsync(options.ArticleCount);
+
+            // Apply section filter if provided
+            if (!string.IsNullOrWhiteSpace(options.Section))
+            {
+                var sections = options.Section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                articles = articles.Where(a => a.Section != null && sections.Contains(a.Section));
+            }
+        }
+
+        var articleList = articles.ToList();
+
+        if (articleList.Count == 0)
+        {
+            Log.Warning("No articles found matching the specified criteria");
+            Log.Information("Criteria:");
+            if (options.PublishedToday)
+            {
+                Log.Information("  Scraped date: today ({Date:yyyy-MM-dd})", DateTime.UtcNow.Date);
+            }
+            if (!string.IsNullOrWhiteSpace(options.Section))
+            {
+                Log.Information("  Sections: {Sections}", options.Section);
+            }
+            Log.Information("  Max count: {Count}", options.ArticleCount);
+            return;
+        }
+
+        Log.Information("Found {Count} article(s) matching criteria", articleList.Count);
+        foreach (var article in articleList)
+        {
+            var hasAudio = !string.IsNullOrEmpty(article.AudioFilePath) ? "has audio" : "needs audio";
+            Log.Information("  - [{ArticleId}] {Title} ({Words} words, {Status})",
+                article.Id, article.Title, article.EstimatedWordCount, hasAudio);
+        }
+
+        // Step 2: Determine output directory
+        var outputDir = !string.IsNullOrEmpty(options.OutputPath)
+            ? options.OutputPath
+            : Path.Combine(Directory.GetCurrentDirectory(), "output");
+        Directory.CreateDirectory(outputDir);
+
+        // Step 3: Separate articles into those with/without audio
+        Log.Information("");
+        Log.Information("Step 2: Checking existing audio files...");
+
+        var articlesNeedingAudio = new List<Article>();
+        var articlesWithExistingAudio = new List<Article>();
+
+        foreach (var article in articleList)
+        {
+            if (!string.IsNullOrEmpty(article.AudioFilePath) && File.Exists(article.AudioFilePath))
+            {
+                articlesWithExistingAudio.Add(article);
+                Log.Information("  [{ArticleId}] Using existing audio: {Title}",
+                    article.Id, article.Title);
+            }
+            else
+            {
+                articlesNeedingAudio.Add(article);
+                if (!string.IsNullOrEmpty(article.AudioFilePath))
+                {
+                    Log.Warning("  [{ArticleId}] Audio file missing, will regenerate: {Title}",
+                        article.Id, article.Title);
+                }
+            }
+        }
+
+        Log.Information("");
+        Log.Information("Audio summary:");
+        Log.Information("  Existing audio files: {Count}", articlesWithExistingAudio.Count);
+        Log.Information("  Need generation: {Count}", articlesNeedingAudio.Count);
+
+        // Step 4: Generate audio for articles that need it
+        AudioGenerationResult? result = null;
+        if (articlesNeedingAudio.Count > 0)
+        {
+            Log.Information("");
+            Log.Information("Step 3: Generating audio files (parallel processing)...");
+
+            var voiceId = options.VoiceId ?? "21m00Tcm4TlvDq8ikWAM";
+
+            using (metrics.Measure("audio_generation"))
+            {
+                result = await parallelAudioGenerator.GenerateAudioForArticlesAsync(
+                    articlesNeedingAudio,
+                    voiceId,
+                    cancellationToken: default);
+            }
+
+            metrics.Increment("audio_generated", result.SuccessCount);
+            metrics.Increment("audio_failed", result.FailureCount);
+
+            var audioGenMetrics = metrics.GetSummary().Operations["audio_generation"];
+            Log.Information("Audio generation completed in {Elapsed:F1}s", audioGenMetrics.Average.TotalSeconds);
+            Log.Information("  Success: {SuccessCount}/{Total} articles", result.SuccessCount, result.TotalProcessed);
+
+            if (result.FailureCount > 0)
+            {
+                Log.Warning("  Failed: {FailureCount}/{Total} articles", result.FailureCount, result.TotalProcessed);
+            }
+
+            // Save newly generated audio files
+            foreach (var (articleId, audioData) in result.SuccessfulGenerations)
+            {
+                var article = articlesNeedingAudio.First(a => a.Id == articleId);
+
+                var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
+                await File.WriteAllBytesAsync(audioFilePath, audioData);
+
+                // Update article with audio file path
+                article.AudioFilePath = audioFilePath;
+
+                Log.Information("  [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
+                    article.Id, article.Title, audioData.Length);
+            }
+
+            // Log failures
+            foreach (var (articleId, errorMessage) in result.FailedGenerations)
+            {
+                var article = articlesNeedingAudio.First(a => a.Id == articleId);
+                Log.Error("  [{ArticleId}] Failed: {Title} - {Error}",
+                    article.Id, article.Title, errorMessage);
+            }
+
+            // Persist audio file paths to database
+            if (result.SuccessCount > 0)
+            {
+                await unitOfWork.SaveChangesAsync();
+                Log.Information("Updated {Count} articles with audio file paths in database",
+                    result.SuccessCount);
+            }
+        }
+        else
+        {
+            Log.Information("");
+            Log.Information("Step 3: Skipped - all articles have existing audio files");
+        }
+
+        // Step 5: Collect all audio files for M4B creation
+        Log.Information("");
+        Log.Information("Step 4: Preparing audiobook...");
+
+        var allArticlesForAudiobook = articleList
+            .Where(a => !string.IsNullOrEmpty(a.AudioFilePath) && File.Exists(a.AudioFilePath))
+            .ToList();
+
+        if (allArticlesForAudiobook.Count == 0)
+        {
+            Log.Warning("No audio files available to create audiobook.");
+            Log.Information("Budget Summary: {Summary}", budgetService.GetSummary());
+            return;
+        }
+
+        // Build chapter list and collect audio file paths
+        var audioFiles = new List<string>();
+        var chapters = new List<AudioChapter>();
+        var currentTimeMs = 0;
+
+        foreach (var article in allArticlesForAudiobook)
+        {
+            audioFiles.Add(article.AudioFilePath!);
+
+            var metadata = await audioProcessor.GetMetadataAsync(article.AudioFilePath!);
+            var durationMs = metadata.DurationMs;
+
+            var chapter = new AudioChapter
+            {
+                Title = article.Title,
+                ArticleId = article.Id,
+                StartTimeMs = currentTimeMs,
+                DurationMs = durationMs,
+                AudioFilePath = article.AudioFilePath!
+            };
+            chapters.Add(chapter);
+            currentTimeMs += durationMs;
+
+            Log.Information("  Chapter: {Title} @ {Start:F1}s - {End:F1}s",
+                chapter.Title,
+                chapter.StartTimeMs / 1000.0,
+                chapter.EndTimeMs / 1000.0);
+        }
+
+        Log.Information("Prepared {Count} chapters for audiobook", chapters.Count);
+
+        string outputFilePath;
+
+        if (options.PodcastMode)
+        {
+            // Podcast mode: Create single M4A with chapters + RSS feed
+            Log.Information("");
+            Log.Information("Step 5: Creating combined podcast file with chapters...");
+
+            var dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+            var displayDateStr = DateTime.Now.ToString("MMM dd, yyyy");
+            var podcastFileName = $"{dateStr}-nyt-todays-paper.m4a";
+            var chaptersFileName = $"{dateStr}-chapters.json";
+            var podcastPath = Path.Combine(outputDir, podcastFileName);
+
+            // Create combined M4A using existing AudioProcessor
+            try
+            {
+                string createdPath;
+                using (metrics.Measure("podcast_creation"))
+                {
+                    createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, podcastPath);
+                }
+
+                Log.Information("Combined audio created: {Path}", createdPath);
+
+                var podcastMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                Log.Information("  Duration: {Duration:F1} minutes", podcastMetadata.DurationMinutes);
+                Log.Information("  File size: {Size:F2} MB", podcastMetadata.FileSizeMB);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error creating combined podcast file");
+                Log.Warning("This may be due to FFmpeg not being installed.");
+                Log.Warning("Install FFmpeg: brew install ffmpeg");
+                return;
+            }
+
+            // Add chapter markers to M4A
+            Log.Information("");
+            Log.Information("Step 6: Adding chapter markers...");
+            try
+            {
+                using (metrics.Measure("chapter_markers"))
+                {
+                    await chapterMarker.AddChaptersAsync(podcastPath, chapters);
+                }
+
+                Log.Information("Added {Count} chapter marker(s)", chapters.Count);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error adding chapter markers");
+            }
+
+            // Generate chapters.json (Podcasting 2.0 format)
+            Log.Information("");
+            Log.Information("Step 7: Generating chapters JSON...");
+            var chaptersPath = Path.Combine(outputDir, chaptersFileName);
+            await chaptersJsonGenerator.SaveJsonAsync(chapters, chaptersPath);
+            Log.Information("Chapters JSON saved: {Path}", chaptersPath);
+
+            // Generate RSS feed with single combined episode
+            Log.Information("");
+            Log.Information("Step 8: Generating RSS feed...");
+
+            var podcastFileInfo = new FileInfo(podcastPath);
+            var podcastAudioMetadata = await audioProcessor.GetMetadataAsync(podcastPath);
+
+            var combinedEpisode = new CombinedPodcastEpisode(
+                Title: $"NYT Today's Paper - {displayDateStr}",
+                Description: "Daily articles from The New York Times Today's Paper",
+                AudioFileName: podcastFileName,
+                ChaptersFileName: chaptersFileName,
+                PubDate: DateTime.UtcNow,
+                FileSizeBytes: podcastFileInfo.Length,
+                DurationSeconds: (int)(podcastAudioMetadata.DurationMs / 1000),
+                Guid: $"nyt-{dateStr}",
+                ChapterTitles: chapters.Select(c => c.Title).ToList());
+
+            var podcastInfo = new PodcastInfo(
+                Title: "NYT Today's Paper",
+                Description: "Daily articles from The New York Times Today's Paper",
+                Author: "The New York Times");
+
+            var feedPath = Path.Combine(outputDir, "feed.xml");
+            await rssFeedGenerator.SaveCombinedFeedAsync(combinedEpisode, podcastInfo, feedPath);
+
+            // Clean up individual MP3 files
+            Log.Information("");
+            Log.Information("Cleaning up temporary files...");
+            foreach (var audioFile in audioFiles)
+            {
+                try
+                {
+                    File.Delete(audioFile);
+                    Log.Debug("Deleted: {File}", audioFile);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to delete temporary file: {File}", audioFile);
+                }
+            }
+
+            outputFilePath = podcastPath;
+
+            Log.Information("");
+            Log.Information("✓ Created combined podcast: {Path}", podcastPath);
+            Log.Information("✓ Added {Count} chapter markers", chapters.Count);
+            Log.Information("✓ Generated chapters JSON: {ChaptersPath}", chaptersPath);
+            Log.Information("✓ Generated RSS feed: {FeedPath}", feedPath);
+            Log.Information("");
+            Log.Information("Next steps:");
+            Log.Information("  1. Upload {AudioFile}, {ChaptersFile}, and feed.xml to your hosting", podcastFileName, chaptersFileName);
+            Log.Information("  2. Edit feed.xml and replace {{{{BASE_URL}}}} with your host URL");
+            Log.Information("  3. Subscribe in Apple Podcasts using the feed URL");
+            Log.Information("");
+            Log.Information("Chapters (in playback order):");
+            for (int i = 0; i < chapters.Count; i++)
+            {
+                var chapter = chapters[i];
+                var startTime = TimeSpan.FromMilliseconds(chapter.StartTimeMs);
+                Log.Information("  {Index}. [{Time}] {Title}",
+                    i + 1,
+                    startTime.ToString(@"mm\:ss"),
+                    chapter.Title.Length > 50 ? chapter.Title[..47] + "..." : chapter.Title);
+            }
+        }
+        else
+        {
+            // Standard mode: Create M4B audiobook
+            Log.Information("");
+            Log.Information("Step 5: Creating M4B audiobook...");
+            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+
+            try
+            {
+                string createdPath;
+                using (metrics.Measure("audiobook_creation"))
+                {
+                    createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+                }
+
+                Log.Information("Audiobook created: {Path}", createdPath);
+
+                var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
+                Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error creating audiobook");
+                Log.Warning("This may be due to FFmpeg not being installed.");
+                Log.Warning("Install FFmpeg: brew install ffmpeg");
+                return;
+            }
+
+            // Step 6: Add chapter markers
+            Log.Information("");
+            Log.Information("Step 6: Adding chapter markers...");
+            try
+            {
+                using (metrics.Measure("chapter_markers"))
+                {
+                    await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+                }
+
+                Log.Information("Added {Count} chapter marker(s)", chapters.Count);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error adding chapter markers");
+            }
+
+            // Clean up newly generated MP3 files (keep existing ones untouched)
+            if (result != null)
+            {
+                foreach (var (articleId, _) in result.SuccessfulGenerations)
+                {
+                    var audioFilePath = Path.Combine(outputDir, $"{articleId}.mp3");
+                    try
+                    {
+                        File.Delete(audioFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Failed to delete temporary file: {File}", audioFilePath);
+                    }
+                }
+            }
+
+            outputFilePath = audiobookPath;
+        }
+
+        // Final summary
+        Log.Information("");
+        Log.Information("========================================");
+        Log.Information(options.PodcastMode ? "Podcast Created Successfully!" : "Audiobook Created Successfully!");
+        Log.Information("========================================");
+        Log.Information("Output: {Path}", outputFilePath);
+        Log.Information("Total articles: {Total}", allArticlesForAudiobook.Count);
+        Log.Information("  - Existing audio: {Existing}", articlesWithExistingAudio.Count);
+        Log.Information("  - Newly generated: {New}", result?.SuccessCount ?? 0);
+        if (result != null && result.FailureCount > 0)
+        {
+            Log.Warning("  - Failed generation: {Failed}", result.FailureCount);
+        }
+        Log.Information("Budget used: {Summary}", budgetService.GetSummary());
+        Log.Information("");
+        if (options.PodcastMode)
+        {
+            Log.Information("Your podcast files are ready for upload.");
+        }
+        else
+        {
+            Log.Information("You can now play the audiobook in any M4B-compatible player.");
+            Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+        }
+    }
+
     private static async Task RunProductionWorkflowAsync(IServiceProvider services, CommandOptions options)
     {
         // Create a scope for scoped services (AppDbContext, etc.)
@@ -548,6 +1011,9 @@ public class Program
         var sessionRepo = scopedServices.GetRequiredService<IScrapingSessionRepository>();
         var articleRepo = scopedServices.GetRequiredService<IArticleRepository>();
         var unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
+        var mp3Tagger = scopedServices.GetRequiredService<IMp3Tagger>();
+        var rssFeedGenerator = scopedServices.GetRequiredService<IRssFeedGenerator>();
+        var chaptersJsonGenerator = scopedServices.GetRequiredService<IChaptersJsonGenerator>();
 
         // Set budget from command line
         budgetService.MaxBudget = options.Budget;
@@ -754,68 +1220,200 @@ public class Program
                 return;
             }
 
-            // Step 3: Create M4B audiobook
-            Log.Information("");
-            Log.Information("Step 3: Creating M4B audiobook...");
-            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+            string outputFilePath;
 
-            try
+            if (options.PodcastMode)
             {
-                string createdPath;
-                using (metrics.Measure("audiobook_creation"))
-                {
-                    createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
-                }
+                // Podcast mode: Create single M4A with chapters + RSS feed
+                Log.Information("");
+                Log.Information("Step 3: Creating combined podcast file with chapters...");
 
-                Log.Information("✓ Audiobook created: {Path}", createdPath);
+                var dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                var displayDateStr = DateTime.Now.ToString("MMM dd, yyyy");
+                var podcastFileName = $"{dateStr}-nyt-todays-paper.m4a";
+                var chaptersFileName = $"{dateStr}-chapters.json";
+                var podcastPath = Path.Combine(outputDir, podcastFileName);
 
-                var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
-                Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
-                Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "✗ Error creating audiobook");
-                Log.Warning("This may be due to FFmpeg not being installed.");
-                Log.Warning("Install FFmpeg: brew install ffmpeg");
-                return;
-            }
-
-            // Step 4: Add chapter markers
-            Log.Information("");
-            Log.Information("Step 4: Adding chapter markers...");
-            try
-            {
-                using (metrics.Measure("chapter_markers"))
-                {
-                    await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
-                }
-
-                Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
-                foreach (var chapter in chapters)
-                {
-                    Log.Information("  - {Title} @ {Time:F1}s",
-                        chapter.Title,
-                        chapter.StartTimeMs / 1000.0);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "✗ Error adding chapter markers");
-            }
-
-            // Clean up individual MP3 files
-            foreach (var file in audioFiles)
-            {
+                // Create combined M4A using existing AudioProcessor
                 try
                 {
-                    File.Delete(file);
+                    string createdPath;
+                    using (metrics.Measure("podcast_creation"))
+                    {
+                        createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, podcastPath);
+                    }
+
+                    Log.Information("✓ Combined audio created: {Path}", createdPath);
+
+                    var podcastMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                    Log.Information("  Duration: {Duration:F1} minutes", podcastMetadata.DurationMinutes);
+                    Log.Information("  File size: {Size:F2} MB", podcastMetadata.FileSizeMB);
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, "Failed to delete temporary file: {File}", file);
+                    Log.Error(ex, "✗ Error creating combined podcast file");
+                    Log.Warning("This may be due to FFmpeg not being installed.");
+                    Log.Warning("Install FFmpeg: brew install ffmpeg");
+                    return;
                 }
+
+                // Add chapter markers to M4A
+                Log.Information("");
+                Log.Information("Step 4: Adding chapter markers...");
+                try
+                {
+                    using (metrics.Measure("chapter_markers"))
+                    {
+                        await chapterMarker.AddChaptersAsync(podcastPath, chapters);
+                    }
+
+                    Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "✗ Error adding chapter markers");
+                }
+
+                // Generate chapters.json (Podcasting 2.0 format)
+                Log.Information("");
+                Log.Information("Step 5: Generating chapters JSON...");
+                var chaptersPath = Path.Combine(outputDir, chaptersFileName);
+                await chaptersJsonGenerator.SaveJsonAsync(chapters, chaptersPath);
+                Log.Information("✓ Chapters JSON saved: {Path}", chaptersPath);
+
+                // Generate RSS feed with single combined episode
+                Log.Information("");
+                Log.Information("Step 6: Generating RSS feed...");
+
+                var podcastFileInfo = new FileInfo(podcastPath);
+                var podcastAudioMetadata = await audioProcessor.GetMetadataAsync(podcastPath);
+
+                var combinedEpisode = new CombinedPodcastEpisode(
+                    Title: $"NYT Today's Paper - {displayDateStr}",
+                    Description: "Daily articles from The New York Times Today's Paper",
+                    AudioFileName: podcastFileName,
+                    ChaptersFileName: chaptersFileName,
+                    PubDate: DateTime.UtcNow,
+                    FileSizeBytes: podcastFileInfo.Length,
+                    DurationSeconds: (int)(podcastAudioMetadata.DurationMs / 1000),
+                    Guid: $"nyt-{dateStr}",
+                    ChapterTitles: chapters.Select(c => c.Title).ToList());
+
+                var podcastInfo = new PodcastInfo(
+                    Title: "NYT Today's Paper",
+                    Description: "Daily articles from The New York Times Today's Paper",
+                    Author: "The New York Times");
+
+                var feedPath = Path.Combine(outputDir, "feed.xml");
+                await rssFeedGenerator.SaveCombinedFeedAsync(combinedEpisode, podcastInfo, feedPath);
+
+                // Clean up individual MP3 files
+                Log.Information("");
+                Log.Information("Cleaning up temporary files...");
+                foreach (var audioFile in audioFiles)
+                {
+                    try
+                    {
+                        File.Delete(audioFile);
+                        Log.Debug("Deleted: {File}", audioFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Failed to delete temporary file: {File}", audioFile);
+                    }
+                }
+
+                outputFilePath = podcastPath;
+
+                Log.Information("");
+                Log.Information("✓ Created combined podcast: {Path}", podcastPath);
+                Log.Information("✓ Added {Count} chapter markers", chapters.Count);
+                Log.Information("✓ Generated chapters JSON: {ChaptersPath}", chaptersPath);
+                Log.Information("✓ Generated RSS feed: {FeedPath}", feedPath);
+                Log.Information("");
+                Log.Information("Next steps:");
+                Log.Information("  1. Upload {AudioFile}, {ChaptersFile}, and feed.xml to your hosting", podcastFileName, chaptersFileName);
+                Log.Information("  2. Edit feed.xml and replace {{{{BASE_URL}}}} with your host URL");
+                Log.Information("  3. Subscribe in Apple Podcasts using the feed URL");
+                Log.Information("");
+                Log.Information("Chapters (in playback order):");
+                for (int i = 0; i < chapters.Count; i++)
+                {
+                    var chapter = chapters[i];
+                    var startTime = TimeSpan.FromMilliseconds(chapter.StartTimeMs);
+                    Log.Information("  {Index}. [{Time}] {Title}",
+                        i + 1,
+                        startTime.ToString(@"mm\:ss"),
+                        chapter.Title.Length > 50 ? chapter.Title[..47] + "..." : chapter.Title);
+                }
+            }
+            else
+            {
+                // Standard mode: Create M4B audiobook
+                Log.Information("");
+                Log.Information("Step 3: Creating M4B audiobook...");
+                var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var audiobookPath = Path.Combine(outputDir, $"nyt-audiobook-{timestamp}.m4b");
+
+                try
+                {
+                    string createdPath;
+                    using (metrics.Measure("audiobook_creation"))
+                    {
+                        createdPath = await audioProcessor.CreateAudiobookAsync(audioFiles, audiobookPath);
+                    }
+
+                    Log.Information("✓ Audiobook created: {Path}", createdPath);
+
+                    var audiobookMetadata = await audioProcessor.GetMetadataAsync(createdPath);
+                    Log.Information("  Duration: {Duration:F1} minutes", audiobookMetadata.DurationMinutes);
+                    Log.Information("  File size: {Size:F2} MB", audiobookMetadata.FileSizeMB);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "✗ Error creating audiobook");
+                    Log.Warning("This may be due to FFmpeg not being installed.");
+                    Log.Warning("Install FFmpeg: brew install ffmpeg");
+                    return;
+                }
+
+                // Step 4: Add chapter markers
+                Log.Information("");
+                Log.Information("Step 4: Adding chapter markers...");
+                try
+                {
+                    using (metrics.Measure("chapter_markers"))
+                    {
+                        await chapterMarker.AddChaptersAsync(audiobookPath, chapters);
+                    }
+
+                    Log.Information("✓ Added {Count} chapter marker(s)", chapters.Count);
+                    foreach (var chapter in chapters)
+                    {
+                        Log.Information("  - {Title} @ {Time:F1}s",
+                            chapter.Title,
+                            chapter.StartTimeMs / 1000.0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "✗ Error adding chapter markers");
+                }
+
+                // Clean up individual MP3 files
+                foreach (var file in audioFiles)
+                {
+                    try
+                    {
+                        File.Delete(file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Failed to delete temporary file: {File}", file);
+                    }
+                }
+
+                outputFilePath = audiobookPath;
             }
 
             // Performance summary
@@ -836,28 +1434,38 @@ public class Program
                 }
             }
 
-            Log.Information("");
-            Log.Information("Counters:");
-            foreach (var (counter, value) in summary.Counters.OrderBy(x => x.Key))
+            if (summary.Counters.Any())
             {
-                Log.Information("  {Counter}: {Value}", counter, value);
+                Log.Information("");
+                Log.Information("Counters:");
+                foreach (var (counter, value) in summary.Counters.OrderBy(x => x.Key))
+                {
+                    Log.Information("  {Counter}: {Value}", counter, value);
+                }
             }
 
             // Final summary
             Log.Information("");
             Log.Information("========================================");
-            Log.Information("Audiobook Created Successfully!");
+            Log.Information(options.PodcastMode ? "Podcast Created Successfully!" : "Audiobook Created Successfully!");
             Log.Information("========================================");
-            Log.Information("Output: {Path}", audiobookPath);
+            Log.Information("Output: {Path}", outputFilePath);
             Log.Information("Budget used: {Summary}", budgetService.GetSummary());
             Log.Information("");
-            Log.Information("You can now play the audiobook in any M4B-compatible player.");
-            Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+            if (options.PodcastMode)
+            {
+                Log.Information("Your podcast files are ready for upload.");
+            }
+            else
+            {
+                Log.Information("You can now play the audiobook in any M4B-compatible player.");
+                Log.Information("Recommended: Apple Books, VLC, or any audiobook player");
+            }
 
             // Update session on successful completion
             session.Status = ScrapingStatus.Completed;
             session.CompletedAt = DateTime.UtcNow;
-            session.OutputFilePath = audiobookPath;
+            session.OutputFilePath = outputFilePath;
             session.TotalCharactersProcessed = articleList.Sum(a => a.Content.Length);
             session.EstimatedCost = budgetService.TotalSpent;
 
