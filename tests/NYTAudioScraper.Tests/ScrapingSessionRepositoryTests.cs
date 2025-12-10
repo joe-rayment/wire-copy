@@ -60,7 +60,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
         {
             await _repository.AddAsync(session);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetSessionsByDateRangeAsync(now.AddDays(-7), now.AddDays(1));
@@ -104,7 +104,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
         {
             await _repository.AddAsync(session);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetSessionsByStatusAsync(ScrapingStatus.Completed);
@@ -148,7 +148,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
         {
             await _repository.AddAsync(session);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetLastIncompleteSessionAsync();
@@ -170,7 +170,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
             Status = ScrapingStatus.Completed
         };
         await _repository.AddAsync(session);
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetLastIncompleteSessionAsync();
@@ -215,7 +215,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
         {
             await _repository.AddAsync(session);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetTotalCostAsync();
@@ -261,7 +261,7 @@ public class ScrapingSessionRepositoryTests : IDisposable
         {
             await _repository.AddAsync(session);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetTotalCostByDateRangeAsync(now.AddDays(-7), now.AddDays(1));

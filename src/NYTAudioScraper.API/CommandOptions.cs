@@ -45,6 +45,15 @@ public class CommandOptions
     [Option("scrape-only", Required = false, Default = false, HelpText = "Only scrape articles without generating audio (for testing)")]
     public bool ScrapeOnly { get; set; }
 
+    [Option("audio-only", Required = false, Default = false, HelpText = "Generate audio from previously scraped articles (skip scraping)")]
+    public bool AudioOnly { get; set; }
+
+    [Option("published-today", Required = false, Default = false, HelpText = "Filter to articles scraped today (from Today's Paper). Requires --audio-only.")]
+    public bool PublishedToday { get; set; }
+
+    [Option("podcast", Required = false, Default = false, HelpText = "Generate individual MP3s with RSS feed for podcasts (instead of M4B audiobook)")]
+    public bool PodcastMode { get; set; }
+
     /// <summary>
     /// Validates the command options and returns validation errors if any
     /// </summary>
@@ -140,6 +149,26 @@ public class CommandOptions
         if (ScrapeOnly && TestMode)
         {
             errors.Add("Cannot use --scrape-only with --test. Test mode already skips audio generation.");
+        }
+
+        if (AudioOnly && ScrapeOnly)
+        {
+            errors.Add("Cannot use --audio-only with --scrape-only. These options are mutually exclusive.");
+        }
+
+        if (AudioOnly && !string.IsNullOrWhiteSpace(ArticleUrl))
+        {
+            errors.Add("Cannot use --audio-only with --url. Use --url for single article scraping.");
+        }
+
+        if (PublishedToday && !AudioOnly)
+        {
+            errors.Add("--published-today requires --audio-only. Use: --audio-only --published-today");
+        }
+
+        if (PodcastMode && ScrapeOnly)
+        {
+            errors.Add("Cannot use --podcast with --scrape-only. Podcast mode requires audio generation.");
         }
 
         return errors;

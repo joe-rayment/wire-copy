@@ -48,7 +48,7 @@ public class RateLimiter : IRateLimiter
     /// <summary>
     /// Acquires the rate limiter, blocking until a slot is available.
     /// </summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task AcquireAsync(CancellationToken cancellationToken = default)
     {
         await _semaphore.WaitAsync(cancellationToken);
@@ -90,7 +90,7 @@ public class RateLimiter : IRateLimiter
     /// <summary>
     /// Executes an action with rate limiting.
     /// </summary>
-    /// <returns><placeholder>A <see cref="Task"/> representing the asynchronous operation.</placeholder></returns>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task<T> ExecuteAsync<T>(
         Func<Task<T>> action,
         CancellationToken cancellationToken = default)

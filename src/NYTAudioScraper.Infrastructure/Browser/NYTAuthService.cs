@@ -248,8 +248,62 @@ public class NYTAuthService : INYTAuthService
 
     private async Task<bool> PromptManualLoginAsync(CancellationToken cancellationToken)
     {
-        try
+        const int MaxAttempts = 2;
+
+        for (int attempt = 1; attempt <= MaxAttempts; attempt++)
         {
+            var cookieValue = PromptForCookie(attempt, MaxAttempts);
+
+            if (cookieValue == null)
+            {
+                // User provided no input or cancelled
+                return false;
+            }
+
+            var validationError = ValidateCookieValue(cookieValue);
+            if (validationError != null)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"✗ {validationError}");
+
+                if (attempt < MaxAttempts)
+                {
+                    Console.WriteLine("  Let's try again...");
+                    Console.WriteLine();
+                }
+                else
+                {
+                    Console.WriteLine("  Continuing without authentication.");
+                    Console.WriteLine();
+                    return false;
+                }
+
+                continue;
+            }
+
+            // Cookie is valid - save it
+            var saved = await SaveCookieAsync(cookieValue, cancellationToken);
+            if (saved)
+            {
+                return true;
+            }
+
+            // Save failed - allow retry if attempts remain
+            if (attempt < MaxAttempts)
+            {
+                Console.WriteLine("  Let's try again...");
+                Console.WriteLine();
+            }
+        }
+
+        return false;
+    }
+
+    private static string? PromptForCookie(int attempt, int maxAttempts)
+    {
+        if (attempt == 1)
+        {
+            // First attempt - show full instructions
             Console.WriteLine();
             Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
             Console.WriteLine("║          NYT Authentication Required                                  ║");
@@ -268,40 +322,51 @@ public class NYTAuthService : INYTAuthService
             Console.WriteLine();
             Console.WriteLine("────────────────────────────────────────────────────────────────────────");
             Console.WriteLine();
-            Console.Write("Paste the NYT-S cookie value here: ");
+        }
+        else
+        {
+            // Retry attempt - shorter prompt
+            Console.WriteLine($"Attempt {attempt} of {maxAttempts}:");
+        }
 
-            var cookieValue = Console.ReadLine()?.Trim();
+        Console.Write("Paste the NYT-S cookie value here: ");
 
-            // Validate input
-            if (string.IsNullOrWhiteSpace(cookieValue))
-            {
-                Console.WriteLine();
-                Console.WriteLine("✗ No cookie value provided. Continuing without authentication.");
-                Console.WriteLine();
-                return false;
-            }
+        var cookieValue = Console.ReadLine()?.Trim();
 
-            // Security: Validate cookie length to prevent DoS
-            const int MaxCookieLength = 8192; // 8KB is reasonable for cookies
-            if (cookieValue.Length > MaxCookieLength)
-            {
-                Console.WriteLine();
-                Console.WriteLine($"✗ Cookie value too long. Maximum {MaxCookieLength} characters allowed.");
-                Console.WriteLine("  This doesn't look like a valid NYT cookie.");
-                Console.WriteLine();
-                return false;
-            }
+        if (string.IsNullOrWhiteSpace(cookieValue))
+        {
+            Console.WriteLine();
+            Console.WriteLine("✗ No cookie value provided. Continuing without authentication.");
+            Console.WriteLine();
+            return null;
+        }
 
-            // Security: Validate cookie format (cookies should be base64/alphanumeric with some special chars)
-            if (!System.Text.RegularExpressions.Regex.IsMatch(cookieValue, @"^[a-zA-Z0-9\-_=.]+$"))
-            {
-                Console.WriteLine();
-                Console.WriteLine("✗ Invalid cookie format. Cookie should only contain alphanumeric characters, hyphens, underscores, equals signs, and periods.");
-                Console.WriteLine("  Please make sure you copied the cookie value correctly.");
-                Console.WriteLine();
-                return false;
-            }
+        return cookieValue;
+    }
 
+    private static string? ValidateCookieValue(string cookieValue)
+    {
+        // Security: Validate cookie length to prevent DoS
+        const int MaxCookieLength = 8192; // 8KB is reasonable for cookies
+        if (cookieValue.Length > MaxCookieLength)
+        {
+            return $"Cookie value too long. Maximum {MaxCookieLength} characters allowed. This doesn't look like a valid NYT cookie.";
+        }
+
+        // Security: Validate cookie format (cookies should be base64/alphanumeric with some special chars)
+        // NYT-S cookies use ^ as a version delimiter (e.g., "0^CB4SNgjD...")
+        if (!System.Text.RegularExpressions.Regex.IsMatch(cookieValue, @"^[a-zA-Z0-9\-_=.^]+$"))
+        {
+            return "Invalid cookie format. Cookie should only contain alphanumeric characters, hyphens, underscores, equals signs, periods, and carets. Please make sure you copied the cookie value correctly.";
+        }
+
+        return null; // Valid
+    }
+
+    private async Task<bool> SaveCookieAsync(string cookieValue, CancellationToken cancellationToken)
+    {
+        try
+        {
             // Create cookie structure and save
             var cookies = new List<CookieData>
             {

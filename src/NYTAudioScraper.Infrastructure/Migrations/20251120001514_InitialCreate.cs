@@ -1,4 +1,4 @@
-﻿// Educational and personal use only.
+// Educational and personal use only.
 
 using System;
 using Microsoft.EntityFrameworkCore.Migrations;

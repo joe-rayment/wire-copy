@@ -40,7 +40,7 @@ public class ArticleRepositoryTests : IDisposable
             ScrapedDate = DateTime.UtcNow
         };
         await _repository.AddAsync(article);
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetByUrlAsync("https://nytimes.com/test");
@@ -102,7 +102,7 @@ public class ArticleRepositoryTests : IDisposable
         {
             await _repository.AddAsync(article);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetBySectionAsync("Business");
@@ -143,7 +143,7 @@ public class ArticleRepositoryTests : IDisposable
         {
             await _repository.AddAsync(article);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetByPublishedDateRangeAsync(now.AddDays(-2), now.AddDays(1));
@@ -167,7 +167,7 @@ public class ArticleRepositoryTests : IDisposable
             ScrapedDate = DateTime.UtcNow
         };
         await _repository.AddAsync(article);
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.ExistsByUrlAsync("https://nytimes.com/test");
@@ -205,7 +205,7 @@ public class ArticleRepositoryTests : IDisposable
         {
             await _repository.AddAsync(article);
         }
-        await _repository.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _repository.GetRecentlyScrapedAsync(3);

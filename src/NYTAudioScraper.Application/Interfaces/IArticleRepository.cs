@@ -43,4 +43,33 @@ public interface IArticleRepository : IRepository<Article>
     Task<IEnumerable<Article>> GetRecentlyScrapedAsync(
         int count = 100,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets articles published on a specific date with optional filters
+    /// </summary>
+    /// <param name="date">The published date to filter by (UTC)</param>
+    /// <param name="section">Optional section filter (comma-separated for multiple)</param>
+    /// <param name="maxCount">Maximum number of articles to return</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Articles published on the specified date, ordered by published date descending</returns>
+    Task<IEnumerable<Article>> GetByPublishedDateAsync(
+        DateTime date,
+        string? section = null,
+        int? maxCount = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets articles scraped on a specific date with optional filters.
+    /// Use this for Today's Paper workflow where articles may have been published online earlier.
+    /// </summary>
+    /// <param name="date">The scraped date to filter by (UTC)</param>
+    /// <param name="section">Optional section filter (comma-separated for multiple)</param>
+    /// <param name="maxCount">Maximum number of articles to return</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Articles scraped on the specified date, ordered by scraped date descending</returns>
+    Task<IEnumerable<Article>> GetByScrapedDateAsync(
+        DateTime date,
+        string? section = null,
+        int? maxCount = null,
+        CancellationToken cancellationToken = default);
 }

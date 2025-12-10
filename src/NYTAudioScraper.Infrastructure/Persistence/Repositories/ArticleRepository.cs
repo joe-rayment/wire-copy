@@ -57,4 +57,60 @@ public class ArticleRepository : Repository<Article>, IArticleRepository
             .Take(count)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IEnumerable<Article>> GetByPublishedDateAsync(
+        DateTime date,
+        string? section = null,
+        int? maxCount = null,
+        CancellationToken cancellationToken = default)
+    {
+        var startOfDay = date.Date;
+        var endOfDay = startOfDay.AddDays(1).AddTicks(-1);
+
+        var query = _dbSet
+            .Where(a => a.PublishedDate >= startOfDay && a.PublishedDate <= endOfDay);
+
+        if (!string.IsNullOrWhiteSpace(section))
+        {
+            var sections = section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            query = query.Where(a => a.Section != null && sections.Contains(a.Section));
+        }
+
+        query = query.OrderByDescending(a => a.PublishedDate);
+
+        if (maxCount.HasValue && maxCount.Value > 0)
+        {
+            query = query.Take(maxCount.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    public async Task<IEnumerable<Article>> GetByScrapedDateAsync(
+        DateTime date,
+        string? section = null,
+        int? maxCount = null,
+        CancellationToken cancellationToken = default)
+    {
+        var startOfDay = date.Date;
+        var endOfDay = startOfDay.AddDays(1).AddTicks(-1);
+
+        var query = _dbSet
+            .Where(a => a.ScrapedDate >= startOfDay && a.ScrapedDate <= endOfDay);
+
+        if (!string.IsNullOrWhiteSpace(section))
+        {
+            var sections = section.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            query = query.Where(a => a.Section != null && sections.Contains(a.Section));
+        }
+
+        query = query.OrderByDescending(a => a.ScrapedDate);
+
+        if (maxCount.HasValue && maxCount.Value > 0)
+        {
+            query = query.Take(maxCount.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
 }
