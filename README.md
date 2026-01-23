@@ -23,7 +23,9 @@ A .NET 9 application that scrapes articles from the New York Times Today's Paper
 
 ## Quick Start
 
-### 1. Clone and Build
+### Audio Mode (Audio Scraper)
+
+#### 1. Clone and Build
 
 ```bash
 git clone https://github.com/joe-rayment/newspaper_reader.git
@@ -32,7 +34,7 @@ dotnet restore
 dotnet build
 ```
 
-### 2. Configure Credentials
+#### 2. Configure Credentials
 
 ```bash
 cd src/NYTAudioScraper.API
@@ -40,7 +42,7 @@ dotnet user-secrets init
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
 ```
 
-### 3. Run
+#### 3. Run
 
 ```bash
 # Scrape and generate audio for 5 articles
@@ -51,6 +53,64 @@ dotnet run --project src/NYTAudioScraper.API -- --count 5 --scrape-only
 
 # Show help
 dotnet run --project src/NYTAudioScraper.API -- --help
+```
+
+### Browser Mode (Terminal-Based Web Browser) 🚀 NEW
+
+Navigate the web with keyboard-only controls in your terminal using Helix-style vim keybindings.
+
+#### Quick Start
+
+```bash
+# Launch browser (will prompt for URL)
+dotnet run --project src/NYTAudioScraper.API browse
+
+# Enter URL when prompted:
+# Enter URL: https://wikipedia.org
+```
+
+#### Navigation Keybindings
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `j` | Move down | Next link in tree |
+| `k` | Move up | Previous link in tree |
+| `h` | Collapse/Back | Collapse node or navigate back |
+| `l` | Expand/Forward | Expand node or navigate forward |
+| `Enter` | Select | Follow selected link |
+| `v` or `Tab` | Toggle view | Switch between link tree and reader view |
+| `Space` | Toggle collapse | Expand/collapse current section |
+| `b` | Back | Navigate to previous page |
+| `Ctrl+d` | Page down | Scroll down half page |
+| `Ctrl+u` | Page up | Scroll up half page |
+| `q` | Quit | Exit browser |
+
+#### Features
+
+- **Hierarchical Link Display**: Main content links expanded, navigation menus collapsed
+- **Reader Mode**: Clean article text without ads, navigation, or clutter
+- **Smart Link Classification**: Automatically categorizes links by context
+- **History Tracking**: Navigate back/forward through browsing history
+- **Vim-like Navigation**: Build muscle memory with Helix editor-style keybindings
+
+#### Example Session
+
+```bash
+$ dotnet run --project src/NYTAudioScraper.API browse
+
+Enter URL: https://news.ycombinator.com
+
+# Link view displays:
+▼ Main Content (30 stories)
+  → [1] Show HN: I built a terminal web browser
+  → [2] Ask HN: Best practices for keyboard navigation
+  ...
+
+▶ Navigation (8 links)
+
+# Press 'j' to move down, Enter to open story
+# Press 'v' to switch to reader view for clean article text
+# Press 'b' to go back to previous page
 ```
 
 ### 4. Authentication
