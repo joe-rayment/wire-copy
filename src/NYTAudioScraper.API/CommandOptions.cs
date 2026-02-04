@@ -7,6 +7,37 @@ using CommandLine;
 
 namespace NYTAudioScraper.API;
 
+/// <summary>
+/// Options for the browse verb - launches terminal browser mode.
+/// </summary>
+[Verb("browse", HelpText = "Launch terminal browser for interactive web browsing")]
+public class BrowseOptions
+{
+    [Value(0, MetaName = "url", Required = false, HelpText = "Initial URL to load (optional, will prompt if not provided)")]
+    public string? Url { get; set; }
+
+    /// <summary>
+    /// Validates the browse options and returns validation errors if any.
+    /// </summary>
+    /// <returns>List of validation error messages, empty if valid.</returns>
+    public List<string> Validate()
+    {
+        var errors = new List<string>();
+
+        // Validate URL format if provided
+        if (!string.IsNullOrWhiteSpace(Url))
+        {
+            if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                errors.Add($"Invalid URL: '{Url}'. Must be a valid HTTP/HTTPS URL.");
+            }
+        }
+
+        return errors;
+    }
+}
+
 public class CommandOptions
 {
     [Option('u', "url", Required = false, HelpText = "Specific NYT article URL to process")]
@@ -53,6 +84,12 @@ public class CommandOptions
 
     [Option("podcast", Required = false, Default = false, HelpText = "Generate individual MP3s with RSS feed for podcasts (instead of M4B audiobook)")]
     public bool PodcastMode { get; set; }
+
+    [Option("browse", Required = false, Default = false, HelpText = "Launch terminal browser mode for interactive web browsing")]
+    public bool BrowseMode { get; set; }
+
+    [Option("browse-url", Required = false, HelpText = "Initial URL to load in browse mode")]
+    public string? BrowseUrl { get; set; }
 
     /// <summary>
     /// Validates the command options and returns validation errors if any
@@ -169,6 +206,47 @@ public class CommandOptions
         if (PodcastMode && ScrapeOnly)
         {
             errors.Add("Cannot use --podcast with --scrape-only. Podcast mode requires audio generation.");
+        }
+
+        // Validate browse mode
+        if (BrowseMode)
+        {
+            // Browse mode is exclusive - cannot combine with scraping or audio options
+            if (!string.IsNullOrWhiteSpace(ArticleUrl))
+            {
+                errors.Add("Cannot use --browse with --url. Browse mode is a standalone feature.");
+            }
+
+            if (AudioOnly)
+            {
+                errors.Add("Cannot use --browse with --audio-only. Browse mode is a standalone feature.");
+            }
+
+            if (ScrapeOnly)
+            {
+                errors.Add("Cannot use --browse with --scrape-only. Browse mode is a standalone feature.");
+            }
+
+            if (PodcastMode)
+            {
+                errors.Add("Cannot use --browse with --podcast. Browse mode is a standalone feature.");
+            }
+        }
+
+        // Validate browse-url requires browse mode
+        if (!string.IsNullOrWhiteSpace(BrowseUrl) && !BrowseMode)
+        {
+            errors.Add("--browse-url requires --browse. Use: --browse --browse-url <url>");
+        }
+
+        // Validate browse-url format
+        if (!string.IsNullOrWhiteSpace(BrowseUrl))
+        {
+            if (!Uri.TryCreate(BrowseUrl, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                errors.Add($"Invalid browse URL: '{BrowseUrl}'. Must be a valid HTTP/HTTPS URL.");
+            }
         }
 
         return errors;

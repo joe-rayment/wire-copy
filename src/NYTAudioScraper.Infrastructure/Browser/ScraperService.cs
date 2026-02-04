@@ -105,7 +105,10 @@ public class ScraperService : IScraperService
 #pragma warning restore S6966
             await Task.Delay(_nytConfig.RateLimitDelayMs, cancellationToken);
 
-            var article = await ParseWithRetryAsync(driver, url, cancellationToken);
+            var (article, currentDriver) = await ParseWithRetryAsync(driver, url, cancellationToken);
+
+            // Update driver reference in case it was swapped (e.g., switched to headed browser)
+            driver = currentDriver;
 
             if (article != null)
             {
@@ -206,7 +209,10 @@ public class ScraperService : IScraperService
                     // Simulate realistic scrolling behavior with variation
                     await SimulateHumanScrolling(driver, cancellationToken);
 
-                    var article = await ParseWithRetryAsync(driver, url, cancellationToken);
+                    var (article, currentDriver) = await ParseWithRetryAsync(driver, url, cancellationToken);
+
+                    // Update driver reference in case it was swapped (e.g., switched to headed browser)
+                    driver = currentDriver;
 
                     if (article != null)
                     {
@@ -311,25 +317,38 @@ public class ScraperService : IScraperService
         }
     }
 
-    private async Task<Article?> ParseWithRetryAsync(
+    private async Task<(Article? Article, IWebDriver Driver)> ParseWithRetryAsync(
         IWebDriver driver,
         string url,
         CancellationToken cancellationToken,
         int maxRetries = 3)
     {
         Article? article = null;
+        var currentDriver = driver;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            var pageSource = driver.PageSource;
+            var pageSource = currentDriver.PageSource;
 
             // Check for challenge page before parsing
             if (DetectChallengePage(pageSource))
             {
                 _logger.LogWarning(
-                    "Challenge page detected on attempt {Attempt} for {Url}. Waiting longer before retry...",
+                    "Challenge page detected on attempt {Attempt} for {Url}.",
                     attempt,
                     url);
+
+                // Offer interactive challenge completion - switch to headed browser
+                if (_browserConfig.Headless && attempt == 1)
+                {
+                    var (success, newDriver) = await PromptForManualChallengeCompletionAsync(currentDriver, url, cancellationToken);
+                    if (success && newDriver != null)
+                    {
+                        // Switch to the headed driver and retry
+                        currentDriver = newDriver;
+                        continue;
+                    }
+                }
 
                 if (attempt < maxRetries)
                 {
@@ -342,7 +361,7 @@ public class ScraperService : IScraperService
                     try
                     {
 #pragma warning disable S6966
-                        driver.Navigate().Refresh();
+                        currentDriver.Navigate().Refresh();
 #pragma warning restore S6966
                         await Task.Delay(Random.Shared.Next(5000, 10000), cancellationToken);
                     }
@@ -364,7 +383,7 @@ public class ScraperService : IScraperService
                     _logger.LogInformation("Successfully parsed article on attempt {Attempt}", attempt);
                 }
 
-                return article;
+                return (article, currentDriver);
             }
 
             if (attempt < maxRetries)
@@ -384,14 +403,14 @@ public class ScraperService : IScraperService
                 {
                     _logger.LogDebug("Refreshing page for retry attempt {Attempt}", attempt + 1);
 #pragma warning disable S6966
-                    driver.Navigate().Refresh();
+                    currentDriver.Navigate().Refresh();
 #pragma warning restore S6966
 
                     // Wait for content to load with some variation
                     await Task.Delay(Random.Shared.Next(4000, 7000), cancellationToken);
 
                     // Scroll to trigger any lazy-loaded content
-                    await SimulateHumanScrolling(driver, cancellationToken);
+                    await SimulateHumanScrolling(currentDriver, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -400,7 +419,7 @@ public class ScraperService : IScraperService
             }
         }
 
-        return article;
+        return (article, currentDriver);
     }
 
     private async Task SimulateHumanScrolling(IWebDriver driver, CancellationToken cancellationToken)
@@ -668,5 +687,130 @@ public class ScraperService : IScraperService
             _logger.LogError(ex, "Error extracting article URLs");
             return new List<string>();
         }
+    }
+
+    private async Task<(bool Success, IWebDriver? NewDriver)> PromptForManualChallengeCompletionAsync(
+        IWebDriver headlessDriver,
+        string url,
+        CancellationToken cancellationToken)
+    {
+        Console.WriteLine();
+        Console.WriteLine("╔════════════════════════════════════════════════════════════════════════╗");
+        Console.WriteLine("║          Challenge Page Detected - Manual Completion Required          ║");
+        Console.WriteLine("╚════════════════════════════════════════════════════════════════════════╝");
+        Console.WriteLine();
+        Console.WriteLine("NYT is blocking the headless browser. A visible browser window will open");
+        Console.WriteLine("for you to complete any challenges and continue scraping.");
+        Console.WriteLine();
+        Console.Write("Open visible browser to continue? [Y/n]: ");
+
+        var response = Console.ReadLine()?.Trim().ToLowerInvariant();
+        if (response == "n" || response == "no")
+        {
+            Console.WriteLine("Skipping - will retry with headless browser...");
+            Console.WriteLine();
+            return (false, null);
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Opening visible browser...");
+        Console.WriteLine();
+
+        try
+        {
+            // Create a headed Chrome browser for manual interaction
+            var headedDriver = CreateHeadedChromeDriver();
+
+            // First, copy cookies from headless driver to maintain session
+            var cookies = headlessDriver.Manage().Cookies.AllCookies;
+
+            // Navigate to NYT first to set the domain
+#pragma warning disable S6966
+            headedDriver.Navigate().GoToUrl("https://www.nytimes.com");
+#pragma warning restore S6966
+            await Task.Delay(2000, cancellationToken);
+
+            // Add cookies from the headless session
+            foreach (var cookie in cookies)
+            {
+                try
+                {
+                    headedDriver.Manage().Cookies.AddCookie(cookie);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not copy cookie {Name}", cookie.Name);
+                }
+            }
+
+            // Navigate to the target URL
+#pragma warning disable S6966
+            headedDriver.Navigate().GoToUrl(url);
+#pragma warning restore S6966
+
+            Console.WriteLine("────────────────────────────────────────────────────────────────────────");
+            Console.WriteLine();
+            Console.WriteLine("A Chrome browser window has opened.");
+            Console.WriteLine("If there's a CAPTCHA, please complete it now.");
+            Console.WriteLine();
+            Console.WriteLine("Press ENTER to continue scraping with the visible browser...");
+            Console.WriteLine("(The browser will remain open until scraping completes)");
+            Console.WriteLine();
+
+            // Wait for user to press Enter
+            Console.ReadLine();
+
+            Console.WriteLine("✓ Continuing with visible browser...");
+            Console.WriteLine();
+
+            _logger.LogInformation("Switching to headed browser for scraping");
+
+            // Dispose the headless driver and return the headed one
+            headlessDriver.Dispose();
+
+            return (true, headedDriver);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during manual challenge completion");
+            Console.WriteLine($"✗ Error: {ex.Message}");
+            Console.WriteLine("Continuing with automatic retry...");
+            Console.WriteLine();
+            return (false, null);
+        }
+    }
+
+    private IWebDriver CreateHeadedChromeDriver()
+    {
+        var options = new ChromeOptions();
+
+        // Anti-detection measures
+        options.AddArgument("--disable-blink-features=AutomationControlled");
+        options.AddExcludedArgument("enable-automation");
+        options.AddAdditionalOption("useAutomationExtension", false);
+        options.AddArgument($"user-agent={_browserConfig.UserAgent}");
+
+        // Headed mode with visible window
+        options.AddArgument("--window-size=1200,800");
+        options.AddArgument("--window-position=100,100");
+
+        // Create ChromeDriver service
+        var service = ChromeDriverService.CreateDefaultService();
+        service.SuppressInitialDiagnosticInformation = true;
+        service.HideCommandPromptWindow = true;
+
+        var driver = new ChromeDriver(service, options);
+        driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
+        driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(60); // Longer timeout for manual interaction
+
+        // Execute script to mask WebDriver detection
+        var script = @"
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.navigator.chrome = {runtime: {}};
+        ";
+        ((IJavaScriptExecutor)driver).ExecuteScript(script);
+
+        _logger.LogDebug("Headed Chrome driver created for manual challenge completion");
+        return driver;
     }
 }
