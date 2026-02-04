@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using NYTAudioScraper.Application.Interfaces;
+using NYTAudioScraper.Application.Interfaces.Browser;
 using NYTAudioScraper.Domain.Entities;
 using NYTAudioScraper.Infrastructure;
 using NYTAudioScraper.Infrastructure.Audio;
@@ -31,11 +32,12 @@ public class Program
 
         try
         {
-            // Parse command line arguments
+            // Parse command line arguments with verb support
             var parser = new Parser(with => with.HelpWriter = Console.Error);
-            var result = parser.ParseArguments<CommandOptions>(args);
+            var result = parser.ParseArguments<BrowseOptions, CommandOptions>(args);
 
             return await result.MapResult(
+                async (BrowseOptions opts) => await RunBrowseVerbAsync(opts),
                 async (CommandOptions opts) => await RunWithOptionsAsync(opts),
                 errs => Task.FromResult(1)); // Return error code 1 for parsing errors
         }
@@ -85,7 +87,12 @@ public class Program
             return await HandleImportCookiesAsync(host.Services, options.ImportCookiesPath);
         }
 
-        if (options.TestMode)
+        if (options.BrowseMode)
+        {
+            // Run terminal browser mode
+            await RunBrowserModeAsync(host.Services, options);
+        }
+        else if (options.TestMode)
         {
             // Run existing test workflow
             await RunApplicationAsync(host.Services);
@@ -104,6 +111,68 @@ public class Program
         Log.Information("Application completed successfully");
         return 0;
     }
+
+    private static async Task<int> RunBrowseVerbAsync(BrowseOptions options)
+    {
+        // Validate browse options
+        var validationErrors = options.Validate();
+        if (validationErrors.Any())
+        {
+            foreach (var error in validationErrors)
+            {
+                Console.Error.WriteLine($"Error: {error}");
+            }
+
+            return 1;
+        }
+
+        // Prompt for URL if not provided
+        var url = options.Url;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            Console.Write("Enter URL to browse (or press Enter for https://news.ycombinator.com): ");
+            var input = Console.ReadLine()?.Trim();
+            url = string.IsNullOrWhiteSpace(input) ? "https://news.ycombinator.com" : input;
+
+            // Validate the entered URL
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                Console.Error.WriteLine($"Error: Invalid URL '{url}'. Must be a valid HTTP/HTTPS URL.");
+                return 1;
+            }
+        }
+
+        // Create a minimal host for browser services
+        var host = CreateBrowseHostBuilder().Build();
+
+        try
+        {
+            var browser = host.Services.GetRequiredService<IBrowserService>();
+            await browser.RunAsync(url);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error in browser mode");
+            return 1;
+        }
+    }
+
+    private static IHostBuilder CreateBrowseHostBuilder() =>
+        Host.CreateDefaultBuilder()
+            .UseSerilog()
+            .ConfigureAppConfiguration((context, config) =>
+            {
+                var basePath = AppContext.BaseDirectory;
+                config.SetBasePath(basePath);
+                config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+            })
+            .ConfigureServices((context, services) =>
+            {
+                // Only register terminal browser services for browse mode
+                services.AddTerminalBrowser();
+            });
 
     private static async Task<int> HandleCookieInfoAsync(IServiceProvider services)
     {
@@ -257,11 +326,39 @@ public class Program
         }
     }
 
+    private static async Task RunBrowserModeAsync(IServiceProvider services, CommandOptions options)
+    {
+        Log.Information("Starting Terminal Browser Mode");
+        Log.Information("==============================");
+        Log.Information("");
+
+        try
+        {
+            var browser = services.GetRequiredService<IBrowserService>();
+
+            // Run the browser loop with optional initial URL
+            await browser.RunAsync(options.BrowseUrl);
+
+            Log.Information("");
+            Log.Information("Browser session ended");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error in browser mode");
+            throw;
+        }
+    }
+
     public static IHostBuilder CreateHostBuilder(CommandOptions options) =>
         Host.CreateDefaultBuilder()
             .UseSerilog()
             .ConfigureAppConfiguration((context, config) =>
             {
+                // Ensure appsettings.json is loaded from the correct location
+                var basePath = AppContext.BaseDirectory;
+                config.SetBasePath(basePath);
+                config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
                 // Add secrets.json to the configuration
                 var projectRoot = Directory.GetCurrentDirectory();
                 var secretsPath = Path.Combine(projectRoot, "secrets.json");
@@ -280,6 +377,12 @@ public class Program
             {
                 // Register infrastructure services
                 services.AddInfrastructure(context.Configuration);
+
+                // Register terminal browser services (if browse mode is enabled)
+                if (options.BrowseMode)
+                {
+                    services.AddTerminalBrowser();
+                }
 
                 // Register command options as singleton so services can access them
                 services.AddSingleton(options);
