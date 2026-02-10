@@ -328,38 +328,38 @@ services.AddOptions<BrowserConfiguration>().ValidateOnStart();
 
 ### New Files (12)
 **Interfaces (5)**:
-- `src/NYTAudioScraper.Application/Interfaces/IBudgetService.cs`
-- `src/NYTAudioScraper.Application/Interfaces/IArticleParser.cs`
-- `src/NYTAudioScraper.Application/Interfaces/INYTAuthService.cs`
-- `src/NYTAudioScraper.Application/Interfaces/IRateLimiter.cs`
-- `src/NYTAudioScraper.Application/Interfaces/IParallelAudioGenerator.cs`
+- `src/TermReader.Application/Interfaces/IBudgetService.cs`
+- `src/TermReader.Application/Interfaces/IArticleParser.cs`
+- `src/TermReader.Application/Interfaces/INYTAuthService.cs`
+- `src/TermReader.Application/Interfaces/IRateLimiter.cs`
+- `src/TermReader.Application/Interfaces/IParallelAudioGenerator.cs`
 
 **Validators (4)**:
-- `src/NYTAudioScraper.Infrastructure/Configuration/Validation/ElevenLabsConfigurationValidator.cs`
-- `src/NYTAudioScraper.Infrastructure/Configuration/Validation/NYTConfigurationValidator.cs`
-- `src/NYTAudioScraper.Infrastructure/Configuration/Validation/AudioConfigurationValidator.cs`
-- `src/NYTAudioScraper.Infrastructure/Configuration/Validation/BrowserConfigurationValidator.cs`
+- `src/TermReader.Infrastructure/Configuration/Validation/ElevenLabsConfigurationValidator.cs`
+- `src/TermReader.Infrastructure/Configuration/Validation/NYTConfigurationValidator.cs`
+- `src/TermReader.Infrastructure/Configuration/Validation/AudioConfigurationValidator.cs`
+- `src/TermReader.Infrastructure/Configuration/Validation/BrowserConfigurationValidator.cs`
 
 **Domain Entities (1)**:
-- `src/NYTAudioScraper.Domain/Entities/AudioGenerationResult.cs`
+- `src/TermReader.Domain/Entities/AudioGenerationResult.cs`
 
 **Infrastructure (2)**:
-- `src/NYTAudioScraper.Infrastructure/Http/HttpResilienceLogger.cs`
+- `src/TermReader.Infrastructure/Http/HttpResilienceLogger.cs`
 
 ### Modified Files (10)
 **API Layer**:
-- `src/NYTAudioScraper.API/CommandOptions.cs` - Added validation method
-- `src/NYTAudioScraper.API/Program.cs` - Call validation before execution
+- `src/TermReader.API/CommandOptions.cs` - Added validation method
+- `src/TermReader.API/Program.cs` - Call validation before execution
 
 **Infrastructure Layer**:
-- `src/NYTAudioScraper.Infrastructure/DependencyInjection.cs` - Register interfaces, validators, resilience logger
-- `src/NYTAudioScraper.Infrastructure/Audio/BudgetService.cs` - Implement IBudgetService
-- `src/NYTAudioScraper.Infrastructure/Audio/ResilientAudioGenerator.cs` - Use IBudgetService
-- `src/NYTAudioScraper.Infrastructure/Audio/ParallelAudioGenerator.cs` - Implement IParallelAudioGenerator, return AudioGenerationResult
-- `src/NYTAudioScraper.Infrastructure/Audio/RateLimiter.cs` - Implement IRateLimiter
-- `src/NYTAudioScraper.Infrastructure/Parsing/ArticleParser.cs` - Implement IArticleParser
-- `src/NYTAudioScraper.Infrastructure/Browser/NYTAuthService.cs` - Implement INYTAuthService, fix exception handling
-- `src/NYTAudioScraper.Infrastructure/Browser/ScraperService.cs` - Use interfaces
+- `src/TermReader.Infrastructure/DependencyInjection.cs` - Register interfaces, validators, resilience logger
+- `src/TermReader.Infrastructure/Audio/BudgetService.cs` - Implement IBudgetService
+- `src/TermReader.Infrastructure/Audio/ResilientAudioGenerator.cs` - Use IBudgetService
+- `src/TermReader.Infrastructure/Audio/ParallelAudioGenerator.cs` - Implement IParallelAudioGenerator, return AudioGenerationResult
+- `src/TermReader.Infrastructure/Audio/RateLimiter.cs` - Implement IRateLimiter
+- `src/TermReader.Infrastructure/Parsing/ArticleParser.cs` - Implement IArticleParser
+- `src/TermReader.Infrastructure/Browser/NYTAuthService.cs` - Implement INYTAuthService, fix exception handling
+- `src/TermReader.Infrastructure/Browser/ScraperService.cs` - Use interfaces
 
 ### Statistics
 - **22 files changed** (12 new, 10 modified)

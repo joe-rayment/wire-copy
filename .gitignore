@@ -136,7 +136,7 @@ secrets.json
 *.db-shm
 *.db-wal
 *.db-journal
-nytaudioscraper.db*
+termreader.db*
 
 # Cookies and authentication
 cookies.json
@@ -166,3 +166,7 @@ Thumbs.db
 *.m4b
 *.mp3
 *.wav
+.claude-dev/
+claude-dev
+.mcp.json
+.claude/
