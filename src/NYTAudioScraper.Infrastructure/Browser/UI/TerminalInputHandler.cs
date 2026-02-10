@@ -24,7 +24,6 @@ public class TerminalInputHandler : IInputHandler
         while (!cancellationToken.IsCancellationRequested)
         {
             var keyInfo = Console.ReadKey(intercept: true);
-            var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Handle 'gg' for go to top
             if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
@@ -45,6 +44,29 @@ public class TerminalInputHandler : IInputHandler
                 _waitingForSecondKey = true;
                 continue; // Wait for second keypress
             }
+
+            // Character-based commands (handle before MapKeyToCommand for reliable detection)
+            if (keyInfo.KeyChar == ':')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.OpenCommandLine });
+            }
+
+            if (keyInfo.KeyChar == '/')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.Search });
+            }
+
+            if (keyInfo.KeyChar == 'n')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.SearchNext });
+            }
+
+            if (keyInfo.KeyChar == 'N')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.SearchPrevious });
+            }
+
+            var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Log non-default commands (MoveUp is the default/fallback)
             if (command.Type != CommandType.MoveUp)
@@ -151,6 +173,17 @@ public class TerminalInputHandler : IInputHandler
   r             Switch to Reader View
   t             Switch to Link Tree View
 
+  Command Line
+  ─────────────────────────────────────────────────────────────────
+  :             Open command line (enter URL or command)
+                Commands: open URL, go URL, back, forward, quit, help
+
+  Search
+  ─────────────────────────────────────────────────────────────────
+  /             Search in current view
+  n             Next search match
+  N             Previous search match
+
   Application
   ─────────────────────────────────────────────────────────────────
   F5            Refresh current page
@@ -186,5 +219,67 @@ public class TerminalInputHandler : IInputHandler
         }
 
         return url;
+    }
+
+    public Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Position at the bottom of the terminal
+            var row = Console.WindowHeight - 1;
+            Console.SetCursorPosition(0, row);
+
+            // Clear the line and show prompt
+            Console.Write(new string(' ', Console.WindowWidth - 1));
+            Console.SetCursorPosition(0, row);
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(prompt);
+            Console.ResetColor();
+
+            // Read input character by character
+            var input = new System.Text.StringBuilder();
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var keyInfo = Console.ReadKey(intercept: true);
+
+                if (keyInfo.Key == ConsoleKey.Escape)
+                {
+                    return Task.FromResult<string?>(null);
+                }
+
+                if (keyInfo.Key == ConsoleKey.Enter)
+                {
+                    var result = input.ToString();
+                    return Task.FromResult<string?>(string.IsNullOrWhiteSpace(result) ? null : result);
+                }
+
+                if (keyInfo.Key == ConsoleKey.Backspace)
+                {
+                    if (input.Length > 0)
+                    {
+                        input.Remove(input.Length - 1, 1);
+
+                        // Redraw the input line
+                        Console.SetCursorPosition(prompt.Length, row);
+                        Console.Write(input.ToString() + " ");
+                        Console.SetCursorPosition(prompt.Length + input.Length, row);
+                    }
+
+                    continue;
+                }
+
+                if (keyInfo.KeyChar >= 32) // Printable character
+                {
+                    input.Append(keyInfo.KeyChar);
+                    Console.Write(keyInfo.KeyChar);
+                }
+            }
+        }
+        catch
+        {
+            // Fallback if cursor positioning fails
+        }
+
+        return Task.FromResult<string?>(null);
     }
 }

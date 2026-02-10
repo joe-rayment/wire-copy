@@ -30,10 +30,13 @@ public class TerminalPageRenderer : IPageRenderer
         // Render header
         RenderHeader(page.Metadata, page.Url, options);
 
+        // Calculate remaining height after header (3 lines for separator + status bar + padding)
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
+
         // Render link tree
         if (page.LinkTree != null)
         {
-            RenderLinkTree(page.LinkTree, context, options);
+            RenderLinkTree(page.LinkTree, context, remainingHeight, options);
         }
         else
         {
@@ -67,8 +70,11 @@ public class TerminalPageRenderer : IPageRenderer
         // Render article header
         RenderArticleHeader(page.ReadableContent, options);
 
+        // Calculate remaining height after header (3 lines for separator + status bar + padding)
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
+
         // Render article content
-        RenderArticleContent(page.ReadableContent, context, options);
+        RenderArticleContent(page.ReadableContent, context, remainingHeight, options);
 
         // Render status bar
         RenderStatusBar(context, ViewMode.Readable);
@@ -115,10 +121,16 @@ public class TerminalPageRenderer : IPageRenderer
 
         var statusText = mode switch
         {
-            ViewMode.Hierarchical => "[LinkView] j/k:move h:collapse l:expand Enter:select v:reader q:quit",
-            ViewMode.Readable => "[ReaderView] j/k:scroll v:links b:back q:quit",
+            ViewMode.Hierarchical => "[LinkView] j/k:move h:collapse l:expand Enter:select v:reader /:search :cmd q:quit",
+            ViewMode.Readable => "[ReaderView] j/k:scroll v:links b:back /:search :cmd q:quit",
             _ => "[Browser] q:quit"
         };
+
+        // Show active search
+        if (!string.IsNullOrEmpty(context.SearchQuery))
+        {
+            statusText += $" | /{context.SearchQuery} (n/N)";
+        }
 
         // Add navigation info
         if (context.CanGoBack)
@@ -242,14 +254,14 @@ public class TerminalPageRenderer : IPageRenderer
         WriteLine();
     }
 
-    private void RenderLinkTree(NavigationTree tree, NavigationContext context, RenderOptions options)
+    private void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
     {
         // Ensure a node is selected before rendering (handles first load and edge cases)
         tree.EnsureSelection();
 
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var startIndex = context.ScrollOffset;
-        var maxDisplay = options.ContentHeight;
+        var maxDisplay = maxLines;
 
         // Render visible nodes (group headers are now part of the tree)
         for (var i = startIndex; i < Math.Min(startIndex + maxDisplay, visibleNodes.Count); i++)
@@ -366,18 +378,25 @@ public class TerminalPageRenderer : IPageRenderer
         WriteLine();
     }
 
-    private void RenderArticleContent(ReadableContent content, NavigationContext context, RenderOptions options)
+    private void RenderArticleContent(ReadableContent content, NavigationContext context, int maxLines, RenderOptions options)
     {
         var paragraphs = content.Paragraphs;
         var startParagraph = context.ScrollOffset;
-        var maxDisplay = Math.Max(3, options.ContentHeight - 6);
+        var maxDisplay = Math.Max(3, maxLines);
 
         for (var i = startParagraph; i < Math.Min(startParagraph + maxDisplay, paragraphs.Count); i++)
         {
             var wrapped = WrapText(paragraphs[i], options.MaxContentWidth - 4);
             foreach (var line in wrapped)
             {
-                WriteLine($"  {line}");
+                if (!string.IsNullOrEmpty(context.SearchQuery))
+                {
+                    WriteLineWithHighlight($"  {line}", context.SearchQuery);
+                }
+                else
+                {
+                    WriteLine($"  {line}");
+                }
             }
 
             WriteLine();
@@ -389,8 +408,68 @@ public class TerminalPageRenderer : IPageRenderer
             Console.ForegroundColor = ConsoleColor.DarkGray;
             var progress = (int)((float)(startParagraph + maxDisplay) / paragraphs.Count * 100);
             WriteLine();
-            WriteLine($"  [{progress}%] {paragraphs.Count - startParagraph - maxDisplay} paragraphs remaining (scroll with j/k)");
+
+            var searchInfo = !string.IsNullOrEmpty(context.SearchQuery) ? $" | search: \"{context.SearchQuery}\"" : "";
+            WriteLine($"  [{progress}%] {paragraphs.Count - startParagraph - maxDisplay} paragraphs remaining (scroll with j/k){searchInfo}");
             Console.ResetColor();
+        }
+    }
+
+    /// <summary>
+    /// Writes a line with search query matches highlighted.
+    /// </summary>
+    private void WriteLineWithHighlight(string text, string searchQuery)
+    {
+        try
+        {
+            var width = Console.WindowWidth;
+            var index = 0;
+            var savedColor = Console.ForegroundColor;
+
+            while (index < text.Length)
+            {
+                var matchPos = text.IndexOf(searchQuery, index, StringComparison.OrdinalIgnoreCase);
+                if (matchPos < 0)
+                {
+                    Console.Write(text.Substring(index));
+                    index = text.Length;
+                }
+                else
+                {
+                    // Write text before match
+                    if (matchPos > index)
+                    {
+                        Console.Write(text.Substring(index, matchPos - index));
+                    }
+
+                    // Write highlighted match
+                    Console.BackgroundColor = ConsoleColor.DarkYellow;
+                    Console.ForegroundColor = ConsoleColor.Black;
+                    Console.Write(text.Substring(matchPos, searchQuery.Length));
+                    Console.ResetColor();
+                    Console.ForegroundColor = savedColor;
+
+                    index = matchPos + searchQuery.Length;
+                }
+            }
+
+            // Pad remaining width and write newline
+            var remaining = width - text.Length - 1;
+            if (remaining > 0)
+            {
+                Console.WriteLine(new string(' ', remaining));
+            }
+            else
+            {
+                Console.WriteLine();
+            }
+
+            _linesWritten++;
+        }
+        catch
+        {
+            Console.WriteLine(text);
+            _linesWritten++;
         }
     }
 

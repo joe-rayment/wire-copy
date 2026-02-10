@@ -30,6 +30,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>nyt-audio-scraper-2025</UserSecretsId>
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
 </Project>

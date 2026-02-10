@@ -57,7 +57,7 @@
     <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- Explicitly suppress StyleCop rules that have 100+ violations -->
-    <NoWarn>$(NoWarn);SA1413;SA1116;SA0001;SA1101;SA1309</NoWarn>
+    <NoWarn>$(NoWarn);SA1413;SA1116;SA0001;SA1101;SA1309;NU1608</NoWarn>
   </PropertyGroup>
 
 </Project>

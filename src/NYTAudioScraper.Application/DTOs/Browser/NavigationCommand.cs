@@ -18,6 +18,11 @@ public record NavigationCommand
     public string? TargetUrl { get; init; }
 
     /// <summary>
+    /// Optional search query (for Search commands).
+    /// </summary>
+    public string? SearchQuery { get; init; }
+
+    /// <summary>
     /// Optional parameters for the command.
     /// </summary>
     public Dictionary<string, object>? Parameters { get; init; }
@@ -57,5 +62,13 @@ public enum CommandType
     // Application
     Refresh,
     Quit,
-    ShowHelp
+    ShowHelp,
+
+    // Command line
+    OpenCommandLine,
+
+    // Search
+    Search,
+    SearchNext,
+    SearchPrevious
 }
