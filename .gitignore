@@ -166,3 +166,7 @@ Thumbs.db
 *.m4b
 *.mp3
 *.wav
+.claude-dev/
+claude-dev
+.mcp.json
+.claude/
