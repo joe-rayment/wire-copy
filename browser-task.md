@@ -46,7 +46,7 @@ All 6 weeks completed. 104+ unit tests passing. CLI integration complete with `-
 
 **Fix**: Changed the ad class detection to extract actual CSS class names using regex (`\.([a-z0-9_-]+)`) and check against the ad class set using exact matching instead of substring matching.
 
-**Location**: `src/NYTAudioScraper.Infrastructure/Browser/LinkExtractor.cs:241-269`
+**Location**: `src/TermReader.Infrastructure/Browser/LinkExtractor.cs:241-269`
 
 ---
 
@@ -150,16 +150,16 @@ Filter out links matching these patterns:
 
 ```bash
 # Test with Maclean's
-dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://macleans.ca/
+dotnet run --project src/TermReader.API -- --browse --browse-url https://macleans.ca/
 
 # Test with simple static site
-dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://example.com
+dotnet run --project src/TermReader.API -- --browse --browse-url https://example.com
 
 # Test with Hacker News (mostly server-rendered)
-dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://news.ycombinator.com
+dotnet run --project src/TermReader.API -- --browse --browse-url https://news.ycombinator.com
 
 # Interactive mode (prompts for URL)
-dotnet run --project src/NYTAudioScraper.API -- --browse
+dotnet run --project src/TermReader.API -- --browse
 ```
 
 ### Success Criteria (Automated Verification)
@@ -169,7 +169,7 @@ Claude Code should run these tests and verify results programmatically - do not 
 **Test 1: Maclean's Homepage**
 ```bash
 # Capture output and verify
-OUTPUT=$(timeout 30 dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://macleans.ca/ 2>&1 || true)
+OUTPUT=$(timeout 30 dotnet run --project src/TermReader.API -- --browse --browse-url https://macleans.ca/ 2>&1 || true)
 
 # Check for success indicators:
 # - "Extracted [15+] links" in output
@@ -179,13 +179,13 @@ OUTPUT=$(timeout 30 dotnet run --project src/NYTAudioScraper.API -- --browse --b
 
 **Test 2: Static Site (Baseline)**
 ```bash
-OUTPUT=$(timeout 15 dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://example.com 2>&1 || true)
+OUTPUT=$(timeout 15 dotnet run --project src/TermReader.API -- --browse --browse-url https://example.com 2>&1 || true)
 # Should show "More information..." link
 ```
 
 **Test 3: Hacker News (Server-rendered)**
 ```bash
-OUTPUT=$(timeout 20 dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://news.ycombinator.com 2>&1 || true)
+OUTPUT=$(timeout 20 dotnet run --project src/TermReader.API -- --browse --browse-url https://news.ycombinator.com 2>&1 || true)
 # Should show 30+ story links
 ```
 
@@ -207,7 +207,7 @@ Enable verbose logging to diagnose issues:
 ```bash
 # Set environment variable for debug output
 export LOGGING__LOGLEVEL__DEFAULT=Debug
-dotnet run --project src/NYTAudioScraper.API -- --browse --browse-url https://macleans.ca/
+dotnet run --project src/TermReader.API -- --browse --browse-url https://macleans.ca/
 ```
 
 Check logs for:

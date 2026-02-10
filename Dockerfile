@@ -5,25 +5,25 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
 # Copy solution and project files
-COPY ["NYTAudioScraper.sln", "./"]
-COPY ["src/NYTAudioScraper.Domain/NYTAudioScraper.Domain.csproj", "src/NYTAudioScraper.Domain/"]
-COPY ["src/NYTAudioScraper.Application/NYTAudioScraper.Application.csproj", "src/NYTAudioScraper.Application/"]
-COPY ["src/NYTAudioScraper.Infrastructure/NYTAudioScraper.Infrastructure.csproj", "src/NYTAudioScraper.Infrastructure/"]
-COPY ["src/NYTAudioScraper.API/NYTAudioScraper.API.csproj", "src/NYTAudioScraper.API/"]
+COPY ["TermReader.sln", "./"]
+COPY ["src/TermReader.Domain/TermReader.Domain.csproj", "src/TermReader.Domain/"]
+COPY ["src/TermReader.Application/TermReader.Application.csproj", "src/TermReader.Application/"]
+COPY ["src/TermReader.Infrastructure/TermReader.Infrastructure.csproj", "src/TermReader.Infrastructure/"]
+COPY ["src/TermReader.API/TermReader.API.csproj", "src/TermReader.API/"]
 
 # Restore dependencies
-RUN dotnet restore "src/NYTAudioScraper.API/NYTAudioScraper.API.csproj"
+RUN dotnet restore "src/TermReader.API/TermReader.API.csproj"
 
 # Copy all source files
 COPY . .
 
 # Build the application
-WORKDIR "/src/src/NYTAudioScraper.API"
-RUN dotnet build "NYTAudioScraper.API.csproj" -c Release -o /app/build
+WORKDIR "/src/src/TermReader.API"
+RUN dotnet build "TermReader.API.csproj" -c Release -o /app/build
 
 # Publish stage
 FROM build AS publish
-RUN dotnet publish "NYTAudioScraper.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "TermReader.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
@@ -81,4 +81,4 @@ VOLUME ["/app/output", "/app/logs"]
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DISPLAY=:99
 
-ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "dotnet", "NYTAudioScraper.API.dll"]
+ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "dotnet", "TermReader.API.dll"]

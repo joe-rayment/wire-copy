@@ -136,7 +136,7 @@ secrets.json
 *.db-shm
 *.db-wal
 *.db-journal
-nytaudioscraper.db*
+termreader.db*
 
 # Cookies and authentication
 cookies.json

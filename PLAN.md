@@ -32,34 +32,34 @@ Priority: fix user-facing bugs and remove tech debt before adding features.
 
 Add P0 tests to prevent regressions before further changes.
 
-- [ ] Task 17: Add `PageLoader` tests — mock WebDriver to verify `WaitForPageLoadAsync` completes within expected time; verify driver disposal on error paths; test `IsJavaScriptRequired` with real-world HTML fixtures (Cloudflare challenge page, normal site mentioning "react" in content, sparse page with few links)
-- [ ] Task 18: Add `TerminalPageRenderer` scroll tests — verify first paragraph is visible when `scrollOffset=0` with various content heights and header sizes; verify progress indicator accuracy
-- [ ] Task 19: Add `BrowserOrchestrator` navigation flow tests — verify ActivateLink resets scroll to 0 and activates reader view for content pages; verify `AdjustScrollForSelection` boundary conditions at top/bottom of tree
+- [x] Task 17: Add `PageLoader` tests — mock WebDriver to verify `WaitForPageLoadAsync` completes within expected time; verify driver disposal on error paths; test `IsJavaScriptRequired` with real-world HTML fixtures (Cloudflare challenge page, normal site mentioning "react" in content, sparse page with few links)
+- [x] Task 18: Add `TerminalPageRenderer` scroll tests — verify first paragraph is visible when `scrollOffset=0` with various content heights and header sizes; verify progress indicator accuracy
+- [x] Task 19: Add `BrowserOrchestrator` navigation flow tests — verify ActivateLink resets scroll to 0 and activates reader view for content pages; verify `AdjustScrollForSelection` boundary conditions at top/bottom of tree
 - [x] Task 20: Add `NavigationService` state tests — verify scrollOffset/viewMode reset on `NavigateTo`, `GoBack`, `GoForward`; verify history stack consistency
 - [x] Task 21: Add edge case tests — `LinkExtractor` with zero links, 1000+ links, malformed HTML, relative URLs; `ReadableContentExtractor` with empty article, very long article (100+ paragraphs), article with no `<p>` tags
-- [ ] Task 22: Run full test suite and fix any regressions
-- [ ] Task 23: Final verification — run through the complete test checklist in `browser-ui-improvements.md`
+- [x] Task 22: Run full test suite and fix any regressions
+- [x] Task 23: Final verification — run through the complete test checklist in `browser-ui-improvements.md`
 
 ## Phase 2: UX Improvements (Helix-like experience)
 
 - [x] Task 24: Add URL navigation command — `:` or `g` keybinding opens a command line to enter a URL (Helix-style command mode). Currently no way to navigate to a new URL without restarting
 - [x] Task 25: Add page caching for back/forward — going back currently reloads the page from scratch. Cache previously loaded `Page` objects in memory for instant back/forward navigation
 - [x] Task 26: Add in-page search — `/` keybinding to search within both link view and reader view. Highlight matches and jump between them with `n`/`N`
-- [ ] Task 27: Improve `ReadableContentExtractor` robustness — handle paywalled content, cookie consent overlays, "continue reading" buttons. Extract `<article>` or `[role="main"]` more aggressively
-- [ ] Task 28: Update README with `browse` command usage, keybindings reference, and examples
+- [x] Task 27: Improve `ReadableContentExtractor` robustness — handle paywalled content, cookie consent overlays, "continue reading" buttons. Extract `<article>` or `[role="main"]` more aggressively
+- [x] Task 28: Update README with `browse` command usage, keybindings reference, and examples
 
 ## Phase 3: Rebrand to General-Purpose Terminal Browser
 
 Rename the project from "NYT Audio Scraper" to a general-purpose terminal browser. NYT remains a supported site but is no longer the sole focus.
 
-- [ ] Task 29: Choose a new project name and update solution/project files — rename `NYTAudioScraper.sln`, all `.csproj` files, and directory names under `src/` and `tests/`
-- [ ] Task 30a: Rename C# namespaces — update all `namespace NYTAudioScraper.*` declarations across `.cs` files
-- [ ] Task 30b: Rename C# using statements — update all `using NYTAudioScraper.*` references across `.cs` files
-- [ ] Task 30c: Verify build compiles and all project references resolve after namespace rename
-- [ ] Task 31: Update `CLAUDE.md` — rewrite project overview, remove NYT-specific legal notices, frame as general-purpose browser with audio features. Keep NYT as one example use case
-- [ ] Task 32: Update `Dockerfile`, `docker-compose.yml`, and any CI/CD references to use new project name
-- [ ] Task 33: Update configuration — rename NYT-specific config keys (e.g., `NYT:Email`) to generic equivalents (e.g., `Auth:Email`), update `appsettings.json` and user secrets references. Add migration note for existing users
-- [ ] Task 34: Run full test suite and fix any breakage from the rename
+- [x] Task 29: Choose a new project name and update solution/project files — rename `TermReader.sln`, all `.csproj` files, and directory names under `src/` and `tests/`
+- [x] Task 30a: Rename C# namespaces — update all `namespace TermReader.*` declarations across `.cs` files
+- [x] Task 30b: Rename C# using statements — update all `using TermReader.*` references across `.cs` files
+- [x] Task 30c: Verify build compiles and all project references resolve after namespace rename
+- [x] Task 31: Update `CLAUDE.md` — rewrite project overview, remove NYT-specific legal notices, frame as general-purpose browser with audio features. Keep NYT as one example use case
+- [x] Task 32: Update `Dockerfile`, `docker-compose.yml`, and any CI/CD references to use new project name
+- [x] Task 33: Update configuration — rename NYT-specific config keys (e.g., `NYT:Email`) to generic equivalents (e.g., `Auth:Email`), update `appsettings.json` and user secrets references. Add migration note for existing users
+- [x] Task 34: Run full test suite and fix any breakage from the rename
 
 ## Notes
 
@@ -75,12 +75,12 @@ Key patterns to follow:
 Test commands:
 ```bash
 # Test simple launcher
-dotnet run --project src/NYTAudioScraper.API -- browse
-dotnet run --project src/NYTAudioScraper.API -- browse https://example.com
+dotnet run --project src/TermReader.API -- browse
+dotnet run --project src/TermReader.API -- browse https://example.com
 
 # Test with sites
-dotnet run --project src/NYTAudioScraper.API -- browse https://news.ycombinator.com
-dotnet run --project src/NYTAudioScraper.API -- browse https://macleans.ca
+dotnet run --project src/TermReader.API -- browse https://news.ycombinator.com
+dotnet run --project src/TermReader.API -- browse https://macleans.ca
 ```
 
 ---

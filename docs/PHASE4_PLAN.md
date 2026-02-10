@@ -23,7 +23,7 @@ Phase 3 successfully integrated session management, parallel audio generation, c
 
 ### Current Security Risk
 
-**Critical Issue**: Cookies are currently stored in plain text at `%AppData%/NYTAudioScraper/cookies.json`
+**Critical Issue**: Cookies are currently stored in plain text at `%AppData%/TermReader/cookies.json`
 
 From IMPLEMENTATION_PLAN.md analysis:
 - ✅ Cookie persistence to JSON file (NYTAuthService.cs:197-227)
@@ -38,7 +38,7 @@ From IMPLEMENTATION_PLAN.md analysis:
 
 #### 1. Create Cookie Encryption Service (1 hour)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Security/CookieEncryptionService.cs`
+**File**: `src/TermReader.Infrastructure/Security/CookieEncryptionService.cs`
 
 ```csharp
 public interface ICookieEncryptionService
@@ -74,7 +74,7 @@ public class DpapiCookieEncryptionService : ICookieEncryptionService
 
 #### 2. Update Cookie Storage Model (30 minutes)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Browser/Models/CookieStorage.cs`
+**File**: `src/TermReader.Infrastructure/Browser/Models/CookieStorage.cs`
 
 ```csharp
 public class CookieStorage
@@ -94,7 +94,7 @@ public class CookieData
 
 #### 3. Update NYTAuthService (1 hour)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Browser/NYTAuthService.cs`
+**File**: `src/TermReader.Infrastructure/Browser/NYTAuthService.cs`
 
 Changes needed:
 - Inject `ICookieEncryptionService`
@@ -162,7 +162,7 @@ private async Task<IEnumerable<Cookie>?> LoadCookiesAsync()
 
 #### 4. Add Cookie Management Commands (30 minutes)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Browser/CookieManager.cs`
+**File**: `src/TermReader.Infrastructure/Browser/CookieManager.cs`
 
 ```csharp
 public interface ICookieManager
@@ -184,13 +184,13 @@ public class CookieInfo
 
 Add CLI commands:
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --cookie-info
-dotnet run --project src/NYTAudioScraper.API -- --clear-cookies
+dotnet run --project src/TermReader.API -- --cookie-info
+dotnet run --project src/TermReader.API -- --clear-cookies
 ```
 
 #### 5. Testing (30 minutes)
 
-**File**: `tests/NYTAudioScraper.Tests/Security/CookieEncryptionServiceTests.cs`
+**File**: `tests/TermReader.Tests/Security/CookieEncryptionServiceTests.cs`
 
 Test cases:
 - ✅ Encrypt/decrypt round-trip preserves data
@@ -217,11 +217,11 @@ Basic rate limiting implemented in Phase 3:
 - Token bucket algorithm
 - Max 3 concurrent requests
 - 1000ms minimum delay between requests
-- Located in `src/NYTAudioScraper.Infrastructure/Audio/RateLimiter.cs`
+- Located in `src/TermReader.Infrastructure/Audio/RateLimiter.cs`
 
 ### Enhancement Plan (1 hour)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Audio/EnhancedRateLimiter.cs`
+**File**: `src/TermReader.Infrastructure/Audio/EnhancedRateLimiter.cs`
 
 Add support for:
 - Respect `Retry-After` header from ElevenLabs API
@@ -295,7 +295,7 @@ Allow resuming interrupted scraping sessions without re-processing completed art
 
 #### 1. Add Resume Detection (30 minutes)
 
-**File**: `src/NYTAudioScraper.Application/Interfaces/IScraperService.cs`
+**File**: `src/TermReader.Application/Interfaces/IScraperService.cs`
 
 ```csharp
 public interface IScraperService
@@ -369,7 +369,7 @@ public bool ListSessions { get; set; }
 
 #### 1. Add Metrics Export (1 hour)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Metrics/MetricsExporter.cs`
+**File**: `src/TermReader.Infrastructure/Metrics/MetricsExporter.cs`
 
 ```csharp
 public interface IMetricsExporter
@@ -405,7 +405,7 @@ Output location: `output/metrics_{timestamp}.json`
 
 #### 2. Add Health Check Dashboard (30 minutes)
 
-**File**: `src/NYTAudioScraper.Infrastructure/Health/HealthCheckReporter.cs`
+**File**: `src/TermReader.Infrastructure/Health/HealthCheckReporter.cs`
 
 ```csharp
 public static class HealthCheckReporter

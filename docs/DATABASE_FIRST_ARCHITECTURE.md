@@ -85,7 +85,7 @@ CREATE TABLE ScrapingSessionArticle (
 
 ### 1. Article-Session Linking
 
-**File:** `src/NYTAudioScraper.API/Program.cs` (lines 541-549)
+**File:** `src/TermReader.API/Program.cs` (lines 541-549)
 
 ```csharp
 // Link articles to session for complete audit trail
@@ -106,7 +106,7 @@ Log.Information("✓ Linked {Count} articles to session", articleList.Count);
 
 ### 2. Audio File Path Tracking
 
-**File:** `src/NYTAudioScraper.API/Program.cs` (lines 593-597)
+**File:** `src/TermReader.API/Program.cs` (lines 593-597)
 
 ```csharp
 // Update article with audio file path in database
@@ -123,7 +123,7 @@ Log.Information("  ✓ [{ArticleId}] Saved: {Title} ({Size:N0} bytes)",
 
 ### 3. Persisting Audio File Paths
 
-**File:** `src/NYTAudioScraper.API/Program.cs` (lines 628-634)
+**File:** `src/TermReader.API/Program.cs` (lines 628-634)
 
 ```csharp
 // Persist audio file paths to database
@@ -141,7 +141,7 @@ if (result.SuccessCount > 0)
 
 ### 4. Enhanced Logging
 
-**File:** `src/NYTAudioScraper.API/Program.cs` (lines 537-538, 596-597, 624-625)
+**File:** `src/TermReader.API/Program.cs` (lines 537-538, 596-597, 624-625)
 
 ```csharp
 // Article IDs in logs for DB queries

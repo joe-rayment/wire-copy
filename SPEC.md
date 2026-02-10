@@ -34,18 +34,18 @@ Lint:   dotnet format --verify-no-changes
 ## Architecture Notes
 
 - Clean Architecture: Domain → Application → Infrastructure → API
-- Terminal browser code is in `src/NYTAudioScraper.Infrastructure/Browser/`
+- Terminal browser code is in `src/TermReader.Infrastructure/Browser/`
 - UI rendering is in `Browser/UI/TerminalPageRenderer.cs`
 - Command handling is in `Browser/BrowserOrchestrator.cs`
 - Link grouping is in `Browser/NavigationTreeBuilder.cs`
 - CLI parsing uses CommandLineParser library with verb-based commands
 
 Key files:
-- `src/NYTAudioScraper.API/CommandOptions.cs` - CLI options/verbs
-- `src/NYTAudioScraper.API/Program.cs` - Entry point
-- `src/NYTAudioScraper.Infrastructure/Browser/UI/TerminalPageRenderer.cs` - Rendering
-- `src/NYTAudioScraper.Infrastructure/Browser/BrowserOrchestrator.cs` - Main loop
-- `src/NYTAudioScraper.Infrastructure/Browser/NavigationTreeBuilder.cs` - Link grouping
+- `src/TermReader.API/CommandOptions.cs` - CLI options/verbs
+- `src/TermReader.API/Program.cs` - Entry point
+- `src/TermReader.Infrastructure/Browser/UI/TerminalPageRenderer.cs` - Rendering
+- `src/TermReader.Infrastructure/Browser/BrowserOrchestrator.cs` - Main loop
+- `src/TermReader.Infrastructure/Browser/NavigationTreeBuilder.cs` - Link grouping
 
 ## Completion Criteria
 

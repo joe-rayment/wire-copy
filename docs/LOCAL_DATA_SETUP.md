@@ -21,10 +21,10 @@ All these files persist on your local machine and will work across git pulls/pus
 ### Windows
 
 ```
-%LOCALAPPDATA%\NYTAudioScraper\
-├── nytaudioscraper.db          # SQLite database
-├── nytaudioscraper.db-shm      # SQLite shared memory
-├── nytaudioscraper.db-wal      # SQLite write-ahead log
+%LOCALAPPDATA%\TermReader\
+├── termreader.db          # SQLite database
+├── termreader.db-shm      # SQLite shared memory
+├── termreader.db-wal      # SQLite write-ahead log
 ├── cookies.json                # Encrypted authentication cookies
 ├── keys\                       # Data Protection API keys
 │   └── key-*.xml              # Encryption keys
@@ -35,14 +35,14 @@ All these files persist on your local machine and will work across git pulls/pus
 
 **Full path example:**
 ```
-C:\Users\YourName\AppData\Local\NYTAudioScraper\
+C:\Users\YourName\AppData\Local\TermReader\
 ```
 
 ### Linux
 
 ```
-~/.local/share/NYTAudioScraper/
-├── nytaudioscraper.db
+~/.local/share/TermReader/
+├── termreader.db
 ├── cookies.json
 ├── keys/
 └── cache/
@@ -52,8 +52,8 @@ C:\Users\YourName\AppData\Local\NYTAudioScraper\
 ### macOS
 
 ```
-~/Library/Application Support/NYTAudioScraper/
-├── nytaudioscraper.db
+~/Library/Application Support/TermReader/
+├── termreader.db
 ├── cookies.json
 ├── keys/
 └── cache/
@@ -79,14 +79,14 @@ You have **two options** for configuring credentials:
 
 ```bash
 # Navigate to API project
-cd src/NYTAudioScraper.API
+cd src/TermReader.API
 
 # Initialize user secrets
 dotnet user-secrets init
 
-# Set NYT credentials
-dotnet user-secrets set "NYT:Email" "your-email@example.com"
-dotnet user-secrets set "NYT:Password" "your-password"
+# Set authentication credentials
+dotnet user-secrets set "Auth:Email" "your-email@example.com"
+dotnet user-secrets set "Auth:Password" "your-password"
 
 # Set ElevenLabs API key
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
@@ -99,7 +99,7 @@ dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
 
 #### Option B: secrets.json (Recommended for Production)
 
-Create `src/NYTAudioScraper.API/secrets.json`:
+Create `src/TermReader.API/secrets.json`:
 
 ```json
 {
@@ -122,11 +122,11 @@ Create `src/NYTAudioScraper.API/secrets.json`:
 dotnet restore
 
 # Run
-dotnet run --project src/NYTAudioScraper.API
+dotnet run --project src/TermReader.API
 ```
 
 **On first run:**
-- Database will be created automatically at `%LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db`
+- Database will be created automatically at `%LOCALAPPDATA%\TermReader\termreader.db`
 - Migrations will run automatically
 - You'll be prompted to authenticate with NYT
 - Cookies will be encrypted and saved
@@ -138,7 +138,7 @@ dotnet run --project src/NYTAudioScraper.API
 When you `git pull` to get updates:
 
 ✅ **Persists locally (not affected):**
-- Database (`nytaudioscraper.db`)
+- Database (`termreader.db`)
 - Credentials (`secrets.json` or user secrets)
 - Cookies (`cookies.json`)
 - Encryption keys (`keys/`)
@@ -164,7 +164,7 @@ The `.gitignore` file ensures these patterns are never committed:
 *.db-shm
 *.db-wal
 *.db-journal
-nytaudioscraper.db*
+termreader.db*
 
 # Cookies and authentication
 cookies.json
@@ -198,9 +198,9 @@ secrets.json
 # macOS: brew install sqlite3
 
 # Open database
-sqlite3 ~/.local/share/NYTAudioScraper/nytaudioscraper.db
+sqlite3 ~/.local/share/TermReader/termreader.db
 # or on Windows:
-sqlite3 %LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db
+sqlite3 %LOCALAPPDATA%\TermReader\termreader.db
 ```
 
 ### Query Examples
@@ -228,10 +228,10 @@ SELECT
 
 ```bash
 # Windows
-copy %LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db backup.db
+copy %LOCALAPPDATA%\TermReader\termreader.db backup.db
 
 # Linux/macOS
-cp ~/.local/share/NYTAudioScraper/nytaudioscraper.db backup.db
+cp ~/.local/share/TermReader/termreader.db backup.db
 ```
 
 ### Reset Database
@@ -240,10 +240,10 @@ If you want to start fresh:
 
 ```bash
 # Windows
-del %LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db*
+del %LOCALAPPDATA%\TermReader\termreader.db*
 
 # Linux/macOS
-rm ~/.local/share/NYTAudioScraper/nytaudioscraper.db*
+rm ~/.local/share/TermReader/termreader.db*
 ```
 
 Database will be recreated on next run.
@@ -255,13 +255,13 @@ Database will be recreated on next run.
 ### View Cookie Status
 
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --cookie-info
+dotnet run --project src/TermReader.API -- --cookie-info
 ```
 
 ### Clear Cookies
 
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --clear-cookies
+dotnet run --project src/TermReader.API -- --clear-cookies
 ```
 
 ### Cookie Security
@@ -302,13 +302,13 @@ You can have different credentials for development/production:
 
 **Development (User Secrets):**
 ```bash
-dotnet user-secrets set "NYT:Email" "dev-account@example.com"
+dotnet user-secrets set "Auth:Email" "dev-account@example.com"
 ```
 
 **Production (secrets.json):**
 ```json
 {
-  "NYT": {
+  "Auth": {
     "Email": "prod-account@example.com"
   }
 }
@@ -323,18 +323,18 @@ When running in Docker, mount volumes for persistence:
 ```yaml
 services:
   nyt-scraper:
-    image: nyt-audio-scraper:latest
+    image: termreader:latest
     volumes:
       # Database
-      - ./data:/root/.local/share/NYTAudioScraper
+      - ./data:/root/.local/share/TermReader
       # Credentials
       - ./secrets.json:/app/secrets.json
       # Output
       - ./output:/app/output
     environment:
       # Or use environment variables instead of secrets.json
-      - NYT__Email=${NYT_EMAIL}
-      - NYT__Password=${NYT_PASSWORD}
+      - Auth__Email=${AUTH_EMAIL}
+      - Auth__Password=${AUTH_PASSWORD}
       - ElevenLabs__ApiKey=${ELEVEN_LABS_API_KEY}
 ```
 
@@ -353,17 +353,17 @@ services:
 **Solution:**
 ```bash
 # Check for running instances
-# Windows: tasklist | findstr "NYTAudioScraper"
-# Linux/macOS: ps aux | grep NYTAudioScraper
+# Windows: tasklist | findstr "TermReader"
+# Linux/macOS: ps aux | grep TermReader
 
 # If stuck, delete lock files
 # Windows:
-del %LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db-shm
-del %LOCALAPPDATA%\NYTAudioScraper\nytaudioscraper.db-wal
+del %LOCALAPPDATA%\TermReader\termreader.db-shm
+del %LOCALAPPDATA%\TermReader\termreader.db-wal
 
 # Linux/macOS:
-rm ~/.local/share/NYTAudioScraper/nytaudioscraper.db-shm
-rm ~/.local/share/NYTAudioScraper/nytaudioscraper.db-wal
+rm ~/.local/share/TermReader/termreader.db-shm
+rm ~/.local/share/TermReader/termreader.db-wal
 ```
 
 ### Cookie Decryption Failed
@@ -374,7 +374,7 @@ rm ~/.local/share/NYTAudioScraper/nytaudioscraper.db-wal
 
 **Solution:**
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --clear-cookies
+dotnet run --project src/TermReader.API -- --clear-cookies
 ```
 
 Then run the application normally to re-authenticate.
@@ -389,10 +389,10 @@ Check if credentials are set:
 
 ```bash
 # User secrets
-dotnet user-secrets list --project src/NYTAudioScraper.API
+dotnet user-secrets list --project src/TermReader.API
 
 # secrets.json
-cat src/NYTAudioScraper.API/secrets.json
+cat src/TermReader.API/secrets.json
 ```
 
 If missing, set them using the [Initial Setup](#2-configure-credentials) instructions.
@@ -405,18 +405,18 @@ If missing, set them using the [Initial Setup](#2-configure-credentials) instruc
 
 1. **Backup database first!**
    ```bash
-   cp ~/.local/share/NYTAudioScraper/nytaudioscraper.db backup.db
+   cp ~/.local/share/TermReader/termreader.db backup.db
    ```
 
 2. Check migration status:
    ```bash
-   cd src/NYTAudioScraper.Infrastructure
+   cd src/TermReader.Infrastructure
    dotnet ef database update --list
    ```
 
 3. If stuck, drop and recreate database (loses all data):
    ```bash
-   rm ~/.local/share/NYTAudioScraper/nytaudioscraper.db*
+   rm ~/.local/share/TermReader/termreader.db*
    ```
 
 4. Run application to recreate database
@@ -450,7 +450,7 @@ If missing, set them using the [Initial Setup](#2-configure-credentials) instruc
 - ✅ Documentation
 
 **What's Local Only:**
-- 💾 Database (`nytaudioscraper.db`)
+- 💾 Database (`termreader.db`)
 - 🔑 Credentials (`secrets.json`)
 - 🍪 Cookies (`cookies.json`)
 - 🔐 Encryption keys (`keys/`)

@@ -13,12 +13,12 @@ Currently requires `--browse --browse-url <url>` flags. User wants to just run a
 ### Steps
 
 **1.1 Add a `browse` verb command**
-- File: `src/NYTAudioScraper.API/CommandOptions.cs`
+- File: `src/TermReader.API/CommandOptions.cs`
 - Add a new verb class `BrowseOptions` that takes an optional positional URL argument
 - Example: `dotnet run -- browse` or `dotnet run -- browse https://macleans.ca`
 
 **1.2 Update Program.cs to handle the verb**
-- File: `src/NYTAudioScraper.API/Program.cs`
+- File: `src/TermReader.API/Program.cs`
 - Add verb handling in the command parser
 - If no URL provided, call `PromptForUrlAsync()` which already exists
 
@@ -37,7 +37,7 @@ Currently requires `--browse --browse-url <url>` flags. User wants to just run a
 ### Steps
 
 **2.1 Implement double-buffering or cursor repositioning**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
+- File: `src/TermReader.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
 - Instead of `Console.Clear()`, use `Console.SetCursorPosition(0, 0)` and overwrite
 - Only clear when content height changes significantly
 - Use ANSI escape codes for efficient screen updates: `\x1b[H` (home) + `\x1b[J` (clear to end)
@@ -62,13 +62,13 @@ Currently requires `--browse --browse-url <url>` flags. User wants to just run a
 ### Steps
 
 **3.1 Ensure first item is selected and visible on load**
-- File: `src/NYTAudioScraper.Domain/Entities/Browser/NavigationTree.cs`
+- File: `src/TermReader.Domain/Entities/Browser/NavigationTree.cs`
 - Verify `CurrentSelection` is set to first child in constructor (line 34) - already done
-- File: `src/NYTAudioScraper.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
+- File: `src/TermReader.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
 - Ensure selected item highlighting is visible on first render
 
 **3.2 Implement scroll-follow for selection**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/BrowserOrchestrator.cs`
+- File: `src/TermReader.Infrastructure/Browser/BrowserOrchestrator.cs`
 - When `SelectNext()` moves selection past visible area, increment `ScrollOffset`
 - When `SelectPrevious()` moves selection above visible area, decrement `ScrollOffset`
 - Add helper method: `EnsureSelectionVisible(tree, context, maxVisible)`
@@ -94,11 +94,11 @@ Currently requires `--browse --browse-url <url>` flags. User wants to just run a
 ### Steps
 
 **4.1 Reset scroll offset when entering viewer mode**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/BrowserOrchestrator.cs`
+- File: `src/TermReader.Infrastructure/Browser/BrowserOrchestrator.cs`
 - In `HandleCommandAsync` for `SwitchToReadable`, set `_navigationService.SetScrollOffset(0)`
 
 **4.2 Reset scroll when navigating to new page**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/NavigationService.cs`
+- File: `src/TermReader.Infrastructure/Browser/NavigationService.cs`
 - In `NavigateTo()`, ensure `ScrollOffset = 0` for new pages
 
 **4.3 Apply same flicker fixes from Phase 2**
@@ -120,7 +120,7 @@ User wants reader view by default when activating a link.
 ### Steps
 
 **5.1 Change link activation behavior**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/BrowserOrchestrator.cs`
+- File: `src/TermReader.Infrastructure/Browser/BrowserOrchestrator.cs`
 - In `HandleCommandAsync` for `ActivateLink`:
   - After navigating to new page, check if page has readable content
   - If yes, automatically switch to `ViewMode.Readable`
@@ -146,18 +146,18 @@ User wants reader view by default when activating a link.
 ### Steps
 
 **6.1 Update NavigationTreeBuilder to create proper groups**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/NavigationTreeBuilder.cs`
+- File: `src/TermReader.Infrastructure/Browser/NavigationTreeBuilder.cs`
 - Create parent nodes for each LinkType (Navigation, Content, External, Footer)
 - Add links as children of their type node
 - Set collapse state: Navigation=Collapsed, Content=Expanded, Footer=Collapsed
 
 **6.2 Update LinkNode to support group headers**
-- File: `src/NYTAudioScraper.Domain/Entities/Browser/LinkNode.cs`
+- File: `src/TermReader.Domain/Entities/Browser/LinkNode.cs`
 - Add `IsGroupHeader` property
 - Group headers show count and collapse indicator
 
 **6.3 Update renderer for group headers**
-- File: `src/NYTAudioScraper.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
+- File: `src/TermReader.Infrastructure/Browser/UI/TerminalPageRenderer.cs`
 - Render group headers differently (bold, with expand/collapse indicator)
 - Respect collapse state when rendering children
 

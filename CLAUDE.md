@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NYT Audio Scraper - A C# .NET 9 application that scrapes articles from NYT Today's Paper, generates high-quality audio using Eleven Labs, and creates audiobook-style M4B files with chapter markers for mobile playback.
+TermReader - A general-purpose terminal browser with Helix-like keybindings, reader view, and audio generation capabilities. Built as a .NET 9 application that can browse the web from your terminal, extract readable content, and optionally generate audiobook-style M4B files with chapter markers.
 
-**Critical Legal Notice**: NYT explicitly prohibits automated scraping in both robots.txt and Terms of Service. This project is for educational purposes and personal subscriber use only.
+**Note**: When scraping websites, always respect robots.txt and Terms of Service. This project is for educational and personal use.
 
 ## Architecture
 
@@ -19,27 +19,29 @@ NYT Audio Scraper - A C# .NET 9 application that scrapes articles from NYT Today
 
 ```
 src/
-├── NYTAudioScraper.Domain/      # Core business logic
-│   ├── Entities/               # Article, AudioChapter, ScrapingSession
-│   └── ValueObjects/           # ArticleContent, AudioMetadata
-├── NYTAudioScraper.Application/ # Application layer
-│   ├── Interfaces/             # IScraperService, IAudioGenerator, etc.
-│   └── DTOs/                   # Data transfer objects
-├── NYTAudioScraper.Infrastructure/  # External integrations
-│   ├── Browser/                # Selenium scraper with anti-detection
+├── TermReader.Domain/           # Core business logic
+│   ├── Entities/               # Article, AudioChapter, ScrapingSession, Browser entities
+│   ├── ValueObjects/           # ArticleContent, AudioMetadata, Browser value objects
+│   └── Enums/                  # ViewMode, LinkType, NodeCollapseState
+├── TermReader.Application/      # Application layer
+│   ├── Interfaces/             # IScraperService, IAudioGenerator, Browser interfaces
+│   └── DTOs/                   # Data transfer objects (Browser DTOs)
+├── TermReader.Infrastructure/   # External integrations
+│   ├── Browser/                # Selenium automation, navigation, page loading, UI rendering
 │   ├── Audio/                  # ElevenLabs, FFmpeg, ATL.NET, BudgetService
 │   ├── Storage/                # File management (LocalFileStorage)
 │   ├── Parsing/                # HTML parsing (ArticleParser)
 │   └── Configuration/          # Configuration models
-└── NYTAudioScraper.API/        # Entry point (Console app)
+└── TermReader.API/             # Entry point (Console app)
 
 tests/
-└── NYTAudioScraper.Tests/      # Unit and integration tests
+└── TermReader.Tests/           # Unit and integration tests
     ├── DependencyInjectionTests.cs
     ├── ArticleParserTests.cs
     ├── BudgetServiceTests.cs
     ├── LocalFileStorageTests.cs
-    └── AudioGeneratorTests.cs
+    ├── AudioGeneratorTests.cs
+    └── Browser/                # Browser component tests
 ```
 
 ## Technology Stack
@@ -80,8 +82,12 @@ dotnet restore
 # Build
 dotnet build --configuration Release
 
-# Run application
-dotnet run --project src/NYTAudioScraper
+# Run terminal browser
+dotnet run --project src/TermReader.API -- browse
+dotnet run --project src/TermReader.API -- browse https://example.com
+
+# Run audio scraper mode
+dotnet run --project src/TermReader.API -- --count 5
 
 # Run tests
 dotnet test
@@ -102,23 +108,23 @@ dotnet format
 dotnet user-secrets init
 
 # Set credentials
-dotnet user-secrets set "NYT:Email" "your-email@example.com"
-dotnet user-secrets set "NYT:Password" "your-password"
+dotnet user-secrets set "Auth:Email" "your-email@example.com"
+dotnet user-secrets set "Auth:Password" "your-password"
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
 ```
 
 ### Docker
 ```bash
 # Build image
-docker build -t nyt-audio-scraper:latest .
+docker build -t termreader:latest .
 
 # Run container
 docker run --rm \
-  -e NYT_EMAIL="your-email@example.com" \
-  -e NYT_PASSWORD="your-password" \
+  -e AUTH_EMAIL="your-email@example.com" \
+  -e AUTH_PASSWORD="your-password" \
   -e ELEVEN_LABS_API_KEY="your-api-key" \
   -v $(pwd)/output:/app/output \
-  nyt-audio-scraper:latest
+  termreader:latest
 
 # Docker Compose
 docker-compose up
@@ -143,8 +149,8 @@ docker-compose up
 
 ### Testing Strategy
 - Mock all external dependencies (never call real APIs in tests)
-- Store HTML fixtures for parser testing (Fixtures/nyt-today-paper.html)
-- Integration tests marked with `[Fact(Skip = "Requires real NYT credentials")]`
+- Store HTML fixtures for parser testing
+- Integration tests marked with appropriate Skip attributes
 - Test coverage target: >80%
 
 ### Security
@@ -165,8 +171,8 @@ docker-compose up
 Browser automation in Docker requires:
 - Xvfb (virtual framebuffer) for headed Chrome
 - `shm_size: '2gb'` to prevent Chrome crashes
-- Run with `xvfb-run -a dotnet NYTAudioScraper.dll`
-- Multi-stage build: sdk for build, aspnet for runtime
+- Run with `xvfb-run -a dotnet TermReader.API.dll`
+- Multi-stage build: sdk for build, runtime for deployment
 
 ## Development Workflow
 
@@ -177,7 +183,7 @@ Browser automation in Docker requires:
 ### Commits
 - Use Conventional Commits format
 - Atomic commits (one logical change per commit)
-- Examples: `feat(scraper): add NYT authentication flow`, `test(audio): add FFmpeg integration tests`
+- Examples: `feat(browser): add reader view mode`, `test(audio): add FFmpeg integration tests`
 
 ### Testing
 - Write tests first (TDD)
@@ -196,8 +202,8 @@ Eleven Labs API pricing considerations:
 
 ## Important Notes
 
-- NYT scraping is legally restricted - subscriber use only, no redistribution
+- Always respect website robots.txt and Terms of Service when scraping
 - Respect rate limits (3-5 second delays minimum)
 - Never log credentials or authentication tokens
-- Test HTML parsing with fixtures to avoid hitting live site during development
+- Test HTML parsing with fixtures to avoid hitting live sites during development
 - Chapter markers use M4B format with Nero chapters (compatible with iOS/Android)

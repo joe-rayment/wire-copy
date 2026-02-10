@@ -67,7 +67,7 @@ NYT Audio Scraper follows **Clean Architecture** principles with clear separatio
 
 ## Layer Structure
 
-### 1. Domain Layer (`NYTAudioScraper.Domain`)
+### 1. Domain Layer (`TermReader.Domain`)
 
 **Purpose**: Core business logic and entities
 
@@ -96,7 +96,7 @@ public class Article
 }
 ```
 
-### 2. Application Layer (`NYTAudioScraper.Application`)
+### 2. Application Layer (`TermReader.Application`)
 
 **Purpose**: Interface definitions and contracts
 
@@ -126,7 +126,7 @@ public interface IBudgetService
 }
 ```
 
-### 3. Infrastructure Layer (`NYTAudioScraper.Infrastructure`)
+### 3. Infrastructure Layer (`TermReader.Infrastructure`)
 
 **Purpose**: Implementation of interfaces and external integrations
 
@@ -169,7 +169,7 @@ public class BudgetService : IBudgetService
 }
 ```
 
-### 4. API Layer (`NYTAudioScraper.API`)
+### 4. API Layer (`TermReader.API`)
 
 **Purpose**: Entry point and host configuration
 
@@ -697,15 +697,15 @@ public async Task SaveChangesAsync_WithPendingChanges_PersistsToDatabase()
 ```bash
 # User secrets (development)
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
-dotnet user-secrets set "NYT:Email" "your-email@example.com"
-dotnet user-secrets set "NYT:Password" "your-password"
+dotnet user-secrets set "Auth:Email" "your-email@example.com"
+dotnet user-secrets set "Auth:Password" "your-password"
 ```
 
 ```bash
 # Environment variables (production)
 export ELEVEN_LABS_API_KEY="your-api-key"
-export NYT_EMAIL="your-email@example.com"
-export NYT_PASSWORD="your-password"
+export AUTH_EMAIL="your-email@example.com"
+export AUTH_PASSWORD="your-password"
 ```
 
 ---

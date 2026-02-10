@@ -36,7 +36,7 @@ A terminal-based web browser that displays pages as hierarchical, keyboard-navig
 
 ```
 src/
-├── NYTAudioScraper.Domain/
+├── TermReader.Domain/
 │   ├── Entities/
 │   │   ├── Article.cs                    [EXISTING]
 │   │   ├── AudioChapter.cs              [EXISTING]
@@ -53,7 +53,7 @@ src/
 │           ├── PageMetadata.cs           Title, description, canonical URL
 │           └── NavigationContext.cs      Current page, history, position
 │
-├── NYTAudioScraper.Application/
+├── TermReader.Application/
 │   ├── Interfaces/
 │   │   ├── IScraperService.cs           [EXISTING - REUSED]
 │   │   ├── IArticleParser.cs            [EXISTING - REUSED]
@@ -70,7 +70,7 @@ src/
 │       └── Browser/
 │           └── BrowserOrchestrator.cs    Coordinates all services
 │
-├── NYTAudioScraper.Infrastructure/
+├── TermReader.Infrastructure/
 │   ├── Browser/
 │   │   ├── ScraperService.cs            [EXISTING - REUSED]
 │   │   ├── PageLoader.cs                [NEW] Wraps ScraperService
@@ -91,14 +91,14 @@ src/
 │       ├── ArticleParser.cs             [EXISTING - REUSED]
 │       └── ReadableContentExtractor.cs  [NEW] Wraps ArticleParser
 │
-└── NYTAudioScraper.API/
+└── TermReader.API/
     ├── Program.cs                       [MODIFIED] Add browser mode
     └── Commands/
         ├── AudioCommand.cs              [EXTRACT] Existing functionality
         └── BrowserCommand.cs            [NEW] Browser mode
 
 tests/
-└── NYTAudioScraper.Tests/
+└── TermReader.Tests/
     └── Browser/                         [NEW]
         ├── Unit/
         │   ├── LinkExtractorTests.cs
