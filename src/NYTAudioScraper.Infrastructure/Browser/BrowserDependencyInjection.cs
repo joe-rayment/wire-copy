@@ -33,6 +33,9 @@ public static class BrowserDependencyInjection
                 CookieContainer = new CookieContainer()
             });
 
+        // Register browser session (shared WebDriver lifecycle)
+        services.AddSingleton<IBrowserSession, BrowserSession>();
+
         // Register browser infrastructure services
         services.AddSingleton<IPageLoader>(sp =>
         {
@@ -40,7 +43,8 @@ public static class BrowserDependencyInjection
             var httpClient = httpClientFactory.CreateClient("BrowserPageLoader");
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
             var logger = sp.GetRequiredService<ILogger<PageLoader>>();
-            return new PageLoader(browserConfig, logger, httpClient);
+            var browserSession = sp.GetRequiredService<IBrowserSession>();
+            return new PageLoader(browserConfig, logger, browserSession, httpClient);
         });
         services.AddSingleton<ILinkExtractor, LinkExtractor>();
         services.AddSingleton<INavigationTreeBuilder, NavigationTreeBuilder>();

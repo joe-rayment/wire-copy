@@ -60,4 +60,14 @@ public record NavigationContext
     /// Whether user can navigate forward in history.
     /// </summary>
     public bool CanGoForward => ForwardHistoryCount > 0;
+
+    /// <summary>
+    /// Current search query, if any.
+    /// </summary>
+    public string? SearchQuery { get; init; }
+
+    /// <summary>
+    /// Index of the current search match (in the list of matching paragraph indices).
+    /// </summary>
+    public int SearchMatchIndex { get; init; }
 }

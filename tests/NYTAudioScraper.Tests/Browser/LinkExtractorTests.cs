@@ -386,4 +386,56 @@ public class LinkExtractorTests
         links.Should().HaveCount(1);
         links[0].DisplayText.Should().Be("Real Link");
     }
+
+    [Fact]
+    public async Task ExtractLinksAsync_WithNoAnchors_ShouldReturnEmptyList()
+    {
+        // Arrange - HTML with content but zero <a> tags
+        var html = @"<html><body><h1>Hello World</h1><p>Some paragraph text.</p></body></html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_WithSevereMalformedHtml_ShouldNotThrow()
+    {
+        // Arrange - severely malformed HTML with unclosed tags and nested issues
+        var html = @"<html><body><div><p>Text<a href=""https://example.com/page1"">Link One<div><span>Nested</a></p></div></body>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert - should not throw, may or may not find links depending on parser behavior
+        links.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_WithRelativeUrls_ShouldResolveCorrectly()
+    {
+        // Arrange
+        var html = @"
+            <html>
+            <body>
+                <a href=""/about"">About Us</a>
+                <a href=""articles/latest"">Latest Articles From Our Publication</a>
+                <a href=""../other"">Other Section With Long Description Text</a>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com/section/page";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().NotBeEmpty();
+        links.Should().Contain(l => l.Url == "https://example.com/about");
+        links.Should().Contain(l => l.Url == "https://example.com/section/articles/latest");
+        links.Should().Contain(l => l.Url == "https://example.com/other");
+    }
 }

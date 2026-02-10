@@ -3,7 +3,10 @@
 // </copyright>
 
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 using NYTAudioScraper.Domain.Entities.Browser;
+using NYTAudioScraper.Infrastructure.Browser;
 using Xunit;
 
 namespace NYTAudioScraper.Tests.Browser;
@@ -272,5 +275,43 @@ public class ReadableContentTests
 
         // Assert
         metadata.Should().Contain("min read");
+    }
+
+    [Fact]
+    public async Task Extractor_WithNoParagraphs_ReturnsNull()
+    {
+        // Arrange - HTML with article tag but no <p> tags with > 50 chars
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><body><article><h1>Title Only</h1><span>Short</span></article></body></html>";
+        var url = "https://example.com/article";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, url);
+
+        // Assert
+        result.Should().BeNull("no paragraphs with sufficient content means no readable content");
+    }
+
+    [Fact]
+    public async Task Extractor_WithNoTitle_UsesFallbackTitle()
+    {
+        // Arrange - article with paragraphs but no h1/title/og:title
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var longParagraph = new string('x', 60);
+        var html = $@"<html><body><article>
+            <p>{longParagraph} first paragraph text here.</p>
+            <p>{longParagraph} second paragraph text here.</p>
+            <p>{longParagraph} third paragraph text here.</p>
+        </article></body></html>";
+        var url = "https://example.com/article";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, url);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Untitled Article");
     }
 }

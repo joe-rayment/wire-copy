@@ -364,6 +364,50 @@ public class BrowserOrchestrator : IBrowserService
                 }
 
                 break;
+
+            case CommandType.OpenCommandLine:
+                var input = await _inputHandler.PromptForInputAsync(":", cancellationToken);
+                if (!string.IsNullOrWhiteSpace(input))
+                {
+                    await HandleCommandLineInput(input.Trim(), options, cancellationToken);
+                }
+                else
+                {
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                break;
+
+            case CommandType.Search:
+                var query = await _inputHandler.PromptForInputAsync("/", cancellationToken);
+                if (!string.IsNullOrWhiteSpace(query))
+                {
+                    _navigationService.SetSearchQuery(query);
+                    ScrollToSearchMatch(0, options);
+                }
+
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+
+            case CommandType.SearchNext:
+                if (!string.IsNullOrEmpty(_navigationService.CurrentContext.SearchQuery))
+                {
+                    var nextIndex = _navigationService.CurrentContext.SearchMatchIndex + 1;
+                    ScrollToSearchMatch(nextIndex, options);
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                break;
+
+            case CommandType.SearchPrevious:
+                if (!string.IsNullOrEmpty(_navigationService.CurrentContext.SearchQuery))
+                {
+                    var prevIndex = Math.Max(0, _navigationService.CurrentContext.SearchMatchIndex - 1);
+                    ScrollToSearchMatch(prevIndex, options);
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                break;
         }
 
         return true;
@@ -378,6 +422,155 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         await RenderAsync(page, _navigationService.CurrentContext.ViewMode, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles command line input (text entered after ':').
+    /// Supports: open/go URL, quit, back, forward, help.
+    /// </summary>
+    private async Task HandleCommandLineInput(string input, RenderOptions options, CancellationToken cancellationToken)
+    {
+        // Parse command - support "open URL", "go URL", or just a bare URL
+        var parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var command = parts[0].ToLowerInvariant();
+
+        switch (command)
+        {
+            case "q" or "quit":
+                // Signal quit by navigating away - caller will handle
+                return;
+
+            case "back" or "b":
+                var prevPage = _navigationService.GoBack();
+                if (prevPage != null)
+                {
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                return;
+
+            case "forward" or "f":
+                var fwdPage = _navigationService.GoForward();
+                if (fwdPage != null)
+                {
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                return;
+
+            case "help" or "h":
+                Console.Clear();
+                Console.WriteLine(_inputHandler.GetHelpText());
+                Console.ReadKey(intercept: true);
+                await RenderCurrentPageAsync(options, cancellationToken);
+                return;
+
+            case "open" or "go" or "o":
+                if (parts.Length > 1)
+                {
+                    var url = NormalizeUrl(parts[1]);
+                    await NavigateToAsync(url, options, cancellationToken);
+                }
+                else
+                {
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                return;
+
+            default:
+                // Treat the entire input as a URL if it looks like one
+                var navigateUrl = NormalizeUrl(input);
+                await NavigateToAsync(navigateUrl, options, cancellationToken);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Normalizes user input into a URL by adding https:// if needed.
+    /// </summary>
+    private static string NormalizeUrl(string input)
+    {
+        if (!input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://" + input;
+        }
+
+        return input;
+    }
+
+    /// <summary>
+    /// Scrolls to a search match at the given match index.
+    /// In reader view, scrolls to the matching paragraph.
+    /// In link view, selects the matching link node.
+    /// </summary>
+    private void ScrollToSearchMatch(int matchIndex, RenderOptions options)
+    {
+        var searchQuery = _navigationService.CurrentContext.SearchQuery;
+        if (string.IsNullOrEmpty(searchQuery))
+        {
+            return;
+        }
+
+        var page = _navigationService.CurrentPage;
+        if (page == null)
+        {
+            return;
+        }
+
+        if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable && page.ReadableContent != null)
+        {
+            // Find paragraphs matching the query
+            var matches = new List<int>();
+            for (var i = 0; i < page.ReadableContent.Paragraphs.Count; i++)
+            {
+                if (page.ReadableContent.Paragraphs[i].Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                {
+                    matches.Add(i);
+                }
+            }
+
+            if (matches.Count > 0)
+            {
+                // Wrap around
+                var wrappedIndex = matchIndex % matches.Count;
+                if (wrappedIndex < 0)
+                {
+                    wrappedIndex = matches.Count - 1;
+                }
+
+                _navigationService.SetSearchMatchIndex(wrappedIndex);
+                _navigationService.SetScrollOffset(matches[wrappedIndex]);
+            }
+        }
+        else if (_navigationService.CurrentContext.ViewMode == ViewMode.Hierarchical && page.LinkTree != null)
+        {
+            // Find link nodes matching the query
+            var visibleNodes = page.LinkTree.GetVisibleNodes().ToList();
+            var matches = new List<int>();
+            for (var i = 0; i < visibleNodes.Count; i++)
+            {
+                if (visibleNodes[i].Link.DisplayText.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                {
+                    matches.Add(i);
+                }
+            }
+
+            if (matches.Count > 0)
+            {
+                var wrappedIndex = matchIndex % matches.Count;
+                if (wrappedIndex < 0)
+                {
+                    wrappedIndex = matches.Count - 1;
+                }
+
+                _navigationService.SetSearchMatchIndex(wrappedIndex);
+                var nodeIndex = matches[wrappedIndex];
+                page.LinkTree.SelectNodeById(visibleNodes[nodeIndex].Id);
+                AdjustScrollForSelection(page.LinkTree, options);
+            }
+        }
     }
 
     /// <summary>

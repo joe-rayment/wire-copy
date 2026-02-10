@@ -37,4 +37,13 @@ public interface IInputHandler
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>User-entered URL.</returns>
     Task<string?> PromptForUrlAsync(string prompt = "Enter URL: ", CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Prompts user for inline text input at the bottom of the screen.
+    /// Used for command mode (:) and search (/).
+    /// </summary>
+    /// <param name="prompt">Prompt character (e.g. ":" or "/").</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>User-entered text, or null if cancelled (Escape).</returns>
+    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default);
 }

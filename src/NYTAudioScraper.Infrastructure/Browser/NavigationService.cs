@@ -20,6 +20,8 @@ public class NavigationService : INavigationService
     private ViewMode _currentViewMode = ViewMode.Hierarchical;
     private int _selectedLinkIndex;
     private int _scrollOffset;
+    private string? _searchQuery;
+    private int _searchMatchIndex;
 
     public NavigationService(ILogger<NavigationService> logger)
     {
@@ -34,7 +36,9 @@ public class NavigationService : INavigationService
         ScrollOffset = _scrollOffset,
         BackHistoryCount = _backHistory.Count,
         ForwardHistoryCount = _forwardHistory.Count,
-        LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow
+        LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
+        SearchQuery = _searchQuery,
+        SearchMatchIndex = _searchMatchIndex
     };
 
     public Page? CurrentPage => _currentPage;
@@ -190,5 +194,22 @@ public class NavigationService : INavigationService
         _scrollOffset = 0;
 
         _logger.LogDebug("Set view mode to {Mode}", mode);
+    }
+
+    /// <summary>
+    /// Sets the current search query and resets match index.
+    /// </summary>
+    public void SetSearchQuery(string? query)
+    {
+        _searchQuery = query;
+        _searchMatchIndex = 0;
+    }
+
+    /// <summary>
+    /// Sets the search match index.
+    /// </summary>
+    public void SetSearchMatchIndex(int index)
+    {
+        _searchMatchIndex = Math.Max(0, index);
     }
 }
