@@ -37,7 +37,7 @@ Phase 4 implements **Priority 15: Cookie Encryption & Management** from the impl
 
 ### Check Cookie Status
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --cookie-info
+dotnet run --project src/TermReader.API -- --cookie-info
 ```
 
 **Output:**
@@ -46,7 +46,7 @@ dotnet run --project src/NYTAudioScraper.API -- --cookie-info
 ║        Cookie Information             ║
 ╚═══════════════════════════════════════╝
 
-File Path:    C:\Users\...\AppData\Local\NYTAudioScraper\cookies.json
+File Path:    C:\Users\...\AppData\Local\TermReader\cookies.json
 Version:      v2 (Encrypted)
 Created At:   2025-01-06 12:00:00 UTC
 Expires At:   2025-02-05 12:00:00 UTC (✓ Valid)
@@ -56,7 +56,7 @@ Cookie Count: 15
 
 ### Clear Cookies
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --clear-cookies
+dotnet run --project src/TermReader.API -- --clear-cookies
 ```
 
 **Prompts for confirmation:**
@@ -92,7 +92,7 @@ Are you sure you want to clear all stored cookies? (y/N): y
 - Linux/macOS: File-based key storage with restricted permissions
 
 ### 2. Encryption Keys
-Stored at: `%LocalAppData%\NYTAudioScraper\keys\`
+Stored at: `%LocalAppData%\TermReader\keys\`
 
 **Important:**
 - Keys are **user-specific** (different Windows users = different keys)
@@ -112,7 +112,7 @@ Encrypted cookies include metadata:
   "Metadata": {
     "user_agent": "Mozilla/5.0...",
     "last_used": "2025-01-06T12:00:00Z",
-    "saved_by": "NYTAudioScraper"
+    "saved_by": "TermReader"
   }
 }
 ```
@@ -209,7 +209,7 @@ dotnet test --filter "CookieEncryptionServiceTests|CookieManagerTests"
 
 **Solution:**
 ```bash
-dotnet run --project src/NYTAudioScraper.API -- --clear-cookies
+dotnet run --project src/TermReader.API -- --clear-cookies
 ```
 Then re-run the scraper to re-authenticate.
 
@@ -219,7 +219,7 @@ Then re-run the scraper to re-authenticate.
 **Solution:** Normal behavior. Run the scraper and it will re-authenticate automatically.
 
 ### Key Recovery
-If you lose encryption keys (`%LocalAppData%\NYTAudioScraper\keys\`):
+If you lose encryption keys (`%LocalAppData%\TermReader\keys\`):
 1. Cookies cannot be recovered
 2. Clear cookies: `--clear-cookies`
 3. Re-authenticate on next run
@@ -234,11 +234,11 @@ To persist cookies and keys across container restarts:
 ```yaml
 services:
   nyt-scraper:
-    image: nyt-audio-scraper:latest
+    image: termreader:latest
     volumes:
       - ./data:/app/data
-      - ./keys:/root/.local/share/NYTAudioScraper/keys
-      - ./cookies:/root/.local/share/NYTAudioScraper
+      - ./keys:/root/.local/share/TermReader/keys
+      - ./cookies:/root/.local/share/TermReader
 ```
 
 **Note:** Keys are container-specific. Recreating the container = new keys = must re-authenticate.
@@ -248,7 +248,7 @@ services:
 ### Cookie Expiration Duration
 To change the default 30-day expiration:
 
-**File:** `src/NYTAudioScraper.Infrastructure/Browser/NYTAuthService.cs`
+**File:** `src/TermReader.Infrastructure/Browser/NYTAuthService.cs`
 
 ```csharp
 private const int CookieExpirationDays = 30; // Change this value
@@ -256,16 +256,16 @@ private const int CookieExpirationDays = 30; // Change this value
 
 ### Encryption Key Location
 Keys are stored at:
-- Windows: `%LocalAppData%\NYTAudioScraper\keys\`
-- Linux: `~/.local/share/NYTAudioScraper/keys/`
-- macOS: `~/.local/share/NYTAudioScraper/keys/`
+- Windows: `%LocalAppData%\TermReader\keys\`
+- Linux: `~/.local/share/TermReader/keys/`
+- macOS: `~/.local/share/TermReader/keys/`
 
 To change location, modify `DependencyInjection.cs`:
 
 ```csharp
 var dataProtectionPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "NYTAudioScraper",
+    "TermReader",
     "keys"); // Change "keys" to your preferred directory
 ```
 

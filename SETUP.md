@@ -1,4 +1,4 @@
-# NYT Audio Scraper Setup
+# TermReader Setup
 
 ## Prerequisites
 
@@ -7,9 +7,8 @@
    ```bash
    brew install ffmpeg
    ```
-3. **Google Chrome** - For web scraping
-4. **ElevenLabs API Key** - Sign up at [elevenlabs.io](https://elevenlabs.io)
-5. **NYT Subscription** (optional) - For accessing subscriber content
+3. **Google Chrome** - For web browsing with Selenium fallback
+4. **ElevenLabs API Key** (optional) - Sign up at [elevenlabs.io](https://elevenlabs.io) for audio generation
 
 ## Configuration
 
@@ -23,9 +22,9 @@
 2. Edit `secrets.json` with your credentials:
    ```json
    {
-     "NYT": {
-       "Email": "your-nyt-email@example.com",
-       "Password": "your-nyt-password"
+     "Auth": {
+       "Email": "your-email@example.com",
+       "Password": "your-password"
      },
      "ElevenLabs": {
        "ApiKey": "your-elevenlabs-api-key"
@@ -43,9 +42,14 @@ dotnet restore
 
 ### Step 3: Test the Application
 
-Run in test mode (uses mock data, doesn't require NYT credentials):
+Run the terminal browser:
 ```bash
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --test
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- browse https://example.com
+```
+
+Run in test mode (uses mock data, doesn't require credentials):
+```bash
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --test
 ```
 
 ## Usage
@@ -54,36 +58,39 @@ dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --tes
 
 ```bash
 # Show help
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --help
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --help
+
+# Browse a website
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- browse https://news.ycombinator.com
 
 # Test mode with mock data
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --test
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --test
 
 # Scrape 3 articles
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --count 3
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --count 3
 
 # Scrape with custom budget
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --count 5 --budget 10
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --count 5 --budget 10
 
 # Scrape without logging in (public articles only)
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --count 2 --skip-login
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --count 2 --skip-login
 
 # Use custom voice
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --count 3 --voice "your-voice-id"
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --count 3 --voice "your-voice-id"
 
 # Custom output directory
-dotnet run --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj -- --count 3 --output "~/Audiobooks"
+dotnet run --project src/TermReader.API/TermReader.API.csproj -- --count 3 --output "~/Audiobooks"
 ```
 
 ### Command Line Options
 
-- `-u, --url` - Specific NYT article URL to process
-- `-s, --section` - NYT section to scrape (e.g., technology, politics)
+- `-u, --url` - Specific article URL to process
+- `-s, --section` - Section to scrape (e.g., technology, politics)
 - `-c, --count` - Number of articles to process (default: 5)
 - `-v, --voice` - ElevenLabs voice ID to use
 - `-b, --budget` - Maximum budget in dollars (default: 5.0)
 - `-o, --output` - Output directory path
-- `--skip-login` - Skip NYT login (only scrape public articles)
+- `--skip-login` - Skip login (only scrape public articles)
 - `--test` - Run with test/mock data
 - `--help` - Display help
 
@@ -107,11 +114,11 @@ If you see "ChromeDriver only supports Chrome version X", the application will a
 - **Rate Limiting**: Reduce the number of articles or increase delays
 - **Budget Exceeded**: Increase the `--budget` parameter
 
-### NYT Login Fails
+### Login Fails
 
 - Verify credentials in `secrets.json`
 - Try running with `--skip-login` to test with public articles
-- Check if NYT's login page structure has changed
+- Check if the target site's login page structure has changed
 
 ### FFmpeg Not Found
 
@@ -126,17 +133,17 @@ brew install ffmpeg
 You can also set configuration via environment variables:
 
 ```bash
-export NYT__Email="your-email@example.com"
-export NYT__Password="your-password"
+export Auth__Email="your-email@example.com"
+export Auth__Password="your-password"
 export ElevenLabs__ApiKey="your-api-key"
 ```
 
 ### .NET User Secrets (Original Method)
 
 ```bash
-dotnet user-secrets set "NYT:Email" "your-email@example.com" --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj
-dotnet user-secrets set "NYT:Password" "your-password" --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj
-dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key" --project src/NYTAudioScraper.API/NYTAudioScraper.API.csproj
+dotnet user-secrets set "Auth:Email" "your-email@example.com" --project src/TermReader.API/TermReader.API.csproj
+dotnet user-secrets set "Auth:Password" "your-password" --project src/TermReader.API/TermReader.API.csproj
+dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key" --project src/TermReader.API/TermReader.API.csproj
 ```
 
 ## Configuration Priority
@@ -150,7 +157,7 @@ The application loads configuration in this order (later sources override earlie
 
 ## Security
 
-- ✅ `secrets.json` is in `.gitignore` and will not be committed
-- ✅ `secrets.json.example` is a template with no real credentials
-- ✅ Never commit real credentials to the repository
-- ✅ Keep your `secrets.json` file secure and local only
+- `secrets.json` is in `.gitignore` and will not be committed
+- `secrets.json.example` is a template with no real credentials
+- Never commit real credentials to the repository
+- Keep your `secrets.json` file secure and local only

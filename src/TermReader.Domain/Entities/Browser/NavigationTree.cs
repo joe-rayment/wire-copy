@@ -1,0 +1,248 @@
+// Educational and personal use only.
+
+using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
+
+namespace TermReader.Domain.Entities.Browser;
+
+/// <summary>
+/// Represents the complete hierarchical link tree for a page.
+/// Manages navigation state and selection.
+/// </summary>
+public class NavigationTree
+{
+    /// <summary>
+    /// Root node of the tree.
+    /// </summary>
+    public LinkNode Root { get; private set; }
+
+    /// <summary>
+    /// Currently selected node (for keyboard navigation).
+    /// </summary>
+    public LinkNode? CurrentSelection { get; private set; }
+
+    /// <summary>
+    /// Total number of links in the tree (excluding root).
+    /// </summary>
+    public int TotalLinks { get; private set; }
+
+    private NavigationTree(LinkNode root)
+    {
+        Root = root;
+        TotalLinks = root.CountDescendants();
+
+        // Select first child by default
+        CurrentSelection = root.Children.FirstOrDefault();
+        CurrentSelection?.Select();
+    }
+
+    /// <summary>
+    /// Builds a navigation tree from a list of links (flat structure).
+    /// </summary>
+    public static NavigationTree Build(List<LinkInfo> links)
+    {
+        var root = LinkNode.CreateRoot();
+
+        // For now, add all links as direct children of root
+        // Future: implement smart hierarchy based on DOM structure
+        foreach (var link in links)
+        {
+            root.AddChild(link);
+        }
+
+        return new NavigationTree(root);
+    }
+
+    /// <summary>
+    /// Builds a navigation tree with hierarchical groups.
+    /// Creates group headers for each LinkType with proper collapse states.
+    /// Order: Content (expanded), Navigation (collapsed), External (collapsed), Footer (collapsed).
+    /// </summary>
+    public static NavigationTree BuildWithGroups(Dictionary<LinkType, List<LinkInfo>> groupedLinks)
+    {
+        var root = LinkNode.CreateRoot();
+
+        // Define the order of groups: Content first (most important), then others
+        var groupOrder = new[] { LinkType.Content, LinkType.Navigation, LinkType.External, LinkType.Footer };
+
+        foreach (var linkType in groupOrder)
+        {
+            if (!groupedLinks.TryGetValue(linkType, out var links) || links.Count == 0)
+            {
+                continue;
+            }
+
+            // Create group header
+            var groupHeader = LinkInfo.CreateGroupHeader(linkType, links.Count);
+            var groupNode = root.AddChild(groupHeader);
+
+            // Add links as children of the group
+            foreach (var link in links)
+            {
+                groupNode.AddChild(link);
+            }
+        }
+
+        return new NavigationTree(root);
+    }
+
+    /// <summary>
+    /// Selects the next visible node in the tree.
+    /// </summary>
+    public void SelectNext()
+    {
+        if (CurrentSelection == null)
+            return;
+
+        var visibleNodes = GetVisibleNodes().ToList();
+        var currentIndex = visibleNodes.IndexOf(CurrentSelection);
+
+        if (currentIndex >= 0 && currentIndex < visibleNodes.Count - 1)
+        {
+            CurrentSelection.Deselect();
+            CurrentSelection = visibleNodes[currentIndex + 1];
+            CurrentSelection.Select();
+        }
+    }
+
+    /// <summary>
+    /// Selects the previous visible node in the tree.
+    /// </summary>
+    public void SelectPrevious()
+    {
+        if (CurrentSelection == null)
+            return;
+
+        var visibleNodes = GetVisibleNodes().ToList();
+        var currentIndex = visibleNodes.IndexOf(CurrentSelection);
+
+        if (currentIndex > 0)
+        {
+            CurrentSelection.Deselect();
+            CurrentSelection = visibleNodes[currentIndex - 1];
+            CurrentSelection.Select();
+        }
+    }
+
+    /// <summary>
+    /// Selects the parent of the current node.
+    /// </summary>
+    public void SelectParent()
+    {
+        if (CurrentSelection?.Parent != null && CurrentSelection.Parent != Root)
+        {
+            CurrentSelection.Deselect();
+            CurrentSelection = CurrentSelection.Parent;
+            CurrentSelection.Select();
+        }
+    }
+
+    /// <summary>
+    /// Selects the first child of the current node (if expanded).
+    /// </summary>
+    public void SelectFirstChild()
+    {
+        if (CurrentSelection?.Children.Any() == true &&
+            CurrentSelection.CollapseState == Enums.Browser.NodeCollapseState.Expanded)
+        {
+            CurrentSelection.Deselect();
+            CurrentSelection = CurrentSelection.Children.First();
+            CurrentSelection.Select();
+        }
+    }
+
+    /// <summary>
+    /// Toggles collapse state of current selection.
+    /// </summary>
+    public void ToggleCollapse()
+    {
+        CurrentSelection?.ToggleCollapse();
+    }
+
+    /// <summary>
+    /// Gets the currently selected node.
+    /// </summary>
+    public LinkNode? GetSelectedNode() => CurrentSelection;
+
+    /// <summary>
+    /// Gets all visible nodes (respects collapse state).
+    /// </summary>
+    public IEnumerable<LinkNode> GetVisibleNodes()
+    {
+        // Root is never visible, only its descendants
+        return Root.GetVisibleDescendants();
+    }
+
+    /// <summary>
+    /// Gets all nodes regardless of collapse state.
+    /// </summary>
+    public IEnumerable<LinkNode> GetAllNodes()
+    {
+        return Root.GetAllDescendants();
+    }
+
+    /// <summary>
+    /// Selects a specific node by its ID.
+    /// </summary>
+    public bool SelectNodeById(Guid nodeId)
+    {
+        var node = GetAllNodes().FirstOrDefault(n => n.Id == nodeId);
+
+        if (node != null)
+        {
+            CurrentSelection?.Deselect();
+            CurrentSelection = node;
+            CurrentSelection.Select();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Ensures a node is selected. If no node is currently selected,
+    /// selects the first visible node. Returns true if a selection exists.
+    /// </summary>
+    public bool EnsureSelection()
+    {
+        // If already have a valid selection, nothing to do
+        if (CurrentSelection != null && CurrentSelection.IsSelected)
+        {
+            return true;
+        }
+
+        // Try to select the first visible node
+        var firstVisible = GetVisibleNodes().FirstOrDefault();
+        if (firstVisible != null)
+        {
+            CurrentSelection?.Deselect();
+            CurrentSelection = firstVisible;
+            CurrentSelection.Select();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Expands all nodes in the tree.
+    /// </summary>
+    public void ExpandAll()
+    {
+        foreach (var node in GetAllNodes())
+        {
+            node.Expand();
+        }
+    }
+
+    /// <summary>
+    /// Collapses all nodes in the tree.
+    /// </summary>
+    public void CollapseAll()
+    {
+        foreach (var node in GetAllNodes())
+        {
+            node.Collapse();
+        }
+    }
+}

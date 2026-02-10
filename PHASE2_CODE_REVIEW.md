@@ -24,7 +24,7 @@ All critical and important issues have been resolved. The codebase now follows a
 
 ### 1. CRITICAL: UnitOfWork Missing IAsyncDisposable Implementation
 
-**Location**: `src/NYTAudioScraper.Infrastructure/Persistence/UnitOfWork.cs:10`
+**Location**: `src/TermReader.Infrastructure/Persistence/UnitOfWork.cs:10`
 
 **Problem**:
 - The class implemented `IDisposable` but not `IAsyncDisposable`
@@ -94,8 +94,8 @@ public class UnitOfWork : IUnitOfWork  // IUnitOfWork now extends IAsyncDisposab
 ```
 
 **Files Modified**:
-- `src/NYTAudioScraper.Application/Interfaces/IUnitOfWork.cs` - Added `IAsyncDisposable` to interface
-- `src/NYTAudioScraper.Infrastructure/Persistence/UnitOfWork.cs` - Implemented `DisposeAsync()` and `DisposeAsyncCore()`
+- `src/TermReader.Application/Interfaces/IUnitOfWork.cs` - Added `IAsyncDisposable` to interface
+- `src/TermReader.Infrastructure/Persistence/UnitOfWork.cs` - Implemented `DisposeAsync()` and `DisposeAsyncCore()`
 
 **Best Practice**:
 Classes with async disposal requirements should implement both `IDisposable` (for backward compatibility) and `IAsyncDisposable` (for proper async resource cleanup).
@@ -104,7 +104,7 @@ Classes with async disposal requirements should implement both `IDisposable` (fo
 
 ### 2. CRITICAL: ArticleCache Operations Lack Transaction Consistency
 
-**Location**: `src/NYTAudioScraper.Infrastructure/Caching/ArticleCache.cs:61-93`
+**Location**: `src/TermReader.Infrastructure/Caching/ArticleCache.cs:61-93`
 
 **Problem**:
 - `SetAsync()` method updated L1 cache (memory) first, then L2 cache (database)
@@ -248,7 +248,7 @@ public async Task RemoveAsync(string key, CancellationToken cancellationToken = 
 5. **Cache Consistency**: L1 and L2 caches remain consistent even on errors
 
 **Files Modified**:
-- `src/NYTAudioScraper.Infrastructure/Caching/ArticleCache.cs` - Updated `SetAsync()` and `RemoveAsync()`
+- `src/TermReader.Infrastructure/Caching/ArticleCache.cs` - Updated `SetAsync()` and `RemoveAsync()`
 
 ---
 
@@ -289,8 +289,8 @@ public class UnitOfWork : IUnitOfWork
 - Improves debugging and logging capabilities
 
 **Files Modified**:
-- `src/NYTAudioScraper.Application/Interfaces/IUnitOfWork.cs` - Added property to interface
-- `src/NYTAudioScraper.Infrastructure/Persistence/UnitOfWork.cs` - Implemented property
+- `src/TermReader.Application/Interfaces/IUnitOfWork.cs` - Added property to interface
+- `src/TermReader.Infrastructure/Persistence/UnitOfWork.cs` - Implemented property
 
 ---
 
@@ -393,7 +393,7 @@ public class UnitOfWorkTests : IAsyncDisposable
 ```
 
 **Files Modified**:
-- `tests/NYTAudioScraper.Tests/UnitOfWorkTests.cs` - Added 5 tests, updated test class disposal
+- `tests/TermReader.Tests/UnitOfWorkTests.cs` - Added 5 tests, updated test class disposal
 
 ---
 
@@ -401,7 +401,7 @@ public class UnitOfWorkTests : IAsyncDisposable
 
 ### Repository GetByIdAsync Assumes String Keys
 
-**Location**: `src/NYTAudioScraper.Application/Interfaces/IRepository.cs:14`
+**Location**: `src/TermReader.Application/Interfaces/IRepository.cs:14`
 
 **Issue**:
 ```csharp
@@ -442,23 +442,23 @@ The following aspects were well-implemented and require no changes:
 
 ### Files Modified (6 total):
 
-1. **src/NYTAudioScraper.Application/Interfaces/IUnitOfWork.cs**
+1. **src/TermReader.Application/Interfaces/IUnitOfWork.cs**
    - Added `IAsyncDisposable` interface inheritance
    - Added `HasActiveTransaction` property
 
-2. **src/NYTAudioScraper.Infrastructure/Persistence/UnitOfWork.cs**
+2. **src/TermReader.Infrastructure/Persistence/UnitOfWork.cs**
    - Implemented `HasActiveTransaction` property
    - Implemented `DisposeAsync()` method
    - Implemented `DisposeAsyncCore()` helper method
    - Added comments explaining disposal strategy
 
-3. **src/NYTAudioScraper.Infrastructure/Caching/ArticleCache.cs**
+3. **src/TermReader.Infrastructure/Caching/ArticleCache.cs**
    - Updated `SetAsync()` with transaction wrapping and proper ordering
    - Updated `RemoveAsync()` with transaction wrapping and proper ordering
    - Added smart transaction detection using `HasActiveTransaction`
    - Added rollback on error
 
-4. **tests/NYTAudioScraper.Tests/UnitOfWorkTests.cs**
+4. **tests/TermReader.Tests/UnitOfWorkTests.cs**
    - Changed test class from `IDisposable` to `IAsyncDisposable`
    - Updated disposal method to use `DisposeAsync()`
    - Added `DisposeAsync_DisposesResourcesAsynchronously()` test
