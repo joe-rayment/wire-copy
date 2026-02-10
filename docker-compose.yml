@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  nyt-scraper:
+  termreader:
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - NYT__Email=${NYT_EMAIL}
-      - NYT__Password=${NYT_PASSWORD}
+      - Auth__Email=${AUTH_EMAIL}
+      - Auth__Password=${AUTH_PASSWORD}
       - ElevenLabs__ApiKey=${ELEVEN_LABS_API_KEY}
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:

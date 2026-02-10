@@ -117,7 +117,7 @@ The infrastructure exists but **isn't being used** in the production workflow:
 
 #### Changes Required
 
-**File**: `src/NYTAudioScraper.API/Program.cs`
+**File**: `src/TermReader.API/Program.cs`
 
 **Before** (Current - Line 296):
 ```csharp
@@ -207,7 +207,7 @@ private static async Task RunProductionWorkflowAsync(IServiceProvider services, 
 
 #### Changes Required
 
-**File**: `src/NYTAudioScraper.API/Program.cs`
+**File**: `src/TermReader.API/Program.cs`
 
 **Before** (Current - Lines 361-418):
 ```csharp
@@ -301,7 +301,7 @@ foreach (var (articleId, errorMessage) in result.FailedGenerations)
 
 ##### 3.1 Article Cache Integration
 
-**File**: `src/NYTAudioScraper.Infrastructure/Browser/ScraperService.cs`
+**File**: `src/TermReader.Infrastructure/Browser/ScraperService.cs`
 
 **Add to `ScrapeArticleByUrlAsync`**:
 ```csharp
@@ -335,7 +335,7 @@ public async Task<Article?> ScrapeArticleByUrlAsync(
 
 ##### 3.2 Audio Cache Integration
 
-**File**: `src/NYTAudioScraper.Infrastructure/Audio/AudioGenerator.cs`
+**File**: `src/TermReader.Infrastructure/Audio/AudioGenerator.cs`
 
 **Update `GenerateAudioAsync`**:
 ```csharp
@@ -415,17 +415,17 @@ Log.Information("Audio cache hits saved ~30s + ${Cost:F2} per article", totalSav
 #### Implementation
 
 **New Files**:
-- `src/NYTAudioScraper.Infrastructure/Health/FFmpegHealthCheck.cs`
-- `src/NYTAudioScraper.Infrastructure/Health/DiskSpaceHealthCheck.cs`
-- `src/NYTAudioScraper.Infrastructure/Health/DatabaseHealthCheck.cs`
+- `src/TermReader.Infrastructure/Health/FFmpegHealthCheck.cs`
+- `src/TermReader.Infrastructure/Health/DiskSpaceHealthCheck.cs`
+- `src/TermReader.Infrastructure/Health/DatabaseHealthCheck.cs`
 
-**File**: `src/NYTAudioScraper.Infrastructure/Health/FFmpegHealthCheck.cs`
+**File**: `src/TermReader.Infrastructure/Health/FFmpegHealthCheck.cs`
 ```csharp
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
-namespace NYTAudioScraper.Infrastructure.Health;
+namespace TermReader.Infrastructure.Health;
 
 public class FFmpegHealthCheck : IHealthCheck
 {
@@ -480,12 +480,12 @@ public class FFmpegHealthCheck : IHealthCheck
 }
 ```
 
-**File**: `src/NYTAudioScraper.Infrastructure/Health/DiskSpaceHealthCheck.cs`
+**File**: `src/TermReader.Infrastructure/Health/DiskSpaceHealthCheck.cs`
 ```csharp
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
-namespace NYTAudioScraper.Infrastructure.Health;
+namespace TermReader.Infrastructure.Health;
 
 public class DiskSpaceHealthCheck : IHealthCheck
 {
@@ -536,14 +536,14 @@ public class DiskSpaceHealthCheck : IHealthCheck
 }
 ```
 
-**File**: `src/NYTAudioScraper.Infrastructure/Health/DatabaseHealthCheck.cs`
+**File**: `src/TermReader.Infrastructure/Health/DatabaseHealthCheck.cs`
 ```csharp
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
-using NYTAudioScraper.Infrastructure.Persistence;
+using TermReader.Infrastructure.Persistence;
 
-namespace NYTAudioScraper.Infrastructure.Health;
+namespace TermReader.Infrastructure.Health;
 
 public class DatabaseHealthCheck : IHealthCheck
 {
@@ -650,13 +650,13 @@ Log.Information("All health checks passed ✓");
 
 #### Implementation
 
-**New File**: `src/NYTAudioScraper.Infrastructure/Metrics/PerformanceMetrics.cs`
+**New File**: `src/TermReader.Infrastructure/Metrics/PerformanceMetrics.cs`
 
 ```csharp
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace NYTAudioScraper.Infrastructure.Metrics;
+namespace TermReader.Infrastructure.Metrics;
 
 public class PerformanceMetrics
 {

@@ -222,8 +222,8 @@ catch (Exception ex)
 #### Phase 7: Add Migration Commands (15 min)
 ```bash
 # Add to CLAUDE.md
-dotnet ef migrations add InitialCreate --project src/NYTAudioScraper.Infrastructure
-dotnet ef database update --project src/NYTAudioScraper.Infrastructure
+dotnet ef migrations add InitialCreate --project src/TermReader.Infrastructure
+dotnet ef database update --project src/TermReader.Infrastructure
 ```
 
 ### ✅ Acceptance Criteria
@@ -1068,7 +1068,7 @@ foreach (var (operation, stats) in summary.Operations)
 "Serilog": {
   "Enrich": ["FromLogContext", "WithMachineName", "WithThreadId"],
   "Properties": {
-    "Application": "NYTAudioScraper",
+    "Application": "TermReader",
     "Environment": "Production"
   }
 }
@@ -1243,7 +1243,7 @@ public class AudioCache : IAudioCache
         _logger = logger;
         _cacheDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NYTAudioScraper",
+            "TermReader",
             "AudioCache");
         Directory.CreateDirectory(_cacheDirectory);
     }
@@ -1438,7 +1438,7 @@ Encrypt stored cookies and improve session management for better security and re
 
 **Security Risk:**
 - Cookies contain session tokens
-- Stored unencrypted in `%AppData%/NYTAudioScraper/cookies.json`
+- Stored unencrypted in `%AppData%/TermReader/cookies.json`
 - If compromised, attacker gains NYT account access
 
 ### 🛠️ Implementation Plan
@@ -1467,7 +1467,7 @@ public class CookieEncryptionService : ICookieEncryptionService
         // Generate or load entropy (additional secret)
         var entropyPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NYTAudioScraper",
+            "TermReader",
             ".entropy");
 
         if (File.Exists(entropyPath))

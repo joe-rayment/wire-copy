@@ -29,12 +29,12 @@ dotnet test --configuration Release --no-build
 
 ### Run tests from a specific test project
 ```bash
-dotnet test tests/NYTAudioScraper.Tests/NYTAudioScraper.Tests.csproj
+dotnet test tests/TermReader.Tests/TermReader.Tests.csproj
 ```
 
 ### Run tests from current directory
 ```bash
-cd tests/NYTAudioScraper.Tests
+cd tests/TermReader.Tests
 dotnet test
 ```
 
@@ -42,7 +42,7 @@ dotnet test
 
 ### Run a specific test by fully qualified name
 ```bash
-dotnet test --filter "FullyQualifiedName=NYTAudioScraper.Tests.DependencyInjectionTests.ServiceProvider_ShouldResolveIScraperService"
+dotnet test --filter "FullyQualifiedName=TermReader.Tests.DependencyInjectionTests.ServiceProvider_ShouldResolveIScraperService"
 ```
 
 ### Run a specific test by method name (shorter)
@@ -93,13 +93,13 @@ dotnet test --collect:"XPlat Code Coverage"
 ```
 
 ### View coverage results
-Coverage reports are generated in: `tests/NYTAudioScraper.Tests/TestResults/*/coverage.cobertura.xml`
+Coverage reports are generated in: `tests/TermReader.Tests/TestResults/*/coverage.cobertura.xml`
 
 ## Running Tests in Watch Mode
 
 ### Automatically re-run tests on file changes
 ```bash
-cd tests/NYTAudioScraper.Tests
+cd tests/TermReader.Tests
 dotnet watch test
 ```
 
@@ -212,8 +212,8 @@ dotnet test
 
 ### Clear test cache
 ```bash
-rm -rf tests/NYTAudioScraper.Tests/bin
-rm -rf tests/NYTAudioScraper.Tests/obj
+rm -rf tests/TermReader.Tests/bin
+rm -rf tests/TermReader.Tests/obj
 dotnet restore
 dotnet test
 ```

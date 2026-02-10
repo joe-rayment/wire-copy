@@ -45,7 +45,7 @@ This document provides a complete project plan for building a NYT article scrape
 ### Project Structure
 
 ```
-NYTAudioScraper/
+TermReader/
 ├── src/
 │   ├── Domain/                          # Core business logic
 │   │   ├── Entities/
@@ -800,7 +800,7 @@ public async Task EndToEnd_MockDependencies_CompletesSuccessfully()
 **Docker Test:**
 ```bash
 # Build test
-docker build -t nyt-audio-scraper .
+docker build -t termreader .
 
 # Run test
 docker run --rm \
@@ -808,7 +808,7 @@ docker run --rm \
   -e NYT_PASSWORD="password" \
   -e ELEVEN_LABS_API_KEY="key" \
   -v ./output:/app/output \
-  nyt-audio-scraper
+  termreader
   
 # Verify output
 ls -lh ./output/*.m4b
@@ -975,7 +975,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Build Docker Image
-        run: docker build -t nyt-audio-scraper:${{ github.sha }} .
+        run: docker build -t termreader:${{ github.sha }} .
       
       - name: Test Docker Image
         run: |
@@ -983,7 +983,7 @@ jobs:
             -e NYT_EMAIL="test@example.com" \
             -e NYT_PASSWORD="test" \
             -e ELEVEN_LABS_API_KEY="test" \
-            nyt-audio-scraper:${{ github.sha }} \
+            termreader:${{ github.sha }} \
             --dry-run
 ```
 
@@ -1181,10 +1181,10 @@ services.Configure<NYTConfiguration>(options =>
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["NYTAudioScraper/NYTAudioScraper.csproj", "NYTAudioScraper/"]
-RUN dotnet restore "NYTAudioScraper/NYTAudioScraper.csproj"
+COPY ["TermReader/TermReader.csproj", "TermReader/"]
+RUN dotnet restore "TermReader/TermReader.csproj"
 COPY . .
-WORKDIR "/src/NYTAudioScraper"
+WORKDIR "/src/TermReader"
 RUN dotnet build -c Release -o /app/build
 
 # Publish stage
@@ -1212,7 +1212,7 @@ USER appuser
 COPY --from=publish --chown=appuser:appuser /app/publish .
 
 # Expose no ports (runs as background job)
-ENTRYPOINT ["dotnet", "NYTAudioScraper.dll"]
+ENTRYPOINT ["dotnet", "TermReader.dll"]
 ```
 
 **Security Best Practices:**
@@ -1429,7 +1429,7 @@ public class ScrapeArticlesValidator : AbstractValidator<ScrapeArticlesCommand>
 
 2. **Run Chrome with Xvfb**
    ```bash
-   xvfb-run -a dotnet NYTAudioScraper.dll
+   xvfb-run -a dotnet TermReader.dll
    ```
 
 3. **Docker Compose with Display**
@@ -1441,7 +1441,7 @@ public class ScrapeArticlesValidator : AbstractValidator<ScrapeArticlesCommand>
          - DISPLAY=:99
        volumes:
          - ./output:/app/output
-       command: xvfb-run -a dotnet NYTAudioScraper.dll
+       command: xvfb-run -a dotnet TermReader.dll
    ```
 
 4. **Increase Shared Memory**
@@ -1580,7 +1580,7 @@ dotnet user-secrets set "NYT:Password" "your-password"
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
 
 # Run application
-dotnet run --project src/NYTAudioScraper
+dotnet run --project src/TermReader
 
 # Run tests
 dotnet test
@@ -1590,7 +1590,7 @@ dotnet test
 
 ```bash
 # Build image
-docker build -t nyt-audio-scraper:latest .
+docker build -t termreader:latest .
 
 # Run container
 docker run --rm \
@@ -1598,7 +1598,7 @@ docker run --rm \
   -e NYT_PASSWORD="your-password" \
   -e ELEVEN_LABS_API_KEY="your-api-key" \
   -v $(pwd)/output:/app/output \
-  nyt-audio-scraper:latest
+  termreader:latest
 
 # Check output
 ls -lh output/
@@ -1624,7 +1624,7 @@ services:
       - ./output:/app/output
       - ./logs:/app/logs
     shm_size: '2gb'
-    command: xvfb-run -a dotnet NYTAudioScraper.dll
+    command: xvfb-run -a dotnet TermReader.dll
 
 # Run with:
 # docker-compose up
@@ -1643,7 +1643,7 @@ services:
 # Create scheduled task to run daily
 $action = New-ScheduledTaskAction -Execute "docker-compose" -Argument "up -d"
 $trigger = New-ScheduledTaskTrigger -Daily -At 6am
-Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "NYTAudioScraper"
+Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "TermReader"
 ```
 
 ### Monitoring & Logging
