@@ -8,7 +8,6 @@ services:
     environment:
       - Auth__Email=${AUTH_EMAIL}
       - Auth__Password=${AUTH_PASSWORD}
-      - ElevenLabs__ApiKey=${ELEVEN_LABS_API_KEY}
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:
       - ./output:/app/output

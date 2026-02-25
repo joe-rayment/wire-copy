@@ -17,5 +17,15 @@ public enum ViewMode
     /// Clean, readable article view with just text content.
     /// Removes ads, navigation, and formatting. Only available for article pages.
     /// </summary>
-    Readable
+    Readable,
+
+    /// <summary>
+    /// Shows all collections as a list.
+    /// </summary>
+    CollectionList,
+
+    /// <summary>
+    /// Shows items within a selected collection.
+    /// </summary>
+    CollectionItems
 }

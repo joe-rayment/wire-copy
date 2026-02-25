@@ -1,8 +1,7 @@
 // Educational and personal use only.
 
 using Microsoft.EntityFrameworkCore;
-using TermReader.Domain.Entities;
-using TermReader.Infrastructure.Persistence.Configurations;
+using TermReader.Domain.Entities.Collections;
 
 namespace TermReader.Infrastructure.Persistence;
 
@@ -16,11 +15,9 @@ public class AppDbContext : DbContext
     {
     }
 
-    public DbSet<Article> Articles => Set<Article>();
+    public DbSet<Collection> Collections => Set<Collection>();
 
-    public DbSet<ScrapingSession> ScrapingSessions => Set<ScrapingSession>();
-
-    public DbSet<AudioChapter> AudioChapters => Set<AudioChapter>();
+    public DbSet<CollectionItem> CollectionItems => Set<CollectionItem>();
 
     /// <summary>
     /// Ensures the database is created and migrations are applied.
@@ -40,17 +37,15 @@ public class AppDbContext : DbContext
             }
         }
 
-        // Apply migrations
-        await Database.MigrateAsync(cancellationToken);
+        // Ensure database is created (no migrations for now - fresh schema)
+        await Database.EnsureCreatedAsync(cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Apply all entity configurations
-        modelBuilder.ApplyConfiguration(new ArticleConfiguration());
-        modelBuilder.ApplyConfiguration(new ScrapingSessionConfiguration());
-        modelBuilder.ApplyConfiguration(new AudioChapterConfiguration());
+        // Apply entity configurations from this assembly
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }
 }

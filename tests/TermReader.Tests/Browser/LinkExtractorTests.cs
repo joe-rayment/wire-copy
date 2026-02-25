@@ -3,6 +3,8 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser;
 using Xunit;
 
@@ -438,4 +440,215 @@ public class LinkExtractorTests
         links.Should().Contain(l => l.Url == "https://example.com/section/articles/latest");
         links.Should().Contain(l => l.Url == "https://example.com/other");
     }
+
+    #region GroupLinksByUrl Tests
+
+    [Fact]
+    public void GroupLinksByUrl_SameUrlSameParent_MergesDisplayText()
+    {
+        // Arrange — category label + headline in same parent
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article-1", DisplayText = "News", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article-1", DisplayText = "Big Headline About Something", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("News: Big Headline About Something");
+        result[0].ImportanceScore.Should().Be(70);
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_SameUrlDifferentParent_KeepsBestRepresentative()
+    {
+        // Arrange — same URL in nav and in content area
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/page", DisplayText = "Home", Type = LinkType.Navigation, ImportanceScore = 30, ParentSelector = "nav.main" },
+            new() { Url = "https://example.com/page", DisplayText = "Welcome to Our Homepage", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "main.content" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Welcome to Our Homepage");
+        result[0].ImportanceScore.Should().Be(70);
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_ThreeLinksInSameParent_MergesAll()
+    {
+        // Arrange — three links in the same card
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article", DisplayText = "Politics", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article", DisplayText = "Breaking News", Type = LinkType.Content, ImportanceScore = 50, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article", DisplayText = "Major Policy Change Announced Today", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Politics: Breaking News: Major Policy Change Announced Today");
+        result[0].ImportanceScore.Should().Be(70);
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_DuplicateText_Deduplicates()
+    {
+        // Arrange — "Read More" appears twice in the same parent
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article", DisplayText = "Read More", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article", DisplayText = "Read More", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Read More");
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_SubstringText_RemovesRedundant()
+    {
+        // Arrange — "News" is a substring of "News Today"
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article", DisplayText = "News", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article", DisplayText = "News Today", Type = LinkType.Content, ImportanceScore = 50, ParentSelector = "div.card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("News Today");
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_ImageAltAndRealText_PrefersRealText()
+    {
+        // Arrange — image alt + real headline in same parent
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article", DisplayText = "Article thumbnail", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.card", IsFromImageAlt = true },
+            new() { Url = "https://example.com/article", DisplayText = "Great Article Title", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.card", IsFromImageAlt = false }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Great Article Title");
+        result[0].IsFromImageAlt.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_DifferentUrls_NoGrouping()
+    {
+        // Arrange — different URLs in the same parent should NOT merge
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article-1", DisplayText = "First Article", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.card" },
+            new() { Url = "https://example.com/article-2", DisplayText = "Second Article", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result[0].DisplayText.Should().Be("First Article");
+        result[1].DisplayText.Should().Be("Second Article");
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_PreservesDocumentOrder()
+    {
+        // Arrange — merged entry should appear at position of first occurrence
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/first", DisplayText = "First Link", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.a" },
+            new() { Url = "https://example.com/second", DisplayText = "Category", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.b" },
+            new() { Url = "https://example.com/second", DisplayText = "Second Link Headline", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.b" },
+            new() { Url = "https://example.com/third", DisplayText = "Third Link", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.c" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert
+        result.Should().HaveCount(3);
+        result[0].Url.Should().Be("https://example.com/first");
+        result[1].Url.Should().Be("https://example.com/second");
+        result[1].DisplayText.Should().Be("Category: Second Link Headline");
+        result[2].Url.Should().Be("https://example.com/third");
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_SameUrlSameParent_NotAdjacent_DoesNotMerge()
+    {
+        // Arrange — two /politics/ links with identical ParentSelector but separated
+        // by a different-URL link (the macleans.ca scenario)
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://macleans.ca/politics/", DisplayText = "Politics", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.article-card" },
+            new() { Url = "https://macleans.ca/politics/article-1", DisplayText = "Headline One About Policy", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.article-card" },
+            new() { Url = "https://macleans.ca/politics/", DisplayText = "Politics", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.article-card" },
+            new() { Url = "https://macleans.ca/politics/article-2", DisplayText = "Headline Two About Economy", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.article-card" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert — the two /politics/ links should NOT merge since they're not adjacent.
+        // Phase 2 cross-parent dedup picks the best representative, so we get 3 unique URLs.
+        result.Should().HaveCount(3);
+        result.Should().Contain(l => l.Url == "https://macleans.ca/politics/article-1");
+        result.Should().Contain(l => l.Url == "https://macleans.ca/politics/article-2");
+        result.Should().Contain(l => l.Url == "https://macleans.ca/politics/");
+
+        // The /politics/ representative should be a single "Politics" text, not merged
+        var politicsLink = result.First(l => l.Url == "https://macleans.ca/politics/");
+        politicsLink.DisplayText.Should().Be("Politics");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_ShouldSkipArticleCategoryLabelLinks()
+    {
+        // Arrange — links with data-link-type="article category label" should be excluded
+        var html = @"
+            <html>
+            <body>
+                <div class=""article-card"">
+                    <a href=""https://example.com/politics/"" data-link-type=""article category label"">Politics</a>
+                    <a href=""https://example.com/politics/article-1"">Big Headline About Important Policy Changes</a>
+                </div>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert — category label link is filtered out, only the headline remains
+        links.Should().HaveCount(1);
+        links[0].Url.Should().Contain("article-1");
+        links[0].DisplayText.Should().Be("Big Headline About Important Policy Changes");
+    }
+
+    #endregion
 }

@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
+using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
@@ -22,6 +23,24 @@ public class NavigationService : INavigationService
     private int _scrollOffset;
     private string? _searchQuery;
     private int _searchMatchIndex;
+
+    // Collection state
+    private Collection? _activeCollection;
+    private bool _inCollectionsMode;
+    private ViewMode _preCollectionsViewMode;
+    private int _preCollectionsScrollOffset;
+    private int _collectionScrollOffset;
+    private int _collectionItemScrollOffset;
+    private int _collectionSelectedIndex;
+    private int _collectionItemSelectedIndex;
+
+    // Return point for navigating back from an article opened from a collection
+    private CollectionReturnPoint? _collectionReturnPoint;
+
+    private record CollectionReturnPoint(
+        Collection Collection,
+        int ItemScrollOffset,
+        int ItemSelectedIndex);
 
     public NavigationService(ILogger<NavigationService> logger)
     {
@@ -211,5 +230,129 @@ public class NavigationService : INavigationService
     public void SetSearchMatchIndex(int index)
     {
         _searchMatchIndex = Math.Max(0, index);
+    }
+
+    // Collection navigation methods
+
+    /// <summary>
+    /// Gets the currently active collection (for CollectionItems view).
+    /// </summary>
+    public Collection? ActiveCollection => _activeCollection;
+
+    /// <summary>
+    /// Gets whether we're currently in collections mode.
+    /// </summary>
+    public bool InCollectionsMode => _inCollectionsMode;
+
+    /// <summary>
+    /// Gets or sets the selected index in the collection list.
+    /// </summary>
+    public int CollectionSelectedIndex
+    {
+        get => _collectionSelectedIndex;
+        set => _collectionSelectedIndex = Math.Max(0, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the selected index in the collection items list.
+    /// </summary>
+    public int CollectionItemSelectedIndex
+    {
+        get => _collectionItemSelectedIndex;
+        set => _collectionItemSelectedIndex = Math.Max(0, value);
+    }
+
+    /// <summary>
+    /// Enters collections mode, saving the current view state.
+    /// </summary>
+    public void EnterCollections()
+    {
+        _preCollectionsViewMode = _currentViewMode;
+        _preCollectionsScrollOffset = _scrollOffset;
+        _inCollectionsMode = true;
+        _currentViewMode = ViewMode.CollectionList;
+        _collectionSelectedIndex = 0;
+        _collectionScrollOffset = 0;
+
+        _logger.LogDebug("Entered collections mode");
+    }
+
+    /// <summary>
+    /// Opens a specific collection's items view.
+    /// </summary>
+    public void EnterCollection(Collection collection)
+    {
+        _activeCollection = collection;
+        _currentViewMode = ViewMode.CollectionItems;
+        _collectionItemSelectedIndex = 0;
+        _collectionItemScrollOffset = 0;
+
+        _logger.LogDebug("Entered collection: {Name}", collection.Name);
+    }
+
+    /// <summary>
+    /// Exits from CollectionItems back to CollectionList.
+    /// </summary>
+    public void ExitToCollectionList()
+    {
+        _activeCollection = null;
+        _currentViewMode = ViewMode.CollectionList;
+
+        _logger.LogDebug("Returned to collection list");
+    }
+
+    /// <summary>
+    /// Exits collections mode entirely, restoring the previous view state.
+    /// </summary>
+    public void ExitCollections()
+    {
+        _inCollectionsMode = false;
+        _activeCollection = null;
+        _currentViewMode = _preCollectionsViewMode;
+        _scrollOffset = _preCollectionsScrollOffset;
+
+        _logger.LogDebug("Exited collections mode");
+    }
+
+    /// <summary>
+    /// Saves the current collection state as a return point before navigating to an article.
+    /// </summary>
+    public void SaveCollectionReturnPoint()
+    {
+        if (_activeCollection != null)
+        {
+            _collectionReturnPoint = new CollectionReturnPoint(
+                _activeCollection,
+                _collectionItemScrollOffset,
+                _collectionItemSelectedIndex);
+        }
+    }
+
+    /// <summary>
+    /// Checks if there is a collection return point and returns to it.
+    /// Returns true if a return point was restored, false otherwise.
+    /// </summary>
+    public bool TryRestoreCollectionReturnPoint()
+    {
+        if (_collectionReturnPoint == null)
+        {
+            return false;
+        }
+
+        _inCollectionsMode = true;
+        _activeCollection = _collectionReturnPoint.Collection;
+        _currentViewMode = ViewMode.CollectionItems;
+        _collectionItemScrollOffset = _collectionReturnPoint.ItemScrollOffset;
+        _collectionItemSelectedIndex = _collectionReturnPoint.ItemSelectedIndex;
+        _collectionReturnPoint = null;
+
+        // Pop back history to get back to the previous page
+        if (_backHistory.Count > 0)
+        {
+            _currentPage = _backHistory.Pop();
+        }
+
+        _logger.LogDebug("Restored collection return point: {Name}", _activeCollection?.Name);
+        return true;
     }
 }

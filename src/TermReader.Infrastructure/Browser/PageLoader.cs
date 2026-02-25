@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Diagnostics;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,7 @@ public class PageLoader : IPageLoader
     public async Task<PageLoadResult> LoadAsync(PageLoadRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading page: {Url}", request.Url);
+        var totalSw = Stopwatch.StartNew();
 
         try
         {
@@ -45,13 +47,21 @@ public class PageLoader : IPageLoader
             if (_httpClient != null)
             {
                 _logger.LogInformation("HttpClient available, attempting HTTP fetch for {Url}", request.Url);
+                var httpSw = Stopwatch.StartNew();
                 var httpResult = await TryHttpFetchAsync(request, cancellationToken);
+                httpSw.Stop();
+
                 if (httpResult.Success)
                 {
+                    totalSw.Stop();
+                    _logger.LogDebug("Page loaded in {ElapsedMs}ms via HTTP: {Url}", totalSw.ElapsedMilliseconds, request.Url);
                     return httpResult;
                 }
 
-                _logger.LogInformation("HTTP fetch failed ({Error}), falling back to browser", httpResult.ErrorMessage);
+                _logger.LogInformation(
+                    "HTTP fetch failed in {ElapsedMs}ms ({Error}), falling back to browser",
+                    httpSw.ElapsedMilliseconds,
+                    httpResult.ErrorMessage);
             }
             else
             {
@@ -59,7 +69,16 @@ public class PageLoader : IPageLoader
             }
 
             // Fall back to browser for JavaScript-heavy sites
-            return await BrowserFetchAsync(request, cancellationToken);
+            var browserSw = Stopwatch.StartNew();
+            var result = await BrowserFetchAsync(request, cancellationToken);
+            browserSw.Stop();
+            totalSw.Stop();
+            _logger.LogDebug(
+                "Page loaded in {ElapsedMs}ms via browser (browser: {BrowserMs}ms): {Url}",
+                totalSw.ElapsedMilliseconds,
+                browserSw.ElapsedMilliseconds,
+                request.Url);
+            return result;
         }
         catch (OperationCanceledException)
         {
@@ -107,7 +126,7 @@ public class PageLoader : IPageLoader
             httpRequest.Headers.Add("Cache-Control", "max-age=0");
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(request.TimeoutMs);
+            cts.CancelAfter(_browserConfig.HttpTimeoutMs);
 
             var response = await _httpClient.SendAsync(httpRequest, cts.Token);
 
@@ -184,11 +203,11 @@ public class PageLoader : IPageLoader
                 return readyState == "complete";
             });
 
-            // Brief wait for dynamic content to render
-            await Task.Delay(1000, cancellationToken);
-
-            // Short additional wait for critical network requests (capped at 2s)
-            await Task.Delay(2000, cancellationToken);
+            // Optional post-load delay for sites needing extra JS rendering time
+            if (_browserConfig.PostLoadDelayMs > 0)
+            {
+                await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken);
+            }
         }
         catch (WebDriverTimeoutException)
         {

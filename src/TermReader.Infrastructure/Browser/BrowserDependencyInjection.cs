@@ -1,12 +1,22 @@
 // Educational and personal use only.
 
 using System.Net;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Browser.UI;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Configuration.Validation;
+using TermReader.Infrastructure.Collections;
+using TermReader.Infrastructure.Persistence;
+using TermReader.Infrastructure.Persistence.Repositories;
+using TermReader.Infrastructure.Security;
+using TermReader.Infrastructure.Storage;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -22,6 +32,49 @@ public static class BrowserDependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddTerminalBrowser(this IServiceCollection services)
     {
+        // Register configuration
+        services.AddOptions<BrowserConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(BrowserConfiguration.SectionName).Bind(opts));
+        services.AddOptions<AuthConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(AuthConfiguration.SectionName).Bind(opts));
+
+        // Register configuration validators
+        services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<AuthConfiguration>, AuthConfigurationValidator>();
+
+        // Register database (SQLite)
+        services.AddDbContext<AppDbContext>((sp, options) =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var connectionString = config.GetConnectionString("DefaultConnection")
+                ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "TermReader",
+                    "termreader.db");
+            options.UseSqlite($"Data Source={connectionString}");
+        });
+
+        // Register Unit of Work and repositories
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+
+        // Register Data Protection for cookie encryption
+        var dataProtectionPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TermReader",
+            "keys");
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+            .SetApplicationName("TermReader");
+
+        // Register security and cookie services
+        services.AddSingleton<ICookieEncryptionService, DpapiCookieEncryptionService>();
+        services.AddSingleton<ICookieManager, CookieManager>();
+        services.AddSingleton<CookieImporter>();
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
+
         // Register HTTP client for PageLoader with automatic decompression
         services.AddHttpClient("BrowserPageLoader")
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -60,6 +113,12 @@ public static class BrowserDependencyInjection
 
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();
+
+        // Register collections
+        services.AddScoped<ICollectionRepository, CollectionRepository>();
+        services.AddScoped<ICollectionService, CollectionService>();
+        services.AddSingleton<ICollectionExporter, UrlListExporter>();
+        services.AddSingleton<ICollectionExporter, OpmlExporter>();
 
         return services;
     }

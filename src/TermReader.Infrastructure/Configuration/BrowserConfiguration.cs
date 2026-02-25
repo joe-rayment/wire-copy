@@ -31,6 +31,18 @@ public class BrowserConfiguration
 
     public string UserAgent { get; init; } = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+    /// <summary>
+    /// Gets optional delay (ms) after document.readyState is complete.
+    /// Use for sites that need extra time for JS rendering. Default: 0 (no delay).
+    /// </summary>
+    public int PostLoadDelayMs { get; init; } = 0;
+
+    /// <summary>
+    /// Gets HTTP fetch timeout (ms) before falling back to browser.
+    /// A short timeout ensures fast fallback to browser for JS-heavy sites.
+    /// </summary>
+    public int HttpTimeoutMs { get; init; } = 3000;
+
     public string[] ExperimentalOptions { get; init; } =
     [
         "excludeSwitches", "enable-automation",
