@@ -230,23 +230,14 @@ public class CookieImporter
     {
         try
         {
-            // Directly attempt to delete - no need for existence check
-            // File.Delete doesn't throw if file doesn't exist
-            File.Delete(_cookieFilePath);
-
-            // Check if file was actually deleted (existed before)
             if (!File.Exists(_cookieFilePath))
             {
-                _logger.LogInformation("Cleared stored cookies");
-                return Task.FromResult(true);
+                return Task.FromResult(false);
             }
 
-            return Task.FromResult(false);
-        }
-        catch (FileNotFoundException)
-        {
-            // File was already deleted or never existed - this is fine
-            return Task.FromResult(false);
+            File.Delete(_cookieFilePath);
+            _logger.LogInformation("Cleared stored cookies");
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {

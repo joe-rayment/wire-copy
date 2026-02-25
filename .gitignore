@@ -170,3 +170,5 @@ Thumbs.db
 claude-dev
 .mcp.json
 .claude/
+.claude/logs/
+attachments/
