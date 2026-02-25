@@ -29,13 +29,12 @@ RUN dotnet publish "TermReader.API.csproj" -c Release -o /app/publish /p:UseAppH
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
 WORKDIR /app
 
-# Install dependencies for browser automation (Chrome/Chromium) and audio processing (FFmpeg)
+# Install dependencies for browser automation (Chrome/Chromium)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     chromium \
     chromium-driver \
     xvfb \
-    ffmpeg \
     wget \
     gnupg \
     fonts-liberation \

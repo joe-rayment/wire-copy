@@ -29,4 +29,11 @@ public interface IBrowserSession : IDisposable
     /// Gets a value indicating whether there is an active WebDriver instance.
     /// </summary>
     bool HasActiveDriver { get; }
+
+    /// <summary>
+    /// Eagerly initializes the browser driver in the background so the first
+    /// browser-based page load does not incur the cold-start penalty.
+    /// Safe to call concurrently with GetOrCreateDriver (guarded by internal lock).
+    /// </summary>
+    Task WarmUpAsync();
 }

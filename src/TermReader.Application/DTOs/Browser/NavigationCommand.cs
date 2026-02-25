@@ -70,5 +70,13 @@ public enum CommandType
     // Search
     Search,
     SearchNext,
-    SearchPrevious
+    SearchPrevious,
+
+    // Collections
+    SaveToCollection,
+    SaveToSpecific,
+    OpenCollections,
+    DeleteItem,
+    ReorderUp,
+    ReorderDown
 }

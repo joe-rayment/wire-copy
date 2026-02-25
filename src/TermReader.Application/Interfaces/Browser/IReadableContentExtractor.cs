@@ -6,7 +6,6 @@ namespace TermReader.Application.Interfaces.Browser;
 
 /// <summary>
 /// Service for extracting clean, readable article content from HTML.
-/// Wraps the existing ArticleParser for browser mode.
 /// </summary>
 public interface IReadableContentExtractor
 {

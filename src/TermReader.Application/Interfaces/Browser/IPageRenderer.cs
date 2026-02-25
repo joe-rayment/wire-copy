@@ -2,6 +2,7 @@
 
 using TermReader.Application.DTOs.Browser;
 using TermReader.Domain.Entities.Browser;
+using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
@@ -27,7 +28,7 @@ public interface IPageRenderer
     /// <param name="page">Page to render.</param>
     /// <param name="context">Current navigation context.</param>
     /// <param name="options">Render options.</param>
-    void RenderReadable(Page page, NavigationContext context, RenderOptions options);
+    void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null);
 
     /// <summary>
     /// Renders loading indicator.
@@ -48,6 +49,23 @@ public interface IPageRenderer
     /// <param name="context">Current navigation context.</param>
     /// <param name="mode">Current view mode.</param>
     void RenderStatusBar(NavigationContext context, ViewMode mode);
+
+    /// <summary>
+    /// Renders the collection list view (all collections).
+    /// </summary>
+    /// <param name="collections">List of collections to render.</param>
+    /// <param name="selectedIndex">Currently selected collection index.</param>
+    /// <param name="defaultCollectionId">ID of the default collection.</param>
+    /// <param name="options">Render options.</param>
+    void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options);
+
+    /// <summary>
+    /// Renders items within a collection.
+    /// </summary>
+    /// <param name="collection">Collection to render.</param>
+    /// <param name="selectedIndex">Currently selected item index.</param>
+    /// <param name="options">Render options.</param>
+    void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options);
 
     /// <summary>
     /// Clears the terminal screen.

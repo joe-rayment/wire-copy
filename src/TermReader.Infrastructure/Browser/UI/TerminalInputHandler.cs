@@ -66,6 +66,22 @@ public class TerminalInputHandler : IInputHandler
                 return Task.FromResult(new NavigationCommand { Type = CommandType.SearchPrevious });
             }
 
+            // Collections commands (character-based for reliable detection)
+            if (keyInfo.KeyChar == 's')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.SaveToCollection });
+            }
+
+            if (keyInfo.KeyChar == 'S')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.SaveToSpecific });
+            }
+
+            if (keyInfo.KeyChar == 'd')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.DeleteItem });
+            }
+
             var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Log non-default commands (MoveUp is the default/fallback)
@@ -88,6 +104,8 @@ public class TerminalInputHandler : IInputHandler
             return key switch
             {
                 ConsoleKey.G => new NavigationCommand { Type = CommandType.GoToBottom }, // G (shift+g)
+                ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown }, // J (shift+j)
+                ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp }, // K (shift+k)
                 _ => new NavigationCommand { Type = CommandType.MoveDown }
             };
         }
@@ -183,6 +201,16 @@ public class TerminalInputHandler : IInputHandler
   /             Search in current view
   n             Next search match
   N             Previous search match
+
+  Collections
+  ─────────────────────────────────────────────────────────────────
+  s             Save link to default collection
+  S             Save link to specific collection
+  d             Delete item (in collection views)
+  J (Shift+j)   Move item down (in collection items)
+  K (Shift+k)   Move item up (in collection items)
+  :collections  Open collections view
+  :readlater    Open read later collection
 
   Application
   ─────────────────────────────────────────────────────────────────
