@@ -70,6 +70,14 @@ public sealed class BrowserSession : IBrowserSession
         }
     }
 
+    public Task WarmUpAsync()
+    {
+        _logger.LogDebug("Warming up browser session");
+        GetOrCreateDriver(headless: true);
+        _logger.LogDebug("Browser session warm-up complete");
+        return Task.CompletedTask;
+    }
+
     public void ReleaseDriver()
     {
         // No-op: the session retains the driver for reuse.

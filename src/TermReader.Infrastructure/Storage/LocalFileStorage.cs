@@ -140,9 +140,15 @@ public class LocalFileStorage : IFileStorage
         // Remove path traversal attempts
         var sanitized = Path.GetFileName(fileName);
 
-        // Remove invalid characters
+        // Remove invalid characters (platform-specific)
         var invalidChars = Path.GetInvalidFileNameChars();
         foreach (var c in invalidChars)
+        {
+            sanitized = sanitized.Replace(c, '_');
+        }
+
+        // Also strip characters that are invalid on Windows to ensure cross-platform compatibility
+        foreach (var c in new[] { '<', '>', ':', '"', '|', '?', '*' })
         {
             sanitized = sanitized.Replace(c, '_');
         }

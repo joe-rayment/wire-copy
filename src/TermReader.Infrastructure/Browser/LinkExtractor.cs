@@ -104,6 +104,13 @@ public class LinkExtractor : ILinkExtractor
                     continue;
                 }
 
+                // Skip category label links (CMS metadata, not meaningful as standalone links)
+                var dataLinkType = anchor.GetAttributeValue("data-link-type", string.Empty);
+                if (dataLinkType.Equals("article category label", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 try
                 {
                     var absoluteUrl = ResolveUrl(href, baseUri);
@@ -150,9 +157,8 @@ public class LinkExtractor : ILinkExtractor
                 }
             }
 
-            // Deduplicate links by URL, keeping the best display text
-            // Prefer actual text over image alt text, keep first occurrence for ordering
-            var deduplicatedLinks = DeduplicateLinks(links);
+            // Group same-URL links within the same parent, then deduplicate across parents
+            var deduplicatedLinks = GroupLinksByUrl(links);
 
             _logger.LogInformation("Extracted {Count} links ({Deduped} unique)",
                 links.Count, deduplicatedLinks.Count);
@@ -168,30 +174,149 @@ public class LinkExtractor : ILinkExtractor
     }
 
     /// <summary>
-    /// Deduplicates links by URL, preserving document order but preferring actual text over image alt text.
+    /// Groups links that share the same URL and parent element, merging their display text.
+    /// Then deduplicates across different parents, keeping the best representative per URL.
     /// </summary>
-    private static List<LinkInfo> DeduplicateLinks(List<LinkInfo> links)
+    internal static List<LinkInfo> GroupLinksByUrl(List<LinkInfo> links)
     {
-        var result = new List<LinkInfo>();
-        var seenUrls = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // URL -> index in result
+        // Phase 1: Build adjacency runs — only merge links that are immediately adjacent
+        // in document order AND share the same URL (case-insensitive) + ParentSelector (exact).
+        // This prevents incorrect merging of same-URL links in different DOM cards that happen
+        // to produce identical ParentSelector strings.
+        var runs = new List<List<(LinkInfo Link, int OriginalIndex)>>();
 
-        foreach (var link in links)
+        if (links.Count > 0)
+        {
+            var currentRun = new List<(LinkInfo Link, int OriginalIndex)> { (links[0], 0) };
+
+            for (var i = 1; i < links.Count; i++)
+            {
+                var prev = links[i - 1];
+                var curr = links[i];
+
+                if (string.Equals(curr.Url, prev.Url, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(curr.ParentSelector, prev.ParentSelector, StringComparison.Ordinal))
+                {
+                    currentRun.Add((curr, i));
+                }
+                else
+                {
+                    runs.Add(currentRun);
+                    currentRun = new List<(LinkInfo Link, int OriginalIndex)> { (curr, i) };
+                }
+            }
+
+            runs.Add(currentRun);
+        }
+
+        // Merge each run's display text, preserving the same logic as before
+        var merged = new List<(LinkInfo Link, int FirstIndex)>();
+
+        foreach (var group in runs)
+        {
+            var firstIndex = group[0].OriginalIndex;
+
+            if (group.Count == 1)
+            {
+                merged.Add((group[0].Link, firstIndex));
+                continue;
+            }
+
+            // Collect display texts in document order, separating real text from image alt
+            var realTexts = new List<string>();
+            var imageTexts = new List<string>();
+
+            foreach (var (link, _) in group)
+            {
+                var text = link.DisplayText.Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                if (link.IsFromImageAlt)
+                    imageTexts.Add(text);
+                else
+                    realTexts.Add(text);
+            }
+
+            // Merge: prefer real text; only use image alt as fallback when no real text exists
+            var allTexts = new List<string>(realTexts);
+            if (realTexts.Count == 0)
+            {
+                allTexts.AddRange(imageTexts);
+            }
+
+            // Remove texts that are substrings of other texts in the group
+            var filtered = new List<string>();
+            for (var i = 0; i < allTexts.Count; i++)
+            {
+                var isSubstring = false;
+                for (var j = 0; j < allTexts.Count; j++)
+                {
+                    if (i == j) continue;
+                    if (allTexts[j].Contains(allTexts[i], StringComparison.OrdinalIgnoreCase) &&
+                        !allTexts[i].Equals(allTexts[j], StringComparison.OrdinalIgnoreCase))
+                    {
+                        isSubstring = true;
+                        break;
+                    }
+                }
+                if (!isSubstring)
+                    filtered.Add(allTexts[i]);
+            }
+
+            // Deduplicate identical texts (case-insensitive)
+            var distinct = new List<string>();
+            foreach (var text in filtered)
+            {
+                if (!distinct.Any(d => d.Equals(text, StringComparison.OrdinalIgnoreCase)))
+                    distinct.Add(text);
+            }
+
+            var mergedText = string.Join(": ", distinct);
+            if (string.IsNullOrWhiteSpace(mergedText))
+                mergedText = group[0].Link.DisplayText;
+
+            var maxImportance = group.Max(g => g.Link.ImportanceScore);
+            var firstLink = group[0].Link;
+
+            // Use non-image-alt status if any real text was found
+            var isFromImage = realTexts.Count == 0 && imageTexts.Count > 0;
+
+            var mergedLink = firstLink with
+            {
+                DisplayText = mergedText,
+                ImportanceScore = maxImportance,
+                IsFromImageAlt = isFromImage
+            };
+
+            merged.Add((mergedLink, firstIndex));
+        }
+
+        // Phase 2: Cross-parent URL dedup — keep the best representative per URL
+        var result = new List<LinkInfo>();
+        var seenUrls = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (link, _) in merged)
         {
             if (seenUrls.TryGetValue(link.Url, out var existingIndex))
             {
                 var existing = result[existingIndex];
 
-                // If existing is from image alt but new one is actual text, replace it
-                if (existing.IsFromImageAlt && !link.IsFromImageAlt)
+                // Replace if new entry has higher importance, or same importance but longer text
+                if (link.ImportanceScore > existing.ImportanceScore ||
+                    (link.ImportanceScore == existing.ImportanceScore &&
+                     link.DisplayText.Length > existing.DisplayText.Length))
                 {
                     result[existingIndex] = link;
                 }
-
-                // Otherwise keep the first one (preserves document order)
+                // Also replace if existing is image alt but new one is real text
+                else if (existing.IsFromImageAlt && !link.IsFromImageAlt)
+                {
+                    result[existingIndex] = link;
+                }
             }
             else
             {
-                // First occurrence of this URL - add it
                 seenUrls[link.Url] = result.Count;
                 result.Add(link);
             }
@@ -430,33 +555,21 @@ public class LinkExtractor : ILinkExtractor
 
     private static (string text, bool isFromImage) GetDisplayTextWithSource(HtmlNode anchor)
     {
-        // First try to get direct text content (not from nested elements like img)
+        // First try to get direct text content (visible on the page)
         var text = anchor.InnerText?.Trim() ?? string.Empty;
 
         // Clean up whitespace
         text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
 
-        // If we have actual text content, use it
+        // If we have actual visible text content, use it
         if (!string.IsNullOrWhiteSpace(text))
         {
             return (text, false);
         }
 
-        // If no text, try aria-label
-        text = anchor.GetAttributeValue("aria-label", string.Empty);
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            return (text, false);
-        }
-
-        // If still no text, try title attribute
-        text = anchor.GetAttributeValue("title", string.Empty);
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            return (text, false);
-        }
-
-        // If still no text, try img alt text (mark as from image)
+        // If no visible text, try img alt text (mark as from image)
+        // This is the only non-visible fallback we use, since alt text
+        // typically describes the image content meaningfully.
         var img = anchor.SelectSingleNode(".//img[@alt]");
         if (img != null)
         {
@@ -466,6 +579,10 @@ public class LinkExtractor : ILinkExtractor
                 return (text, true);
             }
         }
+
+        // Skip aria-label, title, and other non-visible attributes as display text.
+        // These are accessibility/tooltip metadata (e.g., "article link"), not meaningful
+        // page content. aria-label is stored separately in LinkInfo.AriaLabel if needed.
 
         return (string.Empty, false);
     }

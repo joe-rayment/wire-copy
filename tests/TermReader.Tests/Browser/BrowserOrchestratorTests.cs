@@ -1,10 +1,12 @@
 // Educational and personal use only.
 
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
@@ -24,6 +26,7 @@ public class BrowserOrchestratorTests
     private readonly IPageRenderer _renderer;
     private readonly IInputHandler _inputHandler;
     private readonly NavigationService _navigationService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptions<BrowserConfiguration> _browserConfig;
     private readonly ILogger<BrowserOrchestrator> _logger;
     private readonly BrowserOrchestrator _sut;
@@ -39,6 +42,15 @@ public class BrowserOrchestratorTests
         _browserConfig = Options.Create(new BrowserConfiguration());
         _logger = Substitute.For<ILogger<BrowserOrchestrator>>();
 
+        // Set up scoped service factory for ICollectionService
+        _scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        var collectionService = Substitute.For<ICollectionService>();
+        serviceProvider.GetService(typeof(ICollectionService)).Returns(collectionService);
+        scope.ServiceProvider.Returns(serviceProvider);
+        _scopeFactory.CreateScope().Returns(scope);
+
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
@@ -50,6 +62,7 @@ public class BrowserOrchestratorTests
             _renderer,
             _inputHandler,
             _navigationService,
+            _scopeFactory,
             _browserConfig,
             _logger);
     }
@@ -174,7 +187,7 @@ public class BrowserOrchestratorTests
         await _sut.RenderAsync(page, ViewMode.Readable, options);
 
         // Assert
-        _renderer.Received(1).RenderReadable(page, Arg.Any<NavigationContext>(), options);
+        _renderer.Received(1).RenderReadable(page, Arg.Any<NavigationContext>(), options, Arg.Any<List<string>?>());
     }
 
     [Fact]
@@ -241,6 +254,7 @@ public class BrowserOrchestratorNavigationTests
     private readonly IPageRenderer _renderer;
     private readonly IInputHandler _inputHandler;
     private readonly NavigationService _navigationService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptions<BrowserConfiguration> _browserConfig;
     private readonly ILogger<BrowserOrchestrator> _logger;
     private readonly BrowserOrchestrator _sut;
@@ -256,6 +270,15 @@ public class BrowserOrchestratorNavigationTests
         _browserConfig = Options.Create(new BrowserConfiguration());
         _logger = Substitute.For<ILogger<BrowserOrchestrator>>();
 
+        // Set up scoped service factory for ICollectionService
+        _scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        var collectionService = Substitute.For<ICollectionService>();
+        serviceProvider.GetService(typeof(ICollectionService)).Returns(collectionService);
+        scope.ServiceProvider.Returns(serviceProvider);
+        _scopeFactory.CreateScope().Returns(scope);
+
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
@@ -267,6 +290,7 @@ public class BrowserOrchestratorNavigationTests
             _renderer,
             _inputHandler,
             _navigationService,
+            _scopeFactory,
             _browserConfig,
             _logger);
     }
@@ -330,7 +354,7 @@ public class BrowserOrchestratorNavigationTests
         await _sut.RunAsync("https://example.com");
 
         // Assert - renderer was called at least twice (initial + after move down)
-        _renderer.Received(Quantity.AtLeastOne()).RenderHierarchical(
+        _renderer.Received().RenderHierarchical(
             Arg.Any<Page>(), Arg.Any<NavigationContext>(), Arg.Any<RenderOptions>());
     }
 
@@ -354,8 +378,8 @@ public class BrowserOrchestratorNavigationTests
         await _sut.RunAsync("https://example.com");
 
         // Assert - after SwitchView, RenderReadable should be called
-        _renderer.Received(Quantity.AtLeastOne()).RenderReadable(
-            Arg.Any<Page>(), Arg.Any<NavigationContext>(), Arg.Any<RenderOptions>());
+        _renderer.Received().RenderReadable(
+            Arg.Any<Page>(), Arg.Any<NavigationContext>(), Arg.Any<RenderOptions>(), Arg.Any<List<string>?>());
     }
 
     [Fact]

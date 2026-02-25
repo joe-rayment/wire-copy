@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
+using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
@@ -12,6 +13,7 @@ namespace TermReader.Infrastructure.Browser.UI;
 /// <summary>
 /// Renders pages to the terminal.
 /// Handles both hierarchical (link tree) and readable (article) views.
+/// Uses ANSI escape sequences for efficient line clearing.
 /// </summary>
 public class TerminalPageRenderer : IPageRenderer
 {
@@ -52,7 +54,7 @@ public class TerminalPageRenderer : IPageRenderer
         ClearRemainingLines();
     }
 
-    public void RenderReadable(Page page, NavigationContext context, RenderOptions options)
+    public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
     {
         Clear();
 
@@ -71,10 +73,17 @@ public class TerminalPageRenderer : IPageRenderer
         RenderArticleHeader(page.ReadableContent, options);
 
         // Calculate remaining height after header (3 lines for separator + status bar + padding)
-        var remainingHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
+        var viewportHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
 
-        // Render article content
-        RenderArticleContent(page.ReadableContent, context, remainingHeight, options);
+        // Render article content using pre-wrapped lines if available
+        if (wrappedLines != null)
+        {
+            RenderLineBasedContent(wrappedLines, context, viewportHeight, options);
+        }
+        else
+        {
+            RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
+        }
 
         // Render status bar
         RenderStatusBar(context, ViewMode.Readable);
@@ -109,13 +118,190 @@ public class TerminalPageRenderer : IPageRenderer
         ClearRemainingLines();
     }
 
+    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
+    {
+        Clear();
+
+        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+
+        // Render header box
+        WriteLine();
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
+
+        var title = TruncateText("Collections", width - 4);
+        WriteLine($"\u2551 {title.PadRight(width - 4)} \u2551");
+
+        WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
+        Console.ResetColor();
+        WriteLine();
+
+        // Calculate remaining height for list (reserve 3 lines for status bar area)
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
+
+        if (collections.Count == 0)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            WriteLine("  No collections yet. Use :new <name> to create one.");
+            Console.ResetColor();
+        }
+        else
+        {
+            // Scroll the viewport to keep the selected collection visible
+            var startIndex = 0;
+            if (selectedIndex >= remainingHeight)
+            {
+                startIndex = selectedIndex - remainingHeight + 1;
+            }
+
+            var endIndex = Math.Min(collections.Count, startIndex + remainingHeight);
+            for (var i = startIndex; i < endIndex; i++)
+            {
+                var collection = collections[i];
+                var isSelected = i == selectedIndex;
+                var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
+
+                var prefix = isSelected ? "\u2192" : " ";
+                var star = isDefault ? " \u2605" : "";
+                var itemCount = collection.Items.Count;
+                var countText = $"({itemCount} item{(itemCount == 1 ? "" : "s")})";
+
+                if (isSelected)
+                {
+                    Console.ForegroundColor = ConsoleColor.Black;
+                    Console.BackgroundColor = ConsoleColor.White;
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+
+                var displayName = TruncateText(collection.Name, options.MaxContentWidth - 20);
+                WriteLine($"  {prefix} {displayName} {countText}{star}");
+                Console.ResetColor();
+            }
+
+            if (collections.Count > endIndex)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                WriteLine($"  ... {collections.Count - endIndex} more collections");
+                Console.ResetColor();
+            }
+        }
+
+        // Status bar
+        RenderCollectionStatusBar(ViewMode.CollectionList);
+
+        ClearRemainingLines();
+    }
+
+    public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
+    {
+        Clear();
+
+        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+
+        // Render header box with collection name
+        WriteLine();
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
+
+        var itemCount = collection.Items.Count;
+        var headerText = TruncateText($"{collection.Name} ({itemCount} item{(itemCount == 1 ? "" : "s")})", width - 4);
+        WriteLine($"\u2551 {headerText.PadRight(width - 4)} \u2551");
+
+        WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
+        Console.ResetColor();
+        WriteLine();
+
+        // Calculate remaining height for list (reserve 3 lines for status bar area)
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _linesWritten - 3);
+
+        if (collection.Items.Count == 0)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            WriteLine("  No items in this collection.");
+            Console.ResetColor();
+        }
+        else
+        {
+            // Each item renders 2 lines (title + domain), so limit by half the remaining height
+            var maxItems = Math.Max(1, remainingHeight / 2);
+
+            // Scroll the viewport to keep the selected item visible
+            var startIndex = 0;
+            if (selectedIndex >= maxItems)
+            {
+                startIndex = selectedIndex - maxItems + 1;
+            }
+
+            var endIndex = Math.Min(collection.Items.Count, startIndex + maxItems);
+            for (var i = startIndex; i < endIndex; i++)
+            {
+                var item = collection.Items[i];
+                var isSelected = i == selectedIndex;
+
+                var prefix = isSelected ? "\u2192" : " ";
+                var unreadMarker = item.IsRead ? " " : "\u2022";
+
+                // Extract domain from URL
+                var domain = "";
+                try
+                {
+                    var uri = new Uri(item.Url);
+                    domain = uri.Host;
+                }
+                catch
+                {
+                    domain = item.Url;
+                }
+
+                if (isSelected)
+                {
+                    Console.ForegroundColor = ConsoleColor.Black;
+                    Console.BackgroundColor = ConsoleColor.White;
+                }
+                else
+                {
+                    Console.ForegroundColor = item.IsRead ? ConsoleColor.DarkGray : ConsoleColor.White;
+                }
+
+                var displayTitle = TruncateText(item.Title, options.MaxContentWidth - 10);
+                WriteLine($"  {prefix}{unreadMarker} {displayTitle}");
+
+                Console.ResetColor();
+
+                if (!isSelected)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                }
+
+                var displayDomain = TruncateText(domain, options.MaxContentWidth - 10);
+                WriteLine($"      {displayDomain}");
+                Console.ResetColor();
+            }
+
+            if (collection.Items.Count > endIndex)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                WriteLine($"  ... {collection.Items.Count - endIndex} more items below");
+                Console.ResetColor();
+            }
+        }
+
+        // Status bar
+        RenderCollectionStatusBar(ViewMode.CollectionItems);
+
+        ClearRemainingLines();
+    }
+
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
     {
-        // Move to bottom of screen
+        // Separator line
         WriteLine();
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Write("─".PadRight(Console.WindowWidth - 1, '─'));
-        WriteLine();
+        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
+        WriteLine(new string('\u2500', separatorWidth));
 
         Console.ForegroundColor = ConsoleColor.Yellow;
 
@@ -135,8 +321,28 @@ public class TerminalPageRenderer : IPageRenderer
         // Add navigation info
         if (context.CanGoBack)
         {
-            statusText = $"[←back] {statusText}";
+            statusText = $"[\u2190back] {statusText}";
         }
+
+        WriteLine(statusText);
+        Console.ResetColor();
+    }
+
+    private void RenderCollectionStatusBar(ViewMode mode)
+    {
+        WriteLine();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
+        WriteLine(new string('\u2500', separatorWidth));
+
+        Console.ForegroundColor = ConsoleColor.Yellow;
+
+        var statusText = mode switch
+        {
+            ViewMode.CollectionList => "[Collections] j/k:move Enter:open s:set-default d:delete :new q:quit",
+            ViewMode.CollectionItems => "[Items] j/k:move Enter:open d:remove J/K:reorder b:back :export q:quit",
+            _ => "[Collections] q:quit"
+        };
 
         WriteLine(statusText);
         Console.ResetColor();
@@ -169,20 +375,18 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     /// <summary>
-    /// Clears remaining lines from cursor to bottom of visible area.
-    /// Call this after rendering to clear old content.
+    /// Clears remaining lines from cursor to bottom of visible area using ANSI escape.
     /// </summary>
     private void ClearRemainingLines()
     {
         try
         {
             var height = Console.WindowHeight;
-            var width = Console.WindowWidth;
-            var emptyLine = new string(' ', width);
 
             while (_linesWritten < height)
             {
-                Console.Write(emptyLine);
+                Console.SetCursorPosition(0, _linesWritten);
+                Console.Write("\x1b[K");
                 _linesWritten++;
             }
         }
@@ -193,24 +397,20 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     /// <summary>
-    /// Writes a line and tracks lines written for clearing.
+    /// Writes a line using ANSI escape to clear remainder, and tracks lines written.
     /// </summary>
     private void WriteLine(string text = "")
     {
         try
         {
-            // Pad the line to clear any previous content on this line
-            var width = Console.WindowWidth;
-            if (text.Length < width)
+            if (_linesWritten >= Console.WindowHeight)
             {
-                Console.Write(text);
-                Console.WriteLine(new string(' ', width - text.Length - 1));
-            }
-            else
-            {
-                Console.WriteLine(text);
+                return;
             }
 
+            Console.SetCursorPosition(0, _linesWritten);
+            Console.Write(text);
+            Console.Write("\x1b[K");
             _linesWritten++;
         }
         catch
@@ -220,36 +420,24 @@ public class TerminalPageRenderer : IPageRenderer
         }
     }
 
-    /// <summary>
-    /// Writes text without newline and pads to clear previous content.
-    /// </summary>
-    private void Write(string text)
-    {
-        Console.Write(text);
-    }
-
     private void RenderHeader(PageMetadata metadata, string url, RenderOptions options)
     {
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
 
         WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
-        WriteLine($"╔{'═'.ToString().PadRight(width - 2, '═')}╗");
+        WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
 
         // Title
         var title = TruncateText(metadata.Title ?? "Untitled", width - 4);
-        WriteLine($"║ {title.PadRight(width - 4)} ║");
+        WriteLine($"\u2551 {title.PadRight(width - 4)} \u2551");
 
-        // URL
+        // URL - use ANSI inline color codes instead of multi-part Write calls
         var displayUrl = TruncateUrl(url, width - 4);
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Write("║ ");
-        Console.ForegroundColor = ConsoleColor.Gray;
-        Write(displayUrl.PadRight(width - 4));
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        WriteLine(" ║");
+        var urlLine = $"\x1b[90m\u2551 \x1b[37m{displayUrl.PadRight(width - 4)}\x1b[36m \u2551";
+        WriteLine(urlLine);
 
-        WriteLine($"╚{'═'.ToString().PadRight(width - 2, '═')}╝");
+        WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
         Console.ResetColor();
         WriteLine();
     }
@@ -261,7 +449,10 @@ public class TerminalPageRenderer : IPageRenderer
 
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var startIndex = context.ScrollOffset;
-        var maxDisplay = maxLines;
+        var hasMoreNodes = visibleNodes.Count > startIndex + maxLines;
+
+        // Reserve one line for scroll indicator when there are more nodes below
+        var maxDisplay = hasMoreNodes ? maxLines - 1 : maxLines;
 
         // Render visible nodes (group headers are now part of the tree)
         for (var i = startIndex; i < Math.Min(startIndex + maxDisplay, visibleNodes.Count); i++)
@@ -270,12 +461,12 @@ public class TerminalPageRenderer : IPageRenderer
             RenderLinkNode(node, node.IsSelected, options);
         }
 
-        // Show scroll indicator if needed
-        if (visibleNodes.Count > maxDisplay)
+        // Show scroll indicator within the allocated area
+        if (hasMoreNodes)
         {
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            WriteLine();
-            WriteLine($"  ... {visibleNodes.Count - maxDisplay - startIndex} more links (scroll with j/k)");
+            var remaining = Math.Max(0, visibleNodes.Count - startIndex - maxDisplay);
+            WriteLine($"  ... {remaining} more links (scroll with j/k)");
             Console.ResetColor();
         }
     }
@@ -290,7 +481,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         var indent = new string(' ', (node.Depth * 2) + 4);
-        var prefix = isSelected ? "→" : " ";
+        var prefix = isSelected ? "\u2192" : " ";
 
         if (isSelected)
         {
@@ -311,7 +502,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         // Collapse indicator for nodes with children
         var collapseIndicator = node.Children.Count > 0
-            ? (node.CollapseState == NodeCollapseState.Expanded ? "▼" : "▶")
+            ? (node.CollapseState == NodeCollapseState.Expanded ? "\u25bc" : "\u25b6")
             : " ";
 
         var displayText = TruncateText(node.Link.DisplayText, options.MaxContentWidth - indent.Length - 5);
@@ -323,10 +514,10 @@ public class TerminalPageRenderer : IPageRenderer
     private void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
     {
         var indent = new string(' ', (node.Depth * 2) + 2);
-        var prefix = isSelected ? "→" : " ";
+        var prefix = isSelected ? "\u2192" : " ";
 
         // Collapse indicator
-        var collapseIndicator = node.CollapseState == NodeCollapseState.Expanded ? "▼" : "▶";
+        var collapseIndicator = node.CollapseState == NodeCollapseState.Expanded ? "\u25bc" : "\u25b6";
 
         if (isSelected)
         {
@@ -358,16 +549,16 @@ public class TerminalPageRenderer : IPageRenderer
 
         WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
-        WriteLine($"╔{'═'.ToString().PadRight(width - 2, '═')}╗");
+        WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
 
         // Title (may span multiple lines)
         var titleLines = WrapText(content.Title, width - 4);
         foreach (var line in titleLines)
         {
-            WriteLine($"║ {line.PadRight(width - 4)} ║");
+            WriteLine($"\u2551 {line.PadRight(width - 4)} \u2551");
         }
 
-        WriteLine($"╚{'═'.ToString().PadRight(width - 2, '═')}╝");
+        WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
         Console.ResetColor();
 
         // Metadata line
@@ -376,6 +567,52 @@ public class TerminalPageRenderer : IPageRenderer
         WriteLine($"  {content.GetMetadataString()}");
         Console.ResetColor();
         WriteLine();
+    }
+
+    /// <summary>
+    /// Renders pre-wrapped lines with line-based scrolling.
+    /// </summary>
+    private void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options)
+    {
+        var startLine = context.ScrollOffset;
+        var hasMoreContent = allLines.Count > viewportHeight && startLine + viewportHeight < allLines.Count;
+
+        // Reserve one line for progress indicator when there's more content below
+        var contentLines = hasMoreContent ? viewportHeight - 1 : viewportHeight;
+        var endLine = Math.Min(startLine + contentLines, allLines.Count);
+
+        for (var i = startLine; i < endLine; i++)
+        {
+            if (!string.IsNullOrEmpty(context.SearchQuery))
+            {
+                WriteLineWithHighlight(allLines[i], context.SearchQuery);
+            }
+            else
+            {
+                WriteLine(allLines[i]);
+            }
+        }
+
+        // Fill remaining content area with empty lines
+        var linesRendered = endLine - startLine;
+        for (var i = linesRendered; i < contentLines; i++)
+        {
+            WriteLine();
+        }
+
+        // Show progress indicator within the allocated viewport
+        if (hasMoreContent)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            var progress = allLines.Count > 0
+                ? (int)((float)Math.Min(startLine + viewportHeight, allLines.Count) / allLines.Count * 100)
+                : 100;
+            var remaining = Math.Max(0, allLines.Count - startLine - contentLines);
+
+            var searchInfo = !string.IsNullOrEmpty(context.SearchQuery) ? $" | search: \"{context.SearchQuery}\"" : "";
+            WriteLine($"  [{progress}%] {remaining} lines remaining (scroll with j/k){searchInfo}");
+            Console.ResetColor();
+        }
     }
 
     private void RenderArticleContent(ReadableContent content, NavigationContext context, int maxLines, RenderOptions options)
@@ -422,7 +659,13 @@ public class TerminalPageRenderer : IPageRenderer
     {
         try
         {
-            var width = Console.WindowWidth;
+            if (_linesWritten >= Console.WindowHeight)
+            {
+                return;
+            }
+
+            Console.SetCursorPosition(0, _linesWritten);
+
             var index = 0;
             var savedColor = Console.ForegroundColor;
 
@@ -453,17 +696,8 @@ public class TerminalPageRenderer : IPageRenderer
                 }
             }
 
-            // Pad remaining width and write newline
-            var remaining = width - text.Length - 1;
-            if (remaining > 0)
-            {
-                Console.WriteLine(new string(' ', remaining));
-            }
-            else
-            {
-                Console.WriteLine();
-            }
-
+            // Clear remainder of line with ANSI escape
+            Console.Write("\x1b[K");
             _linesWritten++;
         }
         catch
@@ -478,6 +712,11 @@ public class TerminalPageRenderer : IPageRenderer
         if (string.IsNullOrEmpty(text))
         {
             return string.Empty;
+        }
+
+        if (maxLength <= 3)
+        {
+            return text.Length <= maxLength ? text : text.Substring(0, Math.Max(0, maxLength));
         }
 
         if (text.Length <= maxLength)
