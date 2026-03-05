@@ -54,11 +54,7 @@ internal class ArticleRenderer
 
         for (var i = startLine; i < endLine; i++)
         {
-            if (i == startLine)
-            {
-                _helpers.WriteLineWithFocusHighlight(allLines[i], p);
-            }
-            else if (!string.IsNullOrEmpty(context.SearchQuery))
+            if (!string.IsNullOrEmpty(context.SearchQuery))
             {
                 _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery, p);
             }

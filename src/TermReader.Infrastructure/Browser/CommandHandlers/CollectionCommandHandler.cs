@@ -26,9 +26,16 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.SaveToDefaultCollectionAsync(
+                    var savedItem = await service.SaveToDefaultCollectionAsync(
                         saveNode.Link.Url, saveNode.Link.DisplayText, ct);
-                    ctx.Logger.LogInformation("Saved to default collection: {Title}", saveNode.Link.DisplayText);
+                    if (savedItem != null)
+                    {
+                        ctx.Logger.LogInformation("Saved to default collection: {Title}", saveNode.Link.DisplayText);
+                    }
+                    else
+                    {
+                        ctx.Logger.LogWarning("Already in default collection: {Title}", saveNode.Link.DisplayText);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -73,12 +80,22 @@ internal static class CollectionCommandHandler
                     {
                         using var scope = ctx.ScopeFactory.CreateScope();
                         var service = ctx.CreateCollectionService(scope);
-                        await service.SaveToCollectionByNameAsync(
+                        var savedSpecific = await service.SaveToCollectionByNameAsync(
                             collectionName, saveNode.Link.Url, saveNode.Link.DisplayText, ct);
-                        ctx.Logger.LogInformation(
-                            "Saved to collection '{Collection}': {Title}",
-                            collectionName,
-                            saveNode.Link.DisplayText);
+                        if (savedSpecific != null)
+                        {
+                            ctx.Logger.LogInformation(
+                                "Saved to collection '{Collection}': {Title}",
+                                collectionName,
+                                saveNode.Link.DisplayText);
+                        }
+                        else
+                        {
+                            ctx.Logger.LogWarning(
+                                "Already in collection '{Collection}': {Title}",
+                                collectionName,
+                                saveNode.Link.DisplayText);
+                        }
                     }
                     catch (Exception ex)
                     {

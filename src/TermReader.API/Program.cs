@@ -87,6 +87,13 @@ public class Program
 
         try
         {
+            // Initialize database once at startup
+            using (var scope = host.Services.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                await dbContext.InitializeDatabaseAsync();
+            }
+
             // Eagerly warm up the browser session in the background so the first
             // browser-fallback page load avoids the cold-start penalty.
             var session = host.Services.GetRequiredService<IBrowserSession>();
