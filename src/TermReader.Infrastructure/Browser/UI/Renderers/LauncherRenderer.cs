@@ -16,6 +16,7 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
     private const string BrightWhiteFg = "\x1b[38;5;15m";
+    private const string SelDomainFg = "\x1b[38;5;239m";
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -324,7 +325,7 @@ internal class LauncherRenderer
         else if (lineIdx == domainLineIdx)
         {
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-            sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
+            sb.Append($"{selBg}{SelDomainFg}{new string(' ', indent - 1)}");
             sb.Append($"{truncDomain}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncDomain.Length))}{Reset}");
         }
