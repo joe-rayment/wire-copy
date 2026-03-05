@@ -86,6 +86,22 @@ public class DependencyInjectionTests
     }
 
     [Fact]
+    public void ServiceProvider_ShouldResolveBrowserSessionControl()
+    {
+        var service = _serviceProvider.GetService<IBrowserSessionControl>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<IBrowserSessionControl>();
+    }
+
+    [Fact]
+    public void BrowserSession_AndBrowserSessionControl_ShouldBeSameInstance()
+    {
+        var session = _serviceProvider.GetRequiredService<IBrowserSession>();
+        var control = _serviceProvider.GetRequiredService<IBrowserSessionControl>();
+        session.Should().BeSameAs(control);
+    }
+
+    [Fact]
     public void ServiceProvider_ShouldResolveAllBrowserServices()
     {
         var browserService = _serviceProvider.GetRequiredService<IBrowserService>();

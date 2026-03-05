@@ -1,14 +1,15 @@
 // Educational and personal use only.
 
 using OpenQA.Selenium;
+using TermReader.Application.Interfaces.Browser;
 
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
-/// Manages the lifecycle of a shared WebDriver instance,
-/// allowing driver reuse across page loads within a session.
+/// Infrastructure-level interface extending <see cref="IBrowserSessionControl"/>
+/// with Selenium-specific driver access for browser automation components.
 /// </summary>
-public interface IBrowserSession : IDisposable
+public interface IBrowserSession : IBrowserSessionControl
 {
     /// <summary>
     /// Gets a value indicating whether there is an active WebDriver instance.
@@ -29,11 +30,4 @@ public interface IBrowserSession : IDisposable
     /// allowing it to be reused by subsequent calls.
     /// </summary>
     void ReleaseDriver();
-
-    /// <summary>
-    /// Eagerly initializes the browser driver in the background so the first
-    /// browser-based page load does not incur the cold-start penalty.
-    /// Safe to call concurrently with GetOrCreateDriver (guarded by internal lock).
-    /// </summary>
-    Task WarmUpAsync();
 }

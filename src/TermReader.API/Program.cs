@@ -96,7 +96,7 @@ public class Program
 
             // Eagerly warm up the browser session in the background so the first
             // browser-fallback page load avoids the cold-start penalty.
-            var session = host.Services.GetRequiredService<IBrowserSession>();
+            var session = host.Services.GetRequiredService<IBrowserSessionControl>();
             _ = Task.Run(async () =>
             {
                 try

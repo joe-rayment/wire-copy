@@ -67,7 +67,7 @@ public class BrowserOrchestratorTests
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
-        var browserSession = Substitute.For<IBrowserSession>();
+        var browserSession = Substitute.For<IBrowserSessionControl>();
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         _sut = new BrowserOrchestrator(
@@ -313,7 +313,7 @@ public class BrowserOrchestratorNavigationTests
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
-        var browserSession = Substitute.For<IBrowserSession>();
+        var browserSession = Substitute.For<IBrowserSessionControl>();
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         _sut = new BrowserOrchestrator(

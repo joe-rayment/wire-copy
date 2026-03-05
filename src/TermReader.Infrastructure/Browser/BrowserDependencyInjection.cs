@@ -65,7 +65,9 @@ public static class BrowserDependencyInjection
             });
 
         // Register browser session (shared WebDriver lifecycle)
-        services.AddSingleton<IBrowserSession, BrowserSession>();
+        services.AddSingleton<BrowserSession>();
+        services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
+        services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
 
         // Register browser infrastructure services
         services.AddSingleton<IPageLoader>(sp =>
