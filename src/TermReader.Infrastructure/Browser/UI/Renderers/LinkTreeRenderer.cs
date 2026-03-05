@@ -114,9 +114,15 @@ internal class LinkTreeRenderer
             };
         }
 
-        var collapseIndicator = node.Children.Count > 0
-            ? (node.CollapseState == NodeCollapseState.Expanded ? "\u25bc" : "\u25b6")
-            : " ";
+        string collapseIndicator;
+        if (node.Children.Count > 0)
+        {
+            collapseIndicator = node.CollapseState == NodeCollapseState.Expanded ? "\u25bc" : "\u25b6";
+        }
+        else
+        {
+            collapseIndicator = " ";
+        }
 
         var displayText = RenderHelpers.TruncateText(node.Link.DisplayText, options.MaxContentWidth - indent.Length - 5);
         _helpers.WriteLine($"{colorStart}{indent}{prefix}{collapseIndicator} {displayText}{Reset}");

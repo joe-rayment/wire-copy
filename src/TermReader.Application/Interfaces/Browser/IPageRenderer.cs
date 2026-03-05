@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using TermReader.Application.DTOs.Browser;
+using TermReader.Domain.Entities.Bookmarks;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
@@ -66,6 +67,15 @@ public interface IPageRenderer
     /// <param name="selectedIndex">Currently selected item index.</param>
     /// <param name="options">Render options.</param>
     void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options);
+
+    /// <summary>
+    /// Renders the launcher home screen with bookmark tiles.
+    /// </summary>
+    /// <param name="bookmarks">List of bookmarks to render as tiles.</param>
+    /// <param name="selectedIndex">Currently selected tile index.</param>
+    /// <param name="scrollOffset">Scroll offset for the grid.</param>
+    /// <param name="options">Render options.</param>
+    void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options);
 
     /// <summary>
     /// Clears the terminal screen.

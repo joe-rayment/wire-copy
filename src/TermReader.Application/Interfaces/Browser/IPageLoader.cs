@@ -6,7 +6,6 @@ namespace TermReader.Application.Interfaces.Browser;
 
 /// <summary>
 /// Service for loading web pages using browser automation.
-/// Wraps the existing ScraperService to fetch HTML content.
 /// </summary>
 public interface IPageLoader
 {

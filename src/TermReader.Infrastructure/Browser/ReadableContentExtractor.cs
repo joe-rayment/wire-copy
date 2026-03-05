@@ -14,8 +14,6 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public partial class ReadableContentExtractor : IReadableContentExtractor
 {
-    private readonly ILogger<ReadableContentExtractor> _logger;
-
     private static readonly HashSet<string> ArticleIndicators = new(StringComparer.OrdinalIgnoreCase)
     {
         "article", "post", "entry", "story", "news", "blog"
@@ -27,6 +25,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "comment", "comments", "related", "share", "social", "promo", "newsletter",
         "sponsor", "promoted", "popup", "modal", "banner"
     };
+
+    private readonly ILogger<ReadableContentExtractor> _logger;
 
     public ReadableContentExtractor(ILogger<ReadableContentExtractor> logger)
     {
@@ -257,79 +257,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return null;
     }
 
-    private List<string> ExtractParagraphs(HtmlDocument doc)
-    {
-        // Remove boilerplate content first
-        RemoveBoilerplate(doc);
-
-        // Try to find the main content area
-        var contentArea = FindContentArea(doc);
-        if (contentArea == null)
-        {
-            _logger.LogDebug("No content area found, using full document");
-            contentArea = doc.DocumentNode;
-        }
-
-        // Extract paragraphs from multiple element types
-        var paragraphs = new List<string>();
-        var seen = new HashSet<string>();
-        var paragraphNodes = contentArea.SelectNodes(".//p | .//blockquote | .//li") ?? Enumerable.Empty<HtmlNode>();
-
-        foreach (var node in paragraphNodes)
-        {
-            // Skip if inside a boilerplate element
-            if (IsInsideBoilerplate(node))
-            {
-                continue;
-            }
-
-            var text = CleanText(node.InnerText);
-
-            // Filter out very short paragraphs (likely navigation or metadata)
-            if (!string.IsNullOrWhiteSpace(text) && text.Length > 50 && seen.Add(text))
-            {
-                // Prefix blockquotes for reader view clarity
-                if (node.Name.Equals("blockquote", StringComparison.OrdinalIgnoreCase))
-                {
-                    paragraphs.Add($"\u201c{text}\u201d");
-                }
-                else
-                {
-                    paragraphs.Add(text);
-                }
-            }
-        }
-
-        // If standard elements yielded few results, try divs with direct text content
-        if (paragraphs.Count < 3)
-        {
-            var divNodes = contentArea.SelectNodes(".//div") ?? Enumerable.Empty<HtmlNode>();
-            foreach (var div in divNodes)
-            {
-                if (IsInsideBoilerplate(div))
-                {
-                    continue;
-                }
-
-                // Only consider divs that have direct text (not just child elements)
-                var directText = GetDirectTextContent(div);
-                if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
-                {
-                    paragraphs.Add(directText);
-                }
-            }
-        }
-
-        // If we didn't get enough paragraphs, try a more aggressive approach
-        if (paragraphs.Count < 3)
-        {
-            _logger.LogDebug("Few paragraphs found ({Count}), trying alternative extraction", paragraphs.Count);
-            paragraphs = ExtractParagraphsAlternative(contentArea);
-        }
-
-        return paragraphs;
-    }
-
     private static void RemoveBoilerplate(HtmlDocument doc)
     {
         var boilerplateSelectors = new[]
@@ -493,15 +420,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         var textParts = new List<string>();
         foreach (var child in node.ChildNodes)
         {
-            if (child.NodeType == HtmlNodeType.Text)
-            {
-                var text = child.InnerText?.Trim();
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    textParts.Add(text);
-                }
-            }
-            else if (IsInlineElement(child.Name))
+            if (child.NodeType == HtmlNodeType.Text || IsInlineElement(child.Name))
             {
                 var text = child.InnerText?.Trim();
                 if (!string.IsNullOrWhiteSpace(text))
@@ -549,4 +468,77 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     [GeneratedRegex(@"(?<=[.!?])\s+")]
     private static partial Regex SentenceRegex();
+
+    private List<string> ExtractParagraphs(HtmlDocument doc)
+    {
+        // Remove boilerplate content first
+        RemoveBoilerplate(doc);
+
+        // Try to find the main content area
+        var contentArea = FindContentArea(doc);
+        if (contentArea == null)
+        {
+            _logger.LogDebug("No content area found, using full document");
+            contentArea = doc.DocumentNode;
+        }
+
+        // Extract paragraphs from multiple element types
+        var paragraphs = new List<string>();
+        var seen = new HashSet<string>();
+        var paragraphNodes = contentArea.SelectNodes(".//p | .//blockquote | .//li") ?? Enumerable.Empty<HtmlNode>();
+
+        foreach (var node in paragraphNodes)
+        {
+            // Skip if inside a boilerplate element
+            if (IsInsideBoilerplate(node))
+            {
+                continue;
+            }
+
+            var text = CleanText(node.InnerText);
+
+            // Filter out very short paragraphs (likely navigation or metadata)
+            if (!string.IsNullOrWhiteSpace(text) && text.Length > 50 && seen.Add(text))
+            {
+                // Prefix blockquotes for reader view clarity
+                if (node.Name.Equals("blockquote", StringComparison.OrdinalIgnoreCase))
+                {
+                    paragraphs.Add($"\u201c{text}\u201d");
+                }
+                else
+                {
+                    paragraphs.Add(text);
+                }
+            }
+        }
+
+        // If standard elements yielded few results, try divs with direct text content
+        if (paragraphs.Count < 3)
+        {
+            var divNodes = contentArea.SelectNodes(".//div") ?? Enumerable.Empty<HtmlNode>();
+            foreach (var div in divNodes)
+            {
+                if (IsInsideBoilerplate(div))
+                {
+                    continue;
+                }
+
+                // Only consider divs that have direct text (not just child elements)
+                var directText = GetDirectTextContent(div);
+                if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
+                {
+                    paragraphs.Add(directText);
+                }
+            }
+        }
+
+        // If we didn't get enough paragraphs, try a more aggressive approach
+        if (paragraphs.Count < 3)
+        {
+            _logger.LogDebug("Few paragraphs found ({Count}), trying alternative extraction", paragraphs.Count);
+            paragraphs = ExtractParagraphsAlternative(contentArea);
+        }
+
+        return paragraphs;
+    }
 }

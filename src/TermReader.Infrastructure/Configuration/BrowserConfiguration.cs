@@ -13,14 +13,14 @@ public class BrowserConfiguration
     public bool Headless { get; init; } = true;
 
     /// <summary>
-    /// Gets implicit wait timeout in seconds. NYT pages with heavy JavaScript and dynamic content
+    /// Gets implicit wait timeout in seconds. Pages with heavy JavaScript and dynamic content
     /// require longer waits. Recommended: 30+ seconds for reliable element detection.
     /// </summary>
     public int ImplicitWaitSeconds { get; init; } = 10;
 
     /// <summary>
-    /// Gets page load timeout in seconds. NYT pages can be very slow to fully load, especially with
-    /// images disabled and extensive JavaScript processing. Setting to 300 seconds (5 minutes)
+    /// Gets page load timeout in seconds. Some pages can be very slow to fully load, especially with
+    /// images disabled and extensive JavaScript processing. A generous timeout
     /// prevents false timeouts while waiting for document.readyState to complete.
     /// </summary>
     public int PageLoadTimeoutSeconds { get; init; } = 30;

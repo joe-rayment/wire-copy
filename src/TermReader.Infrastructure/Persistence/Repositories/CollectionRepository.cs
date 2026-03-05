@@ -52,7 +52,9 @@ public class CollectionRepository : ICollectionRepository
     {
         var existing = await GetByNameAsync(DefaultCollectionName, cancellationToken);
         if (existing != null)
+        {
             return existing;
+        }
 
         var collection = Collection.Create(DefaultCollectionName, sortOrder: 0);
         await _context.Set<Collection>().AddAsync(collection, cancellationToken);

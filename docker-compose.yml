@@ -6,8 +6,6 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Auth__Email=${AUTH_EMAIL}
-      - Auth__Password=${AUTH_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Production
     volumes:
       - ./output:/app/output

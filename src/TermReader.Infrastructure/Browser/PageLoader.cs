@@ -4,12 +4,12 @@ using System.Diagnostics;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Support.UI;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Configuration;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Support.UI;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -101,118 +101,6 @@ public class PageLoader : IPageLoader
         }
 
         return result.Html;
-    }
-
-    private async Task<PageLoadResult> TryHttpFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
-    {
-        if (_httpClient == null)
-        {
-            return PageLoadResult.Failure("HttpClient not available");
-        }
-
-        try
-        {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, request.Url);
-            httpRequest.Headers.Add("User-Agent", _browserConfig.UserAgent);
-            httpRequest.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
-            httpRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
-            httpRequest.Headers.Add("Accept-Encoding", "gzip, deflate, br");
-            httpRequest.Headers.Add("Connection", "keep-alive");
-            httpRequest.Headers.Add("Upgrade-Insecure-Requests", "1");
-            httpRequest.Headers.Add("Sec-Fetch-Dest", "document");
-            httpRequest.Headers.Add("Sec-Fetch-Mode", "navigate");
-            httpRequest.Headers.Add("Sec-Fetch-Site", "none");
-            httpRequest.Headers.Add("Sec-Fetch-User", "?1");
-            httpRequest.Headers.Add("Cache-Control", "max-age=0");
-
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(_browserConfig.HttpTimeoutMs);
-
-            var response = await _httpClient.SendAsync(httpRequest, cts.Token);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return PageLoadResult.Failure($"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
-            }
-
-            var html = await response.Content.ReadAsStringAsync(cts.Token);
-
-            // Check if this looks like a JavaScript-required page
-            var jsRequired = IsJavaScriptRequired(html);
-            _logger.LogInformation("HTTP response: {Length} bytes, JS required: {JsRequired}", html.Length, jsRequired);
-
-            if (jsRequired)
-            {
-                _logger.LogDebug("Page requires JavaScript, will use browser fallback");
-                return PageLoadResult.Failure("JavaScript required");
-            }
-
-            var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
-            var metadata = ExtractMetadata(html, finalUrl);
-
-            _logger.LogInformation("Successfully loaded page via HTTP: {Url}", finalUrl);
-            return PageLoadResult.Successful(finalUrl, html, metadata);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "HTTP fetch failed for {Url}", request.Url);
-            return PageLoadResult.Failure(ex.Message);
-        }
-    }
-
-    private async Task<PageLoadResult> BrowserFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var driver = _browserSession.GetOrCreateDriver(request.Headless);
-
-            _logger.LogDebug("Navigating to {Url}", request.Url);
-#pragma warning disable S6966 // Selenium WebDriver does not provide async navigation
-            driver.Navigate().GoToUrl(request.Url);
-#pragma warning restore S6966
-
-            // Wait for page to load
-            await WaitForPageLoadAsync(driver, request.TimeoutMs, cancellationToken);
-
-            var finalUrl = driver.Url;
-            var html = driver.PageSource;
-
-            var metadata = ExtractMetadata(html, finalUrl);
-
-            _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
-            return PageLoadResult.Successful(finalUrl, html, metadata);
-        }
-        catch (WebDriverException ex)
-        {
-            _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
-            return PageLoadResult.Failure($"Browser error: {ex.Message}");
-        }
-    }
-
-    private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)
-    {
-        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(Math.Min(timeoutMs, 5000)));
-        var jsExecutor = (IJavaScriptExecutor)driver;
-
-        try
-        {
-            // Wait for document.readyState to be complete
-            wait.Until(d =>
-            {
-                var readyState = jsExecutor.ExecuteScript("return document.readyState")?.ToString();
-                return readyState == "complete";
-            });
-
-            // Optional post-load delay for sites needing extra JS rendering time
-            if (_browserConfig.PostLoadDelayMs > 0)
-            {
-                await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken);
-            }
-        }
-        catch (WebDriverTimeoutException)
-        {
-            _logger.LogWarning("Timeout waiting for page load, continuing anyway");
-        }
     }
 
     private static bool IsJavaScriptRequired(string html)
@@ -346,5 +234,117 @@ public class PageLoader : IPageLoader
         }
 
         return href;
+    }
+
+    private async Task<PageLoadResult> TryHttpFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
+    {
+        if (_httpClient == null)
+        {
+            return PageLoadResult.Failure("HttpClient not available");
+        }
+
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, request.Url);
+            httpRequest.Headers.Add("User-Agent", _browserConfig.UserAgent);
+            httpRequest.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+            httpRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+            httpRequest.Headers.Add("Accept-Encoding", "gzip, deflate, br");
+            httpRequest.Headers.Add("Connection", "keep-alive");
+            httpRequest.Headers.Add("Upgrade-Insecure-Requests", "1");
+            httpRequest.Headers.Add("Sec-Fetch-Dest", "document");
+            httpRequest.Headers.Add("Sec-Fetch-Mode", "navigate");
+            httpRequest.Headers.Add("Sec-Fetch-Site", "none");
+            httpRequest.Headers.Add("Sec-Fetch-User", "?1");
+            httpRequest.Headers.Add("Cache-Control", "max-age=0");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(_browserConfig.HttpTimeoutMs);
+
+            var response = await _httpClient.SendAsync(httpRequest, cts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return PageLoadResult.Failure($"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+            }
+
+            var html = await response.Content.ReadAsStringAsync(cts.Token);
+
+            // Check if this looks like a JavaScript-required page
+            var jsRequired = IsJavaScriptRequired(html);
+            _logger.LogInformation("HTTP response: {Length} bytes, JS required: {JsRequired}", html.Length, jsRequired);
+
+            if (jsRequired)
+            {
+                _logger.LogDebug("Page requires JavaScript, will use browser fallback");
+                return PageLoadResult.Failure("JavaScript required");
+            }
+
+            var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
+            var metadata = ExtractMetadata(html, finalUrl);
+
+            _logger.LogInformation("Successfully loaded page via HTTP: {Url}", finalUrl);
+            return PageLoadResult.Successful(finalUrl, html, metadata);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "HTTP fetch failed for {Url}", request.Url);
+            return PageLoadResult.Failure(ex.Message);
+        }
+    }
+
+    private async Task<PageLoadResult> BrowserFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var driver = _browserSession.GetOrCreateDriver(request.Headless);
+
+            _logger.LogDebug("Navigating to {Url}", request.Url);
+#pragma warning disable S6966 // Selenium WebDriver does not provide async navigation
+            driver.Navigate().GoToUrl(request.Url);
+#pragma warning restore S6966
+
+            // Wait for page to load
+            await WaitForPageLoadAsync(driver, request.TimeoutMs, cancellationToken);
+
+            var finalUrl = driver.Url;
+            var html = driver.PageSource;
+
+            var metadata = ExtractMetadata(html, finalUrl);
+
+            _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
+            return PageLoadResult.Successful(finalUrl, html, metadata);
+        }
+        catch (WebDriverException ex)
+        {
+            _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
+            return PageLoadResult.Failure($"Browser error: {ex.Message}");
+        }
+    }
+
+    private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)
+    {
+        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(Math.Min(timeoutMs, 5000)));
+        var jsExecutor = (IJavaScriptExecutor)driver;
+
+        try
+        {
+            // Wait for document.readyState to be complete
+            wait.Until(d =>
+            {
+                var readyState = jsExecutor.ExecuteScript("return document.readyState")?.ToString();
+                return readyState == "complete";
+            });
+
+            // Optional post-load delay for sites needing extra JS rendering time
+            if (_browserConfig.PostLoadDelayMs > 0)
+            {
+                await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken);
+            }
+        }
+        catch (WebDriverTimeoutException)
+        {
+            _logger.LogWarning("Timeout waiting for page load, continuing anyway");
+        }
     }
 }

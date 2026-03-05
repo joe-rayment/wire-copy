@@ -4,13 +4,11 @@
 
 
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Application.Interfaces;
 using TermReader.Domain.Entities.Collections;
-using TermReader.Infrastructure.Persistence;
+using TermReader.Persistence;
 using Xunit;
 
 namespace TermReader.Tests;
@@ -18,27 +16,15 @@ namespace TermReader.Tests;
 /// <summary>
 /// Tests for IUnitOfWork interface and UnitOfWork implementation
 /// </summary>
-public class UnitOfWorkTests : IAsyncDisposable
+public class UnitOfWorkTests : TestDatabaseFixture, IAsyncDisposable
 {
-    private readonly SqliteConnection _connection;
-    private readonly AppDbContext _context;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<UnitOfWork> _logger;
 
     public UnitOfWorkTests()
     {
-        // Use SQLite in-memory database which supports transactions
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _context = new AppDbContext(options);
-        _context.Database.EnsureCreated();
         _logger = Substitute.For<ILogger<UnitOfWork>>();
-        _unitOfWork = new UnitOfWork(_context, _logger);
+        _unitOfWork = new UnitOfWork(DbContext, _logger);
     }
 
     [Fact]
@@ -46,14 +32,14 @@ public class UnitOfWorkTests : IAsyncDisposable
     {
         // Arrange
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
 
         // Act
         var result = await _unitOfWork.SaveChangesAsync();
 
         // Assert
         result.Should().Be(1);
-        var saved = await _context.Collections.FindAsync(collection.Id);
+        var saved = await DbContext.Collections.FindAsync(collection.Id);
         saved.Should().NotBeNull();
         saved!.Name.Should().Be("Test Collection");
     }
@@ -74,14 +60,14 @@ public class UnitOfWorkTests : IAsyncDisposable
         // Arrange
         var collection1 = Collection.Create("Collection 1");
         var collection2 = Collection.Create("Collection 2");
-        _context.Collections.AddRange(collection1, collection2);
+        DbContext.Collections.AddRange(collection1, collection2);
 
         // Act
         var result = await _unitOfWork.SaveChangesAsync();
 
         // Assert
         result.Should().Be(2);
-        _context.Collections.Should().HaveCount(2);
+        DbContext.Collections.Should().HaveCount(2);
     }
 
     [Fact]
@@ -91,7 +77,7 @@ public class UnitOfWorkTests : IAsyncDisposable
         await _unitOfWork.BeginTransactionAsync();
 
         // Assert
-        _context.Database.CurrentTransaction.Should().NotBeNull();
+        DbContext.Database.CurrentTransaction.Should().NotBeNull();
     }
 
     [Fact]
@@ -114,15 +100,15 @@ public class UnitOfWorkTests : IAsyncDisposable
         // Arrange
         await _unitOfWork.BeginTransactionAsync();
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
 
         // Act
         await _unitOfWork.CommitTransactionAsync();
 
         // Assert
-        var saved = await _context.Collections.FindAsync(collection.Id);
+        var saved = await DbContext.Collections.FindAsync(collection.Id);
         saved.Should().NotBeNull();
-        _context.Database.CurrentTransaction.Should().BeNull(); // Transaction disposed after commit
+        DbContext.Database.CurrentTransaction.Should().BeNull(); // Transaction disposed after commit
     }
 
     [Fact]
@@ -142,20 +128,17 @@ public class UnitOfWorkTests : IAsyncDisposable
         // Arrange
         await _unitOfWork.BeginTransactionAsync();
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
         await _unitOfWork.SaveChangesAsync();
 
         // Act
         await _unitOfWork.RollbackTransactionAsync();
 
         // Assert - Use a fresh context to verify data was actually rolled back in the database
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-        await using var verifyContext = new AppDbContext(options);
+        await using var verifyContext = CreateDbContext();
         var saved = await verifyContext.Collections.FindAsync(collection.Id);
         saved.Should().BeNull(); // Changes were rolled back
-        _context.Database.CurrentTransaction.Should().BeNull(); // Transaction disposed after rollback
+        DbContext.Database.CurrentTransaction.Should().BeNull(); // Transaction disposed after rollback
     }
 
     [Fact]
@@ -178,17 +161,17 @@ public class UnitOfWorkTests : IAsyncDisposable
         var collection1 = Collection.Create("Collection 1");
         var collection2 = Collection.Create("Collection 2");
 
-        _context.Collections.Add(collection1);
+        DbContext.Collections.Add(collection1);
         await _unitOfWork.SaveChangesAsync(); // Save first collection
 
-        _context.Collections.Add(collection2);
+        DbContext.Collections.Add(collection2);
         // Don't save second collection yet
 
         // Act - Rollback entire transaction
         await _unitOfWork.RollbackTransactionAsync();
 
         // Assert - Both collections should be rolled back
-        _context.Collections.Should().BeEmpty();
+        DbContext.Collections.Should().BeEmpty();
     }
 
     [Fact]
@@ -210,13 +193,13 @@ public class UnitOfWorkTests : IAsyncDisposable
         // Arrange
         await _unitOfWork.BeginTransactionAsync();
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
 
         // Act - DisposeAsync should properly clean up transaction
         await _unitOfWork.DisposeAsync();
 
         // Assert - Should not throw and transaction should be cleaned up
-        _context.Database.CurrentTransaction.Should().BeNull();
+        DbContext.Database.CurrentTransaction.Should().BeNull();
     }
 
     [Fact]
@@ -242,7 +225,7 @@ public class UnitOfWorkTests : IAsyncDisposable
         // Arrange
         await _unitOfWork.BeginTransactionAsync();
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
 
         // Act
         await _unitOfWork.CommitTransactionAsync();
@@ -269,7 +252,7 @@ public class UnitOfWorkTests : IAsyncDisposable
     {
         // Arrange
         var collection = Collection.Create("Test Collection");
-        _context.Collections.Add(collection);
+        DbContext.Collections.Add(collection);
 
         var cts = new CancellationTokenSource();
         cts.Cancel(); // Cancel immediately
@@ -287,7 +270,7 @@ public class UnitOfWorkTests : IAsyncDisposable
         {
             await _unitOfWork.DisposeAsync();
         }
-        _context?.Dispose();
-        _connection?.Dispose();
+
+        Dispose();
     }
 }

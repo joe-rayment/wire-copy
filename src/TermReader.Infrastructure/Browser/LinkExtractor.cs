@@ -13,8 +13,6 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class LinkExtractor : ILinkExtractor
 {
-    private readonly ILogger<LinkExtractor> _logger;
-
     private static readonly HashSet<string> NavigationParentTags = new(StringComparer.OrdinalIgnoreCase)
     {
         "nav", "header", "aside"
@@ -57,6 +55,8 @@ public class LinkExtractor : ILinkExtractor
         "promo", "promotion", "partner", "paid"
     };
 
+    private readonly ILogger<LinkExtractor> _logger;
+
     public LinkExtractor(ILogger<LinkExtractor> logger)
     {
         _logger = logger;
@@ -71,6 +71,7 @@ public class LinkExtractor : ILinkExtractor
         try
         {
             var doc = new HtmlDocument();
+
             // Enable options to better handle malformed HTML
             doc.OptionFixNestedTags = true;
             doc.OptionAutoCloseOnEnd = true;
@@ -160,8 +161,10 @@ public class LinkExtractor : ILinkExtractor
             // Group same-URL links within the same parent, then deduplicate across parents
             var deduplicatedLinks = GroupLinksByUrl(links);
 
-            _logger.LogInformation("Extracted {Count} links ({Deduped} unique)",
-                links.Count, deduplicatedLinks.Count);
+            _logger.LogInformation(
+                "Extracted {Count} links ({Deduped} unique)",
+                links.Count,
+                deduplicatedLinks.Count);
 
             links = deduplicatedLinks;
         }
@@ -171,6 +174,21 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return Task.FromResult(links);
+    }
+
+    public LinkInfo ClassifyLink(string url, string displayText, string? parentSelector, string baseUrl)
+    {
+        var linkType = DetermineLinkType(url, parentSelector, displayText, baseUrl);
+        var importance = CalculateImportance(linkType, displayText, parentSelector);
+
+        return new LinkInfo
+        {
+            Url = url,
+            DisplayText = displayText.Trim(),
+            Type = linkType,
+            ImportanceScore = importance,
+            ParentSelector = parentSelector
+        };
     }
 
     /// <summary>
@@ -230,12 +248,18 @@ public class LinkExtractor : ILinkExtractor
             {
                 var text = link.DisplayText.Trim();
                 if (string.IsNullOrWhiteSpace(text))
+                {
                     continue;
+                }
 
                 if (link.IsFromImageAlt)
+                {
                     imageTexts.Add(text);
+                }
                 else
+                {
                     realTexts.Add(text);
+                }
             }
 
             // Merge: prefer real text; only use image alt as fallback when no real text exists
@@ -252,7 +276,11 @@ public class LinkExtractor : ILinkExtractor
                 var isSubstring = false;
                 for (var j = 0; j < allTexts.Count; j++)
                 {
-                    if (i == j) continue;
+                    if (i == j)
+                    {
+                        continue;
+                    }
+
                     if (allTexts[j].Contains(allTexts[i], StringComparison.OrdinalIgnoreCase) &&
                         !allTexts[i].Equals(allTexts[j], StringComparison.OrdinalIgnoreCase))
                     {
@@ -260,21 +288,28 @@ public class LinkExtractor : ILinkExtractor
                         break;
                     }
                 }
+
                 if (!isSubstring)
+                {
                     filtered.Add(allTexts[i]);
+                }
             }
 
             // Deduplicate identical texts (case-insensitive)
             var distinct = new List<string>();
             foreach (var text in filtered)
             {
-                if (!distinct.Any(d => d.Equals(text, StringComparison.OrdinalIgnoreCase)))
+                if (!distinct.Exists(d => d.Equals(text, StringComparison.OrdinalIgnoreCase)))
+                {
                     distinct.Add(text);
+                }
             }
 
             var mergedText = string.Join(": ", distinct);
             if (string.IsNullOrWhiteSpace(mergedText))
+            {
                 mergedText = group[0].Link.DisplayText;
+            }
 
             var maxImportance = group.Max(g => g.Link.ImportanceScore);
             var firstLink = group[0].Link;
@@ -302,15 +337,12 @@ public class LinkExtractor : ILinkExtractor
             {
                 var existing = result[existingIndex];
 
-                // Replace if new entry has higher importance, or same importance but longer text
+                // Replace if new entry has higher importance, same importance but longer text,
+                // or existing is image alt but new one is real text
                 if (link.ImportanceScore > existing.ImportanceScore ||
                     (link.ImportanceScore == existing.ImportanceScore &&
-                     link.DisplayText.Length > existing.DisplayText.Length))
-                {
-                    result[existingIndex] = link;
-                }
-                // Also replace if existing is image alt but new one is real text
-                else if (existing.IsFromImageAlt && !link.IsFromImageAlt)
+                     link.DisplayText.Length > existing.DisplayText.Length) ||
+                    (existing.IsFromImageAlt && !link.IsFromImageAlt))
                 {
                     result[existingIndex] = link;
                 }
@@ -323,21 +355,6 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return result;
-    }
-
-    public LinkInfo ClassifyLink(string url, string displayText, string? parentSelector, string baseUrl)
-    {
-        var linkType = DetermineLinkType(url, parentSelector, displayText, baseUrl);
-        var importance = CalculateImportance(linkType, displayText, parentSelector);
-
-        return new LinkInfo
-        {
-            Url = url,
-            DisplayText = displayText.Trim(),
-            Type = linkType,
-            ImportanceScore = importance,
-            ParentSelector = parentSelector
-        };
     }
 
     private static LinkType DetermineLinkType(string url, string? parentSelector, string displayText, string baseUrl)
@@ -514,46 +531,7 @@ public class LinkExtractor : ILinkExtractor
         return string.Join(".", parts[^2], parts[^1]);
     }
 
-    private string? ResolveUrl(string href, Uri baseUri)
-    {
-        try
-        {
-            // First try to parse as an absolute HTTP/HTTPS URL
-            if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteUri))
-            {
-                // Only return if it's actually an http/https URL
-                // Otherwise fall through to try resolving as relative
-                if (absoluteUri.Scheme == "http" || absoluteUri.Scheme == "https")
-                {
-                    return absoluteUri.ToString();
-                }
-
-                // If it's a file:// or other scheme, it was probably a relative path
-                // that got misinterpreted as absolute (e.g., "/path" -> "file:///path")
-                // Fall through to try relative resolution
-            }
-
-            // Try to resolve as a relative URL
-            if (Uri.TryCreate(baseUri, href, out var resolvedUri))
-            {
-                // Only accept http/https results
-                if (resolvedUri.Scheme == "http" || resolvedUri.Scheme == "https")
-                {
-                    return resolvedUri.ToString();
-                }
-            }
-
-            _logger.LogWarning("Failed to resolve URL: href='{Href}' with baseUri='{BaseUri}'", href, baseUri);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Exception resolving URL: href='{Href}' with baseUri='{BaseUri}'", href, baseUri);
-            return null;
-        }
-    }
-
-    private static (string text, bool isFromImage) GetDisplayTextWithSource(HtmlNode anchor)
+    private static (string Text, bool IsFromImage) GetDisplayTextWithSource(HtmlNode anchor)
     {
         // First try to get direct text content (visible on the page)
         var text = anchor.InnerText?.Trim() ?? string.Empty;
@@ -583,13 +561,7 @@ public class LinkExtractor : ILinkExtractor
         // Skip aria-label, title, and other non-visible attributes as display text.
         // These are accessibility/tooltip metadata (e.g., "article link"), not meaningful
         // page content. aria-label is stored separately in LinkInfo.AriaLabel if needed.
-
         return (string.Empty, false);
-    }
-
-    private static string GetDisplayText(HtmlNode anchor)
-    {
-        return GetDisplayTextWithSource(anchor).text;
     }
 
     private static string GetParentSelector(HtmlNode node)
@@ -627,5 +599,33 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return string.Join(" > ", parts);
+    }
+
+    private string? ResolveUrl(string href, Uri baseUri)
+    {
+        try
+        {
+            // First try to parse as an absolute HTTP/HTTPS URL
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteUri) &&
+                (absoluteUri.Scheme == "http" || absoluteUri.Scheme == "https"))
+            {
+                return absoluteUri.ToString();
+            }
+
+            // Try to resolve as a relative URL
+            if (Uri.TryCreate(baseUri, href, out var resolvedUri) &&
+                (resolvedUri.Scheme == "http" || resolvedUri.Scheme == "https"))
+            {
+                return resolvedUri.ToString();
+            }
+
+            _logger.LogWarning("Failed to resolve URL: href='{Href}' with baseUri='{BaseUri}'", href, baseUri);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception resolving URL: href='{Href}' with baseUri='{BaseUri}'", href, baseUri);
+            return null;
+        }
     }
 }

@@ -27,7 +27,6 @@ internal class CommandContext
     public required ILogger Logger { get; init; }
 
     // Mutable shared state
-
     public List<Collection>? Collections { get; set; }
 
     public Guid? DefaultCollectionId { get; set; }
@@ -42,7 +41,6 @@ internal class CommandContext
     public int? ContentWidthOverride { get; set; }
 
     // Delegates for operations that remain in BrowserOrchestrator
-
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 
     public required Func<RenderOptions, CancellationToken, Task> RenderCurrentPageAsync { get; init; }
@@ -56,7 +54,6 @@ internal class CommandContext
     public required Func<IServiceScope, ICollectionService> CreateCollectionService { get; init; }
 
     // Line cache helpers
-
     public required Action InvalidateLineCache { get; init; }
 
     public required Action<RenderOptions> EnsureLineCache { get; init; }

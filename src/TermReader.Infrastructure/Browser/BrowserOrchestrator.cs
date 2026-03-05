@@ -20,6 +20,9 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class BrowserOrchestrator : IBrowserService
 {
+    private const int MinContentWidth = 40;
+    private const int MaxContentWidth = 120;
+
     private readonly IPageLoader _pageLoader;
     private readonly ILinkExtractor _linkExtractor;
     private readonly INavigationTreeBuilder _treeBuilder;
@@ -46,8 +49,6 @@ public class BrowserOrchestrator : IBrowserService
 
     // Content width override for reader view
     private int? _contentWidthOverride;
-    private const int MinContentWidth = 40;
-    private const int MaxContentWidth = 120;
 
     // Command handler context (lazily initialized)
     private CommandContext? _commandContext;
@@ -269,6 +270,91 @@ public class BrowserOrchestrator : IBrowserService
             Console.Write("\x1b[?1049l");
             Console.CursorVisible = true;
         }
+    }
+
+    /// <summary>
+    /// Returns the actual usable viewport height for hierarchical view.
+    /// Accounts for header (6 lines: blank + box top + title + url + box bottom + blank)
+    /// and status bar area (3 lines: blank + separator + status text).
+    /// </summary>
+    private static int GetHierarchicalViewportHeight(RenderOptions options)
+    {
+        return Math.Max(3, options.TerminalHeight - 9);
+    }
+
+    /// <summary>
+    /// Calculates the available viewport height for the reader view,
+    /// accounting for the article header and status bar.
+    /// Header is ~8 lines (border + title + url + border + blank + metadata + blank),
+    /// status bar is ~3 lines (blank + separator + status text).
+    /// </summary>
+    private static int GetReaderViewportHeight(RenderOptions options)
+    {
+        // Header ~8 lines, status bar ~3 lines
+        return Math.Max(3, options.TerminalHeight - 11);
+    }
+
+    /// <summary>
+    /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
+    /// </summary>
+    private static List<string> WrapAllContent(ReadableContent content, int maxWidth)
+    {
+        var allLines = new List<string>();
+        foreach (var paragraph in content.Paragraphs)
+        {
+            var wrapped = WrapText(paragraph, maxWidth - 4);
+            foreach (var line in wrapped)
+            {
+                allLines.Add($"  {line}");
+            }
+
+            allLines.Add(string.Empty);
+        }
+
+        return allLines;
+    }
+
+    /// <summary>
+    /// Wraps text into lines that fit within maxWidth.
+    /// </summary>
+    private static List<string> WrapText(string text, int maxWidth)
+    {
+        var lines = new List<string>();
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var currentLine = string.Empty;
+
+        foreach (var word in words)
+        {
+            if (currentLine.Length + word.Length + 1 > maxWidth)
+            {
+                if (!string.IsNullOrEmpty(currentLine))
+                {
+                    lines.Add(currentLine);
+                }
+
+                currentLine = word;
+            }
+            else
+            {
+                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
+            }
+        }
+
+        if (!string.IsNullOrEmpty(currentLine))
+        {
+            lines.Add(currentLine);
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// Creates a scoped ICollectionService instance for database operations.
+    /// ICollectionService is registered as Scoped (depends on DbContext) while the orchestrator is Singleton.
+    /// </summary>
+    private static ICollectionService CreateCollectionService(IServiceScope scope)
+    {
+        return scope.ServiceProvider.GetRequiredService<ICollectionService>();
     }
 
     /// <summary>
@@ -547,20 +633,6 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Normalizes user input into a URL by adding https:// if needed.
-    /// </summary>
-    private static string NormalizeUrl(string input)
-    {
-        if (!input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            return "https://" + input;
-        }
-
-        return input;
-    }
-
-    /// <summary>
     /// Scrolls to a search match at the given match index.
     /// In reader view, uses line-based index when cache is available.
     /// In link view, selects the matching link node.
@@ -701,70 +773,6 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Returns the actual usable viewport height for hierarchical view.
-    /// Accounts for header (6 lines: blank + box top + title + url + box bottom + blank)
-    /// and status bar area (3 lines: blank + separator + status text).
-    /// </summary>
-    private static int GetHierarchicalViewportHeight(RenderOptions options)
-    {
-        return Math.Max(3, options.TerminalHeight - 9);
-    }
-
-    /// <summary>
-    /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
-    /// </summary>
-    private static List<string> WrapAllContent(ReadableContent content, int maxWidth)
-    {
-        var allLines = new List<string>();
-        foreach (var paragraph in content.Paragraphs)
-        {
-            var wrapped = WrapText(paragraph, maxWidth - 4);
-            foreach (var line in wrapped)
-            {
-                allLines.Add($"  {line}");
-            }
-
-            allLines.Add(string.Empty);
-        }
-
-        return allLines;
-    }
-
-    /// <summary>
-    /// Wraps text into lines that fit within maxWidth.
-    /// </summary>
-    private static List<string> WrapText(string text, int maxWidth)
-    {
-        var lines = new List<string>();
-        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var currentLine = string.Empty;
-
-        foreach (var word in words)
-        {
-            if (currentLine.Length + word.Length + 1 > maxWidth)
-            {
-                if (!string.IsNullOrEmpty(currentLine))
-                {
-                    lines.Add(currentLine);
-                }
-
-                currentLine = word;
-            }
-            else
-            {
-                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
-            }
-        }
-
-        if (!string.IsNullOrEmpty(currentLine))
-        {
-            lines.Add(currentLine);
-        }
-
-        return lines;
-    }
-
-    /// <summary>
     /// Ensures the line cache is populated and matches the current content width.
     /// Rebuilds if width changed or cache is empty.
     /// </summary>
@@ -847,27 +855,6 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Calculates the available viewport height for the reader view,
-    /// accounting for the article header and status bar.
-    /// Header is ~8 lines (border + title + url + border + blank + metadata + blank),
-    /// status bar is ~3 lines (blank + separator + status text).
-    /// </summary>
-    private static int GetReaderViewportHeight(RenderOptions options)
-    {
-        // Header ~8 lines, status bar ~3 lines
-        return Math.Max(3, options.TerminalHeight - 11);
-    }
-
-    /// <summary>
-    /// Creates a scoped ICollectionService instance for database operations.
-    /// ICollectionService is registered as Scoped (depends on DbContext) while the orchestrator is Singleton.
-    /// </summary>
-    private ICollectionService CreateCollectionService(IServiceScope scope)
-    {
-        return scope.ServiceProvider.GetRequiredService<ICollectionService>();
-    }
-
-    /// <summary>
     /// Enters the launcher home screen.
     /// </summary>
     private async Task EnterLauncherAsync(RenderOptions options, CancellationToken cancellationToken)
@@ -930,7 +917,7 @@ public class BrowserOrchestrator : IBrowserService
             if (_navigationService.ActiveCollection != null)
             {
                 var savedItemIndex = _navigationService.CollectionItemSelectedIndex;
-                var updatedActive = _collections.FirstOrDefault(c => c.Id == _navigationService.ActiveCollection.Id);
+                var updatedActive = _collections.Find(c => c.Id == _navigationService.ActiveCollection.Id);
                 if (updatedActive != null)
                 {
                     _navigationService.EnterCollection(updatedActive);

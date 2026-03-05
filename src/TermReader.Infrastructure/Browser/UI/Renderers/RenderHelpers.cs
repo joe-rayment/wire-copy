@@ -13,6 +13,68 @@ internal class RenderHelpers
 
     public int LinesWritten => _linesWritten;
 
+    public static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        if (maxLength <= 3)
+        {
+            return text.Length <= maxLength ? text : text.Substring(0, Math.Max(0, maxLength));
+        }
+
+        if (text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    public static string TruncateUrl(string url, int maxLength)
+    {
+        if (string.IsNullOrEmpty(url) || url.Length <= maxLength)
+        {
+            return url;
+        }
+
+        var halfLen = (maxLength - 3) / 2;
+        return url.Substring(0, halfLen) + "..." + url.Substring(url.Length - halfLen);
+    }
+
+    public static List<string> WrapText(string text, int maxWidth)
+    {
+        var lines = new List<string>();
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var currentLine = string.Empty;
+
+        foreach (var word in words)
+        {
+            if (currentLine.Length + word.Length + 1 > maxWidth)
+            {
+                if (!string.IsNullOrEmpty(currentLine))
+                {
+                    lines.Add(currentLine);
+                }
+
+                currentLine = word;
+            }
+            else
+            {
+                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
+            }
+        }
+
+        if (!string.IsNullOrEmpty(currentLine))
+        {
+            lines.Add(currentLine);
+        }
+
+        return lines;
+    }
+
     public void Clear()
     {
         try
@@ -143,68 +205,6 @@ internal class RenderHelpers
             Console.WriteLine(text);
             _linesWritten++;
         }
-    }
-
-    public static string TruncateText(string text, int maxLength)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return string.Empty;
-        }
-
-        if (maxLength <= 3)
-        {
-            return text.Length <= maxLength ? text : text.Substring(0, Math.Max(0, maxLength));
-        }
-
-        if (text.Length <= maxLength)
-        {
-            return text;
-        }
-
-        return text.Substring(0, maxLength - 3) + "...";
-    }
-
-    public static string TruncateUrl(string url, int maxLength)
-    {
-        if (string.IsNullOrEmpty(url) || url.Length <= maxLength)
-        {
-            return url;
-        }
-
-        var halfLen = (maxLength - 3) / 2;
-        return url.Substring(0, halfLen) + "..." + url.Substring(url.Length - halfLen);
-    }
-
-    public static List<string> WrapText(string text, int maxWidth)
-    {
-        var lines = new List<string>();
-        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var currentLine = string.Empty;
-
-        foreach (var word in words)
-        {
-            if (currentLine.Length + word.Length + 1 > maxWidth)
-            {
-                if (!string.IsNullOrEmpty(currentLine))
-                {
-                    lines.Add(currentLine);
-                }
-
-                currentLine = word;
-            }
-            else
-            {
-                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
-            }
-        }
-
-        if (!string.IsNullOrEmpty(currentLine))
-        {
-            lines.Add(currentLine);
-        }
-
-        return lines;
     }
 
     /// <summary>

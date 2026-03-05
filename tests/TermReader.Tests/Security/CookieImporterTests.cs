@@ -12,7 +12,7 @@ using TermReader.Application.Interfaces;
 using TermReader.Infrastructure.Browser;
 using Xunit;
 
-namespace TermReader.Tests;
+namespace TermReader.Tests.Security;
 
 public class CookieImporterTests
 {
