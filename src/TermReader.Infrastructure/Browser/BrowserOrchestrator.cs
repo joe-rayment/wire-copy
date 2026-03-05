@@ -754,11 +754,13 @@ public class BrowserOrchestrator : IBrowserService
         if (page?.ReadableContent == null)
         {
             _cachedLines = null;
+            SyncLineCacheToContext();
             return;
         }
 
         _cachedLines = WrapAllContent(page.ReadableContent, contentWidth);
         _cachedWidth = contentWidth;
+        SyncLineCacheToContext();
     }
 
     /// <summary>
@@ -768,6 +770,19 @@ public class BrowserOrchestrator : IBrowserService
     {
         _cachedLines = null;
         _cachedWidth = 0;
+        SyncLineCacheToContext();
+    }
+
+    /// <summary>
+    /// Syncs the line cache fields to the command context so handlers see fresh data.
+    /// </summary>
+    private void SyncLineCacheToContext()
+    {
+        if (_commandContext != null)
+        {
+            _commandContext.CachedLines = _cachedLines;
+            _commandContext.CachedWidth = _cachedWidth;
+        }
     }
 
     /// <summary>
