@@ -35,16 +35,6 @@ public record RenderOptions
     public int HeaderLines { get; init; } = 6;
 
     /// <summary>
-    /// Whether to use colors in rendering.
-    /// </summary>
-    public bool UseColors { get; init; } = true;
-
-    /// <summary>
-    /// Theme name (for future color scheme support).
-    /// </summary>
-    public string Theme { get; init; } = "default";
-
-    /// <summary>
     /// Whether the terminal supports 256-color mode.
     /// Detected from COLORTERM environment variable.
     /// </summary>
