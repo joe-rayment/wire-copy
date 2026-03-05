@@ -23,29 +23,6 @@ internal class ArticleRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderArticleHeader(ReadableContent content, RenderOptions options)
-    {
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var border = p.HeaderBorderFg.AnsiFg;
-        var titleFg = p.HeaderTitleFg.AnsiFg;
-
-        _helpers.WriteLine();
-        _helpers.WriteLine($"{border}\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557{Reset}");
-
-        var titleLines = RenderHelpers.WrapText(content.Title, width - 4);
-        foreach (var line in titleLines)
-        {
-            _helpers.WriteLine($"{border}\u2551 {titleFg}{line.PadRight(width - 4)}{border} \u2551{Reset}");
-        }
-
-        _helpers.WriteLine($"{border}\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d{Reset}");
-
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{content.GetMetadataString()}{Reset}");
-        _helpers.WriteLine();
-    }
-
     public void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);

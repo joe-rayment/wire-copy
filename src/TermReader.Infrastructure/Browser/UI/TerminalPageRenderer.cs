@@ -77,8 +77,6 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        _articleRenderer.RenderArticleHeader(page.ReadableContent, options);
-
         var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
 
         if (wrappedLines != null)
