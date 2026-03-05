@@ -73,6 +73,9 @@ public class Program
             .WriteTo.File("logs/termreader-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateLogger();
 
+        // Clean up any orphaned chromedriver processes from previous crashed sessions
+        OrphanProcessCleaner.CleanupOrphanedDrivers();
+
         // Pass null when no URL provided to trigger the launcher home screen
         var url = string.IsNullOrWhiteSpace(options.Url) ? null : options.Url;
 

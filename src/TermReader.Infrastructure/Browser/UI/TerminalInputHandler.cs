@@ -92,6 +92,22 @@ public class TerminalInputHandler : IInputHandler
                 return Task.FromResult(new NavigationCommand { Type = CommandType.OpenCollections });
             }
 
+            // Reader view width adjustment
+            if (keyInfo.KeyChar == '+' || keyInfo.KeyChar == '=')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.IncreaseWidth });
+            }
+
+            if (keyInfo.KeyChar == '-' || keyInfo.KeyChar == '_')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.DecreaseWidth });
+            }
+
+            if (keyInfo.KeyChar == '0')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.ResetWidth });
+            }
+
             var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Log non-default commands (MoveUp is the default/fallback)
@@ -220,6 +236,12 @@ public class TerminalInputHandler : IInputHandler
   d             Delete selected bookmark
   c             Open collections
   :home         Return to launcher from any view
+
+  Reader View
+  ─────────────────────────────────────────────────────────────────
+  + / =         Increase content width
+  - / _         Decrease content width
+  0             Reset content width to default
 
   Collections
   ─────────────────────────────────────────────────────────────────
