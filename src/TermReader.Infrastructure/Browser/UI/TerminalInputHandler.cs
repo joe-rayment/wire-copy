@@ -178,6 +178,7 @@ public class TerminalInputHandler : IInputHandler
             ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
             ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
             ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
+            ConsoleKey.F6 => new NavigationCommand { Type = CommandType.CycleTheme },
 
             // Help
             ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp }, // '?' key
@@ -256,6 +257,7 @@ public class TerminalInputHandler : IInputHandler
   Application
   ─────────────────────────────────────────────────────────────────
   F5            Refresh current page
+  F6            Cycle color theme
   Esc           Go back (quit from launcher)
   q             Quit browser
   ?             Show this help

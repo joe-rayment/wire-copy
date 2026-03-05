@@ -87,5 +87,8 @@ public enum CommandType
     // Width control
     IncreaseWidth,
     DecreaseWidth,
-    ResetWidth
+    ResetWidth,
+
+    // Theme
+    CycleTheme
 }

@@ -124,7 +124,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.Clear();
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, options);
-        _collectionRenderer.RenderCollectionStatusBar(ViewMode.CollectionList);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList);
         _helpers.ClearRemainingLines();
     }
 
@@ -132,7 +132,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, options);
-        _collectionRenderer.RenderCollectionStatusBar(ViewMode.CollectionItems);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems);
         _helpers.ClearRemainingLines();
     }
 
@@ -140,7 +140,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.Clear();
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
-        _launcherRenderer.RenderLauncherStatusBar();
+        _launcherRenderer.RenderFooter(options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }
 

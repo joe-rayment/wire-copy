@@ -8,7 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
+using TermReader.Infrastructure.Collections;
+using TermReader.Persistence;
 using Serilog;
 using Serilog.Events;
 
@@ -136,7 +139,9 @@ public class Program
             })
             .ConfigureServices((context, services) =>
             {
-                // Only register terminal browser services for browse mode
                 services.AddTerminalBrowser();
+                services.AddPersistence();
+                services.AddCollections();
+                services.AddBookmarks();
             });
 }

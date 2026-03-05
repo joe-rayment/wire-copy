@@ -10,12 +10,8 @@ using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Browser.UI;
-using TermReader.Infrastructure.Bookmarks;
-using TermReader.Infrastructure.Collections;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Configuration.Validation;
-using TermReader.Infrastructure.Persistence;
-using TermReader.Infrastructure.Persistence.Repositories;
 using TermReader.Infrastructure.Security;
 using TermReader.Infrastructure.Storage;
 
@@ -40,22 +36,6 @@ public static class BrowserDependencyInjection
 
         // Register configuration validators
         services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
-
-        // Register database (SQLite)
-        services.AddDbContext<AppDbContext>((sp, options) =>
-        {
-            var config = sp.GetRequiredService<IConfiguration>();
-            var connectionString = config.GetConnectionString("DefaultConnection")
-                ?? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "TermReader",
-                    "termreader.db");
-            options.UseSqlite($"Data Source={connectionString}");
-        });
-
-        // Register Unit of Work and repositories
-        services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
         // Register Data Protection for cookie encryption
         var dataProtectionPath = Path.Combine(
@@ -110,10 +90,6 @@ public static class BrowserDependencyInjection
 
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();
-
-        // Register collections and bookmarks via modular DI extensions
-        services.AddCollections();
-        services.AddBookmarks();
 
         return services;
     }

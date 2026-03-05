@@ -6,7 +6,8 @@ using TermReader.Domain.Entities.Bookmarks;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders the launcher home screen with bookmark tiles and status bar.
+/// Renders the launcher home screen with a full-viewport grid layout.
+/// Items expand to fill available space with thin separators between cells.
 /// </summary>
 internal class LauncherRenderer
 {
@@ -21,186 +22,245 @@ internal class LauncherRenderer
     {
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
 
-        // Header
-        _helpers.WriteLine();
-        var headerLine = "\x1b[36m\u2554" + new string('\u2550', width - 2) + "\u2557\x1b[0m";
-        _helpers.WriteLine(headerLine);
+        // Header: TermReader (Cyan) left + bookmark count + version right (1 line + separator)
+        var title = $"{Colors.Fg256Cyan}TermReader{Colors.Reset}";
+        var statusInfo = $"{Colors.Fg256DarkGray}{bookmarks.Count} bookmarks{Colors.Reset}";
+        var version = $"{Colors.Fg256DarkGray}v1.0{Colors.Reset}";
+        var headerRight = $"{statusInfo} {version}";
 
-        var title = RenderHelpers.TruncateText("TermReader", width - 4);
-        var titleLine = $"\x1b[36m\u2551 \x1b[37m{title.PadRight(width - 4)}\x1b[36m \u2551\x1b[0m";
-        _helpers.WriteLine(titleLine);
+        // Calculate padding (accounting for ANSI escape codes in length)
+        var titleTextLen = "TermReader".Length;
+        var rightTextLen = $"{bookmarks.Count} bookmarks v1.0".Length;
+        var padding = Math.Max(1, width - titleTextLen - rightTextLen - 2);
+        _helpers.WriteLine($" {title}{new string(' ', padding)}{headerRight} ");
 
-        var bottomLine = "\x1b[36m\u255a" + new string('\u2550', width - 2) + "\u255d\x1b[0m";
-        _helpers.WriteLine(bottomLine);
-        _helpers.WriteLine();
+        // Header separator
+        _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', width)}{Colors.Reset}");
 
         // Calculate grid dimensions
         var headerLines = _helpers.LinesWritten;
-        var statusBarLines = 3;
-        var availableHeight = Math.Max(6, options.TerminalHeight - headerLines - statusBarLines);
+        var footerLines = 2; // separator + key hints
+        var availableHeight = Math.Max(4, options.TerminalHeight - headerLines - footerLines);
 
-        var columns = width < 35 ? 1 : 2;
-        var gap = 1;
-        var margin = 1;
-        var tileWidth = columns == 1 ? width - (margin * 2) : (width - (margin * 2) - gap) / 2;
-        var tileHeight = Math.Max(3, availableHeight / 6);
-
+        var columns = width >= 35 ? 2 : 1;
         var totalItems = bookmarks.Count + 1; // +1 for Collections tile
-
-        var visibleRows = Math.Max(1, availableHeight / tileHeight);
-        var startRow = scrollOffset;
-        var totalRows = (totalItems + columns - 1) / columns;
 
         if (bookmarks.Count == 0 && totalItems == 1)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            _helpers.WriteLine("  No bookmarks. Press 'a' to add one.");
-            Console.ResetColor();
             _helpers.WriteLine();
+            _helpers.WriteLine($"  {Colors.Fg256DarkGray}No bookmarks. Press 'a' to add one.{Colors.Reset}");
+            _helpers.WriteLine();
+            _helpers.WriteLine($"  {Colors.Fg256Cyan}\u2502{Colors.Reset} {Colors.Fg256White}Collections{Colors.Reset}");
+            return;
         }
+
+        var totalRows = (totalItems + columns - 1) / columns;
+        var visibleRows = Math.Max(1, availableHeight / Math.Max(3, availableHeight / Math.Max(1, totalRows)));
+        var rowHeight = Math.Max(3, availableHeight / Math.Max(1, Math.Min(visibleRows, totalRows)));
+
+        // Recalculate visible rows with actual row height
+        visibleRows = Math.Max(1, availableHeight / rowHeight);
+        var startRow = scrollOffset;
+
+        var cellWidth = columns == 1 ? width : (width - 1) / 2; // -1 for vertical separator
 
         for (var row = startRow; row < Math.Min(startRow + visibleRows, totalRows); row++)
         {
+            // Horizontal separator between rows (not before first)
+            if (row > startRow)
+            {
+                if (columns == 2)
+                {
+                    var halfSep = cellWidth;
+                    _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', halfSep)}\u253c{new string('\u2500', width - halfSep - 1)}{Colors.Reset}");
+                }
+                else
+                {
+                    _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', width)}{Colors.Reset}");
+                }
+            }
+
             var leftIdx = row * columns;
             var rightIdx = columns == 2 ? leftIdx + 1 : -1;
 
-            var leftBookmark = leftIdx < bookmarks.Count ? bookmarks[leftIdx] : null;
-            var rightBookmark = rightIdx >= 0 && rightIdx < bookmarks.Count ? bookmarks[rightIdx] : null;
+            var contentLines = rowHeight;
 
-            var leftIsCollections = leftIdx == bookmarks.Count;
-            var rightIsCollections = rightIdx == bookmarks.Count;
-
-            var leftSelected = leftIdx == selectedIndex;
-            var rightSelected = rightIdx >= 0 && rightIdx == selectedIndex;
-
-            for (var line = 0; line < tileHeight; line++)
+            for (var line = 0; line < contentLines; line++)
             {
-                var leftStr = BuildTileLine(leftBookmark, leftSelected, leftIsCollections, tileWidth, tileHeight, line);
                 var sb = new System.Text.StringBuilder();
-                sb.Append(new string(' ', margin));
-                sb.Append(leftStr);
 
+                // Left cell
+                sb.Append(BuildCellContent(bookmarks, leftIdx, selectedIndex, cellWidth, contentLines, line));
+
+                // Vertical separator + right cell
                 if (columns == 2)
                 {
-                    sb.Append(new string(' ', gap));
+                    sb.Append($"{Colors.Fg256DarkGray}\u2502{Colors.Reset}");
 
                     if (rightIdx >= 0 && rightIdx < totalItems)
                     {
-                        var rightStr = BuildTileLine(rightBookmark, rightSelected, rightIsCollections, tileWidth, tileHeight, line);
-                        sb.Append(rightStr);
+                        sb.Append(BuildCellContent(bookmarks, rightIdx, selectedIndex, width - cellWidth - 1, contentLines, line));
+                    }
+                    else
+                    {
+                        sb.Append(new string(' ', width - cellWidth - 1));
                     }
                 }
 
-                sb.Append("\x1b[0m");
                 _helpers.WriteLine(sb.ToString());
             }
         }
 
+        // Scroll indicator
         if (totalRows > startRow + visibleRows)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
             var remaining = totalRows - startRow - visibleRows;
-            _helpers.WriteLine($"  ... {remaining} more row{(remaining == 1 ? "" : "s")} below");
-            Console.ResetColor();
+            _helpers.WriteLine($"{Colors.Fg256DarkGray}  \u2193 {remaining} more row{(remaining == 1 ? "" : "s")} below{Colors.Reset}");
         }
     }
 
-    public void RenderLauncherStatusBar()
+    /// <summary>
+    /// Renders the launcher-specific footer with separator and keyboard hints.
+    /// At narrow widths (&lt;60 cols), abbreviates to essential hints only.
+    /// </summary>
+    public void RenderFooter(int width)
     {
-        _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
-        _helpers.WriteLine(new string('\u2500', separatorWidth));
+        // Thin separator
+        var separatorWidth = Math.Max(1, width - 1);
+        _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', separatorWidth)}{Colors.Reset}");
 
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        _helpers.WriteLine("[Launcher] h/j/k/l:navigate Enter:open a:add d:delete c:collections :cmd q:quit");
-        Console.ResetColor();
+        // Keyboard hints: keys in White, action labels in DarkGray
+        string hints;
+        if (width < 60)
+        {
+            // Abbreviated mode
+            hints = $"{Colors.Fg256White}h/j/k/l{Colors.Reset} {Colors.Fg256DarkGray}navigate{Colors.Reset}  " +
+                    $"{Colors.Fg256White}Enter{Colors.Reset} {Colors.Fg256DarkGray}open{Colors.Reset}  " +
+                    $"{Colors.Fg256White}q{Colors.Reset} {Colors.Fg256DarkGray}quit{Colors.Reset}";
+        }
+        else
+        {
+            hints = $"{Colors.Fg256White}h/j/k/l{Colors.Reset} {Colors.Fg256DarkGray}navigate{Colors.Reset}  " +
+                    $"{Colors.Fg256White}Enter{Colors.Reset} {Colors.Fg256DarkGray}open{Colors.Reset}  " +
+                    $"{Colors.Fg256White}a{Colors.Reset} {Colors.Fg256DarkGray}add{Colors.Reset}  " +
+                    $"{Colors.Fg256White}d{Colors.Reset} {Colors.Fg256DarkGray}delete{Colors.Reset}  " +
+                    $"{Colors.Fg256White}c{Colors.Reset} {Colors.Fg256DarkGray}collections{Colors.Reset}  " +
+                    $"{Colors.Fg256White}:{Colors.Reset}{Colors.Fg256DarkGray}cmd{Colors.Reset}  " +
+                    $"{Colors.Fg256White}q{Colors.Reset} {Colors.Fg256DarkGray}quit{Colors.Reset}";
+        }
+
+        _helpers.WriteLine($" {hints}");
     }
 
-    internal static string BuildTileLine(Bookmark? bookmark, bool selected, bool isCollections, int tileWidth, int tileHeight, int lineIdx)
+    private static string BuildCellContent(List<Bookmark> bookmarks, int itemIdx, int selectedIndex, int cellWidth, int totalLines, int lineIdx)
     {
-        var innerWidth = Math.Max(1, tileWidth - 2);
+        var totalItems = bookmarks.Count + 1;
+        if (itemIdx >= totalItems)
+        {
+            return new string(' ', cellWidth);
+        }
+
+        var isCollections = itemIdx == bookmarks.Count;
+        var isSelected = itemIdx == selectedIndex;
 
         string name;
         string domain;
-        string borderColor;
 
         if (isCollections)
         {
             name = "Collections";
             domain = "saved links";
-            borderColor = "\x1b[36m";
         }
-        else if (bookmark != null)
+        else
         {
+            var bookmark = bookmarks[itemIdx];
             name = bookmark.Name;
             domain = ExtractDomain(bookmark.Url);
-            borderColor = "\x1b[36m";
-        }
-        else
-        {
-            return new string(' ', tileWidth);
         }
 
-        var nameLineIdx = Math.Max(1, (tileHeight - 2) / 2);
+        // Name starts 6 chars from left edge (indent)
+        const int indent = 6;
+        var nameLineIdx = Math.Max(1, (totalLines - 1) / 2);
         var domainLineIdx = nameLineIdx + 1;
+        var textWidth = Math.Max(1, cellWidth - indent - 1); // -1 for right padding
+        var barHeight = Math.Min(3, totalLines);
 
-        if (selected)
+        // Bar lines: centered around name/domain lines
+        var barStart = nameLineIdx;
+        var barEnd = barStart + barHeight - 1;
+
+        if (isSelected)
         {
-            var sel = "\x1b[30;47m";
-            var reset = "\x1b[0m";
+            var sb = new System.Text.StringBuilder();
 
-            if (lineIdx == 0)
-            {
-                return $"{sel}\u2554{new string('\u2550', innerWidth)}\u2557{reset}";
-            }
-
-            if (lineIdx == tileHeight - 1)
-            {
-                return $"{sel}\u255a{new string('\u2550', innerWidth)}\u255d{reset}";
-            }
+            // Cyan ▌ left bar on content lines
+            var showBar = lineIdx >= barStart && lineIdx <= barEnd;
 
             if (lineIdx == nameLineIdx)
             {
-                var truncName = RenderHelpers.TruncateText(name, innerWidth - 2);
-                return $"{sel}\u2551 {truncName.PadRight(innerWidth - 1)}\u2551{reset}";
-            }
+                var truncName = RenderHelpers.TruncateText(name, textWidth);
+                if (showBar)
+                {
+                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                }
+                else
+                {
+                    sb.Append(' ');
+                }
 
-            if (lineIdx == domainLineIdx)
+                // Reverse video on name (bar or space is always 1 char wide)
+                var paddedName = truncName.PadRight(cellWidth - 1);
+                sb.Append($"\x1b[30;47m{new string(' ', indent - 1)}{paddedName}\x1b[0m");
+            }
+            else if (lineIdx == domainLineIdx)
             {
-                var truncDomain = RenderHelpers.TruncateText(domain, innerWidth - 2);
-                return $"{sel}\u2551 {truncDomain.PadRight(innerWidth - 1)}\u2551{reset}";
+                var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
+                if (showBar)
+                {
+                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                }
+                else
+                {
+                    sb.Append(' ');
+                }
+
+                // Brighter White domain text (no reverse video)
+                var domainContent = $"{Colors.Fg256White}{truncDomain}{Colors.Reset}";
+                var domainPad = Math.Max(0, cellWidth - indent - truncDomain.Length);
+                sb.Append($"{new string(' ', indent - 1)}{domainContent}{new string(' ', domainPad)}");
+            }
+            else
+            {
+                if (showBar)
+                {
+                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                    sb.Append(new string(' ', cellWidth - 1));
+                }
+                else
+                {
+                    sb.Append(new string(' ', cellWidth));
+                }
             }
 
-            return $"{sel}\u2551{new string(' ', innerWidth)}\u2551{reset}";
+            return sb.ToString();
         }
         else
         {
-            var reset = "\x1b[0m";
-
-            if (lineIdx == 0)
-            {
-                return $"{borderColor}\u250c{new string('\u2500', innerWidth)}\u2510{reset}";
-            }
-
-            if (lineIdx == tileHeight - 1)
-            {
-                return $"{borderColor}\u2514{new string('\u2500', innerWidth)}\u2518{reset}";
-            }
-
             if (lineIdx == nameLineIdx)
             {
-                var truncName = RenderHelpers.TruncateText(name, innerWidth - 2);
-                return $"{borderColor}\u2502\x1b[37m {truncName.PadRight(innerWidth - 1)}{borderColor}\u2502{reset}";
+                var truncName = RenderHelpers.TruncateText(name, textWidth);
+                var pad = Math.Max(0, cellWidth - indent - truncName.Length);
+                return $"{new string(' ', indent)}{Colors.Fg256White}{truncName}{Colors.Reset}{new string(' ', pad)}";
             }
 
             if (lineIdx == domainLineIdx)
             {
-                var truncDomain = RenderHelpers.TruncateText(domain, innerWidth - 2);
-                return $"{borderColor}\u2502\x1b[90m {truncDomain.PadRight(innerWidth - 1)}{borderColor}\u2502{reset}";
+                var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
+                var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
+                return $"{new string(' ', indent)}{Colors.Fg256DarkGray}{truncDomain}{Colors.Reset}{new string(' ', pad)}";
             }
 
-            return $"{borderColor}\u2502{new string(' ', innerWidth)}\u2502{reset}";
+            return new string(' ', cellWidth);
         }
     }
 
@@ -215,5 +275,14 @@ internal class LauncherRenderer
         {
             return url;
         }
+    }
+
+    // Convenience aliases for color constants
+    private static class Colors
+    {
+        public const string Reset = RenderHelpers.Colors.Reset;
+        public const string Fg256Cyan = RenderHelpers.Colors.Fg256Cyan;
+        public const string Fg256White = RenderHelpers.Colors.Fg256White;
+        public const string Fg256DarkGray = RenderHelpers.Colors.Fg256DarkGray;
     }
 }
