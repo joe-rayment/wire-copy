@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Infrastructure.Bookmarks;
+using TermReader.Persistence;
 using TermReader.Persistence.Repositories;
 using Xunit;
 
@@ -18,8 +19,9 @@ public class BookmarkServiceTests : TestDatabaseFixture
     public BookmarkServiceTests()
     {
         _repository = new BookmarkRepository(DbContext);
+        var unitOfWork = new UnitOfWork(DbContext, Substitute.For<ILogger<UnitOfWork>>());
         _logger = Substitute.For<ILogger<BookmarkService>>();
-        _sut = new BookmarkService(_repository, _logger);
+        _sut = new BookmarkService(_repository, unitOfWork, _logger);
     }
 
     #region GetAllBookmarksAsync

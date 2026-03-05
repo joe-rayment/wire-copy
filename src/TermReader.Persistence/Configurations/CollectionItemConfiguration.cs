@@ -34,6 +34,10 @@ public class CollectionItemConfiguration : IEntityTypeConfiguration<CollectionIt
         builder.Property(i => i.IsRead)
             .IsRequired();
 
-        builder.HasIndex(i => new { i.CollectionId, i.SavedAt });
+        builder.Property(i => i.SortOrder)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        builder.HasIndex(i => new { i.CollectionId, i.SortOrder });
     }
 }

@@ -14,20 +14,18 @@ public class CollectionRepository : ICollectionRepository
     private const string DefaultCollectionName = "Read Later";
 
     private readonly AppDbContext _context;
+    private readonly ICollectionPreferences _preferences;
 
-    // Simple in-memory tracking of last used collection ID.
-    // Persists across the application lifetime (singleton scope).
-    private Guid? _lastUsedCollectionId;
-
-    public CollectionRepository(AppDbContext context)
+    public CollectionRepository(AppDbContext context, ICollectionPreferences preferences)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
     }
 
     public async Task<IReadOnlyList<Collection>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return await _context.Set<Collection>()
-            .Include(c => c.Items)
+            .Include(c => c.Items.OrderBy(i => i.SortOrder))
             .OrderBy(c => c.SortOrder)
             .ThenBy(c => c.Name)
             .ToListAsync(cancellationToken);
@@ -36,7 +34,7 @@ public class CollectionRepository : ICollectionRepository
     public async Task<Collection?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Set<Collection>()
-            .Include(c => c.Items)
+            .Include(c => c.Items.OrderBy(i => i.SortOrder))
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
@@ -44,7 +42,7 @@ public class CollectionRepository : ICollectionRepository
     {
         // SQLite default collation is case-insensitive for ASCII
         return await _context.Set<Collection>()
-            .Include(c => c.Items)
+            .Include(c => c.Items.OrderBy(i => i.SortOrder))
             .FirstOrDefaultAsync(c => c.Name.ToLower() == name.ToLower(), cancellationToken);
     }
 
@@ -56,38 +54,36 @@ public class CollectionRepository : ICollectionRepository
 
         var collection = Collection.Create(DefaultCollectionName, sortOrder: 0);
         await _context.Set<Collection>().AddAsync(collection, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
         return collection;
     }
 
-    public async Task AddAsync(Collection collection, CancellationToken cancellationToken = default)
+    public Task AddAsync(Collection collection, CancellationToken cancellationToken = default)
     {
-        await _context.Set<Collection>().AddAsync(collection, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
+        _context.Set<Collection>().Add(collection);
+        return Task.CompletedTask;
     }
 
-    public async Task UpdateAsync(Collection collection, CancellationToken cancellationToken = default)
+    public Task UpdateAsync(Collection collection, CancellationToken cancellationToken = default)
     {
-        // Do not call _context.Update(collection) — it marks the entire entity graph
-        // as Modified, which fails for newly added child entities. Instead, rely on
-        // EF Core change tracking to detect modifications and new entities automatically.
-        await _context.SaveChangesAsync(cancellationToken);
+        // Rely on EF Core change tracking to detect modifications and new entities.
+        // SaveChangesAsync is called by the service layer via IUnitOfWork.
+        return Task.CompletedTask;
     }
 
-    public async Task DeleteAsync(Collection collection, CancellationToken cancellationToken = default)
+    public Task DeleteAsync(Collection collection, CancellationToken cancellationToken = default)
     {
         _context.Set<Collection>().Remove(collection);
-        await _context.SaveChangesAsync(cancellationToken);
+        return Task.CompletedTask;
     }
 
     public Task<Guid?> GetLastUsedCollectionIdAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(_lastUsedCollectionId);
+        return Task.FromResult(_preferences.LastUsedCollectionId);
     }
 
     public Task SetLastUsedCollectionIdAsync(Guid collectionId, CancellationToken cancellationToken = default)
     {
-        _lastUsedCollectionId = collectionId;
+        _preferences.LastUsedCollectionId = collectionId;
         return Task.CompletedTask;
     }
 }

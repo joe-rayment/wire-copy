@@ -12,11 +12,13 @@ namespace TermReader.Infrastructure.Bookmarks;
 public class BookmarkService : IBookmarkService
 {
     private readonly IBookmarkRepository _repository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<BookmarkService> _logger;
 
-    public BookmarkService(IBookmarkRepository repository, ILogger<BookmarkService> logger)
+    public BookmarkService(IBookmarkRepository repository, IUnitOfWork unitOfWork, ILogger<BookmarkService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -30,6 +32,7 @@ public class BookmarkService : IBookmarkService
         var nextOrder = await _repository.GetNextSortOrderAsync(cancellationToken);
         var bookmark = Bookmark.Create(name, url, nextOrder);
         await _repository.AddAsync(bookmark, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Added bookmark: {Name} ({Url})", name, url);
         return bookmark;
     }
@@ -41,6 +44,7 @@ public class BookmarkService : IBookmarkService
 
         bookmark.Rename(newName);
         await _repository.UpdateAsync(bookmark, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Renamed bookmark to: {Name}", newName);
     }
 
@@ -50,11 +54,13 @@ public class BookmarkService : IBookmarkService
             ?? throw new InvalidOperationException($"Bookmark {id} not found");
 
         await _repository.DeleteAsync(bookmark, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Deleted bookmark: {Name}", bookmark.Name);
     }
 
     public async Task EnsureSeededAsync(CancellationToken cancellationToken = default)
     {
         await _repository.SeedDefaultsAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

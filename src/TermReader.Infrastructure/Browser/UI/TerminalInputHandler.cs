@@ -111,6 +111,11 @@ public class TerminalInputHandler : IInputHandler
                 return Task.FromResult(new NavigationCommand { Type = CommandType.ResetWidth });
             }
 
+            if (keyInfo.KeyChar == '?')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.ShowHelp });
+            }
+
             var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Log non-default commands (MoveUp is the default/fallback)
@@ -127,7 +132,7 @@ public class TerminalInputHandler : IInputHandler
 
     public NavigationCommand MapKeyToCommand(ConsoleKey key, ConsoleModifiers modifiers)
     {
-        // Ctrl+key combinations
+        // Shift+key combinations
         if ((modifiers & ConsoleModifiers.Shift) != 0)
         {
             return key switch

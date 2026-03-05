@@ -71,8 +71,11 @@ public class UnitOfWork : IUnitOfWork
         }
         finally
         {
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            if (_transaction != null)
+            {
+                await _transaction.DisposeAsync();
+                _transaction = null;
+            }
         }
     }
 
@@ -121,11 +124,14 @@ public class UnitOfWork : IUnitOfWork
 
     protected virtual async ValueTask DisposeAsyncCore()
     {
-        if (!_disposed && _transaction != null)
+        if (!_disposed)
         {
-            // Properly dispose transaction asynchronously
-            await _transaction.DisposeAsync().ConfigureAwait(false);
-            _transaction = null;
+            if (_transaction != null)
+            {
+                await _transaction.DisposeAsync().ConfigureAwait(false);
+                _transaction = null;
+            }
+
             _disposed = true;
         }
     }

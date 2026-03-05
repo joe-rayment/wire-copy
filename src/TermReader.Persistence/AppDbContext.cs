@@ -56,6 +56,18 @@ public class AppDbContext : DbContext
             )
             """,
             cancellationToken);
+
+        // Add SortOrder column to CollectionItems if missing (schema migration)
+        try
+        {
+            await Database.ExecuteSqlRawAsync(
+                "ALTER TABLE CollectionItems ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0",
+                cancellationToken);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            // Column already exists — ignore
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

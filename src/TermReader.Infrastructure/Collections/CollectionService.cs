@@ -12,17 +12,20 @@ namespace TermReader.Infrastructure.Collections;
 public class CollectionService : ICollectionService
 {
     private readonly ICollectionRepository _repository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CollectionService> _logger;
 
-    public CollectionService(ICollectionRepository repository, ILogger<CollectionService> logger)
+    public CollectionService(ICollectionRepository repository, IUnitOfWork unitOfWork, ILogger<CollectionService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<CollectionItem?> SaveToDefaultCollectionAsync(string url, string title, CancellationToken cancellationToken = default)
     {
         var collection = await _repository.GetOrCreateDefaultAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return await SaveItemToCollection(collection, url, title, cancellationToken);
     }
 
@@ -33,6 +36,7 @@ public class CollectionService : ICollectionService
         {
             collection = Collection.Create(collectionName);
             await _repository.AddAsync(collection, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Created new collection: {Name}", collectionName);
         }
 
@@ -54,6 +58,7 @@ public class CollectionService : ICollectionService
 
         var collection = Collection.Create(name);
         await _repository.AddAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Created collection: {Name}", name);
         return collection;
     }
@@ -63,6 +68,7 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         collection.Rename(newName);
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Renamed collection {Id} to {Name}", collectionId, newName);
     }
 
@@ -70,6 +76,7 @@ public class CollectionService : ICollectionService
     {
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         await _repository.DeleteAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Deleted collection: {Name}", collection.Name);
     }
 
@@ -78,6 +85,7 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         collection.Clear();
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Cleared collection: {Name}", collection.Name);
     }
 
@@ -86,6 +94,7 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         collection.RemoveItem(itemId);
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task MoveItemUpAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
@@ -93,6 +102,7 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         collection.MoveItemUp(itemId);
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task MoveItemDownAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
@@ -100,6 +110,7 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         collection.MoveItemDown(itemId);
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task MarkItemAsReadAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
@@ -113,6 +124,7 @@ public class CollectionService : ICollectionService
 
         item.MarkAsRead();
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task SetDefaultCollectionAsync(Guid collectionId, CancellationToken cancellationToken = default)
@@ -135,7 +147,9 @@ public class CollectionService : ICollectionService
             }
         }
 
-        return await _repository.GetOrCreateDefaultAsync(cancellationToken);
+        var defaultCollection = await _repository.GetOrCreateDefaultAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return defaultCollection;
     }
 
     private async Task<CollectionItem?> SaveItemToCollection(Collection collection, string url, string title, CancellationToken cancellationToken)
@@ -149,6 +163,7 @@ public class CollectionService : ICollectionService
 
         var item = collection.AddItem(url, title);
         await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Saved {Url} to collection {Name}", url, collection.Name);
         return item;
     }
