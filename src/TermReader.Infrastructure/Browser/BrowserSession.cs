@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Infrastructure.Configuration;
@@ -20,6 +21,7 @@ public sealed class BrowserSession : IBrowserSession
     private readonly ILogger<BrowserSession> _logger;
     private readonly object _lock = new();
     private IWebDriver? _driver;
+    private int? _driverServicePid;
     private bool _disposed;
 
     public BrowserSession(
@@ -106,6 +108,8 @@ public sealed class BrowserSession : IBrowserSession
             return;
         }
 
+        var needsForceKill = false;
+
         try
         {
             _driver.Quit();
@@ -113,6 +117,7 @@ public sealed class BrowserSession : IBrowserSession
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Error quitting WebDriver during cleanup");
+            needsForceKill = true;
         }
 
         try
@@ -122,9 +127,36 @@ public sealed class BrowserSession : IBrowserSession
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Error disposing WebDriver during cleanup");
+            needsForceKill = true;
         }
 
         _driver = null;
+
+        if (needsForceKill)
+        {
+            ForceKillBrowserProcesses();
+        }
+
+        _driverServicePid = null;
+    }
+
+    private void ForceKillBrowserProcesses()
+    {
+        if (_driverServicePid == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var process = Process.GetProcessById(_driverServicePid.Value);
+            _logger.LogDebug("Force-killing driver process tree (PID={Pid})", _driverServicePid.Value);
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error force-killing driver process (PID={Pid})", _driverServicePid.Value);
+        }
     }
 
     private IWebDriver CreateWebDriver(bool headless)
@@ -180,6 +212,7 @@ public sealed class BrowserSession : IBrowserSession
         service.HideCommandPromptWindow = true;
 
         var driver = new ChromeDriver(service, options);
+        _driverServicePid = service.ProcessId;
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
         driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
 
@@ -224,6 +257,7 @@ public sealed class BrowserSession : IBrowserSession
         service.HideCommandPromptWindow = true;
 
         var driver = new FirefoxDriver(service, options);
+        _driverServicePid = service.ProcessId;
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
         driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
 

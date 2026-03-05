@@ -43,6 +43,12 @@ public record RenderOptions
     public string Theme { get; init; } = "default";
 
     /// <summary>
+    /// Whether the terminal supports 256-color mode.
+    /// Detected from COLORTERM environment variable.
+    /// </summary>
+    public bool Use256Colors { get; init; }
+
+    /// <summary>
     /// Available height for content (excluding header and status bar).
     /// </summary>
     public int ContentHeight => TerminalHeight - HeaderLines - StatusBarLines;

@@ -82,6 +82,16 @@ public class TerminalInputHandler : IInputHandler
                 return Task.FromResult(new NavigationCommand { Type = CommandType.DeleteItem });
             }
 
+            if (keyInfo.KeyChar == 'a')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.AddBookmark });
+            }
+
+            if (keyInfo.KeyChar == 'c')
+            {
+                return Task.FromResult(new NavigationCommand { Type = CommandType.OpenCollections });
+            }
+
             var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
             // Log non-default commands (MoveUp is the default/fallback)
@@ -150,7 +160,7 @@ public class TerminalInputHandler : IInputHandler
 
             // Application
             ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
-            ConsoleKey.Escape => new NavigationCommand { Type = CommandType.Quit },
+            ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
             ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
 
             // Help
@@ -202,6 +212,15 @@ public class TerminalInputHandler : IInputHandler
   n             Next search match
   N             Previous search match
 
+  Launcher (Home Screen)
+  ─────────────────────────────────────────────────────────────────
+  h/j/k/l       Navigate bookmark grid (left/down/up/right)
+  Enter         Open selected bookmark
+  a             Add new bookmark
+  d             Delete selected bookmark
+  c             Open collections
+  :home         Return to launcher from any view
+
   Collections
   ─────────────────────────────────────────────────────────────────
   s             Save link to default collection
@@ -215,7 +234,8 @@ public class TerminalInputHandler : IInputHandler
   Application
   ─────────────────────────────────────────────────────────────────
   F5            Refresh current page
-  q / Esc       Quit browser
+  Esc           Go back (quit from launcher)
+  q             Quit browser
   ?             Show this help
 
   Press any key to continue...
