@@ -284,9 +284,11 @@ internal class LauncherRenderer
         ThemePalette p)
     {
         var sb = new System.Text.StringBuilder();
+        var selFg = p.SelectedItemFg.AnsiFg;
         var selBg = p.SelectedItemBg.AnsiBg;
         var accentFg = p.HeaderBorderFg.AnsiFg;
 
+        // Accent bar column (1 char) — not highlighted
         if (showAccent)
         {
             sb.Append($"{accentFg}\u258c{Reset}");
@@ -296,6 +298,7 @@ internal class LauncherRenderer
             sb.Append(' ');
         }
 
+        // Remaining width gets full highlight background on every line
         var contentWidth = cellWidth - 1;
 
         if (lineIdx == nameLineIdx)
@@ -305,28 +308,29 @@ internal class LauncherRenderer
             if (badge.Length > 0)
             {
                 var badgePad = indent - badge.Length - 2;
-                sb.Append($" {accentFg}{badge}{Reset}");
-                sb.Append($"{selBg}{new string(' ', Math.Max(0, badgePad))}");
-                sb.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+                sb.Append($"{selBg} {selFg}{badge}");
+                sb.Append($"{new string(' ', Math.Max(0, badgePad))}");
+                sb.Append($"{Bold}{truncName}{Reset}");
                 sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
             }
             else
             {
-                sb.Append($"{selBg}{new string(' ', indent - 1)}");
-                sb.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+                sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
+                sb.Append($"{Bold}{truncName}{Reset}");
                 sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
             }
         }
         else if (lineIdx == domainLineIdx)
         {
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-            sb.Append($"{selBg}{new string(' ', indent - 1)}");
-            sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}");
-            sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncDomain.Length))}{Reset}");
+            sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
+            sb.Append($"{truncDomain}");
+            sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncDomain.Length))}{Reset}");
         }
         else
         {
-            sb.Append(new string(' ', contentWidth));
+            // Padding lines — full highlight background
+            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
         return sb.ToString();
