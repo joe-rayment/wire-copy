@@ -32,7 +32,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly NavigationService _navigationService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Configuration.BrowserConfiguration _browserConfig;
-    private readonly IBrowserSession _browserSession;
+    private readonly IBrowserSessionControl _browserSession;
     private readonly IThemeProvider _themeProvider;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
@@ -62,7 +62,7 @@ public class BrowserOrchestrator : IBrowserService
         IInputHandler inputHandler,
         NavigationService navigationService,
         IServiceScopeFactory scopeFactory,
-        IBrowserSession browserSession,
+        IBrowserSessionControl browserSession,
         IThemeProvider themeProvider,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
