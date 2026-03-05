@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Infrastructure.Collections;
+using TermReader.Persistence;
 using TermReader.Persistence.Repositories;
 using Xunit;
 
@@ -18,9 +19,11 @@ public class CollectionServiceTests : TestDatabaseFixture
 
     public CollectionServiceTests()
     {
-        _repository = new CollectionRepository(DbContext);
+        var preferences = new InMemoryCollectionPreferences();
+        _repository = new CollectionRepository(DbContext, preferences);
+        var unitOfWork = new UnitOfWork(DbContext, Substitute.For<ILogger<UnitOfWork>>());
         _logger = Substitute.For<ILogger<CollectionService>>();
-        _sut = new CollectionService(_repository, _logger);
+        _sut = new CollectionService(_repository, unitOfWork, _logger);
     }
 
     #region SaveToDefaultCollectionAsync

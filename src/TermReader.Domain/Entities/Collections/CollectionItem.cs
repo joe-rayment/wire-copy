@@ -37,7 +37,12 @@ public class CollectionItem
     /// </summary>
     public bool IsRead { get; private set; }
 
-    private CollectionItem(Guid collectionId, string url, string title)
+    /// <summary>
+    /// Sort order for display (lower values appear first).
+    /// </summary>
+    public int SortOrder { get; private set; }
+
+    private CollectionItem(Guid collectionId, string url, string title, int sortOrder)
     {
         Id = Guid.NewGuid();
         CollectionId = collectionId;
@@ -45,6 +50,7 @@ public class CollectionItem
         Title = title;
         SavedAt = DateTime.UtcNow;
         IsRead = false;
+        SortOrder = sortOrder;
     }
 
     // EF Core constructor
@@ -57,7 +63,7 @@ public class CollectionItem
     /// <summary>
     /// Creates a new collection item.
     /// </summary>
-    public static CollectionItem Create(Guid collectionId, string url, string title)
+    public static CollectionItem Create(Guid collectionId, string url, string title, int sortOrder = 0)
     {
         if (collectionId == Guid.Empty)
             throw new ArgumentException("Collection ID cannot be empty", nameof(collectionId));
@@ -68,7 +74,15 @@ public class CollectionItem
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty", nameof(title));
 
-        return new CollectionItem(collectionId, url, title);
+        return new CollectionItem(collectionId, url, title, sortOrder);
+    }
+
+    /// <summary>
+    /// Sets the sort order for this item.
+    /// </summary>
+    internal void SetSortOrder(int sortOrder)
+    {
+        SortOrder = sortOrder;
     }
 
     /// <summary>

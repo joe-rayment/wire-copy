@@ -32,22 +32,23 @@ public class BookmarkRepository : IBookmarkRepository
             .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
     }
 
-    public async Task AddAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
+    public Task AddAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
     {
-        await _context.Set<Bookmark>().AddAsync(bookmark, cancellationToken);
-        await _context.SaveChangesAsync(cancellationToken);
+        _context.Set<Bookmark>().Add(bookmark);
+        return Task.CompletedTask;
     }
 
-    public async Task UpdateAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
+    public Task UpdateAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
     {
         // Rely on EF Core change tracking to detect modifications.
-        await _context.SaveChangesAsync(cancellationToken);
+        // SaveChangesAsync is called by the service layer via IUnitOfWork.
+        return Task.CompletedTask;
     }
 
-    public async Task DeleteAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
+    public Task DeleteAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
     {
         _context.Set<Bookmark>().Remove(bookmark);
-        await _context.SaveChangesAsync(cancellationToken);
+        return Task.CompletedTask;
     }
 
     public async Task<int> GetNextSortOrderAsync(CancellationToken cancellationToken = default)
@@ -74,9 +75,7 @@ public class BookmarkRepository : IBookmarkRepository
 
         foreach (var bookmark in defaults)
         {
-            await _context.Set<Bookmark>().AddAsync(bookmark, cancellationToken);
+            _context.Set<Bookmark>().Add(bookmark);
         }
-
-        await _context.SaveChangesAsync(cancellationToken);
     }
 }

@@ -89,7 +89,8 @@ public class Collection
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty", nameof(title));
 
-        var item = CollectionItem.Create(Id, url.Trim(), title.Trim());
+        var nextSortOrder = _items.Count > 0 ? _items.Max(i => i.SortOrder) + 1 : 0;
+        var item = CollectionItem.Create(Id, url.Trim(), title.Trim(), nextSortOrder);
         _items.Add(item);
         UpdatedAt = DateTime.UtcNow;
         return item;
@@ -116,6 +117,11 @@ public class Collection
         var index = _items.FindIndex(i => i.Id == itemId);
         if (index > 0)
         {
+            // Swap sort orders so EF detects the change
+            var currentOrder = _items[index].SortOrder;
+            _items[index].SetSortOrder(_items[index - 1].SortOrder);
+            _items[index - 1].SetSortOrder(currentOrder);
+
             (_items[index], _items[index - 1]) = (_items[index - 1], _items[index]);
             UpdatedAt = DateTime.UtcNow;
         }
@@ -129,6 +135,11 @@ public class Collection
         var index = _items.FindIndex(i => i.Id == itemId);
         if (index >= 0 && index < _items.Count - 1)
         {
+            // Swap sort orders so EF detects the change
+            var currentOrder = _items[index].SortOrder;
+            _items[index].SetSortOrder(_items[index + 1].SortOrder);
+            _items[index + 1].SetSortOrder(currentOrder);
+
             (_items[index], _items[index + 1]) = (_items[index + 1], _items[index]);
             UpdatedAt = DateTime.UtcNow;
         }
