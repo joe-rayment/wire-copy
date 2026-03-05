@@ -7,7 +7,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
+using TermReader.Infrastructure.Collections;
+using TermReader.Persistence;
 using Xunit;
 
 namespace TermReader.Tests;
@@ -25,8 +28,11 @@ public class DependencyInjectionTests
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
 
-        // Register terminal browser services
+        // Register terminal browser services (modular DI, matching Program.cs)
         services.AddTerminalBrowser();
+        services.AddPersistence();
+        services.AddCollections();
+        services.AddBookmarks();
 
         _serviceProvider = services.BuildServiceProvider();
     }
