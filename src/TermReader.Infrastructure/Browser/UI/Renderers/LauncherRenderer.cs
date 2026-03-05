@@ -16,7 +16,7 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
     private const string BrightWhiteFg = "\x1b[38;5;15m";
-    private const string SelDomainFg = "\x1b[38;5;239m";
+    private const string SelDomainFg = "\x1b[38;5;245m";
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
