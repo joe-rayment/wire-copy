@@ -118,8 +118,8 @@ public class TerminalInputHandler : IInputHandler
 
             var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
 
-            // Log non-default commands (MoveUp is the default/fallback)
-            if (command.Type != CommandType.MoveUp)
+            // Log actionable commands (skip NoOp)
+            if (command.Type != CommandType.NoOp)
             {
                 _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
             }
@@ -140,7 +140,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.G => new NavigationCommand { Type = CommandType.GoToBottom }, // G (shift+g)
                 ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown }, // J (shift+j)
                 ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp }, // K (shift+k)
-                _ => new NavigationCommand { Type = CommandType.MoveDown }
+                _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }
 
@@ -151,7 +151,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
                 ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
                 ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit }, // Ctrl+C
-                _ => new NavigationCommand { Type = CommandType.MoveDown }
+                _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }
 
@@ -191,8 +191,8 @@ public class TerminalInputHandler : IInputHandler
             // Help
             ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp }, // '?' key
 
-            // Default: just return a no-op
-            _ => new NavigationCommand { Type = CommandType.MoveDown }
+            // Default: no-op for unrecognized keys
+            _ => new NavigationCommand { Type = CommandType.NoOp }
         };
     }
 
@@ -358,9 +358,13 @@ public class TerminalInputHandler : IInputHandler
                 }
             }
         }
-        catch
+        catch (IOException)
         {
             // Fallback if cursor positioning fails
+        }
+        catch (InvalidOperationException)
+        {
+            // Fallback if console operations fail
         }
 
         return Task.FromResult<string?>(null);

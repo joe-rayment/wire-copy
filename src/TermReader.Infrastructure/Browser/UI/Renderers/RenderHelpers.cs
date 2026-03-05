@@ -46,13 +46,31 @@ internal class RenderHelpers
 
     public static List<string> WrapText(string text, int maxWidth)
     {
+        if (maxWidth <= 0)
+        {
+            return new List<string>();
+        }
+
         var lines = new List<string>();
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var currentLine = string.Empty;
 
         foreach (var word in words)
         {
-            if (currentLine.Length + word.Length + 1 > maxWidth)
+            if (word.Length > maxWidth)
+            {
+                if (!string.IsNullOrEmpty(currentLine))
+                {
+                    lines.Add(currentLine);
+                    currentLine = string.Empty;
+                }
+
+                for (var i = 0; i < word.Length; i += maxWidth)
+                {
+                    lines.Add(word.Substring(i, Math.Min(maxWidth, word.Length - i)));
+                }
+            }
+            else if (currentLine.Length + word.Length + 1 > maxWidth)
             {
                 if (!string.IsNullOrEmpty(currentLine))
                 {

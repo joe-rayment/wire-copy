@@ -60,6 +60,7 @@ public enum CommandType
     SwitchToReadable,
 
     // Application
+    NoOp,
     Refresh,
     Quit,
     ShowHelp,

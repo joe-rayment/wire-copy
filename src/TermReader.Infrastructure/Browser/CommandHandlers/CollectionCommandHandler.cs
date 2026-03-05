@@ -159,8 +159,13 @@ internal static class CollectionCommandHandler
                     var service = ctx.CreateCollectionService(scope);
                     await service.MoveItemUpAsync(col.Id, item.Id, ct);
                     await ctx.RefreshCollectionsAsync(ct);
-                    ctx.NavigationService.CollectionItemSelectedIndex =
-                        Math.Max(0, ctx.NavigationService.CollectionItemSelectedIndex - 1);
+                    var refreshedUp = ctx.NavigationService.ActiveCollection;
+                    if (refreshedUp != null)
+                    {
+                        var newIdx = IndexOfItemById(refreshedUp.Items, item.Id);
+                        ctx.NavigationService.CollectionItemSelectedIndex =
+                            newIdx >= 0 ? newIdx : Math.Max(0, ctx.NavigationService.CollectionItemSelectedIndex - 1);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -187,10 +192,14 @@ internal static class CollectionCommandHandler
                     await service.MoveItemDownAsync(col.Id, item.Id, ct);
                     await ctx.RefreshCollectionsAsync(ct);
 
-                    var refreshedCol = ctx.NavigationService.ActiveCollection;
-                    var refreshedCount = refreshedCol?.Items.Count ?? 0;
-                    ctx.NavigationService.CollectionItemSelectedIndex =
-                        Math.Min(Math.Max(0, refreshedCount - 1), ctx.NavigationService.CollectionItemSelectedIndex + 1);
+                    var refreshedDown = ctx.NavigationService.ActiveCollection;
+                    if (refreshedDown != null)
+                    {
+                        var newIdx = IndexOfItemById(refreshedDown.Items, item.Id);
+                        var maxIdx = Math.Max(0, refreshedDown.Items.Count - 1);
+                        ctx.NavigationService.CollectionItemSelectedIndex =
+                            newIdx >= 0 ? newIdx : Math.Min(maxIdx, ctx.NavigationService.CollectionItemSelectedIndex + 1);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -216,5 +225,18 @@ internal static class CollectionCommandHandler
             ctx.NavigationService.ExitCollections();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+    }
+
+    private static int IndexOfItemById(IReadOnlyList<Domain.Entities.Collections.CollectionItem> items, Guid id)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i].Id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

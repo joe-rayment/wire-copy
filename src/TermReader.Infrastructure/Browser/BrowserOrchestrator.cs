@@ -302,7 +302,7 @@ public class BrowserOrchestrator : IBrowserService
         var allLines = new List<string>();
         foreach (var paragraph in content.Paragraphs)
         {
-            var wrapped = WrapText(paragraph, maxWidth - 4);
+            var wrapped = UI.Renderers.RenderHelpers.WrapText(paragraph, maxWidth - 4);
             foreach (var line in wrapped)
             {
                 allLines.Add($"  {line}");
@@ -312,40 +312,6 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         return allLines;
-    }
-
-    /// <summary>
-    /// Wraps text into lines that fit within maxWidth.
-    /// </summary>
-    private static List<string> WrapText(string text, int maxWidth)
-    {
-        var lines = new List<string>();
-        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var currentLine = string.Empty;
-
-        foreach (var word in words)
-        {
-            if (currentLine.Length + word.Length + 1 > maxWidth)
-            {
-                if (!string.IsNullOrEmpty(currentLine))
-                {
-                    lines.Add(currentLine);
-                }
-
-                currentLine = word;
-            }
-            else
-            {
-                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
-            }
-        }
-
-        if (!string.IsNullOrEmpty(currentLine))
-        {
-            lines.Add(currentLine);
-        }
-
-        return lines;
     }
 
     /// <summary>
@@ -921,7 +887,8 @@ public class BrowserOrchestrator : IBrowserService
                 if (updatedActive != null)
                 {
                     _navigationService.EnterCollection(updatedActive);
-                    _navigationService.CollectionItemSelectedIndex = savedItemIndex;
+                    var maxIndex = Math.Max(0, updatedActive.Items.Count - 1);
+                    _navigationService.CollectionItemSelectedIndex = Math.Min(savedItemIndex, maxIndex);
                 }
             }
         }

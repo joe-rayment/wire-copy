@@ -166,10 +166,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_UnknownKey_ReturnsMoveDown()
+    public void MapKeyToCommand_UnknownKey_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, 0);
-        result.Type.Should().Be(CommandType.MoveDown);
+        result.Type.Should().Be(CommandType.NoOp);
     }
 
     #endregion
@@ -198,10 +198,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_ShiftUnknown_ReturnsMoveDown()
+    public void MapKeyToCommand_ShiftUnknown_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, ConsoleModifiers.Shift);
-        result.Type.Should().Be(CommandType.MoveDown);
+        result.Type.Should().Be(CommandType.NoOp);
     }
 
     #endregion
@@ -230,10 +230,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_CtrlUnknown_ReturnsMoveDown()
+    public void MapKeyToCommand_CtrlUnknown_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, ConsoleModifiers.Control);
-        result.Type.Should().Be(CommandType.MoveDown);
+        result.Type.Should().Be(CommandType.NoOp);
     }
 
     #endregion

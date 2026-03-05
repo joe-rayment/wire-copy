@@ -84,7 +84,7 @@ public class TerminalPageRenderer : IPageRenderer
         if (wrappedLines != null)
         {
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options);
-            _articleRenderer.RenderReaderStatusBar(context, wrappedLines.Count, options.MaxContentWidth);
+            _articleRenderer.RenderReaderStatusBar(context, wrappedLines.Count, options.MaxContentWidth, viewportHeight);
         }
         else
         {
