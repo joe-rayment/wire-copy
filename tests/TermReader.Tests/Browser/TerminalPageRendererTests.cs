@@ -316,4 +316,98 @@ public class TerminalPageRendererTests
         var act = () => _sut.RenderReadable(page, context, options);
         act.Should().NotThrow();
     }
+
+    #region Behavioral verification (Console.Out redirect)
+
+    private string CaptureConsoleOutput(Action action)
+    {
+        var originalOut = Console.Out;
+        try
+        {
+            using var sw = new StringWriter();
+            Console.SetOut(sw);
+            action();
+            return sw.ToString();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    [Fact]
+    public void RenderLoading_OutputContainsLoadingText()
+    {
+        var output = CaptureConsoleOutput(() => _sut.RenderLoading("https://example.com"));
+        output.Should().Contain("Loading");
+    }
+
+    [Fact]
+    public void RenderLoading_OutputContainsUrl()
+    {
+        var output = CaptureConsoleOutput(() => _sut.RenderLoading("https://example.com/page"));
+        output.Should().Contain("example.com");
+    }
+
+    [Fact]
+    public void RenderError_OutputContainsErrorMessage()
+    {
+        var output = CaptureConsoleOutput(
+            () => _sut.RenderError("Connection refused", "https://example.com"));
+        output.Should().Contain("Connection refused");
+    }
+
+    [Fact]
+    public void RenderError_OutputContainsHelpHint()
+    {
+        var output = CaptureConsoleOutput(
+            () => _sut.RenderError("Error", "https://example.com"));
+        output.Should().ContainAny("q", "quit", "back");
+    }
+
+    [Fact]
+    public void RenderHierarchical_OutputContainsPageTitle()
+    {
+        var page = CreateTestPage(title: "My Test Page", withLinks: true);
+        var context = CreateContext();
+        var options = CreateOptions();
+
+        var output = CaptureConsoleOutput(() => _sut.RenderHierarchical(page, context, options));
+        output.Should().Contain("My Test Page");
+    }
+
+    [Fact]
+    public void RenderHierarchical_OutputContainsLinkText()
+    {
+        var page = CreateTestPage(withLinks: true);
+        var context = CreateContext();
+        var options = CreateOptions();
+
+        var output = CaptureConsoleOutput(() => _sut.RenderHierarchical(page, context, options));
+        output.Should().ContainAny("Link One", "Link Two");
+    }
+
+    [Fact]
+    public void RenderReadable_OutputContainsArticleTitle()
+    {
+        var page = CreateTestPage(withReadableContent: true);
+        var context = CreateContext(mode: ViewMode.Readable);
+        var options = CreateOptions();
+
+        var output = CaptureConsoleOutput(() => _sut.RenderReadable(page, context, options));
+        output.Should().Contain("Article Title");
+    }
+
+    [Fact]
+    public void RenderReadable_OutputContainsParagraphContent()
+    {
+        var page = CreateTestPage(withReadableContent: true);
+        var context = CreateContext(mode: ViewMode.Readable);
+        var options = CreateOptions();
+
+        var output = CaptureConsoleOutput(() => _sut.RenderReadable(page, context, options));
+        output.Should().Contain("First paragraph");
+    }
+
+    #endregion
 }
