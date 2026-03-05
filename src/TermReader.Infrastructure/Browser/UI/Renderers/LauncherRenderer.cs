@@ -207,13 +207,13 @@ internal class LauncherRenderer
 
         if (isCollections)
         {
-            name = "Collections";
+            name = "COLLECTIONS";
             domain = "saved links";
         }
         else
         {
             var bookmark = bookmarks[itemIdx];
-            name = bookmark.Name;
+            name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
         }
 
@@ -425,11 +425,11 @@ internal class LauncherRenderer
         _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
         _helpers.WriteLine();
 
-        var collLabel = "[c]  Collections";
+        var collLabel = "[c]  COLLECTIONS";
         var collPad = Math.Max(0, (width - collLabel.Length) / 2);
         _helpers.WriteLine(
             $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
-            $"  {p.PrimaryText.AnsiFg}Collections{Reset}");
+            $"  {p.PrimaryText.AnsiFg}{Bold}COLLECTIONS{Reset}");
 
         var domainPad = Math.Max(0, (width - "saved links".Length) / 2);
         _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}saved links{Reset}");
