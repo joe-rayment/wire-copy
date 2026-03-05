@@ -42,12 +42,25 @@ public class BrowserOrchestratorTests
         _browserConfig = Options.Create(new BrowserConfiguration());
         _logger = Substitute.For<ILogger<BrowserOrchestrator>>();
 
-        // Set up scoped service factory for ICollectionService
+        // Set up scoped service factory with realistic mock returns
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
         var scope = Substitute.For<IServiceScope>();
         var serviceProvider = Substitute.For<IServiceProvider>();
+
         var collectionService = Substitute.For<ICollectionService>();
+        collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Collections.Collection>>(
+                new List<Domain.Entities.Collections.Collection>()));
+        collectionService.GetDefaultCollectionAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Read Later")));
+
+        var bookmarkService = Substitute.For<IBookmarkService>();
+        bookmarkService.GetAllBookmarksAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Bookmarks.Bookmark>>(
+                new List<Domain.Entities.Bookmarks.Bookmark>()));
+
         serviceProvider.GetService(typeof(ICollectionService)).Returns(collectionService);
+        serviceProvider.GetService(typeof(IBookmarkService)).Returns(bookmarkService);
         scope.ServiceProvider.Returns(serviceProvider);
         _scopeFactory.CreateScope().Returns(scope);
 
@@ -275,12 +288,25 @@ public class BrowserOrchestratorNavigationTests
         _browserConfig = Options.Create(new BrowserConfiguration());
         _logger = Substitute.For<ILogger<BrowserOrchestrator>>();
 
-        // Set up scoped service factory for ICollectionService
+        // Set up scoped service factory with realistic mock returns
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
         var scope = Substitute.For<IServiceScope>();
         var serviceProvider = Substitute.For<IServiceProvider>();
+
         var collectionService = Substitute.For<ICollectionService>();
+        collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Collections.Collection>>(
+                new List<Domain.Entities.Collections.Collection>()));
+        collectionService.GetDefaultCollectionAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Read Later")));
+
+        var bookmarkService = Substitute.For<IBookmarkService>();
+        bookmarkService.GetAllBookmarksAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Bookmarks.Bookmark>>(
+                new List<Domain.Entities.Bookmarks.Bookmark>()));
+
         serviceProvider.GetService(typeof(ICollectionService)).Returns(collectionService);
+        serviceProvider.GetService(typeof(IBookmarkService)).Returns(bookmarkService);
         scope.ServiceProvider.Returns(serviceProvider);
         _scopeFactory.CreateScope().Returns(scope);
 
