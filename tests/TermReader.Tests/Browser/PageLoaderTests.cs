@@ -311,6 +311,47 @@ public class PageLoaderTests
         result.Success.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task LoadAsync_WithHttpClient_ArticleAuthorUrl_ReturnsNullAuthor()
+    {
+        // Arrange — only article:author with a URL, no meta[name=author]
+        var html = @"<html><head>
+            <title>Test Article</title>
+            <meta property='article:author' content='https://www.nytimes.com/by/blacki-migliozzi' />
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert — PageLoader should NOT expose the URL as an author name
+        result.Success.Should().BeTrue();
+        result.Metadata!.Author.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoadAsync_WithHttpClient_MetaNameAuthorAndArticleAuthorUrl_PrefersName()
+    {
+        // Arrange — both meta[name=author] (real name) and article:author (URL)
+        var html = @"<html><head>
+            <title>Test Article</title>
+            <meta name='author' content='John Doe' />
+            <meta property='article:author' content='https://www.nytimes.com/by/someone' />
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Metadata!.Author.Should().Be("John Doe");
+    }
+
     /// <summary>
     /// Fake HttpMessageHandler for testing HttpClient-based code without real HTTP calls.
     /// </summary>

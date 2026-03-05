@@ -314,4 +314,128 @@ public class ReadableContentTests
         result.Should().NotBeNull();
         result!.Title.Should().Be("Untitled Article");
     }
+
+    private static string BuildArticleHtml(string headExtra = "", string bodyExtra = "")
+    {
+        var longParagraph = new string('x', 60);
+        return $@"<html><head>{headExtra}</head><body><article>
+            <h1>Test</h1>
+            <p>{longParagraph} first paragraph content here.</p>
+            <p>{longParagraph} second paragraph content here.</p>
+            <p>{longParagraph} third paragraph content here.</p>
+            {bodyExtra}
+        </article></body></html>";
+    }
+
+    private static async Task<string?> ExtractAuthorFromHtml(string html)
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+        return result?.Author;
+    }
+
+    [Fact]
+    public async Task Extractor_MetaNameAuthor_WithName_ReturnsName()
+    {
+        var html = BuildArticleHtml("<meta name='author' content='Jane Doe' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Jane Doe");
+    }
+
+    [Fact]
+    public async Task Extractor_ArticleAuthorUrl_DoesNotReturnRawUrl()
+    {
+        var html = BuildArticleHtml("<meta property='article:author' content='https://www.nytimes.com/by/blacki-migliozzi' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().NotStartWith("http");
+    }
+
+    [Fact]
+    public async Task Extractor_ArticleAuthorUrl_ExtractsNameFromPath()
+    {
+        var html = BuildArticleHtml("<meta property='article:author' content='https://www.nytimes.com/by/blacki-migliozzi' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Blacki Migliozzi");
+    }
+
+    [Fact]
+    public async Task Extractor_JsonLd_AuthorObject_ReturnsName()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            {""@type"":""NewsArticle"",""author"":{""@type"":""Person"",""name"":""John Smith""}}
+        </script>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("John Smith");
+    }
+
+    [Fact]
+    public async Task Extractor_JsonLd_AuthorArray_ReturnsCommaSeparatedNames()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            {""@type"":""NewsArticle"",""author"":[{""name"":""Alice""},{""name"":""Bob""}]}
+        </script>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Alice, Bob");
+    }
+
+    [Fact]
+    public async Task Extractor_JsonLd_AuthorString_ReturnsName()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            {""@type"":""Article"",""author"":""Sarah Connor""}
+        </script>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Sarah Connor");
+    }
+
+    [Fact]
+    public async Task Extractor_BylineElement_WithLink_ReturnsLinkText()
+    {
+        var html = BuildArticleHtml(bodyExtra: "<div class='byline'><a href='/author/jane'>Jane Doe</a></div>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Jane Doe");
+    }
+
+    [Fact]
+    public async Task Extractor_ItempropAuthor_ReturnsName()
+    {
+        var html = BuildArticleHtml(bodyExtra: "<span itemprop='author'><span itemprop='name'>Alex Writer</span></span>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Alex Writer");
+    }
+
+    [Fact]
+    public async Task Extractor_MetaNameAuthorUrl_FallsBackToUrlParsing()
+    {
+        var html = BuildArticleHtml("<meta name='author' content='https://www.washingtonpost.com/people/mary-kay-johnson/' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Mary Kay Johnson");
+    }
+
+    [Fact]
+    public async Task Extractor_MetaNameAuthor_PreferredOverArticleAuthorUrl()
+    {
+        var html = BuildArticleHtml(
+            "<meta name='author' content='Real Author' />" +
+            "<meta property='article:author' content='https://example.com/by/someone-else' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Real Author");
+    }
+
+    [Fact]
+    public async Task Extractor_UrlWithNoParseableName_ReturnsNull()
+    {
+        var html = BuildArticleHtml("<meta property='article:author' content='https://example.com/' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Extractor_HyphenatedUrlPath_ProperTitleCasing()
+    {
+        var html = BuildArticleHtml("<meta property='article:author' content='https://example.com/authors/mary-kay-johnson' />");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Mary Kay Johnson");
+    }
 }

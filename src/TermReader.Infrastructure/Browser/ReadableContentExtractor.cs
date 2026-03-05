@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
@@ -171,31 +173,48 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static string? ExtractAuthor(HtmlDocument doc)
     {
-        // Try meta tags first
-        var metaAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", null) ??
-                        doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", null);
-        if (!string.IsNullOrWhiteSpace(metaAuthor))
+        // 1. meta[name="author"] — most reliable when it's a real name (not URL)
+        var metaNameAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", null);
+        if (!string.IsNullOrWhiteSpace(metaNameAuthor) && !IsUrl(metaNameAuthor))
         {
-            return CleanAuthorText(metaAuthor);
+            return CleanAuthorText(metaNameAuthor);
         }
 
-        // Try element selectors
-        var elementSelectors = new[]
+        // 2. JSON-LD structured data
+        var jsonLdAuthor = ExtractAuthorFromJsonLd(doc);
+        if (!string.IsNullOrWhiteSpace(jsonLdAuthor))
         {
-            "//*[@itemprop='author']",
+            return CleanAuthorText(jsonLdAuthor);
+        }
+
+        // 3. itemprop="author" with nested itemprop="name"
+        var itempropAuthor = doc.DocumentNode.SelectSingleNode("//*[@itemprop='author']");
+        if (itempropAuthor != null)
+        {
+            var nestedName = itempropAuthor.SelectSingleNode(".//*[@itemprop='name']");
+            var text = CleanText(nestedName?.InnerText ?? itempropAuthor.InnerText);
+            text = CleanAuthorText(text);
+            if (!string.IsNullOrWhiteSpace(text) && text.Length > 1 && text.Length < 100)
+            {
+                return text;
+            }
+        }
+
+        // 4. Byline class/rel selectors
+        var bylineSelectors = new[]
+        {
             "//*[@class='author' or contains(@class, 'byline')]//a",
             "//*[@class='author' or contains(@class, 'byline')]",
             "//*[@rel='author']"
         };
 
-        foreach (var selector in elementSelectors)
+        foreach (var selector in bylineSelectors)
         {
             var node = doc.DocumentNode.SelectSingleNode(selector);
             if (node != null)
             {
                 var text = CleanText(node.InnerText);
                 text = CleanAuthorText(text);
-
                 if (!string.IsNullOrWhiteSpace(text) && text.Length > 1 && text.Length < 100)
                 {
                     return text;
@@ -203,12 +222,169 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             }
         }
 
+        // 5. article:author meta (OG spec — typically a URL)
+        var articleAuthor = doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", null);
+        if (!string.IsNullOrWhiteSpace(articleAuthor))
+        {
+            if (!IsUrl(articleAuthor))
+            {
+                return CleanAuthorText(articleAuthor);
+            }
+
+            var nameFromUrl = ExtractNameFromUrl(articleAuthor);
+            if (nameFromUrl != null)
+            {
+                return nameFromUrl;
+            }
+        }
+
+        // 6. meta[name="author"] URL fallback
+        if (!string.IsNullOrWhiteSpace(metaNameAuthor) && IsUrl(metaNameAuthor))
+        {
+            var nameFromUrl = ExtractNameFromUrl(metaNameAuthor);
+            if (nameFromUrl != null)
+            {
+                return nameFromUrl;
+            }
+        }
+
         return null;
+    }
+
+    private static string? ExtractAuthorFromJsonLd(HtmlDocument doc)
+    {
+        var scriptNodes = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+        if (scriptNodes == null)
+        {
+            return null;
+        }
+
+        foreach (var script in scriptNodes)
+        {
+            try
+            {
+                var json = script.InnerText.Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    continue;
+                }
+
+                using var jsonDoc = JsonDocument.Parse(json);
+                var root = jsonDoc.RootElement;
+
+                // JSON-LD can be wrapped in an array
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in root.EnumerateArray())
+                    {
+                        var name = ExtractAuthorFromJsonLdElement(item);
+                        if (name != null)
+                        {
+                            return name;
+                        }
+                    }
+                }
+                else
+                {
+                    var name = ExtractAuthorFromJsonLdElement(root);
+                    if (name != null)
+                    {
+                        return name;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Malformed JSON-LD, skip
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractAuthorFromJsonLdElement(JsonElement element)
+    {
+        if (!element.TryGetProperty("author", out var authorElement))
+        {
+            return null;
+        }
+
+        return authorElement.ValueKind switch
+        {
+            JsonValueKind.String => authorElement.GetString(),
+            JsonValueKind.Object => authorElement.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null,
+            JsonValueKind.Array => ExtractAuthorNamesFromArray(authorElement),
+            _ => null
+        };
+    }
+
+    private static string? ExtractAuthorNamesFromArray(JsonElement array)
+    {
+        var names = new List<string>();
+
+        foreach (var item in array.EnumerateArray())
+        {
+            string? name = item.ValueKind switch
+            {
+                JsonValueKind.String => item.GetString(),
+                JsonValueKind.Object => item.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null,
+                _ => null
+            };
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                names.Add(name);
+            }
+        }
+
+        return names.Count > 0 ? string.Join(", ", names) : null;
+    }
+
+    private static bool IsUrl(string text)
+    {
+        return Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    private static string? ExtractNameFromUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var path = uri.AbsolutePath.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(path) || path == "/")
+        {
+            return null;
+        }
+
+        var lastSegment = path.Split('/').LastOrDefault(s => !string.IsNullOrWhiteSpace(s));
+        if (string.IsNullOrWhiteSpace(lastSegment))
+        {
+            return null;
+        }
+
+        // Skip segments that are numeric IDs or have file extensions
+        if (long.TryParse(lastSegment, out _) || lastSegment.Contains('.'))
+        {
+            return null;
+        }
+
+        // Replace hyphens/underscores with spaces and title-case
+        var name = lastSegment.Replace('-', ' ').Replace('_', ' ');
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(name);
     }
 
     private static string? CleanAuthorText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        // Reject URLs that slipped through
+        if (IsUrl(text))
         {
             return null;
         }

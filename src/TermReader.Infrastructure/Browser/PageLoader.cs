@@ -150,7 +150,7 @@ public class PageLoader : IPageLoader
         var title = ExtractTitle(doc);
         var description = ExtractMetaContent(doc, "description") ?? ExtractMetaContent(doc, "og:description");
         var canonicalUrl = ExtractCanonicalUrl(doc) ?? ExtractMetaContent(doc, "og:url");
-        var author = ExtractMetaContent(doc, "author") ?? ExtractMetaContent(doc, "article:author");
+        var author = GetNonUrlAuthor(doc);
         var publishedDate = ParsePublishedDate(doc);
         var favicon = ExtractFaviconUrl(doc, url);
 
@@ -186,6 +186,29 @@ public class PageLoader : IPageLoader
                    doc.DocumentNode.SelectSingleNode($"//meta[@property='{name}']");
 
         return node?.GetAttributeValue("content", null);
+    }
+
+    private static string? GetNonUrlAuthor(HtmlDocument doc)
+    {
+        var metaAuthor = ExtractMetaContent(doc, "author");
+        if (!string.IsNullOrWhiteSpace(metaAuthor) && !IsAuthorUrl(metaAuthor))
+        {
+            return metaAuthor;
+        }
+
+        var articleAuthor = ExtractMetaContent(doc, "article:author");
+        if (!string.IsNullOrWhiteSpace(articleAuthor) && !IsAuthorUrl(articleAuthor))
+        {
+            return articleAuthor;
+        }
+
+        return null;
+    }
+
+    private static bool IsAuthorUrl(string text)
+    {
+        return Uri.TryCreate(text, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
     private static string? ExtractCanonicalUrl(HtmlDocument doc)
