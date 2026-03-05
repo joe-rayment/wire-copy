@@ -69,8 +69,9 @@ public class BookmarkRepository : IBookmarkRepository
         var defaults = new[]
         {
             Bookmark.Create("Maclean's", "https://macleans.ca", 0),
-            Bookmark.Create("NYT Today's Paper", "https://www.nytimes.com/section/todayspaper", 1),
-            Bookmark.Create("The Verge", "https://www.theverge.com", 2),
+            Bookmark.Create("CBC News", "https://www.cbc.ca/news", 1),
+            Bookmark.Create("NYT Today's Paper", "https://www.nytimes.com/section/todayspaper", 2),
+            Bookmark.Create("The Verge", "https://www.theverge.com", 3),
         };
 
         foreach (var bookmark in defaults)
