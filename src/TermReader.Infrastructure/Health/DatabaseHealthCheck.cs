@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
-using TermReader.Infrastructure.Persistence;
+using TermReader.Persistence;
 
 namespace TermReader.Infrastructure.Health;
 

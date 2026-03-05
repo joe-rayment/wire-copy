@@ -61,7 +61,7 @@ internal class CollectionRenderer
                 var isSelected = i == selectedIndex;
                 var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
 
-                var star = isDefault ? $" {p.PromptFg.AnsiFg}\u2605{Reset}" : "";
+                var star = isDefault ? $" {p.PromptFg.AnsiFg}\u2605{Reset}" : string.Empty;
                 var itemCount = collection.Items.Count;
                 var countText = $"({itemCount})";
 
@@ -75,7 +75,7 @@ internal class CollectionRenderer
                 if (availableWidth < 30)
                 {
                     displayName = RenderHelpers.TruncateText(collection.Name, availableWidth - starLen);
-                    countDisplay = "";
+                    countDisplay = string.Empty;
                 }
                 else if (collection.Name.Length + countLen + starLen > availableWidth)
                 {
@@ -121,7 +121,7 @@ internal class CollectionRenderer
         _helpers.WriteLine();
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
         var itemCount = collection.Items.Count;
-        var headerText = RenderHelpers.TruncateText($"{collection.Name} ({itemCount} item{(itemCount == 1 ? "" : "s")})", width - 4);
+        var headerText = RenderHelpers.TruncateText($"{collection.Name} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})", width - 4);
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}{headerText.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
         _helpers.WriteLine();
@@ -153,7 +153,7 @@ internal class CollectionRenderer
                     ? $"{p.ReadItemFg.AnsiFg}\u25cb{Reset}"
                     : $"{p.LinkContent.AnsiFg}\u25cf{Reset}";
 
-                var domain = "";
+                var domain = string.Empty;
                 try
                 {
                     var uri = new Uri(item.Url);

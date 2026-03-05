@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\TermReader.Domain\TermReader.Domain.csproj" />
     <ProjectReference Include="..\..\src\TermReader.Application\TermReader.Application.csproj" />
     <ProjectReference Include="..\..\src\TermReader.Infrastructure\TermReader.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\TermReader.Persistence\TermReader.Persistence.csproj" />
     <ProjectReference Include="..\..\src\TermReader.API\TermReader.API.csproj" />
   </ItemGroup>
 

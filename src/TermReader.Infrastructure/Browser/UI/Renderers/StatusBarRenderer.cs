@@ -34,8 +34,8 @@ internal class StatusBarRenderer
 
         var modeLabel = GetModeLabel(mode);
         var hints = GetKeyHints(mode, p);
-        var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : "";
-        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : "";
+        var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
+        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
 
         _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel} | {themeName}{Reset} {hints}{search}");
     }
@@ -57,31 +57,57 @@ internal class StatusBarRenderer
     {
         return mode switch
         {
-            ViewMode.Hierarchical => FormatHints(p,
-                ("j/k", "move"), ("h", "collapse"), ("l", "expand"),
-                ("Enter", "select"), ("v", "reader"), ("/", "search"),
-                (":", "cmd"), ("q", "quit")),
-            ViewMode.Readable => FormatHints(p,
-                ("j/k", "scroll"), ("v", "links"), ("b", "back"),
-                ("/", "search"), (":", "cmd"), ("q", "quit")),
-            ViewMode.CollectionList => FormatHints(p,
-                ("j/k", "move"), ("Enter", "open"), ("s", "set-default"),
-                ("d", "delete"), (":new", "create"), ("q", "quit")),
-            ViewMode.CollectionItems => FormatHints(p,
-                ("j/k", "move"), ("Enter", "open"), ("d", "remove"),
-                ("J/K", "reorder"), ("b", "back"), (":export", "export"),
+            ViewMode.Hierarchical => FormatHints(
+                p,
+                ("j/k", "move"),
+                ("h", "collapse"),
+                ("l", "expand"),
+                ("Enter", "select"),
+                ("v", "reader"),
+                ("/", "search"),
+                (":", "cmd"),
                 ("q", "quit")),
-            ViewMode.Launcher => FormatHints(p,
-                ("h/j/k/l", "navigate"), ("Enter", "open"), ("a", "add"),
-                ("d", "delete"), ("c", "collections"), (":", "cmd"),
+            ViewMode.Readable => FormatHints(
+                p,
+                ("j/k", "scroll"),
+                ("v", "links"),
+                ("b", "back"),
+                ("/", "search"),
+                (":", "cmd"),
+                ("q", "quit")),
+            ViewMode.CollectionList => FormatHints(
+                p,
+                ("j/k", "move"),
+                ("Enter", "open"),
+                ("s", "set-default"),
+                ("d", "delete"),
+                (":new", "create"),
+                ("q", "quit")),
+            ViewMode.CollectionItems => FormatHints(
+                p,
+                ("j/k", "move"),
+                ("Enter", "open"),
+                ("d", "remove"),
+                ("J/K", "reorder"),
+                ("b", "back"),
+                (":export", "export"),
+                ("q", "quit")),
+            ViewMode.Launcher => FormatHints(
+                p,
+                ("h/j/k/l", "navigate"),
+                ("Enter", "open"),
+                ("a", "add"),
+                ("d", "delete"),
+                ("c", "collections"),
+                (":", "cmd"),
                 ("q", "quit")),
             _ => $"{p.SecondaryText.AnsiFg}q:quit{Reset}"
         };
     }
 
-    private static string FormatHints(ThemePalette p, params (string key, string action)[] hints)
+    private static string FormatHints(ThemePalette p, params (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
-            $"{p.PrimaryText.AnsiFg}{h.key}{Reset}{p.SecondaryText.AnsiFg}:{h.action}{Reset}"));
+            $"{p.PrimaryText.AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
     }
 }

@@ -345,7 +345,8 @@ public class TerminalInputHandler : IInputHandler
                     continue;
                 }
 
-                if (keyInfo.KeyChar >= 32) // Printable character
+                // Printable character
+                if (keyInfo.KeyChar >= 32)
                 {
                     input.Append(keyInfo.KeyChar);
                     Console.Write(keyInfo.KeyChar);

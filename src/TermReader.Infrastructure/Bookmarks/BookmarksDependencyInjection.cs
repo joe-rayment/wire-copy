@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using TermReader.Application.Interfaces;
-using TermReader.Infrastructure.Persistence.Repositories;
+using TermReader.Persistence.Repositories;
 
 namespace TermReader.Infrastructure.Bookmarks;
 

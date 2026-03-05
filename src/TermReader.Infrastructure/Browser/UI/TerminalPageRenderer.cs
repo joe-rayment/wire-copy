@@ -20,7 +20,6 @@ namespace TermReader.Infrastructure.Browser.UI;
 public class TerminalPageRenderer : IPageRenderer
 {
     private readonly IThemeProvider _themeProvider;
-    private readonly ILogger<TerminalPageRenderer> _logger;
     private readonly RenderHelpers _helpers;
     private readonly LinkTreeRenderer _linkTreeRenderer;
     private readonly ArticleRenderer _articleRenderer;
@@ -31,7 +30,6 @@ public class TerminalPageRenderer : IPageRenderer
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
     {
         _themeProvider = themeProvider;
-        _logger = logger;
         _helpers = new RenderHelpers();
         _linkTreeRenderer = new LinkTreeRenderer(_helpers, themeProvider);
         _articleRenderer = new ArticleRenderer(_helpers, themeProvider);

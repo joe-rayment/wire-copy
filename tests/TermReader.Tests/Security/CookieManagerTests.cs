@@ -15,7 +15,7 @@ using TermReader.Infrastructure.Browser.Models;
 using TermReader.Infrastructure.Security;
 using Xunit;
 
-namespace TermReader.Tests;
+namespace TermReader.Tests.Security;
 
 public class CookieManagerTests : IDisposable
 {

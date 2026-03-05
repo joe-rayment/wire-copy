@@ -11,6 +11,11 @@ namespace TermReader.Infrastructure.Browser;
 public interface IBrowserSession : IDisposable
 {
     /// <summary>
+    /// Gets a value indicating whether there is an active WebDriver instance.
+    /// </summary>
+    bool HasActiveDriver { get; }
+
+    /// <summary>
     /// Gets or creates a WebDriver instance. Returns the existing driver
     /// if one is active, or creates a new one if none exists or the previous
     /// driver has crashed.
@@ -24,11 +29,6 @@ public interface IBrowserSession : IDisposable
     /// allowing it to be reused by subsequent calls.
     /// </summary>
     void ReleaseDriver();
-
-    /// <summary>
-    /// Gets a value indicating whether there is an active WebDriver instance.
-    /// </summary>
-    bool HasActiveDriver { get; }
 
     /// <summary>
     /// Eagerly initializes the browser driver in the background so the first

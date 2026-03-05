@@ -15,8 +15,15 @@ public class OpmlExporter : ICollectionExporter
 
     public async Task ExportAsync(Collection collection, ExportOptions options, CancellationToken cancellationToken = default)
     {
-        if (collection == null) throw new ArgumentNullException(nameof(collection));
-        if (options == null) throw new ArgumentNullException(nameof(options));
+        if (collection == null)
+        {
+            throw new ArgumentNullException(nameof(collection));
+        }
+
+        if (options == null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
 
         var name = options.CustomName ?? collection.Name;
         var datestamp = options.IncludeDatestamp

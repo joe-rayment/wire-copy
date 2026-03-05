@@ -27,5 +27,10 @@ public enum ViewMode
     /// <summary>
     /// Shows items within a selected collection.
     /// </summary>
-    CollectionItems
+    CollectionItems,
+
+    /// <summary>
+    /// Launcher home screen with bookmark tiles.
+    /// </summary>
+    Launcher
 }

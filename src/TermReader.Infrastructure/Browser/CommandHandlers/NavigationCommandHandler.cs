@@ -1,0 +1,344 @@
+// Educational and personal use only.
+
+using Microsoft.Extensions.Logging;
+using TermReader.Application.DTOs.Browser;
+using TermReader.Domain.Enums.Browser;
+
+namespace TermReader.Infrastructure.Browser.CommandHandlers;
+
+/// <summary>
+/// Handles navigation commands: move up/down, page up/down, go to top/bottom,
+/// go back/forward, expand/collapse nodes, activate links.
+/// </summary>
+internal static class NavigationCommandHandler
+{
+    public static async Task HandleMoveDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.CollectionList)
+        {
+            var maxIdx = (ctx.Collections?.Count ?? 0) - 1;
+            if (maxIdx >= 0)
+            {
+                ctx.NavigationService.CollectionSelectedIndex =
+                    Math.Min(ctx.NavigationService.CollectionSelectedIndex + 1, maxIdx);
+            }
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                var maxItemIdx = activeCol.Items.Count - 1;
+                if (maxItemIdx >= 0)
+                {
+                    ctx.NavigationService.CollectionItemSelectedIndex =
+                        Math.Min(ctx.NavigationService.CollectionItemSelectedIndex + 1, maxItemIdx);
+                }
+            }
+        }
+        else if (viewMode == ViewMode.Hierarchical)
+        {
+            tree?.SelectNext();
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            ctx.EnsureLineCache(options);
+            var vpHeight = ctx.GetReaderViewportHeight(options);
+            var maxOffset = Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight);
+            ctx.NavigationService.SetScrollOffset(
+                Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + 1, maxOffset));
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleMoveUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.CollectionList)
+        {
+            ctx.NavigationService.CollectionSelectedIndex =
+                Math.Max(ctx.NavigationService.CollectionSelectedIndex - 1, 0);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.CollectionItemSelectedIndex =
+                Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, 0);
+        }
+        else if (viewMode == ViewMode.Hierarchical)
+        {
+            tree?.SelectPrevious();
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            ctx.NavigationService.SetScrollOffset(
+                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - 1));
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandlePageDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.Readable)
+        {
+            ctx.EnsureLineCache(options);
+            var vpHeight = ctx.GetReaderViewportHeight(options);
+            var halfPage = Math.Max(1, vpHeight / 2);
+            var maxOff = Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight);
+            ctx.NavigationService.SetScrollOffset(
+                Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + halfPage, maxOff));
+        }
+        else if (viewMode == ViewMode.Hierarchical && tree != null)
+        {
+            var halfVp = Math.Max(1, ctx.GetHierarchicalViewportHeight(options) / 2);
+            for (var i = 0; i < halfVp; i++)
+            {
+                tree.SelectNext();
+            }
+
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            ctx.NavigationService.SetScrollOffset(ctx.NavigationService.CurrentContext.ScrollOffset + 10);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandlePageUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.Readable)
+        {
+            ctx.EnsureLineCache(options);
+            var vpHeight = ctx.GetReaderViewportHeight(options);
+            var halfPage = Math.Max(1, vpHeight / 2);
+            ctx.NavigationService.SetScrollOffset(
+                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - halfPage));
+        }
+        else if (viewMode == ViewMode.Hierarchical && tree != null)
+        {
+            var halfVp = Math.Max(1, ctx.GetHierarchicalViewportHeight(options) / 2);
+            for (var i = 0; i < halfVp; i++)
+            {
+                tree.SelectPrevious();
+            }
+
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            ctx.NavigationService.SetScrollOffset(
+                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - 10));
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleGoToTop(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        ctx.NavigationService.SetScrollOffset(0);
+        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical && tree != null)
+        {
+            var firstNode = tree.GetAllNodes().FirstOrDefault();
+            if (firstNode != null)
+            {
+                tree.SelectNodeById(firstNode.Id);
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleGoToBottom(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        var tree = page?.LinkTree;
+
+        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable && page?.ReadableContent != null)
+        {
+            ctx.EnsureLineCache(options);
+            var vpHeight = ctx.GetReaderViewportHeight(options);
+            ctx.NavigationService.SetScrollOffset(
+                Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight));
+        }
+        else if (tree != null)
+        {
+            var lastNode = tree.GetVisibleNodes().LastOrDefault();
+            if (lastNode != null)
+            {
+                tree.SelectNodeById(lastNode.Id);
+                ctx.AdjustScrollForSelection(tree, options);
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleGoBack(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+
+        if (viewMode == ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.ExitToCollectionList();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        else if (viewMode == ViewMode.CollectionList)
+        {
+            ctx.NavigationService.ExitCollections();
+            ctx.InvalidateLineCache();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
+        {
+            await ctx.RefreshCollectionsAsync(ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        else
+        {
+            var previousPage = ctx.NavigationService.GoBack();
+            if (previousPage != null)
+            {
+                ctx.InvalidateLineCache();
+                await ctx.RenderCurrentPageAsync(options, ct);
+            }
+            else
+            {
+                ctx.NavigationService.EnterLauncher();
+                await ctx.RefreshBookmarksAsync(ct);
+                await ctx.RenderCurrentPageAsync(options, ct);
+            }
+        }
+    }
+
+    public static async Task HandleGoForward(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var nextPage = ctx.NavigationService.GoForward();
+        if (nextPage != null)
+        {
+            ctx.InvalidateLineCache();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+    }
+
+    public static async Task HandleExpandNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection?.Expand();
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleCollapseNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection?.Collapse();
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleToggleNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        ctx.NavigationService.CurrentPage?.LinkTree?.ToggleCollapse();
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleActivateLink(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.CollectionList)
+        {
+            if (ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
+            {
+                var selectedCollection = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
+                ctx.NavigationService.EnterCollection(selectedCollection);
+                await ctx.RenderCurrentPageAsync(options, ct);
+            }
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null && ctx.NavigationService.CollectionItemSelectedIndex < activeCol.Items.Count)
+            {
+                var selectedItem = activeCol.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                ctx.NavigationService.SaveCollectionReturnPoint();
+                await ctx.NavigateToAsync(selectedItem.Url, options, ct);
+
+                // Mark item as read
+                try
+                {
+                    using var markScope = ctx.ScopeFactory.CreateScope();
+                    var markService = ctx.CreateCollectionService(markScope);
+                    await markService.MarkItemAsReadAsync(activeCol.Id, selectedItem.Id, ct);
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Failed to mark item as read");
+                }
+
+                // Default to reader view if the page has readable content
+                if (ctx.NavigationService.CurrentPage?.HasReadableContent() == true)
+                {
+                    ctx.NavigationService.SetViewMode(ViewMode.Readable);
+                    ctx.InvalidateLineCache();
+                    await ctx.RenderCurrentPageAsync(options, ct);
+                }
+            }
+        }
+        else
+        {
+            var selectedNode = tree?.GetSelectedNode();
+            if (selectedNode != null)
+            {
+                if (selectedNode.IsGroupHeader)
+                {
+                    selectedNode.ToggleCollapse();
+                    await ctx.RenderCurrentPageAsync(options, ct);
+                }
+                else if (!string.IsNullOrEmpty(selectedNode.Link.Url))
+                {
+                    await ctx.NavigateToAsync(selectedNode.Link.Url, options, ct);
+
+                    if (ctx.NavigationService.CurrentPage?.HasReadableContent() == true)
+                    {
+                        ctx.NavigationService.SetViewMode(ViewMode.Readable);
+                        ctx.InvalidateLineCache();
+                        await ctx.RenderCurrentPageAsync(options, ct);
+                    }
+                }
+            }
+        }
+    }
+
+    public static async Task HandleRefresh(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        if (page != null)
+        {
+            await ctx.NavigateToAsync(page.Url, options, ct);
+        }
+    }
+
+    public static async Task HandleNavigate(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(command.TargetUrl))
+        {
+            await ctx.NavigateToAsync(command.TargetUrl, options, ct);
+        }
+    }
+}

@@ -118,7 +118,7 @@ internal class LauncherRenderer
         if (totalRows > startRow + visibleRows)
         {
             var remaining = totalRows - startRow - visibleRows;
-            _helpers.WriteLine($"{p.SecondaryText.AnsiFg}  \u2193 {remaining} more row{(remaining == 1 ? "" : "s")} below{Reset}");
+            _helpers.WriteLine($"{p.SecondaryText.AnsiFg}  \u2193 {remaining} more row{(remaining == 1 ? string.Empty : "s")} below{Reset}");
         }
     }
 
@@ -151,6 +151,19 @@ internal class LauncherRenderer
         }
 
         _helpers.WriteLine($" {hints}");
+    }
+
+    internal static string ExtractDomain(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            return uri.Host;
+        }
+        catch
+        {
+            return url;
+        }
     }
 
     private static string BuildCellContent(List<Bookmark> bookmarks, int itemIdx, int selectedIndex, int cellWidth, int totalLines, int lineIdx, ThemePalette p)
@@ -283,19 +296,6 @@ internal class LauncherRenderer
             }
 
             return new string(' ', cellWidth);
-        }
-    }
-
-    internal static string ExtractDomain(string url)
-    {
-        try
-        {
-            var uri = new Uri(url);
-            return uri.Host;
-        }
-        catch
-        {
-            return url;
         }
     }
 }

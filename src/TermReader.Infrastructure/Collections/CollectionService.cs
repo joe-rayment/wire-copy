@@ -48,7 +48,9 @@ public class CollectionService : ICollectionService
     {
         var existing = await _repository.GetByNameAsync(name, cancellationToken);
         if (existing != null)
+        {
             throw new InvalidOperationException($"A collection named '{name}' already exists");
+        }
 
         var collection = Collection.Create(name);
         await _repository.AddAsync(collection, cancellationToken);
@@ -105,7 +107,9 @@ public class CollectionService : ICollectionService
         var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
         var item = collection.Items.FirstOrDefault(i => i.Id == itemId);
         if (item == null)
+        {
             throw new InvalidOperationException($"Item {itemId} not found in collection {collectionId}");
+        }
 
         item.MarkAsRead();
         await _repository.UpdateAsync(collection, cancellationToken);
@@ -126,7 +130,9 @@ public class CollectionService : ICollectionService
         {
             var collection = await _repository.GetByIdAsync(lastUsedId.Value, cancellationToken);
             if (collection != null)
+            {
                 return collection;
+            }
         }
 
         return await _repository.GetOrCreateDefaultAsync(cancellationToken);
@@ -151,7 +157,9 @@ public class CollectionService : ICollectionService
     {
         var collection = await _repository.GetByIdAsync(collectionId, cancellationToken);
         if (collection == null)
+        {
             throw new InvalidOperationException($"Collection {collectionId} not found");
+        }
 
         return collection;
     }

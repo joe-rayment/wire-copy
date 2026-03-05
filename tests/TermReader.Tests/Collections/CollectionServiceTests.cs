@@ -1,47 +1,26 @@
 // Educational and personal use only.
 
 using FluentAssertions;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Infrastructure.Collections;
-using TermReader.Infrastructure.Persistence;
-using TermReader.Infrastructure.Persistence.Repositories;
+using TermReader.Persistence.Repositories;
 using Xunit;
 
 namespace TermReader.Tests.Collections;
 
-public class CollectionServiceTests : IDisposable
+public class CollectionServiceTests : TestDatabaseFixture
 {
-    private readonly SqliteConnection _connection;
-    private readonly AppDbContext _context;
     private readonly CollectionRepository _repository;
     private readonly CollectionService _sut;
     private readonly ILogger<CollectionService> _logger;
 
     public CollectionServiceTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connection)
-            .Options;
-
-        _context = new AppDbContext(options);
-        _context.Database.EnsureCreated();
-
-        _repository = new CollectionRepository(_context);
+        _repository = new CollectionRepository(DbContext);
         _logger = Substitute.For<ILogger<CollectionService>>();
         _sut = new CollectionService(_repository, _logger);
-    }
-
-    public void Dispose()
-    {
-        _context.Dispose();
-        _connection.Dispose();
     }
 
     #region SaveToDefaultCollectionAsync

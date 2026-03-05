@@ -3,10 +3,10 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using TermReader.Infrastructure.Configuration;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
+using TermReader.Infrastructure.Configuration;
 
 namespace TermReader.Infrastructure.Browser;
 

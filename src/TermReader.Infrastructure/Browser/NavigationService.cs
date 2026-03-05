@@ -11,6 +11,8 @@ namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
 /// Manages browser navigation history with back/forward support.
+/// Core navigation only - collection and launcher state are delegated
+/// to CollectionNavigationState and LauncherNavigationState.
 /// </summary>
 public class NavigationService : INavigationService
 {
@@ -24,28 +26,26 @@ public class NavigationService : INavigationService
     private string? _searchQuery;
     private int _searchMatchIndex;
 
-    // Collection state
-    private Collection? _activeCollection;
-    private bool _inCollectionsMode;
-    private ViewMode _preCollectionsViewMode;
-    private int _preCollectionsScrollOffset;
-    private int _collectionScrollOffset;
-    private int _collectionItemScrollOffset;
-    private int _collectionSelectedIndex;
-    private int _collectionItemSelectedIndex;
-
-    // Return point for navigating back from an article opened from a collection
-    private CollectionReturnPoint? _collectionReturnPoint;
-
-    private record CollectionReturnPoint(
-        Collection Collection,
-        int ItemScrollOffset,
-        int ItemSelectedIndex);
+    // Delegated state managers
+    private readonly CollectionNavigationState _collectionState;
+    private readonly LauncherNavigationState _launcherState;
 
     public NavigationService(ILogger<NavigationService> logger)
     {
         _logger = logger;
+        _collectionState = new CollectionNavigationState(logger);
+        _launcherState = new LauncherNavigationState(logger);
     }
+
+    /// <summary>
+    /// Gets the collection navigation state manager.
+    /// </summary>
+    public CollectionNavigationState CollectionState => _collectionState;
+
+    /// <summary>
+    /// Gets the launcher navigation state manager.
+    /// </summary>
+    public LauncherNavigationState LauncherState => _launcherState;
 
     public NavigationContext CurrentContext => new()
     {
@@ -146,7 +146,7 @@ public class NavigationService : INavigationService
         // Add current page
         if (_currentPage != null)
         {
-            history.Add($"→ {_currentPage.Metadata.Title} (current)");
+            history.Add($"\u2192 {_currentPage.Metadata.Title} (current)");
         }
 
         // Add back history
@@ -232,25 +232,26 @@ public class NavigationService : INavigationService
         _searchMatchIndex = Math.Max(0, index);
     }
 
-    // Collection navigation methods
+#pragma warning disable SA1201 // Delegating properties intentionally grouped after core methods
+    // Delegating properties and methods for backward compatibility
 
     /// <summary>
     /// Gets the currently active collection (for CollectionItems view).
     /// </summary>
-    public Collection? ActiveCollection => _activeCollection;
+    public Collection? ActiveCollection => _collectionState.ActiveCollection;
 
     /// <summary>
     /// Gets whether we're currently in collections mode.
     /// </summary>
-    public bool InCollectionsMode => _inCollectionsMode;
+    public bool InCollectionsMode => _collectionState.InCollectionsMode;
 
     /// <summary>
     /// Gets or sets the selected index in the collection list.
     /// </summary>
     public int CollectionSelectedIndex
     {
-        get => _collectionSelectedIndex;
-        set => _collectionSelectedIndex = Math.Max(0, value);
+        get => _collectionState.CollectionSelectedIndex;
+        set => _collectionState.CollectionSelectedIndex = value;
     }
 
     /// <summary>
@@ -258,8 +259,42 @@ public class NavigationService : INavigationService
     /// </summary>
     public int CollectionItemSelectedIndex
     {
-        get => _collectionItemSelectedIndex;
-        set => _collectionItemSelectedIndex = Math.Max(0, value);
+        get => _collectionState.CollectionItemSelectedIndex;
+        set => _collectionState.CollectionItemSelectedIndex = value;
+    }
+
+    // Launcher properties and methods
+
+    /// <summary>
+    /// Gets or sets the selected index on the launcher grid.
+    /// </summary>
+    public int LauncherSelectedIndex
+    {
+        get => _launcherState.SelectedIndex;
+        set => _launcherState.SelectedIndex = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the scroll offset for the launcher grid.
+    /// </summary>
+    public int LauncherScrollOffset
+    {
+        get => _launcherState.ScrollOffset;
+        set => _launcherState.ScrollOffset = value;
+    }
+
+    /// <summary>
+    /// Gets whether the browser is currently in launcher mode.
+    /// </summary>
+    public bool InLauncherMode => _currentViewMode == ViewMode.Launcher;
+#pragma warning restore SA1201
+
+    /// <summary>
+    /// Computes a new index for 2D grid navigation.
+    /// </summary>
+    public static int MoveInGrid(int currentIndex, int totalItems, int direction, int columns = 2)
+    {
+        return LauncherNavigationState.MoveInGrid(currentIndex, totalItems, direction, columns);
     }
 
     /// <summary>
@@ -267,14 +302,8 @@ public class NavigationService : INavigationService
     /// </summary>
     public void EnterCollections()
     {
-        _preCollectionsViewMode = _currentViewMode;
-        _preCollectionsScrollOffset = _scrollOffset;
-        _inCollectionsMode = true;
+        _collectionState.EnterCollections(_currentViewMode, _scrollOffset);
         _currentViewMode = ViewMode.CollectionList;
-        _collectionSelectedIndex = 0;
-        _collectionScrollOffset = 0;
-
-        _logger.LogDebug("Entered collections mode");
     }
 
     /// <summary>
@@ -282,12 +311,8 @@ public class NavigationService : INavigationService
     /// </summary>
     public void EnterCollection(Collection collection)
     {
-        _activeCollection = collection;
+        _collectionState.EnterCollection(collection);
         _currentViewMode = ViewMode.CollectionItems;
-        _collectionItemSelectedIndex = 0;
-        _collectionItemScrollOffset = 0;
-
-        _logger.LogDebug("Entered collection: {Name}", collection.Name);
     }
 
     /// <summary>
@@ -295,10 +320,8 @@ public class NavigationService : INavigationService
     /// </summary>
     public void ExitToCollectionList()
     {
-        _activeCollection = null;
+        _collectionState.ExitToCollectionList();
         _currentViewMode = ViewMode.CollectionList;
-
-        _logger.LogDebug("Returned to collection list");
     }
 
     /// <summary>
@@ -306,12 +329,11 @@ public class NavigationService : INavigationService
     /// </summary>
     public void ExitCollections()
     {
-        _inCollectionsMode = false;
-        _activeCollection = null;
-        _currentViewMode = _preCollectionsViewMode;
-        _scrollOffset = _preCollectionsScrollOffset;
-
-        _logger.LogDebug("Exited collections mode");
+        var preViewMode = _collectionState.PreCollectionsViewMode;
+        var preScrollOffset = _collectionState.PreCollectionsScrollOffset;
+        _collectionState.ExitCollections();
+        _currentViewMode = preViewMode;
+        _scrollOffset = preScrollOffset;
     }
 
     /// <summary>
@@ -319,13 +341,16 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SaveCollectionReturnPoint()
     {
-        if (_activeCollection != null)
-        {
-            _collectionReturnPoint = new CollectionReturnPoint(
-                _activeCollection,
-                _collectionItemScrollOffset,
-                _collectionItemSelectedIndex);
-        }
+        _collectionState.SaveCollectionReturnPoint();
+    }
+
+    /// <summary>
+    /// Enters launcher mode, showing the bookmark grid.
+    /// </summary>
+    public void EnterLauncher()
+    {
+        _currentViewMode = ViewMode.Launcher;
+        _launcherState.Enter();
     }
 
     /// <summary>
@@ -334,17 +359,13 @@ public class NavigationService : INavigationService
     /// </summary>
     public bool TryRestoreCollectionReturnPoint()
     {
-        if (_collectionReturnPoint == null)
+        var returnData = _collectionState.TryRestoreReturnPoint();
+        if (returnData == null)
         {
             return false;
         }
 
-        _inCollectionsMode = true;
-        _activeCollection = _collectionReturnPoint.Collection;
         _currentViewMode = ViewMode.CollectionItems;
-        _collectionItemScrollOffset = _collectionReturnPoint.ItemScrollOffset;
-        _collectionItemSelectedIndex = _collectionReturnPoint.ItemSelectedIndex;
-        _collectionReturnPoint = null;
 
         // Pop back history to get back to the previous page
         if (_backHistory.Count > 0)
@@ -352,7 +373,6 @@ public class NavigationService : INavigationService
             _currentPage = _backHistory.Pop();
         }
 
-        _logger.LogDebug("Restored collection return point: {Name}", _activeCollection?.Name);
         return true;
     }
 }

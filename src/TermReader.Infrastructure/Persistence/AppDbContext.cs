@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using Microsoft.EntityFrameworkCore;
+using TermReader.Domain.Entities.Bookmarks;
 using TermReader.Domain.Entities.Collections;
 
 namespace TermReader.Infrastructure.Persistence;
@@ -18,6 +19,8 @@ public class AppDbContext : DbContext
     public DbSet<Collection> Collections => Set<Collection>();
 
     public DbSet<CollectionItem> CollectionItems => Set<CollectionItem>();
+
+    public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
 
     /// <summary>
     /// Ensures the database is created and migrations are applied.
@@ -39,6 +42,20 @@ public class AppDbContext : DbContext
 
         // Ensure database is created (no migrations for now - fresh schema)
         await Database.EnsureCreatedAsync(cancellationToken);
+
+        // EnsureCreatedAsync only creates a DB that doesn't exist — it won't add
+        // new tables to an existing database. Create Bookmarks table if missing.
+        await Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS Bookmarks (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Url TEXT NOT NULL,
+                SortOrder INTEGER NOT NULL,
+                CreatedAt TEXT NOT NULL
+            )
+            """,
+            cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

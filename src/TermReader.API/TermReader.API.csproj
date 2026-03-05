@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TermReader.Application\TermReader.Application.csproj" />
     <ProjectReference Include="..\TermReader.Infrastructure\TermReader.Infrastructure.csproj" />
+    <ProjectReference Include="..\TermReader.Persistence\TermReader.Persistence.csproj" />
     <ProjectReference Include="..\TermReader.Domain\TermReader.Domain.csproj" />
   </ItemGroup>
 
