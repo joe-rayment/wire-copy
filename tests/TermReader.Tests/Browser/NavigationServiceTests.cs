@@ -220,4 +220,40 @@ public class NavigationServiceTests
         _sut.CurrentContext.ScrollOffset.Should().Be(0);
         _sut.CurrentContext.SelectedLinkIndex.Should().Be(0);
     }
+
+    [Fact]
+    public void GoBack_ResetsViewModeToHierarchical()
+    {
+        // Arrange
+        var page1 = CreateTestPage("https://example.com/1", "Page 1");
+        var page2 = CreateTestPage("https://example.com/2", "Page 2");
+        _sut.NavigateTo(page1);
+        _sut.NavigateTo(page2);
+        _sut.SetViewMode(ViewMode.Readable);
+
+        // Act
+        _sut.GoBack();
+
+        // Assert
+        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Hierarchical);
+    }
+
+    [Fact]
+    public void GoForward_ResetsViewModeToHierarchical()
+    {
+        // Arrange
+        var page1 = CreateTestPage("https://example.com/1", "Page 1");
+        var page2 = CreateTestPage("https://example.com/2", "Page 2");
+        _sut.NavigateTo(page1);
+        _sut.NavigateTo(page2);
+        _sut.SetViewMode(ViewMode.Readable);
+        _sut.GoBack();
+        _sut.SetViewMode(ViewMode.Readable);
+
+        // Act
+        _sut.GoForward();
+
+        // Assert
+        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Hierarchical);
+    }
 }

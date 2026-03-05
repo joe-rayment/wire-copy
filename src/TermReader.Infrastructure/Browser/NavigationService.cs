@@ -109,6 +109,7 @@ public class NavigationService : INavigationService
         _currentPage = _backHistory.Pop();
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated back to: {Title}",
             _currentPage.Metadata.Title);
@@ -132,6 +133,7 @@ public class NavigationService : INavigationService
         _currentPage = _forwardHistory.Pop();
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated forward to: {Title}",
             _currentPage.Metadata.Title);
