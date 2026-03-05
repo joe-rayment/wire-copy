@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 using TermReader.Infrastructure.Browser.UI;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Configuration.Validation;
@@ -83,6 +84,9 @@ public static class BrowserDependencyInjection
         // Register navigation service (manages history and state)
         services.AddSingleton<NavigationService>();
         services.AddSingleton<INavigationService>(sp => sp.GetRequiredService<NavigationService>());
+
+        // Register theme provider
+        services.AddSingleton<IThemeProvider, ThemeProvider>();
 
         // Register UI components
         services.AddSingleton<IPageRenderer, TerminalPageRenderer>();
