@@ -388,14 +388,41 @@ public class TerminalPageRendererTests
     }
 
     [Fact]
+    public void RenderHierarchical_OutputContainsDomainText()
+    {
+        var page = CreateTestPage(withLinks: true);
+        var context = CreateContext();
+        var options = CreateOptions();
+
+        var output = CaptureConsoleOutput(() => _sut.RenderHierarchical(page, context, options));
+        output.Should().Contain("example.com");
+    }
+
+    [Fact]
     public void RenderReadable_OutputContainsArticleTitle()
     {
         var page = CreateTestPage(withReadableContent: true);
         var context = CreateContext(mode: ViewMode.Readable);
         var options = CreateOptions();
 
-        var output = CaptureConsoleOutput(() => _sut.RenderReadable(page, context, options));
-        output.Should().Contain("Article Title");
+        // Headline is now part of the scrollable line cache (not a sticky header).
+        // Pass wrappedLines containing the styled uppercase title.
+        var wrappedLines = new List<string>
+        {
+            string.Empty,
+            "  \x1b[1m\x1b[38;5;15mARTICLE TITLE\x1b[0m",
+            "  \x1b[38;5;40m\x1b[2mBy Author Name | Jan 15, 2024 | 1 min read\x1b[0m",
+            string.Empty,
+            "  First paragraph of the article.",
+            string.Empty,
+            "  Second paragraph with more detail.",
+            string.Empty,
+            "  Third paragraph wrapping up.",
+            string.Empty
+        };
+
+        var output = CaptureConsoleOutput(() => _sut.RenderReadable(page, context, options, wrappedLines));
+        output.Should().Contain("ARTICLE TITLE");
     }
 
     [Fact]

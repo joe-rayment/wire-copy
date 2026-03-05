@@ -11,6 +11,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -273,25 +274,55 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Returns the actual usable viewport height for hierarchical view.
-    /// Accounts for header (6 lines: blank + box top + title + url + box bottom + blank)
-    /// and status bar area (3 lines: blank + separator + status text).
+    /// Returns the number of visible nodes in the hierarchical view.
+    /// Divides available lines by card height to convert from line count to node count.
     /// </summary>
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
-        return Math.Max(3, options.TerminalHeight - 9);
+        var availableLines = Math.Max(3, options.TerminalHeight - 9);
+        var cardHeight = UI.Renderers.LinkTreeRenderer.GetCardHeight(availableLines);
+        return Math.Max(1, availableLines / cardHeight);
     }
 
     /// <summary>
-    /// Calculates the available viewport height for the reader view,
-    /// accounting for the article header and status bar.
-    /// Header is ~8 lines (border + title + url + border + blank + metadata + blank),
-    /// status bar is ~3 lines (blank + separator + status text).
+    /// Calculates the available viewport height for the reader view.
+    /// The headline is now embedded in the scrollable line cache,
+    /// so only the status bar area (3 lines) is reserved.
     /// </summary>
     private static int GetReaderViewportHeight(RenderOptions options)
     {
-        // Header ~8 lines, status bar ~3 lines
-        return Math.Max(3, options.TerminalHeight - 11);
+        return Math.Max(3, options.TerminalHeight - 3);
+    }
+
+    /// <summary>
+    /// Builds styled headline lines (bold/uppercase title + secondary-text metadata)
+    /// matching the launcher tile label style. These lines are prepended to the line cache
+    /// so the headline scrolls with the content.
+    /// </summary>
+    private static List<string> BuildHeadlineLines(ReadableContent content, int maxWidth, ThemePalette palette)
+    {
+        const string bold = "\x1b[1m";
+        const string dim = "\x1b[2m";
+        const string brightWhiteFg = "\x1b[38;5;15m";
+        const string reset = "\x1b[0m";
+
+        var lines = new List<string>();
+        lines.Add(string.Empty);
+
+        var titleLines = UI.Renderers.RenderHelpers.WrapText(content.Title.ToUpperInvariant(), maxWidth - 4);
+        foreach (var line in titleLines)
+        {
+            lines.Add($"  {bold}{brightWhiteFg}{line}{reset}");
+        }
+
+        var metadata = content.GetMetadataString();
+        if (!string.IsNullOrEmpty(metadata))
+        {
+            lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{metadata}{reset}");
+        }
+
+        lines.Add(string.Empty);
+        return lines;
     }
 
     /// <summary>
@@ -533,6 +564,7 @@ public class BrowserOrchestrator : IBrowserService
 
                 case CommandType.CycleTheme:
                     _themeProvider.CycleTheme();
+                    InvalidateLineCache();
                     await RenderCurrentPageAsync(options, cancellationToken);
                     break;
 
@@ -758,7 +790,11 @@ public class BrowserOrchestrator : IBrowserService
             return;
         }
 
-        _cachedLines = WrapAllContent(page.ReadableContent, contentWidth);
+        var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette);
+        var contentLines = WrapAllContent(page.ReadableContent, contentWidth);
+        headlineLines.AddRange(contentLines);
+        _cachedLines = headlineLines;
         _cachedWidth = contentWidth;
         SyncLineCacheToContext();
     }
