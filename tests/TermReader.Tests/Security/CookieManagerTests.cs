@@ -38,17 +38,12 @@ public class CookieManagerTests : IDisposable
         var encryptionLogger = Substitute.For<ILogger<DpapiCookieEncryptionService>>();
         _encryptionService = new DpapiCookieEncryptionService(dataProtectionProvider, encryptionLogger);
 
-        _cookieManager = new CookieManager(_logger, _encryptionService);
-
         // Use a test directory for cookies
         _testDirectory = Path.Combine(Path.GetTempPath(), "TermReaderTests", Guid.NewGuid().ToString());
         Directory.CreateDirectory(_testDirectory);
         _testCookiePath = Path.Combine(_testDirectory, "cookies.json");
 
-        // Use reflection to set the cookie file path for testing
-        var field = typeof(CookieManager).GetField("_cookieFilePath",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        field?.SetValue(_cookieManager, _testCookiePath);
+        _cookieManager = new CookieManager(_logger, _encryptionService, _testCookiePath);
     }
 
     public void Dispose()

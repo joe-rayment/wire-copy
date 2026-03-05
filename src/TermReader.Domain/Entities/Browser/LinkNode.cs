@@ -173,10 +173,11 @@ public class LinkNode
     }
 
     /// <summary>
-    /// Counts total descendants (including collapsed).
+    /// Counts total link descendants, excluding group headers.
     /// </summary>
     public int CountDescendants()
     {
-        return Children.Sum(child => 1 + child.CountDescendants());
+        return Children.Sum(child =>
+            (child.IsGroupHeader ? 0 : 1) + child.CountDescendants());
     }
 }

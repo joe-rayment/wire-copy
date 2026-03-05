@@ -18,11 +18,12 @@ public class CookieManager : ICookieManager
 
     public CookieManager(
         ILogger<CookieManager> logger,
-        ICookieEncryptionService encryptionService)
+        ICookieEncryptionService encryptionService,
+        string? cookieFilePath = null)
     {
         _logger = logger;
         _encryptionService = encryptionService;
-        _cookieFilePath = Path.Combine(
+        _cookieFilePath = cookieFilePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TermReader",
             "cookies.json");
