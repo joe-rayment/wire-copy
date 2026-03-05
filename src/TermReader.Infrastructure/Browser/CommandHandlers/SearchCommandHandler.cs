@@ -39,7 +39,7 @@ internal static class SearchCommandHandler
     {
         if (!string.IsNullOrEmpty(ctx.NavigationService.CurrentContext.SearchQuery))
         {
-            var prevIndex = Math.Max(0, ctx.NavigationService.CurrentContext.SearchMatchIndex - 1);
+            var prevIndex = ctx.NavigationService.CurrentContext.SearchMatchIndex - 1;
             ctx.ScrollToSearchMatch(prevIndex, options);
             await ctx.RenderCurrentPageAsync(options, ct);
         }

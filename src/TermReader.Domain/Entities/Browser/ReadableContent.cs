@@ -31,7 +31,7 @@ public class ReadableContent
     /// <summary>
     /// Content split into paragraphs for better rendering.
     /// </summary>
-    public List<string> Paragraphs { get; private set; }
+    public IReadOnlyList<string> Paragraphs { get; private set; }
 
     /// <summary>
     /// Word count of the content.

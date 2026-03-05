@@ -845,11 +845,6 @@ public class BrowserOrchestrator : IBrowserService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-
-            // Ensure database and tables are created (handles both fresh and existing DBs)
-            var dbContext = scope.ServiceProvider.GetRequiredService<TermReader.Persistence.AppDbContext>();
-            await dbContext.InitializeDatabaseAsync(cancellationToken);
-
             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
             await bookmarkService.EnsureSeededAsync(cancellationToken);
             var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken);
