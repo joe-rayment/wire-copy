@@ -28,6 +28,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly NavigationService _navigationService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Configuration.BrowserConfiguration _browserConfig;
+    private readonly IBrowserSession _browserSession;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
     // Line cache for reader view line-based scrolling
@@ -50,6 +51,7 @@ public class BrowserOrchestrator : IBrowserService
         IInputHandler inputHandler,
         NavigationService navigationService,
         IServiceScopeFactory scopeFactory,
+        IBrowserSession browserSession,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -62,6 +64,7 @@ public class BrowserOrchestrator : IBrowserService
         _inputHandler = inputHandler;
         _navigationService = navigationService;
         _scopeFactory = scopeFactory;
+        _browserSession = browserSession;
         _logger = logger;
     }
 
@@ -178,9 +181,18 @@ public class BrowserOrchestrator : IBrowserService
     /// </summary>
     public async Task RunAsync(string? initialUrl = null, CancellationToken cancellationToken = default)
     {
-        // Handle SIGINT gracefully: restore main screen buffer before exit
+        // Handle SIGINT gracefully: dispose browser session and restore console before exit
         Console.CancelKeyPress += (_, e) =>
         {
+            try
+            {
+                _browserSession.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disposing browser session during SIGINT");
+            }
+
             Console.Write("\x1b[?1049l");
             Console.CursorVisible = true;
             e.Cancel = false;
@@ -231,6 +243,16 @@ public class BrowserOrchestrator : IBrowserService
         }
         finally
         {
+            // Dispose browser session (defense-in-depth alongside host disposal)
+            try
+            {
+                _browserSession.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disposing browser session during shutdown");
+            }
+
             // Exit alternate screen buffer and restore cursor
             Console.Write("\x1b[?1049l");
             Console.CursorVisible = true;
@@ -513,6 +535,17 @@ public class BrowserOrchestrator : IBrowserService
                     _navigationService.SetScrollOffset(
                         Math.Min(_navigationService.CurrentContext.ScrollOffset + halfPage, maxOff));
                 }
+                else if (_navigationService.CurrentContext.ViewMode == ViewMode.Hierarchical && tree != null)
+                {
+                    // Move selection down by half-viewport nodes (like Ctrl+D in vim)
+                    var halfVp = Math.Max(1, GetHierarchicalViewportHeight(options) / 2);
+                    for (var i = 0; i < halfVp; i++)
+                    {
+                        tree.SelectNext();
+                    }
+
+                    AdjustScrollForSelection(tree, options);
+                }
                 else
                 {
                     _navigationService.SetScrollOffset(_navigationService.CurrentContext.ScrollOffset + 10);
@@ -530,6 +563,17 @@ public class BrowserOrchestrator : IBrowserService
                     var halfPageUp = Math.Max(1, vpHeightUp / 2);
                     _navigationService.SetScrollOffset(
                         Math.Max(0, _navigationService.CurrentContext.ScrollOffset - halfPageUp));
+                }
+                else if (_navigationService.CurrentContext.ViewMode == ViewMode.Hierarchical && tree != null)
+                {
+                    // Move selection up by half-viewport nodes (like Ctrl+U in vim)
+                    var halfVpUp = Math.Max(1, GetHierarchicalViewportHeight(options) / 2);
+                    for (var i = 0; i < halfVpUp; i++)
+                    {
+                        tree.SelectPrevious();
+                    }
+
+                    AdjustScrollForSelection(tree, options);
                 }
                 else
                 {
@@ -569,6 +613,7 @@ public class BrowserOrchestrator : IBrowserService
                     if (lastNode != null)
                     {
                         tree.SelectNodeById(lastNode.Id);
+                        AdjustScrollForSelection(tree, options);
                     }
                 }
 

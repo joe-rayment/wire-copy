@@ -10,9 +10,10 @@ using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Browser.UI;
+using TermReader.Infrastructure.Bookmarks;
+using TermReader.Infrastructure.Collections;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Configuration.Validation;
-using TermReader.Infrastructure.Collections;
 using TermReader.Infrastructure.Persistence;
 using TermReader.Infrastructure.Persistence.Repositories;
 using TermReader.Infrastructure.Security;
@@ -36,13 +37,9 @@ public static class BrowserDependencyInjection
         services.AddOptions<BrowserConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(BrowserConfiguration.SectionName).Bind(opts));
-        services.AddOptions<AuthConfiguration>()
-            .Configure<IConfiguration>((opts, config) =>
-                config.GetSection(AuthConfiguration.SectionName).Bind(opts));
 
         // Register configuration validators
         services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
-        services.AddSingleton<IValidateOptions<AuthConfiguration>, AuthConfigurationValidator>();
 
         // Register database (SQLite)
         services.AddDbContext<AppDbContext>((sp, options) =>
@@ -114,11 +111,9 @@ public static class BrowserDependencyInjection
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();
 
-        // Register collections
-        services.AddScoped<ICollectionRepository, CollectionRepository>();
-        services.AddScoped<ICollectionService, CollectionService>();
-        services.AddSingleton<ICollectionExporter, UrlListExporter>();
-        services.AddSingleton<ICollectionExporter, OpmlExporter>();
+        // Register collections and bookmarks via modular DI extensions
+        services.AddCollections();
+        services.AddBookmarks();
 
         return services;
     }

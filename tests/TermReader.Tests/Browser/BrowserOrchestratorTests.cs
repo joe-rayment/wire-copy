@@ -54,6 +54,7 @@ public class BrowserOrchestratorTests
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
+        var browserSession = Substitute.For<IBrowserSession>();
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -63,6 +64,7 @@ public class BrowserOrchestratorTests
             _inputHandler,
             _navigationService,
             _scopeFactory,
+            browserSession,
             _browserConfig,
             _logger);
     }
@@ -282,6 +284,7 @@ public class BrowserOrchestratorNavigationTests
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
 
+        var browserSession = Substitute.For<IBrowserSession>();
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -291,6 +294,7 @@ public class BrowserOrchestratorNavigationTests
             _inputHandler,
             _navigationService,
             _scopeFactory,
+            browserSession,
             _browserConfig,
             _logger);
     }
@@ -470,7 +474,7 @@ public class BrowserOrchestratorNavigationTests
     }
 
     [Fact]
-    public async Task RunAsync_PageDownThenQuit_IncrementsScrollOffset()
+    public async Task RunAsync_PageDownThenQuit_MovesSelectionInHierarchicalView()
     {
         // Arrange
         SetupPageLoad("https://example.com");
@@ -488,8 +492,9 @@ public class BrowserOrchestratorNavigationTests
         // Act
         await _sut.RunAsync("https://example.com");
 
-        // Assert - scroll offset should have increased by 10
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(10);
+        // Assert - in hierarchical view, PageDown moves selection rather than raw scroll
+        // With only 1 link, selection stays at 0 and scroll offset stays at 0
+        _navigationService.CurrentContext.ScrollOffset.Should().Be(0);
     }
 
     [Fact]

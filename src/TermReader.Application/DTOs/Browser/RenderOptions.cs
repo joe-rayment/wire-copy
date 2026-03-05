@@ -24,13 +24,15 @@ public record RenderOptions
 
     /// <summary>
     /// Number of lines to reserve for status bar.
+    /// Matches actual status bar rendering: blank + separator + status text.
     /// </summary>
-    public int StatusBarLines { get; init; } = 1;
+    public int StatusBarLines { get; init; } = 3;
 
     /// <summary>
     /// Number of lines to reserve for header.
+    /// Matches actual header rendering: blank + box top + title + url + box bottom + blank.
     /// </summary>
-    public int HeaderLines { get; init; } = 3;
+    public int HeaderLines { get; init; } = 6;
 
     /// <summary>
     /// Whether to use colors in rendering.

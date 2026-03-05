@@ -45,21 +45,37 @@ internal class LinkTreeRenderer
 
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var startIndex = context.ScrollOffset;
-        var hasMoreNodes = visibleNodes.Count > startIndex + maxLines;
 
-        var maxDisplay = hasMoreNodes ? maxLines - 1 : maxLines;
+        // Use a line-budget loop instead of node-count loop because
+        // depth-1 group headers consume 2 lines (blank line + header text).
+        var linesUsed = 0;
+        var nodesRendered = 0;
+        var reserveForMore = 1; // Reserve 1 line for "... N more" indicator
 
-        for (var i = startIndex; i < Math.Min(startIndex + maxDisplay, visibleNodes.Count); i++)
+        for (var i = startIndex; i < visibleNodes.Count; i++)
         {
             var node = visibleNodes[i];
+            var linesNeeded = (node.IsGroupHeader && node.Depth == 1) ? 2 : 1;
+
+            // Check if we have room (reserve space for "more" indicator if there are remaining nodes)
+            var hasMoreAfter = i + 1 < visibleNodes.Count;
+            var available = hasMoreAfter ? maxLines - reserveForMore : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
             RenderLinkNode(node, node.IsSelected, options);
+            linesUsed += linesNeeded;
+            nodesRendered++;
         }
 
-        if (hasMoreNodes)
+        var totalRemaining = Math.Max(0, visibleNodes.Count - startIndex - nodesRendered);
+        if (totalRemaining > 0)
         {
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            var remaining = Math.Max(0, visibleNodes.Count - startIndex - maxDisplay);
-            _helpers.WriteLine($"  ... {remaining} more links (scroll with j/k)");
+            _helpers.WriteLine($"  ... {totalRemaining} more links (scroll with j/k)");
             Console.ResetColor();
         }
     }
