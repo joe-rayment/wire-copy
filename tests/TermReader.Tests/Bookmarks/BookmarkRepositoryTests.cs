@@ -128,14 +128,14 @@ public class BookmarkRepositoryTests : TestDatabaseFixture
     #region SeedDefaultsAsync
 
     [Fact]
-    public async Task SeedDefaultsAsync_EmptyTable_SeedsThreeDefaults()
+    public async Task SeedDefaultsAsync_EmptyTable_SeedsFourDefaults()
     {
         await _sut.SeedDefaultsAsync();
         await DbContext.SaveChangesAsync();
 
         var all = await _sut.GetAllAsync();
-        all.Should().HaveCount(3);
-        all.Select(b => b.Name).Should().Contain("Maclean's");
+        all.Should().HaveCount(4);
+        all.Select(b => b.Name).Should().Contain("CBC News");
     }
 
     [Fact]
