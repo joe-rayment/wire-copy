@@ -30,6 +30,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Configuration.BrowserConfiguration _browserConfig;
     private readonly IBrowserSession _browserSession;
+    private readonly IThemeProvider _themeProvider;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
     // Line cache for reader view line-based scrolling
@@ -61,6 +62,7 @@ public class BrowserOrchestrator : IBrowserService
         NavigationService navigationService,
         IServiceScopeFactory scopeFactory,
         IBrowserSession browserSession,
+        IThemeProvider themeProvider,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -74,6 +76,7 @@ public class BrowserOrchestrator : IBrowserService
         _navigationService = navigationService;
         _scopeFactory = scopeFactory;
         _browserSession = browserSession;
+        _themeProvider = themeProvider;
         _logger = logger;
     }
 
@@ -473,6 +476,11 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.OpenLauncher:
                     _navigationService.EnterLauncher();
                     await RefreshBookmarksAsync(cancellationToken);
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                    break;
+
+                case CommandType.CycleTheme:
+                    _themeProvider.CycleTheme();
                     await RenderCurrentPageAsync(options, cancellationToken);
                     break;
 

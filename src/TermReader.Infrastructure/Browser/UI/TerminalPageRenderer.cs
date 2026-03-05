@@ -8,6 +8,7 @@ using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.UI;
@@ -18,6 +19,7 @@ namespace TermReader.Infrastructure.Browser.UI;
 /// </summary>
 public class TerminalPageRenderer : IPageRenderer
 {
+    private readonly IThemeProvider _themeProvider;
     private readonly ILogger<TerminalPageRenderer> _logger;
     private readonly RenderHelpers _helpers;
     private readonly LinkTreeRenderer _linkTreeRenderer;
@@ -26,15 +28,16 @@ public class TerminalPageRenderer : IPageRenderer
     private readonly LauncherRenderer _launcherRenderer;
     private readonly StatusBarRenderer _statusBarRenderer;
 
-    public TerminalPageRenderer(ILogger<TerminalPageRenderer> logger)
+    public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
     {
+        _themeProvider = themeProvider;
         _logger = logger;
         _helpers = new RenderHelpers();
-        _linkTreeRenderer = new LinkTreeRenderer(_helpers);
-        _articleRenderer = new ArticleRenderer(_helpers);
-        _collectionRenderer = new CollectionRenderer(_helpers);
-        _launcherRenderer = new LauncherRenderer(_helpers);
-        _statusBarRenderer = new StatusBarRenderer(_helpers);
+        _linkTreeRenderer = new LinkTreeRenderer(_helpers, themeProvider);
+        _articleRenderer = new ArticleRenderer(_helpers, themeProvider);
+        _collectionRenderer = new CollectionRenderer(_helpers, themeProvider);
+        _launcherRenderer = new LauncherRenderer(_helpers, themeProvider);
+        _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider);
     }
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
@@ -106,11 +109,10 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderError(string message, string url)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Red;
-        _helpers.WriteLine("  Error loading page:");
-        Console.ResetColor();
+        _helpers.WriteLine($"  {p.ErrorFg.AnsiFg}Error loading page:\x1b[0m");
         _helpers.WriteLine($"  {message}");
         _helpers.WriteLine();
         _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");

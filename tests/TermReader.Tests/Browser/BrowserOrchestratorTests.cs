@@ -55,6 +55,8 @@ public class BrowserOrchestratorTests
         _navigationService = new NavigationService(navLogger);
 
         var browserSession = Substitute.For<IBrowserSession>();
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -65,6 +67,7 @@ public class BrowserOrchestratorTests
             _navigationService,
             _scopeFactory,
             browserSession,
+            themeProvider,
             _browserConfig,
             _logger);
     }
@@ -285,6 +288,8 @@ public class BrowserOrchestratorNavigationTests
         _navigationService = new NavigationService(navLogger);
 
         var browserSession = Substitute.For<IBrowserSession>();
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -295,6 +300,7 @@ public class BrowserOrchestratorNavigationTests
             _navigationService,
             _scopeFactory,
             browserSession,
+            themeProvider,
             _browserConfig,
             _logger);
     }

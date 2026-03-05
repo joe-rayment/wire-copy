@@ -1,118 +1,142 @@
 // Educational and personal use only.
 
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders collection list and collection items views.
+/// Renders collection list and collection items views with selection bars and separators.
 /// </summary>
 internal class CollectionRenderer
 {
+    private const string Reset = "\x1b[0m";
     private readonly RenderHelpers _helpers;
+    private readonly IThemeProvider _themeProvider;
 
-    public CollectionRenderer(RenderHelpers helpers)
+    public CollectionRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
     {
         _helpers = helpers;
+        _themeProvider = themeProvider;
     }
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var height = options.TerminalHeight;
 
+        // Rounded box header
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        _helpers.WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
-
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
         var title = RenderHelpers.TruncateText("Collections", width - 4);
-        _helpers.WriteLine($"\u2551 {title.PadRight(width - 4)} \u2551");
-
-        _helpers.WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
-        Console.ResetColor();
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}{title.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
         _helpers.WriteLine();
 
-        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
+        var useSeparators = height >= 30;
+        var linesPerItem = useSeparators ? 2 : 1;
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var maxVisible = useSeparators ? (remainingHeight + 1) / linesPerItem : remainingHeight;
 
         if (collections.Count == 0)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            _helpers.WriteLine("  No collections yet. Use :new <name> to create one.");
-            Console.ResetColor();
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}No collections yet. Use :new <name> to create one.{Reset}");
         }
         else
         {
             var startIndex = 0;
-            if (selectedIndex >= remainingHeight)
+            if (selectedIndex >= maxVisible)
             {
-                startIndex = selectedIndex - remainingHeight + 1;
+                startIndex = selectedIndex - maxVisible + 1;
             }
 
-            var endIndex = Math.Min(collections.Count, startIndex + remainingHeight);
+            var endIndex = Math.Min(collections.Count, startIndex + maxVisible);
             for (var i = startIndex; i < endIndex; i++)
             {
                 var collection = collections[i];
                 var isSelected = i == selectedIndex;
                 var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
 
-                var prefix = isSelected ? "\u2192" : " ";
-                var star = isDefault ? " \u2605" : "";
+                var star = isDefault ? $" {p.PromptFg.AnsiFg}\u2605{Reset}" : "";
                 var itemCount = collection.Items.Count;
-                var countText = $"({itemCount} item{(itemCount == 1 ? "" : "s")})";
+                var countText = $"({itemCount})";
 
-                if (isSelected)
+                var availableWidth = width - 6;
+                var starLen = isDefault ? 2 : 0;
+                var countLen = countText.Length + 1;
+
+                string displayName;
+                string countDisplay;
+
+                if (availableWidth < 30)
                 {
-                    Console.ForegroundColor = ConsoleColor.Black;
-                    Console.BackgroundColor = ConsoleColor.White;
+                    displayName = RenderHelpers.TruncateText(collection.Name, availableWidth - starLen);
+                    countDisplay = "";
+                }
+                else if (collection.Name.Length + countLen + starLen > availableWidth)
+                {
+                    var nameWidth = Math.Max(15, availableWidth - countLen - starLen);
+                    displayName = RenderHelpers.TruncateText(collection.Name, nameWidth);
+                    countDisplay = $" {p.SecondaryText.AnsiFg}{countText}{Reset}";
                 }
                 else
                 {
-                    Console.ForegroundColor = ConsoleColor.White;
+                    displayName = collection.Name;
+                    countDisplay = $" {p.SecondaryText.AnsiFg}{countText}{Reset}";
                 }
 
-                var displayName = RenderHelpers.TruncateText(collection.Name, options.MaxContentWidth - 20);
-                _helpers.WriteLine($"  {prefix} {displayName} {countText}{star}");
-                Console.ResetColor();
+                if (isSelected)
+                {
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {displayName}{countDisplay}{star} \x1b[27m{Reset}");
+                }
+                else
+                {
+                    _helpers.WriteLine($"   {p.PrimaryText.AnsiFg}{displayName}{countDisplay}{star}{Reset}");
+                }
+
+                if (useSeparators && i < endIndex - 1)
+                {
+                    _helpers.WriteLine($"   {p.SecondaryText.AnsiFg}\u2576\u2500\u2500\u2574{Reset}");
+                }
             }
 
             if (collections.Count > endIndex)
             {
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                _helpers.WriteLine($"  ... {collections.Count - endIndex} more collections");
-                Console.ResetColor();
+                _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}... {collections.Count - endIndex} more collections{Reset}");
             }
         }
     }
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var height = options.TerminalHeight;
 
+        // Rounded box header with collection name and item count
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        _helpers.WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
-
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
         var itemCount = collection.Items.Count;
         var headerText = RenderHelpers.TruncateText($"{collection.Name} ({itemCount} item{(itemCount == 1 ? "" : "s")})", width - 4);
-        _helpers.WriteLine($"\u2551 {headerText.PadRight(width - 4)} \u2551");
-
-        _helpers.WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
-        Console.ResetColor();
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}{headerText.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
         _helpers.WriteLine();
 
-        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
+        var useSeparators = height >= 30;
+        var linesPerItem = useSeparators ? 3 : 2;
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var maxItems = Math.Max(1, (remainingHeight + 1) / linesPerItem);
 
         if (collection.Items.Count == 0)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            _helpers.WriteLine("  No items in this collection.");
-            Console.ResetColor();
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}No items in this collection.{Reset}");
         }
         else
         {
-            var maxItems = Math.Max(1, remainingHeight / 2);
-
             var startIndex = 0;
             if (selectedIndex >= maxItems)
             {
@@ -125,8 +149,9 @@ internal class CollectionRenderer
                 var item = collection.Items[i];
                 var isSelected = i == selectedIndex;
 
-                var prefix = isSelected ? "\u2192" : " ";
-                var unreadMarker = item.IsRead ? " " : "\u2022";
+                var marker = item.IsRead
+                    ? $"{p.ReadItemFg.AnsiFg}\u25cb{Reset}"
+                    : $"{p.LinkContent.AnsiFg}\u25cf{Reset}";
 
                 var domain = "";
                 try
@@ -139,57 +164,31 @@ internal class CollectionRenderer
                     domain = item.Url;
                 }
 
+                var displayTitle = RenderHelpers.TruncateText(item.Title, width - 10);
+                var displayDomain = RenderHelpers.TruncateText(domain, width - 10);
+
                 if (isSelected)
                 {
-                    Console.ForegroundColor = ConsoleColor.Black;
-                    Console.BackgroundColor = ConsoleColor.White;
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {marker} {displayTitle} \x1b[27m{Reset}");
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain} \x1b[27m{Reset}");
                 }
                 else
                 {
-                    Console.ForegroundColor = item.IsRead ? ConsoleColor.DarkGray : ConsoleColor.White;
+                    var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
+                    _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}");
+                    _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}");
                 }
 
-                var displayTitle = RenderHelpers.TruncateText(item.Title, options.MaxContentWidth - 10);
-                _helpers.WriteLine($"  {prefix}{unreadMarker} {displayTitle}");
-
-                Console.ResetColor();
-
-                if (!isSelected)
+                if (useSeparators && i < endIndex - 1)
                 {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    _helpers.WriteLine($"     {p.SecondaryText.AnsiFg}\u2576\u2500\u2500\u2574{Reset}");
                 }
-
-                var displayDomain = RenderHelpers.TruncateText(domain, options.MaxContentWidth - 10);
-                _helpers.WriteLine($"      {displayDomain}");
-                Console.ResetColor();
             }
 
             if (collection.Items.Count > endIndex)
             {
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                _helpers.WriteLine($"  ... {collection.Items.Count - endIndex} more items below");
-                Console.ResetColor();
+                _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}... {collection.Items.Count - endIndex} more items below{Reset}");
             }
         }
-    }
-
-    public void RenderCollectionStatusBar(ViewMode mode)
-    {
-        _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
-        _helpers.WriteLine(new string('\u2500', separatorWidth));
-
-        Console.ForegroundColor = ConsoleColor.Yellow;
-
-        var statusText = mode switch
-        {
-            ViewMode.CollectionList => "[Collections] j/k:move Enter:open s:set-default d:delete :new q:quit",
-            ViewMode.CollectionItems => "[Items] j/k:move Enter:open d:remove J/K:reorder b:back :export q:quit",
-            _ => "[Collections] q:quit"
-        };
-
-        _helpers.WriteLine(statusText);
-        Console.ResetColor();
     }
 }

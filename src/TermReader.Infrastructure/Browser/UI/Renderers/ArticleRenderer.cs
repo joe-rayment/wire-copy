@@ -1,8 +1,10 @@
 // Educational and personal use only.
 
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -11,39 +13,42 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class ArticleRenderer
 {
+    private const string Reset = "\x1b[0m";
     private readonly RenderHelpers _helpers;
+    private readonly IThemeProvider _themeProvider;
 
-    public ArticleRenderer(RenderHelpers helpers)
+    public ArticleRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
     {
         _helpers = helpers;
+        _themeProvider = themeProvider;
     }
 
     public void RenderArticleHeader(ReadableContent content, RenderOptions options)
     {
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var border = p.HeaderBorderFg.AnsiFg;
+        var titleFg = p.HeaderTitleFg.AnsiFg;
 
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        _helpers.WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
+        _helpers.WriteLine($"{border}\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557{Reset}");
 
         var titleLines = RenderHelpers.WrapText(content.Title, width - 4);
         foreach (var line in titleLines)
         {
-            _helpers.WriteLine($"\u2551 {line.PadRight(width - 4)} \u2551");
+            _helpers.WriteLine($"{border}\u2551 {titleFg}{line.PadRight(width - 4)}{border} \u2551{Reset}");
         }
 
-        _helpers.WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
-        Console.ResetColor();
+        _helpers.WriteLine($"{border}\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d{Reset}");
 
-        Console.ForegroundColor = ConsoleColor.DarkGray;
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {content.GetMetadataString()}");
-        Console.ResetColor();
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{content.GetMetadataString()}{Reset}");
         _helpers.WriteLine();
     }
 
     public void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var startLine = context.ScrollOffset;
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
 
@@ -51,11 +56,11 @@ internal class ArticleRenderer
         {
             if (i == startLine)
             {
-                _helpers.WriteLineWithFocusHighlight(allLines[i], options.Use256Colors);
+                _helpers.WriteLineWithFocusHighlight(allLines[i], p);
             }
             else if (!string.IsNullOrEmpty(context.SearchQuery))
             {
-                _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery);
+                _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery, p);
             }
             else
             {
@@ -72,6 +77,7 @@ internal class ArticleRenderer
 
     public void RenderArticleContent(ReadableContent content, NavigationContext context, int maxLines, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var paragraphs = content.Paragraphs;
         var startParagraph = context.ScrollOffset;
         var maxDisplay = Math.Max(3, maxLines);
@@ -83,7 +89,7 @@ internal class ArticleRenderer
             {
                 if (!string.IsNullOrEmpty(context.SearchQuery))
                 {
-                    _helpers.WriteLineWithHighlight($"  {line}", context.SearchQuery);
+                    _helpers.WriteLineWithHighlight($"  {line}", context.SearchQuery, p);
                 }
                 else
                 {
@@ -96,22 +102,20 @@ internal class ArticleRenderer
 
         if (paragraphs.Count > maxDisplay)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
             var progress = (int)((float)(startParagraph + maxDisplay) / paragraphs.Count * 100);
             _helpers.WriteLine();
 
             var searchInfo = !string.IsNullOrEmpty(context.SearchQuery) ? $" | search: \"{context.SearchQuery}\"" : string.Empty;
-            _helpers.WriteLine($"  [{progress}%] {paragraphs.Count - startParagraph - maxDisplay} paragraphs remaining (scroll with j/k){searchInfo}");
-            Console.ResetColor();
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}[{progress}%] {paragraphs.Count - startParagraph - maxDisplay} paragraphs remaining (scroll with j/k){searchInfo}{Reset}");
         }
     }
 
     public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.DarkGray;
         var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
-        _helpers.WriteLine(new string('\u2500', separatorWidth));
+        _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
         var progress = totalLines > 0
             ? (int)((float)Math.Min(context.ScrollOffset + 20, totalLines) / totalLines * 100)
@@ -120,6 +124,7 @@ internal class ArticleRenderer
         var lineInfo = $"L{context.ScrollOffset + 1}/{totalLines}";
         var widthInfo = $"W{contentWidth}";
         var progressInfo = $"{progress}%";
+        var themeName = _themeProvider.CurrentTheme.ToString();
 
         var searchInfo = !string.IsNullOrEmpty(context.SearchQuery)
             ? $" /{context.SearchQuery}"
@@ -127,8 +132,6 @@ internal class ArticleRenderer
 
         var hints = "j/k:scroll v:links b:back /:search :cmd q:quit";
 
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        _helpers.WriteLine($"[Reader] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}");
-        Console.ResetColor();
+        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader | {themeName}] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}{Reset}");
     }
 }

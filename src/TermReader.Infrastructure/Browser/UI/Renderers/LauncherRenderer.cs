@@ -1,7 +1,9 @@
 // Educational and personal use only.
 
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Bookmarks;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -11,46 +13,47 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LauncherRenderer
 {
+    private const string Reset = "\x1b[0m";
     private readonly RenderHelpers _helpers;
+    private readonly IThemeProvider _themeProvider;
 
-    public LauncherRenderer(RenderHelpers helpers)
+    public LauncherRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
     {
         _helpers = helpers;
+        _themeProvider = themeProvider;
     }
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
 
-        // Header: TermReader (Cyan) left + bookmark count + version right (1 line + separator)
-        var title = $"{Colors.Fg256Cyan}TermReader{Colors.Reset}";
-        var statusInfo = $"{Colors.Fg256DarkGray}{bookmarks.Count} bookmarks{Colors.Reset}";
-        var version = $"{Colors.Fg256DarkGray}v1.0{Colors.Reset}";
+        // Header: TermReader left + bookmark count + version right (1 line + separator)
+        var title = $"{p.HeaderTitleFg.AnsiFg}TermReader{Reset}";
+        var statusInfo = $"{p.SecondaryText.AnsiFg}{bookmarks.Count} bookmarks{Reset}";
+        var version = $"{p.SecondaryText.AnsiFg}v1.0{Reset}";
         var headerRight = $"{statusInfo} {version}";
 
-        // Calculate padding (accounting for ANSI escape codes in length)
         var titleTextLen = "TermReader".Length;
         var rightTextLen = $"{bookmarks.Count} bookmarks v1.0".Length;
         var padding = Math.Max(1, width - titleTextLen - rightTextLen - 2);
         _helpers.WriteLine($" {title}{new string(' ', padding)}{headerRight} ");
 
-        // Header separator
-        _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', width)}{Colors.Reset}");
+        _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', width)}{Reset}");
 
-        // Calculate grid dimensions
         var headerLines = _helpers.LinesWritten;
-        var footerLines = 2; // separator + key hints
+        var footerLines = 2;
         var availableHeight = Math.Max(4, options.TerminalHeight - headerLines - footerLines);
 
         var columns = width >= 35 ? 2 : 1;
-        var totalItems = bookmarks.Count + 1; // +1 for Collections tile
+        var totalItems = bookmarks.Count + 1;
 
         if (bookmarks.Count == 0 && totalItems == 1)
         {
             _helpers.WriteLine();
-            _helpers.WriteLine($"  {Colors.Fg256DarkGray}No bookmarks. Press 'a' to add one.{Colors.Reset}");
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}No bookmarks. Press 'a' to add one.{Reset}");
             _helpers.WriteLine();
-            _helpers.WriteLine($"  {Colors.Fg256Cyan}\u2502{Colors.Reset} {Colors.Fg256White}Collections{Colors.Reset}");
+            _helpers.WriteLine($"  {p.HeaderBorderFg.AnsiFg}\u2502{Reset} {p.PrimaryText.AnsiFg}Collections{Reset}");
             return;
         }
 
@@ -72,11 +75,11 @@ internal class LauncherRenderer
                 if (columns == 2)
                 {
                     var halfSep = cellWidth;
-                    _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', halfSep)}\u253c{new string('\u2500', width - halfSep - 1)}{Colors.Reset}");
+                    _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', halfSep)}\u253c{new string('\u2500', width - halfSep - 1)}{Reset}");
                 }
                 else
                 {
-                    _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', width)}{Colors.Reset}");
+                    _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', width)}{Reset}");
                 }
             }
 
@@ -90,16 +93,16 @@ internal class LauncherRenderer
                 var sb = new System.Text.StringBuilder();
 
                 // Left cell
-                sb.Append(BuildCellContent(bookmarks, leftIdx, selectedIndex, cellWidth, contentLines, line));
+                sb.Append(BuildCellContent(bookmarks, leftIdx, selectedIndex, cellWidth, contentLines, line, p));
 
                 // Vertical separator + right cell
                 if (columns == 2)
                 {
-                    sb.Append($"{Colors.Fg256DarkGray}\u2502{Colors.Reset}");
+                    sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
 
                     if (rightIdx >= 0 && rightIdx < totalItems)
                     {
-                        sb.Append(BuildCellContent(bookmarks, rightIdx, selectedIndex, width - cellWidth - 1, contentLines, line));
+                        sb.Append(BuildCellContent(bookmarks, rightIdx, selectedIndex, width - cellWidth - 1, contentLines, line, p));
                     }
                     else
                     {
@@ -115,7 +118,7 @@ internal class LauncherRenderer
         if (totalRows > startRow + visibleRows)
         {
             var remaining = totalRows - startRow - visibleRows;
-            _helpers.WriteLine($"{Colors.Fg256DarkGray}  \u2193 {remaining} more row{(remaining == 1 ? "" : "s")} below{Colors.Reset}");
+            _helpers.WriteLine($"{p.SecondaryText.AnsiFg}  \u2193 {remaining} more row{(remaining == 1 ? "" : "s")} below{Reset}");
         }
     }
 
@@ -125,34 +128,32 @@ internal class LauncherRenderer
     /// </summary>
     public void RenderFooter(int width)
     {
-        // Thin separator
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var separatorWidth = Math.Max(1, width - 1);
-        _helpers.WriteLine($"{Colors.Fg256DarkGray}{new string('\u2500', separatorWidth)}{Colors.Reset}");
+        _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
-        // Keyboard hints: keys in White, action labels in DarkGray
         string hints;
         if (width < 60)
         {
-            // Abbreviated mode
-            hints = $"{Colors.Fg256White}h/j/k/l{Colors.Reset} {Colors.Fg256DarkGray}navigate{Colors.Reset}  " +
-                    $"{Colors.Fg256White}Enter{Colors.Reset} {Colors.Fg256DarkGray}open{Colors.Reset}  " +
-                    $"{Colors.Fg256White}q{Colors.Reset} {Colors.Fg256DarkGray}quit{Colors.Reset}";
+            hints = $"{p.PrimaryText.AnsiFg}h/j/k/l{Reset} {p.SecondaryText.AnsiFg}navigate{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}Enter{Reset} {p.SecondaryText.AnsiFg}open{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}q{Reset} {p.SecondaryText.AnsiFg}quit{Reset}";
         }
         else
         {
-            hints = $"{Colors.Fg256White}h/j/k/l{Colors.Reset} {Colors.Fg256DarkGray}navigate{Colors.Reset}  " +
-                    $"{Colors.Fg256White}Enter{Colors.Reset} {Colors.Fg256DarkGray}open{Colors.Reset}  " +
-                    $"{Colors.Fg256White}a{Colors.Reset} {Colors.Fg256DarkGray}add{Colors.Reset}  " +
-                    $"{Colors.Fg256White}d{Colors.Reset} {Colors.Fg256DarkGray}delete{Colors.Reset}  " +
-                    $"{Colors.Fg256White}c{Colors.Reset} {Colors.Fg256DarkGray}collections{Colors.Reset}  " +
-                    $"{Colors.Fg256White}:{Colors.Reset}{Colors.Fg256DarkGray}cmd{Colors.Reset}  " +
-                    $"{Colors.Fg256White}q{Colors.Reset} {Colors.Fg256DarkGray}quit{Colors.Reset}";
+            hints = $"{p.PrimaryText.AnsiFg}h/j/k/l{Reset} {p.SecondaryText.AnsiFg}navigate{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}Enter{Reset} {p.SecondaryText.AnsiFg}open{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}a{Reset} {p.SecondaryText.AnsiFg}add{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}d{Reset} {p.SecondaryText.AnsiFg}delete{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}c{Reset} {p.SecondaryText.AnsiFg}collections{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}cmd{Reset}  " +
+                    $"{p.PrimaryText.AnsiFg}q{Reset} {p.SecondaryText.AnsiFg}quit{Reset}";
         }
 
         _helpers.WriteLine($" {hints}");
     }
 
-    private static string BuildCellContent(List<Bookmark> bookmarks, int itemIdx, int selectedIndex, int cellWidth, int totalLines, int lineIdx)
+    private static string BuildCellContent(List<Bookmark> bookmarks, int itemIdx, int selectedIndex, int cellWidth, int totalLines, int lineIdx, ThemePalette p)
     {
         var totalItems = bookmarks.Count + 1;
         if (itemIdx >= totalItems)
@@ -178,7 +179,6 @@ internal class LauncherRenderer
             domain = ExtractDomain(bookmark.Url);
         }
 
-        // Compute badge string based on absolute item index
         string badge;
         if (isCollections)
         {
@@ -193,22 +193,21 @@ internal class LauncherRenderer
             badge = string.Empty;
         }
 
-        // Name starts 6 chars from left edge (indent)
         const int indent = 6;
         var nameLineIdx = Math.Max(1, (totalLines - 1) / 2);
         var domainLineIdx = nameLineIdx + 1;
-        var textWidth = Math.Max(1, cellWidth - indent - 1); // -1 for right padding
+        var textWidth = Math.Max(1, cellWidth - indent - 1);
         var barHeight = Math.Min(3, totalLines);
 
-        // Bar lines: centered around name/domain lines
         var barStart = nameLineIdx;
         var barEnd = barStart + barHeight - 1;
+
+        var selFg = p.SelectedItemFg.AnsiFg;
+        var selBg = p.SelectedItemBg.AnsiBg;
 
         if (isSelected)
         {
             var sb = new System.Text.StringBuilder();
-
-            // Cyan ▌ left bar on content lines
             var showBar = lineIdx >= barStart && lineIdx <= barEnd;
 
             if (lineIdx == nameLineIdx)
@@ -216,18 +215,16 @@ internal class LauncherRenderer
                 var truncName = RenderHelpers.TruncateText(name, textWidth);
                 if (showBar)
                 {
-                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
                 }
                 else
                 {
                     sb.Append(' ');
                 }
 
-                // Reverse video on name (bar or space is always 1 char wide)
-                // Render badge in DarkGray within the indent, then name
                 var indentContent = badge.Length > 0
-                    ? $" {Colors.Fg256DarkGray}{badge}{Colors.Reset}\x1b[30;47m{new string(' ', indent - 1 - badge.Length - 1)}"
-                    : $"\x1b[30;47m{new string(' ', indent - 1)}";
+                    ? $" {p.SecondaryText.AnsiFg}{badge}\x1b[0m{selFg}{selBg}{new string(' ', indent - 1 - badge.Length - 1)}"
+                    : $"{selFg}{selBg}{new string(' ', indent - 1)}";
                 var paddedName = truncName.PadRight(cellWidth - indent);
                 sb.Append($"{indentContent}{paddedName}\x1b[0m");
             }
@@ -236,15 +233,14 @@ internal class LauncherRenderer
                 var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
                 if (showBar)
                 {
-                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
                 }
                 else
                 {
                     sb.Append(' ');
                 }
 
-                // Brighter White domain text (no reverse video)
-                var domainContent = $"{Colors.Fg256White}{truncDomain}{Colors.Reset}";
+                var domainContent = $"{p.PrimaryText.AnsiFg}{truncDomain}\x1b[0m";
                 var domainPad = Math.Max(0, cellWidth - indent - truncDomain.Length);
                 sb.Append($"{new string(' ', indent - 1)}{domainContent}{new string(' ', domainPad)}");
             }
@@ -252,7 +248,7 @@ internal class LauncherRenderer
             {
                 if (showBar)
                 {
-                    sb.Append($"{Colors.Fg256Cyan}\u258c{Colors.Reset}");
+                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
                     sb.Append(new string(' ', cellWidth - 1));
                 }
                 else
@@ -270,21 +266,20 @@ internal class LauncherRenderer
                 var truncName = RenderHelpers.TruncateText(name, textWidth);
                 var pad = Math.Max(0, cellWidth - indent - truncName.Length);
 
-                // Render badge in DarkGray within the indent space
                 if (badge.Length > 0)
                 {
-                    var badgePad = indent - badge.Length - 1; // 1 char space before badge
-                    return $" {Colors.Fg256DarkGray}{badge}{Colors.Reset}{new string(' ', badgePad)}{Colors.Fg256White}{truncName}{Colors.Reset}{new string(' ', pad)}";
+                    var badgePad = indent - badge.Length - 1;
+                    return $" {p.SecondaryText.AnsiFg}{badge}\x1b[0m{new string(' ', badgePad)}{p.PrimaryText.AnsiFg}{truncName}\x1b[0m{new string(' ', pad)}";
                 }
 
-                return $"{new string(' ', indent)}{Colors.Fg256White}{truncName}{Colors.Reset}{new string(' ', pad)}";
+                return $"{new string(' ', indent)}{p.PrimaryText.AnsiFg}{truncName}\x1b[0m{new string(' ', pad)}";
             }
 
             if (lineIdx == domainLineIdx)
             {
                 var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
                 var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
-                return $"{new string(' ', indent)}{Colors.Fg256DarkGray}{truncDomain}{Colors.Reset}{new string(' ', pad)}";
+                return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{truncDomain}\x1b[0m{new string(' ', pad)}";
             }
 
             return new string(' ', cellWidth);
@@ -302,14 +297,5 @@ internal class LauncherRenderer
         {
             return url;
         }
-    }
-
-    // Convenience aliases for color constants
-    private static class Colors
-    {
-        public const string Reset = RenderHelpers.Colors.Reset;
-        public const string Fg256Cyan = RenderHelpers.Colors.Fg256Cyan;
-        public const string Fg256White = RenderHelpers.Colors.Fg256White;
-        public const string Fg256DarkGray = RenderHelpers.Colors.Fg256DarkGray;
     }
 }
