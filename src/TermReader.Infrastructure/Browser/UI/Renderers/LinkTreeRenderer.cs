@@ -1,9 +1,11 @@
 // Educational and personal use only.
 
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -12,30 +14,34 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LinkTreeRenderer
 {
+    private const string Reset = "\x1b[0m";
     private readonly RenderHelpers _helpers;
+    private readonly IThemeProvider _themeProvider;
 
-    public LinkTreeRenderer(RenderHelpers helpers)
+    public LinkTreeRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
     {
         _helpers = helpers;
+        _themeProvider = themeProvider;
     }
 
     public void RenderHeader(PageMetadata metadata, string url, RenderOptions options)
     {
         var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var border = p.HeaderBorderFg.AnsiFg;
+        var titleFg = p.HeaderTitleFg.AnsiFg;
+        var urlFg = p.HeaderUrlFg.AnsiFg;
 
         _helpers.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        _helpers.WriteLine($"\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557");
+        _helpers.WriteLine($"{border}\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557{Reset}");
 
         var title = RenderHelpers.TruncateText(metadata.Title ?? "Untitled", width - 4);
-        _helpers.WriteLine($"\u2551 {title.PadRight(width - 4)} \u2551");
+        _helpers.WriteLine($"{border}\u2551 {titleFg}{title.PadRight(width - 4)}{border} \u2551{Reset}");
 
         var displayUrl = RenderHelpers.TruncateUrl(url, width - 4);
-        var urlLine = $"\x1b[90m\u2551 \x1b[37m{displayUrl.PadRight(width - 4)}\x1b[36m \u2551";
-        _helpers.WriteLine(urlLine);
+        _helpers.WriteLine($"{border}\u2551 {urlFg}{displayUrl.PadRight(width - 4)}{border} \u2551{Reset}");
 
-        _helpers.WriteLine($"\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d");
-        Console.ResetColor();
+        _helpers.WriteLine($"{border}\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d{Reset}");
         _helpers.WriteLine();
     }
 
@@ -74,9 +80,8 @@ internal class LinkTreeRenderer
         var totalRemaining = Math.Max(0, visibleNodes.Count - startIndex - nodesRendered);
         if (totalRemaining > 0)
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            _helpers.WriteLine($"  ... {totalRemaining} more links (scroll with j/k)");
-            Console.ResetColor();
+            var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+            _helpers.WriteLine($"{p.SecondaryText.AnsiFg}  ... {totalRemaining} more links (scroll with j/k){Reset}");
         }
     }
 
@@ -88,23 +93,24 @@ internal class LinkTreeRenderer
             return;
         }
 
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var indent = new string(' ', (node.Depth * 2) + 4);
         var prefix = isSelected ? "\u2192" : " ";
 
+        string colorStart;
         if (isSelected)
         {
-            Console.ForegroundColor = ConsoleColor.Black;
-            Console.BackgroundColor = ConsoleColor.White;
+            colorStart = $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}";
         }
         else
         {
-            Console.ForegroundColor = node.Link.Type switch
+            colorStart = node.Link.Type switch
             {
-                LinkType.Content => ConsoleColor.Green,
-                LinkType.Navigation => ConsoleColor.Gray,
-                LinkType.External => ConsoleColor.Cyan,
-                LinkType.Footer => ConsoleColor.DarkGray,
-                _ => ConsoleColor.White
+                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Navigation => p.LinkNavigation.AnsiFg,
+                LinkType.External => p.LinkExternal.AnsiFg,
+                LinkType.Footer => p.LinkFooter.AnsiFg,
+                _ => p.PrimaryText.AnsiFg
             };
         }
 
@@ -113,27 +119,20 @@ internal class LinkTreeRenderer
             : " ";
 
         var displayText = RenderHelpers.TruncateText(node.Link.DisplayText, options.MaxContentWidth - indent.Length - 5);
-        _helpers.WriteLine($"{indent}{prefix}{collapseIndicator} {displayText}");
-
-        Console.ResetColor();
+        _helpers.WriteLine($"{colorStart}{indent}{prefix}{collapseIndicator} {displayText}{Reset}");
     }
 
     public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var indent = new string(' ', (node.Depth * 2) + 2);
         var prefix = isSelected ? "\u2192" : " ";
 
         var collapseIndicator = node.CollapseState == NodeCollapseState.Expanded ? "\u25bc" : "\u25b6";
 
-        if (isSelected)
-        {
-            Console.ForegroundColor = ConsoleColor.Black;
-            Console.BackgroundColor = ConsoleColor.White;
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.White;
-        }
+        var colorStart = isSelected
+            ? $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}"
+            : p.PrimaryText.AnsiFg;
 
         var displayText = RenderHelpers.TruncateText(node.Link.DisplayText, options.MaxContentWidth - indent.Length - 5);
 
@@ -142,8 +141,6 @@ internal class LinkTreeRenderer
             _helpers.WriteLine();
         }
 
-        _helpers.WriteLine($"{indent}{prefix}{collapseIndicator} {displayText}");
-
-        Console.ResetColor();
+        _helpers.WriteLine($"{colorStart}{indent}{prefix}{collapseIndicator} {displayText}{Reset}");
     }
 }

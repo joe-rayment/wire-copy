@@ -4,6 +4,8 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.UI;
 using Xunit;
 
@@ -15,8 +17,10 @@ public class TerminalInputHandlerTests
 
     public TerminalInputHandlerTests()
     {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         var logger = Substitute.For<ILogger<TerminalInputHandler>>();
-        _sut = new TerminalInputHandler(logger);
+        _sut = new TerminalInputHandler(themeProvider, logger);
     }
 
     #region Regular key mappings

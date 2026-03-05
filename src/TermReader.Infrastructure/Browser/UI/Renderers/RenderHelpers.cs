@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using TermReader.Infrastructure.Browser.Themes;
+
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
@@ -74,7 +76,7 @@ internal class RenderHelpers
         }
     }
 
-    public void WriteLineWithHighlight(string text, string searchQuery)
+    public void WriteLineWithHighlight(string text, string searchQuery, ThemePalette palette)
     {
         try
         {
@@ -86,7 +88,6 @@ internal class RenderHelpers
             Console.SetCursorPosition(0, _linesWritten);
 
             var index = 0;
-            var savedColor = Console.ForegroundColor;
 
             while (index < text.Length)
             {
@@ -103,11 +104,9 @@ internal class RenderHelpers
                         Console.Write(text.Substring(index, matchPos - index));
                     }
 
-                    Console.BackgroundColor = ConsoleColor.DarkYellow;
-                    Console.ForegroundColor = ConsoleColor.Black;
+                    Console.Write($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
                     Console.Write(text.Substring(matchPos, searchQuery.Length));
-                    Console.ResetColor();
-                    Console.ForegroundColor = savedColor;
+                    Console.Write(Colors.Reset);
 
                     index = matchPos + searchQuery.Length;
                 }
@@ -123,7 +122,7 @@ internal class RenderHelpers
         }
     }
 
-    public void WriteLineWithFocusHighlight(string text, bool use256Colors)
+    public void WriteLineWithFocusHighlight(string text, ThemePalette palette)
     {
         try
         {
@@ -134,14 +133,7 @@ internal class RenderHelpers
 
             Console.SetCursorPosition(0, _linesWritten);
 
-            if (use256Colors)
-            {
-                Console.Write($"{Colors.Bg256Highlight}{Colors.Fg256White}{text}{Colors.Reset}");
-            }
-            else
-            {
-                Console.Write($"{Colors.Bold}{text}{Colors.Reset}");
-            }
+            Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{Colors.Reset}");
 
             Console.Write("\x1b[K");
             _linesWritten++;

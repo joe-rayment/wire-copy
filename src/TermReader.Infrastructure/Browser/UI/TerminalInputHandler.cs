@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI;
 
@@ -11,11 +12,13 @@ namespace TermReader.Infrastructure.Browser.UI;
 /// </summary>
 public class TerminalInputHandler : IInputHandler
 {
+    private readonly IThemeProvider _themeProvider;
     private readonly ILogger<TerminalInputHandler> _logger;
     private bool _waitingForSecondKey; // For 'gg' command
 
-    public TerminalInputHandler(ILogger<TerminalInputHandler> logger)
+    public TerminalInputHandler(IThemeProvider themeProvider, ILogger<TerminalInputHandler> logger)
     {
+        _themeProvider = themeProvider;
         _logger = logger;
     }
 
@@ -269,10 +272,11 @@ public class TerminalInputHandler : IInputHandler
     public async Task<string?> PromptForUrlAsync(string prompt = "Enter URL: ", CancellationToken cancellationToken = default)
     {
         Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Cyan;
+        var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        Console.Write(palette.PromptLabelFg.AnsiFg);
         Console.WriteLine("TermReader - Browser Mode");
         Console.WriteLine("================================");
-        Console.ResetColor();
+        Console.Write("\x1b[0m");
         Console.WriteLine();
         Console.Write(prompt);
 
@@ -304,9 +308,10 @@ public class TerminalInputHandler : IInputHandler
             // Clear the line and show prompt
             Console.Write(new string(' ', Console.WindowWidth - 1));
             Console.SetCursorPosition(0, row);
-            Console.ForegroundColor = ConsoleColor.Yellow;
+            var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+            Console.Write(palette.PromptFg.AnsiFg);
             Console.Write(prompt);
-            Console.ResetColor();
+            Console.Write("\x1b[0m");
 
             // Read input character by character
             var input = new System.Text.StringBuilder();

@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
@@ -35,8 +36,10 @@ public class TerminalPageRendererTests
 
     public TerminalPageRendererTests()
     {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         _logger = Substitute.For<ILogger<TerminalPageRenderer>>();
-        _sut = new TerminalPageRenderer(_logger);
+        _sut = new TerminalPageRenderer(themeProvider, _logger);
     }
 
     private static Page CreateTestPage(
