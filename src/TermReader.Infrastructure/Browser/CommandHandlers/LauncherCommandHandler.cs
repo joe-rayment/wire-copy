@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
+using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -204,23 +205,17 @@ internal static class LauncherCommandHandler
 
     private static void AdjustLauncherScroll(CommandContext ctx, RenderOptions options)
     {
-        var columns = options.TerminalWidth < 35 ? 1 : 2;
-        var headerLines = 5;
-        var statusBarLines = 3;
-        var availableHeight = Math.Max(6, options.TerminalHeight - headerLines - statusBarLines);
-        var tileHeight = Math.Max(3, availableHeight / 6);
-        var visibleRows = Math.Max(1, availableHeight / tileHeight);
-
-        var selectedRow = ctx.NavigationService.LauncherSelectedIndex / columns;
+        var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var selectedRow = ctx.NavigationService.LauncherSelectedIndex / layout.Columns;
         var currentOffset = ctx.NavigationService.LauncherScrollOffset;
 
         if (selectedRow < currentOffset)
         {
             ctx.NavigationService.LauncherScrollOffset = selectedRow;
         }
-        else if (selectedRow >= currentOffset + visibleRows)
+        else if (selectedRow >= currentOffset + layout.VisibleRows)
         {
-            ctx.NavigationService.LauncherScrollOffset = selectedRow - visibleRows + 1;
+            ctx.NavigationService.LauncherScrollOffset = selectedRow - layout.VisibleRows + 1;
         }
     }
 }

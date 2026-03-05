@@ -8,12 +8,14 @@ using TermReader.Infrastructure.Browser.Themes;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders the launcher home screen with a full-viewport grid layout.
-/// Items expand to fill available space with thin separators between cells.
+/// Renders the launcher home screen with a fixed-height 2-column grid layout.
 /// </summary>
 internal class LauncherRenderer
 {
     private const string Reset = "\x1b[0m";
+    private const string Bold = "\x1b[1m";
+    private const string Dim = "\x1b[2m";
+
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
 
@@ -23,134 +25,150 @@ internal class LauncherRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
+    public void RenderLauncher(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
 
-        // Header: TermReader left + bookmark count + version right (1 line + separator)
-        var title = $"{p.HeaderTitleFg.AnsiFg}TermReader{Reset}";
-        var statusInfo = $"{p.SecondaryText.AnsiFg}{bookmarks.Count} bookmarks{Reset}";
-        var version = $"{p.SecondaryText.AnsiFg}v1.0{Reset}";
-        var headerRight = $"{statusInfo} {version}";
+        RenderHeader(bookmarks.Count, layout.Width, p);
 
-        var titleTextLen = "TermReader".Length;
-        var rightTextLen = $"{bookmarks.Count} bookmarks v1.0".Length;
-        var padding = Math.Max(1, width - titleTextLen - rightTextLen - 2);
-        _helpers.WriteLine($" {title}{new string(' ', padding)}{headerRight} ");
-
-        _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', width)}{Reset}");
-
-        var headerLines = _helpers.LinesWritten;
-        var footerLines = 2;
-        var availableHeight = Math.Max(4, options.TerminalHeight - headerLines - footerLines);
-
-        var columns = width >= 35 ? 2 : 1;
         var totalItems = bookmarks.Count + 1;
 
-        if (bookmarks.Count == 0 && totalItems == 1)
+        if (bookmarks.Count == 0)
         {
-            _helpers.WriteLine();
-            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}No bookmarks. Press 'a' to add one.{Reset}");
-            _helpers.WriteLine();
-            _helpers.WriteLine($"  {p.HeaderBorderFg.AnsiFg}\u2502{Reset} {p.PrimaryText.AnsiFg}Collections{Reset}");
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
             return;
         }
 
-        var totalRows = (totalItems + columns - 1) / columns;
-        var visibleRows = Math.Max(1, availableHeight / Math.Max(3, availableHeight / Math.Max(1, totalRows)));
-        var rowHeight = Math.Max(3, availableHeight / Math.Max(1, Math.Min(visibleRows, totalRows)));
-
-        // Recalculate visible rows with actual row height
-        visibleRows = Math.Max(1, availableHeight / rowHeight);
+        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
         var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow * layout.Columns;
+        var belowCount = totalItems - (endRow * layout.Columns);
 
-        var cellWidth = columns == 1 ? width : (width - 1) / 2; // -1 for vertical separator
-
-        for (var row = startRow; row < Math.Min(startRow + visibleRows, totalRows); row++)
+        for (var row = startRow; row < endRow; row++)
         {
-            // Horizontal separator between rows (not before first)
-            if (row > startRow)
+            var isFirstVisible = row == startRow;
+            var isLastVisible = row == endRow - 1;
+
+            for (var line = 0; line < layout.CellHeight; line++)
             {
-                if (columns == 2)
+                if (isFirstVisible && line == 0 && hasMoreAbove)
                 {
-                    var halfSep = cellWidth;
-                    _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', halfSep)}\u253c{new string('\u2500', width - halfSep - 1)}{Reset}");
+                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                    continue;
                 }
-                else
+
+                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
                 {
-                    _helpers.WriteLine($"{p.SecondaryText.AnsiFg}{new string('\u2500', width)}{Reset}");
+                    RenderScrollIndicator(layout.Width, p, false, belowCount);
+                    continue;
                 }
-            }
 
-            var leftIdx = row * columns;
-            var rightIdx = columns == 2 ? leftIdx + 1 : -1;
-
-            var contentLines = rowHeight;
-
-            for (var line = 0; line < contentLines; line++)
-            {
                 var sb = new System.Text.StringBuilder();
+                var leftIdx = row * layout.Columns;
+                sb.Append(BuildCellLine(
+                    bookmarks,
+                    leftIdx,
+                    selectedIndex,
+                    layout.CellWidth,
+                    layout.CellHeight,
+                    line,
+                    p));
 
-                // Left cell
-                sb.Append(BuildCellContent(bookmarks, leftIdx, selectedIndex, cellWidth, contentLines, line, p));
-
-                // Vertical separator + right cell
-                if (columns == 2)
+                if (layout.Columns == 2)
                 {
                     sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
-
-                    if (rightIdx >= 0 && rightIdx < totalItems)
+                    var rightIdx = leftIdx + 1;
+                    var rightWidth = layout.Width - layout.CellWidth - 1;
+                    if (rightIdx < totalItems)
                     {
-                        sb.Append(BuildCellContent(bookmarks, rightIdx, selectedIndex, width - cellWidth - 1, contentLines, line, p));
+                        sb.Append(BuildCellLine(
+                            bookmarks,
+                            rightIdx,
+                            selectedIndex,
+                            rightWidth,
+                            layout.CellHeight,
+                            line,
+                            p));
                     }
                     else
                     {
-                        sb.Append(new string(' ', width - cellWidth - 1));
+                        sb.Append(new string(' ', rightWidth));
                     }
                 }
 
                 _helpers.WriteLine(sb.ToString());
             }
         }
-
-        // Scroll indicator
-        if (totalRows > startRow + visibleRows)
-        {
-            var remaining = totalRows - startRow - visibleRows;
-            _helpers.WriteLine($"{p.SecondaryText.AnsiFg}  \u2193 {remaining} more row{(remaining == 1 ? string.Empty : "s")} below{Reset}");
-        }
     }
 
     /// <summary>
-    /// Renders the launcher-specific footer with separator and keyboard hints.
-    /// At narrow widths (&lt;60 cols), abbreviates to essential hints only.
+    /// Renders the launcher-specific footer with kbd-style keyboard hints.
     /// </summary>
     public void RenderFooter(int width)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var separatorWidth = Math.Max(1, width - 1);
-        _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', Math.Max(1, width))}{Reset}");
 
         string hints;
-        if (width < 60)
+        var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
+        var versionTextLen = "v1.0".Length;
+        var narrow = width < 60;
+
+        if (narrow)
         {
-            hints = $"{p.PrimaryText.AnsiFg}h/j/k/l{Reset} {p.SecondaryText.AnsiFg}navigate{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}Enter{Reset} {p.SecondaryText.AnsiFg}open{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}q{Reset} {p.SecondaryText.AnsiFg}quit{Reset}";
+            hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
+                    FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("q", "quit", p);
         }
         else
         {
-            hints = $"{p.PrimaryText.AnsiFg}h/j/k/l{Reset} {p.SecondaryText.AnsiFg}navigate{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}Enter{Reset} {p.SecondaryText.AnsiFg}open{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}a{Reset} {p.SecondaryText.AnsiFg}add{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}d{Reset} {p.SecondaryText.AnsiFg}delete{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}c{Reset} {p.SecondaryText.AnsiFg}collections{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}cmd{Reset}  " +
-                    $"{p.PrimaryText.AnsiFg}q{Reset} {p.SecondaryText.AnsiFg}quit{Reset}";
+            hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
+                    FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("a", "add", p) + "  " +
+                    FormatKbdHint("d", "delete", p) + "  " +
+                    FormatKbdHint("q", "quit", p);
         }
 
-        _helpers.WriteLine($" {hints}");
+        var hintsTextLen = CalculateKbdHintsTextLen(narrow);
+        var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
+        _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
+    }
+
+    /// <summary>
+    /// Computes shared layout parameters from terminal dimensions.
+    /// Used by both the renderer and <see cref="CommandHandlers.LauncherCommandHandler"/>.
+    /// </summary>
+    internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
+    {
+        const int headerLines = 2;
+        const int footerLines = 2;
+        const int columnThreshold = 40;
+        const int standardCellHeight = 5;
+        const int compactCellHeight = 3;
+
+        var width = Math.Min(terminalWidth, Console.WindowWidth - 2);
+        var columns = width >= columnThreshold ? 2 : 1;
+        var availableHeight = Math.Max(4, terminalHeight - headerLines - footerLines);
+        var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+        var visibleRows = Math.Max(1, availableHeight / cellHeight);
+        var cellWidth = columns == 1 ? width : (width - 1) / 2;
+
+        return new LauncherLayout(
+            Width: width,
+            Columns: columns,
+            CellHeight: cellHeight,
+            VisibleRows: visibleRows,
+            CellWidth: cellWidth,
+            HeaderLines: headerLines,
+            FooterLines: footerLines);
     }
 
     internal static string ExtractDomain(string url)
@@ -166,7 +184,14 @@ internal class LauncherRenderer
         }
     }
 
-    private static string BuildCellContent(List<Bookmark> bookmarks, int itemIdx, int selectedIndex, int cellWidth, int totalLines, int lineIdx, ThemePalette p)
+    private static string BuildCellLine(
+        List<Bookmark> bookmarks,
+        int itemIdx,
+        int selectedIndex,
+        int cellWidth,
+        int cellHeight,
+        int lineIdx,
+        ThemePalette p)
     {
         var totalItems = bookmarks.Count + 1;
         if (itemIdx >= totalItems)
@@ -206,96 +231,214 @@ internal class LauncherRenderer
             badge = string.Empty;
         }
 
-        const int indent = 6;
-        var nameLineIdx = Math.Max(1, (totalLines - 1) / 2);
+        // For 5-line cells: 0=pad, 1=name, 2=domain, 3=accent, 4=pad
+        // For 3-line cells: 0=name, 1=domain, 2=blank
+        var nameLineIdx = cellHeight == 5 ? 1 : 0;
         var domainLineIdx = nameLineIdx + 1;
+        var accentEndIdx = nameLineIdx + 2;
+
+        const int indent = 6;
         var textWidth = Math.Max(1, cellWidth - indent - 1);
-        var barHeight = Math.Min(3, totalLines);
-
-        var barStart = nameLineIdx;
-        var barEnd = barStart + barHeight - 1;
-
-        var selFg = p.SelectedItemFg.AnsiFg;
-        var selBg = p.SelectedItemBg.AnsiBg;
+        var showAccent = lineIdx >= nameLineIdx && lineIdx <= accentEndIdx;
 
         if (isSelected)
         {
-            var sb = new System.Text.StringBuilder();
-            var showBar = lineIdx >= barStart && lineIdx <= barEnd;
+            return BuildSelectedLine(
+                lineIdx,
+                nameLineIdx,
+                domainLineIdx,
+                showAccent,
+                name,
+                domain,
+                badge,
+                indent,
+                textWidth,
+                cellWidth,
+                p);
+        }
 
-            if (lineIdx == nameLineIdx)
-            {
-                var truncName = RenderHelpers.TruncateText(name, textWidth);
-                if (showBar)
-                {
-                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
-                }
-                else
-                {
-                    sb.Append(' ');
-                }
+        return BuildNormalLine(
+            lineIdx,
+            nameLineIdx,
+            domainLineIdx,
+            name,
+            domain,
+            badge,
+            indent,
+            textWidth,
+            cellWidth,
+            p);
+    }
 
-                var indentContent = badge.Length > 0
-                    ? $" {p.SecondaryText.AnsiFg}{badge}\x1b[0m{selFg}{selBg}{new string(' ', indent - 1 - badge.Length - 1)}"
-                    : $"{selFg}{selBg}{new string(' ', indent - 1)}";
-                var paddedName = truncName.PadRight(cellWidth - indent);
-                sb.Append($"{indentContent}{paddedName}\x1b[0m");
-            }
-            else if (lineIdx == domainLineIdx)
-            {
-                var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-                if (showBar)
-                {
-                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
-                }
-                else
-                {
-                    sb.Append(' ');
-                }
+    private static string BuildSelectedLine(
+        int lineIdx,
+        int nameLineIdx,
+        int domainLineIdx,
+        bool showAccent,
+        string name,
+        string domain,
+        string badge,
+        int indent,
+        int textWidth,
+        int cellWidth,
+        ThemePalette p)
+    {
+        var sb = new System.Text.StringBuilder();
+        var selBg = p.SelectedItemBg.AnsiBg;
+        var accentFg = p.HeaderBorderFg.AnsiFg;
 
-                var domainContent = $"{p.PrimaryText.AnsiFg}{truncDomain}\x1b[0m";
-                var domainPad = Math.Max(0, cellWidth - indent - truncDomain.Length);
-                sb.Append($"{new string(' ', indent - 1)}{domainContent}{new string(' ', domainPad)}");
-            }
-            else
-            {
-                if (showBar)
-                {
-                    sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c\x1b[0m");
-                    sb.Append(new string(' ', cellWidth - 1));
-                }
-                else
-                {
-                    sb.Append(new string(' ', cellWidth));
-                }
-            }
-
-            return sb.ToString();
+        if (showAccent)
+        {
+            sb.Append($"{accentFg}\u258c{Reset}");
         }
         else
         {
-            if (lineIdx == nameLineIdx)
-            {
-                var truncName = RenderHelpers.TruncateText(name, textWidth);
-                var pad = Math.Max(0, cellWidth - indent - truncName.Length);
-
-                if (badge.Length > 0)
-                {
-                    var badgePad = indent - badge.Length - 1;
-                    return $" {p.SecondaryText.AnsiFg}{badge}\x1b[0m{new string(' ', badgePad)}{p.PrimaryText.AnsiFg}{truncName}\x1b[0m{new string(' ', pad)}";
-                }
-
-                return $"{new string(' ', indent)}{p.PrimaryText.AnsiFg}{truncName}\x1b[0m{new string(' ', pad)}";
-            }
-
-            if (lineIdx == domainLineIdx)
-            {
-                var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-                var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
-                return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{truncDomain}\x1b[0m{new string(' ', pad)}";
-            }
-
-            return new string(' ', cellWidth);
+            sb.Append(' ');
         }
+
+        var contentWidth = cellWidth - 1;
+
+        if (lineIdx == nameLineIdx)
+        {
+            var truncName = RenderHelpers.TruncateText(name, textWidth);
+
+            if (badge.Length > 0)
+            {
+                var badgePad = indent - badge.Length - 2;
+                sb.Append($" {accentFg}{badge}{Reset}");
+                sb.Append($"{selBg}{new string(' ', Math.Max(0, badgePad))}");
+                sb.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+                sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+            }
+            else
+            {
+                sb.Append($"{selBg}{new string(' ', indent - 1)}");
+                sb.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+                sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+            }
+        }
+        else if (lineIdx == domainLineIdx)
+        {
+            var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
+            sb.Append($"{selBg}{new string(' ', indent - 1)}");
+            sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}");
+            sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncDomain.Length))}{Reset}");
+        }
+        else
+        {
+            sb.Append(new string(' ', contentWidth));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildNormalLine(
+        int lineIdx,
+        int nameLineIdx,
+        int domainLineIdx,
+        string name,
+        string domain,
+        string badge,
+        int indent,
+        int textWidth,
+        int cellWidth,
+        ThemePalette p)
+    {
+        if (lineIdx == nameLineIdx)
+        {
+            var truncName = RenderHelpers.TruncateText(name, textWidth);
+            var pad = Math.Max(0, cellWidth - indent - truncName.Length);
+
+            if (badge.Length > 0)
+            {
+                var badgePad = indent - badge.Length - 1;
+                return $" {p.SecondaryText.AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
+                       $"{p.PrimaryText.AnsiFg}{Bold}{truncName}{Reset}{new string(' ', pad)}";
+            }
+
+            return $"{new string(' ', indent)}{p.PrimaryText.AnsiFg}{Bold}{truncName}{Reset}{new string(' ', pad)}";
+        }
+
+        if (lineIdx == domainLineIdx)
+        {
+            var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
+            var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
+            return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}{new string(' ', pad)}";
+        }
+
+        return new string(' ', cellWidth);
+    }
+
+    private static string FormatKbdHint(string key, string action, ThemePalette p)
+    {
+        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+               $" {p.SecondaryText.AnsiFg}{Dim}{action}{Reset}";
+    }
+
+    private static int CalculateKbdHintsTextLen(bool narrow)
+    {
+        if (narrow)
+        {
+            return "[hjkl] navigate  [Enter] open  [q] quit".Length;
+        }
+
+        return "[hjkl] navigate  [Enter] open  [a] add  [d] delete  [q] quit".Length;
+    }
+
+    private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
+    {
+        var titleText = "TermReader";
+        var rightText = $"{bookmarkCount} bookmarks  v1.0";
+        var pad = Math.Max(1, width - titleText.Length - rightText.Length - 2);
+
+        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}{titleText}{Reset}";
+        var countPart = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
+        var versionPart = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
+
+        _helpers.WriteLine($" {title}{new string(' ', pad)}{countPart}  {versionPart} ");
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}");
+    }
+
+    private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
+    {
+        var availableLines = Math.Max(6, terminalHeight - 4);
+        var topPad = Math.Max(1, availableLines / 3);
+
+        for (var i = 0; i < topPad; i++)
+        {
+            _helpers.WriteLine();
+        }
+
+        var heading = "No bookmarks yet";
+        var headingPad = Math.Max(0, (width - heading.Length) / 2);
+        _helpers.WriteLine($"{new string(' ', headingPad)}{p.PrimaryText.AnsiFg}{Bold}{heading}{Reset}");
+        _helpers.WriteLine();
+
+        var instruction = "Press [a] to add your first site";
+        var instrPad = Math.Max(0, (width - instruction.Length) / 2);
+        var instrFormatted = $"Press {p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+                             $"{p.SecondaryText.AnsiFg}{Dim} to add your first site{Reset}";
+        _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
+        _helpers.WriteLine();
+
+        var collLabel = "[c]  Collections";
+        var collPad = Math.Max(0, (width - collLabel.Length) / 2);
+        _helpers.WriteLine(
+            $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+            $"  {p.PrimaryText.AnsiFg}Collections{Reset}");
+
+        var domainPad = Math.Max(0, (width - "saved links".Length) / 2);
+        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}saved links{Reset}");
+    }
+
+    private void RenderScrollIndicator(int width, ThemePalette p, bool isUp, int count)
+    {
+        var arrow = isUp ? "\u25b2" : "\u25bc";
+        var direction = isUp ? "above" : "below";
+        var indicator = $"{arrow} {count} more {direction}";
+        var indicatorPad = Math.Max(0, (width - indicator.Length) / 2);
+        _helpers.WriteLine(
+            $"{new string(' ', indicatorPad)}{p.SecondaryText.AnsiFg}{Dim}{indicator}{Reset}" +
+            $"{new string(' ', Math.Max(0, width - indicatorPad - indicator.Length))}");
     }
 }
