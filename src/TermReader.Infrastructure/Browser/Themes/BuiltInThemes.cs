@@ -18,24 +18,24 @@ public static class BuiltInThemes
             [ThemeName.Phosphor] = new ThemePalette
             {
                 PrimaryText = new ThemeColor(ConsoleColor.Green, 46),        // #00ff00 classic CRT
-                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 28),   // #008700 dim CRT
+                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 dim CRT
                 LinkContent = new ThemeColor(ConsoleColor.Green, 46),
-                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 28),
-                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 28),
-                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 28),
-                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 28),
+                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 46),
-                HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 28),
+                HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 SelectedItemFg = new ThemeColor(ConsoleColor.Black, 0),
                 SelectedItemBg = new ThemeColor(ConsoleColor.Green, 46),
-                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 28),
+                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 46),
                 PromptFg = new ThemeColor(ConsoleColor.Green, 46),
-                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 28),
+                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 ErrorFg = new ThemeColor(ConsoleColor.Red, 203),
                 SearchHighlightFg = new ThemeColor(ConsoleColor.Black, 0),
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Green, 46),
-                ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 28),
+                ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
             },
             [ThemeName.Amber] = new ThemePalette
             {

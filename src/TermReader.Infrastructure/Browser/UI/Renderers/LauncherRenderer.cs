@@ -310,14 +310,14 @@ internal class LauncherRenderer
                 var badgePad = indent - badge.Length - 2;
                 sb.Append($"{selBg} {selFg}{badge}");
                 sb.Append($"{new string(' ', Math.Max(0, badgePad))}");
-                sb.Append($"{Bold}{truncName}{Reset}");
-                sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+                sb.Append($"{Bold}{selFg}{selBg}{truncName}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
             }
             else
             {
                 sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
-                sb.Append($"{Bold}{truncName}{Reset}");
-                sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+                sb.Append($"{Bold}{selFg}{selBg}{truncName}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
             }
         }
         else if (lineIdx == domainLineIdx)
