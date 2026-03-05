@@ -110,7 +110,7 @@ internal class ArticleRenderer
         }
     }
 
-    public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth)
+    public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth, int viewportHeight)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine();
@@ -118,7 +118,7 @@ internal class ArticleRenderer
         _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
         var progress = totalLines > 0
-            ? (int)((float)Math.Min(context.ScrollOffset + 20, totalLines) / totalLines * 100)
+            ? (int)((float)Math.Min(context.ScrollOffset + viewportHeight, totalLines) / totalLines * 100)
             : 100;
 
         var lineInfo = $"L{context.ScrollOffset + 1}/{totalLines}";

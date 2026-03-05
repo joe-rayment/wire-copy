@@ -3,7 +3,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TermReader.Application.Interfaces;
-using TermReader.Persistence.Repositories;
 
 namespace TermReader.Persistence;
 
@@ -27,8 +26,6 @@ public static class PersistenceDependencyInjection
 
         services.AddSingleton<ICollectionPreferences, InMemoryCollectionPreferences>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddScoped<ICollectionRepository, CollectionRepository>();
-        services.AddScoped<IBookmarkRepository, BookmarkRepository>();
 
         return services;
     }
