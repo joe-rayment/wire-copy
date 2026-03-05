@@ -15,6 +15,7 @@ internal class LauncherRenderer
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
+    private const string BrightWhiteFg = "\x1b[38;5;15m";
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -357,10 +358,10 @@ internal class LauncherRenderer
             {
                 var badgePad = indent - badge.Length - 1;
                 return $" {p.SecondaryText.AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
-                       $"{p.PrimaryText.AnsiFg}{Bold}{truncName}{Reset}{new string(' ', pad)}";
+                       $"{Bold}{BrightWhiteFg}{truncName}{Reset}{new string(' ', pad)}";
             }
 
-            return $"{new string(' ', indent)}{p.PrimaryText.AnsiFg}{Bold}{truncName}{Reset}{new string(' ', pad)}";
+            return $"{new string(' ', indent)}{Bold}{BrightWhiteFg}{truncName}{Reset}{new string(' ', pad)}";
         }
 
         if (lineIdx == domainLineIdx)
