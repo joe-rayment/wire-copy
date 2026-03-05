@@ -141,10 +141,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_Escape_ReturnsQuit()
+    public void MapKeyToCommand_Escape_ReturnsGoBack()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.Escape, 0);
-        result.Type.Should().Be(CommandType.Quit);
+        result.Type.Should().Be(CommandType.GoBack);
     }
 
     [Fact]

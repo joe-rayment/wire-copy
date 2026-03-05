@@ -38,6 +38,9 @@ public class BrowserOrchestrator : IBrowserService
     private List<Collection>? _collections;
     private Guid? _defaultCollectionId;
 
+    // Launcher state
+    private List<Domain.Entities.Bookmarks.Bookmark>? _bookmarks;
+
     public BrowserOrchestrator(
         IPageLoader pageLoader,
         ILinkExtractor linkExtractor,
@@ -154,6 +157,15 @@ public class BrowserOrchestrator : IBrowserService
                         _navigationService.CollectionItemSelectedIndex,
                         options);
                 }
+
+                break;
+
+            case ViewMode.Launcher:
+                _renderer.RenderLauncher(
+                    _bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                    _navigationService.LauncherSelectedIndex,
+                    _navigationService.LauncherScrollOffset,
+                    options);
                 break;
         }
 
@@ -180,17 +192,18 @@ public class BrowserOrchestrator : IBrowserService
             Console.Write("\x1b[?1049h");
             Console.CursorVisible = false;
 
-            // Get initial URL if not provided
-            var url = initialUrl ?? await _inputHandler.PromptForUrlAsync(cancellationToken: cancellationToken);
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                _logger.LogInformation("No URL provided, exiting");
-                return;
-            }
-
-            // Load initial page with dynamic render options
             var options = GetCurrentRenderOptions();
-            await NavigateToAsync(url, options, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(initialUrl))
+            {
+                // Explicit URL provided → load directly (existing behavior)
+                await NavigateToAsync(initialUrl, options, cancellationToken);
+            }
+            else
+            {
+                // No URL → show launcher home screen
+                await EnterLauncherAsync(options, cancellationToken);
+            }
 
             // Main input loop
             while (!cancellationToken.IsCancellationRequested)
@@ -231,11 +244,16 @@ public class BrowserOrchestrator : IBrowserService
     {
         var width = Console.WindowWidth;
         var height = Console.WindowHeight;
+        var colorTerm = Environment.GetEnvironmentVariable("COLORTERM");
+        var use256 = string.Equals(colorTerm, "truecolor", StringComparison.OrdinalIgnoreCase)
+                  || string.Equals(colorTerm, "24bit", StringComparison.OrdinalIgnoreCase)
+                  || !string.IsNullOrEmpty(colorTerm);
         return new RenderOptions
         {
             TerminalWidth = width,
             TerminalHeight = height,
-            MaxContentWidth = Math.Clamp(width - 2, 40, 120)
+            MaxContentWidth = Math.Clamp(width - 2, 40, 120),
+            Use256Colors = use256
         };
     }
 
@@ -259,6 +277,12 @@ public class BrowserOrchestrator : IBrowserService
     {
         var page = _navigationService.CurrentPage;
         var tree = page?.LinkTree;
+
+        // Handle launcher-specific commands first
+        if (_navigationService.InLauncherMode)
+        {
+            return await HandleLauncherCommandAsync(command, options, cancellationToken);
+        }
 
         switch (command.Type)
         {
@@ -440,6 +464,11 @@ public class BrowserOrchestrator : IBrowserService
                     {
                         InvalidateLineCache();
                         await RenderCurrentPageAsync(options, cancellationToken);
+                    }
+                    else
+                    {
+                        // No back history → return to launcher home screen
+                        await EnterLauncherAsync(options, cancellationToken);
                     }
                 }
 
@@ -798,6 +827,14 @@ public class BrowserOrchestrator : IBrowserService
 
                 await RenderCurrentPageAsync(options, cancellationToken);
                 break;
+
+            case CommandType.OpenLauncher:
+                await EnterLauncherAsync(options, cancellationToken);
+                break;
+
+            case CommandType.AddBookmark:
+                // Only handle in launcher mode (handled above), ignore in other views
+                break;
         }
 
         return true;
@@ -806,6 +843,17 @@ public class BrowserOrchestrator : IBrowserService
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)
     {
         var viewMode = _navigationService.CurrentContext.ViewMode;
+
+        // Launcher view doesn't require a page - render directly
+        if (viewMode == ViewMode.Launcher)
+        {
+            _renderer.RenderLauncher(
+                _bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                _navigationService.LauncherSelectedIndex,
+                _navigationService.LauncherScrollOffset,
+                options);
+            return;
+        }
 
         // Collection views don't require a page - render directly
         if (viewMode == ViewMode.CollectionList)
@@ -895,6 +943,14 @@ public class BrowserOrchestrator : IBrowserService
                     await RenderCurrentPageAsync(options, cancellationToken);
                 }
 
+                return;
+
+            case "home":
+                await EnterLauncherAsync(options, cancellationToken);
+                return;
+
+            case "add":
+                await HandleAddBookmarkAsync(options, cancellationToken);
                 return;
 
             case "collections" or "readlater":
@@ -1121,7 +1177,7 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         var currentOffset = _navigationService.CurrentContext.ScrollOffset;
-        var contentHeight = options.ContentHeight;
+        var contentHeight = GetHierarchicalViewportHeight(options);
 
         // If selection is above visible area, scroll up
         if (selectedIndex < currentOffset)
@@ -1134,6 +1190,16 @@ public class BrowserOrchestrator : IBrowserService
         {
             _navigationService.SetScrollOffset(selectedIndex - contentHeight + 1);
         }
+    }
+
+    /// <summary>
+    /// Returns the actual usable viewport height for hierarchical view.
+    /// Accounts for header (6 lines: blank + box top + title + url + box bottom + blank)
+    /// and status bar area (3 lines: blank + separator + status text).
+    /// </summary>
+    private static int GetHierarchicalViewportHeight(RenderOptions options)
+    {
+        return Math.Max(3, options.TerminalHeight - 9);
     }
 
     /// <summary>
@@ -1307,6 +1373,277 @@ public class BrowserOrchestrator : IBrowserService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to export collection");
+        }
+
+        await RenderCurrentPageAsync(options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Handles commands while in launcher mode.
+    /// </summary>
+    private async Task<bool> HandleLauncherCommandAsync(NavigationCommand command, RenderOptions options, CancellationToken cancellationToken)
+    {
+        var totalItems = (_bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
+
+        switch (command.Type)
+        {
+            case CommandType.Quit:
+            case CommandType.GoBack:
+                return false;
+
+            case CommandType.MoveDown:
+            {
+                var newIndex = NavigationService.MoveInGrid(_navigationService.LauncherSelectedIndex, totalItems, 1);
+                _navigationService.LauncherSelectedIndex = newIndex;
+                AdjustLauncherScroll(options);
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.MoveUp:
+            {
+                var newIndex = NavigationService.MoveInGrid(_navigationService.LauncherSelectedIndex, totalItems, 0);
+                _navigationService.LauncherSelectedIndex = newIndex;
+                AdjustLauncherScroll(options);
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.CollapseNode: // h = left
+            {
+                var newIndex = NavigationService.MoveInGrid(_navigationService.LauncherSelectedIndex, totalItems, 2);
+                _navigationService.LauncherSelectedIndex = newIndex;
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.ExpandNode: // l = right
+            {
+                var newIndex = NavigationService.MoveInGrid(_navigationService.LauncherSelectedIndex, totalItems, 3);
+                _navigationService.LauncherSelectedIndex = newIndex;
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.ActivateLink: // Enter
+            {
+                var idx = _navigationService.LauncherSelectedIndex;
+
+                if (idx == (_bookmarks?.Count ?? 0))
+                {
+                    // Collections tile
+                    await EnterCollectionsModeAsync(options, cancellationToken);
+                }
+                else if (_bookmarks != null && idx < _bookmarks.Count)
+                {
+                    var bookmark = _bookmarks[idx];
+                    await NavigateToAsync(bookmark.Url, options, cancellationToken);
+                }
+
+                break;
+            }
+
+            case CommandType.AddBookmark:
+                await HandleAddBookmarkAsync(options, cancellationToken);
+                break;
+
+            case CommandType.DeleteItem:
+            {
+                var idx = _navigationService.LauncherSelectedIndex;
+                if (_bookmarks != null && idx < _bookmarks.Count)
+                {
+                    var bookmark = _bookmarks[idx];
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+                        await bookmarkService.DeleteBookmarkAsync(bookmark.Id, cancellationToken);
+                        await RefreshBookmarksAsync(cancellationToken);
+
+                        var newTotal = (_bookmarks?.Count ?? 0) + 1;
+                        if (_navigationService.LauncherSelectedIndex >= newTotal)
+                        {
+                            _navigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete bookmark");
+                    }
+                }
+
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.OpenCollections:
+                await EnterCollectionsModeAsync(options, cancellationToken);
+                break;
+
+            case CommandType.OpenCommandLine:
+            {
+                var input = await _inputHandler.PromptForInputAsync(":", cancellationToken);
+                if (!string.IsNullOrWhiteSpace(input))
+                {
+                    await HandleCommandLineInput(input.Trim(), options, cancellationToken);
+                }
+                else
+                {
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                break;
+            }
+
+            case CommandType.Search:
+            {
+                // Search/filter bookmark names
+                var query = await _inputHandler.PromptForInputAsync("/", cancellationToken);
+                if (!string.IsNullOrWhiteSpace(query) && _bookmarks != null)
+                {
+                    var matchIdx = _bookmarks.FindIndex(b =>
+                        b.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
+                    if (matchIdx >= 0)
+                    {
+                        _navigationService.LauncherSelectedIndex = matchIdx;
+                    }
+                }
+
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+            }
+
+            case CommandType.ShowHelp:
+                Console.Clear();
+                Console.WriteLine(_inputHandler.GetHelpText());
+                Console.ReadKey(intercept: true);
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+
+            case CommandType.GoToTop:
+                _navigationService.LauncherSelectedIndex = 0;
+                _navigationService.LauncherScrollOffset = 0;
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+
+            case CommandType.GoToBottom:
+                _navigationService.LauncherSelectedIndex = Math.Max(0, totalItems - 1);
+                AdjustLauncherScroll(options);
+                await RenderCurrentPageAsync(options, cancellationToken);
+                break;
+
+            default:
+                // Ignore unhandled commands in launcher mode
+                break;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Adjusts the launcher scroll offset to keep the selected tile visible.
+    /// </summary>
+    private void AdjustLauncherScroll(RenderOptions options)
+    {
+        var columns = options.TerminalWidth < 35 ? 1 : 2;
+        var headerLines = 5; // header box + blank line
+        var statusBarLines = 3;
+        var availableHeight = Math.Max(6, options.TerminalHeight - headerLines - statusBarLines);
+        var tileHeight = Math.Max(3, availableHeight / 6);
+        var visibleRows = Math.Max(1, availableHeight / tileHeight);
+
+        var selectedRow = _navigationService.LauncherSelectedIndex / columns;
+        var currentOffset = _navigationService.LauncherScrollOffset;
+
+        if (selectedRow < currentOffset)
+        {
+            _navigationService.LauncherScrollOffset = selectedRow;
+        }
+        else if (selectedRow >= currentOffset + visibleRows)
+        {
+            _navigationService.LauncherScrollOffset = selectedRow - visibleRows + 1;
+        }
+    }
+
+    /// <summary>
+    /// Enters the launcher home screen.
+    /// </summary>
+    private async Task EnterLauncherAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _navigationService.EnterLauncher();
+            await RefreshBookmarksAsync(cancellationToken);
+            await RenderCurrentPageAsync(options, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enter launcher mode");
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the cached bookmarks from the database, seeding defaults on first run.
+    /// </summary>
+    private async Task RefreshBookmarksAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+
+            // Ensure database and tables are created (handles both fresh and existing DBs)
+            var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.AppDbContext>();
+            await dbContext.InitializeDatabaseAsync(cancellationToken);
+
+            var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+            await bookmarkService.EnsureSeededAsync(cancellationToken);
+            var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken);
+            _bookmarks = all.ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh bookmarks");
+            _bookmarks ??= new List<Domain.Entities.Bookmarks.Bookmark>();
+        }
+    }
+
+    /// <summary>
+    /// Handles the AddBookmark command: prompts for name and URL, saves to database.
+    /// </summary>
+    private async Task HandleAddBookmarkAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        var name = await _inputHandler.PromptForInputAsync("Bookmark name: ", cancellationToken);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            await RenderCurrentPageAsync(options, cancellationToken);
+            return;
+        }
+
+        var url = await _inputHandler.PromptForInputAsync("URL: ", cancellationToken);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            await RenderCurrentPageAsync(options, cancellationToken);
+            return;
+        }
+
+        // Normalize URL
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            url = "https://" + url;
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+            await bookmarkService.AddBookmarkAsync(name, url, cancellationToken);
+            await RefreshBookmarksAsync(cancellationToken);
+            _logger.LogInformation("Added bookmark: {Name} ({Url})", name, url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to add bookmark");
         }
 
         await RenderCurrentPageAsync(options, cancellationToken);

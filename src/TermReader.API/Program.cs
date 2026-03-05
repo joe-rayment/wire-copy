@@ -73,8 +73,8 @@ public class Program
             .WriteTo.File("logs/termreader-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateLogger();
 
-        // Use default URL if none provided
-        var url = string.IsNullOrWhiteSpace(options.Url) ? DefaultUrl : options.Url;
+        // Pass null when no URL provided to trigger the launcher home screen
+        var url = string.IsNullOrWhiteSpace(options.Url) ? null : options.Url;
 
         // Create a minimal host for browser services
         var host = CreateBrowseHostBuilder().Build();
@@ -107,6 +107,16 @@ public class Program
         }
         finally
         {
+            try
+            {
+                await host.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Error stopping host during cleanup");
+            }
+
+            host.Dispose();
             await Log.CloseAndFlushAsync();
         }
     }

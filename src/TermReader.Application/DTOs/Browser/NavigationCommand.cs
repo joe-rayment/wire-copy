@@ -78,5 +78,14 @@ public enum CommandType
     OpenCollections,
     DeleteItem,
     ReorderUp,
-    ReorderDown
+    ReorderDown,
+
+    // Launcher
+    AddBookmark,
+    OpenLauncher,
+
+    // Width control
+    IncreaseWidth,
+    DecreaseWidth,
+    ResetWidth
 }
