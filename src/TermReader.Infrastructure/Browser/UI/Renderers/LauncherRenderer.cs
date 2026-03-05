@@ -313,13 +313,13 @@ internal class LauncherRenderer
                 sb.Append($"{selBg} {selFg}{badge}");
                 sb.Append($"{new string(' ', Math.Max(0, badgePad))}");
                 sb.Append($"{Bold}{selFg}{selBg}{truncName}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncName.Length))}{Reset}");
             }
             else
             {
                 sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
                 sb.Append($"{Bold}{selFg}{selBg}{truncName}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncName.Length))}{Reset}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncName.Length))}{Reset}");
             }
         }
         else if (lineIdx == domainLineIdx)
@@ -327,7 +327,7 @@ internal class LauncherRenderer
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
             sb.Append($"{selBg}{SelDomainFg}{new string(' ', indent - 1)}");
             sb.Append($"{truncDomain}");
-            sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent - truncDomain.Length))}{Reset}");
+            sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncDomain.Length))}{Reset}");
         }
         else
         {
