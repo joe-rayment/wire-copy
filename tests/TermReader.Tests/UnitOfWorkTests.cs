@@ -170,8 +170,9 @@ public class UnitOfWorkTests : TestDatabaseFixture, IAsyncDisposable
         // Act - Rollback entire transaction
         await _unitOfWork.RollbackTransactionAsync();
 
-        // Assert - Both collections should be rolled back
-        DbContext.Collections.Should().BeEmpty();
+        // Assert - Both collections should be rolled back (use fresh context to verify database state)
+        await using var verifyContext = CreateDbContext();
+        verifyContext.Collections.Should().BeEmpty();
     }
 
     [Fact]
