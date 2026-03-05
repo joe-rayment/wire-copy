@@ -19,12 +19,6 @@ using System.Diagnostics.CodeAnalysis;
 [assembly: SuppressMessage("StyleCop.CSharp.MaintainabilityRules", "SA1402:File may only contain a single type", Justification = "Result types are intentionally kept with their service class", Scope = "type", Target = "~T:TermReader.Infrastructure.Browser.CookieInfoResult")]
 
 // ============================================================================
-// SA1401 (protected fields)
-// Protected fields in base Repository class are intentional for derived class access.
-// ============================================================================
-[assembly: SuppressMessage("StyleCop.CSharp.MaintainabilityRules", "SA1401:Fields should be private", Justification = "Protected fields are intentional for derived class access in Repository pattern", Scope = "type", Target = "~T:TermReader.Infrastructure.Persistence.Repositories.Repository`1")]
-
-// ============================================================================
 // SA1118 (multi-line parameters)
 // Complex logging calls may span multiple lines for readability.
 // ============================================================================
