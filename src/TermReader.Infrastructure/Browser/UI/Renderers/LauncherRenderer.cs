@@ -178,6 +178,21 @@ internal class LauncherRenderer
             domain = ExtractDomain(bookmark.Url);
         }
 
+        // Compute badge string based on absolute item index
+        string badge;
+        if (isCollections)
+        {
+            badge = "[c]";
+        }
+        else if (itemIdx < 9)
+        {
+            badge = $"[{itemIdx + 1}]";
+        }
+        else
+        {
+            badge = string.Empty;
+        }
+
         // Name starts 6 chars from left edge (indent)
         const int indent = 6;
         var nameLineIdx = Math.Max(1, (totalLines - 1) / 2);
@@ -209,8 +224,12 @@ internal class LauncherRenderer
                 }
 
                 // Reverse video on name (bar or space is always 1 char wide)
-                var paddedName = truncName.PadRight(cellWidth - 1);
-                sb.Append($"\x1b[30;47m{new string(' ', indent - 1)}{paddedName}\x1b[0m");
+                // Render badge in DarkGray within the indent, then name
+                var indentContent = badge.Length > 0
+                    ? $" {Colors.Fg256DarkGray}{badge}{Colors.Reset}\x1b[30;47m{new string(' ', indent - 1 - badge.Length - 1)}"
+                    : $"\x1b[30;47m{new string(' ', indent - 1)}";
+                var paddedName = truncName.PadRight(cellWidth - indent);
+                sb.Append($"{indentContent}{paddedName}\x1b[0m");
             }
             else if (lineIdx == domainLineIdx)
             {
@@ -250,6 +269,14 @@ internal class LauncherRenderer
             {
                 var truncName = RenderHelpers.TruncateText(name, textWidth);
                 var pad = Math.Max(0, cellWidth - indent - truncName.Length);
+
+                // Render badge in DarkGray within the indent space
+                if (badge.Length > 0)
+                {
+                    var badgePad = indent - badge.Length - 1; // 1 char space before badge
+                    return $" {Colors.Fg256DarkGray}{badge}{Colors.Reset}{new string(' ', badgePad)}{Colors.Fg256White}{truncName}{Colors.Reset}{new string(' ', pad)}";
+                }
+
                 return $"{new string(' ', indent)}{Colors.Fg256White}{truncName}{Colors.Reset}{new string(' ', pad)}";
             }
 
