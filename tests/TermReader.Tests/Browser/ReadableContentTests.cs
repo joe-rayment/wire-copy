@@ -438,4 +438,83 @@ public class ReadableContentTests
         var author = await ExtractAuthorFromHtml(html);
         author.Should().Be("Mary Kay Johnson");
     }
+
+    #region IsEmptyArticleShell
+
+    [Fact]
+    public void IsEmptyArticleShell_ArticleTagNoParagraphs_ReturnsTrue()
+    {
+        var html = "<html><body><article><h1>Title</h1><div>Loading...</div></article></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_ArticleTagWithShortParagraphs_ReturnsTrue()
+    {
+        var html = "<html><body><article><h1>Title</h1><p>Short</p><p>Also short</p></article></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_ArticleTagWithSubstantialParagraphs_ReturnsFalse()
+    {
+        var longText = new string('x', 60);
+        var html = $"<html><body><article><h1>Title</h1><p>{longText}</p><p>{longText}</p></article></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_NoArticleIndicators_ReturnsFalse()
+    {
+        var html = "<html><body><div>Just a normal page with no article markers</div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_OgTypeArticleNoParagraphs_ReturnsTrue()
+    {
+        var html = "<html><head><meta property='og:type' content='article' /></head><body><div>Shell</div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_EntryContentClassNoParagraphs_ReturnsTrue()
+    {
+        var html = "<html><body><div class='entry-content'><span>Loading</span></div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_PostContentClassNoParagraphs_ReturnsTrue()
+    {
+        var html = "<html><body><div class='post-content'></div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_ArticleBodyClassWithContent_ReturnsFalse()
+    {
+        var longText = new string('x', 60);
+        var html = $"<html><body><div class='article-body'><p>{longText}</p><p>{longText}</p></div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsEmptyArticleShell_OnlyOneSubstantialParagraph_ReturnsTrue()
+    {
+        var longText = new string('x', 60);
+        var html = $"<html><body><article><p>{longText}</p><p>Short</p></article></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
+    #endregion
 }
