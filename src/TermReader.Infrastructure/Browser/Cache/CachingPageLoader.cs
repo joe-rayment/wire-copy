@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Enums.Browser;
 
 namespace TermReader.Infrastructure.Browser.Cache;
 
@@ -36,7 +37,7 @@ public class CachingPageLoader : IPageLoader
             if (cached != null)
             {
                 _logger.LogInformation("Serving from cache: {Url}", request.Url);
-                return cached;
+                return cached with { FetchMethod = FetchMethod.Cached };
             }
         }
         else

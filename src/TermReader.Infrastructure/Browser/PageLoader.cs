@@ -9,6 +9,7 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Configuration;
 
@@ -340,7 +341,7 @@ public class PageLoader : IPageLoader
             var metadata = ExtractMetadata(html, finalUrl);
 
             _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
-            return PageLoadResult.Successful(finalUrl, html, metadata);
+            return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Selenium);
         }
         catch (WebDriverException ex)
         {
