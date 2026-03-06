@@ -204,6 +204,73 @@ public class ReadingListTests
 
     #endregion
 
+    #region Save-then-view flow
+
+    [Fact]
+    public async Task SaveToReadingList_ThenGetReadingList_ReturnsItemsInOrder()
+    {
+        var (service, repo, uow) = CreateService();
+        var collection = Collection.Create("Reading List");
+        repo.GetByNameAsync("Reading List", Arg.Any<CancellationToken>()).Returns(collection);
+        repo.UpdateAsync(Arg.Any<Collection>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        uow.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+
+        await service.SaveToReadingListAsync("https://a.com", "Article A");
+        await service.SaveToReadingListAsync("https://b.com", "Article B");
+
+        var result = await service.GetReadingListAsync();
+
+        result.Name.Should().Be("Reading List");
+        result.Items.Should().HaveCount(2);
+        // Most recently saved should be first (AddOrMoveToTop)
+        result.Items[0].Url.Should().Be("https://b.com");
+        result.Items[1].Url.Should().Be("https://a.com");
+    }
+
+    [Fact]
+    public async Task SaveAllToReadingList_ThenGetReadingList_ReturnsAllItems()
+    {
+        var (service, repo, uow) = CreateService();
+        var collection = Collection.Create("Reading List");
+        repo.GetByNameAsync("Reading List", Arg.Any<CancellationToken>()).Returns(collection);
+        repo.UpdateAsync(Arg.Any<Collection>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        uow.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+
+        var items = new[]
+        {
+            ("https://a.com", "A"),
+            ("https://b.com", "B"),
+            ("https://c.com", "C")
+        };
+        await service.SaveAllToReadingListAsync(items);
+
+        var result = await service.GetReadingListAsync();
+
+        result.Items.Should().HaveCount(3);
+        result.Items.Select(i => i.Url).Should().ContainInOrder(
+            "https://a.com", "https://b.com", "https://c.com");
+    }
+
+    [Fact]
+    public async Task GetReadingListAsync_WhenLegacyReadLaterExists_RenamesAndReturns()
+    {
+        var (service, repo, uow) = CreateService();
+        var legacy = Collection.Create("Read Later");
+        legacy.AddItem("https://old.com", "Old Article");
+        repo.GetByNameAsync("Reading List", Arg.Any<CancellationToken>()).Returns((Collection?)null);
+        repo.GetByNameAsync("Read Later", Arg.Any<CancellationToken>()).Returns(legacy);
+        repo.UpdateAsync(Arg.Any<Collection>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        uow.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(1));
+
+        var result = await service.GetReadingListAsync();
+
+        result.Name.Should().Be("Reading List");
+        result.Items.Should().HaveCount(1);
+        result.Items[0].Url.Should().Be("https://old.com");
+    }
+
+    #endregion
+
     private static (CollectionService Service, ICollectionRepository Repo, IUnitOfWork UoW) CreateService()
     {
         var repo = Substitute.For<ICollectionRepository>();
