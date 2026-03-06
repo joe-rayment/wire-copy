@@ -70,6 +70,7 @@ public class BrowserOrchestratorTests
         var browserSession = Substitute.For<IBrowserSessionControl>();
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var resizeDetector = Substitute.For<IResizeDetector>();
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -81,6 +82,7 @@ public class BrowserOrchestratorTests
             _scopeFactory,
             browserSession,
             themeProvider,
+            resizeDetector,
             _browserConfig,
             _logger);
     }
@@ -316,6 +318,7 @@ public class BrowserOrchestratorNavigationTests
         var browserSession = Substitute.For<IBrowserSessionControl>();
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var resizeDetector = Substitute.For<IResizeDetector>();
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -327,6 +330,7 @@ public class BrowserOrchestratorNavigationTests
             _scopeFactory,
             browserSession,
             themeProvider,
+            resizeDetector,
             _browserConfig,
             _logger);
     }

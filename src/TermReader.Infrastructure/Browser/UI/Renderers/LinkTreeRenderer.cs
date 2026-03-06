@@ -53,29 +53,29 @@ internal class LinkTreeRenderer
         tree.EnsureSelection();
 
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Max(1, options.TerminalWidth - 2);
-        var availableLines = Math.Max(3, options.TerminalHeight - 9);
-        var cardHeight = GetCardHeight(availableLines);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
         var visibleNodes = tree.GetVisibleNodes().ToList();
-        var startIndex = context.ScrollOffset;
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
 
         var linesUsed = 0;
-        var nodesRendered = 0;
+        var rowsRendered = 0;
 
         // Scroll-up indicator
-        if (startIndex > 0)
+        if (startRow > 0)
         {
-            RenderScrollIndicator(width, p, true, startIndex);
+            RenderScrollIndicator(layout.Width, p, true, startRow);
             linesUsed++;
         }
 
-        for (var i = startIndex; i < visibleNodes.Count; i++)
+        for (var row = startRow; row < gridRows.Count; row++)
         {
-            var node = visibleNodes[i];
-            var linesNeeded = GetLinesForNode(node, cardHeight);
+            var gr = gridRows[row];
+            var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
+            var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
 
-            // Reserve 1 line for scroll-down indicator if more nodes follow
-            var hasMoreAfter = i + 1 < visibleNodes.Count;
+            // Reserve 1 line for scroll-down indicator if more rows follow
+            var hasMoreAfter = row + 1 < gridRows.Count;
             var available = hasMoreAfter ? maxLines - 1 : maxLines;
 
             if (linesUsed + linesNeeded > available)
@@ -83,27 +83,24 @@ internal class LinkTreeRenderer
                 break;
             }
 
-            if (node.IsGroupHeader)
+            if (gr.IsGroupHeader)
             {
-                RenderGroupHeader(node, node.IsSelected, options);
+                RenderGroupHeader(gr.Left, gr.Left.IsSelected, options);
             }
             else
             {
-                for (var lineIdx = 0; lineIdx < cardHeight; lineIdx++)
-                {
-                    _helpers.WriteLine(BuildCardLine(node, node.IsSelected, cardHeight, lineIdx, width, p));
-                }
+                RenderGridRow(gr, layout, p);
             }
 
             linesUsed += linesNeeded;
-            nodesRendered++;
+            rowsRendered++;
         }
 
         // Scroll-down indicator
-        var totalRemaining = Math.Max(0, visibleNodes.Count - startIndex - nodesRendered);
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
         if (totalRemaining > 0)
         {
-            RenderScrollIndicator(width, p, false, totalRemaining);
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
         }
     }
 
@@ -238,10 +235,6 @@ internal class LinkTreeRenderer
         }
     }
 
-    /// <summary>
-    /// Returns the card height (lines per node) based on available vertical space.
-    /// Compact (1) when tight, standard (2) for typical, expanded (3) when spacious.
-    /// </summary>
     internal static int GetCardHeight(int availableLines)
     {
         if (availableLines < 10)
@@ -303,6 +296,34 @@ internal class LinkTreeRenderer
             : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette);
     }
 
+    internal static string? FormatDate(DateTime? date)
+    {
+        if (date == null)
+        {
+            return null;
+        }
+
+        var d = date.Value;
+        var now = DateTime.Now;
+
+        if (d.Date == now.Date)
+        {
+            return "Today";
+        }
+
+        if (d.Date == now.Date.AddDays(-1))
+        {
+            return "Yesterday";
+        }
+
+        if (d.Year == now.Year)
+        {
+            return d.ToString("MMM d");
+        }
+
+        return d.ToString("MMM d, yyyy");
+    }
+
     private static string BuildSelectedCardLine(
         LinkNode node,
         int cardHeight,
@@ -319,24 +340,23 @@ internal class LinkTreeRenderer
         // Accent bar on all lines
         sb.Append($"{accentFg}\u258c{Reset}");
 
-        if (lineIndex == 0)
+        var titleLineIdx = cardHeight >= 5 ? 1 : 0;
+        var metadataLineIdx = GetMetadataLineIndex(cardHeight);
+
+        if (lineIndex == titleLineIdx)
         {
-            // Title line
             var title = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
             sb.Append($"{selBg}{selFg}{Bold} {title}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - title.Length))}{Reset}");
         }
-        else if (lineIndex == 1 && cardHeight >= 2)
+        else if (lineIndex == metadataLineIdx)
         {
-            // Domain line
-            var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
-            var truncDomain = RenderHelpers.TruncateText(domain, contentWidth - 1);
-            sb.Append($"{selBg}\x1b[38;5;245m {truncDomain}");
-            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - truncDomain.Length))}{Reset}");
+            var subtitle = GetMetadataSubtitle(node, contentWidth - 1);
+            sb.Append($"{selBg}\x1b[38;5;245m {subtitle}");
+            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
         }
         else
         {
-            // Blank separator line (expanded mode)
             sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
@@ -350,9 +370,11 @@ internal class LinkTreeRenderer
         int width,
         ThemePalette palette)
     {
-        if (lineIndex == 0)
+        var titleLineIdx = cardHeight >= 5 ? 1 : 0;
+        var metadataLineIdx = GetMetadataLineIndex(cardHeight);
+
+        if (lineIndex == titleLineIdx)
         {
-            // Title line - colored by LinkType
             var colorFg = node.Link.Type switch
             {
                 LinkType.Content => palette.LinkContent.AnsiFg,
@@ -365,16 +387,50 @@ internal class LinkTreeRenderer
             return $" {colorFg}{title}{Reset}";
         }
 
-        if (lineIndex == 1 && cardHeight >= 2)
+        if (lineIndex == metadataLineIdx)
         {
-            // Domain line
-            var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
-            var truncDomain = RenderHelpers.TruncateText(domain, width - 1);
-            return $" {palette.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}";
+            var subtitle = GetMetadataSubtitle(node, width - 1);
+            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{Reset}";
         }
 
-        // Blank separator line (expanded mode)
         return string.Empty;
+    }
+
+    private static string GetMetadataSubtitle(LinkNode node, int maxWidth)
+    {
+        var dateStr = FormatDate(node.Link.PublishedDate);
+        var author = node.Link.Author;
+        var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
+
+        string subtitle;
+        if (dateStr != null && !string.IsNullOrEmpty(author))
+        {
+            subtitle = $"{dateStr} \u00b7 {author}";
+        }
+        else if (dateStr != null)
+        {
+            subtitle = $"{dateStr} \u00b7 {domain}";
+        }
+        else if (!string.IsNullOrEmpty(author))
+        {
+            subtitle = author;
+        }
+        else
+        {
+            subtitle = domain;
+        }
+
+        return RenderHelpers.TruncateText(subtitle, maxWidth);
+    }
+
+    private static int GetMetadataLineIndex(int cardHeight)
+    {
+        if (cardHeight >= 5)
+        {
+            return 3;
+        }
+
+        return cardHeight >= 3 ? 1 : -1;
     }
 
     private static int GetLinesForNode(LinkNode node, int cardHeight)
@@ -390,6 +446,31 @@ internal class LinkTreeRenderer
         }
 
         return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+    }
+
+    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p)
+    {
+        for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
+        {
+            var sb = new StringBuilder();
+            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p));
+
+            if (layout.Columns == 2)
+            {
+                sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
+                if (row.Right != null)
+                {
+                    var rightWidth = layout.Width - layout.CellWidth - 1;
+                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p));
+                }
+                else
+                {
+                    sb.Append(new string(' ', layout.Width - layout.CellWidth - 1));
+                }
+            }
+
+            _helpers.WriteLine(sb.ToString());
+        }
     }
 
     private void RenderScrollIndicator(int width, ThemePalette p, bool isUp, int count)

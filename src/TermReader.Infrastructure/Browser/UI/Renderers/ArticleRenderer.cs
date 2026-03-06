@@ -23,15 +23,22 @@ internal class ArticleRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options)
+    public void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options, int focusLineOffset = -1)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var startLine = context.ScrollOffset;
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
+        var indicatorAnsi = $"{p.FocusIndicatorFg.AnsiFg}\u258e{Reset}";
 
         for (var i = startLine; i < endLine; i++)
         {
-            if (!string.IsNullOrEmpty(context.SearchQuery))
+            var viewportLine = i - startLine;
+
+            if (focusLineOffset >= 0 && viewportLine == focusLineOffset)
+            {
+                _helpers.WriteLineWithIndicator(allLines[i], indicatorAnsi, context.SearchQuery, !string.IsNullOrEmpty(context.SearchQuery) ? p : null);
+            }
+            else if (!string.IsNullOrEmpty(context.SearchQuery))
             {
                 _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery, p);
             }

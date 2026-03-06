@@ -73,4 +73,19 @@ public interface ICollectionService
     /// Gets the current default collection.
     /// </summary>
     Task<Collection> GetDefaultCollectionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves a URL to the Reading List with move-to-top semantics.
+    /// </summary>
+    Task<CollectionItem> SaveToReadingListAsync(string url, string title, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves multiple URLs to the Reading List at the end.
+    /// </summary>
+    Task SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes expired items from the Reading List.
+    /// </summary>
+    Task<int> PurgeExpiredReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
 }
