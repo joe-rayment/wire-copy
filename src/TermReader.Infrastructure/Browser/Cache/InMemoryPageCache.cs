@@ -208,6 +208,21 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         if (_entries.TryRemove(key, out var removed))
         {
             Interlocked.Add(ref _totalSizeBytes, -removed.Metadata.SizeBytes);
+
+            // Clean up alias key (same entry indexed under both request and final URL)
+            var normalizedUrl = removed.Metadata.NormalizedUrl;
+            var finalKey = UrlNormalizer.Normalize(removed.Metadata.FinalUrl);
+            var aliasKey = string.Equals(key, normalizedUrl, StringComparison.Ordinal)
+                ? finalKey
+                : normalizedUrl;
+
+            if (!string.Equals(key, aliasKey, StringComparison.Ordinal) &&
+                _entries.TryGetValue(aliasKey, out var aliasEntry) &&
+                ReferenceEquals(aliasEntry, removed))
+            {
+                _entries.TryRemove(aliasKey, out _);
+            }
+
             return true;
         }
 
