@@ -383,6 +383,51 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
+    /// Calculates how many grid rows actually fit on screen from a given scroll offset,
+    /// accounting for scroll indicators and variable-height group headers.
+    /// Mirrors the rendering loop in LinkTreeRenderer.RenderLinkTree.
+    /// </summary>
+    private static int GetActualVisibleRowCount(
+        IReadOnlyList<UI.Renderers.GridRow> gridRows,
+        int startRow,
+        UI.Renderers.LinkTreeLayout layout)
+    {
+        // maxLines matches what TerminalPageRenderer passes: termHeight - headerLines - statusBarLines
+        var maxLines = layout.VisibleRows * layout.CellHeight;
+        var linesUsed = 0;
+        var rowsVisible = 0;
+
+        // Scroll-up indicator takes 1 line when scrolled down
+        if (startRow > 0)
+        {
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
+            var linesNeeded = gr.IsGroupHeader
+                ? UI.Renderers.LinkTreeRenderer.GetLinesForGroupHeader(gr.Left, groupCardHeight)
+                : layout.CellHeight;
+
+            // Reserve 1 line for scroll-down indicator if more rows follow
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            linesUsed += linesNeeded;
+            rowsVisible++;
+        }
+
+        return Math.Max(1, rowsVisible);
+    }
+
+    /// <summary>
     /// Creates render options from current terminal dimensions.
     /// </summary>
     private RenderOptions GetCurrentRenderOptions()
@@ -878,7 +923,7 @@ public class BrowserOrchestrator : IBrowserService
         var (gridRow, _) = UI.Renderers.LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
 
         var currentOffset = _navigationService.CurrentContext.ScrollOffset;
-        var contentHeight = layout.VisibleRows;
+        var contentHeight = GetActualVisibleRowCount(gridRows, currentOffset, layout);
 
         if (gridRow < currentOffset)
         {

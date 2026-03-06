@@ -367,6 +367,20 @@ internal class LinkTreeRenderer
         return string.Empty;
     }
 
+    /// <summary>
+    /// Gets the number of lines a group header occupies at a given card height.
+    /// Used by AdjustScrollForSelection to mirror the rendering loop's line accounting.
+    /// </summary>
+    internal static int GetLinesForGroupHeader(LinkNode node, int cardHeight)
+    {
+        if (cardHeight == 1)
+        {
+            return 1;
+        }
+
+        return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+    }
+
     private static string BuildSelectedCardLine(
         LinkNode node,
         int cardHeight,
@@ -553,12 +567,7 @@ internal class LinkTreeRenderer
             return cardHeight;
         }
 
-        if (cardHeight == 1)
-        {
-            return 1;
-        }
-
-        return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+        return GetLinesForGroupHeader(node, cardHeight);
     }
 
     private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null)
