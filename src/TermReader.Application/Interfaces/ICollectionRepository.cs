@@ -25,7 +25,7 @@ public interface ICollectionRepository
     Task<Collection?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets or creates the default "Read Later" collection.
+    /// Gets or creates the default "Reading List" collection.
     /// </summary>
     Task<Collection> GetOrCreateDefaultAsync(CancellationToken cancellationToken = default);
 

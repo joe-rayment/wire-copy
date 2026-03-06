@@ -152,6 +152,11 @@ public class CollectionService : ICollectionService
         return defaultCollection;
     }
 
+    public async Task<Collection> GetReadingListAsync(CancellationToken cancellationToken = default)
+    {
+        return await GetOrCreateReadingListAsync(cancellationToken);
+    }
+
     public async Task<CollectionItem> SaveToReadingListAsync(string url, string title, CancellationToken cancellationToken = default)
     {
         var collection = await GetOrCreateReadingListAsync(cancellationToken);

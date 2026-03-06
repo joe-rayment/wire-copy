@@ -151,13 +151,13 @@ public class CollectionRepositoryTests : TestDatabaseFixture
         await DbContext.SaveChangesAsync();
 
         result.Should().NotBeNull();
-        result.Name.Should().Be("Read Later");
+        result.Name.Should().Be("Reading List");
     }
 
     [Fact]
     public async Task GetOrCreateDefaultAsync_DefaultExists_ReturnsExisting()
     {
-        var existing = Collection.Create("Read Later", sortOrder: 0);
+        var existing = Collection.Create("Reading List", sortOrder: 0);
         await _sut.AddAsync(existing);
         await DbContext.SaveChangesAsync();
 

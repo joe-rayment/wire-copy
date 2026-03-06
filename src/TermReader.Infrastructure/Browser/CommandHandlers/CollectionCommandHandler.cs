@@ -268,7 +268,7 @@ internal static class CollectionCommandHandler
             }
 
             // Go directly to Reading List items view (skip CollectionList)
-            var readingList = await service.GetDefaultCollectionAsync(ct);
+            var readingList = await service.GetReadingListAsync(ct);
             ctx.NavigationService.EnterCollections();
             ctx.NavigationService.EnterCollection(readingList);
             await ctx.RefreshCollectionsAsync(ct);

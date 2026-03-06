@@ -52,7 +52,7 @@ public class BrowserOrchestratorTests
             .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Collections.Collection>>(
                 new List<Domain.Entities.Collections.Collection>()));
         collectionService.GetDefaultCollectionAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Read Later")));
+            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Reading List")));
 
         var bookmarkService = Substitute.For<IBookmarkService>();
         bookmarkService.GetAllBookmarksAsync(Arg.Any<CancellationToken>())
@@ -303,7 +303,7 @@ public class BrowserOrchestratorNavigationTests
             .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Collections.Collection>>(
                 new List<Domain.Entities.Collections.Collection>()));
         collectionService.GetDefaultCollectionAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Read Later")));
+            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Reading List")));
 
         var bookmarkService = Substitute.For<IBookmarkService>();
         bookmarkService.GetAllBookmarksAsync(Arg.Any<CancellationToken>())
