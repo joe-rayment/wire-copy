@@ -146,9 +146,10 @@ cookies.json
 **/keys/
 **/DataProtection-Keys/
 
-# Cache directories
+# Cache directories (runtime caches, not source code)
 **/cache/
 cache/
+!src/**/Cache/
 
 # Output
 output/
