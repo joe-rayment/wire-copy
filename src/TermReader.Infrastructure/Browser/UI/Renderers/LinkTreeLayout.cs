@@ -3,10 +3,13 @@
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Shared layout parameters for the link tree card view.
+/// Shared layout parameters for the link tree 2-column grid view.
 /// </summary>
 internal record LinkTreeLayout(
     int Width,
-    int StandardCardHeight,
-    int GroupHeaderHeight,
-    int CompactThreshold);
+    int Columns,
+    int CellHeight,
+    int CellWidth,
+    int VisibleRows,
+    int HeaderLines,
+    int StatusBarLines);

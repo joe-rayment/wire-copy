@@ -47,4 +47,6 @@ public record ThemePalette
     public required ThemeColor SearchHighlightBg { get; init; }
 
     public required ThemeColor ReadItemFg { get; init; }
+
+    public required ThemeColor FocusIndicatorFg { get; init; }
 }

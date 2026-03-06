@@ -265,17 +265,25 @@ internal class LinkTreeRenderer
     {
         const int headerLines = 6;
         const int statusBarLines = 3;
+        const int columnThreshold = 50;
+        const int standardCellHeight = 5;
+        const int compactCellHeight = 3;
 
         var width = Math.Min(terminalWidth, Console.WindowWidth - 2);
-        var availableLines = Math.Max(3, terminalHeight - headerLines - statusBarLines);
-        var cardHeight = GetCardHeight(availableLines);
-        var groupHeaderHeight = cardHeight >= 3 ? 3 : cardHeight;
+        var availableHeight = Math.Max(4, terminalHeight - headerLines - statusBarLines);
+        var columns = width >= columnThreshold ? 2 : 1;
+        var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+        var visibleRows = Math.Max(1, availableHeight / cellHeight);
+        var cellWidth = columns == 1 ? width : (width - 1) / 2;
 
         return new LinkTreeLayout(
             Width: width,
-            StandardCardHeight: cardHeight,
-            GroupHeaderHeight: groupHeaderHeight,
-            CompactThreshold: 10);
+            Columns: columns,
+            CellHeight: cellHeight,
+            CellWidth: cellWidth,
+            VisibleRows: visibleRows,
+            HeaderLines: headerLines,
+            StatusBarLines: statusBarLines);
     }
 
     /// <summary>

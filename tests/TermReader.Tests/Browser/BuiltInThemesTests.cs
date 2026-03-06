@@ -37,8 +37,8 @@ public class BuiltInThemesTests
     {
         var palette = BuiltInThemes.Get(theme);
 
-        // ThemePalette has 19 ThemeColor properties
-        PaletteProperties.Should().HaveCount(19);
+        // ThemePalette has 20 ThemeColor properties
+        PaletteProperties.Should().HaveCount(20);
 
         foreach (var prop in PaletteProperties)
         {

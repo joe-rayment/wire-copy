@@ -49,58 +49,67 @@ public class LinkTreeLayoutTests
 
     #endregion
 
-    #region ComputeLayout
+    #region ComputeLayout - 2-column grid
 
     [Fact]
-    public void ComputeLayout_Standard80x24_ReturnsCardHeightTwo()
+    public void ComputeLayout_Width80_ReturnsTwoColumns()
     {
-        // available = max(3, 24 - 6 - 3) = 15 → cardHeight = 2 (standard)
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.StandardCardHeight.Should().Be(2);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]
-    public void ComputeLayout_Large80x50_ReturnsCardHeightThree()
+    public void ComputeLayout_Width40_ReturnsOneColumn()
     {
-        // available = max(3, 50 - 6 - 3) = 41 → cardHeight = 3 (expanded)
-        var layout = LinkTreeRenderer.ComputeLayout(80, 50);
-        layout.StandardCardHeight.Should().Be(3);
+        var layout = LinkTreeRenderer.ComputeLayout(40, 24);
+        layout.Columns.Should().Be(1);
     }
 
     [Fact]
-    public void ComputeLayout_Compact80x18_ReturnsCardHeightOne()
+    public void CellWidth_IsHalfMinusOneForTwoColumns()
     {
-        // available = max(3, 18 - 6 - 3) = 9 → cardHeight = 1 (compact)
+        var layout = LinkTreeRenderer.ComputeLayout(80, 24);
+        // For 2 columns: (width-1)/2
+        layout.CellWidth.Should().Be((layout.Width - 1) / 2);
+    }
+
+    [Fact]
+    public void CellWidth_IsFullWidthForOneColumn()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(40, 24);
+        layout.CellWidth.Should().Be(layout.Width);
+    }
+
+    [Fact]
+    public void CellHeight_IsCompactWhenShort()
+    {
+        // availableHeight = max(4, 18 - 6 - 3) = 9 < 15 → compact (3)
         var layout = LinkTreeRenderer.ComputeLayout(80, 18);
-        layout.StandardCardHeight.Should().Be(1);
+        layout.CellHeight.Should().Be(3);
     }
 
     [Fact]
-    public void ComputeLayout_CompactThreshold_IsTen()
+    public void CellHeight_IsStandardWhenTall()
+    {
+        // availableHeight = max(4, 30 - 6 - 3) = 21 >= 15 → standard (5)
+        var layout = LinkTreeRenderer.ComputeLayout(80, 30);
+        layout.CellHeight.Should().Be(5);
+    }
+
+    [Fact]
+    public void VisibleRows_CalculatedFromAvailableHeight()
+    {
+        // availableHeight = max(4, 30 - 6 - 3) = 21, cellHeight = 5 → 21/5 = 4
+        var layout = LinkTreeRenderer.ComputeLayout(80, 30);
+        layout.VisibleRows.Should().Be(4);
+    }
+
+    [Fact]
+    public void ComputeLayout_HeaderAndStatusBarLines()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.CompactThreshold.Should().Be(10);
-    }
-
-    [Fact]
-    public void ComputeLayout_GroupHeaderHeight_MatchesCardHeight_WhenCompact()
-    {
-        var layout = LinkTreeRenderer.ComputeLayout(80, 18);
-        layout.GroupHeaderHeight.Should().Be(1);
-    }
-
-    [Fact]
-    public void ComputeLayout_GroupHeaderHeight_EqualsCardHeight_WhenStandard()
-    {
-        var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.GroupHeaderHeight.Should().Be(2);
-    }
-
-    [Fact]
-    public void ComputeLayout_GroupHeaderHeight_IsThree_WhenExpanded()
-    {
-        var layout = LinkTreeRenderer.ComputeLayout(80, 50);
-        layout.GroupHeaderHeight.Should().Be(3);
+        layout.HeaderLines.Should().Be(6);
+        layout.StatusBarLines.Should().Be(3);
     }
 
     #endregion

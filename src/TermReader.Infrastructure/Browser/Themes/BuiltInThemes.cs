@@ -36,6 +36,7 @@ public static class BuiltInThemes
                 SearchHighlightFg = new ThemeColor(ConsoleColor.Black, 0),
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Green, 46),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 40),
+                FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGreen, 22),
             },
             [ThemeName.Amber] = new ThemePalette
             {
@@ -58,6 +59,7 @@ public static class BuiltInThemes
                 SearchHighlightFg = new ThemeColor(ConsoleColor.Black, 0),
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Yellow, 220),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkYellow, 136),
+                FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkYellow, 94),
             },
             [ThemeName.Dracula] = new ThemePalette
             {
@@ -80,6 +82,7 @@ public static class BuiltInThemes
                 SearchHighlightFg = new ThemeColor(ConsoleColor.Black, 0),
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Yellow, 220),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGray, 240),
+                FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGray, 238),
             },
             [ThemeName.Light] = new ThemePalette
             {
@@ -102,6 +105,7 @@ public static class BuiltInThemes
                 SearchHighlightFg = new ThemeColor(ConsoleColor.White, 252),
                 SearchHighlightBg = new ThemeColor(ConsoleColor.DarkYellow, 136),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGray, 245),
+                FocusIndicatorFg = new ThemeColor(ConsoleColor.Gray, 249),
             },
         };
 

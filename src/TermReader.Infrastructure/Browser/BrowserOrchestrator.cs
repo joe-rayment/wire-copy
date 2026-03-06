@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -355,6 +356,14 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
+    /// Returns the visible length of a string after stripping ANSI escape sequences.
+    /// </summary>
+    private static int VisibleLength(string text)
+    {
+        return Regex.Replace(text, @"\x1b\[[0-9;]*m", string.Empty).Length;
+    }
+
+    /// <summary>
     /// Creates render options from current terminal dimensions.
     /// </summary>
     private RenderOptions GetCurrentRenderOptions()
@@ -370,7 +379,7 @@ public class BrowserOrchestrator : IBrowserService
             TerminalWidth = width,
             TerminalHeight = height,
             MaxContentWidth = _contentWidthOverride.HasValue
-                ? Math.Clamp(_contentWidthOverride.Value, MinContentWidth, MaxContentWidth)
+                ? Math.Clamp(Math.Min(_contentWidthOverride.Value, width - 2), MinContentWidth, MaxContentWidth)
                 : Math.Clamp(width - 2, MinContentWidth, MaxContentWidth),
             Use256Colors = use256
         };
@@ -837,11 +846,11 @@ public class BrowserOrchestrator : IBrowserService
 
         var currentScroll = _navigationService.CurrentContext.ScrollOffset;
 
-        // Count character offset up to the current scroll line
+        // Count character offset up to the current scroll line (strip ANSI codes for accurate length)
         var charOffset = 0;
         for (var i = 0; i < Math.Min(currentScroll, _cachedLines.Count); i++)
         {
-            charOffset += _cachedLines[i].TrimStart().Length + 1; // +1 for implicit newline
+            charOffset += VisibleLength(_cachedLines[i].TrimStart()) + 1; // +1 for implicit newline
         }
 
         // Invalidate and rebuild with new width
@@ -858,7 +867,7 @@ public class BrowserOrchestrator : IBrowserService
         var newLineIndex = 0;
         for (var i = 0; i < _cachedLines.Count; i++)
         {
-            accumulatedChars += _cachedLines[i].TrimStart().Length + 1;
+            accumulatedChars += VisibleLength(_cachedLines[i].TrimStart()) + 1;
             if (accumulatedChars >= charOffset)
             {
                 newLineIndex = i;
