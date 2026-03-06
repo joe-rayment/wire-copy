@@ -83,7 +83,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsCompactWhenShort()
     {
-        // availableHeight = max(4, 18 - 6 - 3) = 9 < 15 → compact (3)
+        // availableHeight = max(4, 18 - 2 - 3) = 13 < 15 → compact (3)
         var layout = LinkTreeRenderer.ComputeLayout(80, 18);
         layout.CellHeight.Should().Be(3);
     }
@@ -91,7 +91,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsStandardWhenTall()
     {
-        // availableHeight = max(4, 30 - 6 - 3) = 21 >= 15 → standard (5)
+        // availableHeight = max(4, 30 - 2 - 3) = 25 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.CellHeight.Should().Be(5);
     }
@@ -99,16 +99,16 @@ public class LinkTreeLayoutTests
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 6 - 3) = 21, cellHeight = 5 → 21/5 = 4
+        // availableHeight = max(4, 30 - 2 - 3) = 25, cellHeight = 5 → 25/5 = 5
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.VisibleRows.Should().Be(4);
+        layout.VisibleRows.Should().Be(5);
     }
 
     [Fact]
     public void ComputeLayout_HeaderAndStatusBarLines()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(6);
+        layout.HeaderLines.Should().Be(2);
         layout.StatusBarLines.Should().Be(3);
     }
 

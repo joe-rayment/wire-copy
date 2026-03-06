@@ -30,9 +30,9 @@ public record RenderOptions
 
     /// <summary>
     /// Number of lines to reserve for header.
-    /// Matches actual header rendering: blank + box top + title + url + box bottom + blank.
+    /// Matches actual header rendering: title + thin rule.
     /// </summary>
-    public int HeaderLines { get; init; } = 6;
+    public int HeaderLines { get; init; } = 2;
 
     /// <summary>
     /// Whether the terminal supports 256-color mode.
