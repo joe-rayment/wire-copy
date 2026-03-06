@@ -199,78 +199,70 @@ public class TerminalInputHandler : IInputHandler
     public string GetHelpText()
     {
         return @"
-╔════════════════════════════════════════════════════════════════╗
-║                    Terminal Browser Help                        ║
-╚════════════════════════════════════════════════════════════════╝
+ Keyboard Shortcuts
+ ══════════════════════════════════════════════════════════════
 
-  Navigation (Vim-style)
-  ─────────────────────────────────────────────────────────────────
-  j / ↓         Move down (next link / scroll)
-  k / ↑         Move up (previous link / scroll)
-  h / ←         Collapse node / Go back
-  l / →         Expand node / Go forward
-  Enter         Follow selected link
-  Space         Toggle expand/collapse
-  b / Backspace Go back in history
+ Navigation
+ ──────────────────────────────────────────────────────────────
+  j / ↓           Move down / scroll
+  k / ↑           Move up / scroll
+  h / ←           Collapse node
+  l / →           Expand node
+  Enter           Follow link / open item
+  Space           Toggle expand/collapse
+  b / Backspace   Go back
 
-  Scrolling
-  ─────────────────────────────────────────────────────────────────
-  Ctrl+d        Page down
-  Ctrl+u        Page up
-  gg            Go to top
-  G (Shift+g)   Go to bottom
+ Scrolling
+ ──────────────────────────────────────────────────────────────
+  Ctrl+d          Page down
+  Ctrl+u          Page up
+  gg              Go to top
+  G               Go to bottom
 
-  View Modes
-  ─────────────────────────────────────────────────────────────────
-  v / Tab       Toggle between Link View and Reader View
-  r             Switch to Reader View
-  t             Switch to Link Tree View
+ Views
+ ──────────────────────────────────────────────────────────────
+  v / Tab         Toggle Link View ↔ Reader View
+  r               Reader View
+  t               Link Tree View
 
-  Command Line
-  ─────────────────────────────────────────────────────────────────
-  :             Open command line (enter URL or command)
-                Commands: open URL, go URL, back, forward, quit, help
+ Reader View
+ ──────────────────────────────────────────────────────────────
+  + / =           Widen content
+  - / _           Narrow content
+  0               Reset width
 
-  Search
-  ─────────────────────────────────────────────────────────────────
-  /             Search in current view
-  n             Next search match
-  N             Previous search match
+ Search & Commands
+ ──────────────────────────────────────────────────────────────
+  /               Search
+  n / N           Next / previous match
+  :               Command line
 
-  Launcher (Home Screen)
-  ─────────────────────────────────────────────────────────────────
-  h/j/k/l       Navigate bookmark grid (left/down/up/right)
-  Enter         Open selected bookmark
-  a             Add new bookmark
-  d             Delete selected bookmark
-  c             Open collections
-  :home         Return to launcher from any view
+ Launcher
+ ──────────────────────────────────────────────────────────────
+  h/j/k/l         Navigate grid
+  a               Add bookmark
+  d               Delete bookmark
+  c               Collections
+  :home           Return to launcher
 
-  Reader View
-  ─────────────────────────────────────────────────────────────────
-  + / =         Increase content width
-  - / _         Decrease content width
-  0             Reset content width to default
+ Collections
+ ──────────────────────────────────────────────────────────────
+  s               Save to default collection
+  S               Save to specific collection
+  d               Delete / remove item
+  J / K           Reorder items
+  :collections    Collections view
+  :readlater      Read later
 
-  Collections
-  ─────────────────────────────────────────────────────────────────
-  s             Save link to default collection
-  S             Save link to specific collection
-  d             Delete item (in collection views)
-  J (Shift+j)   Move item down (in collection items)
-  K (Shift+k)   Move item up (in collection items)
-  :collections  Open collections view
-  :readlater    Open read later collection
+ General
+ ──────────────────────────────────────────────────────────────
+  F5              Refresh page
+  F6              Cycle theme
+  Esc             Go back
+  q               Quit
+  ?               This menu
 
-  Application
-  ─────────────────────────────────────────────────────────────────
-  F5            Refresh current page
-  F6            Cycle color theme
-  Esc           Go back (quit from launcher)
-  q             Quit browser
-  ?             Show this help
-
-  Press any key to continue...
+ Press any key to continue...
 ";
     }
 
