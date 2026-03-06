@@ -253,7 +253,8 @@ public class TerminalInputHandlerTests
     {
         var help = _sut.GetHelpText();
 
-        help.Should().Contain("Save to default collection");
+        help.Should().Contain("Save to Reading List");
+        help.Should().Contain("Save all links to Reading List");
         help.Should().Contain("Save to specific collection");
         help.Should().Contain("Delete / remove item");
         help.Should().Contain("Reorder items");

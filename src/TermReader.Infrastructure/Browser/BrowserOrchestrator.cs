@@ -558,6 +558,9 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.SaveToSpecific:
                     await CollectionCommandHandler.HandleSaveToSpecific(ctx, options, cancellationToken);
                     break;
+                case CommandType.SaveAllToReadingList:
+                    await CollectionCommandHandler.HandleSaveAllToReadingList(ctx, options, cancellationToken);
+                    break;
                 case CommandType.OpenCollections:
                     await CollectionCommandHandler.HandleOpenCollections(ctx, options, cancellationToken);
                     break;
@@ -587,6 +590,16 @@ public class BrowserOrchestrator : IBrowserService
 
                 case CommandType.AddBookmark:
                     // Only handle in launcher mode (handled above), ignore in other views
+                    break;
+
+                case CommandType.TerminalResized:
+                    var newOptions = GetCurrentRenderOptions();
+                    if (_cachedWidth > 0 && newOptions.MaxContentWidth != _cachedWidth)
+                    {
+                        PreserveScrollPositionAfterRewrap(newOptions);
+                    }
+
+                    await RenderCurrentPageAsync(newOptions, cancellationToken);
                     break;
             }
 

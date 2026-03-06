@@ -76,6 +76,7 @@ public enum CommandType
     // Collections
     SaveToCollection,
     SaveToSpecific,
+    SaveAllToReadingList,
     OpenCollections,
     DeleteItem,
     ReorderUp,

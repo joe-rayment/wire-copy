@@ -133,8 +133,9 @@ public class TerminalInputHandler : IInputHandler
    c               Reading list
    :home           Return to launcher
 
- Collections
-   s               Save to default collection
+ Reading List
+   s               Save to Reading List
+   A               Save all links to Reading List
    S               Save to specific collection
    d               Delete / remove item
    J / K           Reorder items
@@ -256,6 +257,7 @@ public class TerminalInputHandler : IInputHandler
             'N' => new NavigationCommand { Type = CommandType.SearchPrevious },
             's' => new NavigationCommand { Type = CommandType.SaveToCollection },
             'S' => new NavigationCommand { Type = CommandType.SaveToSpecific },
+            'A' => new NavigationCommand { Type = CommandType.SaveAllToReadingList },
             'd' => new NavigationCommand { Type = CommandType.DeleteItem },
             'a' => new NavigationCommand { Type = CommandType.AddBookmark },
             'c' => new NavigationCommand { Type = CommandType.OpenCollections },
