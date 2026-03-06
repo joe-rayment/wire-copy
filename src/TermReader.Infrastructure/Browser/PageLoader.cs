@@ -289,7 +289,7 @@ public class PageLoader : IPageLoader
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(_browserConfig.HttpTimeoutMs);
 
-            var response = await _httpClient.SendAsync(httpRequest, cts.Token);
+            using var response = await _httpClient.SendAsync(httpRequest, cts.Token);
 
             if (!response.IsSuccessStatusCode)
             {

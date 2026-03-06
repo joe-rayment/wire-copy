@@ -414,7 +414,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
 
-            var response = await _httpClient.SendAsync(request, cts.Token);
+            using var response = await _httpClient.SendAsync(request, cts.Token);
 
             if (!response.IsSuccessStatusCode)
             {
