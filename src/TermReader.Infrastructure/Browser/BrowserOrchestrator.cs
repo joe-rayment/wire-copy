@@ -99,7 +99,11 @@ public class BrowserOrchestrator : IBrowserService
     {
         _logger.LogInformation("Loading page: {Url}", url);
         _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.Headless);
-        _renderer.RenderLoading(url);
+
+        if (!_pageCache.Contains(url))
+        {
+            _renderer.RenderLoading(url);
+        }
 
         // Load the page HTML
         var loadResult = await _pageLoader.LoadAsync(
