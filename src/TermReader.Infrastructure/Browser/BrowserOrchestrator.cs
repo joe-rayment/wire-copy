@@ -38,6 +38,8 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IThemeProvider _themeProvider;
     private readonly IResizeDetector _resizeDetector;
     private readonly IPageCache _pageCache;
+    private readonly IPreloadService _preloadService;
+    private readonly IIdleDetector _idleDetector;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
     // Line cache for reader view line-based scrolling
@@ -70,6 +72,8 @@ public class BrowserOrchestrator : IBrowserService
         IThemeProvider themeProvider,
         IResizeDetector resizeDetector,
         IPageCache pageCache,
+        IPreloadService preloadService,
+        IIdleDetector idleDetector,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -86,6 +90,8 @@ public class BrowserOrchestrator : IBrowserService
         _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
         _pageCache = pageCache;
+        _preloadService = preloadService;
+        _idleDetector = idleDetector;
         _logger = logger;
     }
 
@@ -225,8 +231,9 @@ public class BrowserOrchestrator : IBrowserService
             Console.Write("\x1b[?1049h");
             Console.CursorVisible = false;
 
-            // Start resize detection in the background
+            // Start resize detection and pre-loading in the background
             _ = _resizeDetector.StartAsync(cancellationToken);
+            _ = _preloadService.StartAsync(cancellationToken);
 
             var options = GetCurrentRenderOptions();
 
@@ -267,14 +274,16 @@ public class BrowserOrchestrator : IBrowserService
         }
         finally
         {
-            // Dispose browser session (defense-in-depth alongside host disposal)
+            // Dispose browser session and background services
             try
             {
+                _preloadService.Dispose();
+                _idleDetector.Dispose();
                 _browserSession.Dispose();
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Error disposing browser session during shutdown");
+                _logger.LogDebug(ex, "Error disposing services during shutdown");
             }
 
             // Exit alternate screen buffer and restore cursor
@@ -396,6 +405,8 @@ public class BrowserOrchestrator : IBrowserService
 
     private async Task NavigateToAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
+        _preloadService.Pause();
+
         try
         {
             var cachedAt = _pageCache.GetCachedAt(url);
@@ -405,6 +416,10 @@ public class BrowserOrchestrator : IBrowserService
             _navigationService.NavigateTo(page);
             _navigationService.SetCacheInfo(isFromCache, cachedAt);
             InvalidateLineCache();
+
+            _preloadService.NotifyPageLoaded(page);
+            NotifyPreloadSelectionChanged();
+
             await RenderCurrentPageAsync(options, cancellationToken);
         }
         catch (Exception ex)
@@ -412,10 +427,16 @@ public class BrowserOrchestrator : IBrowserService
             _logger.LogError(ex, "Error navigating to {Url}", url);
             _renderer.RenderError(ex.Message, url);
         }
+        finally
+        {
+            _preloadService.Resume();
+        }
     }
 
     private async Task ForceRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
+        _preloadService.Pause();
+
         try
         {
             _renderer.RenderLoading(url);
@@ -445,12 +466,20 @@ public class BrowserOrchestrator : IBrowserService
             _navigationService.NavigateTo(page);
             _navigationService.SetCacheInfo(false, null);
             InvalidateLineCache();
+
+            _preloadService.NotifyPageLoaded(page);
+            NotifyPreloadSelectionChanged();
+
             await RenderCurrentPageAsync(options, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error force-refreshing {Url}", url);
             _renderer.RenderError(ex.Message, url);
+        }
+        finally
+        {
+            _preloadService.Resume();
         }
     }
 
@@ -508,6 +537,7 @@ public class BrowserOrchestrator : IBrowserService
 
     private async Task<bool> HandleCommandAsync(NavigationCommand command, RenderOptions options, CancellationToken cancellationToken)
     {
+        _idleDetector.RecordActivity();
         var ctx = GetCommandContext();
 
         try
@@ -654,6 +684,9 @@ public class BrowserOrchestrator : IBrowserService
                     await RenderCurrentPageAsync(newOptions, cancellationToken);
                     break;
             }
+
+            // Notify pre-loader of selection changes in hierarchical view
+            NotifyPreloadSelectionChanged();
 
             return true;
         }
@@ -952,6 +985,33 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         _navigationService.SetScrollOffset(Math.Clamp(newLineIndex, 0, Math.Max(0, _cachedLines.Count - 1)));
+    }
+
+    /// <summary>
+    /// Notifies the pre-load service of the current selection in the hierarchical view.
+    /// </summary>
+    private void NotifyPreloadSelectionChanged()
+    {
+        if (_navigationService.CurrentContext.ViewMode != ViewMode.Hierarchical)
+        {
+            return;
+        }
+
+        var page = _navigationService.CurrentPage;
+        var tree = page?.LinkTree;
+        if (tree == null)
+        {
+            return;
+        }
+
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var selectedNode = tree.CurrentSelection;
+        var selectedIndex = selectedNode != null ? visibleNodes.IndexOf(selectedNode) : 0;
+
+        _preloadService.NotifySelectionChanged(
+            Math.Max(0, selectedIndex),
+            visibleNodes,
+            page!.Url);
     }
 
     /// <summary>
