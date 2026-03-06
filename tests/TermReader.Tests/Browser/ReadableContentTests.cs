@@ -516,5 +516,13 @@ public class ReadableContentTests
         ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
     }
 
+    [Fact]
+    public void IsEmptyArticleShell_ArticleContentClassNoParagraphs_ReturnsTrue()
+    {
+        var html = "<html><body><div class='article-content'><span>Loading</span></div></body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(html).Should().BeTrue();
+    }
+
     #endregion
 }
