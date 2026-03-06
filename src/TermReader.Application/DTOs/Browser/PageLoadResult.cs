@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
 namespace TermReader.Application.DTOs.Browser;
@@ -40,9 +41,14 @@ public record PageLoadResult
     public int StatusCode { get; init; }
 
     /// <summary>
+    /// How this page was fetched (HTTP, Selenium, or from cache).
+    /// </summary>
+    public FetchMethod FetchMethod { get; init; }
+
+    /// <summary>
     /// Creates a successful result.
     /// </summary>
-    public static PageLoadResult Successful(string url, string html, PageMetadata metadata)
+    public static PageLoadResult Successful(string url, string html, PageMetadata metadata, FetchMethod fetchMethod = FetchMethod.Http)
     {
         return new PageLoadResult
         {
@@ -50,7 +56,8 @@ public record PageLoadResult
             Url = url,
             Html = html,
             Metadata = metadata,
-            StatusCode = 200
+            StatusCode = 200,
+            FetchMethod = fetchMethod
         };
     }
 

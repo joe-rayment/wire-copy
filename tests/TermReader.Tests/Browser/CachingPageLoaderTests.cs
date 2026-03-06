@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.Cache;
 using TermReader.Infrastructure.Configuration;
@@ -72,7 +73,10 @@ public class CachingPageLoaderTests : IDisposable
         var request = new PageLoadRequest { Url = url };
         var result = await _sut.LoadAsync(request);
 
-        result.Should().Be(cached);
+        result.Url.Should().Be(cached.Url);
+        result.Html.Should().Be(cached.Html);
+        result.Success.Should().Be(cached.Success);
+        result.FetchMethod.Should().Be(FetchMethod.Cached);
         await _innerLoader.DidNotReceive().LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
     }
 
