@@ -360,6 +360,50 @@ public class CollectionServiceTests : TestDatabaseFixture
 
     #endregion
 
+    #region Save-then-view Reading List (integration)
+
+    [Fact]
+    public async Task SaveToReadingList_ThenGetReadingList_ReturnsCollectionWithItems()
+    {
+        await _sut.SaveToReadingListAsync("https://example.com/article", "My Article");
+
+        var readingList = await _sut.GetReadingListAsync();
+
+        readingList.Should().NotBeNull();
+        readingList.Name.Should().Be("Reading List");
+        readingList.Items.Should().HaveCount(1);
+        readingList.Items[0].Url.Should().Be("https://example.com/article");
+    }
+
+    [Fact]
+    public async Task SaveAllToReadingList_ThenGetReadingList_ContainsAllItems()
+    {
+        var items = new[]
+        {
+            ("https://example.com/1", "First"),
+            ("https://example.com/2", "Second"),
+            ("https://example.com/3", "Third")
+        };
+        await _sut.SaveAllToReadingListAsync(items);
+
+        var readingList = await _sut.GetReadingListAsync();
+
+        readingList.Items.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task GetReadingListAsync_SameCollectionAsGetDefaultCollectionAsync()
+    {
+        await _sut.SaveToReadingListAsync("https://example.com", "Test");
+
+        var readingList = await _sut.GetReadingListAsync();
+        var defaultCollection = await _sut.GetDefaultCollectionAsync();
+
+        readingList.Id.Should().Be(defaultCollection.Id);
+    }
+
+    #endregion
+
     #region RenameCollectionAsync
 
     [Fact]
