@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Collections.Concurrent;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -251,6 +252,60 @@ public class BackgroundPreloadServiceTests
         // The queue should have been rebuilt with the second set of nodes
         var queue = _service.BuildQueue(0, nodes2, "https://example.com");
         queue.Should().HaveCount(2);
+    }
+
+    #endregion
+
+    #region Circuit Breaker Recovery
+
+    [Fact]
+    public void BuildQueue_CircuitBrokenDomain_SkipsDuringCooldown()
+    {
+        // Simulate bot detection for example.com by building a service that
+        // has the domain circuit-broken via reflection (since the internal
+        // dictionary isn't directly accessible from tests, we use the
+        // BuildQueue skip behavior after a prior failed fetch).
+        // Instead, we can trigger the skip by using a short cooldown config.
+        var cache = Substitute.For<IPageCache>();
+        var config = new CacheConfiguration { CircuitBreakerCooldownSeconds = 300 };
+        var service = new BackgroundPreloadService(
+            cache, Substitute.For<IIdleDetector>(), new HttpClient(), config,
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Break the circuit by accessing the internal dictionary via reflection
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_circuitBrokenDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, DateTime>)field!.GetValue(service)!;
+        dict["https://example.com"] = DateTime.UtcNow;
+
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().BeEmpty("domain is circuit-broken and cooldown has not elapsed");
+    }
+
+    [Fact]
+    public void BuildQueue_CircuitBrokenDomain_RecoverAfterCooldown()
+    {
+        var cache = Substitute.For<IPageCache>();
+        var config = new CacheConfiguration { CircuitBreakerCooldownSeconds = 1 };
+        var service = new BackgroundPreloadService(
+            cache, Substitute.For<IIdleDetector>(), new HttpClient(), config,
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Break the circuit with a time in the past (beyond cooldown)
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_circuitBrokenDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, DateTime>)field!.GetValue(service)!;
+        dict["https://example.com"] = DateTime.UtcNow.AddSeconds(-5);
+
+        var nodes = CreateContentNodes("https://example.com/a1");
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().HaveCount(1, "cooldown has elapsed, domain should be retried");
+        dict.Should().NotContainKey("https://example.com", "expired circuit breaker entry should be removed");
     }
 
     #endregion
