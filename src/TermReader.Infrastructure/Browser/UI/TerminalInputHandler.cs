@@ -150,6 +150,7 @@ public class TerminalInputHandler : IInputHandler
             {
                 ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
                 ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
+                ConsoleKey.P => new NavigationCommand { Type = CommandType.CycleTheme }, // Ctrl+P
                 ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit }, // Ctrl+C
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
@@ -186,7 +187,6 @@ public class TerminalInputHandler : IInputHandler
             ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
             ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
             ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
-            ConsoleKey.F6 => new NavigationCommand { Type = CommandType.CycleTheme },
 
             // Help
             ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp }, // '?' key
@@ -199,70 +199,56 @@ public class TerminalInputHandler : IInputHandler
     public string GetHelpText()
     {
         return @"
- Keyboard Shortcuts
+ Shortcuts
  ══════════════════════════════════════════════════════════════
 
  Navigation
- ──────────────────────────────────────────────────────────────
-  j / ↓           Move down / scroll
-  k / ↑           Move up / scroll
-  h / ←           Collapse node
-  l / →           Expand node
-  Enter           Follow link / open item
-  Space           Toggle expand/collapse
-  b / Backspace   Go back
+   j / ↓           Move down / scroll
+   k / ↑           Move up / scroll
+   h / ←           Collapse node
+   l / →           Expand node
+   Enter           Follow link / open item
+   Space           Toggle expand/collapse
+   b / Backspace   Go back
 
  Scrolling
- ──────────────────────────────────────────────────────────────
-  Ctrl+d          Page down
-  Ctrl+u          Page up
-  gg              Go to top
-  G               Go to bottom
+   Ctrl+d          Page down
+   Ctrl+u          Page up
+   gg              Go to top
+   G               Go to bottom
 
  Views
- ──────────────────────────────────────────────────────────────
-  v / Tab         Toggle Link View ↔ Reader View
-  r               Reader View
-  t               Link Tree View
+   v / Tab         Toggle Link View ↔ Reader View
+   r               Reader View
+   t               Link Tree View
 
- Reader View
- ──────────────────────────────────────────────────────────────
-  + / =           Widen content
-  - / _           Narrow content
-  0               Reset width
+ Reader Width
+   + / =           Widen       - / _           Narrow
+   0               Reset
 
  Search & Commands
- ──────────────────────────────────────────────────────────────
-  /               Search
-  n / N           Next / previous match
-  :               Command line
+   /               Search
+   n / N           Next / previous match
+   :               Command line
 
  Launcher
- ──────────────────────────────────────────────────────────────
-  h/j/k/l         Navigate grid
-  a               Add bookmark
-  d               Delete bookmark
-  c               Collections
-  :home           Return to launcher
+   h/j/k/l         Navigate grid
+   a               Add bookmark
+   d               Delete bookmark
+   c               Reading list
+   :home           Return to launcher
 
  Collections
- ──────────────────────────────────────────────────────────────
-  s               Save to default collection
-  S               Save to specific collection
-  d               Delete / remove item
-  J / K           Reorder items
-  :collections    Collections view
-  :readlater      Read later
+   s               Save to default collection
+   S               Save to specific collection
+   d               Delete / remove item
+   J / K           Reorder items
 
  General
- ──────────────────────────────────────────────────────────────
-  F5              Refresh page
-  F6              Cycle theme
-  Esc             Go back
-  q               Quit
-  ?               This menu
+   F5              Refresh          Ctrl+p          Cycle theme
+   Esc             Go back          q               Quit
 
- Press any key to continue...
+ Press any key to close...
 ";
     }
 

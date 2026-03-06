@@ -26,7 +26,6 @@ internal class StatusBarRenderer
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var themeName = _themeProvider.CurrentTheme.ToString();
 
         _helpers.WriteLine();
         var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
@@ -37,7 +36,7 @@ internal class StatusBarRenderer
         var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
         var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
 
-        _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel} | {themeName}{Reset} {hints}{search}");
+        _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}");
     }
 
     private static string GetModeLabel(ViewMode mode)
@@ -46,7 +45,7 @@ internal class StatusBarRenderer
         {
             ViewMode.Hierarchical => "LinkView",
             ViewMode.Readable => "ReaderView",
-            ViewMode.CollectionList => "Collections",
+            ViewMode.CollectionList => "Reading List",
             ViewMode.CollectionItems => "Items",
             ViewMode.Launcher => "Launcher",
             _ => "Browser"
@@ -59,32 +58,28 @@ internal class StatusBarRenderer
         {
             ViewMode.Hierarchical => FormatHints(
                 p,
-                ("j/k", "move"),
-                ("Enter", "select"),
+                ("Enter", "open"),
                 ("v", "reader"),
-                ("?", "shortcuts")),
+                ("?", "help")),
             ViewMode.Readable => FormatHints(
                 p,
-                ("j/k", "scroll"),
+                ("+/-", "width"),
                 ("v", "links"),
                 ("b", "back"),
-                ("?", "shortcuts")),
+                ("?", "help")),
             ViewMode.CollectionList => FormatHints(
                 p,
-                ("j/k", "move"),
                 ("Enter", "open"),
-                ("?", "shortcuts")),
+                ("?", "help")),
             ViewMode.CollectionItems => FormatHints(
                 p,
-                ("j/k", "move"),
                 ("Enter", "open"),
                 ("b", "back"),
-                ("?", "shortcuts")),
+                ("?", "help")),
             ViewMode.Launcher => FormatHints(
                 p,
-                ("hjkl", "navigate"),
                 ("Enter", "open"),
-                ("?", "shortcuts")),
+                ("?", "help")),
             _ => $"{p.SecondaryText.AnsiFg}q:quit{Reset}"
         };
     }

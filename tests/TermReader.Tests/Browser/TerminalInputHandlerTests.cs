@@ -223,6 +223,13 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
+    public void MapKeyToCommand_CtrlP_ReturnsCycleTheme()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.P, ConsoleModifiers.Control);
+        result.Type.Should().Be(CommandType.CycleTheme);
+    }
+
+    [Fact]
     public void MapKeyToCommand_CtrlC_ReturnsQuit()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.C, ConsoleModifiers.Control);

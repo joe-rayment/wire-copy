@@ -44,6 +44,16 @@ public record LinkInfo
     public string? ParentSelector { get; init; }
 
     /// <summary>
+    /// Author of the linked content (if available from metadata).
+    /// </summary>
+    public string? Author { get; init; }
+
+    /// <summary>
+    /// Publication date of the linked content (if available from metadata).
+    /// </summary>
+    public DateTime? PublishedDate { get; init; }
+
+    /// <summary>
     /// True if display text was extracted from an image alt attribute.
     /// Used for deduplication - actual text is preferred over image alt.
     /// </summary>

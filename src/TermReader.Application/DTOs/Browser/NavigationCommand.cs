@@ -91,5 +91,8 @@ public enum CommandType
     ResetWidth,
 
     // Theme
-    CycleTheme
+    CycleTheme,
+
+    // Terminal
+    TerminalResized
 }
