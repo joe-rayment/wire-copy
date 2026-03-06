@@ -18,6 +18,7 @@ public class CollectionNavigationState
     private bool _inCollectionsMode;
     private ViewMode _preCollectionsViewMode;
     private int _preCollectionsScrollOffset;
+    private int _collectionListScrollOffset;
     private int _collectionItemScrollOffset;
     private int _collectionSelectedIndex;
     private int _collectionItemSelectedIndex;
@@ -58,6 +59,24 @@ public class CollectionNavigationState
     }
 
     /// <summary>
+    /// Gets or sets the scroll offset for the collection list.
+    /// </summary>
+    public int CollectionListScrollOffset
+    {
+        get => _collectionListScrollOffset;
+        set => _collectionListScrollOffset = Math.Max(0, value);
+    }
+
+    /// <summary>
+    /// Gets or sets the scroll offset for collection items.
+    /// </summary>
+    public int CollectionItemScrollOffset
+    {
+        get => _collectionItemScrollOffset;
+        set => _collectionItemScrollOffset = Math.Max(0, value);
+    }
+
+    /// <summary>
     /// Gets the view mode that was active before entering collections.
     /// </summary>
     public ViewMode PreCollectionsViewMode => _preCollectionsViewMode;
@@ -76,6 +95,7 @@ public class CollectionNavigationState
         _preCollectionsScrollOffset = currentScrollOffset;
         _inCollectionsMode = true;
         _collectionSelectedIndex = 0;
+        _collectionListScrollOffset = 0;
 
         _logger.LogDebug("Entered collections mode");
     }

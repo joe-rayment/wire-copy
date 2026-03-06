@@ -121,20 +121,20 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ClearRemainingLines();
     }
 
-    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
+    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
-        _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, options);
+        _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }
 
-    public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
+    public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
-        _collectionRenderer.RenderCollectionItems(collection, selectedIndex, options);
+        _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }

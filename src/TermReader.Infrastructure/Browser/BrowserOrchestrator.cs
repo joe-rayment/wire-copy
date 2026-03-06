@@ -175,6 +175,7 @@ public class BrowserOrchestrator : IBrowserService
                     _collections ?? new List<Collection>(),
                     _navigationService.CollectionSelectedIndex,
                     _defaultCollectionId,
+                    _navigationService.CollectionListScrollOffset,
                     options);
                 break;
 
@@ -185,6 +186,7 @@ public class BrowserOrchestrator : IBrowserService
                     _renderer.RenderCollectionItems(
                         activeCollection,
                         _navigationService.CollectionItemSelectedIndex,
+                        _navigationService.CollectionItemScrollOffset,
                         options);
                 }
 
@@ -718,6 +720,7 @@ public class BrowserOrchestrator : IBrowserService
                 _collections ?? new List<Collection>(),
                 _navigationService.CollectionSelectedIndex,
                 _defaultCollectionId,
+                _navigationService.CollectionListScrollOffset,
                 options);
             return;
         }
@@ -730,6 +733,7 @@ public class BrowserOrchestrator : IBrowserService
                 _renderer.RenderCollectionItems(
                     activeCollection,
                     _navigationService.CollectionItemSelectedIndex,
+                    _navigationService.CollectionItemScrollOffset,
                     options);
             }
 

@@ -296,6 +296,24 @@ public class NavigationService : INavigationService
         set => _collectionState.CollectionItemSelectedIndex = value;
     }
 
+    /// <summary>
+    /// Gets or sets the scroll offset for the collection list.
+    /// </summary>
+    public int CollectionListScrollOffset
+    {
+        get => _collectionState.CollectionListScrollOffset;
+        set => _collectionState.CollectionListScrollOffset = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the scroll offset for collection items.
+    /// </summary>
+    public int CollectionItemScrollOffset
+    {
+        get => _collectionState.CollectionItemScrollOffset;
+        set => _collectionState.CollectionItemScrollOffset = value;
+    }
+
     // Launcher properties and methods
 
     /// <summary>

@@ -58,15 +58,16 @@ public interface IPageRenderer
     /// <param name="selectedIndex">Currently selected collection index.</param>
     /// <param name="defaultCollectionId">ID of the default collection.</param>
     /// <param name="options">Render options.</param>
-    void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options);
+    void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options);
 
     /// <summary>
     /// Renders items within a collection.
     /// </summary>
     /// <param name="collection">Collection to render.</param>
     /// <param name="selectedIndex">Currently selected item index.</param>
+    /// <param name="scrollOffset">Scroll offset for the item list.</param>
     /// <param name="options">Render options.</param>
-    void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options);
+    void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options);
 
     /// <summary>
     /// Renders the launcher home screen with bookmark tiles.

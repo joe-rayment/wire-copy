@@ -23,7 +23,7 @@ internal class CollectionRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
+    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -48,12 +48,7 @@ internal class CollectionRenderer
         }
         else
         {
-            var startIndex = 0;
-            if (selectedIndex >= maxVisible)
-            {
-                startIndex = selectedIndex - maxVisible + 1;
-            }
-
+            var startIndex = Math.Max(0, Math.Min(scrollOffset, collections.Count - maxVisible));
             var endIndex = Math.Min(collections.Count, startIndex + maxVisible);
             for (var i = startIndex; i < endIndex; i++)
             {
@@ -111,7 +106,7 @@ internal class CollectionRenderer
         }
     }
 
-    public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
+    public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -137,12 +132,7 @@ internal class CollectionRenderer
         }
         else
         {
-            var startIndex = 0;
-            if (selectedIndex >= maxItems)
-            {
-                startIndex = selectedIndex - maxItems + 1;
-            }
-
+            var startIndex = Math.Max(0, Math.Min(scrollOffset, collection.Items.Count - maxItems));
             var endIndex = Math.Min(collection.Items.Count, startIndex + maxItems);
             for (var i = startIndex; i < endIndex; i++)
             {
