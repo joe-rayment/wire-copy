@@ -35,6 +35,55 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         _logger = logger;
     }
 
+    /// <summary>
+    /// Detects JS shell pages: HTML with article indicators but no actual paragraph content.
+    /// Returns true when the page looks like it should have article content but doesn't,
+    /// suggesting it needs JavaScript to render. Non-article pages are never flagged.
+    /// </summary>
+    public static bool IsEmptyArticleShell(string html)
+    {
+        var lowerHtml = html.ToLowerInvariant();
+
+        // Only check pages that have article indicators
+        var hasArticleIndicators = lowerHtml.Contains("<article") ||
+            (lowerHtml.Contains("og:type") && lowerHtml.Contains("article")) ||
+            lowerHtml.Contains("article-body") ||
+            lowerHtml.Contains("article-content") ||
+            lowerHtml.Contains("entry-content") ||
+            lowerHtml.Contains("post-content");
+
+        if (!hasArticleIndicators)
+        {
+            return false;
+        }
+
+        // Has article markup — check for actual paragraph content
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var paragraphs = doc.DocumentNode.SelectNodes("//p");
+        if (paragraphs == null)
+        {
+            return true;
+        }
+
+        var substantialCount = 0;
+        foreach (var p in paragraphs)
+        {
+            var text = p.InnerText?.Trim();
+            if (text != null && text.Length > 50)
+            {
+                substantialCount++;
+                if (substantialCount >= 2)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     public Task<ReadableContent?> ExtractAsync(string html, string url, CancellationToken cancellationToken = default)
     {
         try

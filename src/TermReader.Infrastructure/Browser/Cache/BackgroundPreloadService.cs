@@ -361,6 +361,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
                             origin);
                     }
                 }
+                else if (ReadableContentExtractor.IsEmptyArticleShell(result.Html))
+                {
+                    _logger.LogDebug("Pre-loaded page is an empty article shell, skipping cache: {Url}", url);
+                }
                 else
                 {
                     _cache.Put(url, result);

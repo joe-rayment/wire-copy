@@ -308,6 +308,13 @@ public class PageLoader : IPageLoader
                 return PageLoadResult.Failure("JavaScript required");
             }
 
+            // Check for JS shell pages with article markup but no actual content
+            if (ReadableContentExtractor.IsEmptyArticleShell(html))
+            {
+                _logger.LogDebug("HTTP response is an empty article shell, will use browser fallback");
+                return PageLoadResult.Failure("Empty article shell");
+            }
+
             var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
             var metadata = ExtractMetadata(html, finalUrl);
 
