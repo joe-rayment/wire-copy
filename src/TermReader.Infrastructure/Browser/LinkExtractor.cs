@@ -55,6 +55,11 @@ public class LinkExtractor : ILinkExtractor
         "promo", "promotion", "partner", "paid"
     };
 
+    private static readonly HashSet<string> ContainerTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "article", "div", "li", "section"
+    };
+
     private readonly ILogger<LinkExtractor> _logger;
 
     public LinkExtractor(ILogger<LinkExtractor> logger)
@@ -149,6 +154,13 @@ public class LinkExtractor : ILinkExtractor
 
                     // Track whether this came from image alt text
                     linkInfo = linkInfo with { IsFromImageAlt = isFromImage };
+
+                    // Extract per-link metadata (author, date) from container
+                    var (author, pubDate) = ExtractLinkMetadata(anchor);
+                    if (author != null || pubDate != null)
+                    {
+                        linkInfo = linkInfo with { Author = author, PublishedDate = pubDate };
+                    }
 
                     links.Add(linkInfo);
                 }
@@ -317,11 +329,17 @@ public class LinkExtractor : ILinkExtractor
             // Use non-image-alt status if any real text was found
             var isFromImage = realTexts.Count == 0 && imageTexts.Count > 0;
 
+            // Propagate author/date from first link that has them
+            var author = group.Select(g => g.Link.Author).FirstOrDefault(a => a != null);
+            var pubDate = group.Select(g => g.Link.PublishedDate).FirstOrDefault(d => d != null);
+
             var mergedLink = firstLink with
             {
                 DisplayText = mergedText,
                 ImportanceScore = maxImportance,
-                IsFromImageAlt = isFromImage
+                IsFromImageAlt = isFromImage,
+                Author = author,
+                PublishedDate = pubDate
             };
 
             merged.Add((mergedLink, firstIndex));
@@ -344,7 +362,22 @@ public class LinkExtractor : ILinkExtractor
                      link.DisplayText.Length > existing.DisplayText.Length) ||
                     (existing.IsFromImageAlt && !link.IsFromImageAlt))
                 {
-                    result[existingIndex] = link;
+                    // Preserve metadata from existing if replacement doesn't have it
+                    result[existingIndex] = link with
+                    {
+                        Author = link.Author ?? existing.Author,
+                        PublishedDate = link.PublishedDate ?? existing.PublishedDate
+                    };
+                }
+                else if ((existing.Author == null && link.Author != null) ||
+                         (existing.PublishedDate == null && link.PublishedDate != null))
+                {
+                    // Propagate metadata to existing entry if it's missing
+                    result[existingIndex] = existing with
+                    {
+                        Author = existing.Author ?? link.Author,
+                        PublishedDate = existing.PublishedDate ?? link.PublishedDate
+                    };
                 }
             }
             else
@@ -355,6 +388,104 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Extracts author and publication date metadata from the container element surrounding a link.
+    /// Walks up to 3 ancestor levels looking for article/div/li/section containers, then searches
+    /// for &lt;time datetime&gt; elements and author indicators.
+    /// </summary>
+    internal static (string? Author, DateTime? PublishedDate) ExtractLinkMetadata(HtmlNode anchor)
+    {
+        // Find a meaningful container by walking up to 3 ancestor levels
+        var container = FindContainer(anchor);
+        if (container == null)
+        {
+            return (null, null);
+        }
+
+        var author = ExtractAuthor(container);
+        var pubDate = ExtractPublishedDate(container);
+
+        return (author, pubDate);
+    }
+
+    private static HtmlNode? FindContainer(HtmlNode node)
+    {
+        var current = node.ParentNode;
+        var depth = 0;
+
+        while (current != null && depth < 3)
+        {
+            if (ContainerTags.Contains(current.Name))
+            {
+                return current;
+            }
+
+            current = current.ParentNode;
+            depth++;
+        }
+
+        return null;
+    }
+
+    private static string? ExtractAuthor(HtmlNode container)
+    {
+        // Look for elements with author-related classes
+        var authorClasses = new[] { "author", "byline", "writer" };
+
+        foreach (var className in authorClasses)
+        {
+            var authorNode = container.SelectSingleNode(
+                $".//*[contains(translate(@class, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{className}')]");
+            if (authorNode != null)
+            {
+                var text = authorNode.InnerText?.Trim();
+                text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+                if (!string.IsNullOrWhiteSpace(text) && text.Length <= 100)
+                {
+                    return text;
+                }
+            }
+        }
+
+        // Check for rel="author" attribute
+        var relAuthor = container.SelectSingleNode(".//*[@rel='author']");
+        if (relAuthor != null)
+        {
+            var text = relAuthor.InnerText?.Trim();
+            text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+            if (!string.IsNullOrWhiteSpace(text) && text.Length <= 100)
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    private static DateTime? ExtractPublishedDate(HtmlNode container)
+    {
+        // Look for <time datetime="..."> elements
+        var timeNodes = container.SelectNodes(".//time[@datetime]");
+        if (timeNodes != null)
+        {
+            foreach (var timeNode in timeNodes)
+            {
+                var datetime = timeNode.GetAttributeValue("datetime", string.Empty);
+                if (!string.IsNullOrWhiteSpace(datetime) &&
+                    DateTimeOffset.TryParse(
+                        datetime,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out var dto))
+                {
+                    return dto.LocalDateTime;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static LinkType DetermineLinkType(string url, string? parentSelector, string displayText, string baseUrl)

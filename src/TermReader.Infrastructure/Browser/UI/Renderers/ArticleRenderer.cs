@@ -83,11 +83,12 @@ internal class ArticleRenderer
         }
     }
 
-    public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth, int viewportHeight)
+    public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth, int viewportHeight, int terminalWidth = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine();
-        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
+        var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
+        var separatorWidth = Math.Max(1, width - 1);
         _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
         var progress = totalLines > 0

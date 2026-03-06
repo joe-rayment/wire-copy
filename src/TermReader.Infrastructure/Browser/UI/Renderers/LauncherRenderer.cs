@@ -141,7 +141,7 @@ internal class LauncherRenderer
         const int standardCellHeight = 5;
         const int compactCellHeight = 3;
 
-        var width = Math.Min(terminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, terminalWidth - 2);
         var columns = width >= columnThreshold ? 2 : 1;
         var availableHeight = Math.Max(4, terminalHeight - headerLines - footerLines);
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;

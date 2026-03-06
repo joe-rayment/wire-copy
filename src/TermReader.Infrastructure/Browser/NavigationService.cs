@@ -25,6 +25,7 @@ public class NavigationService : INavigationService
     private int _scrollOffset;
     private string? _searchQuery;
     private int _searchMatchIndex;
+    private string? _statusMessage;
 
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
@@ -57,7 +58,8 @@ public class NavigationService : INavigationService
         ForwardHistoryCount = _forwardHistory.Count,
         LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
         SearchQuery = _searchQuery,
-        SearchMatchIndex = _searchMatchIndex
+        SearchMatchIndex = _searchMatchIndex,
+        StatusMessage = _statusMessage
     };
 
     public Page? CurrentPage => _currentPage;
@@ -185,6 +187,22 @@ public class NavigationService : INavigationService
     public void SetScrollOffset(int offset)
     {
         _scrollOffset = Math.Max(0, offset);
+    }
+
+    /// <summary>
+    /// Sets a transient status message displayed for one render cycle.
+    /// </summary>
+    public void SetStatusMessage(string message)
+    {
+        _statusMessage = message;
+    }
+
+    /// <summary>
+    /// Clears the transient status message.
+    /// </summary>
+    public void ClearStatusMessage()
+    {
+        _statusMessage = null;
     }
 
     /// <summary>

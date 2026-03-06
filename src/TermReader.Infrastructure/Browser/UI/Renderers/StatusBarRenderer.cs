@@ -23,12 +23,13 @@ internal class StatusBarRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderStatusBar(NavigationContext context, ViewMode mode)
+    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
         _helpers.WriteLine();
-        var separatorWidth = Math.Max(1, Console.WindowWidth - 1);
+        var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
+        var separatorWidth = Math.Max(1, width - 1);
         _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
         var modeLabel = GetModeLabel(mode);
@@ -36,7 +37,11 @@ internal class StatusBarRenderer
         var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
         var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
 
-        _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}");
+        var statusMsg = !string.IsNullOrEmpty(context.StatusMessage)
+            ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
+            : string.Empty;
+
+        _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{statusMsg}");
     }
 
     private static string GetModeLabel(ViewMode mode)

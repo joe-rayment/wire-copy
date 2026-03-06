@@ -70,4 +70,9 @@ public record NavigationContext
     /// Index of the current search match (in the list of matching paragraph indices).
     /// </summary>
     public int SearchMatchIndex { get; init; }
+
+    /// <summary>
+    /// Transient status message displayed for one render cycle (e.g., theme name after cycling).
+    /// </summary>
+    public string? StatusMessage { get; init; }
 }

@@ -26,7 +26,7 @@ internal class CollectionRenderer
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
         // Rounded box header
@@ -114,7 +114,7 @@ internal class CollectionRenderer
     public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
         // Rounded box header with collection name and item count

@@ -164,7 +164,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null);
         if (!string.IsNullOrWhiteSpace(ogTitle))
         {
-            return ogTitle;
+            return CleanText(ogTitle);
         }
 
         var titleTag = doc.DocumentNode.SelectSingleNode("//title")?.InnerText;

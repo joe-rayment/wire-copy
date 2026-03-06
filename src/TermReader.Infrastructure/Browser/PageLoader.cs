@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using System.Diagnostics;
+using System.Net;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -168,6 +169,7 @@ public class PageLoader : IPageLoader
     private static string? ExtractTitle(HtmlDocument doc)
     {
         // Try og:title first (usually cleaner)
+        // ExtractMetaContent already decodes HTML entities
         var ogTitle = ExtractMetaContent(doc, "og:title");
         if (!string.IsNullOrWhiteSpace(ogTitle))
         {
@@ -176,7 +178,8 @@ public class PageLoader : IPageLoader
 
         // Fall back to <title> tag
         var titleNode = doc.DocumentNode.SelectSingleNode("//title");
-        return titleNode?.InnerText.Trim();
+        var title = titleNode?.InnerText.Trim();
+        return title != null ? WebUtility.HtmlDecode(title) : null;
     }
 
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
@@ -185,7 +188,8 @@ public class PageLoader : IPageLoader
         var node = doc.DocumentNode.SelectSingleNode($"//meta[@name='{name}']") ??
                    doc.DocumentNode.SelectSingleNode($"//meta[@property='{name}']");
 
-        return node?.GetAttributeValue("content", null);
+        var value = node?.GetAttributeValue("content", null);
+        return value != null ? WebUtility.HtmlDecode(value) : null;
     }
 
     private static string? GetNonUrlAuthor(HtmlDocument doc)

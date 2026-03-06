@@ -29,7 +29,7 @@ internal class LinkTreeRenderer
 
     public void RenderHeader(PageMetadata metadata, string url, RenderOptions options)
     {
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, options.TerminalWidth - 2);
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var border = p.HeaderBorderFg.AnsiFg;
         var titleFg = p.HeaderTitleFg.AnsiFg;
@@ -53,7 +53,7 @@ internal class LinkTreeRenderer
         tree.EnsureSelection();
 
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, options.TerminalWidth - 2);
         var availableLines = Math.Max(3, options.TerminalHeight - 9);
         var cardHeight = GetCardHeight(availableLines);
         var visibleNodes = tree.GetVisibleNodes().ToList();
@@ -159,7 +159,7 @@ internal class LinkTreeRenderer
     public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Min(options.TerminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, options.TerminalWidth - 2);
         var availableLines = Math.Max(3, options.TerminalHeight - 9);
         var cardHeight = GetCardHeight(availableLines);
         var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
@@ -269,7 +269,7 @@ internal class LinkTreeRenderer
         const int standardCellHeight = 5;
         const int compactCellHeight = 3;
 
-        var width = Math.Min(terminalWidth, Console.WindowWidth - 2);
+        var width = Math.Max(1, terminalWidth - 2);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - statusBarLines);
         var columns = width >= columnThreshold ? 2 : 1;
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
