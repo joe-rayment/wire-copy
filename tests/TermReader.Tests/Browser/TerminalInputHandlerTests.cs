@@ -245,11 +245,10 @@ public class TerminalInputHandlerTests
     {
         var help = _sut.GetHelpText();
 
-        help.Should().Contain("Save link to default collection");
-        help.Should().Contain("Save link to specific collection");
-        help.Should().Contain("Delete item");
-        help.Should().Contain("Move item down");
-        help.Should().Contain("Move item up");
+        help.Should().Contain("Save to default collection");
+        help.Should().Contain("Save to specific collection");
+        help.Should().Contain("Delete / remove item");
+        help.Should().Contain("Reorder items");
     }
 
     [Fact]
@@ -258,8 +257,7 @@ public class TerminalInputHandlerTests
         var help = _sut.GetHelpText();
 
         help.Should().Contain("Search");
-        help.Should().Contain("Next search match");
-        help.Should().Contain("Previous search match");
+        help.Should().Contain("Next / previous match");
     }
 
     [Fact]
@@ -270,7 +268,7 @@ public class TerminalInputHandlerTests
         help.Should().Contain("Move down");
         help.Should().Contain("Move up");
         help.Should().Contain("Go back");
-        help.Should().Contain("Follow selected link");
+        help.Should().Contain("Follow link");
     }
 
     #endregion

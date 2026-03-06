@@ -103,7 +103,7 @@ internal class ArticleRenderer
             ? $" /{context.SearchQuery}"
             : string.Empty;
 
-        var hints = "j/k:scroll v:links b:back /:search :cmd q:quit";
+        var hints = "j/k:scroll v:links b:back ?:shortcuts";
 
         _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader | {themeName}] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}{Reset}");
     }

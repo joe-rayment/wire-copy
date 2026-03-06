@@ -119,27 +119,13 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', Math.Max(1, width))}{Reset}");
 
-        string hints;
+        var hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
+                    FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("?", "shortcuts", p);
+
         var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var narrow = width < 60;
-
-        if (narrow)
-        {
-            hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
-                    FormatKbdHint("Enter", "open", p) + "  " +
-                    FormatKbdHint("q", "quit", p);
-        }
-        else
-        {
-            hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
-                    FormatKbdHint("Enter", "open", p) + "  " +
-                    FormatKbdHint("a", "add", p) + "  " +
-                    FormatKbdHint("d", "delete", p) + "  " +
-                    FormatKbdHint("q", "quit", p);
-        }
-
-        var hintsTextLen = CalculateKbdHintsTextLen(narrow);
+        var hintsTextLen = "[hjkl] navigate  [Enter] open  [?] shortcuts".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }
@@ -379,16 +365,6 @@ internal class LauncherRenderer
     {
         return $"{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
                $" {p.SecondaryText.AnsiFg}{Dim}{action}{Reset}";
-    }
-
-    private static int CalculateKbdHintsTextLen(bool narrow)
-    {
-        if (narrow)
-        {
-            return "[hjkl] navigate  [Enter] open  [q] quit".Length;
-        }
-
-        return "[hjkl] navigate  [Enter] open  [a] add  [d] delete  [q] quit".Length;
     }
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
