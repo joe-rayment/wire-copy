@@ -281,7 +281,6 @@ internal static class SearchCommandHandler
             ctx.NavigationService.SetStatusMessage(
                 $"Cache: {stats.EntryCount} pages, {stats.FormattedSize} / {stats.FormattedMaxSize}, {stats.HitRatePercent}% hit rate");
             await ctx.RenderCurrentPageAsync(options, ct);
-            ctx.NavigationService.ClearStatusMessage();
             return;
         }
 
@@ -306,7 +305,6 @@ internal static class SearchCommandHandler
             }
 
             await ctx.RenderCurrentPageAsync(options, ct);
-            ctx.NavigationService.ClearStatusMessage();
             return;
         }
 

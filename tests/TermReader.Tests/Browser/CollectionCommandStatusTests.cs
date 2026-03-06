@@ -80,7 +80,8 @@ public class CollectionCommandStatusTests
         await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Saved: My Article");
-        _navService.CurrentContext.StatusMessage.Should().BeNull("status cleared after render");
+        _navService.CurrentContext.StatusMessage.Should().Be("Saved: My Article",
+            "status message persists until auto-expiry (3s)");
     }
 
     [Fact]
