@@ -178,7 +178,7 @@ public class BrowserOrchestratorTests
         await _sut.LoadPageAsync("https://example.com");
 
         // Assert
-        _renderer.Received(1).RenderLoading("https://example.com");
+        _renderer.Received().RenderLoading("https://example.com");
     }
 
     [Fact]

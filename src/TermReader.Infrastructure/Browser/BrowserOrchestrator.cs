@@ -126,6 +126,35 @@ public class BrowserOrchestrator : IBrowserService
 
         // Try to extract readable content
         var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+
+        // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
+        if (readable == null && loadResult.FetchMethod != FetchMethod.Selenium)
+        {
+            _logger.LogInformation(
+                "No readable content from {FetchMethod} page, retrying with Selenium: {Url}",
+                loadResult.FetchMethod,
+                url);
+
+            _pageCache.Remove(url);
+            _renderer.RenderLoading(url);
+
+            var retryResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                cancellationToken);
+
+            if (retryResult.Success)
+            {
+                metadata = retryResult.Metadata ?? new PageMetadata { Title = "Untitled" };
+                page = Page.Create(retryResult.Url, retryResult.Html, metadata);
+
+                links = await _linkExtractor.ExtractLinksAsync(retryResult.Html, retryResult.Url, cancellationToken);
+                tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+                page.SetLinkTree(tree);
+
+                readable = await _contentExtractor.ExtractAsync(retryResult.Html, retryResult.Url, cancellationToken);
+            }
+        }
+
         if (readable != null)
         {
             page.SetReadableContent(readable);
