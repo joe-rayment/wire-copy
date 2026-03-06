@@ -390,16 +390,18 @@ internal class LinkTreeRenderer
                            !string.IsNullOrEmpty(node.Link.Url) &&
                            cachedUrls.Contains(node.Link.Url);
             var prefix = isCached ? $"{palette.SecondaryText.AnsiFg}\u25cf{Reset}" : " ";
-            return $"{prefix}{colorFg}{title}{Reset}";
+            var pad = new string(' ', Math.Max(0, width - 1 - title.Length));
+            return $"{prefix}{colorFg}{title}{pad}{Reset}";
         }
 
         if (lineIndex == metadataLineIdx)
         {
             var subtitle = GetMetadataSubtitle(node, width - 1);
-            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{Reset}";
+            var metaPad = new string(' ', Math.Max(0, width - 1 - subtitle.Length));
+            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{metaPad}{Reset}";
         }
 
-        return string.Empty;
+        return new string(' ', width);
     }
 
     private static string GetMetadataSubtitle(LinkNode node, int maxWidth)

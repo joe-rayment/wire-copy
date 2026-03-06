@@ -154,8 +154,8 @@ public class LinkTreeLayoutTests
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 1, 1, 80, TestPalette);
 
-        // cardHeight=1, lineIndex=1 is a blank separator, not domain
-        line.Should().BeEmpty();
+        // cardHeight=1, lineIndex=1 is a blank separator padded to full width
+        line.Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public class LinkTreeLayoutTests
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 2, 80, TestPalette);
 
-        line.Should().BeEmpty();
+        line.Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
     }
 
     #endregion
@@ -271,10 +271,10 @@ public class LinkTreeLayoutTests
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        // Lines 0, 2, 4 should be blank padding
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().BeEmpty();
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().BeEmpty();
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().BeEmpty();
+        // Lines 0, 2, 4 should be blank padding padded to full width
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
     }
 
     #endregion
