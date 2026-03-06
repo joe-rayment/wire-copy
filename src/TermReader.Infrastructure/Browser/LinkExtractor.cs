@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Text.Json;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.Interfaces.Browser;
@@ -167,6 +168,22 @@ public class LinkExtractor : ILinkExtractor
                 catch (UriFormatException ex)
                 {
                     _logger.LogDebug(ex, "Invalid URL: {Href}", href);
+                }
+            }
+
+            // Apply page-level metadata fallback for links without per-container metadata
+            var (pageAuthor, pageDate) = ExtractPageLevelMetadata(doc);
+            for (var i = 0; i < links.Count; i++)
+            {
+                var link = links[i];
+                if (link.Type == LinkType.Content && link.Author == null && link.PublishedDate == null &&
+                    (pageAuthor != null || pageDate != null))
+                {
+                    links[i] = link with
+                    {
+                        Author = link.Author ?? pageAuthor,
+                        PublishedDate = link.PublishedDate ?? pageDate
+                    };
                 }
             }
 
@@ -410,6 +427,132 @@ public class LinkExtractor : ILinkExtractor
         return (author, pubDate);
     }
 
+    /// <summary>
+    /// Extracts page-level author and date from JSON-LD, meta tags, and other page-wide indicators.
+    /// Used as fallback when per-link container extraction doesn't find metadata.
+    /// </summary>
+    internal static (string? Author, DateTime? PublishedDate) ExtractPageLevelMetadata(HtmlDocument doc)
+    {
+        var author = ExtractPageAuthorFromJsonLd(doc);
+        var pubDate = ExtractPageDateFromMeta(doc);
+
+        if (author == null)
+        {
+            // Fallback to meta[name="author"]
+            var authorMeta = doc.DocumentNode.SelectSingleNode("//meta[@name='author']");
+            var content = authorMeta?.GetAttributeValue("content", null);
+            if (!string.IsNullOrWhiteSpace(content) && !content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                author = content.Trim();
+            }
+        }
+
+        return (author, pubDate);
+    }
+
+    private static string? ExtractPageAuthorFromJsonLd(HtmlDocument doc)
+    {
+        var scripts = doc.DocumentNode.SelectNodes("//script[@type='application/ld+json']");
+        if (scripts == null)
+        {
+            return null;
+        }
+
+        foreach (var script in scripts)
+        {
+            try
+            {
+                var json = script.InnerText.Trim();
+                using var jsonDoc = JsonDocument.Parse(json);
+                var root = jsonDoc.RootElement;
+
+                if (root.TryGetProperty("author", out var authorElement))
+                {
+                    return ParseJsonLdAuthor(authorElement);
+                }
+            }
+            catch (JsonException)
+            {
+                // Malformed JSON-LD, skip
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ParseJsonLdAuthor(JsonElement authorElement)
+    {
+        if (authorElement.ValueKind == JsonValueKind.String)
+        {
+            return authorElement.GetString()?.Trim();
+        }
+
+        if (authorElement.ValueKind == JsonValueKind.Object &&
+            authorElement.TryGetProperty("name", out var nameEl))
+        {
+            return nameEl.GetString()?.Trim();
+        }
+
+        if (authorElement.ValueKind == JsonValueKind.Array)
+        {
+            var names = new List<string>();
+            foreach (var item in authorElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object &&
+                    item.TryGetProperty("name", out var n))
+                {
+                    var name = n.GetString()?.Trim();
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        names.Add(name);
+                    }
+                }
+                else if (item.ValueKind == JsonValueKind.String)
+                {
+                    var name = item.GetString()?.Trim();
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        names.Add(name);
+                    }
+                }
+            }
+
+            return names.Count > 0 ? string.Join(", ", names) : null;
+        }
+
+        return null;
+    }
+
+    private static DateTime? ExtractPageDateFromMeta(HtmlDocument doc)
+    {
+        // Try common meta date properties
+        var dateSelectors = new[]
+        {
+            "//meta[@property='article:published_time']",
+            "//meta[@property='og:article:published_time']",
+            "//meta[@name='publish-date']",
+            "//meta[@name='date']",
+            "//meta[@name='DC.date.issued']"
+        };
+
+        foreach (var selector in dateSelectors)
+        {
+            var node = doc.DocumentNode.SelectSingleNode(selector);
+            var content = node?.GetAttributeValue("content", null);
+            if (!string.IsNullOrWhiteSpace(content) &&
+                DateTimeOffset.TryParse(
+                    content,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out var dto))
+            {
+                return dto.LocalDateTime;
+            }
+        }
+
+        return null;
+    }
+
     private static HtmlNode? FindContainer(HtmlNode node)
     {
         var current = node.ParentNode;
@@ -458,6 +601,20 @@ public class LinkExtractor : ILinkExtractor
             if (!string.IsNullOrWhiteSpace(text) && text.Length <= 100)
             {
                 return text;
+            }
+        }
+
+        // NYT-style: look for spans with "By" prefix inside the container
+        var spans = container.SelectNodes(".//span | .//p");
+        if (spans != null)
+        {
+            foreach (var span in spans)
+            {
+                var text = span.InnerText?.Trim();
+                if (text != null && text.StartsWith("By ", StringComparison.OrdinalIgnoreCase) && text.Length <= 100)
+                {
+                    return text[3..].Trim();
+                }
             }
         }
 
