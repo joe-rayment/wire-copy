@@ -25,6 +25,7 @@ internal static class NavigationCommandHandler
             {
                 ctx.NavigationService.CollectionSelectedIndex =
                     Math.Min(ctx.NavigationService.CollectionSelectedIndex + 1, maxIdx);
+                AdjustCollectionListScroll(ctx, options);
             }
         }
         else if (viewMode == ViewMode.CollectionItems)
@@ -37,6 +38,7 @@ internal static class NavigationCommandHandler
                 {
                     ctx.NavigationService.CollectionItemSelectedIndex =
                         Math.Min(ctx.NavigationService.CollectionItemSelectedIndex + 1, maxItemIdx);
+                    AdjustCollectionItemScroll(ctx, options);
                 }
             }
         }
@@ -66,11 +68,13 @@ internal static class NavigationCommandHandler
         {
             ctx.NavigationService.CollectionSelectedIndex =
                 Math.Max(ctx.NavigationService.CollectionSelectedIndex - 1, 0);
+            AdjustCollectionListScroll(ctx, options);
         }
         else if (viewMode == ViewMode.CollectionItems)
         {
             ctx.NavigationService.CollectionItemSelectedIndex =
                 Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, 0);
+            AdjustCollectionItemScroll(ctx, options);
         }
         else if (viewMode == ViewMode.Hierarchical)
         {
@@ -91,7 +95,29 @@ internal static class NavigationCommandHandler
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
 
-        if (viewMode == ViewMode.Readable)
+        if (viewMode == ViewMode.CollectionList)
+        {
+            var maxVisible = CollectionRenderer.GetCollectionListVisibleCount(options.TerminalHeight);
+            var halfPage = Math.Max(1, maxVisible / 2);
+            var maxIdx = Math.Max(0, (ctx.Collections?.Count ?? 0) - 1);
+            ctx.NavigationService.CollectionSelectedIndex =
+                Math.Min(ctx.NavigationService.CollectionSelectedIndex + halfPage, maxIdx);
+            AdjustCollectionListScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+                var halfPage = Math.Max(1, maxVisible / 2);
+                var maxIdx = Math.Max(0, activeCol.Items.Count - 1);
+                ctx.NavigationService.CollectionItemSelectedIndex =
+                    Math.Min(ctx.NavigationService.CollectionItemSelectedIndex + halfPage, maxIdx);
+                AdjustCollectionItemScroll(ctx, options);
+            }
+        }
+        else if (viewMode == ViewMode.Readable)
         {
             ctx.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
@@ -110,10 +136,6 @@ internal static class NavigationCommandHandler
 
             ctx.AdjustScrollForSelection(tree, options);
         }
-        else
-        {
-            ctx.NavigationService.SetScrollOffset(ctx.NavigationService.CurrentContext.ScrollOffset + 10);
-        }
 
         await ctx.RenderCurrentPageAsync(options, ct);
     }
@@ -123,7 +145,27 @@ internal static class NavigationCommandHandler
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
 
-        if (viewMode == ViewMode.Readable)
+        if (viewMode == ViewMode.CollectionList)
+        {
+            var maxVisible = CollectionRenderer.GetCollectionListVisibleCount(options.TerminalHeight);
+            var halfPage = Math.Max(1, maxVisible / 2);
+            ctx.NavigationService.CollectionSelectedIndex =
+                Math.Max(ctx.NavigationService.CollectionSelectedIndex - halfPage, 0);
+            AdjustCollectionListScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+                var halfPage = Math.Max(1, maxVisible / 2);
+                ctx.NavigationService.CollectionItemSelectedIndex =
+                    Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - halfPage, 0);
+                AdjustCollectionItemScroll(ctx, options);
+            }
+        }
+        else if (viewMode == ViewMode.Readable)
         {
             ctx.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
@@ -141,26 +183,35 @@ internal static class NavigationCommandHandler
 
             ctx.AdjustScrollForSelection(tree, options);
         }
-        else
-        {
-            ctx.NavigationService.SetScrollOffset(
-                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - 10));
-        }
 
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     public static async Task HandleGoToTop(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
 
-        ctx.NavigationService.SetScrollOffset(0);
-        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical && tree != null)
+        if (viewMode == ViewMode.CollectionList)
         {
-            var firstNode = tree.GetAllNodes().FirstOrDefault();
-            if (firstNode != null)
+            ctx.NavigationService.CollectionSelectedIndex = 0;
+            ctx.NavigationService.CollectionListScrollOffset = 0;
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.CollectionItemSelectedIndex = 0;
+            ctx.NavigationService.CollectionItemScrollOffset = 0;
+        }
+        else
+        {
+            ctx.NavigationService.SetScrollOffset(0);
+            if (viewMode == ViewMode.Hierarchical && tree != null)
             {
-                tree.SelectNodeById(firstNode.Id);
+                var firstNode = tree.GetAllNodes().FirstOrDefault();
+                if (firstNode != null)
+                {
+                    tree.SelectNodeById(firstNode.Id);
+                }
             }
         }
 
@@ -169,10 +220,26 @@ internal static class NavigationCommandHandler
 
     public static async Task HandleGoToBottom(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var page = ctx.NavigationService.CurrentPage;
         var tree = page?.LinkTree;
 
-        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable && page?.ReadableContent != null)
+        if (viewMode == ViewMode.CollectionList)
+        {
+            var maxIdx = Math.Max(0, (ctx.Collections?.Count ?? 0) - 1);
+            ctx.NavigationService.CollectionSelectedIndex = maxIdx;
+            AdjustCollectionListScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                ctx.NavigationService.CollectionItemSelectedIndex = Math.Max(0, activeCol.Items.Count - 1);
+                AdjustCollectionItemScroll(ctx, options);
+            }
+        }
+        else if (viewMode == ViewMode.Readable && page?.ReadableContent != null)
         {
             ctx.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
@@ -464,6 +531,38 @@ internal static class NavigationCommandHandler
         if (newNodeIndex >= 0 && newNodeIndex < visibleNodes.Count)
         {
             tree.SelectNodeById(visibleNodes[newNodeIndex].Id);
+        }
+    }
+
+    private static void AdjustCollectionListScroll(CommandContext ctx, RenderOptions options)
+    {
+        var maxVisible = CollectionRenderer.GetCollectionListVisibleCount(options.TerminalHeight);
+        var selectedIndex = ctx.NavigationService.CollectionSelectedIndex;
+        var currentOffset = ctx.NavigationService.CollectionListScrollOffset;
+
+        if (selectedIndex < currentOffset)
+        {
+            ctx.NavigationService.CollectionListScrollOffset = selectedIndex;
+        }
+        else if (selectedIndex >= currentOffset + maxVisible)
+        {
+            ctx.NavigationService.CollectionListScrollOffset = selectedIndex - maxVisible + 1;
+        }
+    }
+
+    private static void AdjustCollectionItemScroll(CommandContext ctx, RenderOptions options)
+    {
+        var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+        var selectedIndex = ctx.NavigationService.CollectionItemSelectedIndex;
+        var currentOffset = ctx.NavigationService.CollectionItemScrollOffset;
+
+        if (selectedIndex < currentOffset)
+        {
+            ctx.NavigationService.CollectionItemScrollOffset = selectedIndex;
+        }
+        else if (selectedIndex >= currentOffset + maxVisible)
+        {
+            ctx.NavigationService.CollectionItemScrollOffset = selectedIndex - maxVisible + 1;
         }
     }
 }
