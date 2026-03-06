@@ -64,6 +64,8 @@ internal class StatusBarRenderer
             ViewMode.Hierarchical => FormatHints(
                 p,
                 ("Enter", "open"),
+                ("s", "save"),
+                ("A", "save-all"),
                 ("v", "reader"),
                 ("?", "help")),
             ViewMode.Readable => FormatHints(

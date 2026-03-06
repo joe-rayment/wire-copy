@@ -64,9 +64,20 @@ internal static class ViewCommandHandler
 
     public static async Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        Console.Clear();
-        Console.WriteLine(ctx.InputHandler.GetHelpText());
-        Console.ReadKey(intercept: true);
+        while (!ct.IsCancellationRequested)
+        {
+            Console.Clear();
+            Console.WriteLine(ctx.InputHandler.GetHelpText());
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            if (command.Type == CommandType.TerminalResized)
+            {
+                continue;
+            }
+
+            break;
+        }
+
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 }
