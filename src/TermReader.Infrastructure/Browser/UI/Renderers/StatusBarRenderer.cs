@@ -51,7 +51,7 @@ internal class StatusBarRenderer
             ViewMode.Hierarchical => "LinkView",
             ViewMode.Readable => "ReaderView",
             ViewMode.CollectionList => "Reading List",
-            ViewMode.CollectionItems => "Items",
+            ViewMode.CollectionItems => "Reading List",
             ViewMode.Launcher => "Launcher",
             _ => "Browser"
         };
@@ -81,6 +81,8 @@ internal class StatusBarRenderer
             ViewMode.CollectionItems => FormatHints(
                 p,
                 ("Enter", "open"),
+                ("d", "remove"),
+                ("J/K", "reorder"),
                 ("b", "back"),
                 ("?", "help")),
             ViewMode.Launcher => FormatHints(

@@ -242,6 +242,134 @@ public class LinkTreeLayoutTests
 
     #endregion
 
+    #region BuildCardLine - Standard 5-line cell mode
+
+    [Fact]
+    public void BuildCardLine_Standard5Line_TitleOnLine1()
+    {
+        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+
+        // cardHeight=5: title line is at index 1
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 80, TestPalette);
+
+        line.Should().Contain("My Article");
+    }
+
+    [Fact]
+    public void BuildCardLine_Standard5Line_MetadataOnLine3()
+    {
+        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+
+        // cardHeight=5: metadata line is at index 3
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette);
+
+        line.Should().Contain("example.com");
+    }
+
+    [Fact]
+    public void BuildCardLine_Standard5Line_PaddingLinesAreBlank()
+    {
+        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+
+        // Lines 0, 2, 4 should be blank padding
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().BeEmpty();
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().BeEmpty();
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Metadata subtitle fallback
+
+    [Fact]
+    public void BuildCardLine_MetadataWithAuthor_ShowsAuthor()
+    {
+        var root = LinkNode.CreateRoot();
+        var link = new LinkInfo
+        {
+            DisplayText = "Article",
+            Url = "https://example.com/article",
+            Type = LinkType.Content,
+            ImportanceScore = 50,
+            Author = "Jane Doe"
+        };
+        var node = root.AddChild(link);
+
+        // cardHeight=3: metadata at index 1
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
+
+        line.Should().Contain("Jane Doe");
+    }
+
+    [Fact]
+    public void BuildCardLine_MetadataWithDateAndAuthor_ShowsBoth()
+    {
+        var root = LinkNode.CreateRoot();
+        var link = new LinkInfo
+        {
+            DisplayText = "Article",
+            Url = "https://example.com/article",
+            Type = LinkType.Content,
+            ImportanceScore = 50,
+            Author = "Jane Doe",
+            PublishedDate = new DateTime(2024, 3, 15)
+        };
+        var node = root.AddChild(link);
+
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
+
+        line.Should().Contain("Jane Doe");
+        line.Should().Contain("\u00b7"); // middle dot separator
+    }
+
+    #endregion
+
+    #region FormatDate
+
+    [Fact]
+    public void FormatDate_Today_ReturnsToday()
+    {
+        LinkTreeRenderer.FormatDate(DateTime.Now).Should().Be("Today");
+    }
+
+    [Fact]
+    public void FormatDate_Yesterday_ReturnsYesterday()
+    {
+        LinkTreeRenderer.FormatDate(DateTime.Now.AddDays(-1)).Should().Be("Yesterday");
+    }
+
+    [Fact]
+    public void FormatDate_ThisYear_ReturnsShortMonth()
+    {
+        var date = new DateTime(DateTime.Now.Year, 3, 15);
+        if (date.Date == DateTime.Now.Date || date.Date == DateTime.Now.Date.AddDays(-1))
+        {
+            // Skip if it happens to be today/yesterday
+            return;
+        }
+
+        var result = LinkTreeRenderer.FormatDate(date);
+        result.Should().Contain("Mar");
+        result.Should().Contain("15");
+    }
+
+    [Fact]
+    public void FormatDate_PreviousYear_IncludesYear()
+    {
+        var date = new DateTime(2023, 6, 20);
+        var result = LinkTreeRenderer.FormatDate(date);
+        result.Should().Contain("2023");
+        result.Should().Contain("Jun");
+    }
+
+    [Fact]
+    public void FormatDate_Null_ReturnsNull()
+    {
+        LinkTreeRenderer.FormatDate(null).Should().BeNull();
+    }
+
+    #endregion
+
     #region BuildCardLine - Link type colors
 
     [Fact]

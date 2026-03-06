@@ -157,4 +157,34 @@ public class LinkExtractorMetadataTests
         pubDate.Should().NotBeNull();
         pubDate!.Value.Month.Should().Be(6);
     }
+
+    [Fact]
+    public void GroupLinksByUrl_PropagatesMetadataFromBestRepresentative()
+    {
+        var links = new List<TermReader.Domain.ValueObjects.Browser.LinkInfo>
+        {
+            new()
+            {
+                Url = "https://example.com/article",
+                DisplayText = "Short",
+                Type = TermReader.Domain.Enums.Browser.LinkType.Content,
+                ImportanceScore = 50,
+                Author = "Jane Doe",
+                PublishedDate = new DateTime(2024, 3, 15)
+            },
+            new()
+            {
+                Url = "https://example.com/article",
+                DisplayText = "Much Longer Article Title Here",
+                Type = TermReader.Domain.Enums.Browser.LinkType.Content,
+                ImportanceScore = 70
+            }
+        };
+
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        result.Should().HaveCount(1);
+        result[0].Author.Should().Be("Jane Doe");
+        result[0].PublishedDate.Should().NotBeNull();
+    }
 }
