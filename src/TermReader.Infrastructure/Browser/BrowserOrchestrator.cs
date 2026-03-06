@@ -389,7 +389,8 @@ public class BrowserOrchestrator : IBrowserService
             MaxContentWidth = _contentWidthOverride.HasValue
                 ? Math.Clamp(Math.Min(_contentWidthOverride.Value, width - 2), MinContentWidth, MaxContentWidth)
                 : Math.Clamp(width - 2, MinContentWidth, MaxContentWidth),
-            Use256Colors = use256
+            Use256Colors = use256,
+            CachedUrls = _pageCache.GetCachedUrls()
         };
     }
 
