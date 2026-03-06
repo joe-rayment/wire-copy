@@ -26,16 +26,9 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    var savedItem = await service.SaveToDefaultCollectionAsync(
+                    await service.SaveToReadingListAsync(
                         saveNode.Link.Url, saveNode.Link.DisplayText, ct);
-                    if (savedItem != null)
-                    {
-                        ctx.Logger.LogInformation("Saved to default collection: {Title}", saveNode.Link.DisplayText);
-                    }
-                    else
-                    {
-                        ctx.Logger.LogWarning("Already in default collection: {Title}", saveNode.Link.DisplayText);
-                    }
+                    ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
                 }
                 catch (Exception ex)
                 {
@@ -100,6 +93,38 @@ internal static class CollectionCommandHandler
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to collection");
+                    }
+                }
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical)
+        {
+            var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+            if (tree != null)
+            {
+                var visibleNodes = tree.GetVisibleNodes()
+                    .Where(n => !n.IsGroupHeader && !string.IsNullOrEmpty(n.Link.Url))
+                    .Select(n => (n.Link.Url, n.Link.DisplayText))
+                    .ToList();
+
+                if (visibleNodes.Count > 0)
+                {
+                    try
+                    {
+                        using var scope = ctx.ScopeFactory.CreateScope();
+                        var service = ctx.CreateCollectionService(scope);
+                        await service.SaveAllToReadingListAsync(visibleNodes, ct);
+                        ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
+                    }
+                    catch (Exception ex)
+                    {
+                        ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
                     }
                 }
             }
@@ -232,6 +257,17 @@ internal static class CollectionCommandHandler
     {
         try
         {
+            // Purge expired Reading List items (16-hour auto-expiry)
+            using (var purgeScope = ctx.ScopeFactory.CreateScope())
+            {
+                var purgeService = ctx.CreateCollectionService(purgeScope);
+                var purged = await purgeService.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
+                if (purged > 0)
+                {
+                    ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
+                }
+            }
+
             ctx.NavigationService.EnterCollections();
             await ctx.RefreshCollectionsAsync(ct);
             await ctx.RenderCurrentPageAsync(options, ct);
