@@ -15,8 +15,6 @@ internal class LauncherRenderer
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
-    private const string BrightWhiteFg = "\x1b[38;5;15m";
-    private const string SelDomainFg = "\x1b[38;5;245m";
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -310,7 +308,7 @@ internal class LauncherRenderer
         else if (lineIdx == domainLineIdx)
         {
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-            sb.Append($"{selBg}{SelDomainFg}{new string(' ', indent - 1)}");
+            sb.Append($"{selBg}{p.SecondaryText.AnsiFg}{new string(' ', indent - 1)}");
             sb.Append($"{truncDomain}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncDomain.Length))}{Reset}");
         }
@@ -344,10 +342,10 @@ internal class LauncherRenderer
             {
                 var badgePad = indent - badge.Length - 1;
                 return $" {p.SecondaryText.AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
-                       $"{Bold}{BrightWhiteFg}{truncName}{Reset}{new string(' ', pad)}";
+                       $"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}{new string(' ', pad)}";
             }
 
-            return $"{new string(' ', indent)}{Bold}{BrightWhiteFg}{truncName}{Reset}{new string(' ', pad)}";
+            return $"{new string(' ', indent)}{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}{new string(' ', pad)}";
         }
 
         if (lineIdx == domainLineIdx)

@@ -27,7 +27,7 @@ public static class BuiltInThemes
                 HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 46),
                 HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 40),
                 SelectedItemFg = new ThemeColor(ConsoleColor.White, 15),
-                SelectedItemBg = new ThemeColor(ConsoleColor.DarkGray, 236),
+                SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),
                 StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 40),
                 StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 46),
                 PromptFg = new ThemeColor(ConsoleColor.Green, 46),
