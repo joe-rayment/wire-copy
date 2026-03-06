@@ -196,6 +196,63 @@ public class LinkTreeGridMapperTests
         result.Should().Be(2); // header is at node index 2
     }
 
+    [Fact]
+    public void MoveDown_AtBottom_StaysInPlace()
+    {
+        var nodes = CreateFlatNodes(2);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 2);
+
+        // Only 1 row — moving down stays on row 0
+        var result = LinkTreeGridMapper.MoveDown(grid, 0, 0);
+        result.Should().Be(0);
+    }
+
+    [Fact]
+    public void MoveUp_AtTop_StaysInPlace()
+    {
+        var nodes = CreateFlatNodes(4);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 2);
+
+        var result = LinkTreeGridMapper.MoveUp(grid, 0, 1);
+        result.Should().Be(1);
+    }
+
+    #endregion
+
+    #region Edge cases
+
+    [Fact]
+    public void MapToGrid_SingleLink_OneRowNoRight()
+    {
+        var nodes = CreateFlatNodes(1);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 2);
+
+        grid.Should().HaveCount(1);
+        grid[0].Right.Should().BeNull();
+    }
+
+    [Fact]
+    public void MapToGrid_AllGroupHeaders_AllFullWidth()
+    {
+        var root = LinkNode.CreateRoot();
+        var h1 = root.AddChild(CreateGroupHeaderInfo("Content"));
+        var h2 = root.AddChild(CreateGroupHeaderInfo("Navigation"));
+
+        var nodes = new List<LinkNode> { h1, h2 };
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 2);
+
+        grid.Should().HaveCount(2);
+        grid.Should().AllSatisfy(r => r.IsGroupHeader.Should().BeTrue());
+        grid.Should().AllSatisfy(r => r.Right.Should().BeNull());
+    }
+
+    [Fact]
+    public void MapToGrid_EmptyList_ReturnsEmpty()
+    {
+        var grid = LinkTreeGridMapper.MapToGrid(new List<LinkNode>(), 2);
+        grid.Should().BeEmpty();
+    }
+
     #endregion
 
     private static List<LinkNode> CreateFlatNodes(int count)
