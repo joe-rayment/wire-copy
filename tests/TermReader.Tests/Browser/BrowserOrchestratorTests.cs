@@ -84,6 +84,8 @@ public class BrowserOrchestratorTests
             themeProvider,
             resizeDetector,
             Substitute.For<IPageCache>(),
+            Substitute.For<IPreloadService>(),
+            Substitute.For<IIdleDetector>(),
             _browserConfig,
             _logger);
     }
@@ -333,6 +335,8 @@ public class BrowserOrchestratorNavigationTests
             themeProvider,
             resizeDetector,
             Substitute.For<IPageCache>(),
+            Substitute.For<IPreloadService>(),
+            Substitute.For<IIdleDetector>(),
             _browserConfig,
             _logger);
     }

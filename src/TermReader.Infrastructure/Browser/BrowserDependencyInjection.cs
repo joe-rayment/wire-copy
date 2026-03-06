@@ -106,6 +106,24 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IInputHandler, TerminalInputHandler>();
         services.AddSingleton<IResizeDetector, TerminalResizeDetector>();
 
+        // Register idle detection and pre-loading services
+        services.AddSingleton<IIdleDetector>(sp =>
+        {
+            var cacheConfig = sp.GetRequiredService<IOptions<CacheConfiguration>>();
+            return new Cache.InputIdleDetector(cacheConfig);
+        });
+        services.AddSingleton<IPreloadService>(sp =>
+        {
+            var cache = sp.GetRequiredService<IPageCache>();
+            var idleDetector = sp.GetRequiredService<IIdleDetector>();
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var httpClient = httpClientFactory.CreateClient("BrowserPageLoader");
+            var cacheConfig = sp.GetRequiredService<IOptions<CacheConfiguration>>();
+            var preloadLogger = sp.GetRequiredService<ILogger<Cache.BackgroundPreloadService>>();
+            return new Cache.BackgroundPreloadService(
+                cache, idleDetector, httpClient, cacheConfig.Value, preloadLogger);
+        });
+
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();
 
