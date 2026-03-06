@@ -31,21 +31,21 @@ internal class LinkTreeRenderer
     {
         var width = Math.Max(1, options.TerminalWidth - 2);
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var border = p.HeaderBorderFg.AnsiFg;
-        var titleFg = p.HeaderTitleFg.AnsiFg;
-        var urlFg = p.HeaderUrlFg.AnsiFg;
 
-        _helpers.WriteLine();
-        _helpers.WriteLine($"{border}\u2554{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u2557{Reset}");
+        var title = metadata.Title ?? "Untitled";
+        var domain = LauncherRenderer.ExtractDomain(url);
+        var pad = Math.Max(1, width - title.Length - domain.Length - 2);
 
-        var title = RenderHelpers.TruncateText(metadata.Title ?? "Untitled", width - 4);
-        _helpers.WriteLine($"{border}\u2551 {titleFg}{title.PadRight(width - 4)}{border} \u2551{Reset}");
+        if (title.Length + domain.Length + 2 > width)
+        {
+            title = RenderHelpers.TruncateText(title, Math.Max(10, width - domain.Length - 3));
+            pad = Math.Max(1, width - title.Length - domain.Length - 2);
+        }
 
-        var displayUrl = RenderHelpers.TruncateUrl(url, width - 4);
-        _helpers.WriteLine($"{border}\u2551 {urlFg}{displayUrl.PadRight(width - 4)}{border} \u2551{Reset}");
-
-        _helpers.WriteLine($"{border}\u255a{'\u2550'.ToString().PadRight(width - 2, '\u2550')}\u255d{Reset}");
-        _helpers.WriteLine();
+        _helpers.WriteLine(
+            $" {p.HeaderTitleFg.AnsiFg}{Bold}{title}{Reset}" +
+            $"{new string(' ', pad)}{p.HeaderUrlFg.AnsiFg}{Dim}{domain}{Reset} ");
+        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}");
     }
 
     public void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
@@ -256,7 +256,7 @@ internal class LinkTreeRenderer
     /// </summary>
     internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        const int headerLines = 6;
+        const int headerLines = 2;
         const int statusBarLines = 3;
         const int columnThreshold = 50;
         const int standardCellHeight = 5;
