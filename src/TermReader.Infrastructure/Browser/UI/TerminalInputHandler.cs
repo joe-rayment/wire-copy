@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
@@ -9,30 +10,55 @@ namespace TermReader.Infrastructure.Browser.UI;
 
 /// <summary>
 /// Handles keyboard input with vim-like bindings for the terminal browser.
+/// Owns stdin via a persistent background thread that feeds a key channel.
+/// Races keyboard input against resize events from IResizeDetector.
 /// </summary>
 public class TerminalInputHandler : IInputHandler
 {
     private readonly IThemeProvider _themeProvider;
+    private readonly IResizeDetector _resizeDetector;
     private readonly ILogger<TerminalInputHandler> _logger;
+    private readonly Channel<ConsoleKeyInfo> _keyChannel = Channel.CreateUnbounded<ConsoleKeyInfo>();
     private bool _waitingForSecondKey; // For 'gg' command
+    private bool _keyReaderStarted;
 
-    public TerminalInputHandler(IThemeProvider themeProvider, ILogger<TerminalInputHandler> logger)
+    public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, ILogger<TerminalInputHandler> logger)
     {
         _themeProvider = themeProvider;
+        _resizeDetector = resizeDetector;
         _logger = logger;
     }
 
-    public Task<NavigationCommand> WaitForInputAsync(CancellationToken cancellationToken = default)
+    public async Task<NavigationCommand> WaitForInputAsync(CancellationToken cancellationToken = default)
     {
+        EnsureKeyReaderStarted();
+
         while (!cancellationToken.IsCancellationRequested)
         {
-            var keyInfo = Console.ReadKey(intercept: true);
+            // Race keyboard channel against resize channel
+            var keyTask = _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
+            var resizeTask = _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
+
+            var completed = await Task.WhenAny(keyTask, resizeTask).ConfigureAwait(false);
+
+            if (completed == resizeTask)
+            {
+                // Drain any additional resize events (coalesce rapid resizes)
+                while (_resizeDetector.Resizes.TryRead(out _))
+                {
+                    // Intentionally empty: discard queued resize signals to coalesce into one
+                }
+
+                return new NavigationCommand { Type = CommandType.TerminalResized };
+            }
+
+            var keyInfo = await keyTask.ConfigureAwait(false);
 
             // Handle 'gg' for go to top
             if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
             {
                 _waitingForSecondKey = false;
-                return Task.FromResult(new NavigationCommand { Type = CommandType.GoToTop });
+                return new NavigationCommand { Type = CommandType.GoToTop };
             }
 
             // If we were waiting for 'g' but got something else, reset
@@ -45,155 +71,24 @@ public class TerminalInputHandler : IInputHandler
             if (keyInfo.Key == ConsoleKey.G && (keyInfo.Modifiers & ConsoleModifiers.Shift) == 0)
             {
                 _waitingForSecondKey = true;
-                continue; // Wait for second keypress
+                continue;
             }
 
-            // Character-based commands (handle before MapKeyToCommand for reliable detection)
-            if (keyInfo.KeyChar == ':')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.OpenCommandLine });
-            }
-
-            if (keyInfo.KeyChar == '/')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.Search });
-            }
-
-            if (keyInfo.KeyChar == 'n')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.SearchNext });
-            }
-
-            if (keyInfo.KeyChar == 'N')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.SearchPrevious });
-            }
-
-            // Collections commands (character-based for reliable detection)
-            if (keyInfo.KeyChar == 's')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.SaveToCollection });
-            }
-
-            if (keyInfo.KeyChar == 'S')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.SaveToSpecific });
-            }
-
-            if (keyInfo.KeyChar == 'd')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.DeleteItem });
-            }
-
-            if (keyInfo.KeyChar == 'a')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.AddBookmark });
-            }
-
-            if (keyInfo.KeyChar == 'c')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.OpenCollections });
-            }
-
-            // Reader view width adjustment
-            if (keyInfo.KeyChar == '+' || keyInfo.KeyChar == '=')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.IncreaseWidth });
-            }
-
-            if (keyInfo.KeyChar == '-' || keyInfo.KeyChar == '_')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.DecreaseWidth });
-            }
-
-            if (keyInfo.KeyChar == '0')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.ResetWidth });
-            }
-
-            if (keyInfo.KeyChar == '?')
-            {
-                return Task.FromResult(new NavigationCommand { Type = CommandType.ShowHelp });
-            }
-
-            var command = MapKeyToCommand(keyInfo.Key, keyInfo.Modifiers);
-
-            // Log actionable commands (skip NoOp)
+            var command = MapKeyInfoToCommand(keyInfo);
             if (command.Type != CommandType.NoOp)
             {
                 _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
             }
 
-            return Task.FromResult(command);
+            return command;
         }
 
-        return Task.FromResult(new NavigationCommand { Type = CommandType.Quit });
+        return new NavigationCommand { Type = CommandType.Quit };
     }
 
     public NavigationCommand MapKeyToCommand(ConsoleKey key, ConsoleModifiers modifiers)
     {
-        // Shift+key combinations
-        if ((modifiers & ConsoleModifiers.Shift) != 0)
-        {
-            return key switch
-            {
-                ConsoleKey.G => new NavigationCommand { Type = CommandType.GoToBottom }, // G (shift+g)
-                ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown }, // J (shift+j)
-                ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp }, // K (shift+k)
-                _ => new NavigationCommand { Type = CommandType.NoOp }
-            };
-        }
-
-        if ((modifiers & ConsoleModifiers.Control) != 0)
-        {
-            return key switch
-            {
-                ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
-                ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
-                ConsoleKey.P => new NavigationCommand { Type = CommandType.CycleTheme }, // Ctrl+P
-                ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit }, // Ctrl+C
-                _ => new NavigationCommand { Type = CommandType.NoOp }
-            };
-        }
-
-        // Regular keys (vim-like bindings)
-        return key switch
-        {
-            // Movement
-            ConsoleKey.J => new NavigationCommand { Type = CommandType.MoveDown },
-            ConsoleKey.K => new NavigationCommand { Type = CommandType.MoveUp },
-            ConsoleKey.DownArrow => new NavigationCommand { Type = CommandType.MoveDown },
-            ConsoleKey.UpArrow => new NavigationCommand { Type = CommandType.MoveUp },
-
-            // Collapse/Expand
-            ConsoleKey.H => new NavigationCommand { Type = CommandType.CollapseNode },
-            ConsoleKey.L => new NavigationCommand { Type = CommandType.ExpandNode },
-            ConsoleKey.LeftArrow => new NavigationCommand { Type = CommandType.CollapseNode },
-            ConsoleKey.RightArrow => new NavigationCommand { Type = CommandType.ExpandNode },
-            ConsoleKey.Spacebar => new NavigationCommand { Type = CommandType.ToggleNode },
-
-            // Navigation
-            ConsoleKey.Enter => new NavigationCommand { Type = CommandType.ActivateLink },
-            ConsoleKey.B => new NavigationCommand { Type = CommandType.GoBack },
-            ConsoleKey.Backspace => new NavigationCommand { Type = CommandType.GoBack },
-
-            // View switching
-            ConsoleKey.V => new NavigationCommand { Type = CommandType.SwitchView },
-            ConsoleKey.Tab => new NavigationCommand { Type = CommandType.SwitchView },
-            ConsoleKey.R => new NavigationCommand { Type = CommandType.SwitchToReadable },
-            ConsoleKey.T => new NavigationCommand { Type = CommandType.SwitchToHierarchical },
-
-            // Application
-            ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
-            ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
-            ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
-
-            // Help
-            ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp }, // '?' key
-
-            // Default: no-op for unrecognized keys
-            _ => new NavigationCommand { Type = CommandType.NoOp }
-        };
+        return MapKeyToCommandStatic(key, modifiers);
     }
 
     public string GetHelpText()
@@ -254,6 +149,7 @@ public class TerminalInputHandler : IInputHandler
 
     public async Task<string?> PromptForUrlAsync(string prompt = "Enter URL: ", CancellationToken cancellationToken = default)
     {
+        // Called before main loop, before key reader starts - uses Console.ReadLine directly
         Console.WriteLine();
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         Console.Write(palette.PromptLabelFg.AnsiFg);
@@ -280,8 +176,10 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default)
     {
+        EnsureKeyReaderStarted();
+
         try
         {
             // Position at the bottom of the terminal
@@ -296,21 +194,21 @@ public class TerminalInputHandler : IInputHandler
             Console.Write(prompt);
             Console.Write("\x1b[0m");
 
-            // Read input character by character
+            // Read input from the key channel
             var input = new System.Text.StringBuilder();
             while (!cancellationToken.IsCancellationRequested)
             {
-                var keyInfo = Console.ReadKey(intercept: true);
+                var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken);
 
                 if (keyInfo.Key == ConsoleKey.Escape)
                 {
-                    return Task.FromResult<string?>(null);
+                    return null;
                 }
 
                 if (keyInfo.Key == ConsoleKey.Enter)
                 {
                     var result = input.ToString();
-                    return Task.FromResult<string?>(string.IsNullOrWhiteSpace(result) ? null : result);
+                    return string.IsNullOrWhiteSpace(result) ? null : result;
                 }
 
                 if (keyInfo.Key == ConsoleKey.Backspace)
@@ -345,6 +243,110 @@ public class TerminalInputHandler : IInputHandler
             // Fallback if console operations fail
         }
 
-        return Task.FromResult<string?>(null);
+        return null;
+    }
+
+    private static NavigationCommand MapKeyInfoToCommand(ConsoleKeyInfo keyInfo)
+    {
+        return keyInfo.KeyChar switch
+        {
+            ':' => new NavigationCommand { Type = CommandType.OpenCommandLine },
+            '/' => new NavigationCommand { Type = CommandType.Search },
+            'n' => new NavigationCommand { Type = CommandType.SearchNext },
+            'N' => new NavigationCommand { Type = CommandType.SearchPrevious },
+            's' => new NavigationCommand { Type = CommandType.SaveToCollection },
+            'S' => new NavigationCommand { Type = CommandType.SaveToSpecific },
+            'd' => new NavigationCommand { Type = CommandType.DeleteItem },
+            'a' => new NavigationCommand { Type = CommandType.AddBookmark },
+            'c' => new NavigationCommand { Type = CommandType.OpenCollections },
+            '+' or '=' => new NavigationCommand { Type = CommandType.IncreaseWidth },
+            '-' or '_' => new NavigationCommand { Type = CommandType.DecreaseWidth },
+            '0' => new NavigationCommand { Type = CommandType.ResetWidth },
+            '?' => new NavigationCommand { Type = CommandType.ShowHelp },
+            _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
+        };
+    }
+
+    private static NavigationCommand MapKeyToCommandStatic(ConsoleKey key, ConsoleModifiers modifiers)
+    {
+        if ((modifiers & ConsoleModifiers.Shift) != 0)
+        {
+            return key switch
+            {
+                ConsoleKey.G => new NavigationCommand { Type = CommandType.GoToBottom },
+                ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown },
+                ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp },
+                _ => new NavigationCommand { Type = CommandType.NoOp }
+            };
+        }
+
+        if ((modifiers & ConsoleModifiers.Control) != 0)
+        {
+            return key switch
+            {
+                ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
+                ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
+                ConsoleKey.P => new NavigationCommand { Type = CommandType.CycleTheme },
+                ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit },
+                _ => new NavigationCommand { Type = CommandType.NoOp }
+            };
+        }
+
+        return key switch
+        {
+            ConsoleKey.J => new NavigationCommand { Type = CommandType.MoveDown },
+            ConsoleKey.K => new NavigationCommand { Type = CommandType.MoveUp },
+            ConsoleKey.DownArrow => new NavigationCommand { Type = CommandType.MoveDown },
+            ConsoleKey.UpArrow => new NavigationCommand { Type = CommandType.MoveUp },
+            ConsoleKey.H => new NavigationCommand { Type = CommandType.CollapseNode },
+            ConsoleKey.L => new NavigationCommand { Type = CommandType.ExpandNode },
+            ConsoleKey.LeftArrow => new NavigationCommand { Type = CommandType.CollapseNode },
+            ConsoleKey.RightArrow => new NavigationCommand { Type = CommandType.ExpandNode },
+            ConsoleKey.Spacebar => new NavigationCommand { Type = CommandType.ToggleNode },
+            ConsoleKey.Enter => new NavigationCommand { Type = CommandType.ActivateLink },
+            ConsoleKey.B => new NavigationCommand { Type = CommandType.GoBack },
+            ConsoleKey.Backspace => new NavigationCommand { Type = CommandType.GoBack },
+            ConsoleKey.V => new NavigationCommand { Type = CommandType.SwitchView },
+            ConsoleKey.Tab => new NavigationCommand { Type = CommandType.SwitchView },
+            ConsoleKey.R => new NavigationCommand { Type = CommandType.SwitchToReadable },
+            ConsoleKey.T => new NavigationCommand { Type = CommandType.SwitchToHierarchical },
+            ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
+            ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
+            ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
+            ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp },
+            _ => new NavigationCommand { Type = CommandType.NoOp }
+        };
+    }
+
+    private void EnsureKeyReaderStarted()
+    {
+        if (_keyReaderStarted)
+        {
+            return;
+        }
+
+        _keyReaderStarted = true;
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var key = Console.ReadKey(intercept: true);
+                    _keyChannel.Writer.TryWrite(key);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Key reader thread terminated");
+                _keyChannel.Writer.TryComplete();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "TermReader-KeyReader"
+        };
+        thread.Start();
     }
 }

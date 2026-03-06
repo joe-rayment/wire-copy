@@ -127,21 +127,22 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_NormalDomain_ContainsDomainText()
+    public void BuildCardLine_NormalMetadata_ContainsDomainText()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 1, 80, TestPalette);
+        // cardHeight=3 (compact): metadata line is at index 1
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
 
         line.Should().Contain("example.com");
     }
 
     [Fact]
-    public void BuildCardLine_NormalDomain_ContainsDimEscape()
+    public void BuildCardLine_NormalMetadata_ContainsDimEscape()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 1, 80, TestPalette);
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
 
         line.Should().Contain("\x1b[2m"); // Dim
     }
@@ -212,11 +213,12 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Selected_DomainLine_HasHighlightBg()
+    public void BuildCardLine_Selected_MetadataLine_HasHighlightBg()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        var line = LinkTreeRenderer.BuildCardLine(node, true, 2, 1, 80, TestPalette);
+        // cardHeight=3 (compact): metadata line is at index 1
+        var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 1, 80, TestPalette);
 
         line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
         line.Should().Contain("example.com");

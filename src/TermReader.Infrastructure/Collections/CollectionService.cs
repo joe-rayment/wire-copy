@@ -152,6 +152,71 @@ public class CollectionService : ICollectionService
         return defaultCollection;
     }
 
+    public async Task<CollectionItem> SaveToReadingListAsync(string url, string title, CancellationToken cancellationToken = default)
+    {
+        var collection = await GetOrCreateReadingListAsync(cancellationToken);
+        var item = collection.AddOrMoveToTop(url, title);
+        await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Saved {Url} to Reading List (move-to-top)", url);
+        return item;
+    }
+
+    public async Task SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default)
+    {
+        var collection = await GetOrCreateReadingListAsync(cancellationToken);
+        collection.AddItemsAtEnd(items);
+        await _repository.UpdateAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Saved multiple items to Reading List");
+    }
+
+    public async Task<int> PurgeExpiredReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        if (collection == null)
+        {
+            return 0;
+        }
+
+        var removed = collection.RemoveExpiredItems(maxAge);
+        if (removed > 0)
+        {
+            await _repository.UpdateAsync(collection, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Purged {Count} expired items from Reading List", removed);
+        }
+
+        return removed;
+    }
+
+    private async Task<Collection> GetOrCreateReadingListAsync(CancellationToken cancellationToken)
+    {
+        // Try "Reading List" first
+        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        if (collection != null)
+        {
+            return collection;
+        }
+
+        // Rename legacy "Read Later" to "Reading List" if found
+        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken);
+        if (legacy != null)
+        {
+            legacy.Rename("Reading List");
+            await _repository.UpdateAsync(legacy, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return legacy;
+        }
+
+        // Create new Reading List
+        collection = Collection.Create("Reading List");
+        await _repository.AddAsync(collection, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Created Reading List collection");
+        return collection;
+    }
+
     private async Task<CollectionItem?> SaveItemToCollection(Collection collection, string url, string title, CancellationToken cancellationToken)
     {
         // Duplicate URL detection: silently skip if URL already exists

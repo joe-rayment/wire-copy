@@ -36,6 +36,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly Configuration.BrowserConfiguration _browserConfig;
     private readonly IBrowserSessionControl _browserSession;
     private readonly IThemeProvider _themeProvider;
+    private readonly IResizeDetector _resizeDetector;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
     // Line cache for reader view line-based scrolling
@@ -66,6 +67,7 @@ public class BrowserOrchestrator : IBrowserService
         IServiceScopeFactory scopeFactory,
         IBrowserSessionControl browserSession,
         IThemeProvider themeProvider,
+        IResizeDetector resizeDetector,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -80,6 +82,7 @@ public class BrowserOrchestrator : IBrowserService
         _scopeFactory = scopeFactory;
         _browserSession = browserSession;
         _themeProvider = themeProvider;
+        _resizeDetector = resizeDetector;
         _logger = logger;
     }
 
@@ -218,6 +221,9 @@ public class BrowserOrchestrator : IBrowserService
             // Enter alternate screen buffer and hide cursor
             Console.Write("\x1b[?1049h");
             Console.CursorVisible = false;
+
+            // Start resize detection in the background
+            _ = _resizeDetector.StartAsync(cancellationToken);
 
             var options = GetCurrentRenderOptions();
 
