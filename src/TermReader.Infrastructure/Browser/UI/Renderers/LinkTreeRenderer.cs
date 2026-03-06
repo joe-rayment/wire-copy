@@ -325,6 +325,48 @@ internal class LinkTreeRenderer
         return d.ToString("MMM d, yyyy");
     }
 
+    /// <summary>
+    /// Gets the effective text width for title wrapping, consistent between selected and normal modes.
+    /// Selected cards have accent bar (1 char) + space (1 char) = 2 chars overhead from width.
+    /// Normal cards have prefix space/dot (1 char) = 1 char overhead from width.
+    /// Use the narrower (selected) width for both to avoid visual jitter on selection change.
+    /// </summary>
+    internal static int GetTitleTextWidth(int cellWidth) => Math.Max(1, cellWidth - 2);
+
+    /// <summary>
+    /// Gets a specific wrapped line of the title text (0-indexed).
+    /// Returns the requested line, or empty string if the title doesn't have that many lines.
+    /// If lineNumber == 1 and there are 3+ wrapped lines, the second line is truncated with ellipsis.
+    /// </summary>
+    internal static string GetWrappedTitleLine(string displayText, int textWidth, int lineNumber)
+    {
+        if (textWidth <= 0 || string.IsNullOrEmpty(displayText))
+        {
+            return lineNumber == 0 ? RenderHelpers.TruncateText(displayText ?? string.Empty, Math.Max(1, textWidth)) : string.Empty;
+        }
+
+        var wrapped = RenderHelpers.WrapText(displayText, textWidth);
+        if (wrapped.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (lineNumber == 0)
+        {
+            return wrapped[0];
+        }
+
+        if (lineNumber == 1 && wrapped.Count > 1)
+        {
+            // If 3+ wrapped lines, truncate the second line with ellipsis
+            return wrapped.Count > 2
+                ? RenderHelpers.TruncateText(string.Join(" ", wrapped.Skip(1)), textWidth)
+                : wrapped[1];
+        }
+
+        return string.Empty;
+    }
+
     private static string BuildSelectedCardLine(
         LinkNode node,
         int cardHeight,
@@ -337,18 +379,42 @@ internal class LinkTreeRenderer
         var selBg = palette.SelectedItemBg.AnsiBg;
         var selFg = palette.SelectedItemFg.AnsiFg;
         var contentWidth = width - 1;
+        var textWidth = GetTitleTextWidth(width);
 
         // Accent bar on all lines
         sb.Append($"{accentFg}\u258c{Reset}");
 
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
+        var titleOverflowIdx = cardHeight >= 5 ? 2 : -1;
         var metadataLineIdx = GetMetadataLineIndex(cardHeight);
 
         if (lineIndex == titleLineIdx)
         {
-            var title = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
-            sb.Append($"{selBg}{selFg}{Bold} {title}");
-            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - title.Length))}{Reset}");
+            string titleLine;
+            if (cardHeight >= 5)
+            {
+                titleLine = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0);
+            }
+            else
+            {
+                titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+            }
+
+            sb.Append($"{selBg}{selFg}{Bold} {titleLine}");
+            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
+        }
+        else if (lineIndex == titleOverflowIdx)
+        {
+            var overflow = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
+            if (!string.IsNullOrEmpty(overflow))
+            {
+                sb.Append($"{selBg}{selFg}{Bold} {overflow}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - overflow.Length))}{Reset}");
+            }
+            else
+            {
+                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+            }
         }
         else if (lineIndex == metadataLineIdx)
         {
@@ -377,7 +443,9 @@ internal class LinkTreeRenderer
         IReadOnlySet<string>? cachedUrls = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
+        var titleOverflowIdx = cardHeight >= 5 ? 2 : -1;
         var metadataLineIdx = GetMetadataLineIndex(cardHeight);
+        var textWidth = GetTitleTextWidth(width);
 
         if (lineIndex == titleLineIdx)
         {
@@ -389,13 +457,42 @@ internal class LinkTreeRenderer
                 LinkType.Footer => palette.LinkFooter.AnsiFg,
                 _ => palette.PrimaryText.AnsiFg
             };
-            var title = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
+            string titleLine;
+            if (cardHeight >= 5)
+            {
+                titleLine = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0);
+            }
+            else
+            {
+                titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
+            }
+
             var isCached = cachedUrls != null &&
                            !string.IsNullOrEmpty(node.Link.Url) &&
                            cachedUrls.Contains(node.Link.Url);
             var prefix = isCached ? $"{palette.SecondaryText.AnsiFg}\u25cf{Reset}" : " ";
-            var pad = new string(' ', Math.Max(0, width - 1 - title.Length));
-            return $"{prefix}{colorFg}{title}{pad}{Reset}";
+            var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
+            return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
+        }
+
+        if (lineIndex == titleOverflowIdx)
+        {
+            var overflow = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
+            if (!string.IsNullOrEmpty(overflow))
+            {
+                var colorFg = node.Link.Type switch
+                {
+                    LinkType.Content => palette.LinkContent.AnsiFg,
+                    LinkType.Navigation => palette.LinkNavigation.AnsiFg,
+                    LinkType.External => palette.LinkExternal.AnsiFg,
+                    LinkType.Footer => palette.LinkFooter.AnsiFg,
+                    _ => palette.PrimaryText.AnsiFg
+                };
+                var pad = new string(' ', Math.Max(0, width - 1 - overflow.Length));
+                return $" {colorFg}{overflow}{pad}{Reset}";
+            }
+
+            return new string(' ', width);
         }
 
         if (lineIndex == metadataLineIdx)
