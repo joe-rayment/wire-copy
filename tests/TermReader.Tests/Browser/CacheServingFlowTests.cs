@@ -179,6 +179,61 @@ public class CacheServingFlowTests
     }
 
     [Fact]
+    public async Task LoadPageAsync_HttpNoContent_RetrySucceeds_SetsReadableContent()
+    {
+        var url = "https://example.com/article";
+        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false);
+
+        // First call returns null, second call returns content
+        var readable = ReadableContent.Create(
+            "Real Article",
+            "This is the actual article content from Selenium.",
+            new List<string> { "This is the actual article content from Selenium." });
+        var callCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1 ? null : readable;
+            });
+
+        var retryResult = PageLoadResult.Successful(
+            url, "<html><body><p>Real content</p></body></html>",
+            new PageMetadata { Title = "Real Article" },
+            FetchMethod.Selenium);
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.ForceRefresh),
+            Arg.Any<CancellationToken>())
+            .Returns(retryResult);
+
+        var page = await _sut.LoadPageAsync(url);
+
+        page.HasReadableContent().Should().BeTrue();
+        page.ReadableContent!.Title.Should().Be("Real Article");
+    }
+
+    [Fact]
+    public async Task LoadPageAsync_HttpNoContent_RetryFails_ReturnsPageWithoutContent()
+    {
+        var url = "https://example.com/article";
+        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false);
+
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ReadableContent?)null);
+
+        // Retry fails
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.ForceRefresh),
+            Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Failure("Selenium timeout"));
+
+        var page = await _sut.LoadPageAsync(url);
+
+        page.Should().NotBeNull();
+        page.HasReadableContent().Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LoadPageAsync_HttpWithContent_DoesNotRetry()
     {
         var url = "https://example.com/article";

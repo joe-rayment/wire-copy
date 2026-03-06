@@ -29,10 +29,12 @@ internal static class CollectionCommandHandler
                     await service.SaveToReadingListAsync(
                         saveNode.Link.Url, saveNode.Link.DisplayText, ct);
                     ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
+                    ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
                 }
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save to default collection");
+                    ctx.NavigationService.SetStatusMessage("Failed to save");
                 }
             }
         }
@@ -55,6 +57,7 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleSaveToSpecific(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -81,6 +84,8 @@ internal static class CollectionCommandHandler
                                 "Saved to collection '{Collection}': {Title}",
                                 collectionName,
                                 saveNode.Link.DisplayText);
+                            ctx.NavigationService.SetStatusMessage(
+                                $"Saved to {collectionName}: {saveNode.Link.DisplayText}");
                         }
                         else
                         {
@@ -88,17 +93,21 @@ internal static class CollectionCommandHandler
                                 "Already in collection '{Collection}': {Title}",
                                 collectionName,
                                 saveNode.Link.DisplayText);
+                            ctx.NavigationService.SetStatusMessage(
+                                $"Already in {collectionName}");
                         }
                     }
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to collection");
+                        ctx.NavigationService.SetStatusMessage("Failed to save");
                     }
                 }
             }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -121,16 +130,20 @@ internal static class CollectionCommandHandler
                         var service = ctx.CreateCollectionService(scope);
                         await service.SaveAllToReadingListAsync(visibleNodes, ct);
                         ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
+                        ctx.NavigationService.SetStatusMessage(
+                            $"Saved {visibleNodes.Count} links to Reading List");
                     }
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
+                        ctx.NavigationService.SetStatusMessage("Failed to save");
                     }
                 }
             }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleDeleteItem(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -149,6 +162,7 @@ internal static class CollectionCommandHandler
                     var service = ctx.CreateCollectionService(scope);
                     await service.RemoveItemAsync(col.Id, item.Id, ct);
                     await ctx.RefreshCollectionsAsync(ct);
+                    ctx.NavigationService.SetStatusMessage($"Removed: {item.Title}");
 
                     var refreshedCol = ctx.NavigationService.ActiveCollection;
                     var refreshedCount = refreshedCol?.Items.Count ?? 0;
@@ -160,6 +174,7 @@ internal static class CollectionCommandHandler
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to remove item");
+                    ctx.NavigationService.SetStatusMessage("Failed to remove");
                 }
             }
         }
@@ -173,6 +188,7 @@ internal static class CollectionCommandHandler
                 var service = ctx.CreateCollectionService(scope);
                 await service.DeleteCollectionAsync(collection.Id, ct);
                 await ctx.RefreshCollectionsAsync(ct);
+                ctx.NavigationService.SetStatusMessage($"Deleted collection: {collection.Name}");
                 if (ctx.NavigationService.CollectionSelectedIndex >= ctx.Collections.Count)
                 {
                     ctx.NavigationService.CollectionSelectedIndex = Math.Max(0, ctx.Collections.Count - 1);
@@ -181,10 +197,12 @@ internal static class CollectionCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to delete collection");
+                ctx.NavigationService.SetStatusMessage("Failed to delete");
             }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
