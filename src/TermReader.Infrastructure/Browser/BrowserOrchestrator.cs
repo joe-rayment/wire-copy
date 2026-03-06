@@ -37,6 +37,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IBrowserSessionControl _browserSession;
     private readonly IThemeProvider _themeProvider;
     private readonly IResizeDetector _resizeDetector;
+    private readonly IPageCache _pageCache;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
     // Line cache for reader view line-based scrolling
@@ -68,6 +69,7 @@ public class BrowserOrchestrator : IBrowserService
         IBrowserSessionControl browserSession,
         IThemeProvider themeProvider,
         IResizeDetector resizeDetector,
+        IPageCache pageCache,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -83,6 +85,7 @@ public class BrowserOrchestrator : IBrowserService
         _browserSession = browserSession;
         _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
+        _pageCache = pageCache;
         _logger = logger;
     }
 
@@ -394,8 +397,12 @@ public class BrowserOrchestrator : IBrowserService
     {
         try
         {
+            var cachedAt = _pageCache.GetCachedAt(url);
+            var isFromCache = cachedAt != null;
+
             var page = await LoadPageAsync(url, cancellationToken);
             _navigationService.NavigateTo(page);
+            _navigationService.SetCacheInfo(isFromCache, cachedAt);
             InvalidateLineCache();
             await RenderCurrentPageAsync(options, cancellationToken);
         }
@@ -435,6 +442,7 @@ public class BrowserOrchestrator : IBrowserService
             }
 
             _navigationService.NavigateTo(page);
+            _navigationService.SetCacheInfo(false, null);
             InvalidateLineCache();
             await RenderCurrentPageAsync(options, cancellationToken);
         }

@@ -83,6 +83,7 @@ public class BrowserOrchestratorTests
             browserSession,
             themeProvider,
             resizeDetector,
+            Substitute.For<IPageCache>(),
             _browserConfig,
             _logger);
     }
@@ -331,6 +332,7 @@ public class BrowserOrchestratorNavigationTests
             browserSession,
             themeProvider,
             resizeDetector,
+            Substitute.For<IPageCache>(),
             _browserConfig,
             _logger);
     }
