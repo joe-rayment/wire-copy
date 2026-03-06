@@ -286,9 +286,8 @@ public class BrowserOrchestrator : IBrowserService
     /// </summary>
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
-        var availableLines = Math.Max(3, options.TerminalHeight - 9);
-        var cardHeight = UI.Renderers.LinkTreeRenderer.GetCardHeight(availableLines);
-        return Math.Max(1, availableLines / cardHeight);
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        return layout.VisibleRows;
     }
 
     /// <summary>
@@ -784,19 +783,20 @@ public class BrowserOrchestrator : IBrowserService
             return;
         }
 
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var gridRows = UI.Renderers.LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var (gridRow, _) = UI.Renderers.LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
+
         var currentOffset = _navigationService.CurrentContext.ScrollOffset;
-        var contentHeight = GetHierarchicalViewportHeight(options);
+        var contentHeight = layout.VisibleRows;
 
-        // If selection is above visible area, scroll up
-        if (selectedIndex < currentOffset)
+        if (gridRow < currentOffset)
         {
-            _navigationService.SetScrollOffset(selectedIndex);
+            _navigationService.SetScrollOffset(gridRow);
         }
-
-        // If selection is below visible area, scroll down
-        else if (selectedIndex >= currentOffset + contentHeight)
+        else if (gridRow >= currentOffset + contentHeight)
         {
-            _navigationService.SetScrollOffset(selectedIndex - contentHeight + 1);
+            _navigationService.SetScrollOffset(gridRow - contentHeight + 1);
         }
     }
 

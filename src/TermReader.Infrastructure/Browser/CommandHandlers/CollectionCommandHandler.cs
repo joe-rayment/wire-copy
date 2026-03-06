@@ -257,24 +257,26 @@ internal static class CollectionCommandHandler
     {
         try
         {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var service = ctx.CreateCollectionService(scope);
+
             // Purge expired Reading List items (16-hour auto-expiry)
-            using (var purgeScope = ctx.ScopeFactory.CreateScope())
+            var purged = await service.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
+            if (purged > 0)
             {
-                var purgeService = ctx.CreateCollectionService(purgeScope);
-                var purged = await purgeService.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
-                if (purged > 0)
-                {
-                    ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
-                }
+                ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
             }
 
+            // Go directly to Reading List items view (skip CollectionList)
+            var readingList = await service.GetDefaultCollectionAsync(ct);
             ctx.NavigationService.EnterCollections();
+            ctx.NavigationService.EnterCollection(readingList);
             await ctx.RefreshCollectionsAsync(ct);
             await ctx.RenderCurrentPageAsync(options, ct);
         }
         catch (Exception ex)
         {
-            ctx.Logger.LogError(ex, "Failed to enter collections mode");
+            ctx.Logger.LogError(ex, "Failed to open Reading List");
             ctx.NavigationService.ExitCollections();
             await ctx.RenderCurrentPageAsync(options, ct);
         }

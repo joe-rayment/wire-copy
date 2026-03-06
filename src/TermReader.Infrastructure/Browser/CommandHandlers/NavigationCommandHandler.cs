@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -41,7 +42,7 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Hierarchical)
         {
-            tree?.SelectNext();
+            MoveVerticalInGrid(tree, options, down: true);
             ctx.AdjustScrollForSelection(tree, options);
         }
         else
@@ -73,7 +74,7 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Hierarchical)
         {
-            tree?.SelectPrevious();
+            MoveVerticalInGrid(tree, options, down: false);
             ctx.AdjustScrollForSelection(tree, options);
         }
         else
@@ -195,12 +196,7 @@ internal static class NavigationCommandHandler
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
-        if (viewMode == ViewMode.CollectionItems)
-        {
-            ctx.NavigationService.ExitToCollectionList();
-            await ctx.RenderCurrentPageAsync(options, ct);
-        }
-        else if (viewMode == ViewMode.CollectionList)
+        if (viewMode == ViewMode.CollectionItems || viewMode == ViewMode.CollectionList)
         {
             ctx.NavigationService.ExitCollections();
             ctx.InvalidateLineCache();
@@ -240,13 +236,35 @@ internal static class NavigationCommandHandler
 
     public static async Task HandleExpandNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection?.Expand();
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+        var selected = tree?.CurrentSelection;
+
+        if (selected != null && !selected.IsGroupHeader && ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical)
+        {
+            MoveHorizontalInGrid(tree!, options, right: true);
+        }
+        else
+        {
+            selected?.Expand();
+        }
+
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     public static async Task HandleCollapseNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection?.Collapse();
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+        var selected = tree?.CurrentSelection;
+
+        if (selected != null && !selected.IsGroupHeader && ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical)
+        {
+            MoveHorizontalInGrid(tree!, options, right: false);
+        }
+        else
+        {
+            selected?.Collapse();
+        }
+
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
@@ -339,6 +357,104 @@ internal static class NavigationCommandHandler
         if (!string.IsNullOrEmpty(command.TargetUrl))
         {
             await ctx.NavigateToAsync(command.TargetUrl, options, ct);
+        }
+    }
+
+    private static void MoveVerticalInGrid(Domain.Entities.Browser.NavigationTree? tree, RenderOptions options, bool down)
+    {
+        if (tree == null)
+        {
+            return;
+        }
+
+        var selected = tree.CurrentSelection;
+        if (selected == null)
+        {
+            return;
+        }
+
+        // Group headers: use sequential movement (no column concept)
+        if (selected.IsGroupHeader)
+        {
+            if (down)
+            {
+                tree.SelectNext();
+            }
+            else
+            {
+                tree.SelectPrevious();
+            }
+
+            return;
+        }
+
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var selectedIndex = visibleNodes.IndexOf(selected);
+        if (selectedIndex < 0)
+        {
+            return;
+        }
+
+        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var (row, col) = LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
+
+        var newNodeIndex = down
+            ? LinkTreeGridMapper.MoveDown(gridRows, row, col)
+            : LinkTreeGridMapper.MoveUp(gridRows, row, col);
+
+        if (newNodeIndex >= 0 && newNodeIndex < visibleNodes.Count)
+        {
+            tree.SelectNodeById(visibleNodes[newNodeIndex].Id);
+        }
+    }
+
+    private static void MoveHorizontalInGrid(Domain.Entities.Browser.NavigationTree tree, RenderOptions options, bool right)
+    {
+        var selected = tree.CurrentSelection;
+        if (selected == null)
+        {
+            return;
+        }
+
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var selectedIndex = visibleNodes.IndexOf(selected);
+        if (selectedIndex < 0)
+        {
+            return;
+        }
+
+        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        if (layout.Columns < 2)
+        {
+            return;
+        }
+
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var (row, col) = LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
+
+        int targetCol;
+        if (right)
+        {
+            targetCol = 1;
+            if (col == 1 || row >= gridRows.Count || gridRows[row].Right == null)
+            {
+                return;
+            }
+        }
+        else
+        {
+            targetCol = 0;
+            if (col == 0)
+            {
+                return;
+            }
+        }
+
+        var newNodeIndex = LinkTreeGridMapper.GridPositionToNodeIndex(gridRows, row, targetCol);
+        if (newNodeIndex >= 0 && newNodeIndex < visibleNodes.Count)
+        {
+            tree.SelectNodeById(visibleNodes[newNodeIndex].Id);
         }
     }
 }
