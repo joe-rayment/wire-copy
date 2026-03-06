@@ -16,6 +16,8 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class NavigationService : INavigationService
 {
+    private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
+
     private readonly ILogger<NavigationService> _logger;
     private readonly Stack<Page> _backHistory = new();
     private readonly Stack<Page> _forwardHistory = new();
@@ -26,6 +28,7 @@ public class NavigationService : INavigationService
     private string? _searchQuery;
     private int _searchMatchIndex;
     private string? _statusMessage;
+    private DateTime? _statusMessageSetAt;
     private bool _isFromCache;
     private DateTime? _cachedAt;
 
@@ -61,7 +64,7 @@ public class NavigationService : INavigationService
         LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
         SearchQuery = _searchQuery,
         SearchMatchIndex = _searchMatchIndex,
-        StatusMessage = _statusMessage,
+        StatusMessage = GetActiveStatusMessage(),
         IsFromCache = _isFromCache,
         CachedAt = _cachedAt
     };
@@ -194,19 +197,21 @@ public class NavigationService : INavigationService
     }
 
     /// <summary>
-    /// Sets a transient status message displayed for one render cycle.
+    /// Sets a status message that auto-expires after a few seconds.
     /// </summary>
     public void SetStatusMessage(string message)
     {
         _statusMessage = message;
+        _statusMessageSetAt = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Clears the transient status message.
+    /// Clears the status message immediately.
     /// </summary>
     public void ClearStatusMessage()
     {
         _statusMessage = null;
+        _statusMessageSetAt = null;
     }
 
     /// <summary>
@@ -425,5 +430,22 @@ public class NavigationService : INavigationService
         }
 
         return true;
+    }
+
+    private string? GetActiveStatusMessage()
+    {
+        if (_statusMessage == null || _statusMessageSetAt == null)
+        {
+            return null;
+        }
+
+        if (DateTime.UtcNow - _statusMessageSetAt.Value > StatusMessageDuration)
+        {
+            _statusMessage = null;
+            _statusMessageSetAt = null;
+            return null;
+        }
+
+        return _statusMessage;
     }
 }

@@ -754,7 +754,6 @@ public class BrowserOrchestrator : IBrowserService
                     _navigationService.SetStatusMessage(_themeProvider.CurrentTheme.ToString());
                     InvalidateLineCache();
                     await RenderCurrentPageAsync(options, cancellationToken);
-                    _navigationService.ClearStatusMessage();
                     break;
 
                 case CommandType.AddBookmark:

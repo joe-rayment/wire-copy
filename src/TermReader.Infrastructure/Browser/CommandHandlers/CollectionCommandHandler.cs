@@ -57,7 +57,6 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
-        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleSaveToSpecific(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -107,7 +106,6 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
-        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -143,7 +141,6 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
-        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleDeleteItem(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -202,7 +199,6 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
-        ctx.NavigationService.ClearStatusMessage();
     }
 
     public static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
