@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Infrastructure.Browser.Cache;
 using TermReader.Infrastructure.Browser.Themes;
 using TermReader.Infrastructure.Browser.UI;
 using TermReader.Infrastructure.Configuration;
@@ -69,15 +70,25 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
         services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
 
-        // Register browser infrastructure services
+        // Register cache configuration and services
+        services.AddOptions<CacheConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(CacheConfiguration.SectionName).Bind(opts));
+        services.AddSingleton<IPageCache, InMemoryPageCache>();
+
+        // Register browser infrastructure services with caching decorator
         services.AddSingleton<IPageLoader>(sp =>
         {
             var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             var httpClient = httpClientFactory.CreateClient("BrowserPageLoader");
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
-            var logger = sp.GetRequiredService<ILogger<PageLoader>>();
+            var pageLoaderLogger = sp.GetRequiredService<ILogger<PageLoader>>();
             var browserSession = sp.GetRequiredService<IBrowserSession>();
-            return new PageLoader(browserConfig, logger, browserSession, httpClient);
+            var innerLoader = new PageLoader(browserConfig, pageLoaderLogger, browserSession, httpClient);
+
+            var cache = sp.GetRequiredService<IPageCache>();
+            var cachingLogger = sp.GetRequiredService<ILogger<CachingPageLoader>>();
+            return new CachingPageLoader(innerLoader, cache, cachingLogger);
         });
         services.AddSingleton<ILinkExtractor, LinkExtractor>();
         services.AddSingleton<INavigationTreeBuilder, NavigationTreeBuilder>();
