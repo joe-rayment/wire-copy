@@ -42,6 +42,9 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IIdleDetector _idleDetector;
     private readonly ILogger<BrowserOrchestrator> _logger;
 
+    // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
+    private FetchMethod _lastLoadFetchMethod;
+
     // Line cache for reader view line-based scrolling
     private List<string>? _cachedLines;
     private int _cachedWidth;
@@ -115,6 +118,8 @@ public class BrowserOrchestrator : IBrowserService
             throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
         }
 
+        _lastLoadFetchMethod = loadResult.FetchMethod;
+
         // Create page entity
         var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
         var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
@@ -144,6 +149,7 @@ public class BrowserOrchestrator : IBrowserService
 
             if (retryResult.Success)
             {
+                _lastLoadFetchMethod = retryResult.FetchMethod;
                 metadata = retryResult.Metadata ?? new PageMetadata { Title = "Untitled" };
                 page = Page.Create(retryResult.Url, retryResult.Html, metadata);
 
@@ -489,11 +495,12 @@ public class BrowserOrchestrator : IBrowserService
 
         try
         {
-            var cachedAt = _pageCache.GetCachedAt(url);
-            var isFromCache = cachedAt != null;
-
             var page = await LoadPageAsync(url, cancellationToken);
             _navigationService.NavigateTo(page);
+
+            // Derive cache info from actual FetchMethod (avoids race with cache expiry)
+            var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
+            var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
             _navigationService.SetCacheInfo(isFromCache, cachedAt);
             InvalidateLineCache();
 
