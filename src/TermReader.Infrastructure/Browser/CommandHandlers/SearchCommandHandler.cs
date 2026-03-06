@@ -216,6 +216,10 @@ internal static class SearchCommandHandler
                 await HandleExportCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return;
 
+            case "cache":
+                await HandleCacheCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                return;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
@@ -264,6 +268,46 @@ internal static class SearchCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to export collection");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCacheCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(subcommand))
+        {
+            var stats = ctx.PageCache.GetStats();
+            ctx.NavigationService.SetStatusMessage(
+                $"Cache: {stats.EntryCount} pages, {stats.FormattedSize} / {stats.FormattedMaxSize}, {stats.HitRatePercent}% hit rate");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            ctx.NavigationService.ClearStatusMessage();
+            return;
+        }
+
+        if (subcommand.StartsWith("clear", StringComparison.OrdinalIgnoreCase))
+        {
+            var clearArg = subcommand.Length > 5 ? subcommand[5..].Trim() : null;
+            if (!string.IsNullOrEmpty(clearArg))
+            {
+                var removed = ctx.PageCache.Remove(clearArg);
+                ctx.NavigationService.SetStatusMessage(
+                    removed ? $"Removed {clearArg} from cache" : "URL not found in cache");
+            }
+            else
+            {
+                var confirm = await ctx.InputHandler.PromptForInputAsync("Clear all cached pages? (y/n): ", ct);
+                if (string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+                {
+                    var cleared = ctx.PageCache.Clear();
+                    ctx.NavigationService.SetStatusMessage(
+                        $"Cache cleared ({cleared.EntryCount} pages, {cleared.FormattedSize} freed)");
+                }
+            }
+
+            await ctx.RenderCurrentPageAsync(options, ct);
+            ctx.NavigationService.ClearStatusMessage();
+            return;
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

@@ -59,6 +59,7 @@ public class NavigationCommandHandlerScrollTests
             InputHandler = Substitute.For<IInputHandler>(),
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
+            PageCache = Substitute.For<IPageCache>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
