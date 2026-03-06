@@ -159,13 +159,13 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_ExpandedMode_ThirdLineIsBlank()
+    public void BuildCardLine_ExpandedMode_ThirdLineIsSeparator()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 2, 80, TestPalette);
 
-        line.Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        line.Should().Contain("\u2500"); // horizontal rule separator
     }
 
     #endregion
@@ -267,14 +267,14 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Standard5Line_PaddingLinesAreBlank()
+    public void BuildCardLine_Standard5Line_PaddingLinesAreBlankExceptSeparator()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        // Lines 0, 2, 4 should be blank padding padded to full width
+        // Lines 0, 2 are blank padding; line 4 is a separator rule
         LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
         LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().Contain("\u2500");
     }
 
     #endregion
