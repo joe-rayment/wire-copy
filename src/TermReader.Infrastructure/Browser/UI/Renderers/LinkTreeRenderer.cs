@@ -393,47 +393,24 @@ internal class LinkTreeRenderer
         var selBg = palette.SelectedItemBg.AnsiBg;
         var selFg = palette.SelectedItemFg.AnsiFg;
         var contentWidth = width - 1;
-        var textWidth = GetTitleTextWidth(width);
 
         // Accent bar on all lines
         sb.Append($"{accentFg}\u258c{Reset}");
 
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var titleOverflowIdx = cardHeight >= 5 ? 2 : -1;
-        var metadataLineIdx = GetMetadataLineIndex(cardHeight);
+        var authorDateLineIdx = cardHeight >= 5 ? 2 : -1;
+        var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
 
         if (lineIndex == titleLineIdx)
         {
-            string titleLine;
-            if (cardHeight >= 5)
-            {
-                titleLine = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0);
-            }
-            else
-            {
-                titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
-            }
-
+            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
             sb.Append($"{selBg}{selFg}{Bold} {titleLine}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
         }
-        else if (lineIndex == titleOverflowIdx)
-        {
-            var overflow = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
-            if (!string.IsNullOrEmpty(overflow))
-            {
-                sb.Append($"{selBg}{selFg}{Bold} {overflow}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - overflow.Length))}{Reset}");
-            }
-            else
-            {
-                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
-            }
-        }
-        else if (lineIndex == metadataLineIdx)
+        else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
         {
             var subtitle = GetMetadataSubtitle(node, contentWidth - 1);
-            sb.Append($"{selBg}\x1b[38;5;245m {subtitle}");
+            sb.Append($"{selBg}{palette.SecondaryText.AnsiFg} {subtitle}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
         }
         else if (lineIndex == cardHeight - 1 && cardHeight > 1)
@@ -457,9 +434,8 @@ internal class LinkTreeRenderer
         IReadOnlySet<string>? cachedUrls = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var titleOverflowIdx = cardHeight >= 5 ? 2 : -1;
-        var metadataLineIdx = GetMetadataLineIndex(cardHeight);
-        var textWidth = GetTitleTextWidth(width);
+        var authorDateLineIdx = cardHeight >= 5 ? 2 : -1;
+        var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
 
         if (lineIndex == titleLineIdx)
         {
@@ -471,15 +447,7 @@ internal class LinkTreeRenderer
                 LinkType.Footer => palette.LinkFooter.AnsiFg,
                 _ => palette.PrimaryText.AnsiFg
             };
-            string titleLine;
-            if (cardHeight >= 5)
-            {
-                titleLine = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0);
-            }
-            else
-            {
-                titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
-            }
+            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
 
             var isCached = cachedUrls != null &&
                            !string.IsNullOrEmpty(node.Link.Url) &&
@@ -489,24 +457,11 @@ internal class LinkTreeRenderer
             return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
         }
 
-        if (lineIndex == titleOverflowIdx)
+        if (lineIndex == authorDateLineIdx)
         {
-            var overflow = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
-            if (!string.IsNullOrEmpty(overflow))
-            {
-                var colorFg = node.Link.Type switch
-                {
-                    LinkType.Content => palette.LinkContent.AnsiFg,
-                    LinkType.Navigation => palette.LinkNavigation.AnsiFg,
-                    LinkType.External => palette.LinkExternal.AnsiFg,
-                    LinkType.Footer => palette.LinkFooter.AnsiFg,
-                    _ => palette.PrimaryText.AnsiFg
-                };
-                var pad = new string(' ', Math.Max(0, width - 1 - overflow.Length));
-                return $" {colorFg}{overflow}{pad}{Reset}";
-            }
-
-            return new string(' ', width);
+            var subtitle = GetMetadataSubtitle(node, width - 1);
+            var metaPad = new string(' ', Math.Max(0, width - 1 - subtitle.Length));
+            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{metaPad}{Reset}";
         }
 
         if (lineIndex == metadataLineIdx)
@@ -530,17 +485,17 @@ internal class LinkTreeRenderer
         var author = node.Link.Author;
 
         string subtitle;
-        if (dateStr != null && !string.IsNullOrEmpty(author))
+        if (!string.IsNullOrEmpty(author) && dateStr != null)
         {
-            subtitle = $"{dateStr} \u00b7 {author}";
-        }
-        else if (dateStr != null)
-        {
-            subtitle = dateStr;
+            subtitle = $"{author} \u00b7 {dateStr}";
         }
         else if (!string.IsNullOrEmpty(author))
         {
             subtitle = author;
+        }
+        else if (dateStr != null)
+        {
+            subtitle = dateStr;
         }
         else
         {
