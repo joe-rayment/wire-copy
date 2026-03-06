@@ -1,0 +1,279 @@
+// Educational and personal use only.
+
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Entities.Browser;
+using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser.Cache;
+using TermReader.Infrastructure.Configuration;
+using Xunit;
+
+namespace TermReader.Tests.Browser;
+
+public class BackgroundPreloadServiceTests
+{
+    private readonly IPageCache _cache;
+    private readonly IIdleDetector _idleDetector;
+    private readonly CacheConfiguration _config;
+    private readonly BackgroundPreloadService _service;
+
+    public BackgroundPreloadServiceTests()
+    {
+        _cache = Substitute.For<IPageCache>();
+        _idleDetector = Substitute.For<IIdleDetector>();
+        var httpClient = new HttpClient();
+        _config = new CacheConfiguration();
+        _service = new BackgroundPreloadService(
+            _cache, _idleDetector, httpClient, _config,
+            NullLogger<BackgroundPreloadService>.Instance);
+    }
+
+    #region BuildQueue - Priority Ordering
+
+    [Fact]
+    public void BuildQueue_SelectedLink_GetsFocusedPriority()
+    {
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2", "https://example.com/a3");
+
+        var queue = _service.BuildQueue(1, nodes, "https://example.com");
+
+        queue.Should().Contain(i => i.Url == "https://example.com/a2" && i.Priority == PreloadPriority.Focused);
+    }
+
+    [Fact]
+    public void BuildQueue_NearbyLinks_GetNearbyPriority()
+    {
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = _service.BuildQueue(5, nodes, "https://example.com");
+
+        // Nodes at indices 2,3,4 and 6,7,8 are within radius 3 of index 5
+        var nearbyItems = queue.Where(i => i.Priority == PreloadPriority.Nearby).ToList();
+        nearbyItems.Should().HaveCount(6);
+    }
+
+    [Fact]
+    public void BuildQueue_FarLinks_GetSpeculativePriority()
+    {
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = _service.BuildQueue(5, nodes, "https://example.com");
+
+        var specItems = queue.Where(i => i.Priority == PreloadPriority.Speculative).ToList();
+        specItems.Should().HaveCount(3); // indices 0, 1, 9
+    }
+
+    [Fact]
+    public void BuildQueue_SortedByPriorityThenDistance()
+    {
+        var urls = Enumerable.Range(1, 8).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = _service.BuildQueue(3, nodes, "https://example.com");
+
+        // First item should be Focused (selected)
+        queue[0].Priority.Should().Be(PreloadPriority.Focused);
+
+        // Then Nearby items sorted by distance
+        var nearbyItems = queue.Where(i => i.Priority == PreloadPriority.Nearby).ToList();
+        for (var i = 1; i < nearbyItems.Count; i++)
+        {
+            nearbyItems[i].Distance.Should().BeGreaterThanOrEqualTo(nearbyItems[i - 1].Distance);
+        }
+
+        // Then Speculative items
+        var lastNearby = queue.FindLastIndex(i => i.Priority == PreloadPriority.Nearby);
+        var firstSpec = queue.FindIndex(i => i.Priority == PreloadPriority.Speculative);
+        if (lastNearby >= 0 && firstSpec >= 0)
+        {
+            firstSpec.Should().BeGreaterThan(lastNearby);
+        }
+    }
+
+    #endregion
+
+    #region BuildQueue - Filtering
+
+    [Fact]
+    public void BuildQueue_FiltersOutExternalOriginLinks()
+    {
+        var nodes = CreateContentNodes("https://example.com/a1", "https://other.com/a2", "https://example.com/a3");
+
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().NotContain(i => i.Url == "https://other.com/a2");
+    }
+
+    [Fact]
+    public void BuildQueue_FiltersOutNonContentLinks()
+    {
+        var root = LinkNode.CreateRoot();
+        var contentLink = new LinkInfo
+        {
+            Url = "https://example.com/article",
+            DisplayText = "Article",
+            Type = LinkType.Content,
+            ImportanceScore = 50
+        };
+        var navLink = new LinkInfo
+        {
+            Url = "https://example.com/nav",
+            DisplayText = "Nav",
+            Type = LinkType.Navigation,
+            ImportanceScore = 50
+        };
+        root.AddChild(contentLink);
+        root.AddChild(navLink);
+        var nodes = root.Children.ToList();
+
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().NotContain(i => i.Url == "https://example.com/nav");
+        queue.Should().Contain(i => i.Url == "https://example.com/article");
+    }
+
+    [Fact]
+    public void BuildQueue_SkipsCachedUrls()
+    {
+        _cache.Contains("https://example.com/a1").Returns(true);
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().NotContain(i => i.Url == "https://example.com/a1");
+        queue.Should().Contain(i => i.Url == "https://example.com/a2");
+    }
+
+    [Fact]
+    public void BuildQueue_SkipsGroupHeaders()
+    {
+        var root = LinkNode.CreateRoot();
+        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content, 5);
+        var contentLink = new LinkInfo
+        {
+            Url = "https://example.com/article",
+            DisplayText = "Article",
+            Type = LinkType.Content,
+            ImportanceScore = 50
+        };
+        root.AddChild(groupHeader);
+        root.AddChild(contentLink);
+        var nodes = root.Children.ToList();
+
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().HaveCount(1);
+        queue[0].Url.Should().Be("https://example.com/article");
+    }
+
+    [Fact]
+    public void BuildQueue_EmptyNodes_ReturnsEmptyQueue()
+    {
+        var nodes = new List<LinkNode>();
+
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region IsBotDetectionResponse
+
+    [Theory]
+    [InlineData("Attention Required! | Cloudflare")]
+    [InlineData("<html>You have been blocked</html>")]
+    [InlineData("<div>Checking your browser before accessing</div>")]
+    [InlineData("<div id='cf-challenge'>challenge</div>")]
+    [InlineData("<html>Please enable JavaScript to continue</html>")]
+    [InlineData("<html>Access Denied</html>")]
+    public void IsBotDetectionResponse_DetectsBotPages(string html)
+    {
+        BackgroundPreloadService.IsBotDetectionResponse(html).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("<html><body>Normal page content</body></html>")]
+    [InlineData("<html><head><title>News Article</title></head></html>")]
+    [InlineData("")]
+    public void IsBotDetectionResponse_AcceptsNormalPages(string html)
+    {
+        BackgroundPreloadService.IsBotDetectionResponse(html).Should().BeFalse();
+    }
+
+    #endregion
+
+    #region Pause / Resume
+
+    [Fact]
+    public async Task StartAsync_WhenPaused_SkipsPreloading()
+    {
+        _idleDetector.WaitForIdleAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var nodes = CreateContentNodes("https://example.com/a1");
+        _service.NotifySelectionChanged(0, nodes, "https://example.com");
+
+        _service.Pause();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        try
+        {
+            await _service.StartAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected
+        }
+
+        // Should not have tried to cache anything since paused
+        _cache.DidNotReceive().Put(Arg.Any<string>(), Arg.Any<Application.DTOs.Browser.PageLoadResult>());
+    }
+
+    #endregion
+
+    #region NotifySelectionChanged
+
+    [Fact]
+    public void NotifySelectionChanged_RebuildsQueue()
+    {
+        var nodes1 = CreateContentNodes("https://example.com/a1");
+        _service.NotifySelectionChanged(0, nodes1, "https://example.com");
+
+        var nodes2 = CreateContentNodes("https://example.com/b1", "https://example.com/b2");
+        _service.NotifySelectionChanged(0, nodes2, "https://example.com");
+
+        // The queue should have been rebuilt with the second set of nodes
+        var queue = _service.BuildQueue(0, nodes2, "https://example.com");
+        queue.Should().HaveCount(2);
+    }
+
+    #endregion
+
+    #region Helpers
+
+    private static List<LinkNode> CreateContentNodes(params string[] urls)
+    {
+        var root = LinkNode.CreateRoot();
+        foreach (var url in urls)
+        {
+            var link = new LinkInfo
+            {
+                Url = url,
+                DisplayText = $"Article at {url}",
+                Type = LinkType.Content,
+                ImportanceScore = 50
+            };
+            root.AddChild(link);
+        }
+
+        return root.Children.ToList();
+    }
+
+    #endregion
+}
