@@ -26,6 +26,8 @@ public class NavigationService : INavigationService
     private string? _searchQuery;
     private int _searchMatchIndex;
     private string? _statusMessage;
+    private bool _isFromCache;
+    private DateTime? _cachedAt;
 
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
@@ -59,7 +61,9 @@ public class NavigationService : INavigationService
         LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
         SearchQuery = _searchQuery,
         SearchMatchIndex = _searchMatchIndex,
-        StatusMessage = _statusMessage
+        StatusMessage = _statusMessage,
+        IsFromCache = _isFromCache,
+        CachedAt = _cachedAt
     };
 
     public Page? CurrentPage => _currentPage;
@@ -203,6 +207,15 @@ public class NavigationService : INavigationService
     public void ClearStatusMessage()
     {
         _statusMessage = null;
+    }
+
+    /// <summary>
+    /// Sets cache metadata for the current page (shown in status bar).
+    /// </summary>
+    public void SetCacheInfo(bool isFromCache, DateTime? cachedAt)
+    {
+        _isFromCache = isFromCache;
+        _cachedAt = cachedAt;
     }
 
     /// <summary>
