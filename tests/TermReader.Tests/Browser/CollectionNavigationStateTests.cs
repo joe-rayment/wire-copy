@@ -174,4 +174,63 @@ public class CollectionNavigationStateTests
     }
 
     #endregion
+
+    #region Scroll offset properties
+
+    [Fact]
+    public void CollectionListScrollOffset_DefaultsToZero()
+    {
+        _sut.CollectionListScrollOffset.Should().Be(0);
+    }
+
+    [Fact]
+    public void CollectionListScrollOffset_CanBeSetAndRead()
+    {
+        _sut.CollectionListScrollOffset = 5;
+        _sut.CollectionListScrollOffset.Should().Be(5);
+    }
+
+    [Fact]
+    public void CollectionListScrollOffset_ClampsNegativeToZero()
+    {
+        _sut.CollectionListScrollOffset = -3;
+        _sut.CollectionListScrollOffset.Should().Be(0);
+    }
+
+    [Fact]
+    public void CollectionItemScrollOffset_CanBeSetAndRead()
+    {
+        _sut.CollectionItemScrollOffset = 10;
+        _sut.CollectionItemScrollOffset.Should().Be(10);
+    }
+
+    [Fact]
+    public void CollectionItemScrollOffset_ClampsNegativeToZero()
+    {
+        _sut.CollectionItemScrollOffset = -1;
+        _sut.CollectionItemScrollOffset.Should().Be(0);
+    }
+
+    [Fact]
+    public void EnterCollections_ResetsCollectionListScrollOffset()
+    {
+        _sut.CollectionListScrollOffset = 7;
+
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+
+        _sut.CollectionListScrollOffset.Should().Be(0);
+    }
+
+    [Fact]
+    public void EnterCollection_ResetsCollectionItemScrollOffset()
+    {
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+        _sut.CollectionItemScrollOffset = 5;
+
+        _sut.EnterCollection(Collection.Create("Test"));
+
+        _sut.CollectionItemScrollOffset.Should().Be(0);
+    }
+
+    #endregion
 }
