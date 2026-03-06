@@ -406,6 +406,45 @@ public class BrowserOrchestrator : IBrowserService
         }
     }
 
+    private async Task ForceRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _renderer.RenderLoading(url);
+
+            var loadResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                cancellationToken);
+
+            if (!loadResult.Success)
+            {
+                throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
+            }
+
+            var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
+            var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
+
+            var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
+            var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+            page.SetLinkTree(tree);
+
+            var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+            if (readable != null)
+            {
+                page.SetReadableContent(readable);
+            }
+
+            _navigationService.NavigateTo(page);
+            InvalidateLineCache();
+            await RenderCurrentPageAsync(options, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error force-refreshing {Url}", url);
+            _renderer.RenderError(ex.Message, url);
+        }
+    }
+
     private CommandContext GetCommandContext()
     {
         _commandContext ??= new CommandContext
@@ -416,6 +455,7 @@ public class BrowserOrchestrator : IBrowserService
             ScopeFactory = _scopeFactory,
             Logger = _logger,
             NavigateToAsync = NavigateToAsync,
+            ForceRefreshAsync = ForceRefreshAsync,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,
@@ -511,6 +551,9 @@ public class BrowserOrchestrator : IBrowserService
                     break;
                 case CommandType.Refresh:
                     await NavigationCommandHandler.HandleRefresh(ctx, options, cancellationToken);
+                    break;
+                case CommandType.ForceRefresh:
+                    await NavigationCommandHandler.HandleForceRefresh(ctx, options, cancellationToken);
                     break;
                 case CommandType.Navigate:
                     await NavigationCommandHandler.HandleNavigate(ctx, command, options, cancellationToken);

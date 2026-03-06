@@ -57,6 +57,7 @@ public class SearchCommandHandlerTests
                 _navigatedUrl = url;
                 return Task.CompletedTask;
             },
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
             {
                 _renderCalled = true;

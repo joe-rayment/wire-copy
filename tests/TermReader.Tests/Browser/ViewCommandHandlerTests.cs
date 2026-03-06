@@ -51,6 +51,7 @@ public class ViewCommandHandlerTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (opts, _) =>
             {
                 _renderCalled = true;
