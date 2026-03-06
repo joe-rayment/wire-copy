@@ -127,14 +127,14 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_NormalMetadata_ContainsDomainText()
+    public void BuildCardLine_NormalMetadata_ContainsAuthorText()
     {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+        var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", null);
 
         // cardHeight=3 (compact): metadata line is at index 1
         var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
 
-        line.Should().Contain("example.com");
+        line.Should().Contain("Jane Doe");
     }
 
     [Fact]
@@ -215,13 +215,13 @@ public class LinkTreeLayoutTests
     [Fact]
     public void BuildCardLine_Selected_MetadataLine_HasHighlightBg()
     {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+        var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", null);
 
         // cardHeight=3 (compact): metadata line is at index 1
         var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 1, 80, TestPalette);
 
         line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
-        line.Should().Contain("example.com");
+        line.Should().Contain("Jane Doe");
     }
 
     #endregion
@@ -258,12 +258,12 @@ public class LinkTreeLayoutTests
     [Fact]
     public void BuildCardLine_Standard5Line_MetadataOnLine3()
     {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
+        var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", DateTime.Now);
 
         // cardHeight=5: metadata line is at index 3
         var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette);
 
-        line.Should().Contain("example.com");
+        line.Should().Contain("Today").And.Contain("Jane Doe");
     }
 
     [Fact]
@@ -486,6 +486,21 @@ public class LinkTreeLayoutTests
             Url = url,
             Type = type,
             ImportanceScore = 50
+        };
+        return root.AddChild(link);
+    }
+
+    private static LinkNode CreateLinkNodeWithMetadata(string displayText, string url, LinkType type, string? author, DateTime? publishedDate)
+    {
+        var root = LinkNode.CreateRoot();
+        var link = new LinkInfo
+        {
+            DisplayText = displayText,
+            Url = url,
+            Type = type,
+            ImportanceScore = 50,
+            Author = author,
+            PublishedDate = publishedDate
         };
         return root.AddChild(link);
     }
