@@ -27,7 +27,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ILogger<BackgroundPreloadService> _logger;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
-    private readonly ConcurrentDictionary<string, byte> _circuitBrokenDomains = new();
+    private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
     private readonly object _queueLock = new();
     private List<PreloadItem> _queue = [];
     private volatile bool _paused;
@@ -240,11 +240,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Skip circuit-broken domains
+            // Skip circuit-broken domains (with TTL recovery)
             var origin = UrlNormalizer.GetOrigin(url);
-            if (origin != null && _circuitBrokenDomains.ContainsKey(origin))
+            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
             {
-                continue;
+                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
+                {
+                    continue;
+                }
+
+                // Cooldown elapsed — allow retry
+                _circuitBrokenDomains.TryRemove(origin, out _);
             }
 
             // Determine priority
@@ -355,7 +361,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     var origin = UrlNormalizer.GetOrigin(url);
                     if (origin != null)
                     {
-                        _circuitBrokenDomains.TryAdd(origin, 0);
+                        _circuitBrokenDomains[origin] = DateTime.UtcNow;
                         _logger.LogWarning(
                             "Bot detection triggered for {Origin}, stopping pre-loads for this domain",
                             origin);
