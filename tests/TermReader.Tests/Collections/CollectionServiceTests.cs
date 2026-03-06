@@ -41,7 +41,7 @@ public class CollectionServiceTests : TestDatabaseFixture
 
         var collections = await _sut.GetAllCollectionsAsync();
         collections.Should().HaveCount(1);
-        collections[0].Name.Should().Be("Read Later");
+        collections[0].Name.Should().Be("Reading List");
         collections[0].Items.Should().HaveCount(1);
     }
 
@@ -327,7 +327,7 @@ public class CollectionServiceTests : TestDatabaseFixture
 
         // Assert
         collection.Should().NotBeNull();
-        collection.Name.Should().Be("Read Later");
+        collection.Name.Should().Be("Reading List");
     }
 
     [Fact]

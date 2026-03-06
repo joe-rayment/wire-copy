@@ -11,7 +11,7 @@ namespace TermReader.Persistence.Repositories;
 /// </summary>
 public class CollectionRepository : ICollectionRepository
 {
-    private const string DefaultCollectionName = "Read Later";
+    private const string DefaultCollectionName = "Reading List";
 
     private readonly AppDbContext _context;
     private readonly ICollectionPreferences _preferences;
