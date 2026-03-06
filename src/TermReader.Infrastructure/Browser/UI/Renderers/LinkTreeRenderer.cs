@@ -356,6 +356,10 @@ internal class LinkTreeRenderer
             sb.Append($"{selBg}\x1b[38;5;245m {subtitle}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
         }
+        else if (lineIndex == cardHeight - 1 && cardHeight > 1)
+        {
+            sb.Append($"{selBg}{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', contentWidth)}{Reset}");
+        }
         else
         {
             sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
@@ -399,6 +403,11 @@ internal class LinkTreeRenderer
             var subtitle = GetMetadataSubtitle(node, width - 1);
             var metaPad = new string(' ', Math.Max(0, width - 1 - subtitle.Length));
             return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{metaPad}{Reset}";
+        }
+
+        if (lineIndex == cardHeight - 1 && cardHeight > 1)
+        {
+            return $"{palette.SecondaryText.AnsiFg}{Dim}{new string('\u2500', width)}{Reset}";
         }
 
         return new string(' ', width);
@@ -464,7 +473,9 @@ internal class LinkTreeRenderer
 
             if (layout.Columns == 2)
             {
-                sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
+                var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
+                var divider = isSeparatorLine ? "\u253c" : "\u2502";
+                sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
                 if (row.Right != null)
                 {
                     var rightWidth = layout.Width - layout.CellWidth - 1;
