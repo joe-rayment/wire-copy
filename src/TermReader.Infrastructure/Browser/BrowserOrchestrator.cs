@@ -573,8 +573,10 @@ public class BrowserOrchestrator : IBrowserService
 
                 case CommandType.CycleTheme:
                     _themeProvider.CycleTheme();
+                    _navigationService.SetStatusMessage(_themeProvider.CurrentTheme.ToString());
                     InvalidateLineCache();
                     await RenderCurrentPageAsync(options, cancellationToken);
+                    _navigationService.ClearStatusMessage();
                     break;
 
                 case CommandType.AddBookmark:

@@ -93,6 +93,7 @@ public static class BrowserDependencyInjection
         // Register UI components
         services.AddSingleton<IPageRenderer, TerminalPageRenderer>();
         services.AddSingleton<IInputHandler, TerminalInputHandler>();
+        services.AddSingleton<IResizeDetector, TerminalResizeDetector>();
 
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();

@@ -161,4 +161,86 @@ public class Collection
     {
         return _items.Any(i => string.Equals(i.Url, url, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Adds a URL at the top of the collection. If the URL already exists,
+    /// removes the old item and re-adds at position 0 with a fresh SavedAt timestamp.
+    /// All existing items are shifted down by incrementing their SortOrder.
+    /// </summary>
+    public CollectionItem AddOrMoveToTop(string url, string title)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("URL cannot be empty", nameof(url));
+
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Title cannot be empty", nameof(title));
+
+        // Remove existing item with same URL if present
+        var existing = _items.FirstOrDefault(i => string.Equals(i.Url, url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            _items.Remove(existing);
+        }
+
+        // Shift all existing items down
+        foreach (var item in _items)
+        {
+            item.SetSortOrder(item.SortOrder + 1);
+        }
+
+        // Add new item at top (SortOrder 0)
+        var newItem = CollectionItem.Create(Id, url.Trim(), title.Trim(), 0);
+        _items.Insert(0, newItem);
+        UpdatedAt = DateTime.UtcNow;
+        return newItem;
+    }
+
+    /// <summary>
+    /// Removes items older than the specified max age based on SavedAt timestamp.
+    /// Returns the count of removed items.
+    /// </summary>
+    public int RemoveExpiredItems(TimeSpan maxAge)
+    {
+        var cutoff = DateTime.UtcNow - maxAge;
+        var expired = _items.Where(i => i.SavedAt < cutoff).ToList();
+
+        foreach (var item in expired)
+        {
+            _items.Remove(item);
+        }
+
+        if (expired.Count > 0)
+        {
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        return expired.Count;
+    }
+
+    /// <summary>
+    /// Adds multiple items at the end of the collection with sequential SortOrder values.
+    /// </summary>
+    public void AddItemsAtEnd(IEnumerable<(string Url, string Title)> items)
+    {
+        var nextSortOrder = _items.Count > 0 ? _items.Max(i => i.SortOrder) + 1 : 0;
+        var added = false;
+
+        foreach (var (url, title) in items)
+        {
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var item = CollectionItem.Create(Id, url.Trim(), title.Trim(), nextSortOrder);
+            _items.Add(item);
+            nextSortOrder++;
+            added = true;
+        }
+
+        if (added)
+        {
+            UpdatedAt = DateTime.UtcNow;
+        }
+    }
 }

@@ -40,6 +40,7 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
+        _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
 
         _linkTreeRenderer.RenderHeader(page.Metadata, page.Url, options);
@@ -57,13 +58,14 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine();
         }
 
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth);
 
         _helpers.ClearRemainingLines();
     }
 
     public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
     {
+        _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
 
         if (page.ReadableContent == null)
@@ -72,7 +74,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine("  No readable content available for this page.");
             _helpers.WriteLine("  Press 'v' to switch to link view.");
             _helpers.WriteLine();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
             _helpers.ClearRemainingLines();
             return;
         }
@@ -82,12 +84,12 @@ public class TerminalPageRenderer : IPageRenderer
         if (wrappedLines != null)
         {
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options);
-            _articleRenderer.RenderReaderStatusBar(context, wrappedLines.Count, options.MaxContentWidth, viewportHeight);
+            _articleRenderer.RenderReaderStatusBar(context, wrappedLines.Count, options.MaxContentWidth, viewportHeight, options.TerminalWidth);
         }
         else
         {
             _articleRenderer.RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
         }
 
         _helpers.ClearRemainingLines();
@@ -120,22 +122,25 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, RenderOptions options)
     {
+        _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, options);
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, RenderOptions options)
     {
+        _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, options);
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
     {
+        _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _launcherRenderer.RenderFooter(options.TerminalWidth);

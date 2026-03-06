@@ -352,6 +352,64 @@ public class PageLoaderTests
         result.Metadata!.Author.Should().Be("John Doe");
     }
 
+    [Fact]
+    public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInTitle()
+    {
+        // Arrange — title contains HTML entities (e.g. smart quotes, apostrophes)
+        var html = @"<html><head>
+            <meta property='og:title' content='Today&#x27;s Paper' />
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Metadata!.Title.Should().Be("Today's Paper");
+    }
+
+    [Fact]
+    public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInTitleTag()
+    {
+        // Arrange — <title> tag contains HTML entities
+        var html = @"<html><head>
+            <title>Today&#x27;s Paper &amp; More</title>
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Metadata!.Title.Should().Be("Today's Paper & More");
+    }
+
+    [Fact]
+    public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInDescription()
+    {
+        // Arrange — description contains HTML entities
+        var html = @"<html><head>
+            <title>Test</title>
+            <meta name='description' content='It&#x27;s a great day &amp; more' />
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Metadata!.Description.Should().Be("It's a great day & more");
+    }
+
     /// <summary>
     /// Fake HttpMessageHandler for testing HttpClient-based code without real HTTP calls.
     /// </summary>

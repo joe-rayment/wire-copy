@@ -10,8 +10,15 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 internal class RenderHelpers
 {
     private int _linesWritten;
+    private int _terminalHeight;
 
     public int LinesWritten => _linesWritten;
+
+    public int TerminalHeight
+    {
+        get => _terminalHeight > 0 ? _terminalHeight : Console.WindowHeight;
+        set => _terminalHeight = value;
+    }
 
     public static string TruncateText(string text, int maxLength)
     {
@@ -108,7 +115,7 @@ internal class RenderHelpers
             }
             catch
             {
-                for (var i = 0; i < Console.WindowHeight; i++)
+                for (var i = 0; i < TerminalHeight; i++)
                 {
                     Console.WriteLine();
                 }
@@ -120,7 +127,7 @@ internal class RenderHelpers
     {
         try
         {
-            var height = Console.WindowHeight;
+            var height = TerminalHeight;
 
             while (_linesWritten < height)
             {
@@ -139,7 +146,7 @@ internal class RenderHelpers
     {
         try
         {
-            if (_linesWritten >= Console.WindowHeight)
+            if (_linesWritten >= TerminalHeight)
             {
                 return;
             }
@@ -160,36 +167,47 @@ internal class RenderHelpers
     {
         try
         {
-            if (_linesWritten >= Console.WindowHeight)
+            if (_linesWritten >= TerminalHeight)
+            {
+                return;
+            }
+
+            Console.SetCursorPosition(0, _linesWritten);
+            WriteSearchHighlightedContent(text, searchQuery, palette);
+            Console.Write("\x1b[K");
+            _linesWritten++;
+        }
+        catch
+        {
+            Console.WriteLine(text);
+            _linesWritten++;
+        }
+    }
+
+    public void WriteLineWithIndicator(string text, string indicatorAnsi, string? searchQuery, ThemePalette? palette)
+    {
+        try
+        {
+            if (_linesWritten >= TerminalHeight)
             {
                 return;
             }
 
             Console.SetCursorPosition(0, _linesWritten);
 
-            var index = 0;
+            // Write the indicator prefix
+            Console.Write(indicatorAnsi);
 
-            while (index < text.Length)
+            // Strip leading space from content to maintain alignment since indicator takes its place
+            var content = text.Length > 0 && text[0] == ' ' ? text.Substring(1) : text;
+
+            if (!string.IsNullOrEmpty(searchQuery) && palette != null)
             {
-                var matchPos = text.IndexOf(searchQuery, index, StringComparison.OrdinalIgnoreCase);
-                if (matchPos < 0)
-                {
-                    Console.Write(text.Substring(index));
-                    index = text.Length;
-                }
-                else
-                {
-                    if (matchPos > index)
-                    {
-                        Console.Write(text.Substring(index, matchPos - index));
-                    }
-
-                    Console.Write($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
-                    Console.Write(text.Substring(matchPos, searchQuery.Length));
-                    Console.Write(Colors.Reset);
-
-                    index = matchPos + searchQuery.Length;
-                }
+                WriteSearchHighlightedContent(content, searchQuery, palette);
+            }
+            else
+            {
+                Console.Write(content);
             }
 
             Console.Write("\x1b[K");
@@ -206,7 +224,7 @@ internal class RenderHelpers
     {
         try
         {
-            if (_linesWritten >= Console.WindowHeight)
+            if (_linesWritten >= TerminalHeight)
             {
                 return;
             }
@@ -222,6 +240,34 @@ internal class RenderHelpers
         {
             Console.WriteLine(text);
             _linesWritten++;
+        }
+    }
+
+    private static void WriteSearchHighlightedContent(string text, string searchQuery, ThemePalette palette)
+    {
+        var index = 0;
+
+        while (index < text.Length)
+        {
+            var matchPos = text.IndexOf(searchQuery, index, StringComparison.OrdinalIgnoreCase);
+            if (matchPos < 0)
+            {
+                Console.Write(text.Substring(index));
+                index = text.Length;
+            }
+            else
+            {
+                if (matchPos > index)
+                {
+                    Console.Write(text.Substring(index, matchPos - index));
+                }
+
+                Console.Write($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
+                Console.Write(text.Substring(matchPos, searchQuery.Length));
+                Console.Write(Colors.Reset);
+
+                index = matchPos + searchQuery.Length;
+            }
         }
     }
 
