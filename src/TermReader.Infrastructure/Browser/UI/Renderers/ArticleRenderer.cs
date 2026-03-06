@@ -97,14 +97,13 @@ internal class ArticleRenderer
         var lineInfo = $"L{context.ScrollOffset + 1}/{totalLines}";
         var widthInfo = $"W{contentWidth}";
         var progressInfo = $"{progress}%";
-        var themeName = _themeProvider.CurrentTheme.ToString();
 
         var searchInfo = !string.IsNullOrEmpty(context.SearchQuery)
             ? $" /{context.SearchQuery}"
             : string.Empty;
 
-        var hints = "j/k:scroll v:links b:back ?:shortcuts";
+        var hints = "+/-:width v:links b:back ?:help";
 
-        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader | {themeName}] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}{Reset}");
+        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}{Reset}");
     }
 }

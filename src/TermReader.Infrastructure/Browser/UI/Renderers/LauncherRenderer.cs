@@ -119,13 +119,12 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', Math.Max(1, width))}{Reset}");
 
-        var hints = FormatKbdHint("hjkl", "navigate", p) + "  " +
-                    FormatKbdHint("Enter", "open", p) + "  " +
-                    FormatKbdHint("?", "shortcuts", p);
+        var hints = FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("?", "help", p);
 
         var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var hintsTextLen = "[hjkl] navigate  [Enter] open  [?] shortcuts".Length;
+        var hintsTextLen = "[Enter] open  [?] help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }
@@ -195,8 +194,8 @@ internal class LauncherRenderer
 
         if (isCollections)
         {
-            name = "COLLECTIONS";
-            domain = "saved links";
+            name = "READING LIST";
+            domain = "reading list";
         }
         else
         {
@@ -403,14 +402,14 @@ internal class LauncherRenderer
         _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
         _helpers.WriteLine();
 
-        var collLabel = "[c]  COLLECTIONS";
+        var collLabel = "[c]  READING LIST";
         var collPad = Math.Max(0, (width - collLabel.Length) / 2);
         _helpers.WriteLine(
             $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
-            $"  {p.PrimaryText.AnsiFg}{Bold}COLLECTIONS{Reset}");
+            $"  {p.PrimaryText.AnsiFg}{Bold}READING LIST{Reset}");
 
-        var domainPad = Math.Max(0, (width - "saved links".Length) / 2);
-        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}saved links{Reset}");
+        var domainPad = Math.Max(0, (width - "reading list".Length) / 2);
+        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}reading list{Reset}");
     }
 
     private void RenderScrollIndicator(int width, ThemePalette p, bool isUp, int count)
