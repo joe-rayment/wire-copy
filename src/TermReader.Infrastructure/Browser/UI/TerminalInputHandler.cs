@@ -140,8 +140,12 @@ public class TerminalInputHandler : IInputHandler
    d               Delete / remove item
    J / K           Reorder items
 
+ Cache
+   R               Force-refresh (bypass cache)
+   F5              Smart refresh (use cache if available)
+
  General
-   F5              Refresh          Ctrl+p          Cycle theme
+   Ctrl+p          Cycle theme
    Esc             Go back          q               Quit
 
  Press any key to close...
@@ -278,6 +282,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.G => new NavigationCommand { Type = CommandType.GoToBottom },
                 ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown },
                 ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp },
+                ConsoleKey.R => new NavigationCommand { Type = CommandType.ForceRefresh },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }

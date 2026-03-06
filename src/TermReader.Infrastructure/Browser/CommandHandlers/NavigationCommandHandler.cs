@@ -352,6 +352,15 @@ internal static class NavigationCommandHandler
         }
     }
 
+    public static async Task HandleForceRefresh(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        if (page != null)
+        {
+            await ctx.ForceRefreshAsync(page.Url, options, ct);
+        }
+    }
+
     public static async Task HandleNavigate(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(command.TargetUrl))

@@ -43,6 +43,8 @@ internal class CommandContext
     // Delegates for operations that remain in BrowserOrchestrator
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 
+    public required Func<string, RenderOptions, CancellationToken, Task> ForceRefreshAsync { get; init; }
+
     public required Func<RenderOptions, CancellationToken, Task> RenderCurrentPageAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }

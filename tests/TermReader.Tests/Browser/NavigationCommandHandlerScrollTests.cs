@@ -60,6 +60,7 @@ public class NavigationCommandHandlerScrollTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
             {
                 _renderCalled = true;
