@@ -89,7 +89,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                RenderGridRow(gr, layout, p);
+                RenderGridRow(gr, layout, p, options.CachedUrls);
             }
 
             linesUsed += linesNeeded;
@@ -289,11 +289,12 @@ internal class LinkTreeRenderer
         int cardHeight,
         int lineIndex,
         int width,
-        ThemePalette palette)
+        ThemePalette palette,
+        IReadOnlySet<string>? cachedUrls = null)
     {
         return isSelected
             ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette)
-            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette);
+            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, cachedUrls);
     }
 
     internal static string? FormatDate(DateTime? date)
@@ -368,7 +369,8 @@ internal class LinkTreeRenderer
         int cardHeight,
         int lineIndex,
         int width,
-        ThemePalette palette)
+        ThemePalette palette,
+        IReadOnlySet<string>? cachedUrls = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
         var metadataLineIdx = GetMetadataLineIndex(cardHeight);
@@ -384,7 +386,11 @@ internal class LinkTreeRenderer
                 _ => palette.PrimaryText.AnsiFg
             };
             var title = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
-            return $" {colorFg}{title}{Reset}";
+            var isCached = cachedUrls != null &&
+                           !string.IsNullOrEmpty(node.Link.Url) &&
+                           cachedUrls.Contains(node.Link.Url);
+            var prefix = isCached ? $"{palette.SecondaryText.AnsiFg}\u25cf{Reset}" : " ";
+            return $"{prefix}{colorFg}{title}{Reset}";
         }
 
         if (lineIndex == metadataLineIdx)
@@ -448,12 +454,12 @@ internal class LinkTreeRenderer
         return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
     }
 
-    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p)
+    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null)
     {
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
         {
             var sb = new StringBuilder();
-            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p));
+            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls));
 
             if (layout.Columns == 2)
             {
@@ -461,7 +467,7 @@ internal class LinkTreeRenderer
                 if (row.Right != null)
                 {
                     var rightWidth = layout.Width - layout.CellWidth - 1;
-                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p));
+                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls));
                 }
                 else
                 {
