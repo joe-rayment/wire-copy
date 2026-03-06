@@ -149,6 +149,30 @@ internal static class LauncherCommandHandler
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
 
+            case CommandType.PageDown:
+            {
+                var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+                var halfRows = Math.Max(1, layout.VisibleRows / 2);
+                var step = halfRows * layout.Columns;
+                ctx.NavigationService.LauncherSelectedIndex =
+                    Math.Min(ctx.NavigationService.LauncherSelectedIndex + step, totalItems - 1);
+                AdjustLauncherScroll(ctx, options);
+                await ctx.RenderCurrentPageAsync(options, ct);
+                break;
+            }
+
+            case CommandType.PageUp:
+            {
+                var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+                var halfRows = Math.Max(1, layout.VisibleRows / 2);
+                var step = halfRows * layout.Columns;
+                ctx.NavigationService.LauncherSelectedIndex =
+                    Math.Max(ctx.NavigationService.LauncherSelectedIndex - step, 0);
+                AdjustLauncherScroll(ctx, options);
+                await ctx.RenderCurrentPageAsync(options, ct);
+                break;
+            }
+
             case CommandType.GoToTop:
                 ctx.NavigationService.LauncherSelectedIndex = 0;
                 ctx.NavigationService.LauncherScrollOffset = 0;
