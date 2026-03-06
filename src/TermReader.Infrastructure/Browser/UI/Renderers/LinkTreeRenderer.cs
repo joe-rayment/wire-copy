@@ -408,7 +408,6 @@ internal class LinkTreeRenderer
     {
         var dateStr = FormatDate(node.Link.PublishedDate);
         var author = node.Link.Author;
-        var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
 
         string subtitle;
         if (dateStr != null && !string.IsNullOrEmpty(author))
@@ -417,7 +416,7 @@ internal class LinkTreeRenderer
         }
         else if (dateStr != null)
         {
-            subtitle = $"{dateStr} \u00b7 {domain}";
+            subtitle = dateStr;
         }
         else if (!string.IsNullOrEmpty(author))
         {
@@ -425,7 +424,7 @@ internal class LinkTreeRenderer
         }
         else
         {
-            subtitle = domain;
+            subtitle = string.Empty;
         }
 
         return RenderHelpers.TruncateText(subtitle, maxWidth);
