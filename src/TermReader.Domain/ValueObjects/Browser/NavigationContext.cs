@@ -75,4 +75,14 @@ public record NavigationContext
     /// Transient status message displayed for one render cycle (e.g., theme name after cycling).
     /// </summary>
     public string? StatusMessage { get; init; }
+
+    /// <summary>
+    /// Whether the current page was served from the cache.
+    /// </summary>
+    public bool IsFromCache { get; init; }
+
+    /// <summary>
+    /// When the cached version was originally loaded (null if fresh).
+    /// </summary>
+    public DateTime? CachedAt { get; init; }
 }

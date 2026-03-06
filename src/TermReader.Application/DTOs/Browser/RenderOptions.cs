@@ -44,4 +44,10 @@ public record RenderOptions
     /// Available height for content (excluding header and status bar).
     /// </summary>
     public int ContentHeight => TerminalHeight - HeaderLines - StatusBarLines;
+
+    /// <summary>
+    /// Set of normalized URLs currently in the page cache.
+    /// Used by renderers to show pre-load/cache indicators on link tree items.
+    /// </summary>
+    public IReadOnlySet<string>? CachedUrls { get; init; }
 }

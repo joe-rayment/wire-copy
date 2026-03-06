@@ -21,4 +21,9 @@ public record PageLoadRequest
     /// Maximum time to wait for page load (milliseconds).
     /// </summary>
     public int TimeoutMs { get; init; } = 30000;
+
+    /// <summary>
+    /// Whether to bypass the cache and force a fresh network fetch.
+    /// </summary>
+    public bool ForceRefresh { get; init; }
 }

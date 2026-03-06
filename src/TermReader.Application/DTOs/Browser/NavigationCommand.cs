@@ -94,6 +94,9 @@ public enum CommandType
     // Theme
     CycleTheme,
 
+    // Cache
+    ForceRefresh,
+
     // Terminal
     TerminalResized
 }
