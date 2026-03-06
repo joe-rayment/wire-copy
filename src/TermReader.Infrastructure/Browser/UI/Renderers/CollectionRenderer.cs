@@ -181,4 +181,24 @@ internal class CollectionRenderer
             }
         }
     }
+
+    internal static int GetCollectionListVisibleCount(int terminalHeight)
+    {
+        const int headerLines = 5;
+        const int statusBarLines = 3;
+        var useSeparators = terminalHeight >= 30;
+        var linesPerItem = useSeparators ? 2 : 1;
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
+        return useSeparators ? (remainingHeight + 1) / linesPerItem : remainingHeight;
+    }
+
+    internal static int GetCollectionItemsVisibleCount(int terminalHeight)
+    {
+        const int headerLines = 5;
+        const int statusBarLines = 3;
+        var useSeparators = terminalHeight >= 30;
+        var linesPerItem = useSeparators ? 3 : 2;
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
+        return Math.Max(1, (remainingHeight + 1) / linesPerItem);
+    }
 }
