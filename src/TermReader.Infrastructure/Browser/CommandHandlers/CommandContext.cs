@@ -26,6 +26,8 @@ internal class CommandContext
 
     public required ILogger Logger { get; init; }
 
+    public required IPageCache PageCache { get; init; }
+
     // Mutable shared state
     public List<Collection>? Collections { get; set; }
 

@@ -462,6 +462,7 @@ public class BrowserOrchestrator : IBrowserService
             InputHandler = _inputHandler,
             ScopeFactory = _scopeFactory,
             Logger = _logger,
+            PageCache = _pageCache,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             RenderCurrentPageAsync = RenderCurrentPageAsync,

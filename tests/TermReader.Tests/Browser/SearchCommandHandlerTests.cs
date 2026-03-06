@@ -52,6 +52,7 @@ public class SearchCommandHandlerTests
             InputHandler = _inputHandler,
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
+            PageCache = Substitute.For<IPageCache>(),
             NavigateToAsync = (url, _, _) =>
             {
                 _navigatedUrl = url;
