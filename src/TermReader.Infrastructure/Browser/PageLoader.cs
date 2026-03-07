@@ -38,6 +38,42 @@ public class PageLoader : IPageLoader
         _httpClient = httpClient;
     }
 
+    /// <summary>
+    /// Checks if the loaded HTML is a bot challenge or CAPTCHA page rather than real content.
+    /// Detects DataDome, Cloudflare challenge, and generic CAPTCHA interstitials.
+    /// </summary>
+    public static bool IsBotChallengePage(string html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return false;
+        }
+
+        var lowerHtml = html.ToLowerInvariant();
+
+        // DataDome detection
+        if (lowerHtml.Contains("captcha-delivery.com") || lowerHtml.Contains("datadome"))
+        {
+            return true;
+        }
+
+        // Cloudflare challenge detection
+        if (lowerHtml.Contains("cf-challenge") || lowerHtml.Contains("challenge-platform"))
+        {
+            return true;
+        }
+
+        // Generic CAPTCHA detection: very small page with captcha/challenge keywords
+        const int smallPageThreshold = 5 * 1024;
+        if (html.Length < smallPageThreshold &&
+            (lowerHtml.Contains("captcha") || lowerHtml.Contains("challenge")))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public async Task<PageLoadResult> LoadAsync(PageLoadRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading page: {Url}", request.Url);
@@ -109,7 +145,7 @@ public class PageLoader : IPageLoader
     {
         var lowerHtml = html.ToLowerInvariant();
 
-        // Check for Cloudflare challenge/block pages - these need browser to solve
+        // Check for Cloudflare/DataDome challenge/block pages - these need browser to solve
         var cloudflareIndicators = new[]
         {
             "attention required! | cloudflare",
@@ -119,7 +155,10 @@ public class PageLoader : IPageLoader
             "cf-challenge",
             "challenge-platform",
             "just a moment...",
-            "enable cookies"
+            "enable cookies",
+            "captcha-delivery.com",
+            "datadome",
+            "geo.captcha-delivery.com"
         };
 
         if (Array.Exists(cloudflareIndicators, i => lowerHtml.Contains(i)))
@@ -131,6 +170,7 @@ public class PageLoader : IPageLoader
         var indicators = new[]
         {
             "please enable javascript",
+            "please enable js",
             "javascript is required",
             "this page requires javascript",
             "you need to enable javascript",
@@ -331,6 +371,11 @@ public class PageLoader : IPageLoader
             var finalUrl = driver.Url;
             var html = driver.PageSource;
 
+            if (IsBotChallengePage(html))
+            {
+                _logger.LogWarning("Bot challenge page detected after browser load: {Url}", request.Url);
+            }
+
             var metadata = ExtractMetadata(html, finalUrl);
 
             _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
@@ -345,7 +390,7 @@ public class PageLoader : IPageLoader
 
     private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)
     {
-        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(Math.Min(timeoutMs, 5000)));
+        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(timeoutMs));
         var jsExecutor = (IJavaScriptExecutor)driver;
 
         try
@@ -356,6 +401,22 @@ public class PageLoader : IPageLoader
                 var readyState = jsExecutor.ExecuteScript("return document.readyState")?.ToString();
                 return readyState == "complete";
             });
+
+            // Secondary wait: give JS time to render content into the DOM
+            try
+            {
+                var contentWait = new WebDriverWait(driver, TimeSpan.FromSeconds(3));
+                contentWait.Until(d =>
+                {
+                    var bodyLength = jsExecutor.ExecuteScript(
+                        "return document.body ? document.body.innerHTML.length : 0")?.ToString();
+                    return int.TryParse(bodyLength, out var len) && len > 1000;
+                });
+            }
+            catch (WebDriverTimeoutException)
+            {
+                _logger.LogDebug("Content did not reach expected size within secondary wait");
+            }
 
             // Optional post-load delay for sites needing extra JS rendering time
             if (_browserConfig.PostLoadDelayMs > 0)

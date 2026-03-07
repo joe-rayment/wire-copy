@@ -35,7 +35,7 @@ public class BrowserConfiguration
     /// Gets optional delay (ms) after document.readyState is complete.
     /// Use for sites that need extra time for JS rendering. Default: 0 (no delay).
     /// </summary>
-    public int PostLoadDelayMs { get; init; } = 0;
+    public int PostLoadDelayMs { get; init; } = 500;
 
     /// <summary>
     /// Gets HTTP fetch timeout (ms) before falling back to browser.
