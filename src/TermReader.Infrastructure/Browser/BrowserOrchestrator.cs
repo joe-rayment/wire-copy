@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -129,6 +130,64 @@ public class BrowserOrchestrator : IBrowserService
 
         var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
 
+        // Bot challenge handling: if Selenium returned a challenge page in headed mode,
+        // wait for the user to solve it in the visible browser window
+        if (loadResult.FetchMethod == FetchMethod.Selenium &&
+            PageLoader.IsBotChallengePage(loadResult.Html) &&
+            !_browserConfig.Headless)
+        {
+            _logger.LogWarning("Bot challenge detected in headed mode, waiting for user to resolve: {Url}", url);
+            _renderer.RenderChallenge(url);
+
+            var challengeTimeout = TimeSpan.FromMinutes(2);
+            var sw = Stopwatch.StartNew();
+            var resolved = false;
+
+            while (sw.Elapsed < challengeTimeout && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(1500, cancellationToken);
+                try
+                {
+                    if (_browserSession is IBrowserSession session)
+                    {
+                        var driver = session.GetOrCreateDriver(_browserConfig.Headless);
+                        var currentSource = driver.PageSource;
+                        if (!PageLoader.IsBotChallengePage(currentSource))
+                        {
+                            _logger.LogInformation("Bot challenge resolved by user: {Url}", url);
+                            resolved = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Browser session does not support driver access, skipping challenge poll");
+                        break;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "Error polling challenge status");
+                    break;
+                }
+            }
+
+            if (resolved)
+            {
+                _renderer.RenderLoading(url);
+                _pageCache.Remove(url);
+                var retryResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                    cancellationToken);
+
+                if (retryResult.Success)
+                {
+                    _lastLoadFetchMethod = retryResult.FetchMethod;
+                    page = await BuildPageFromLoadResultAsync(retryResult, cancellationToken);
+                }
+            }
+        }
+
         // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
         if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium)
         {
@@ -148,6 +207,31 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
                 page = await BuildPageFromLoadResultAsync(retryResult, cancellationToken);
+            }
+        }
+
+        // Headless challenge fallback: if headless Selenium got a bot challenge,
+        // retry in headed mode where DataDome is less likely to block
+        if (!page.HasReadableContent() &&
+            loadResult.FetchMethod == FetchMethod.Selenium &&
+            _browserConfig.Headless &&
+            PageLoader.IsBotChallengePage(loadResult.Html))
+        {
+            _logger.LogWarning(
+                "Bot challenge detected in headless mode, retrying headed: {Url}",
+                url);
+
+            _pageCache.Remove(url);
+            _renderer.RenderLoading(url);
+
+            var headedResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                cancellationToken);
+
+            if (headedResult.Success)
+            {
+                _lastLoadFetchMethod = headedResult.FetchMethod;
+                page = await BuildPageFromLoadResultAsync(headedResult, cancellationToken);
             }
         }
 

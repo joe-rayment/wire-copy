@@ -45,6 +45,12 @@ public interface IPageRenderer
     void RenderError(string message, string url);
 
     /// <summary>
+    /// Renders a message telling the user to solve a challenge in the browser window.
+    /// </summary>
+    /// <param name="url">URL that triggered the challenge.</param>
+    void RenderChallenge(string url);
+
+    /// <summary>
     /// Renders status bar at bottom of screen.
     /// </summary>
     /// <param name="context">Current navigation context.</param>

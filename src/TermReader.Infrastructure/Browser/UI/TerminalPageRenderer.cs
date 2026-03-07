@@ -121,6 +121,17 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ClearRemainingLines();
     }
 
+    public void RenderChallenge(string url)
+    {
+        _helpers.Clear();
+        _helpers.WriteLine();
+        _helpers.WriteLine("  Bot challenge detected. Please solve it in the browser window.");
+        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
+        _helpers.WriteLine();
+        _helpers.WriteLine("  Waiting for challenge to be resolved...");
+        _helpers.ClearRemainingLines();
+    }
+
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;

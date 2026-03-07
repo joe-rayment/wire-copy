@@ -49,16 +49,16 @@ public class PageLoader : IPageLoader
             return false;
         }
 
-        var lowerHtml = html.ToLowerInvariant();
-
         // DataDome detection
-        if (lowerHtml.Contains("captcha-delivery.com") || lowerHtml.Contains("datadome"))
+        if (html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("datadome", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         // Cloudflare challenge detection
-        if (lowerHtml.Contains("cf-challenge") || lowerHtml.Contains("challenge-platform"))
+        if (html.Contains("cf-challenge", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -66,7 +66,8 @@ public class PageLoader : IPageLoader
         // Generic CAPTCHA detection: very small page with captcha/challenge keywords
         const int smallPageThreshold = 5 * 1024;
         if (html.Length < smallPageThreshold &&
-            (lowerHtml.Contains("captcha") || lowerHtml.Contains("challenge")))
+            (html.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
+             html.Contains("challenge", StringComparison.OrdinalIgnoreCase)))
         {
             return true;
         }
