@@ -267,7 +267,7 @@ internal class LinkTreeRenderer
         var columns = width >= columnThreshold ? 2 : 1;
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
-        var cellWidth = columns == 1 ? width : (width - 1) / 2;
+        var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
 
         return new LinkTreeLayout(
             Width: width,

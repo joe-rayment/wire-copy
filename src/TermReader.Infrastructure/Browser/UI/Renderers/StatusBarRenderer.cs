@@ -42,7 +42,15 @@ internal class StatusBarRenderer
             ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
             : string.Empty;
 
-        _helpers.WriteLine($"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{cacheBadge}{statusMsg}");
+        var statusLine = $"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{cacheBadge}{statusMsg}";
+
+        // Truncate the visible content if it would wrap on narrow terminals
+        if (RenderHelpers.GetDisplayWidth(statusLine) > width - 1)
+        {
+            statusLine = RenderHelpers.TruncateText(statusLine, width - 1);
+        }
+
+        _helpers.WriteLine(statusLine);
     }
 
     private static string GetModeLabel(ViewMode mode)
