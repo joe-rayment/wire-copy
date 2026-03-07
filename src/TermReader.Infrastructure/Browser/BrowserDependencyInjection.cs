@@ -51,7 +51,6 @@ public static class BrowserDependencyInjection
         // Register security and cookie services
         services.AddSingleton<ICookieEncryptionService, DpapiCookieEncryptionService>();
         services.AddSingleton<ICookieManager, CookieManager>();
-        services.AddSingleton<CookieImporter>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         // Register HTTP client for PageLoader with automatic decompression
@@ -74,6 +73,7 @@ public static class BrowserDependencyInjection
         services.AddOptions<CacheConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(CacheConfiguration.SectionName).Bind(opts));
+        services.AddSingleton<IValidateOptions<CacheConfiguration>, CacheConfigurationValidator>();
         services.AddSingleton<IPageCache, InMemoryPageCache>();
 
         // Register browser infrastructure services with caching decorator
