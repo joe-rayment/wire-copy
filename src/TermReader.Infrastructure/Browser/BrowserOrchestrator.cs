@@ -11,7 +11,6 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
-using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -34,7 +33,6 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Configuration.BrowserConfiguration _browserConfig;
     private readonly IBrowserSessionControl _browserSession;
-    private readonly IThemeProvider _themeProvider;
     private readonly IResizeDetector _resizeDetector;
     private readonly IPageCache _pageCache;
     private readonly IPreloadService _preloadService;
@@ -45,18 +43,8 @@ public class BrowserOrchestrator : IBrowserService
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
 
-    // Collections state
-    private List<Collection>? _collections;
-    private Guid? _defaultCollectionId;
-
-    // Launcher state
-    private List<Domain.Entities.Bookmarks.Bookmark>? _bookmarks;
-
-    // Content width override for reader view
-    private int? _contentWidthOverride;
-
-    // Command handler context (lazily initialized)
-    private CommandContext? _commandContext;
+    // Shared context for command handlers (single source of truth for mutable state)
+    private readonly CommandContext _commandContext;
 
     public BrowserOrchestrator(
         IPageLoader pageLoader,
@@ -86,13 +74,35 @@ public class BrowserOrchestrator : IBrowserService
         _navigationService = navigationService;
         _scopeFactory = scopeFactory;
         _browserSession = browserSession;
-        _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
         _pageCache = pageCache;
         _preloadService = preloadService;
         _idleDetector = idleDetector;
         _logger = logger;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
+
+        _commandContext = new CommandContext
+        {
+            NavigationService = _navigationService,
+            Renderer = _renderer,
+            InputHandler = _inputHandler,
+            ScopeFactory = _scopeFactory,
+            Logger = _logger,
+            PageCache = _pageCache,
+            LineCacheManager = _lineCacheManager,
+            ThemeProvider = themeProvider,
+            NavigateToAsync = NavigateToAsync,
+            ForceRefreshAsync = ForceRefreshAsync,
+            RenderCurrentPageAsync = RenderCurrentPageAsync,
+            RefreshCollectionsAsync = RefreshCollectionsAsync,
+            RefreshBookmarksAsync = RefreshBookmarksAsync,
+            GetCurrentRenderOptions = GetCurrentRenderOptions,
+            CreateCollectionService = CreateCollectionService,
+            GetReaderViewportHeight = GetReaderViewportHeight,
+            GetHierarchicalViewportHeight = GetHierarchicalViewportHeight,
+            AdjustScrollForSelection = AdjustScrollForSelection,
+            ScrollToSearchMatch = ScrollToSearchMatch,
+        };
     }
 
     public async Task<Page> LoadPageAsync(string url, CancellationToken cancellationToken = default)
@@ -186,9 +196,9 @@ public class BrowserOrchestrator : IBrowserService
 
             case ViewMode.CollectionList:
                 _renderer.RenderCollectionList(
-                    _collections ?? new List<Collection>(),
+                    _commandContext.Collections?.ToList() ?? new List<Collection>(),
                     _navigationService.CollectionSelectedIndex,
-                    _defaultCollectionId,
+                    _commandContext.DefaultCollectionId,
                     _navigationService.CollectionListScrollOffset,
                     options);
                 break;
@@ -208,7 +218,7 @@ public class BrowserOrchestrator : IBrowserService
 
             case ViewMode.Launcher:
                 _renderer.RenderLauncher(
-                    _bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                    _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
                     _navigationService.LauncherSelectedIndex,
                     _navigationService.LauncherScrollOffset,
                     options);
@@ -397,8 +407,8 @@ public class BrowserOrchestrator : IBrowserService
         {
             TerminalWidth = width,
             TerminalHeight = height,
-            MaxContentWidth = _contentWidthOverride.HasValue
-                ? Math.Clamp(Math.Min(_contentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
+            MaxContentWidth = _commandContext.ContentWidthOverride.HasValue
+                ? Math.Clamp(Math.Min(_commandContext.ContentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
                 : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
             Use256Colors = use256,
             CachedUrls = _pageCache.GetCachedUrls()
@@ -496,212 +506,142 @@ public class BrowserOrchestrator : IBrowserService
         }
     }
 
-    private CommandContext GetCommandContext()
-    {
-        _commandContext ??= new CommandContext
-        {
-            NavigationService = _navigationService,
-            Renderer = _renderer,
-            InputHandler = _inputHandler,
-            ScopeFactory = _scopeFactory,
-            Logger = _logger,
-            PageCache = _pageCache,
-            LineCacheManager = _lineCacheManager,
-            NavigateToAsync = NavigateToAsync,
-            ForceRefreshAsync = ForceRefreshAsync,
-            RenderCurrentPageAsync = RenderCurrentPageAsync,
-            RefreshCollectionsAsync = RefreshCollectionsAsync,
-            RefreshBookmarksAsync = RefreshBookmarksAsync,
-            GetCurrentRenderOptions = GetCurrentRenderOptions,
-            CreateCollectionService = CreateCollectionService,
-            GetReaderViewportHeight = GetReaderViewportHeight,
-            GetHierarchicalViewportHeight = GetHierarchicalViewportHeight,
-            AdjustScrollForSelection = AdjustScrollForSelection,
-            ScrollToSearchMatch = ScrollToSearchMatch,
-        };
-
-        // Sync mutable state
-        _commandContext.Collections = _collections;
-        _commandContext.DefaultCollectionId = _defaultCollectionId;
-        _commandContext.Bookmarks = _bookmarks;
-        _commandContext.ContentWidthOverride = _contentWidthOverride;
-
-        return _commandContext;
-    }
-
-    private void SyncFromCommandContext()
-    {
-        if (_commandContext == null)
-        {
-            return;
-        }
-
-        _collections = _commandContext.Collections as List<Collection> ?? _commandContext.Collections?.ToList();
-        _defaultCollectionId = _commandContext.DefaultCollectionId;
-        _bookmarks = _commandContext.Bookmarks as List<Domain.Entities.Bookmarks.Bookmark>
-            ?? _commandContext.Bookmarks?.ToList();
-        _contentWidthOverride = _commandContext.ContentWidthOverride;
-    }
-
     private async Task<bool> HandleCommandAsync(NavigationCommand command, RenderOptions options, CancellationToken cancellationToken)
     {
         _idleDetector.RecordActivity();
-        var ctx = GetCommandContext();
 
-        try
+        // Handle launcher-specific commands first
+        if (_navigationService.InLauncherMode)
         {
-            // Handle launcher-specific commands first
-            if (_navigationService.InLauncherMode)
-            {
-                return await LauncherCommandHandler.Handle(ctx, command, options, cancellationToken);
-            }
-
-            switch (command.Type)
-            {
-                case CommandType.Quit:
-                    return false;
-
-                case CommandType.MoveDown:
-                    await NavigationCommandHandler.HandleMoveDown(ctx, options, cancellationToken);
-                    break;
-                case CommandType.MoveUp:
-                    await NavigationCommandHandler.HandleMoveUp(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ExpandNode:
-                    await NavigationCommandHandler.HandleExpandNode(ctx, options, cancellationToken);
-                    break;
-                case CommandType.CollapseNode:
-                    await NavigationCommandHandler.HandleCollapseNode(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ToggleNode:
-                    await NavigationCommandHandler.HandleToggleNode(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ActivateLink:
-                    await NavigationCommandHandler.HandleActivateLink(ctx, options, cancellationToken);
-                    break;
-                case CommandType.GoBack:
-                    await NavigationCommandHandler.HandleGoBack(ctx, options, cancellationToken);
-                    break;
-                case CommandType.GoForward:
-                    await NavigationCommandHandler.HandleGoForward(ctx, options, cancellationToken);
-                    break;
-                case CommandType.PageDown:
-                    await NavigationCommandHandler.HandlePageDown(ctx, options, cancellationToken);
-                    break;
-                case CommandType.PageUp:
-                    await NavigationCommandHandler.HandlePageUp(ctx, options, cancellationToken);
-                    break;
-                case CommandType.GoToTop:
-                    await NavigationCommandHandler.HandleGoToTop(ctx, options, cancellationToken);
-                    break;
-                case CommandType.GoToBottom:
-                    await NavigationCommandHandler.HandleGoToBottom(ctx, options, cancellationToken);
-                    break;
-                case CommandType.Refresh:
-                    await NavigationCommandHandler.HandleRefresh(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ForceRefresh:
-                    await NavigationCommandHandler.HandleForceRefresh(ctx, options, cancellationToken);
-                    break;
-                case CommandType.Navigate:
-                    await NavigationCommandHandler.HandleNavigate(ctx, command, options, cancellationToken);
-                    break;
-
-                case CommandType.SwitchView:
-                    await ViewCommandHandler.HandleSwitchView(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SwitchToHierarchical:
-                    await ViewCommandHandler.HandleSwitchToHierarchical(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SwitchToReadable:
-                    await ViewCommandHandler.HandleSwitchToReadable(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ShowHelp:
-                    await ViewCommandHandler.HandleShowHelp(ctx, options, cancellationToken);
-                    break;
-                case CommandType.IncreaseWidth:
-                    await ViewCommandHandler.HandleIncreaseWidth(ctx, options, cancellationToken);
-                    break;
-                case CommandType.DecreaseWidth:
-                    await ViewCommandHandler.HandleDecreaseWidth(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ResetWidth:
-                    await ViewCommandHandler.HandleResetWidth(ctx, options, cancellationToken);
-                    break;
-
-                case CommandType.OpenCommandLine:
-                    await SearchCommandHandler.HandleOpenCommandLine(ctx, options, cancellationToken);
-                    break;
-                case CommandType.Search:
-                    await SearchCommandHandler.HandleSearch(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SearchNext:
-                    await SearchCommandHandler.HandleSearchNext(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SearchPrevious:
-                    await SearchCommandHandler.HandleSearchPrevious(ctx, options, cancellationToken);
-                    break;
-
-                case CommandType.SaveToCollection:
-                    await CollectionCommandHandler.HandleSaveToCollection(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SaveToSpecific:
-                    await CollectionCommandHandler.HandleSaveToSpecific(ctx, options, cancellationToken);
-                    break;
-                case CommandType.SaveAllToReadingList:
-                    await CollectionCommandHandler.HandleSaveAllToReadingList(ctx, options, cancellationToken);
-                    break;
-                case CommandType.OpenCollections:
-                    await CollectionCommandHandler.HandleOpenCollections(ctx, options, cancellationToken);
-                    break;
-                case CommandType.DeleteItem:
-                    await CollectionCommandHandler.HandleDeleteItem(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ReorderUp:
-                    await CollectionCommandHandler.HandleReorderUp(ctx, options, cancellationToken);
-                    break;
-                case CommandType.ReorderDown:
-                    await CollectionCommandHandler.HandleReorderDown(ctx, options, cancellationToken);
-                    break;
-
-                case CommandType.OpenLauncher:
-                    _navigationService.EnterLauncher();
-                    await RefreshBookmarksAsync(cancellationToken);
-                    await RenderCurrentPageAsync(options, cancellationToken);
-                    break;
-
-                case CommandType.CycleTheme:
-                    _themeProvider.CycleTheme();
-                    _navigationService.SetStatusMessage(_themeProvider.CurrentTheme.ToString());
-                    _lineCacheManager.InvalidateLineCache();
-                    await RenderCurrentPageAsync(options, cancellationToken);
-                    break;
-
-                case CommandType.AddBookmark:
-                    // Only handle in launcher mode (handled above), ignore in other views
-                    break;
-
-                case CommandType.TerminalResized:
-                    var newOptions = GetCurrentRenderOptions();
-                    if (_lineCacheManager.CachedWidth > 0 && newOptions.MaxContentWidth != _lineCacheManager.CachedWidth)
-                    {
-                        _lineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
-                    }
-
-                    _lineCacheManager.ClampScrollOffset();
-                    await RenderCurrentPageAsync(newOptions, cancellationToken);
-                    break;
-            }
-
-            // Notify pre-loader of selection changes in hierarchical view
-            NotifyPreloadSelectionChanged();
-
-            return true;
+            return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
         }
-        finally
+
+        switch (command.Type)
         {
-            SyncFromCommandContext();
+            case CommandType.Quit:
+                return false;
+
+            case CommandType.MoveDown:
+                await NavigationCommandHandler.HandleMoveDown(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.MoveUp:
+                await NavigationCommandHandler.HandleMoveUp(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ExpandNode:
+                await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.CollapseNode:
+                await NavigationCommandHandler.HandleCollapseNode(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ToggleNode:
+                await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ActivateLink:
+                await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.GoBack:
+                await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.GoForward:
+                await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.PageDown:
+                await NavigationCommandHandler.HandlePageDown(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.PageUp:
+                await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.GoToTop:
+                await NavigationCommandHandler.HandleGoToTop(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.GoToBottom:
+                await NavigationCommandHandler.HandleGoToBottom(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.Refresh:
+                await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ForceRefresh:
+                await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.Navigate:
+                await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken);
+                break;
+
+            case CommandType.SwitchView:
+                await ViewCommandHandler.HandleSwitchView(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SwitchToHierarchical:
+                await ViewCommandHandler.HandleSwitchToHierarchical(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SwitchToReadable:
+                await ViewCommandHandler.HandleSwitchToReadable(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ShowHelp:
+                await ViewCommandHandler.HandleShowHelp(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.IncreaseWidth:
+                await ViewCommandHandler.HandleIncreaseWidth(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.DecreaseWidth:
+                await ViewCommandHandler.HandleDecreaseWidth(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ResetWidth:
+                await ViewCommandHandler.HandleResetWidth(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.OpenLauncher:
+                await ViewCommandHandler.HandleOpenLauncher(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.CycleTheme:
+                await ViewCommandHandler.HandleCycleTheme(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.TerminalResized:
+                await ViewCommandHandler.HandleTerminalResized(_commandContext, options, cancellationToken);
+                break;
+
+            case CommandType.OpenCommandLine:
+                await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.Search:
+                await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SearchNext:
+                await SearchCommandHandler.HandleSearchNext(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SearchPrevious:
+                await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken);
+                break;
+
+            case CommandType.SaveToCollection:
+                await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SaveToSpecific:
+                await CollectionCommandHandler.HandleSaveToSpecific(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.SaveAllToReadingList:
+                await CollectionCommandHandler.HandleSaveAllToReadingList(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.OpenCollections:
+                await CollectionCommandHandler.HandleOpenCollections(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.DeleteItem:
+                await CollectionCommandHandler.HandleDeleteItem(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ReorderUp:
+                await CollectionCommandHandler.HandleReorderUp(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.ReorderDown:
+                await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
+                break;
+
+            case CommandType.AddBookmark:
+                // Only handle in launcher mode (handled above), ignore in other views
+                break;
         }
+
+        // Notify pre-loader of selection changes in hierarchical view
+        NotifyPreloadSelectionChanged();
+
+        return true;
     }
 
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)
@@ -712,7 +652,7 @@ public class BrowserOrchestrator : IBrowserService
         if (viewMode == ViewMode.Launcher)
         {
             _renderer.RenderLauncher(
-                _bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
                 _navigationService.LauncherSelectedIndex,
                 _navigationService.LauncherScrollOffset,
                 options);
@@ -723,9 +663,9 @@ public class BrowserOrchestrator : IBrowserService
         if (viewMode == ViewMode.CollectionList)
         {
             _renderer.RenderCollectionList(
-                _collections ?? new List<Collection>(),
+                _commandContext.Collections?.ToList() ?? new List<Collection>(),
                 _navigationService.CollectionSelectedIndex,
-                _defaultCollectionId,
+                _commandContext.DefaultCollectionId,
                 _navigationService.CollectionListScrollOffset,
                 options);
             return;
@@ -952,12 +892,12 @@ public class BrowserOrchestrator : IBrowserService
             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
             await bookmarkService.EnsureSeededAsync(cancellationToken);
             var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken);
-            _bookmarks = all.ToList();
+            _commandContext.Bookmarks = all.ToList();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh bookmarks");
-            _bookmarks ??= new List<Domain.Entities.Bookmarks.Bookmark>();
+            _commandContext.Bookmarks ??= new List<Domain.Entities.Bookmarks.Bookmark>();
         }
     }
 
@@ -973,16 +913,17 @@ public class BrowserOrchestrator : IBrowserService
             var collectionService = CreateCollectionService(scope);
 
             var allCollections = await collectionService.GetAllCollectionsAsync(cancellationToken);
-            _collections = allCollections.ToList();
+            _commandContext.Collections = allCollections.ToList();
 
             var defaultCollection = await collectionService.GetDefaultCollectionAsync(cancellationToken);
-            _defaultCollectionId = defaultCollection.Id;
+            _commandContext.DefaultCollectionId = defaultCollection.Id;
 
             // Update active collection reference if we're viewing one
             if (_navigationService.ActiveCollection != null)
             {
                 var savedItemIndex = _navigationService.CollectionItemSelectedIndex;
-                var updatedActive = _collections.FirstOrDefault(c => c.Id == _navigationService.ActiveCollection.Id);
+                var collections = _commandContext.Collections;
+                var updatedActive = collections?.FirstOrDefault(c => c.Id == _navigationService.ActiveCollection.Id);
                 if (updatedActive != null)
                 {
                     _navigationService.EnterCollection(updatedActive);

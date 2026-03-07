@@ -58,6 +58,7 @@ public class SearchCommandHandlerTests
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = new LineCacheManager(_navigationService, themeProvider),
+            ThemeProvider = themeProvider,
             NavigateToAsync = (url, _, _) =>
             {
                 _navigatedUrl = url;

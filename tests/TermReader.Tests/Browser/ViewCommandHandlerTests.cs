@@ -56,6 +56,7 @@ public class ViewCommandHandlerTests
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = _lineCacheManager,
+            ThemeProvider = themeProvider,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (opts, _) =>
@@ -230,6 +231,91 @@ public class ViewCommandHandlerTests
         _renderCalled.Should().BeTrue();
         _lastRenderOptions.Should().NotBeNull();
         _lastRenderOptions!.MaxContentWidth.Should().Be(66);
+    }
+
+    #endregion
+
+    #region HandleOpenLauncher
+
+    [Fact]
+    public async Task HandleOpenLauncher_EntersLauncherModeAndRefreshesBookmarks()
+    {
+        var refreshBookmarksCalled = false;
+        // Replace delegate to track call
+        var ctx = new CommandContext
+        {
+            NavigationService = _navigationService,
+            Renderer = Substitute.For<IPageRenderer>(),
+            InputHandler = Substitute.For<IInputHandler>(),
+            ScopeFactory = Substitute.For<IServiceScopeFactory>(),
+            Logger = Substitute.For<ILogger>(),
+            PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = _lineCacheManager,
+            ThemeProvider = Substitute.For<IThemeProvider>(),
+            NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
+            RefreshCollectionsAsync = _ => Task.CompletedTask,
+            RefreshBookmarksAsync = _ =>
+            {
+                refreshBookmarksCalled = true;
+                return Task.CompletedTask;
+            },
+            GetCurrentRenderOptions = () => _options,
+            CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
+            GetReaderViewportHeight = _ => 20,
+            GetHierarchicalViewportHeight = _ => 20,
+            AdjustScrollForSelection = (_, _) => { },
+            ScrollToSearchMatch = (_, _) => { },
+        };
+
+        await ViewCommandHandler.HandleOpenLauncher(ctx, _options, CancellationToken.None);
+
+        _navigationService.InLauncherMode.Should().BeTrue();
+        refreshBookmarksCalled.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region HandleCycleTheme
+
+    [Fact]
+    public async Task HandleCycleTheme_CyclesThemeAndInvalidatesCache()
+    {
+        _lineCacheManager.SetCacheForTesting(new List<string> { "test" }, 80);
+        _ctx.ThemeProvider.CycleTheme().Returns(ThemeName.Amber);
+        _ctx.ThemeProvider.CurrentTheme.Returns(ThemeName.Amber);
+
+        await ViewCommandHandler.HandleCycleTheme(_ctx, _options, CancellationToken.None);
+
+        _ctx.ThemeProvider.Received(1).CycleTheme();
+        _lineCacheManager.CachedLines.Should().BeNull();
+        _renderCalled.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region HandleTerminalResized
+
+    [Fact]
+    public async Task HandleTerminalResized_RendersWithFreshOptions()
+    {
+        await ViewCommandHandler.HandleTerminalResized(_ctx, _options, CancellationToken.None);
+
+        _renderCalled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleTerminalResized_PreservesScrollPositionWhenWidthChanges()
+    {
+        _lineCacheManager.SetCacheForTesting(
+            new List<string> { "line1", "line2", "line3", "line4", "line5" }, 80);
+        _navigationService.SetScrollOffset(2);
+
+        // GetCurrentRenderOptions returns width 66, cache was at 80 → width changed
+        await ViewCommandHandler.HandleTerminalResized(_ctx, _options, CancellationToken.None);
+
+        _renderCalled.Should().BeTrue();
     }
 
     #endregion

@@ -50,6 +50,7 @@ public class CollectionCommandStatusTests
             Logger = NullLogger.Instance,
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = new LineCacheManager(_navService, themeProvider),
+            ThemeProvider = themeProvider,
             RenderCurrentPageAsync = (_, _) =>
             {
                 _lastStatusMessage = _navService.CurrentContext.StatusMessage;

@@ -30,6 +30,8 @@ internal class CommandContext
 
     public required LineCacheManager LineCacheManager { get; init; }
 
+    public required IThemeProvider ThemeProvider { get; init; }
+
     // Mutable shared state
     public IReadOnlyList<Collection>? Collections { get; set; }
 
