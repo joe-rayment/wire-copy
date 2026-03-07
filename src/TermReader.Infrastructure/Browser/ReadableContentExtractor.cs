@@ -155,15 +155,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // Check for common article indicators in classes or IDs
-        foreach (var indicator in ArticleIndicators)
+        if (ArticleIndicators.Any(indicator =>
+            lowerHtml.Contains($"class=\"{indicator}") ||
+            lowerHtml.Contains($"class='{indicator}") ||
+            lowerHtml.Contains($"id=\"{indicator}") ||
+            lowerHtml.Contains($"id='{indicator}")))
         {
-            if (lowerHtml.Contains($"class=\"{indicator}") ||
-                lowerHtml.Contains($"class='{indicator}") ||
-                lowerHtml.Contains($"id=\"{indicator}") ||
-                lowerHtml.Contains($"id='{indicator}"))
-            {
-                return true;
-            }
+            return true;
         }
 
         // Check for common content container classes
