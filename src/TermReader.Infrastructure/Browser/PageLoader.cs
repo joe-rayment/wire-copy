@@ -185,12 +185,7 @@ public class PageLoader : IPageLoader
 
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
-        // Try name attribute
-        var node = doc.DocumentNode.SelectSingleNode($"//meta[@name='{name}']") ??
-                   doc.DocumentNode.SelectSingleNode($"//meta[@property='{name}']");
-
-        var value = node?.GetAttributeValue("content", null);
-        return value != null ? WebUtility.HtmlDecode(value) : null;
+        return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
     }
 
     private static string? GetNonUrlAuthor(HtmlDocument doc)
@@ -224,16 +219,7 @@ public class PageLoader : IPageLoader
 
     private static DateTime? ParsePublishedDate(HtmlDocument doc)
     {
-        var dateString = ExtractMetaContent(doc, "article:published_time") ??
-                        ExtractMetaContent(doc, "datePublished") ??
-                        ExtractMetaContent(doc, "date");
-
-        if (DateTime.TryParse(dateString, out var date))
-        {
-            return date;
-        }
-
-        return null;
+        return HtmlMetadataExtractor.ExtractPublishedDate(doc);
     }
 
     private static string? ExtractFaviconUrl(HtmlDocument doc, string pageUrl)

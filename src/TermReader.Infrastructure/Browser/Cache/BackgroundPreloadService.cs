@@ -255,11 +255,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
-        var node = doc.DocumentNode.SelectSingleNode($"//meta[@name='{name}']") ??
-                   doc.DocumentNode.SelectSingleNode($"//meta[@property='{name}']");
-
-        var value = node?.GetAttributeValue("content", null);
-        return value != null ? WebUtility.HtmlDecode(value) : null;
+        return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
     }
 
     private void SignalQueueChanged()
