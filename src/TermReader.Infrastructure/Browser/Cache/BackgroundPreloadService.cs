@@ -28,11 +28,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
+    private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
     private List<PreloadItem> _queue = [];
     private volatile bool _paused;
     private volatile bool _disposed;
-    private CancellationTokenSource? _queueChangedCts;
 
     public BackgroundPreloadService(
         IPageCache cache,
@@ -64,14 +64,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         // Signal the background loop that the queue changed
-        try
-        {
-            _queueChangedCts?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Ignore if already disposed during shutdown
-        }
+        SignalQueueChanged();
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -87,23 +80,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 var item = DequeueNext();
                 if (item == null)
                 {
-                    // No items to pre-load; wait for queue change or short delay
-                    using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    _queueChangedCts = waitCts;
-
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(1), waitCts.Token);
-                    }
-                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        // Queue changed — loop back
-                    }
-                    finally
-                    {
-                        _queueChangedCts = null;
-                    }
-
+                    // No items to pre-load; wait for queue change or short timeout
+                    await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
                     continue;
                 }
 
@@ -115,21 +93,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 await PreloadUrlAsync(item.Url, cancellationToken);
 
                 // Rate limit between pre-loads
-                using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _queueChangedCts = delayCts;
-
-                try
-                {
-                    await Task.Delay(_config.PreloadDelayMs, delayCts.Token);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    // Queue changed or paused — continue
-                }
-                finally
-                {
-                    _queueChangedCts = null;
-                }
+                await WaitForSignalAsync(TimeSpan.FromMilliseconds(_config.PreloadDelayMs), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -155,15 +119,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         _paused = false;
         _logger.LogDebug("Pre-loading resumed");
-
-        try
-        {
-            _queueChangedCts?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Ignore
-        }
+        SignalQueueChanged();
     }
 
     public void Dispose()
@@ -174,15 +130,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         _disposed = true;
-
-        try
-        {
-            _queueChangedCts?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Ignore
-        }
+        SignalQueueChanged();
+        _queueSignal.Dispose();
     }
 
     internal static bool IsBotDetectionResponse(string html)
@@ -311,6 +260,34 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         var value = node?.GetAttributeValue("content", null);
         return value != null ? WebUtility.HtmlDecode(value) : null;
+    }
+
+    private void SignalQueueChanged()
+    {
+        try
+        {
+            _queueSignal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Already signaled — no action needed
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed during shutdown — no action needed
+        }
+    }
+
+    private async Task WaitForSignalAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _queueSignal.WaitAsync(timeout, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
     }
 
     private PreloadItem? DequeueNext()
