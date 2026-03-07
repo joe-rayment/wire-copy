@@ -190,4 +190,109 @@ public class RenderHelpersTests
     }
 
     #endregion
+
+    #region GetDisplayWidth
+
+    [Fact]
+    public void GetDisplayWidth_AsciiText_ReturnsLength()
+    {
+        RenderHelpers.GetDisplayWidth("hello").Should().Be(5);
+    }
+
+    [Fact]
+    public void GetDisplayWidth_EmptyString_ReturnsZero()
+    {
+        RenderHelpers.GetDisplayWidth("").Should().Be(0);
+        RenderHelpers.GetDisplayWidth(null!).Should().Be(0);
+    }
+
+    [Fact]
+    public void GetDisplayWidth_CjkCharacters_ReturnDoubleWidth()
+    {
+        // Each CJK character = 2 columns
+        RenderHelpers.GetDisplayWidth("漢字").Should().Be(4);
+        RenderHelpers.GetDisplayWidth("こんにちは").Should().Be(10);
+    }
+
+    [Fact]
+    public void GetDisplayWidth_MixedAsciiAndCjk_ReturnsCorrectWidth()
+    {
+        // "Hello" (5) + "世界" (4) = 9
+        RenderHelpers.GetDisplayWidth("Hello世界").Should().Be(9);
+    }
+
+    [Fact]
+    public void GetDisplayWidth_AnsiEscapeSequences_SkippedInWidth()
+    {
+        // ANSI codes have zero display width
+        RenderHelpers.GetDisplayWidth("\x1b[31mred\x1b[0m").Should().Be(3);
+        RenderHelpers.GetDisplayWidth("\x1b[38;5;220mhello\x1b[0m").Should().Be(5);
+    }
+
+    [Fact]
+    public void GetDisplayWidth_FullwidthForms_ReturnDoubleWidth()
+    {
+        // Fullwidth Latin 'Ａ' (U+FF21) = 2 columns
+        RenderHelpers.GetDisplayWidth("\uFF21").Should().Be(2);
+    }
+
+    #endregion
+
+    #region GetCharDisplayWidth
+
+    [Fact]
+    public void GetCharDisplayWidth_Ascii_ReturnsOne()
+    {
+        RenderHelpers.GetCharDisplayWidth('A').Should().Be(1);
+        RenderHelpers.GetCharDisplayWidth(' ').Should().Be(1);
+    }
+
+    [Fact]
+    public void GetCharDisplayWidth_CjkUnified_ReturnsTwo()
+    {
+        RenderHelpers.GetCharDisplayWidth('漢').Should().Be(2);
+    }
+
+    [Fact]
+    public void GetCharDisplayWidth_Hangul_ReturnsTwo()
+    {
+        RenderHelpers.GetCharDisplayWidth('한').Should().Be(2);
+    }
+
+    #endregion
+
+    #region TruncateText with Unicode
+
+    [Fact]
+    public void TruncateText_CjkText_TruncatesByDisplayWidth()
+    {
+        // "漢字漢字漢字" = 12 display cols. Truncate to 8 = "漢字" (4) + "..." (3) = 7 (fits in 8)
+        var result = RenderHelpers.TruncateText("漢字漢字漢字", 8);
+        result.Should().EndWith("...");
+        RenderHelpers.GetDisplayWidth(result).Should().BeLessOrEqualTo(8);
+    }
+
+    [Fact]
+    public void TruncateText_CjkTextFits_ReturnsOriginal()
+    {
+        RenderHelpers.TruncateText("漢字", 10).Should().Be("漢字");
+    }
+
+    #endregion
+
+    #region WrapText with Unicode
+
+    [Fact]
+    public void WrapText_CjkWord_WrapsAtDisplayWidth()
+    {
+        // "漢字漢字" = 8 cols, maxWidth = 6 -> should wrap
+        var result = RenderHelpers.WrapText("漢字漢字", 6);
+        result.Should().HaveCountGreaterThan(1);
+        foreach (var line in result)
+        {
+            RenderHelpers.GetDisplayWidth(line).Should().BeLessOrEqualTo(6);
+        }
+    }
+
+    #endregion
 }
