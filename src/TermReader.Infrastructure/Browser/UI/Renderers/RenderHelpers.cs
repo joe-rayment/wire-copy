@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using System.Globalization;
+using System.Text;
 using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
@@ -20,35 +22,90 @@ internal class RenderHelpers
         set => _terminalHeight = value;
     }
 
-    public static string TruncateText(string text, int maxLength)
+    /// <summary>
+    /// Returns the display width of a character, accounting for East Asian wide characters.
+    /// CJK characters and most emoji occupy 2 columns in a terminal.
+    /// </summary>
+    public static int GetCharDisplayWidth(char c)
+    {
+        if (c < 0x1100)
+        {
+            return 1;
+        }
+
+        var category = CharUnicodeInfo.GetUnicodeCategory(c);
+        if (category == UnicodeCategory.NonSpacingMark ||
+            category == UnicodeCategory.EnclosingMark ||
+            category == UnicodeCategory.Format)
+        {
+            return 0;
+        }
+
+        // East Asian wide characters: CJK Unified, Hangul, Katakana/Hiragana, fullwidth forms.
+        // Ranges from Unicode East Asian Width property (W and F categories).
+        if (c <= 0x115F ||
+            c == 0x2329 || c == 0x232A ||
+            (c >= 0x2E80 && c <= 0x303E) ||
+            (c >= 0x3040 && c <= 0x33BF) ||
+            (c >= 0x3400 && c <= 0x4DBF) ||
+            (c >= 0x4E00 && c <= 0xA4CF) ||
+            (c >= 0xA960 && c <= 0xA97C) ||
+            (c >= 0xAC00 && c <= 0xD7FF) ||
+            (c >= 0xF900 && c <= 0xFAFF) ||
+            (c >= 0xFE10 && c <= 0xFE6F) ||
+            (c >= 0xFF01 && c <= 0xFF60) ||
+            (c >= 0xFFE0 && c <= 0xFFE6))
+        {
+            return 2;
+        }
+
+        return 1;
+    }
+
+    /// <summary>
+    /// Returns the display width of a string in terminal columns.
+    /// </summary>
+    public static int GetDisplayWidth(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        return GetDisplayWidthCore(text.AsSpan());
+    }
+
+    public static string TruncateText(string text, int maxWidth)
     {
         if (string.IsNullOrEmpty(text))
         {
             return string.Empty;
         }
 
-        if (maxLength <= 3)
+        if (maxWidth <= 3)
         {
-            return text.Length <= maxLength ? text : text.Substring(0, Math.Max(0, maxLength));
+            return GetDisplayWidth(text) <= maxWidth ? text : TruncateToWidth(text, maxWidth);
         }
 
-        if (text.Length <= maxLength)
+        if (GetDisplayWidth(text) <= maxWidth)
         {
             return text;
         }
 
-        return text.Substring(0, maxLength - 3) + "...";
+        return TruncateToWidth(text, maxWidth - 3) + "...";
     }
 
-    public static string TruncateUrl(string url, int maxLength)
+    public static string TruncateUrl(string url, int maxWidth)
     {
-        if (string.IsNullOrEmpty(url) || url.Length <= maxLength)
+        if (string.IsNullOrEmpty(url) || GetDisplayWidth(url) <= maxWidth)
         {
             return url;
         }
 
-        var halfLen = (maxLength - 3) / 2;
-        return url.Substring(0, halfLen) + "..." + url.Substring(url.Length - halfLen);
+        var halfWidth = (maxWidth - 3) / 2;
+        var prefix = TruncateToWidth(url, halfWidth);
+        var suffix = TakeTrailingWidth(url, halfWidth);
+        return $"{prefix}...{suffix}";
     }
 
     public static List<string> WrapText(string text, int maxWidth)
@@ -60,41 +117,72 @@ internal class RenderHelpers
 
         var lines = new List<string>();
         var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var currentLine = string.Empty;
+        var currentLine = new StringBuilder();
+        var currentWidth = 0;
 
         foreach (var word in words)
         {
-            if (word.Length > maxWidth)
+            var wordWidth = GetDisplayWidth(word);
+
+            if (wordWidth > maxWidth)
             {
-                if (!string.IsNullOrEmpty(currentLine))
+                if (currentLine.Length > 0)
                 {
-                    lines.Add(currentLine);
-                    currentLine = string.Empty;
+                    lines.Add(currentLine.ToString());
+                    currentLine.Clear();
+                    currentWidth = 0;
                 }
 
-                for (var i = 0; i < word.Length; i += maxWidth)
+                // Break long word across lines
+                var sb = new StringBuilder();
+                var w = 0;
+                foreach (var c in word)
                 {
-                    lines.Add(word.Substring(i, Math.Min(maxWidth, word.Length - i)));
+                    var cw = GetCharDisplayWidth(c);
+                    if (w + cw > maxWidth)
+                    {
+                        lines.Add(sb.ToString());
+                        sb.Clear();
+                        w = 0;
+                    }
+
+                    sb.Append(c);
+                    w += cw;
+                }
+
+                if (sb.Length > 0)
+                {
+                    currentLine.Append(sb);
+                    currentWidth = w;
                 }
             }
-            else if (currentLine.Length + word.Length + 1 > maxWidth)
+            else if (currentWidth + wordWidth + (currentLine.Length > 0 ? 1 : 0) > maxWidth)
             {
-                if (!string.IsNullOrEmpty(currentLine))
+                if (currentLine.Length > 0)
                 {
-                    lines.Add(currentLine);
+                    lines.Add(currentLine.ToString());
+                    currentLine.Clear();
                 }
 
-                currentLine = word;
+                currentLine.Append(word);
+                currentWidth = wordWidth;
             }
             else
             {
-                currentLine = string.IsNullOrEmpty(currentLine) ? word : $"{currentLine} {word}";
+                if (currentLine.Length > 0)
+                {
+                    currentLine.Append(' ');
+                    currentWidth++;
+                }
+
+                currentLine.Append(word);
+                currentWidth += wordWidth;
             }
         }
 
-        if (!string.IsNullOrEmpty(currentLine))
+        if (currentLine.Length > 0)
         {
-            lines.Add(currentLine);
+            lines.Add(currentLine.ToString());
         }
 
         return lines;
@@ -241,6 +329,80 @@ internal class RenderHelpers
             Console.WriteLine(text);
             _linesWritten++;
         }
+    }
+
+    private static int GetDisplayWidthCore(ReadOnlySpan<char> span)
+    {
+        var width = 0;
+        var i = 0;
+        while (i < span.Length)
+        {
+            var c = span[i];
+
+            // Skip ANSI escape sequences (\x1b[...m)
+            if (c == '\x1b' && i + 1 < span.Length && span[i + 1] == '[')
+            {
+                i += 2;
+                while (i < span.Length && span[i] != 'm')
+                {
+                    i++;
+                }
+
+                i++;
+                continue;
+            }
+
+            // Surrogate pairs (emoji) — count as 2 columns
+            if (char.IsHighSurrogate(c) && i + 1 < span.Length && char.IsLowSurrogate(span[i + 1]))
+            {
+                width += 2;
+                i += 2;
+                continue;
+            }
+
+            width += GetCharDisplayWidth(c);
+            i++;
+        }
+
+        return width;
+    }
+
+    private static string TruncateToWidth(string text, int maxWidth)
+    {
+        var sb = new StringBuilder();
+        var width = 0;
+        foreach (var c in text)
+        {
+            var cw = GetCharDisplayWidth(c);
+            if (width + cw > maxWidth)
+            {
+                break;
+            }
+
+            sb.Append(c);
+            width += cw;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string TakeTrailingWidth(string text, int maxWidth)
+    {
+        var totalWidth = 0;
+        var startIndex = text.Length;
+        for (var i = text.Length - 1; i >= 0; i--)
+        {
+            var cw = GetCharDisplayWidth(text[i]);
+            if (totalWidth + cw > maxWidth)
+            {
+                break;
+            }
+
+            totalWidth += cw;
+            startIndex = i;
+        }
+
+        return text[startIndex..];
     }
 
     private static void WriteSearchHighlightedContent(string text, string searchQuery, ThemePalette palette)
