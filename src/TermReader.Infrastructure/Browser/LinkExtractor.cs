@@ -325,14 +325,9 @@ public class LinkExtractor : ILinkExtractor
             }
 
             // Deduplicate identical texts (case-insensitive)
-            var distinct = new List<string>();
-            foreach (var text in filtered)
-            {
-                if (!distinct.Exists(d => d.Equals(text, StringComparison.OrdinalIgnoreCase)))
-                {
-                    distinct.Add(text);
-                }
-            }
+            var distinct = filtered
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             var mergedText = string.Join(": ", distinct);
             if (string.IsNullOrWhiteSpace(mergedText))
