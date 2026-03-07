@@ -18,6 +18,7 @@ namespace TermReader.Infrastructure.Browser.Cache;
 public sealed class InMemoryPageCache : IPageCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
+    private readonly ConcurrentDictionary<string, string> _normalizedUrlCache = new();
     private readonly CacheConfiguration _config;
     private readonly ILogger<InMemoryPageCache> _logger;
     private readonly Timer _evictionTimer;
@@ -42,7 +43,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public PageLoadResult? TryGet(string url)
     {
-        var key = UrlNormalizer.Normalize(url);
+        var key = NormalizeUrl(url);
 
         if (!_entries.TryGetValue(key, out var entry))
         {
@@ -76,7 +77,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             return;
         }
 
-        var key = UrlNormalizer.Normalize(requestUrl);
+        var key = NormalizeUrl(requestUrl);
         var entrySize = EstimateSize(result);
 
         if (entrySize > _config.MaxEntrySizeBytes)
@@ -120,7 +121,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         }
 
         // Also index by final URL if different from request URL
-        var finalKey = UrlNormalizer.Normalize(result.Url);
+        var finalKey = NormalizeUrl(result.Url);
         if (!string.Equals(key, finalKey, StringComparison.Ordinal))
         {
             _entries.TryAdd(finalKey, entry);
@@ -135,13 +136,13 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public bool Remove(string url)
     {
-        var key = UrlNormalizer.Normalize(url);
+        var key = NormalizeUrl(url);
         return RemoveEntry(key);
     }
 
     public bool Contains(string url)
     {
-        var key = UrlNormalizer.Normalize(url);
+        var key = NormalizeUrl(url);
         return _entries.TryGetValue(key, out var entry) && !entry.Metadata.IsExpired;
     }
 
@@ -149,6 +150,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
     {
         var stats = GetStats();
         _entries.Clear();
+        _normalizedUrlCache.Clear();
         Interlocked.Exchange(ref _totalSizeBytes, 0);
         _logger.LogInformation(
             "Cache cleared: {Count} entries, {Size} bytes freed",
@@ -179,7 +181,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public DateTime? GetCachedAt(string url)
     {
-        var key = UrlNormalizer.Normalize(url);
+        var key = NormalizeUrl(url);
         if (_entries.TryGetValue(key, out var entry) && !entry.Metadata.IsExpired)
         {
             return entry.Metadata.CachedAtUtc;
@@ -203,6 +205,11 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         return htmlBytes + 1024;
     }
 
+    private string NormalizeUrl(string url)
+    {
+        return _normalizedUrlCache.GetOrAdd(url, UrlNormalizer.Normalize);
+    }
+
     private bool RemoveEntry(string key)
     {
         if (_entries.TryRemove(key, out var removed))
@@ -211,7 +218,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
             // Clean up alias key (same entry indexed under both request and final URL)
             var normalizedUrl = removed.Metadata.NormalizedUrl;
-            var finalKey = UrlNormalizer.Normalize(removed.Metadata.FinalUrl);
+            var finalKey = NormalizeUrl(removed.Metadata.FinalUrl);
             var aliasKey = string.Equals(key, normalizedUrl, StringComparison.Ordinal)
                 ? finalKey
                 : normalizedUrl;
@@ -238,18 +245,37 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         while (Interlocked.Read(ref _totalSizeBytes) + requiredBytes > _config.MaxSizeBytes ||
                _entries.Count >= _config.MaxEntries)
         {
-            var lruEntry = _entries
-                .OrderBy(e => e.Value.Metadata.LastAccessedAtUtc)
-                .FirstOrDefault();
-
-            if (lruEntry.Key == null)
+            var lruKey = FindLruKey();
+            if (lruKey == null)
             {
                 break;
             }
 
-            _logger.LogDebug("Evicting LRU cache entry: {Url}", lruEntry.Value.Metadata.RequestUrl);
-            RemoveEntry(lruEntry.Key);
+            if (_entries.TryGetValue(lruKey, out var lruEntry))
+            {
+                _logger.LogDebug("Evicting LRU cache entry: {Url}", lruEntry.Metadata.RequestUrl);
+            }
+
+            RemoveEntry(lruKey);
         }
+    }
+
+    private string? FindLruKey()
+    {
+        string? oldestKey = null;
+        var oldestTime = DateTime.MaxValue;
+
+        foreach (var kvp in _entries)
+        {
+            var accessed = kvp.Value.Metadata.LastAccessedAtUtc;
+            if (accessed < oldestTime)
+            {
+                oldestTime = accessed;
+                oldestKey = kvp.Key;
+            }
+        }
+
+        return oldestKey;
     }
 
     private void EvictExpired()
