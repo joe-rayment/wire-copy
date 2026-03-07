@@ -66,7 +66,7 @@ internal static class ViewCommandHandler
     {
         while (!ct.IsCancellationRequested)
         {
-            Console.Clear();
+            Console.Write("\x1b[H\x1b[2J");
             Console.WriteLine(ctx.InputHandler.GetHelpText());
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);

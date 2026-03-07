@@ -89,7 +89,7 @@ internal static class SearchCommandHandler
                 return;
 
             case "help" or "h":
-                Console.Clear();
+                Console.Write("\x1b[H\x1b[2J");
                 Console.WriteLine(ctx.InputHandler.GetHelpText());
                 Console.ReadKey(intercept: true);
                 await ctx.RenderCurrentPageAsync(options, ct);

@@ -216,13 +216,22 @@ internal class RenderHelpers
         try
         {
             var height = TerminalHeight;
+            var remaining = height - _linesWritten;
 
-            while (_linesWritten < height)
+            if (remaining <= 0)
             {
-                Console.SetCursorPosition(0, _linesWritten);
-                Console.Write("\x1b[K");
-                _linesWritten++;
+                return;
             }
+
+            // Batch all clear operations into a single write
+            var sb = new StringBuilder(remaining * 10);
+            for (var line = _linesWritten; line < height; line++)
+            {
+                sb.Append($"\x1b[{line + 1};1H\x1b[K");
+            }
+
+            Console.Write(sb.ToString());
+            _linesWritten = height;
         }
         catch
         {
