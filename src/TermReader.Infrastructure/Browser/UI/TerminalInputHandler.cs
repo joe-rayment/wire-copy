@@ -344,10 +344,22 @@ public class TerminalInputHandler : IInputHandler
                     _keyChannel.Writer.TryWrite(key);
                 }
             }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Key reader: stdin unavailable");
+                _keyChannel.Writer.TryComplete();
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Key reader: stdin closed");
+                _keyChannel.Writer.TryComplete();
+            }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Key reader thread terminated");
-                _keyChannel.Writer.TryComplete();
+                _logger.LogError(ex, "Key reader thread crashed, will restart on next input request");
+
+                // Allow restart by resetting the flag and recreating the channel
+                _keyReaderStarted = false;
             }
         })
         {
