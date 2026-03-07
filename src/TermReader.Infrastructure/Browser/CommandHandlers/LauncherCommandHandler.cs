@@ -130,8 +130,11 @@ internal static class LauncherCommandHandler
                 var query = await ctx.InputHandler.PromptForInputAsync("/", ct);
                 if (!string.IsNullOrWhiteSpace(query) && ctx.Bookmarks != null)
                 {
-                    var matchIdx = ctx.Bookmarks.FindIndex(b =>
-                        b.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
+                    var matchIdx = ctx.Bookmarks
+                        .Select((b, i) => (b, i))
+                        .Where(x => x.b.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                        .Select(x => x.i)
+                        .FirstOrDefault(-1);
                     if (matchIdx >= 0)
                     {
                         ctx.NavigationService.LauncherSelectedIndex = matchIdx;

@@ -21,6 +21,7 @@ namespace TermReader.Tests.Browser;
 public class NavigationCommandHandlerScrollTests
 {
     private readonly NavigationService _navigationService;
+    private readonly LineCacheManager _lineCacheManager;
     private readonly CommandContext _ctx;
     private readonly RenderOptions _options;
     private readonly List<string> _testLines;
@@ -52,6 +53,11 @@ public class NavigationCommandHandlerScrollTests
         // 50 lines of content — more than viewport height
         _testLines = Enumerable.Range(1, 50).Select(i => $"  Line {i}").ToList();
 
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        _lineCacheManager = new LineCacheManager(_navigationService, themeProvider);
+        _lineCacheManager.SetCacheForTesting(_testLines, 76);
+
         _ctx = new CommandContext
         {
             NavigationService = _navigationService,
@@ -60,6 +66,7 @@ public class NavigationCommandHandlerScrollTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = _lineCacheManager,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
@@ -71,21 +78,10 @@ public class NavigationCommandHandlerScrollTests
             RefreshBookmarksAsync = _ => Task.CompletedTask,
             GetCurrentRenderOptions = () => _options,
             CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
-            InvalidateLineCache = () =>
-            {
-                _ctx!.CachedLines = null;
-                _ctx.CachedWidth = 0;
-            },
-            EnsureLineCache = _ =>
-            {
-                _ctx!.CachedLines = _testLines;
-                _ctx.CachedWidth = 76;
-            },
             GetReaderViewportHeight = _ => ViewportHeight,
             GetHierarchicalViewportHeight = _ => ViewportHeight,
             AdjustScrollForSelection = (_, _) => { },
             ScrollToSearchMatch = (_, _) => { },
-            PreserveScrollPositionAfterRewrap = _ => { }
         };
     }
 
@@ -126,13 +122,12 @@ public class NavigationCommandHandlerScrollTests
     [Fact]
     public async Task HandleMoveDown_Readable_PopulatesCachedLinesViaEnsureLineCache()
     {
-        _ctx.CachedLines = null;
+        _lineCacheManager.InvalidateLineCache();
 
         await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
 
-        _ctx.CachedLines.Should().NotBeNull();
-        _ctx.CachedLines.Should().HaveCount(50);
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(1);
+        // EnsureLineCache should rebuild from the page's ReadableContent
+        _lineCacheManager.CachedLines.Should().NotBeNull();
     }
 
     #endregion

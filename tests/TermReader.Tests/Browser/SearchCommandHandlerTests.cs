@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
 using Xunit;
@@ -45,6 +46,9 @@ public class SearchCommandHandlerTests
             MaxContentWidth = 80
         };
 
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+
         _ctx = new CommandContext
         {
             NavigationService = _navigationService,
@@ -53,6 +57,7 @@ public class SearchCommandHandlerTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = new LineCacheManager(_navigationService, themeProvider),
             NavigateToAsync = (url, _, _) =>
             {
                 _navigatedUrl = url;
@@ -68,13 +73,10 @@ public class SearchCommandHandlerTests
             RefreshBookmarksAsync = _ => Task.CompletedTask,
             GetCurrentRenderOptions = () => _options,
             CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
-            InvalidateLineCache = () => { },
-            EnsureLineCache = _ => { },
             GetReaderViewportHeight = _ => 20,
             GetHierarchicalViewportHeight = _ => 20,
             AdjustScrollForSelection = (_, _) => { },
             ScrollToSearchMatch = (index, _) => { _lastScrollToSearchMatchIndex = index; },
-            PreserveScrollPositionAfterRewrap = _ => { }
         };
     }
 

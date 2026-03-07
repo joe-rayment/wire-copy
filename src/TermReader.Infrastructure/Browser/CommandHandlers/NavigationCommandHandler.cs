@@ -49,9 +49,9 @@ internal static class NavigationCommandHandler
         }
         else
         {
-            ctx.EnsureLineCache(options);
+            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
-            var maxOffset = Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight);
+            var maxOffset = Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight);
             ctx.NavigationService.SetScrollOffset(
                 Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + 1, maxOffset));
         }
@@ -119,10 +119,10 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Readable)
         {
-            ctx.EnsureLineCache(options);
+            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
             var halfPage = Math.Max(1, vpHeight / 2);
-            var maxOff = Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight);
+            var maxOff = Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight);
             ctx.NavigationService.SetScrollOffset(
                 Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + halfPage, maxOff));
         }
@@ -167,7 +167,7 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Readable)
         {
-            ctx.EnsureLineCache(options);
+            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
             var halfPage = Math.Max(1, vpHeight / 2);
             ctx.NavigationService.SetScrollOffset(
@@ -241,10 +241,10 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Readable && page?.ReadableContent != null)
         {
-            ctx.EnsureLineCache(options);
+            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
             ctx.NavigationService.SetScrollOffset(
-                Math.Max(0, (ctx.CachedLines?.Count ?? 0) - vpHeight));
+                Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight));
         }
         else if (tree != null)
         {
@@ -266,7 +266,7 @@ internal static class NavigationCommandHandler
         if (viewMode == ViewMode.CollectionItems || viewMode == ViewMode.CollectionList)
         {
             ctx.NavigationService.ExitCollections();
-            ctx.InvalidateLineCache();
+            ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
         else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
@@ -279,7 +279,7 @@ internal static class NavigationCommandHandler
             var previousPage = ctx.NavigationService.GoBack();
             if (previousPage != null)
             {
-                ctx.InvalidateLineCache();
+                ctx.LineCacheManager.InvalidateLineCache();
                 await ctx.RenderCurrentPageAsync(options, ct);
             }
             else
@@ -296,7 +296,7 @@ internal static class NavigationCommandHandler
         var nextPage = ctx.NavigationService.GoForward();
         if (nextPage != null)
         {
-            ctx.InvalidateLineCache();
+            ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
     }
@@ -380,7 +380,7 @@ internal static class NavigationCommandHandler
                 if (ctx.NavigationService.CurrentPage?.HasReadableContent() == true)
                 {
                     ctx.NavigationService.SetViewMode(ViewMode.Readable);
-                    ctx.InvalidateLineCache();
+                    ctx.LineCacheManager.InvalidateLineCache();
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
             }
@@ -402,7 +402,7 @@ internal static class NavigationCommandHandler
                     if (ctx.NavigationService.CurrentPage?.HasReadableContent() == true)
                     {
                         ctx.NavigationService.SetViewMode(ViewMode.Readable);
-                        ctx.InvalidateLineCache();
+                        ctx.LineCacheManager.InvalidateLineCache();
                         await ctx.RenderCurrentPageAsync(options, ct);
                     }
                 }

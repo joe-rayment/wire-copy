@@ -28,16 +28,14 @@ internal class CommandContext
 
     public required IPageCache PageCache { get; init; }
 
+    public required LineCacheManager LineCacheManager { get; init; }
+
     // Mutable shared state
-    public List<Collection>? Collections { get; set; }
+    public IReadOnlyList<Collection>? Collections { get; set; }
 
     public Guid? DefaultCollectionId { get; set; }
 
-    public List<Domain.Entities.Bookmarks.Bookmark>? Bookmarks { get; set; }
-
-    public List<string>? CachedLines { get; set; }
-
-    public int CachedWidth { get; set; }
+    public IReadOnlyList<Domain.Entities.Bookmarks.Bookmark>? Bookmarks { get; set; }
 
     // Content width override
     public int? ContentWidthOverride { get; set; }
@@ -57,11 +55,6 @@ internal class CommandContext
 
     public required Func<IServiceScope, ICollectionService> CreateCollectionService { get; init; }
 
-    // Line cache helpers
-    public required Action InvalidateLineCache { get; init; }
-
-    public required Action<RenderOptions> EnsureLineCache { get; init; }
-
     public required Func<RenderOptions, int> GetReaderViewportHeight { get; init; }
 
     public required Func<RenderOptions, int> GetHierarchicalViewportHeight { get; init; }
@@ -69,6 +62,4 @@ internal class CommandContext
     public required Action<NavigationTree?, RenderOptions> AdjustScrollForSelection { get; init; }
 
     public required Action<int, RenderOptions> ScrollToSearchMatch { get; init; }
-
-    public required Action<RenderOptions> PreserveScrollPositionAfterRewrap { get; init; }
 }

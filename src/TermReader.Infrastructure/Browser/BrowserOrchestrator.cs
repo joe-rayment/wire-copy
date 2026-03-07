@@ -1,6 +1,5 @@
 // Educational and personal use only.
 
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,8 +24,6 @@ public class BrowserOrchestrator : IBrowserService
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
 
-    private static readonly Regex AnsiEscapeRegex = new(@"\x1b\[[0-9;]*m", RegexOptions.Compiled);
-
     private readonly IPageLoader _pageLoader;
     private readonly ILinkExtractor _linkExtractor;
     private readonly INavigationTreeBuilder _treeBuilder;
@@ -43,13 +40,10 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IPreloadService _preloadService;
     private readonly IIdleDetector _idleDetector;
     private readonly ILogger<BrowserOrchestrator> _logger;
+    private readonly LineCacheManager _lineCacheManager;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
-
-    // Line cache for reader view line-based scrolling
-    private List<string>? _cachedLines;
-    private int _cachedWidth;
 
     // Collections state
     private List<Collection>? _collections;
@@ -98,6 +92,7 @@ public class BrowserOrchestrator : IBrowserService
         _preloadService = preloadService;
         _idleDetector = idleDetector;
         _logger = logger;
+        _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
     }
 
     public async Task<Page> LoadPageAsync(string url, CancellationToken cancellationToken = default)
@@ -122,20 +117,10 @@ public class BrowserOrchestrator : IBrowserService
 
         _lastLoadFetchMethod = loadResult.FetchMethod;
 
-        // Create page entity
-        var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
-        var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
-
-        // Extract links and build navigation tree
-        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
-        var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
-        page.SetLinkTree(tree);
-
-        // Try to extract readable content
-        var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+        var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
 
         // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
-        if (readable == null && loadResult.FetchMethod != FetchMethod.Selenium)
+        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium)
         {
             _logger.LogInformation(
                 "No readable content from {FetchMethod} page, retrying with Selenium: {Url}",
@@ -152,20 +137,8 @@ public class BrowserOrchestrator : IBrowserService
             if (retryResult.Success)
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
-                metadata = retryResult.Metadata ?? new PageMetadata { Title = "Untitled" };
-                page = Page.Create(retryResult.Url, retryResult.Html, metadata);
-
-                links = await _linkExtractor.ExtractLinksAsync(retryResult.Html, retryResult.Url, cancellationToken);
-                tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
-                page.SetLinkTree(tree);
-
-                readable = await _contentExtractor.ExtractAsync(retryResult.Html, retryResult.Url, cancellationToken);
+                page = await BuildPageFromLoadResultAsync(retryResult, cancellationToken);
             }
-        }
-
-        if (readable != null)
-        {
-            page.SetReadableContent(readable);
         }
 
         _logger.LogInformation("Page loaded: {Title} - {LinkCount} links, {HasReadable} readable",
@@ -207,8 +180,8 @@ public class BrowserOrchestrator : IBrowserService
                 break;
 
             case ViewMode.Readable:
-                EnsureLineCache(options);
-                _renderer.RenderReadable(page, context, options, _cachedLines);
+                _lineCacheManager.EnsureLineCache(options);
+                _renderer.RenderReadable(page, context, options, _lineCacheManager.CachedLines?.ToList());
                 break;
 
             case ViewMode.CollectionList:
@@ -356,71 +329,12 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Builds styled headline lines (bold/uppercase title + secondary-text metadata)
-    /// matching the launcher tile label style. These lines are prepended to the line cache
-    /// so the headline scrolls with the content.
-    /// </summary>
-    private static List<string> BuildHeadlineLines(ReadableContent content, int maxWidth, ThemePalette palette)
-    {
-        const string bold = "\x1b[1m";
-        const string dim = "\x1b[2m";
-        const string brightWhiteFg = "\x1b[38;5;15m";
-        const string reset = "\x1b[0m";
-
-        var lines = new List<string>();
-        lines.Add(string.Empty);
-
-        var titleLines = UI.Renderers.RenderHelpers.WrapText(content.Title.ToUpperInvariant(), maxWidth - 4);
-        foreach (var line in titleLines)
-        {
-            lines.Add($"  {bold}{brightWhiteFg}{line}{reset}");
-        }
-
-        var metadata = content.GetMetadataString();
-        if (!string.IsNullOrEmpty(metadata))
-        {
-            lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{metadata}{reset}");
-        }
-
-        lines.Add(string.Empty);
-        return lines;
-    }
-
-    /// <summary>
-    /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
-    /// </summary>
-    private static List<string> WrapAllContent(ReadableContent content, int maxWidth)
-    {
-        var allLines = new List<string>();
-        foreach (var paragraph in content.Paragraphs)
-        {
-            var wrapped = UI.Renderers.RenderHelpers.WrapText(paragraph, maxWidth - 4);
-            foreach (var line in wrapped)
-            {
-                allLines.Add($"  {line}");
-            }
-
-            allLines.Add(string.Empty);
-        }
-
-        return allLines;
-    }
-
-    /// <summary>
     /// Creates a scoped ICollectionService instance for database operations.
     /// ICollectionService is registered as Scoped (depends on DbContext) while the orchestrator is Singleton.
     /// </summary>
     private static ICollectionService CreateCollectionService(IServiceScope scope)
     {
         return scope.ServiceProvider.GetRequiredService<ICollectionService>();
-    }
-
-    /// <summary>
-    /// Returns the visible length of a string after stripping ANSI escape sequences.
-    /// </summary>
-    private static int VisibleLength(string text)
-    {
-        return AnsiEscapeRegex.Replace(text, string.Empty).Length;
     }
 
     /// <summary>
@@ -491,6 +405,27 @@ public class BrowserOrchestrator : IBrowserService
         };
     }
 
+    /// <summary>
+    /// Builds a Page entity from a PageLoadResult, extracting links, tree, and readable content.
+    /// </summary>
+    private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, CancellationToken cancellationToken)
+    {
+        var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
+        var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
+
+        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
+        var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+        page.SetLinkTree(tree);
+
+        var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+        if (readable != null)
+        {
+            page.SetReadableContent(readable);
+        }
+
+        return page;
+    }
+
     private async Task NavigateToAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
         _preloadService.Pause();
@@ -504,7 +439,7 @@ public class BrowserOrchestrator : IBrowserService
             var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
             var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
             _navigationService.SetCacheInfo(isFromCache, cachedAt);
-            InvalidateLineCache();
+            _lineCacheManager.InvalidateLineCache();
 
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
@@ -539,22 +474,11 @@ public class BrowserOrchestrator : IBrowserService
                 throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
             }
 
-            var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
-            var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
-
-            var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
-            var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
-            page.SetLinkTree(tree);
-
-            var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
-            if (readable != null)
-            {
-                page.SetReadableContent(readable);
-            }
+            var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
 
             _navigationService.NavigateTo(page);
             _navigationService.SetCacheInfo(false, null);
-            InvalidateLineCache();
+            _lineCacheManager.InvalidateLineCache();
 
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
@@ -582,6 +506,7 @@ public class BrowserOrchestrator : IBrowserService
             ScopeFactory = _scopeFactory,
             Logger = _logger,
             PageCache = _pageCache,
+            LineCacheManager = _lineCacheManager,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
@@ -589,21 +514,16 @@ public class BrowserOrchestrator : IBrowserService
             RefreshBookmarksAsync = RefreshBookmarksAsync,
             GetCurrentRenderOptions = GetCurrentRenderOptions,
             CreateCollectionService = CreateCollectionService,
-            InvalidateLineCache = InvalidateLineCache,
-            EnsureLineCache = EnsureLineCache,
             GetReaderViewportHeight = GetReaderViewportHeight,
             GetHierarchicalViewportHeight = GetHierarchicalViewportHeight,
             AdjustScrollForSelection = AdjustScrollForSelection,
             ScrollToSearchMatch = ScrollToSearchMatch,
-            PreserveScrollPositionAfterRewrap = PreserveScrollPositionAfterRewrap,
         };
 
         // Sync mutable state
         _commandContext.Collections = _collections;
         _commandContext.DefaultCollectionId = _defaultCollectionId;
         _commandContext.Bookmarks = _bookmarks;
-        _commandContext.CachedLines = _cachedLines;
-        _commandContext.CachedWidth = _cachedWidth;
         _commandContext.ContentWidthOverride = _contentWidthOverride;
 
         return _commandContext;
@@ -616,11 +536,10 @@ public class BrowserOrchestrator : IBrowserService
             return;
         }
 
-        _collections = _commandContext.Collections;
+        _collections = _commandContext.Collections as List<Collection> ?? _commandContext.Collections?.ToList();
         _defaultCollectionId = _commandContext.DefaultCollectionId;
-        _bookmarks = _commandContext.Bookmarks;
-        _cachedLines = _commandContext.CachedLines;
-        _cachedWidth = _commandContext.CachedWidth;
+        _bookmarks = _commandContext.Bookmarks as List<Domain.Entities.Bookmarks.Bookmark>
+            ?? _commandContext.Bookmarks?.ToList();
         _contentWidthOverride = _commandContext.ContentWidthOverride;
     }
 
@@ -754,7 +673,7 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.CycleTheme:
                     _themeProvider.CycleTheme();
                     _navigationService.SetStatusMessage(_themeProvider.CurrentTheme.ToString());
-                    InvalidateLineCache();
+                    _lineCacheManager.InvalidateLineCache();
                     await RenderCurrentPageAsync(options, cancellationToken);
                     break;
 
@@ -764,12 +683,12 @@ public class BrowserOrchestrator : IBrowserService
 
                 case CommandType.TerminalResized:
                     var newOptions = GetCurrentRenderOptions();
-                    if (_cachedWidth > 0 && newOptions.MaxContentWidth != _cachedWidth)
+                    if (_lineCacheManager.CachedWidth > 0 && newOptions.MaxContentWidth != _lineCacheManager.CachedWidth)
                     {
-                        PreserveScrollPositionAfterRewrap(newOptions);
+                        _lineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
                     }
 
-                    ClampScrollOffset();
+                    _lineCacheManager.ClampScrollOffset();
                     await RenderCurrentPageAsync(newOptions, cancellationToken);
                     break;
             }
@@ -857,15 +776,16 @@ public class BrowserOrchestrator : IBrowserService
 
         if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable && page.ReadableContent != null)
         {
-            EnsureLineCache(options);
+            _lineCacheManager.EnsureLineCache(options);
+            var cachedLines = _lineCacheManager.CachedLines;
 
-            if (_cachedLines != null)
+            if (cachedLines != null)
             {
                 // Search in pre-wrapped lines for precise line-based scrolling
                 var matches = new List<int>();
-                for (var i = 0; i < _cachedLines.Count; i++)
+                for (var i = 0; i < cachedLines.Count; i++)
                 {
-                    if (_cachedLines[i].Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                    if (cachedLines[i].Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
                     {
                         matches.Add(i);
                     }
@@ -978,120 +898,6 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Ensures the line cache is populated and matches the current content width.
-    /// Rebuilds if width changed or cache is empty.
-    /// </summary>
-    private void EnsureLineCache(RenderOptions options)
-    {
-        var contentWidth = options.MaxContentWidth;
-        if (_cachedLines != null && _cachedWidth == contentWidth)
-        {
-            return;
-        }
-
-        var page = _navigationService.CurrentPage;
-        if (page?.ReadableContent == null)
-        {
-            _cachedLines = null;
-            SyncLineCacheToContext();
-            return;
-        }
-
-        var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette);
-        var contentLines = WrapAllContent(page.ReadableContent, contentWidth);
-        headlineLines.AddRange(contentLines);
-        _cachedLines = headlineLines;
-        _cachedWidth = contentWidth;
-        SyncLineCacheToContext();
-    }
-
-    /// <summary>
-    /// Invalidates the line cache so it is rebuilt on next access.
-    /// </summary>
-    private void InvalidateLineCache()
-    {
-        _cachedLines = null;
-        _cachedWidth = 0;
-        SyncLineCacheToContext();
-    }
-
-    /// <summary>
-    /// Syncs the line cache fields to the command context so handlers see fresh data.
-    /// </summary>
-    private void SyncLineCacheToContext()
-    {
-        if (_commandContext != null)
-        {
-            _commandContext.CachedLines = _cachedLines;
-            _commandContext.CachedWidth = _cachedWidth;
-        }
-    }
-
-    /// <summary>
-    /// Preserves the reading position when content width changes by computing
-    /// the character offset of the current scroll position in the old lines,
-    /// re-wrapping with the new width, and finding the matching line index.
-    /// </summary>
-    private void ClampScrollOffset()
-    {
-        var context = _navigationService.CurrentContext;
-        if (context.ViewMode == ViewMode.Readable && _cachedLines != null && _cachedLines.Count > 0)
-        {
-            var maxScroll = Math.Max(0, _cachedLines.Count - 1);
-            if (context.ScrollOffset > maxScroll)
-            {
-                _navigationService.SetScrollOffset(maxScroll);
-            }
-        }
-    }
-
-    private void PreserveScrollPositionAfterRewrap(RenderOptions newOptions)
-    {
-        var page = _navigationService.CurrentPage;
-        if (page?.ReadableContent == null || _cachedLines == null || _cachedLines.Count == 0)
-        {
-            InvalidateLineCache();
-            return;
-        }
-
-        var currentScroll = _navigationService.CurrentContext.ScrollOffset;
-
-        // Count character offset up to the current scroll line (strip ANSI codes for accurate length)
-        var charOffset = 0;
-        for (var i = 0; i < Math.Min(currentScroll, _cachedLines.Count); i++)
-        {
-            charOffset += VisibleLength(_cachedLines[i].TrimStart()) + 1; // +1 for implicit newline
-        }
-
-        // Invalidate and rebuild with new width
-        InvalidateLineCache();
-        EnsureLineCache(newOptions);
-
-        if (_cachedLines == null || _cachedLines.Count == 0)
-        {
-            return;
-        }
-
-        // Find the line index in new lines matching the character offset
-        var accumulatedChars = 0;
-        var newLineIndex = 0;
-        for (var i = 0; i < _cachedLines.Count; i++)
-        {
-            accumulatedChars += VisibleLength(_cachedLines[i].TrimStart()) + 1;
-            if (accumulatedChars >= charOffset)
-            {
-                newLineIndex = i;
-                break;
-            }
-
-            newLineIndex = i;
-        }
-
-        _navigationService.SetScrollOffset(Math.Clamp(newLineIndex, 0, Math.Max(0, _cachedLines.Count - 1)));
-    }
-
-    /// <summary>
     /// Notifies the pre-load service of the current selection in the hierarchical view.
     /// </summary>
     private void NotifyPreloadSelectionChanged()
@@ -1176,7 +982,7 @@ public class BrowserOrchestrator : IBrowserService
             if (_navigationService.ActiveCollection != null)
             {
                 var savedItemIndex = _navigationService.CollectionItemSelectedIndex;
-                var updatedActive = _collections.Find(c => c.Id == _navigationService.ActiveCollection.Id);
+                var updatedActive = _collections.FirstOrDefault(c => c.Id == _navigationService.ActiveCollection.Id);
                 if (updatedActive != null)
                 {
                     _navigationService.EnterCollection(updatedActive);

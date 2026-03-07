@@ -72,7 +72,7 @@ internal static class SearchCommandHandler
                 var prevPage = ctx.NavigationService.GoBack();
                 if (prevPage != null)
                 {
-                    ctx.InvalidateLineCache();
+                    ctx.LineCacheManager.InvalidateLineCache();
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
 
@@ -82,7 +82,7 @@ internal static class SearchCommandHandler
                 var fwdPage = ctx.NavigationService.GoForward();
                 if (fwdPage != null)
                 {
-                    ctx.InvalidateLineCache();
+                    ctx.LineCacheManager.InvalidateLineCache();
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
 
