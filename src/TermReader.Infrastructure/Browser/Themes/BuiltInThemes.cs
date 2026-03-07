@@ -18,7 +18,7 @@ public static class BuiltInThemes
             [ThemeName.Phosphor] = new ThemePalette
             {
                 PrimaryText = new ThemeColor(ConsoleColor.Green, 46),        // #00ff00 classic CRT
-                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 40),   // #00d700 visible CRT
+                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 dimmer for contrast
                 LinkContent = new ThemeColor(ConsoleColor.Green, 46),
                 LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 40),
                 LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 40),
