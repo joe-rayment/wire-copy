@@ -1,6 +1,8 @@
 // Educational and personal use only.
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using TermReader.Domain.Entities.Bookmarks;
 using TermReader.Domain.Entities.Collections;
 
@@ -23,7 +25,8 @@ public class AppDbContext : DbContext
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
 
     /// <summary>
-    /// Ensures the database is created and migrations are applied.
+    /// Ensures the database is created and all migrations are applied.
+    /// Handles upgrade from legacy EnsureCreatedAsync-based databases.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)
@@ -40,34 +43,58 @@ public class AppDbContext : DbContext
             }
         }
 
-        // Ensure database is created (no migrations for now - fresh schema)
-        await Database.EnsureCreatedAsync(cancellationToken);
+        // Handle upgrade from legacy EnsureCreatedAsync databases:
+        // If tables exist but no migration history, stamp the initial migration as applied.
+        await StampLegacyDatabaseIfNeeded(cancellationToken);
 
-        // EnsureCreatedAsync only creates a DB that doesn't exist — it won't add
-        // new tables to an existing database. Create Bookmarks table if missing.
-        await Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE IF NOT EXISTS Bookmarks (
-                Id TEXT NOT NULL PRIMARY KEY,
-                Name TEXT NOT NULL,
-                Url TEXT NOT NULL,
-                SortOrder INTEGER NOT NULL,
-                CreatedAt TEXT NOT NULL
-            )
-            """,
-            cancellationToken);
+        await Database.MigrateAsync(cancellationToken);
+    }
 
-        // Add SortOrder column to CollectionItems if missing (schema migration)
+    private async Task StampLegacyDatabaseIfNeeded(CancellationToken cancellationToken)
+    {
+        // Check if Collections table exists (indicator of a pre-existing database)
+        var hasExistingTables = false;
         try
         {
             await Database.ExecuteSqlRawAsync(
-                "ALTER TABLE CollectionItems ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0",
-                cancellationToken);
+                "SELECT 1 FROM Collections LIMIT 1", cancellationToken);
+            hasExistingTables = true;
         }
-        catch (Microsoft.Data.Sqlite.SqliteException)
+        catch
         {
-            // Column already exists — ignore
+            // Table doesn't exist — fresh database, MigrateAsync will handle it
         }
+
+        if (!hasExistingTables)
+        {
+            return;
+        }
+
+        // Database has tables — check if migration history already tracks InitialCreate
+        try
+        {
+            var applied = await Database.GetAppliedMigrationsAsync(cancellationToken);
+            if (applied.Any())
+            {
+                return; // Already using migrations
+            }
+        }
+        catch
+        {
+            // History table doesn't exist yet — will be created below
+        }
+
+        // Legacy database detected: ensure history table exists and stamp InitialCreate
+        var historyRepository = this.GetService<IHistoryRepository>();
+
+        // Use IF NOT EXISTS to handle partially-created history tables
+        await Database.ExecuteSqlRawAsync(
+            historyRepository.GetCreateScript().Replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"),
+            cancellationToken);
+
+        var insertSql = historyRepository.GetInsertScript(
+            new HistoryRow("20260307135947_InitialCreate", "9.0.0"));
+        await Database.ExecuteSqlRawAsync(insertSql, cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
