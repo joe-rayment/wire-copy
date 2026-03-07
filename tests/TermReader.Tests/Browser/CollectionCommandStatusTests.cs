@@ -38,6 +38,9 @@ public class CollectionCommandStatusTests
         var scope = Substitute.For<IServiceScope>();
         scopeFactory.CreateScope().Returns(scope);
 
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+
         _ctx = new CommandContext
         {
             NavigationService = _navService,
@@ -46,6 +49,7 @@ public class CollectionCommandStatusTests
             ScopeFactory = scopeFactory,
             Logger = NullLogger.Instance,
             PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = new LineCacheManager(_navService, themeProvider),
             RenderCurrentPageAsync = (_, _) =>
             {
                 _lastStatusMessage = _navService.CurrentContext.StatusMessage;
@@ -57,13 +61,10 @@ public class CollectionCommandStatusTests
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             GetCurrentRenderOptions = () => _options,
             CreateCollectionService = _ => _collectionService,
-            InvalidateLineCache = () => { },
-            EnsureLineCache = _ => { },
             GetReaderViewportHeight = _ => 20,
             GetHierarchicalViewportHeight = _ => 20,
             AdjustScrollForSelection = (_, _) => { },
             ScrollToSearchMatch = (_, _) => { },
-            PreserveScrollPositionAfterRewrap = _ => { }
         };
     }
 

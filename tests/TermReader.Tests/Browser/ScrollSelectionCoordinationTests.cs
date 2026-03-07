@@ -25,7 +25,6 @@ public class ScrollSelectionCoordinationTests
     private readonly NavigationService _navigationService;
     private readonly CommandContext _ctx;
     private readonly RenderOptions _options;
-    private readonly List<string> _testLines;
     private bool _renderCalled;
 
     private const int TermHeight = 24;
@@ -50,7 +49,12 @@ public class ScrollSelectionCoordinationTests
             MaxContentWidth = 76
         };
 
-        _testLines = Enumerable.Range(1, 50).Select(i => $"  Line {i}").ToList();
+        var testLines = Enumerable.Range(1, 50).Select(i => $"  Line {i}").ToList();
+
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var lineCacheManager = new LineCacheManager(_navigationService, themeProvider);
+        lineCacheManager.SetCacheForTesting(testLines, 76);
 
         _ctx = new CommandContext
         {
@@ -60,6 +64,7 @@ public class ScrollSelectionCoordinationTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = lineCacheManager,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
@@ -71,21 +76,10 @@ public class ScrollSelectionCoordinationTests
             RefreshBookmarksAsync = _ => Task.CompletedTask,
             GetCurrentRenderOptions = () => _options,
             CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
-            InvalidateLineCache = () =>
-            {
-                _ctx!.CachedLines = null;
-                _ctx.CachedWidth = 0;
-            },
-            EnsureLineCache = _ =>
-            {
-                _ctx!.CachedLines = _testLines;
-                _ctx.CachedWidth = 76;
-            },
             GetReaderViewportHeight = _ => 20,
             GetHierarchicalViewportHeight = _ => 20,
             AdjustScrollForSelection = (_, _) => { },
             ScrollToSearchMatch = (_, _) => { },
-            PreserveScrollPositionAfterRewrap = _ => { }
         };
     }
 

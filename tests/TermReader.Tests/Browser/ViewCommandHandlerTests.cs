@@ -19,9 +19,9 @@ namespace TermReader.Tests.Browser;
 public class ViewCommandHandlerTests
 {
     private readonly NavigationService _navigationService;
+    private readonly LineCacheManager _lineCacheManager;
     private readonly CommandContext _ctx;
     private readonly RenderOptions _options;
-    private bool _lineCacheInvalidated;
     private bool _renderCalled;
     private RenderOptions? _lastRenderOptions;
 
@@ -43,6 +43,10 @@ public class ViewCommandHandlerTests
             MaxContentWidth = 80
         };
 
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        _lineCacheManager = new LineCacheManager(_navigationService, themeProvider);
+
         _ctx = new CommandContext
         {
             NavigationService = _navigationService,
@@ -51,6 +55,7 @@ public class ViewCommandHandlerTests
             ScopeFactory = Substitute.For<IServiceScopeFactory>(),
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = _lineCacheManager,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (opts, _) =>
@@ -68,13 +73,10 @@ public class ViewCommandHandlerTests
                 MaxContentWidth = _ctx!.ContentWidthOverride ?? 66
             },
             CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
-            InvalidateLineCache = () => _lineCacheInvalidated = true,
-            EnsureLineCache = _ => { },
             GetReaderViewportHeight = _ => 20,
             GetHierarchicalViewportHeight = _ => 20,
             AdjustScrollForSelection = (_, _) => { },
             ScrollToSearchMatch = (_, _) => { },
-            PreserveScrollPositionAfterRewrap = _ => { }
         };
     }
 
@@ -103,9 +105,12 @@ public class ViewCommandHandlerTests
     [Fact]
     public async Task HandleSwitchView_InvalidatesLineCacheAndRenders()
     {
+        // Pre-populate the cache so we can verify invalidation
+        _lineCacheManager.SetCacheForTesting(new List<string> { "test" }, 80);
+
         await ViewCommandHandler.HandleSwitchView(_ctx, _options, CancellationToken.None);
 
-        _lineCacheInvalidated.Should().BeTrue();
+        _lineCacheManager.CachedLines.Should().BeNull();
         _renderCalled.Should().BeTrue();
     }
 

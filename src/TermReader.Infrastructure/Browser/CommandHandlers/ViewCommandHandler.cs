@@ -18,21 +18,21 @@ internal static class ViewCommandHandler
     public static async Task HandleSwitchView(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.NavigationService.ToggleViewMode();
-        ctx.InvalidateLineCache();
+        ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     public static async Task HandleSwitchToHierarchical(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
-        ctx.InvalidateLineCache();
+        ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     public static async Task HandleSwitchToReadable(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.NavigationService.SetViewMode(ViewMode.Readable);
-        ctx.InvalidateLineCache();
+        ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
@@ -41,7 +41,7 @@ internal static class ViewCommandHandler
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current + WidthStep, MinContentWidth, MaxContentWidth);
         var newOptions = ctx.GetCurrentRenderOptions();
-        ctx.PreserveScrollPositionAfterRewrap(newOptions);
+        ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);
     }
 
@@ -50,7 +50,7 @@ internal static class ViewCommandHandler
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current - WidthStep, MinContentWidth, MaxContentWidth);
         var newOptions = ctx.GetCurrentRenderOptions();
-        ctx.PreserveScrollPositionAfterRewrap(newOptions);
+        ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);
     }
 
@@ -58,7 +58,7 @@ internal static class ViewCommandHandler
     {
         ctx.ContentWidthOverride = null;
         var newOptions = ctx.GetCurrentRenderOptions();
-        ctx.PreserveScrollPositionAfterRewrap(newOptions);
+        ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);
     }
 
