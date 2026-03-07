@@ -67,6 +67,7 @@ public class NavigationCommandHandlerScrollTests
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = _lineCacheManager,
+            ThemeProvider = themeProvider,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>

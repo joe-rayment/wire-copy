@@ -65,6 +65,7 @@ public class ScrollSelectionCoordinationTests
             Logger = Substitute.For<ILogger>(),
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = lineCacheManager,
+            ThemeProvider = themeProvider,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>

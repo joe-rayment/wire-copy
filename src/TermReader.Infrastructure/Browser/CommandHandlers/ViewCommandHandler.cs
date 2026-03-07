@@ -62,6 +62,33 @@ internal static class ViewCommandHandler
         await ctx.RenderCurrentPageAsync(newOptions, ct);
     }
 
+    public static async Task HandleOpenLauncher(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        ctx.NavigationService.EnterLauncher();
+        await ctx.RefreshBookmarksAsync(ct);
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleCycleTheme(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        ctx.ThemeProvider.CycleTheme();
+        ctx.NavigationService.SetStatusMessage(ctx.ThemeProvider.CurrentTheme.ToString());
+        ctx.LineCacheManager.InvalidateLineCache();
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleTerminalResized(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var newOptions = ctx.GetCurrentRenderOptions();
+        if (ctx.LineCacheManager.CachedWidth > 0 && newOptions.MaxContentWidth != ctx.LineCacheManager.CachedWidth)
+        {
+            ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
+        }
+
+        ctx.LineCacheManager.ClampScrollOffset();
+        await ctx.RenderCurrentPageAsync(newOptions, ct);
+    }
+
     public static async Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
