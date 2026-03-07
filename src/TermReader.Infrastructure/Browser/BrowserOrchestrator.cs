@@ -484,8 +484,8 @@ public class BrowserOrchestrator : IBrowserService
             TerminalWidth = width,
             TerminalHeight = height,
             MaxContentWidth = _contentWidthOverride.HasValue
-                ? Math.Clamp(Math.Min(_contentWidthOverride.Value, width - 2), MinContentWidth, MaxContentWidth)
-                : Math.Clamp(width - 2, MinContentWidth, MaxContentWidth),
+                ? Math.Clamp(Math.Min(_contentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
+                : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
             Use256Colors = use256,
             CachedUrls = _pageCache.GetCachedUrls()
         };
@@ -769,6 +769,7 @@ public class BrowserOrchestrator : IBrowserService
                         PreserveScrollPositionAfterRewrap(newOptions);
                     }
 
+                    ClampScrollOffset();
                     await RenderCurrentPageAsync(newOptions, cancellationToken);
                     break;
             }
@@ -1032,6 +1033,19 @@ public class BrowserOrchestrator : IBrowserService
     /// the character offset of the current scroll position in the old lines,
     /// re-wrapping with the new width, and finding the matching line index.
     /// </summary>
+    private void ClampScrollOffset()
+    {
+        var context = _navigationService.CurrentContext;
+        if (context.ViewMode == ViewMode.Readable && _cachedLines != null && _cachedLines.Count > 0)
+        {
+            var maxScroll = Math.Max(0, _cachedLines.Count - 1);
+            if (context.ScrollOffset > maxScroll)
+            {
+                _navigationService.SetScrollOffset(maxScroll);
+            }
+        }
+    }
+
     private void PreserveScrollPositionAfterRewrap(RenderOptions newOptions)
     {
         var page = _navigationService.CurrentPage;

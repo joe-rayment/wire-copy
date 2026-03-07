@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using TermReader.Application.Interfaces.Browser;
 
 namespace TermReader.Infrastructure.Browser;
@@ -14,12 +15,20 @@ public sealed class TerminalResizeDetector : IResizeDetector
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 
+    private readonly ILogger<TerminalResizeDetector> _logger;
     private readonly Channel<bool> _channel = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleWriter = true
         });
+
+    private bool _fallbackLogged;
+
+    public TerminalResizeDetector(ILogger<TerminalResizeDetector> logger)
+    {
+        _logger = logger;
+    }
 
     public ChannelReader<bool> Resizes => _channel.Reader;
 
@@ -47,7 +56,7 @@ public sealed class TerminalResizeDetector : IResizeDetector
         _channel.Writer.TryComplete();
     }
 
-    private static void ReadDimensions(out int width, out int height)
+    private void ReadDimensions(out int width, out int height)
     {
         try
         {
@@ -57,10 +66,16 @@ public sealed class TerminalResizeDetector : IResizeDetector
             width = Console.WindowWidth;
             height = Console.WindowHeight;
         }
-        catch
+        catch (Exception ex)
         {
             width = 80;
             height = 24;
+
+            if (!_fallbackLogged)
+            {
+                _fallbackLogged = true;
+                _logger.LogWarning(ex, "Console dimensions unavailable, using default {Width}x{Height}", width, height);
+            }
         }
     }
 }

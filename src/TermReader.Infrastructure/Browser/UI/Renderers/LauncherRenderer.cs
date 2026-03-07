@@ -144,7 +144,7 @@ internal class LauncherRenderer
         var availableHeight = Math.Max(4, terminalHeight - headerLines - footerLines);
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
-        var cellWidth = columns == 1 ? width : (width - 1) / 2;
+        var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
 
         return new LauncherLayout(
             Width: width,
