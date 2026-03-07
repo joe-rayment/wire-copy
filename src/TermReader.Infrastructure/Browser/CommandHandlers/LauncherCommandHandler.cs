@@ -143,7 +143,7 @@ internal static class LauncherCommandHandler
             }
 
             case CommandType.ShowHelp:
-                Console.Clear();
+                Console.Write("\x1b[H\x1b[2J");
                 Console.WriteLine(ctx.InputHandler.GetHelpText());
                 Console.ReadKey(intercept: true);
                 await ctx.RenderCurrentPageAsync(options, ct);
