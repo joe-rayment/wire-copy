@@ -25,6 +25,8 @@ public class BrowserOrchestrator : IBrowserService
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
 
+    private static readonly Regex AnsiEscapeRegex = new(@"\x1b\[[0-9;]*m", RegexOptions.Compiled);
+
     private readonly IPageLoader _pageLoader;
     private readonly ILinkExtractor _linkExtractor;
     private readonly INavigationTreeBuilder _treeBuilder;
@@ -418,7 +420,7 @@ public class BrowserOrchestrator : IBrowserService
     /// </summary>
     private static int VisibleLength(string text)
     {
-        return Regex.Replace(text, @"\x1b\[[0-9;]*m", string.Empty).Length;
+        return AnsiEscapeRegex.Replace(text, string.Empty).Length;
     }
 
     /// <summary>
