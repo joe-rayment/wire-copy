@@ -21,6 +21,7 @@ public sealed class BrowserSession : IBrowserSession
     private readonly ILogger<BrowserSession> _logger;
     private readonly object _lock = new();
     private IWebDriver? _driver;
+    private bool _driverIsHeadless;
     private int? _driverServicePid;
     private bool _disposed;
 
@@ -51,31 +52,44 @@ public sealed class BrowserSession : IBrowserSession
 
             if (_driver != null)
             {
-                // Verify the existing driver is still alive
-                try
+                // If the caller needs a different headless mode, dispose and recreate
+                if (_driverIsHeadless != headless)
                 {
-                    // Accessing the Title property is a lightweight check
-                    _ = _driver.Title;
-                    _logger.LogDebug("Reusing existing WebDriver session");
-                    return _driver;
-                }
-                catch (WebDriverException ex)
-                {
-                    _logger.LogWarning(ex, "Existing WebDriver session is dead, creating a new one");
+                    _logger.LogInformation(
+                        "Headless mode mismatch (current={Current}, requested={Requested}), recreating driver",
+                        _driverIsHeadless,
+                        headless);
                     DisposeDriverUnsafe();
+                }
+                else
+                {
+                    // Verify the existing driver is still alive
+                    try
+                    {
+                        // Accessing the Title property is a lightweight check
+                        _ = _driver.Title;
+                        _logger.LogDebug("Reusing existing WebDriver session");
+                        return _driver;
+                    }
+                    catch (WebDriverException ex)
+                    {
+                        _logger.LogWarning(ex, "Existing WebDriver session is dead, creating a new one");
+                        DisposeDriverUnsafe();
+                    }
                 }
             }
 
             _logger.LogInformation("Creating new WebDriver session (headless={Headless})", headless);
             _driver = CreateWebDriver(headless);
+            _driverIsHeadless = headless;
             return _driver;
         }
     }
 
     public Task WarmUpAsync()
     {
-        _logger.LogDebug("Warming up browser session");
-        GetOrCreateDriver(headless: true);
+        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.Headless);
+        GetOrCreateDriver(_browserConfig.Headless);
         _logger.LogDebug("Browser session warm-up complete");
         return Task.CompletedTask;
     }

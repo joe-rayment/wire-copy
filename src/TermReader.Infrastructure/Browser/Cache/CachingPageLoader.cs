@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Browser;
 
 namespace TermReader.Infrastructure.Browser.Cache;
 
@@ -49,7 +50,14 @@ public class CachingPageLoader : IPageLoader
 
         if (result.Success)
         {
-            _cache.Put(request.Url, result);
+            if (PageLoader.IsBotChallengePage(result.Html))
+            {
+                _logger.LogWarning("Bot challenge page detected, skipping cache: {Url}", request.Url);
+            }
+            else
+            {
+                _cache.Put(request.Url, result);
+            }
         }
 
         return result;
