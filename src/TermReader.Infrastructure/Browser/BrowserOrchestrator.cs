@@ -807,13 +807,8 @@ public class BrowserOrchestrator : IBrowserService
                 break;
 
             case CommandType.GeneratePodcast:
-                // Delegates to PodcastCommandHandler (created in next task)
-                if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
-                {
-                    _navigationService.SetStatusMessage("Podcast generation not yet available");
-                    await RenderCurrentPageAsync(options, cancellationToken);
-                }
-
+                await PodcastCommandHandler.HandleGeneratePodcast(
+                    _commandContext, options, cancellationToken);
                 break;
 
             case CommandType.AddBookmark:

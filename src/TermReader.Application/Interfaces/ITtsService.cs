@@ -22,6 +22,12 @@ public interface ITtsService
     TtsCostEstimate EstimateCost(string text);
 
     /// <summary>
+    /// Sets a runtime API key override, allowing the UI to inject credentials.
+    /// </summary>
+    /// <param name="apiKey">The API key to use.</param>
+    void SetApiKeyOverride(string apiKey);
+
+    /// <summary>
     /// Generates audio from text, reporting progress per chunk.
     /// </summary>
     /// <param name="text">The text to convert to audio.</param>
