@@ -74,11 +74,8 @@ public class NavigationTree
 
             if (linkType == LinkType.Content)
             {
-                // Content links are promoted directly under root (no group header)
-                foreach (var link in links)
-                {
-                    root.AddChild(link);
-                }
+                // Content links may be sub-grouped by SectionTitle
+                AddContentLinks(root, links);
             }
             else
             {
@@ -94,6 +91,75 @@ public class NavigationTree
         }
 
         return new NavigationTree(root);
+    }
+
+    /// <summary>
+    /// Adds content links to root, optionally sub-grouped by SectionTitle.
+    /// Sub-sections are created when there are 2+ distinct non-null SectionTitle values
+    /// and 2+ links per section on average. Links with null SectionTitle before
+    /// the first named section are placed as direct children of root.
+    /// </summary>
+    private static void AddContentLinks(LinkNode root, List<LinkInfo> links)
+    {
+        if (!ShouldSubGroup(links))
+        {
+            // No sub-grouping: add all links directly under root
+            foreach (var link in links)
+            {
+                root.AddChild(link);
+            }
+
+            return;
+        }
+
+        // Build sections preserving document order
+        // Links before first named section go directly under root (headerless flow)
+        string? currentSection = null;
+        LinkNode? currentSectionNode = null;
+
+        foreach (var link in links)
+        {
+            if (link.SectionTitle != null && link.SectionTitle != currentSection)
+            {
+                // Start a new section
+                currentSection = link.SectionTitle;
+                var sectionHeader = LinkInfo.CreateSubSectionHeader(currentSection, LinkType.Content);
+                currentSectionNode = root.AddChild(sectionHeader);
+            }
+
+            if (currentSectionNode != null)
+            {
+                currentSectionNode.AddChild(link);
+            }
+            else
+            {
+                // Before any named section: place directly under root
+                root.AddChild(link);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Determines whether content links should be sub-grouped by SectionTitle.
+    /// Requires 2+ distinct non-null SectionTitle values and 2+ links per section on average.
+    /// </summary>
+    private static bool ShouldSubGroup(List<LinkInfo> links)
+    {
+        var distinctSections = links
+            .Where(l => l.SectionTitle != null)
+            .Select(l => l.SectionTitle)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (distinctSections.Count < 2)
+        {
+            return false;
+        }
+
+        var linksWithSection = links.Count(l => l.SectionTitle != null);
+        var avgPerSection = (double)linksWithSection / distinctSections.Count;
+
+        return avgPerSection >= 2.0;
     }
 
     /// <summary>
