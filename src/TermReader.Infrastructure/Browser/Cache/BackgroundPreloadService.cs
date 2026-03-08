@@ -28,6 +28,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
+    private readonly ConcurrentDictionary<string, bool> _needsJsDomains = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
     private readonly Timer _debounceTimer;
@@ -223,6 +224,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 _circuitBrokenDomains.TryRemove(origin, out _);
             }
 
+            // Skip domains that need JS rendering (empty article shells via HTTP)
+            if (origin != null && _needsJsDomains.ContainsKey(origin))
+            {
+                continue;
+            }
+
             items.Add(new PreloadItem(url, i));
         }
 
@@ -372,7 +379,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 }
                 else if (ReadableContentExtractor.IsEmptyArticleShell(result.Html))
                 {
-                    _logger.LogDebug("Pre-loaded page is an empty article shell, skipping cache: {Url}", url);
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                        _logger.LogDebug(
+                            "Domain {Origin} needs JS rendering, skipping future HTTP pre-loads",
+                            origin);
+                    }
                 }
                 else
                 {

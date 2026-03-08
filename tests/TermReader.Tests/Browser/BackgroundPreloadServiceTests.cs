@@ -330,6 +330,53 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region Needs-JS Domain Tracking
+
+    [Fact]
+    public void BuildQueue_NeedsJsDomain_SkipsUrls()
+    {
+        var cache = Substitute.For<IPageCache>();
+        var service = new BackgroundPreloadService(
+            cache, Substitute.For<IIdleDetector>(), new HttpClient(), new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Mark domain as needing JS via reflection
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, bool>)field!.GetValue(service)!;
+        dict["https://example.com"] = true;
+
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().BeEmpty("domain needs JS rendering, HTTP pre-loads should be skipped");
+    }
+
+    [Fact]
+    public void BuildQueue_NeedsJsDomain_DoesNotAffectOtherDomains()
+    {
+        var cache = Substitute.For<IPageCache>();
+        var service = new BackgroundPreloadService(
+            cache, Substitute.For<IIdleDetector>(), new HttpClient(), new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Mark only one domain as needing JS
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, bool>)field!.GetValue(service)!;
+        dict["https://jsonly.com"] = true;
+
+        // URLs from a different domain should still be queued
+        var nodes = CreateContentNodes("https://example.com/a1");
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().HaveCount(1);
+    }
+
+    #endregion
+
     #region Helpers
 
     private static List<LinkNode> CreateContentNodes(params string[] urls)
