@@ -50,4 +50,9 @@ public record RenderOptions
     /// Used by renderers to show pre-load/cache indicators on link tree items.
     /// </summary>
     public IReadOnlySet<string>? CachedUrls { get; init; }
+
+    /// <summary>
+    /// Current pre-load progress for showing in the status bar.
+    /// </summary>
+    public PreloadProgress? CacheProgress { get; init; }
 }

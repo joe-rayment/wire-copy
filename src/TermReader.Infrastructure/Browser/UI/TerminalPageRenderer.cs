@@ -58,7 +58,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine();
         }
 
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress);
 
         _helpers.ClearRemainingLines();
     }

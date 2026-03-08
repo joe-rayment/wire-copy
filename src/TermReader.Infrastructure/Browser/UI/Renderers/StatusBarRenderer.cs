@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
@@ -23,7 +24,7 @@ internal class StatusBarRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0)
+    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0, PreloadProgress? cacheProgress = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
@@ -36,7 +37,7 @@ internal class StatusBarRenderer
         var hints = GetKeyHints(mode, p);
         var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
         var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
-        var cacheBadge = context.IsFromCache ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}" : string.Empty;
+        var cacheBadge = FormatCacheBadge(context, mode, p, cacheProgress);
 
         var statusMsg = !string.IsNullOrEmpty(context.StatusMessage)
             ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
@@ -102,10 +103,31 @@ internal class StatusBarRenderer
         };
     }
 
+    private static string FormatCacheBadge(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
+    {
+        // In hierarchical view, show preload progress instead of per-page cache badge
+        if (mode == ViewMode.Hierarchical && progress != null && progress.TotalCacheableLinks > 0)
+        {
+            if (progress.IsComplete)
+            {
+                return $" {p.SecondaryText.AnsiFg}[all cached]{Reset}";
+            }
+
+            return $" {p.PromptFg.AnsiFg}[caching {progress.CachedCount}/{progress.TotalCacheableLinks}]{Reset}";
+        }
+
+        // For other views, show per-page cache badge
+        if (context.IsFromCache)
+        {
+            return $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}";
+        }
+
+        return string.Empty;
+    }
+
     private static string FormatHints(ThemePalette p, params (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
             $"{p.PrimaryText.AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
     }
-
 }
