@@ -142,6 +142,7 @@ public class TerminalInputHandler : IInputHandler
 
  Cache
    R               Force-refresh (bypass cache)
+   I               Interactive refresh (headed browser for captcha/login)
    F5              Smart refresh (use cache if available)
 
  General
@@ -283,6 +284,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.J => new NavigationCommand { Type = CommandType.ReorderDown },
                 ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp },
                 ConsoleKey.R => new NavigationCommand { Type = CommandType.ForceRefresh },
+                ConsoleKey.I => new NavigationCommand { Type = CommandType.InteractiveRefresh },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }

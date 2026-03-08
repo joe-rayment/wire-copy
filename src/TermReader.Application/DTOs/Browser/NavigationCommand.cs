@@ -96,6 +96,7 @@ public enum CommandType
 
     // Cache
     ForceRefresh,
+    InteractiveRefresh,
 
     // Terminal
     TerminalResized
