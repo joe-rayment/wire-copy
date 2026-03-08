@@ -202,30 +202,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 _circuitBrokenDomains.TryRemove(origin, out _);
             }
 
-            // Determine priority
-            PreloadPriority priority;
-            if (i == selectedIndex)
-            {
-                priority = PreloadPriority.Focused;
-            }
-            else if (Math.Abs(i - selectedIndex) <= _config.NearbyLinkRadius)
-            {
-                priority = PreloadPriority.Nearby;
-            }
-            else
-            {
-                priority = PreloadPriority.Speculative;
-            }
-
-            items.Add(new PreloadItem(url, priority, Math.Abs(i - selectedIndex)));
+            items.Add(new PreloadItem(url, i));
         }
 
-        // Sort by priority, then distance from selection
-        items.Sort((a, b) =>
-        {
-            var cmp = a.Priority.CompareTo(b.Priority);
-            return cmp != 0 ? cmp : a.Distance.CompareTo(b.Distance);
-        });
+        // Sort by original list index (top-to-bottom)
+        items.Sort((a, b) => a.ListIndex.CompareTo(b.ListIndex));
 
         return items;
     }
@@ -412,5 +393,5 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
-    internal sealed record PreloadItem(string Url, PreloadPriority Priority, int Distance);
+    internal sealed record PreloadItem(string Url, int ListIndex);
 }
