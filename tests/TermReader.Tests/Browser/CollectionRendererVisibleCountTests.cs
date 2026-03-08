@@ -44,21 +44,21 @@ public class CollectionRendererVisibleCountTests
     [Fact]
     public void GetCollectionItemsVisibleCount_SmallTerminal_NoSeparators()
     {
-        // height=20 < 30, linesPerItem=2
-        // remainingHeight = Max(3, 20-5-3) = 12
-        // Max(1, (12+1)/2) = 6
+        // height=20, podcastButtonLines=4 (20 is not < 20), linesPerItem=2
+        // remainingHeight = Max(3, 20-5-3-4) = 8
+        // Max(1, (8+1)/2) = 4
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(20);
-        result.Should().Be(6);
+        result.Should().Be(4);
     }
 
     [Fact]
     public void GetCollectionItemsVisibleCount_LargeTerminal_WithSeparators()
     {
-        // height=40 >= 30, linesPerItem=3
-        // remainingHeight = Max(3, 40-5-3) = 32
-        // Max(1, (32+1)/3) = 11
+        // height=40, podcastButtonLines=4, linesPerItem=3
+        // remainingHeight = Max(3, 40-5-3-4) = 28
+        // Max(1, (28+1)/3) = 9
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(40);
-        result.Should().Be(11);
+        result.Should().Be(9);
     }
 
     [Fact]

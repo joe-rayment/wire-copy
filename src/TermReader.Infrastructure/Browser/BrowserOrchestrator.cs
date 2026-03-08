@@ -806,6 +806,16 @@ public class BrowserOrchestrator : IBrowserService
                 await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
                 break;
 
+            case CommandType.GeneratePodcast:
+                // Delegates to PodcastCommandHandler (created in next task)
+                if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
+                {
+                    _navigationService.SetStatusMessage("Podcast generation not yet available");
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
+
+                break;
+
             case CommandType.AddBookmark:
                 // Only handle in launcher mode (handled above), ignore in other views
                 break;

@@ -121,6 +121,33 @@ internal class CollectionRenderer
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
         _helpers.WriteLine();
 
+        // Podcast button (only shown when collection has items)
+        if (collection.Items.Count > 0)
+        {
+            var buttonWidth = Math.Min(45, width - 12);
+
+            if (height < 20 || buttonWidth < 40)
+            {
+                // Compact mode: single centered line
+                var compactPad = Math.Max(0, (width - 35) / 2);
+                _helpers.WriteLine($"{new string(' ', compactPad)}{p.HeaderTitleFg.AnsiFg}\u266b  Turn this list into a podcast {p.SecondaryText.AnsiFg}[p]{Reset}");
+            }
+            else
+            {
+                // Full rounded box
+                var pad = Math.Max(0, (width - buttonWidth) / 2);
+                var innerWidth = buttonWidth - 2;
+                var labelPart = "\u266b  Turn this list into a podcast";
+                var hintPart = "[p]";
+                var spacing = Math.Max(1, innerWidth - labelPart.Length - hintPart.Length - 2);
+                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
+                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u2502{Reset} {p.HeaderTitleFg.AnsiFg}{labelPart}{Reset}{new string(' ', spacing)}{p.SecondaryText.AnsiFg}{hintPart}{Reset} {p.PromptFg.AnsiFg}\u2502{Reset}");
+                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
+            }
+
+            _helpers.WriteLine();
+        }
+
         var useSeparators = height >= 30;
         var linesPerItem = useSeparators ? 3 : 2;
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
@@ -196,9 +223,10 @@ internal class CollectionRenderer
     {
         const int headerLines = 5;
         const int statusBarLines = 3;
+        var podcastButtonLines = terminalHeight < 20 ? 2 : 4;
         var useSeparators = terminalHeight >= 30;
         var linesPerItem = useSeparators ? 3 : 2;
-        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
         return Math.Max(1, (remainingHeight + 1) / linesPerItem);
     }
 }
