@@ -11,6 +11,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Collections;
+using TermReader.Infrastructure.Podcast;
 using TermReader.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -150,5 +151,6 @@ public class Program
                 services.AddPersistence();
                 services.AddCollections();
                 services.AddBookmarks();
+                services.AddPodcast();
             });
 }

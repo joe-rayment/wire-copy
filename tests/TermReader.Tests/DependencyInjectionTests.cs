@@ -6,10 +6,13 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TermReader.Application.Interfaces;
+using TermReader.Application.Interfaces.Audio;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Application.Interfaces.Podcast;
 using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Collections;
+using TermReader.Infrastructure.Podcast;
 using TermReader.Persistence;
 using Xunit;
 
@@ -33,6 +36,7 @@ public class DependencyInjectionTests
         services.AddPersistence();
         services.AddCollections();
         services.AddBookmarks();
+        services.AddPodcast();
 
         _serviceProvider = services.BuildServiceProvider();
     }
@@ -170,6 +174,46 @@ public class DependencyInjectionTests
     {
         var service = _serviceProvider.GetService<IInputHandler>();
         service.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ServiceProvider_ShouldResolveITtsService()
+    {
+        var service = _serviceProvider.GetService<ITtsService>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<ITtsService>();
+    }
+
+    [Fact]
+    public void ServiceProvider_ShouldResolveIAudioAssembler()
+    {
+        var service = _serviceProvider.GetService<IAudioAssembler>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<IAudioAssembler>();
+    }
+
+    [Fact]
+    public void ServiceProvider_ShouldResolveIPodcastFeedGenerator()
+    {
+        var service = _serviceProvider.GetService<IPodcastFeedGenerator>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<IPodcastFeedGenerator>();
+    }
+
+    [Fact]
+    public void ServiceProvider_ShouldResolveICloudStorageClient()
+    {
+        var service = _serviceProvider.GetService<ICloudStorageClient>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<ICloudStorageClient>();
+    }
+
+    [Fact]
+    public void ServiceProvider_ShouldResolveIPodcastPublisher()
+    {
+        var service = _serviceProvider.GetService<IPodcastPublisher>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<IPodcastPublisher>();
     }
 
     private static IConfiguration GetConfiguration()
