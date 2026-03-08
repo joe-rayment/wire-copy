@@ -27,6 +27,21 @@ public interface IPreloadService : IDisposable
     void NotifySelectionChanged(int selectedIndex, IReadOnlyList<LinkNode> visibleNodes, string currentPageUrl);
 
     /// <summary>
+    /// Notifies the pre-loader that a collection view has changed,
+    /// allowing it to enqueue collection item URLs for pre-loading.
+    /// Uses IReadOnlyList&lt;string&gt; to avoid coupling to Collection domain.
+    /// </summary>
+    /// <param name="selectedIndex">Index of the selected item in the collection.</param>
+    /// <param name="urls">Flat list of URLs from the collection items.</param>
+    void NotifyCollectionChanged(int selectedIndex, IReadOnlyList<string> urls);
+
+    /// <summary>
+    /// Clears the pre-load queue. Call when transitioning to views
+    /// that don't support pre-loading (e.g., Launcher, CollectionList).
+    /// </summary>
+    void ClearQueue();
+
+    /// <summary>
     /// Starts the background pre-loading loop.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token to stop pre-loading.</param>
