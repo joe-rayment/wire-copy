@@ -142,6 +142,7 @@ public class TerminalInputHandler : IInputHandler
    S               Save to specific collection
    d               Delete / remove item
    J / K           Reorder items
+   X               Clear all items from collection
    p               Generate podcast from collection
 
  Cache
@@ -290,6 +291,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.K => new NavigationCommand { Type = CommandType.ReorderUp },
                 ConsoleKey.R => new NavigationCommand { Type = CommandType.ForceRefresh },
                 ConsoleKey.I => new NavigationCommand { Type = CommandType.InteractiveRefresh },
+                ConsoleKey.X => new NavigationCommand { Type = CommandType.ClearCollection },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }

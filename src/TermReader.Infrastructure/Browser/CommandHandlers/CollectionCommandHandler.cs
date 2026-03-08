@@ -153,6 +153,14 @@ internal static class CollectionCommandHandler
             if (col != null && ctx.NavigationService.CollectionItemSelectedIndex < col.Items.Count)
             {
                 var item = col.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                var confirm = await ctx.InputHandler.PromptForInputAsync(
+                    $"Remove \"{item.Title}\"? (y/n): ", ct);
+                if (!string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ctx.RenderCurrentPageAsync(options, ct);
+                    return;
+                }
+
                 try
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
@@ -179,6 +187,14 @@ internal static class CollectionCommandHandler
                  ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
         {
             var collection = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
+            var confirm = await ctx.InputHandler.PromptForInputAsync(
+                $"Delete collection \"{collection.Name}\"? (y/n): ", ct);
+            if (!string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
             try
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
@@ -196,6 +212,48 @@ internal static class CollectionCommandHandler
                 ctx.Logger.LogWarning(ex, "Failed to delete collection");
                 ctx.NavigationService.SetStatusMessage("Failed to delete");
             }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleClearCollection(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var col = ctx.NavigationService.ActiveCollection;
+        if (col == null || col.Items.Count == 0)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var confirm = await ctx.InputHandler.PromptForInputAsync(
+            $"Clear all {col.Items.Count} items from \"{col.Name}\"? (y/n): ", ct);
+        if (!string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var service = ctx.CreateCollectionService(scope);
+            await service.ClearCollectionAsync(col.Id, ct);
+            await ctx.RefreshCollectionsAsync(ct);
+            ctx.NavigationService.CollectionItemSelectedIndex = 0;
+            ctx.Logger.LogInformation("Cleared collection: {Name}", col.Name);
+            ctx.NavigationService.SetStatusMessage($"Cleared: {col.Name}");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to clear collection");
+            ctx.NavigationService.SetStatusMessage("Failed to clear");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

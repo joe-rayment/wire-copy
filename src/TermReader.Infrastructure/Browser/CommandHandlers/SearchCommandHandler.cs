@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Storage;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -188,28 +189,7 @@ internal static class SearchCommandHandler
                 return;
 
             case "clear":
-                if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
-                {
-                    var clearCol = ctx.NavigationService.ActiveCollection;
-                    if (clearCol != null)
-                    {
-                        try
-                        {
-                            using var scope = ctx.ScopeFactory.CreateScope();
-                            var service = ctx.CreateCollectionService(scope);
-                            await service.ClearCollectionAsync(clearCol.Id, ct);
-                            await ctx.RefreshCollectionsAsync(ct);
-                            ctx.NavigationService.CollectionItemSelectedIndex = 0;
-                            ctx.Logger.LogInformation("Cleared collection: {Name}", clearCol.Name);
-                        }
-                        catch (Exception ex)
-                        {
-                            ctx.Logger.LogWarning(ex, "Failed to clear collection");
-                        }
-                    }
-                }
-
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
                 return;
 
             case "export":
@@ -263,7 +243,7 @@ internal static class SearchCommandHandler
                 "termreader-exports");
             Directory.CreateDirectory(outputDir);
 
-            var safeName = string.Join("_", collection.Name.Split(Path.GetInvalidFileNameChars()));
+            var safeName = FileNameSanitizer.Sanitize(collection.Name);
             var outputPath = Path.Combine(outputDir, $"{safeName}.{requestedFormat}");
 
             await exporter.ExportAsync(collection, new ExportOptions(outputPath), ct);
