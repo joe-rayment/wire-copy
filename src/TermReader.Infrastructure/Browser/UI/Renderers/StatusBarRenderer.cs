@@ -80,7 +80,7 @@ internal class StatusBarRenderer
                 ("?", "help")),
             ViewMode.Readable => FormatHints(
                 p,
-                ("+/-", "width"),
+                ("h/l", "width"),
                 ("v", "links"),
                 ("b", "back"),
                 ("?", "help")),
