@@ -199,6 +199,20 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
+    public void MapKeyToCommand_ShiftR_ReturnsForceRefresh()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.R, ConsoleModifiers.Shift);
+        result.Type.Should().Be(CommandType.ForceRefresh);
+    }
+
+    [Fact]
+    public void MapKeyToCommand_ShiftI_ReturnsInteractiveRefresh()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.I, ConsoleModifiers.Shift);
+        result.Type.Should().Be(CommandType.InteractiveRefresh);
+    }
+
+    [Fact]
     public void MapKeyToCommand_ShiftUnknown_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, ConsoleModifiers.Shift);
@@ -278,6 +292,15 @@ public class TerminalInputHandlerTests
         help.Should().Contain("Move up");
         help.Should().Contain("Go back");
         help.Should().Contain("Follow link");
+    }
+
+    [Fact]
+    public void GetHelpText_ContainsCacheKeybindings()
+    {
+        var help = _sut.GetHelpText();
+
+        help.Should().Contain("Force-refresh");
+        help.Should().Contain("Interactive refresh");
     }
 
     #endregion
