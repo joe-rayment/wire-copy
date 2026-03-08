@@ -221,11 +221,7 @@ internal static class SearchCommandHandler
                 return;
 
             case "podcast":
-                ctx.NavigationService.SetStatusMessage(
-                    ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
-                        ? "Podcast generation not yet available"
-                        : "Open a collection first, then use :podcast");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
                 return;
 
             default:
