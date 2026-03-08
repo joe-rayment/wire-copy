@@ -87,13 +87,17 @@ internal class StatusBarRenderer
             ViewMode.CollectionList => FormatHints(
                 p,
                 ("Enter", "open"),
+                ("d", "delete"),
+                ("b", "back"),
                 ("?", "help")),
             ViewMode.CollectionItems => FormatHints(
                 p,
                 ("Enter", "open"),
                 ("d", "remove"),
+                ("X", "clear"),
                 ("J/K", "reorder"),
                 ("p", "podcast"),
+                (":", "cmd"),
                 ("b", "back"),
                 ("?", "help")),
             ViewMode.Launcher => FormatHints(
