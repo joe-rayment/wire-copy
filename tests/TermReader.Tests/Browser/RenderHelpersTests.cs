@@ -295,4 +295,32 @@ public class RenderHelpersTests
     }
 
     #endregion
+
+    #region FormatCacheAge
+
+    [Fact]
+    public void FormatCacheAge_Null_ReturnsJustNow()
+    {
+        RenderHelpers.FormatCacheAge(null).Should().Be("just now");
+    }
+
+    [Fact]
+    public void FormatCacheAge_LessThanOneMinute_ReturnsLessThan1m()
+    {
+        RenderHelpers.FormatCacheAge(DateTime.UtcNow.AddSeconds(-30)).Should().Be("<1m ago");
+    }
+
+    [Fact]
+    public void FormatCacheAge_FiveMinutesAgo_Returns5m()
+    {
+        RenderHelpers.FormatCacheAge(DateTime.UtcNow.AddMinutes(-5)).Should().Be("5m ago");
+    }
+
+    [Fact]
+    public void FormatCacheAge_TwoHoursAgo_Returns2h()
+    {
+        RenderHelpers.FormatCacheAge(DateTime.UtcNow.AddHours(-2)).Should().Be("2h ago");
+    }
+
+    #endregion
 }

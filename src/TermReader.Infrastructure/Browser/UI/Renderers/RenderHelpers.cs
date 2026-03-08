@@ -95,6 +95,22 @@ internal class RenderHelpers
         return TruncateToWidth(text, maxWidth - 3) + "...";
     }
 
+    public static string FormatCacheAge(DateTime? cachedAt)
+    {
+        if (cachedAt == null)
+        {
+            return "just now";
+        }
+
+        var age = DateTime.UtcNow - cachedAt.Value;
+        return age.TotalMinutes switch
+        {
+            < 1 => "<1m ago",
+            < 60 => $"{(int)age.TotalMinutes}m ago",
+            _ => $"{(int)age.TotalHours}h ago"
+        };
+    }
+
     public static string TruncateUrl(string url, int maxWidth)
     {
         if (string.IsNullOrEmpty(url) || GetDisplayWidth(url) <= maxWidth)

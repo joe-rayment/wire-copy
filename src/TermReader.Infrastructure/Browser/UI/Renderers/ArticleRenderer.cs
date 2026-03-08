@@ -110,8 +110,12 @@ internal class ArticleRenderer
             ? $" /{context.SearchQuery}"
             : string.Empty;
 
+        var cacheBadge = context.IsFromCache
+            ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}"
+            : string.Empty;
+
         var hints = "+/-:width v:links b:back ?:help";
 
-        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{searchInfo} | {hints}{Reset}");
+        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{cacheBadge}{searchInfo} | {hints}{Reset}");
     }
 }

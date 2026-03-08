@@ -36,7 +36,7 @@ internal class StatusBarRenderer
         var hints = GetKeyHints(mode, p);
         var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
         var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
-        var cacheBadge = context.IsFromCache ? $" {p.SecondaryText.AnsiFg}[cached {FormatCacheAge(context.CachedAt)}]{Reset}" : string.Empty;
+        var cacheBadge = context.IsFromCache ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}" : string.Empty;
 
         var statusMsg = !string.IsNullOrEmpty(context.StatusMessage)
             ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
@@ -108,19 +108,4 @@ internal class StatusBarRenderer
             $"{p.PrimaryText.AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
     }
 
-    private static string FormatCacheAge(DateTime? cachedAt)
-    {
-        if (cachedAt == null)
-        {
-            return "just now";
-        }
-
-        var age = DateTime.UtcNow - cachedAt.Value;
-        return age.TotalMinutes switch
-        {
-            < 1 => "<1m ago",
-            < 60 => $"{(int)age.TotalMinutes}m ago",
-            _ => $"{(int)age.TotalHours}h ago"
-        };
-    }
 }
