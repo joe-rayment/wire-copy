@@ -447,7 +447,8 @@ public class BrowserOrchestrator : IBrowserService
                 ? Math.Clamp(Math.Min(_commandContext.ContentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
                 : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
             Use256Colors = use256,
-            CachedUrls = _pageCache.GetCachedUrls()
+            CachedUrls = _pageCache.GetCachedUrls(),
+            CacheProgress = _preloadService.GetProgress()
         };
     }
 
