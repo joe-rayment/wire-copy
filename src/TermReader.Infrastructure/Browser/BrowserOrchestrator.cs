@@ -683,7 +683,10 @@ public class BrowserOrchestrator : IBrowserService
             return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
         }
 
-        switch (command.Type)
+        // Remap h/l (CollapseNode/ExpandNode) to width controls in Reader View
+        var commandType = RemapForViewMode(command.Type);
+
+        switch (commandType)
         {
             case CommandType.Quit:
                 return false;
@@ -812,6 +815,21 @@ public class BrowserOrchestrator : IBrowserService
         NotifyPreloadSelectionChanged();
 
         return true;
+    }
+
+    private CommandType RemapForViewMode(CommandType commandType)
+    {
+        if (_navigationService.CurrentContext.ViewMode != ViewMode.Readable)
+        {
+            return commandType;
+        }
+
+        return commandType switch
+        {
+            CommandType.CollapseNode => CommandType.DecreaseWidth,
+            CommandType.ExpandNode => CommandType.IncreaseWidth,
+            _ => commandType,
+        };
     }
 
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)
