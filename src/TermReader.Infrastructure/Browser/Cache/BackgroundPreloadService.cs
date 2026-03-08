@@ -92,6 +92,80 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
+    public void NotifyCollectionChanged(int selectedIndex, IReadOnlyList<string> urls)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var items = new List<PreloadItem>();
+        var allEligible = new List<string>();
+        var needsJs = new List<string>();
+
+        for (var i = 0; i < urls.Count; i++)
+        {
+            var url = urls[i];
+            if (string.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            allEligible.Add(url);
+
+            // Skip domains known to need JS (Selenium)
+            var origin = UrlNormalizer.GetOrigin(url);
+            if (origin != null && _needsJsDomains.ContainsKey(origin))
+            {
+                needsJs.Add(url);
+                continue;
+            }
+
+            // Skip already cached
+            if (_cache.Contains(url))
+            {
+                continue;
+            }
+
+            // Skip circuit-broken domains
+            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
+            {
+                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
+                {
+                    continue;
+                }
+
+                _circuitBrokenDomains.TryRemove(origin, out _);
+            }
+
+            items.Add(new PreloadItem(url, i));
+        }
+
+        // Sort by distance from selected index (closest first)
+        items.Sort((a, b) =>
+            Math.Abs(a.ListIndex - selectedIndex).CompareTo(
+                Math.Abs(b.ListIndex - selectedIndex)));
+
+        lock (_queueLock)
+        {
+            _queue = items;
+            _allEligibleUrls = allEligible;
+            _needsJsUrls = needsJs;
+        }
+
+        SignalQueueChanged();
+    }
+
+    public void ClearQueue()
+    {
+        lock (_queueLock)
+        {
+            _queue = [];
+            _allEligibleUrls = [];
+            _needsJsUrls = [];
+        }
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Background pre-load service started");
