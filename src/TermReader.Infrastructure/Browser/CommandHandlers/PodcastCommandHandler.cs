@@ -122,21 +122,40 @@ internal static class PodcastCommandHandler
                 : $"    {p.ErrorFg.AnsiFg}\u25cb{Reset} OpenAI TTS API key     {p.ErrorFg.AnsiFg}not found{Reset}";
             helpers.WriteLine(ttsIndicator);
 
+            if (!isTtsConfigured)
+            {
+                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required for text-to-speech audio generation{Reset}");
+            }
+
             var gcsIndicator = isGcsConfigured
-                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}configured{Reset}"
-                : $"    {p.ErrorFg.AnsiFg}\u25cb{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not found (local-only){Reset}";
+                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}"
+                : $"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not set (local-only){Reset}";
             helpers.WriteLine(gcsIndicator);
+
+            if (!isGcsConfigured)
+            {
+                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed publishing{Reset}");
+            }
 
             helpers.WriteLine();
 
+            var hints = new StringBuilder();
             if (!isTtsConfigured)
             {
-                helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:set API key   {Reset}{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+                hints.Append($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:set API key   {Reset}");
             }
             else
             {
-                helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+                hints.Append($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}");
             }
+
+            if (!isGcsConfigured)
+            {
+                hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}set bucket   {Reset}");
+            }
+
+            hints.Append($"{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+            helpers.WriteLine(hints.ToString());
 
             helpers.ClearRemainingLines();
 
@@ -157,7 +176,8 @@ internal static class PodcastCommandHandler
             {
                 if (!isTtsConfigured)
                 {
-                    var apiKey = await ctx.InputHandler.PromptForInputAsync("OpenAI API key: ", ct);
+                    var apiKey = await ctx.InputHandler.PromptForInputAsync(
+                        "OpenAI API key (platform.openai.com/api-keys): ", ct);
                     if (!string.IsNullOrWhiteSpace(apiKey))
                     {
                         ttsService.SetApiKeyOverride(apiKey.Trim());
@@ -168,6 +188,23 @@ internal static class PodcastCommandHandler
                 }
 
                 return true;
+            }
+
+            if (command.Type == CommandType.OpenCommandLine && !isGcsConfigured)
+            {
+                var bucketName = await ctx.InputHandler.PromptForInputAsync(
+                    "GCS bucket name: ", ct);
+                if (!string.IsNullOrWhiteSpace(bucketName))
+                {
+                    var trimmed = bucketName.Trim();
+                    if (GcsConfiguration.IsValidBucketName(trimmed))
+                    {
+                        gcsConfig.BucketName = trimmed;
+                        isGcsConfigured = true;
+                    }
+                }
+
+                continue;
             }
         }
 
@@ -195,6 +232,7 @@ internal static class PodcastCommandHandler
         PodcastProgress? latestProgress = null;
         var animFrame = 0;
 
+        var lastProcessingIndex = -1;
         var progress = new Progress<PodcastProgress>(p =>
         {
             Volatile.Write(ref latestProgress, p);
@@ -203,15 +241,14 @@ internal static class PodcastCommandHandler
             {
                 var idx = p.CurrentArticle - 1;
 
-                for (var i = 0; i < idx; i++)
+                if (lastProcessingIndex >= 0 && lastProcessingIndex < idx &&
+                    statuses[lastProcessingIndex].State == ArticleState.Processing)
                 {
-                    if (statuses[i].State == ArticleState.Processing)
-                    {
-                        statuses[i].State = ArticleState.Completed;
-                    }
+                    statuses[lastProcessingIndex].State = ArticleState.Completed;
                 }
 
                 statuses[idx].State = ArticleState.Processing;
+                lastProcessingIndex = idx;
             }
         });
 
