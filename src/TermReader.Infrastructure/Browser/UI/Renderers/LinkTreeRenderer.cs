@@ -148,12 +148,80 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
-    /// Renders a card-style group header.
+    /// Renders a card-style group header, dispatching to sub-section or top-level rendering.
+    /// </summary>
+    public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
+    {
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            RenderSubSectionHeader(node, isSelected, options);
+            return;
+        }
+
+        RenderTopLevelGroupHeader(node, isSelected, options);
+    }
+
+    /// <summary>
+    /// Renders a sub-section header with visually lighter style than top-level groups.
+    /// Standard mode (cardHeight >= 2): blank line + thin-rule title line.
+    /// Compact mode (cardHeight == 1): single thin-rule title line.
+    /// Format: ' ─ Title (count) ────────'
+    /// </summary>
+    private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var availableLines = Math.Max(3, options.TerminalHeight - 9);
+        var cardHeight = GetCardHeight(availableLines);
+        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
+        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
+        var childCount = node.Children.Count;
+        var showCount = !isExpanded || childCount >= 5;
+        var countSuffix = showCount ? $" ({childCount})" : string.Empty;
+        var headerLabel = $"\u2500 {collapseIndicator} {node.Link.DisplayText}{countSuffix} ";
+
+        // Fill remaining width with thin rule
+        var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
+        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
+        var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
+
+        if (cardHeight >= 2)
+        {
+            // Line 0: blank line
+            if (isSelected)
+            {
+                _helpers.WriteLine(
+                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
+            }
+            else
+            {
+                _helpers.WriteLine();
+            }
+        }
+
+        // Header line
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{truncLine}");
+            sb.Append($"{new string(' ', Math.Max(0, width - 1 - truncLine.Length))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else
+        {
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncLine}{Reset}");
+        }
+    }
+
+    /// <summary>
+    /// Renders a top-level group header (Navigation, External, Footer).
     /// Standard mode (cardHeight >= 2): blank line + header text [+ thin rule for expanded].
     /// Compact mode (cardHeight == 1): single line.
     /// Selected headers get accent bar and highlight background.
     /// </summary>
-    public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
+    private void RenderTopLevelGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -370,12 +438,19 @@ internal class LinkTreeRenderer
     /// <summary>
     /// Gets the number of lines a group header occupies at a given card height.
     /// Used by AdjustScrollForSelection to mirror the rendering loop's line accounting.
+    /// Sub-section headers are always 2 lines (blank + header) or 1 in compact mode.
+    /// Top-level headers are 3 lines when expanded (blank + header + rule) or 2 when collapsed.
     /// </summary>
     internal static int GetLinesForGroupHeader(LinkNode node, int cardHeight)
     {
         if (cardHeight == 1)
         {
             return 1;
+        }
+
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            return 2;
         }
 
         return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
