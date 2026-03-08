@@ -55,8 +55,8 @@ public class NavigationTree
 
     /// <summary>
     /// Builds a navigation tree with hierarchical groups.
-    /// Creates group headers for each LinkType with proper collapse states.
-    /// Order: Content (expanded), Navigation (collapsed), External (collapsed), Footer (collapsed).
+    /// Content links are added directly under root (no group header).
+    /// Navigation, External, and Footer get collapsible group headers (collapsed by default).
     /// </summary>
     public static NavigationTree BuildWithGroups(Dictionary<LinkType, List<LinkInfo>> groupedLinks)
     {
@@ -72,14 +72,24 @@ public class NavigationTree
                 continue;
             }
 
-            // Create group header
-            var groupHeader = LinkInfo.CreateGroupHeader(linkType);
-            var groupNode = root.AddChild(groupHeader);
-
-            // Add links as children of the group
-            foreach (var link in links)
+            if (linkType == LinkType.Content)
             {
-                groupNode.AddChild(link);
+                // Content links are promoted directly under root (no group header)
+                foreach (var link in links)
+                {
+                    root.AddChild(link);
+                }
+            }
+            else
+            {
+                // Non-content groups get a collapsible group header
+                var groupHeader = LinkInfo.CreateGroupHeader(linkType);
+                var groupNode = root.AddChild(groupHeader);
+
+                foreach (var link in links)
+                {
+                    groupNode.AddChild(link);
+                }
             }
         }
 
