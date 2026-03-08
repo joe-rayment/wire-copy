@@ -65,6 +65,7 @@ public class SearchCommandHandlerTests
                 return Task.CompletedTask;
             },
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) =>
             {
                 _renderCalled = true;

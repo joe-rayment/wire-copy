@@ -132,6 +132,18 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ClearRemainingLines();
     }
 
+    public void RenderInteractiveRefresh(string url)
+    {
+        _helpers.Clear();
+        _helpers.WriteLine();
+        _helpers.WriteLine("  Interactive refresh — browser window is open.");
+        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
+        _helpers.WriteLine();
+        _helpers.WriteLine("  Complete any captcha or login in the browser window.");
+        _helpers.WriteLine("  Press Enter to accept the page, or Esc to cancel.");
+        _helpers.ClearRemainingLines();
+    }
+
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;

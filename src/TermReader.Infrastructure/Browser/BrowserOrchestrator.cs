@@ -94,6 +94,7 @@ public class BrowserOrchestrator : IBrowserService
             ThemeProvider = themeProvider,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
+            InteractiveRefreshAsync = InteractiveRefreshAsync,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,
@@ -541,6 +542,67 @@ public class BrowserOrchestrator : IBrowserService
         }
     }
 
+    private async Task InteractiveRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)
+    {
+        _preloadService.Pause();
+
+        try
+        {
+            _renderer.RenderInteractiveRefresh(url);
+
+            // Force headed mode for interactive refresh
+            var loadResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                cancellationToken);
+
+            if (!loadResult.Success)
+            {
+                _renderer.RenderError($"Failed to load page: {loadResult.ErrorMessage}", url);
+                return;
+            }
+
+            // If bot challenge detected, use the challenge polling helper (force headed)
+            var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken, headlessOverride: false);
+            if (challengeResult != null)
+            {
+                loadResult = challengeResult;
+            }
+
+            // Show prompt and wait for user to accept or cancel
+            _renderer.RenderInteractiveRefresh(url);
+
+            var input = await _inputHandler.WaitForInputAsync(cancellationToken);
+            if (input.Type == CommandType.GoBack)
+            {
+                // User pressed Esc — cancel
+                await RenderCurrentPageAsync(options, cancellationToken);
+                return;
+            }
+
+            // Accept: build page, cache, and re-render
+            var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
+
+            _pageCache.Put(url, loadResult);
+            _navigationService.NavigateTo(page);
+            _navigationService.SetCacheInfo(false, null);
+            _lineCacheManager.InvalidateLineCache();
+
+            _preloadService.NotifyPageLoaded(page);
+            NotifyPreloadSelectionChanged();
+
+            await RenderCurrentPageAsync(options, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during interactive refresh for {Url}", url);
+            _renderer.RenderError(ex.Message, url);
+        }
+        finally
+        {
+            _preloadService.Resume();
+        }
+    }
+
     /// <summary>
     /// Handles bot challenge detection and polling in headed mode.
     /// Returns a resolved PageLoadResult if the challenge was solved, or null if not applicable.
@@ -548,11 +610,14 @@ public class BrowserOrchestrator : IBrowserService
     private async Task<PageLoadResult?> HandleBotChallengeIfNeededAsync(
         string url,
         PageLoadResult loadResult,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? headlessOverride = null)
     {
+        var headless = headlessOverride ?? _browserConfig.Headless;
+
         if (loadResult.FetchMethod != FetchMethod.Selenium ||
             !PageLoader.IsBotChallengePage(loadResult.Html) ||
-            _browserConfig.Headless)
+            headless)
         {
             return null;
         }
@@ -571,7 +636,7 @@ public class BrowserOrchestrator : IBrowserService
             {
                 if (_browserSession is IBrowserSession session)
                 {
-                    var driver = session.GetOrCreateDriver(_browserConfig.Headless);
+                    var driver = session.GetOrCreateDriver(headless);
                     var currentSource = driver.PageSource;
                     if (!PageLoader.IsBotChallengePage(currentSource))
                     {
@@ -601,7 +666,7 @@ public class BrowserOrchestrator : IBrowserService
         _renderer.RenderLoading(url);
         _pageCache.Remove(url);
         var retryResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+            new PageLoadRequest { Url = url, Headless = headless, ForceRefresh = true },
             cancellationToken);
 
         return retryResult.Success ? retryResult : null;
@@ -663,6 +728,9 @@ public class BrowserOrchestrator : IBrowserService
                 break;
             case CommandType.ForceRefresh:
                 await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken);
+                break;
+            case CommandType.InteractiveRefresh:
+                await NavigationCommandHandler.HandleInteractiveRefresh(_commandContext, options, cancellationToken);
                 break;
             case CommandType.Navigate:
                 await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken);

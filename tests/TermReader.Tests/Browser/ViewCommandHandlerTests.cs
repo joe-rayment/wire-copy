@@ -59,6 +59,7 @@ public class ViewCommandHandlerTests
             ThemeProvider = themeProvider,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (opts, _) =>
             {
                 _renderCalled = true;
@@ -254,6 +255,7 @@ public class ViewCommandHandlerTests
             ThemeProvider = Substitute.For<IThemeProvider>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
             RefreshCollectionsAsync = _ => Task.CompletedTask,
             RefreshBookmarksAsync = _ =>
