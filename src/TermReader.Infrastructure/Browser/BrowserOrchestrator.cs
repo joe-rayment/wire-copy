@@ -132,60 +132,11 @@ public class BrowserOrchestrator : IBrowserService
 
         // Bot challenge handling: if Selenium returned a challenge page in headed mode,
         // wait for the user to solve it in the visible browser window
-        if (loadResult.FetchMethod == FetchMethod.Selenium &&
-            PageLoader.IsBotChallengePage(loadResult.Html) &&
-            !_browserConfig.Headless)
+        var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken);
+        if (challengeResult != null)
         {
-            _logger.LogWarning("Bot challenge detected in headed mode, waiting for user to resolve: {Url}", url);
-            _renderer.RenderChallenge(url);
-
-            var challengeTimeout = TimeSpan.FromMinutes(2);
-            var sw = Stopwatch.StartNew();
-            var resolved = false;
-
-            while (sw.Elapsed < challengeTimeout && !cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(1500, cancellationToken);
-                try
-                {
-                    if (_browserSession is IBrowserSession session)
-                    {
-                        var driver = session.GetOrCreateDriver(_browserConfig.Headless);
-                        var currentSource = driver.PageSource;
-                        if (!PageLoader.IsBotChallengePage(currentSource))
-                        {
-                            _logger.LogInformation("Bot challenge resolved by user: {Url}", url);
-                            resolved = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Browser session does not support driver access, skipping challenge poll");
-                        break;
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogDebug(ex, "Error polling challenge status");
-                    break;
-                }
-            }
-
-            if (resolved)
-            {
-                _renderer.RenderLoading(url);
-                _pageCache.Remove(url);
-                var retryResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
-                    cancellationToken);
-
-                if (retryResult.Success)
-                {
-                    _lastLoadFetchMethod = retryResult.FetchMethod;
-                    page = await BuildPageFromLoadResultAsync(retryResult, cancellationToken);
-                }
-            }
+            _lastLoadFetchMethod = challengeResult.FetchMethod;
+            page = await BuildPageFromLoadResultAsync(challengeResult, cancellationToken);
         }
 
         // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
@@ -588,6 +539,72 @@ public class BrowserOrchestrator : IBrowserService
         {
             _preloadService.Resume();
         }
+    }
+
+    /// <summary>
+    /// Handles bot challenge detection and polling in headed mode.
+    /// Returns a resolved PageLoadResult if the challenge was solved, or null if not applicable.
+    /// </summary>
+    private async Task<PageLoadResult?> HandleBotChallengeIfNeededAsync(
+        string url,
+        PageLoadResult loadResult,
+        CancellationToken cancellationToken)
+    {
+        if (loadResult.FetchMethod != FetchMethod.Selenium ||
+            !PageLoader.IsBotChallengePage(loadResult.Html) ||
+            _browserConfig.Headless)
+        {
+            return null;
+        }
+
+        _logger.LogWarning("Bot challenge detected in headed mode, waiting for user to resolve: {Url}", url);
+        _renderer.RenderChallenge(url);
+
+        var challengeTimeout = TimeSpan.FromMinutes(2);
+        var sw = Stopwatch.StartNew();
+        var resolved = false;
+
+        while (sw.Elapsed < challengeTimeout && !cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(1500, cancellationToken);
+            try
+            {
+                if (_browserSession is IBrowserSession session)
+                {
+                    var driver = session.GetOrCreateDriver(_browserConfig.Headless);
+                    var currentSource = driver.PageSource;
+                    if (!PageLoader.IsBotChallengePage(currentSource))
+                    {
+                        _logger.LogInformation("Bot challenge resolved by user: {Url}", url);
+                        resolved = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    _logger.LogDebug("Browser session does not support driver access, skipping challenge poll");
+                    break;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Error polling challenge status");
+                break;
+            }
+        }
+
+        if (!resolved)
+        {
+            return null;
+        }
+
+        _renderer.RenderLoading(url);
+        _pageCache.Remove(url);
+        var retryResult = await _pageLoader.LoadAsync(
+            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+            cancellationToken);
+
+        return retryResult.Success ? retryResult : null;
     }
 
     private async Task<bool> HandleCommandAsync(NavigationCommand command, RenderOptions options, CancellationToken cancellationToken)
