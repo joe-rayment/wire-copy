@@ -60,10 +60,15 @@ public record LinkInfo
     public bool IsFromImageAlt { get; init; }
 
     /// <summary>
-    /// True if this LinkInfo represents a group header (e.g., "Navigation", "Content").
-    /// Group headers have special rendering and behavior (toggle collapse on Enter).
+    /// Classifies whether this LinkInfo is a regular link or a header.
     /// </summary>
-    public bool IsGroupHeader { get; init; }
+    public HeaderType HeaderType { get; init; }
+
+    /// <summary>
+    /// True if this LinkInfo represents any kind of header (group or sub-section).
+    /// Computed from HeaderType for backward compatibility.
+    /// </summary>
+    public bool IsGroupHeader => HeaderType != HeaderType.None;
 
     /// <summary>
     /// Determines if this link should start collapsed based on type and importance.
@@ -106,7 +111,22 @@ public record LinkInfo
             DisplayText = displayText,
             Type = type,
             ImportanceScore = 100,
-            IsGroupHeader = true
+            HeaderType = HeaderType.TopLevelGroup
+        };
+    }
+
+    /// <summary>
+    /// Creates a LinkInfo for a sub-section header within a group.
+    /// </summary>
+    public static LinkInfo CreateSubSectionHeader(string title, LinkType type)
+    {
+        return new LinkInfo
+        {
+            Url = string.Empty,
+            DisplayText = title,
+            Type = type,
+            ImportanceScore = 100,
+            HeaderType = HeaderType.SubSection
         };
     }
 }
