@@ -142,6 +142,7 @@ public class TerminalInputHandler : IInputHandler
    S               Save to specific collection
    d               Delete / remove item
    J / K           Reorder items
+   p               Generate podcast from collection
 
  Cache
    R               Force-refresh (bypass cache)
@@ -267,6 +268,7 @@ public class TerminalInputHandler : IInputHandler
             'S' => new NavigationCommand { Type = CommandType.SaveToSpecific },
             'A' => new NavigationCommand { Type = CommandType.SaveAllToReadingList },
             'd' => new NavigationCommand { Type = CommandType.DeleteItem },
+            'p' => new NavigationCommand { Type = CommandType.GeneratePodcast },
             'a' => new NavigationCommand { Type = CommandType.AddBookmark },
             'c' => new NavigationCommand { Type = CommandType.OpenCollections },
             '+' or '=' => new NavigationCommand { Type = CommandType.IncreaseWidth },

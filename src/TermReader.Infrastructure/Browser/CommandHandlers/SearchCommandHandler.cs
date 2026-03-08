@@ -220,6 +220,14 @@ internal static class SearchCommandHandler
                 await HandleCacheCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return;
 
+            case "podcast":
+                ctx.NavigationService.SetStatusMessage(
+                    ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
+                        ? "Podcast generation not yet available"
+                        : "Open a collection first, then use :podcast");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);

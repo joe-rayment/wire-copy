@@ -93,6 +93,7 @@ internal class StatusBarRenderer
                 ("Enter", "open"),
                 ("d", "remove"),
                 ("J/K", "reorder"),
+                ("p", "podcast"),
                 ("b", "back"),
                 ("?", "help")),
             ViewMode.Launcher => FormatHints(
