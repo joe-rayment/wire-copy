@@ -60,6 +60,7 @@ public class CollectionCommandStatusTests
             RefreshBookmarksAsync = _ => Task.CompletedTask,
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             GetCurrentRenderOptions = () => _options,
             CreateCollectionService = _ => _collectionService,
             GetReaderViewportHeight = _ => 20,

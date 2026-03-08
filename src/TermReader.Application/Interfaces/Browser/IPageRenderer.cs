@@ -51,6 +51,12 @@ public interface IPageRenderer
     void RenderChallenge(string url);
 
     /// <summary>
+    /// Renders a message for interactive refresh mode (headed browser open for manual intervention).
+    /// </summary>
+    /// <param name="url">URL being loaded interactively.</param>
+    void RenderInteractiveRefresh(string url);
+
+    /// <summary>
     /// Renders status bar at bottom of screen.
     /// </summary>
     /// <param name="context">Current navigation context.</param>
