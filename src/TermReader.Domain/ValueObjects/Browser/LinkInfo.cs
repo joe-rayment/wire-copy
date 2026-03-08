@@ -54,6 +54,12 @@ public record LinkInfo
     public DateTime? PublishedDate { get; init; }
 
     /// <summary>
+    /// Section heading from the HTML DOM ancestry (e.g., nearest h2/h3 above the link).
+    /// Null when no section heading was detected.
+    /// </summary>
+    public string? SectionTitle { get; init; }
+
+    /// <summary>
     /// True if display text was extracted from an image alt attribute.
     /// Used for deduplication - actual text is preferred over image alt.
     /// </summary>
