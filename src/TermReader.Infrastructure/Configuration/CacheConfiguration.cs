@@ -43,11 +43,6 @@ public class CacheConfiguration
     public int PreloadDelayMs { get; init; } = 4000;
 
     /// <summary>
-    /// Number of nearby links (in each direction) to include as Nearby priority. Default: 3.
-    /// </summary>
-    public int NearbyLinkRadius { get; init; } = 3;
-
-    /// <summary>
     /// Cooldown in seconds before retrying a circuit-broken domain. Default: 5 minutes.
     /// </summary>
     public int CircuitBreakerCooldownSeconds { get; init; } = 300;

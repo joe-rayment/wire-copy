@@ -53,11 +53,6 @@ public class CacheConfigurationValidator : IValidateOptions<CacheConfiguration>
             errors.Add($"{nameof(CacheConfiguration.PreloadDelayMs)} must be positive. Got: {options.PreloadDelayMs}");
         }
 
-        if (options.NearbyLinkRadius < 0)
-        {
-            errors.Add($"{nameof(CacheConfiguration.NearbyLinkRadius)} cannot be negative. Got: {options.NearbyLinkRadius}");
-        }
-
         if (options.CircuitBreakerCooldownSeconds <= 0)
         {
             errors.Add($"{nameof(CacheConfiguration.CircuitBreakerCooldownSeconds)} must be positive. Got: {options.CircuitBreakerCooldownSeconds}");

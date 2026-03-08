@@ -33,68 +33,67 @@ public class BackgroundPreloadServiceTests
             NullLogger<BackgroundPreloadService>.Instance);
     }
 
-    #region BuildQueue - Priority Ordering
+    #region BuildQueue - Top-to-Bottom Ordering
 
     [Fact]
-    public void BuildQueue_SelectedLink_GetsFocusedPriority()
+    public void BuildQueue_SortedByListIndex()
+    {
+        var urls = Enumerable.Range(1, 5).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = _service.BuildQueue(3, nodes, "https://example.com");
+
+        // All items should be sorted by their original list index (top-to-bottom)
+        for (var i = 1; i < queue.Count; i++)
+        {
+            queue[i].ListIndex.Should().BeGreaterThan(queue[i - 1].ListIndex);
+        }
+    }
+
+    [Fact]
+    public void BuildQueue_PreservesOriginalListIndex()
     {
         var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2", "https://example.com/a3");
 
         var queue = _service.BuildQueue(1, nodes, "https://example.com");
 
-        queue.Should().Contain(i => i.Url == "https://example.com/a2" && i.Priority == PreloadPriority.Focused);
+        queue.Should().HaveCount(3);
+        queue[0].ListIndex.Should().Be(0);
+        queue[1].ListIndex.Should().Be(1);
+        queue[2].ListIndex.Should().Be(2);
     }
 
     [Fact]
-    public void BuildQueue_NearbyLinks_GetNearbyPriority()
+    public void BuildQueue_SelectedIndexDoesNotAffectOrdering()
     {
-        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var urls = Enumerable.Range(1, 5).Select(i => $"https://example.com/a{i}").ToArray();
         var nodes = CreateContentNodes(urls);
 
-        var queue = _service.BuildQueue(5, nodes, "https://example.com");
+        // Regardless of which item is selected, ordering is always top-to-bottom
+        var queueStart = _service.BuildQueue(0, nodes, "https://example.com");
+        var queueEnd = _service.BuildQueue(4, nodes, "https://example.com");
 
-        // Nodes at indices 2,3,4 and 6,7,8 are within radius 3 of index 5
-        var nearbyItems = queue.Where(i => i.Priority == PreloadPriority.Nearby).ToList();
-        nearbyItems.Should().HaveCount(6);
+        queueStart.Select(i => i.Url).Should().Equal(queueEnd.Select(i => i.Url));
     }
 
     [Fact]
-    public void BuildQueue_FarLinks_GetSpeculativePriority()
+    public void BuildQueue_MixedNodeTypes_ListIndexReflectsOriginalPosition()
     {
-        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
-        var nodes = CreateContentNodes(urls);
+        var root = LinkNode.CreateRoot();
+        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content, 5);
+        var article1 = new LinkInfo { Url = "https://example.com/a1", DisplayText = "A1", Type = LinkType.Content, ImportanceScore = 50 };
+        var article2 = new LinkInfo { Url = "https://example.com/a2", DisplayText = "A2", Type = LinkType.Content, ImportanceScore = 50 };
+        root.AddChild(groupHeader);  // index 0
+        root.AddChild(article1);     // index 1
+        root.AddChild(groupHeader);  // index 2
+        root.AddChild(article2);     // index 3
+        var nodes = root.Children.ToList();
 
-        var queue = _service.BuildQueue(5, nodes, "https://example.com");
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
 
-        var specItems = queue.Where(i => i.Priority == PreloadPriority.Speculative).ToList();
-        specItems.Should().HaveCount(3); // indices 0, 1, 9
-    }
-
-    [Fact]
-    public void BuildQueue_SortedByPriorityThenDistance()
-    {
-        var urls = Enumerable.Range(1, 8).Select(i => $"https://example.com/a{i}").ToArray();
-        var nodes = CreateContentNodes(urls);
-
-        var queue = _service.BuildQueue(3, nodes, "https://example.com");
-
-        // First item should be Focused (selected)
-        queue[0].Priority.Should().Be(PreloadPriority.Focused);
-
-        // Then Nearby items sorted by distance
-        var nearbyItems = queue.Where(i => i.Priority == PreloadPriority.Nearby).ToList();
-        for (var i = 1; i < nearbyItems.Count; i++)
-        {
-            nearbyItems[i].Distance.Should().BeGreaterThanOrEqualTo(nearbyItems[i - 1].Distance);
-        }
-
-        // Then Speculative items
-        var lastNearby = queue.FindLastIndex(i => i.Priority == PreloadPriority.Nearby);
-        var firstSpec = queue.FindIndex(i => i.Priority == PreloadPriority.Speculative);
-        if (lastNearby >= 0 && firstSpec >= 0)
-        {
-            firstSpec.Should().BeGreaterThan(lastNearby);
-        }
+        queue.Should().HaveCount(2);
+        queue[0].ListIndex.Should().Be(1, "article1 is at original index 1");
+        queue[1].ListIndex.Should().Be(3, "article2 is at original index 3");
     }
 
     #endregion

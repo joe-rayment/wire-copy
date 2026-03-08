@@ -92,17 +92,6 @@ public class CacheConfigurationValidatorTests
     }
 
     [Fact]
-    public void Validate_NegativeNearbyLinkRadius_Fails()
-    {
-        var config = new CacheConfiguration { NearbyLinkRadius = -1 };
-
-        var result = _validator.Validate(null, config);
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain("NearbyLinkRadius");
-    }
-
-    [Fact]
     public void Validate_ZeroPreloadDelay_Fails()
     {
         var config = new CacheConfiguration { PreloadDelayMs = 0 };
