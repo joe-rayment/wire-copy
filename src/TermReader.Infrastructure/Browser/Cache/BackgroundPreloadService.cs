@@ -30,9 +30,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
+    private readonly Timer _debounceTimer;
     private List<PreloadItem> _queue = [];
     private volatile bool _paused;
     private volatile bool _disposed;
+
+    // Debounce state: stores the latest selection change parameters
+    private int _pendingSelectedIndex;
+    private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
+    private string? _pendingCurrentPageUrl;
 
     public BackgroundPreloadService(
         IPageCache cache,
@@ -46,6 +52,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _httpClient = httpClient;
         _config = config;
         _logger = logger;
+        _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     public void NotifyPageLoaded(Page page)
@@ -56,15 +63,28 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     public void NotifySelectionChanged(int selectedIndex, IReadOnlyList<LinkNode> visibleNodes, string currentPageUrl)
     {
-        var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
+        if (_disposed)
+        {
+            return;
+        }
 
         lock (_queueLock)
         {
-            _queue = newQueue;
+            _pendingSelectedIndex = selectedIndex;
+            _pendingVisibleNodes = visibleNodes;
+            _pendingCurrentPageUrl = currentPageUrl;
         }
 
-        // Signal the background loop that the queue changed
-        SignalQueueChanged();
+        // Reset the debounce timer (200ms). If the user is scrolling fast,
+        // this prevents rebuilding the queue on every keystroke.
+        try
+        {
+            _debounceTimer.Change(200, Timeout.Infinite);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer was disposed between the _disposed check and the Change call
+        }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -130,6 +150,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         _disposed = true;
+        _debounceTimer.Dispose();
         SignalQueueChanged();
         _queueSignal.Dispose();
     }
@@ -237,6 +258,34 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
         return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
+    }
+
+    private void OnDebounceElapsed(object? state)
+    {
+        int selectedIndex;
+        IReadOnlyList<LinkNode>? visibleNodes;
+        string? currentPageUrl;
+
+        lock (_queueLock)
+        {
+            selectedIndex = _pendingSelectedIndex;
+            visibleNodes = _pendingVisibleNodes;
+            currentPageUrl = _pendingCurrentPageUrl;
+        }
+
+        if (visibleNodes == null || currentPageUrl == null)
+        {
+            return;
+        }
+
+        var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
+
+        lock (_queueLock)
+        {
+            _queue = newQueue;
+        }
+
+        SignalQueueChanged();
     }
 
     private void SignalQueueChanged()
