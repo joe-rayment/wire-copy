@@ -82,6 +82,7 @@ public enum CommandType
     ReorderUp,
     ReorderDown,
     GeneratePodcast,
+    ClearCollection,
 
     // Launcher
     AddBookmark,

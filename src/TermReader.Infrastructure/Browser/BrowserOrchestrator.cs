@@ -805,6 +805,9 @@ public class BrowserOrchestrator : IBrowserService
             case CommandType.ReorderDown:
                 await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
                 break;
+            case CommandType.ClearCollection:
+                await CollectionCommandHandler.HandleClearCollection(_commandContext, options, cancellationToken);
+                break;
 
             case CommandType.GeneratePodcast:
                 await PodcastCommandHandler.HandleGeneratePodcast(

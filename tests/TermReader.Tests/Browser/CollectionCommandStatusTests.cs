@@ -162,10 +162,28 @@ public class CollectionCommandStatusTests
         collection.AddItem("https://example.com/article", "Old Article");
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("y");
 
         await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Removed: Old Article");
+    }
+
+    [Fact]
+    public async Task HandleDeleteItem_RemoveItem_Cancelled_NoAction()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/article", "Old Article");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("n");
+
+        await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
+
+        await _collectionService.DidNotReceive()
+            .RemoveItemAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -174,11 +192,91 @@ public class CollectionCommandStatusTests
         var collections = new List<Collection> { Collection.Create("My Collection") };
         _ctx.Collections = collections;
         _navService.EnterCollections();
-        // Stay in CollectionList view (don't enter a specific collection)
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("y");
 
         await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Deleted collection: My Collection");
+    }
+
+    [Fact]
+    public async Task HandleDeleteItem_DeleteCollection_Cancelled_NoAction()
+    {
+        var collections = new List<Collection> { Collection.Create("My Collection") };
+        _ctx.Collections = collections;
+        _navService.EnterCollections();
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+
+        await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
+
+        await _collectionService.DidNotReceive()
+            .DeleteCollectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region HandleClearCollection
+
+    [Fact]
+    public async Task HandleClearCollection_Confirmed_ClearsAndShowsMessage()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/1", "Article 1");
+        collection.AddItem("https://example.com/2", "Article 2");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("y");
+
+        await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
+
+        _lastStatusMessage.Should().Be("Cleared: Reading List");
+        await _collectionService.Received(1)
+            .ClearCollectionAsync(collection.Id, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleClearCollection_Cancelled_NoAction()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/1", "Article 1");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("n");
+
+        await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
+
+        await _collectionService.DidNotReceive()
+            .ClearCollectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleClearCollection_WrongViewMode_NoAction()
+    {
+        SetupHierarchicalWithSelectedLink("Article", "https://example.com/article");
+
+        await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
+
+        await _collectionService.DidNotReceive()
+            .ClearCollectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleClearCollection_EmptyCollection_NoPrompt()
+    {
+        var collection = Collection.Create("Empty List");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+
+        await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
+
+        await _ctx.InputHandler.DidNotReceive()
+            .PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _collectionService.DidNotReceive()
+            .ClearCollectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     #endregion
