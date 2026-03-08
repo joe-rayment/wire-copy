@@ -63,7 +63,7 @@ public class LinkTreeGridMapperTests
             Url = string.Empty,
             Type = LinkType.Content,
             ImportanceScore = 100,
-            IsGroupHeader = true
+            HeaderType = HeaderType.TopLevelGroup
         });
         var link1 = root.AddChild(CreateLinkInfo("Article 1"));
         var link2 = root.AddChild(CreateLinkInfo("Article 2"));
@@ -286,7 +286,7 @@ public class LinkTreeGridMapperTests
             Url = string.Empty,
             Type = LinkType.Content,
             ImportanceScore = 100,
-            IsGroupHeader = true
+            HeaderType = HeaderType.TopLevelGroup
         };
     }
 }
