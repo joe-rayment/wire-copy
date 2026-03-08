@@ -54,4 +54,11 @@ public interface ICloudStorageClient
     Task<bool> ExistsAsync(
         string objectName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the public URL for an object in cloud storage.
+    /// </summary>
+    /// <param name="objectName">The object name.</param>
+    /// <returns>The public URL of the object.</returns>
+    string GetPublicUrl(string objectName);
 }
