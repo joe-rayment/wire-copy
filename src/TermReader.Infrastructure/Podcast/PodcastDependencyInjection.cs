@@ -47,6 +47,7 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IPodcastPublisher, PodcastPublisher>();
+        services.AddSingleton<ReadingListContentProvider>();
 
         return services;
     }
