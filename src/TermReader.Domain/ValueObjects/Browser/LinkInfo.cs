@@ -89,15 +89,15 @@ public record LinkInfo
     /// <summary>
     /// Creates a LinkInfo for a group header.
     /// </summary>
-    public static LinkInfo CreateGroupHeader(LinkType type, int linkCount)
+    public static LinkInfo CreateGroupHeader(LinkType type)
     {
         var displayText = type switch
         {
-            LinkType.Navigation => $"Navigation ({linkCount})",
-            LinkType.Content => $"Content ({linkCount})",
-            LinkType.External => $"External ({linkCount})",
-            LinkType.Footer => $"Footer ({linkCount})",
-            _ => $"Links ({linkCount})"
+            LinkType.Navigation => "Navigation",
+            LinkType.Content => "Content",
+            LinkType.External => "External",
+            LinkType.Footer => "Footer",
+            _ => "Links"
         };
 
         return new LinkInfo

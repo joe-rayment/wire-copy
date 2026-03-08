@@ -81,7 +81,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_MixedNodeTypes_ListIndexReflectsOriginalPosition()
     {
         var root = LinkNode.CreateRoot();
-        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content, 5);
+        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content);
         var article1 = new LinkInfo { Url = "https://example.com/a1", DisplayText = "A1", Type = LinkType.Content, ImportanceScore = 50 };
         var article2 = new LinkInfo { Url = "https://example.com/a2", DisplayText = "A2", Type = LinkType.Content, ImportanceScore = 50 };
         root.AddChild(groupHeader);  // index 0
@@ -155,7 +155,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_SkipsGroupHeaders()
     {
         var root = LinkNode.CreateRoot();
-        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content, 5);
+        var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content);
         var contentLink = new LinkInfo
         {
             Url = "https://example.com/article",

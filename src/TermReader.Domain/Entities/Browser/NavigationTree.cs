@@ -73,7 +73,7 @@ public class NavigationTree
             }
 
             // Create group header
-            var groupHeader = LinkInfo.CreateGroupHeader(linkType, links.Count);
+            var groupHeader = LinkInfo.CreateGroupHeader(linkType);
             var groupNode = root.AddChild(groupHeader);
 
             // Add links as children of the group
