@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using System.Net;
+using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
@@ -37,8 +39,16 @@ public class CachingPageLoader : IPageLoader
             var cached = _cache.TryGet(request.Url);
             if (cached != null)
             {
-                _logger.LogInformation("Serving from cache: {Url}", request.Url);
-                return cached with { FetchMethod = FetchMethod.Cached };
+                if (HasSufficientContent(cached.Html))
+                {
+                    _logger.LogInformation("Serving from cache: {Url}", request.Url);
+                    return cached with { FetchMethod = FetchMethod.Cached };
+                }
+
+                _logger.LogInformation(
+                    "Cached content below quality threshold, falling through to loader: {Url}",
+                    request.Url);
+                _cache.Remove(request.Url);
             }
         }
         else
@@ -68,5 +78,58 @@ public class CachingPageLoader : IPageLoader
         CancellationToken cancellationToken = default)
     {
         return _inner.GetPageSourceAsync(url, cancellationToken);
+    }
+
+    /// <summary>
+    /// Checks whether the cached HTML has enough visible text content to be a real article.
+    /// Paywall pages, JS shells, and bot challenge pages typically have very few words.
+    /// </summary>
+    internal static bool HasSufficientContent(string? html, int minWordCount = 50)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Remove script/style nodes before extracting text
+        var nodesToRemove = doc.DocumentNode.SelectNodes("//script|//style|//noscript");
+        if (nodesToRemove != null)
+        {
+            foreach (var node in nodesToRemove)
+            {
+                node.Remove();
+            }
+        }
+
+        var text = WebUtility.HtmlDecode(doc.DocumentNode.InnerText);
+        var wordCount = CountWords(text);
+        return wordCount >= minWordCount;
+    }
+
+    private static int CountWords(string text)
+    {
+        var count = 0;
+        var inWord = false;
+
+        foreach (var c in text)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                if (!inWord)
+                {
+                    count++;
+                    inWord = true;
+                }
+            }
+            else
+            {
+                inWord = false;
+            }
+        }
+
+        return count;
     }
 }

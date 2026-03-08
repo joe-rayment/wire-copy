@@ -127,6 +127,52 @@ public class CachingPageLoaderTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_CacheHit_LowQuality_FallsThrough()
+    {
+        var url = "https://example.com/page";
+        var thinHtml = "<html><body><p>Enable JavaScript</p></body></html>";
+        _cache.Put(url, CreateResult(url, thinHtml));
+
+        var freshResult = CreateResult(url);
+        _innerLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(freshResult);
+
+        var request = new PageLoadRequest { Url = url };
+        var result = await _sut.LoadAsync(request);
+
+        result.Html.Should().Be(freshResult.Html);
+        await _innerLoader.Received(1).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+        _cache.Contains(url).Should().BeTrue("fresh result should be cached");
+    }
+
+    [Theory]
+    [InlineData("<html><body><p>short</p></body></html>", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void HasSufficientContent_BelowThreshold_ReturnsFalse(string? html, bool expected)
+    {
+        CachingPageLoader.HasSufficientContent(html, 50).Should().Be(expected);
+    }
+
+    [Fact]
+    public void HasSufficientContent_RichContent_ReturnsTrue()
+    {
+        CachingPageLoader.HasSufficientContent(RichHtml, 50).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasSufficientContent_ScriptHeavyPage_ReturnsFalse()
+    {
+        var html = "<html><body>" +
+            "<script>var x = 'lots of words inside script tags that should not count " +
+            "towards the word total because they are not visible to the user at all';</script>" +
+            "<style>.class { background: url('more words here in stylesheet rules'); }</style>" +
+            "<p>Only three words</p>" +
+            "</body></html>";
+        CachingPageLoader.HasSufficientContent(html, 50).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task GetPageSourceAsync_DelegatesToInner()
     {
         _innerLoader.GetPageSourceAsync("https://example.com", Arg.Any<CancellationToken>())
@@ -137,8 +183,18 @@ public class CachingPageLoaderTests : IDisposable
         result.Should().Be("<html>source</html>");
     }
 
-    private static PageLoadResult CreateResult(string url, string html = "<html>test</html>")
+    private const string RichHtml =
+        "<html><body><article>" +
+        "<p>This is a long article with enough words to pass the quality threshold. " +
+        "It contains multiple sentences with varied vocabulary and structure. " +
+        "The purpose of this text is to simulate a real web page that has been " +
+        "properly loaded with actual content rather than a paywall or JavaScript " +
+        "shell page. We need at least fifty words to pass the minimum threshold " +
+        "that prevents serving degraded cached content to users.</p>" +
+        "</article></body></html>";
+
+    private static PageLoadResult CreateResult(string url, string? html = null)
     {
-        return PageLoadResult.Successful(url, html, new PageMetadata { Title = "Test" });
+        return PageLoadResult.Successful(url, html ?? RichHtml, new PageMetadata { Title = "Test" });
     }
 }
