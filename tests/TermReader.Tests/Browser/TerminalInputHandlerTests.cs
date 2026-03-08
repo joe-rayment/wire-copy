@@ -303,5 +303,28 @@ public class TerminalInputHandlerTests
         help.Should().Contain("Interactive refresh");
     }
 
+    [Fact]
+    public void GetHelpText_ContainsPerViewSections()
+    {
+        var help = _sut.GetHelpText();
+
+        help.Should().Contain("Link Tree View");
+        help.Should().Contain("Reader View");
+        help.Should().Contain("Narrow width");
+        help.Should().Contain("Widen width");
+    }
+
+    [Fact]
+    public void GetHelpText_ShowsBothOldAndNewWidthBindings()
+    {
+        var help = _sut.GetHelpText();
+
+        // Both h/l and +/- should appear in help
+        help.Should().Contain("h / ");
+        help.Should().Contain("l / ");
+        help.Should().Contain("-");
+        help.Should().Contain("+");
+    }
+
     #endregion
 }

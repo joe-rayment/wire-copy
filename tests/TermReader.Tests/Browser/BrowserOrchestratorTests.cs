@@ -561,4 +561,84 @@ public class BrowserOrchestratorNavigationTests
         // Assert - scroll offset should stay at 0 (cannot go negative)
         _navigationService.CurrentContext.ScrollOffset.Should().Be(0);
     }
+
+    [Fact]
+    public async Task RunAsync_CollapseNodeInReadableMode_RemapsToDecreaseWidth()
+    {
+        // Arrange - switch to Readable then send CollapseNode
+        SetupPageLoad("https://example.com");
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => new NavigationCommand { Type = CommandType.SwitchToReadable },
+                    2 => new NavigationCommand { Type = CommandType.CollapseNode },
+                    _ => new NavigationCommand { Type = CommandType.Quit }
+                };
+            });
+
+        // Act
+        await _sut.RunAsync("https://example.com");
+
+        // Assert - in Readable mode, CollapseNode should be remapped to DecreaseWidth
+        // Status message should contain width info
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width:");
+    }
+
+    [Fact]
+    public async Task RunAsync_ExpandNodeInReadableMode_RemapsToIncreaseWidth()
+    {
+        // Arrange - switch to Readable then send ExpandNode
+        SetupPageLoad("https://example.com");
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => new NavigationCommand { Type = CommandType.SwitchToReadable },
+                    2 => new NavigationCommand { Type = CommandType.ExpandNode },
+                    _ => new NavigationCommand { Type = CommandType.Quit }
+                };
+            });
+
+        // Act
+        await _sut.RunAsync("https://example.com");
+
+        // Assert - in Readable mode, ExpandNode should be remapped to IncreaseWidth
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width:");
+    }
+
+    [Fact]
+    public async Task RunAsync_CollapseNodeInHierarchicalMode_IsNotRemapped()
+    {
+        // Arrange - stay in Hierarchical mode, send CollapseNode
+        SetupPageLoad("https://example.com");
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => new NavigationCommand { Type = CommandType.CollapseNode },
+                    _ => new NavigationCommand { Type = CommandType.Quit }
+                };
+            });
+
+        // Act
+        await _sut.RunAsync("https://example.com");
+
+        // Assert - in Hierarchical mode, no width status message
+        var statusMsg = _navigationService.CurrentContext.StatusMessage;
+        (statusMsg == null || !statusMsg.Contains("Width:")).Should().BeTrue(
+            "CollapseNode in Hierarchical mode should NOT be remapped to DecreaseWidth");
+    }
 }
