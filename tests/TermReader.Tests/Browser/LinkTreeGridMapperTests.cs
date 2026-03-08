@@ -59,7 +59,7 @@ public class LinkTreeGridMapperTests
         var root = LinkNode.CreateRoot();
         var header = root.AddChild(new LinkInfo
         {
-            DisplayText = "Content (3)",
+            DisplayText = "Content",
             Url = string.Empty,
             Type = LinkType.Content,
             ImportanceScore = 100,
@@ -282,7 +282,7 @@ public class LinkTreeGridMapperTests
     {
         return new LinkInfo
         {
-            DisplayText = $"{name} (0)",
+            DisplayText = name,
             Url = string.Empty,
             Type = LinkType.Content,
             ImportanceScore = 100,
