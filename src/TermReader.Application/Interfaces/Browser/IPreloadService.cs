@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using TermReader.Application.DTOs.Browser;
 using TermReader.Domain.Entities.Browser;
 
 namespace TermReader.Application.Interfaces.Browser;
@@ -40,4 +41,9 @@ public interface IPreloadService : IDisposable
     /// Resumes pre-loading after a pause.
     /// </summary>
     void Resume();
+
+    /// <summary>
+    /// Gets current pre-loading progress for display in the UI.
+    /// </summary>
+    PreloadProgress GetProgress();
 }

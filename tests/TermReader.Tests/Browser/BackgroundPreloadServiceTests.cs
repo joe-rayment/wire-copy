@@ -377,6 +377,79 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region GetProgress
+
+    [Fact]
+    public void GetProgress_NoLinks_ReturnsZeros()
+    {
+        var progress = _service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(0);
+        progress.CachedCount.Should().Be(0);
+        progress.NeedsBrowserCount.Should().Be(0);
+        progress.IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetProgress_AfterBuildQueue_ReportsEligibleLinks()
+    {
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2", "https://example.com/a3");
+        _service.BuildQueue(0, nodes, "https://example.com");
+
+        var progress = _service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(3);
+        progress.CachedCount.Should().Be(0);
+        progress.NeedsBrowserCount.Should().Be(0);
+        progress.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetProgress_WithCachedLinks_ReportsCachedCount()
+    {
+        _cache.Contains("https://example.com/a1").Returns(true);
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+        _service.BuildQueue(0, nodes, "https://example.com");
+
+        var progress = _service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(2);
+        progress.CachedCount.Should().Be(1);
+        progress.IsComplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetProgress_WithNeedsJsDomains_ReportsNeedsBrowserCount()
+    {
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, bool>)field!.GetValue(_service)!;
+        dict["https://example.com"] = true;
+
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+        _service.BuildQueue(0, nodes, "https://example.com");
+
+        var progress = _service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(2);
+        progress.NeedsBrowserCount.Should().Be(2);
+        progress.IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetProgress_AllCached_IsComplete()
+    {
+        _cache.Contains(Arg.Any<string>()).Returns(true);
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+        _service.BuildQueue(0, nodes, "https://example.com");
+
+        var progress = _service.GetProgress();
+
+        progress.IsComplete.Should().BeTrue();
+    }
+
+    #endregion
+
     #region Helpers
 
     private static List<LinkNode> CreateContentNodes(params string[] urls)
