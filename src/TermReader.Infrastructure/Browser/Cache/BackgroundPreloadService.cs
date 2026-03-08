@@ -41,6 +41,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
     private string? _pendingCurrentPageUrl;
 
+    // Debounce state for collection preloading
+    private int _pendingCollectionSelectedIndex;
+    private IReadOnlyList<string>? _pendingCollectionUrls;
+    private bool _pendingIsCollection;
+
     // Progress tracking: all eligible content URLs from the current page
     private List<string> _allEligibleUrls = [];
     private List<string> _needsJsUrls = [];
@@ -78,6 +83,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             _pendingSelectedIndex = selectedIndex;
             _pendingVisibleNodes = visibleNodes;
             _pendingCurrentPageUrl = currentPageUrl;
+            _pendingIsCollection = false;
         }
 
         // Reset the debounce timer (200ms). If the user is scrolling fast,
@@ -99,61 +105,21 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
-        var items = new List<PreloadItem>();
-        var allEligible = new List<string>();
-        var needsJs = new List<string>();
-
-        for (var i = 0; i < urls.Count; i++)
-        {
-            var url = urls[i];
-            if (string.IsNullOrEmpty(url))
-            {
-                continue;
-            }
-
-            allEligible.Add(url);
-
-            // Skip domains known to need JS (Selenium)
-            var origin = UrlNormalizer.GetOrigin(url);
-            if (origin != null && _needsJsDomains.ContainsKey(origin))
-            {
-                needsJs.Add(url);
-                continue;
-            }
-
-            // Skip already cached
-            if (_cache.Contains(url))
-            {
-                continue;
-            }
-
-            // Skip circuit-broken domains
-            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
-            {
-                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
-                {
-                    continue;
-                }
-
-                _circuitBrokenDomains.TryRemove(origin, out _);
-            }
-
-            items.Add(new PreloadItem(url, i));
-        }
-
-        // Sort by distance from selected index (closest first)
-        items.Sort((a, b) =>
-            Math.Abs(a.ListIndex - selectedIndex).CompareTo(
-                Math.Abs(b.ListIndex - selectedIndex)));
-
         lock (_queueLock)
         {
-            _queue = items;
-            _allEligibleUrls = allEligible;
-            _needsJsUrls = needsJs;
+            _pendingCollectionSelectedIndex = selectedIndex;
+            _pendingCollectionUrls = urls;
+            _pendingIsCollection = true;
         }
 
-        SignalQueueChanged();
+        try
+        {
+            _debounceTimer.Change(200, Timeout.Infinite);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer was disposed between the _disposed check and the Change call
+        }
     }
 
     public void ClearQueue()
@@ -358,6 +324,67 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return items;
     }
 
+    internal List<PreloadItem> BuildCollectionQueue(
+        int selectedIndex,
+        IReadOnlyList<string> urls)
+    {
+        var items = new List<PreloadItem>();
+        var allEligible = new List<string>();
+        var needsJs = new List<string>();
+
+        for (var i = 0; i < urls.Count; i++)
+        {
+            var url = urls[i];
+            if (string.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            allEligible.Add(url);
+
+            // Skip domains known to need JS (Selenium)
+            var origin = UrlNormalizer.GetOrigin(url);
+            if (origin != null && _needsJsDomains.ContainsKey(origin))
+            {
+                needsJs.Add(url);
+                continue;
+            }
+
+            // Skip already cached
+            if (_cache.Contains(url))
+            {
+                continue;
+            }
+
+            // Skip circuit-broken domains
+            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
+            {
+                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
+                {
+                    continue;
+                }
+
+                _circuitBrokenDomains.TryRemove(origin, out _);
+            }
+
+            items.Add(new PreloadItem(url, i));
+        }
+
+        // Sort by distance from selected index (closest first)
+        items.Sort((a, b) =>
+            Math.Abs(a.ListIndex - selectedIndex).CompareTo(
+                Math.Abs(b.ListIndex - selectedIndex)));
+
+        // Update progress tracking state
+        lock (_queueLock)
+        {
+            _allEligibleUrls = allEligible;
+            _needsJsUrls = needsJs;
+        }
+
+        return items;
+    }
+
     private static PageMetadata ExtractMetadata(string html)
     {
         var doc = new HtmlDocument();
@@ -388,30 +415,55 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private void OnDebounceElapsed(object? state)
     {
+        bool isCollection;
         int selectedIndex;
         IReadOnlyList<LinkNode>? visibleNodes;
         string? currentPageUrl;
+        int collectionSelectedIndex;
+        IReadOnlyList<string>? collectionUrls;
 
         lock (_queueLock)
         {
+            isCollection = _pendingIsCollection;
             selectedIndex = _pendingSelectedIndex;
             visibleNodes = _pendingVisibleNodes;
             currentPageUrl = _pendingCurrentPageUrl;
+            collectionSelectedIndex = _pendingCollectionSelectedIndex;
+            collectionUrls = _pendingCollectionUrls;
         }
 
-        if (visibleNodes == null || currentPageUrl == null)
+        if (isCollection)
         {
-            return;
+            if (collectionUrls == null)
+            {
+                return;
+            }
+
+            var newQueue = BuildCollectionQueue(collectionSelectedIndex, collectionUrls);
+
+            lock (_queueLock)
+            {
+                _queue = newQueue;
+            }
+
+            SignalQueueChanged();
         }
-
-        var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
-
-        lock (_queueLock)
+        else
         {
-            _queue = newQueue;
-        }
+            if (visibleNodes == null || currentPageUrl == null)
+            {
+                return;
+            }
 
-        SignalQueueChanged();
+            var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
+
+            lock (_queueLock)
+            {
+                _queue = newQueue;
+            }
+
+            SignalQueueChanged();
+        }
     }
 
     private void SignalQueueChanged()
