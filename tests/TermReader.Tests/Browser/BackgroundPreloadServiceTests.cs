@@ -240,17 +240,38 @@ public class BackgroundPreloadServiceTests
     #region NotifySelectionChanged
 
     [Fact]
-    public void NotifySelectionChanged_RebuildsQueue()
+    public async Task NotifySelectionChanged_DebouncesQueueRebuilds()
     {
         var nodes1 = CreateContentNodes("https://example.com/a1");
-        _service.NotifySelectionChanged(0, nodes1, "https://example.com");
-
         var nodes2 = CreateContentNodes("https://example.com/b1", "https://example.com/b2");
+
+        // Rapid-fire changes should be debounced — only the last one should take effect
+        _service.NotifySelectionChanged(0, nodes1, "https://example.com");
         _service.NotifySelectionChanged(0, nodes2, "https://example.com");
 
-        // The queue should have been rebuilt with the second set of nodes
-        var queue = _service.BuildQueue(0, nodes2, "https://example.com");
-        queue.Should().HaveCount(2);
+        // Wait for debounce timer to fire (200ms + margin)
+        await Task.Delay(350);
+
+        // Read internal _queue via reflection to verify actual debounce behavior
+        var queueField = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+
+        // Should reflect the second (latest) call — 2 items from nodes2
+        internalQueue.Should().HaveCount(2);
+        internalQueue.Select(i => i.Url).Should().Contain("https://example.com/b1");
+        internalQueue.Select(i => i.Url).Should().Contain("https://example.com/b2");
+    }
+
+    [Fact]
+    public void NotifySelectionChanged_AfterDispose_DoesNotThrow()
+    {
+        _service.Dispose();
+
+        var nodes = CreateContentNodes("https://example.com/a1");
+
+        var act = () => _service.NotifySelectionChanged(0, nodes, "https://example.com");
+        act.Should().NotThrow();
     }
 
     #endregion
