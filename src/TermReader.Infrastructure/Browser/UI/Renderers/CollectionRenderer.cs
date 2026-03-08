@@ -16,11 +16,13 @@ internal class CollectionRenderer
     private const string Reset = "\x1b[0m";
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
+    private readonly PodcastCtaRenderer _podcastCtaRenderer;
 
     public CollectionRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
     {
         _helpers = helpers;
         _themeProvider = themeProvider;
+        _podcastCtaRenderer = new PodcastCtaRenderer(helpers, themeProvider);
     }
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
@@ -124,28 +126,7 @@ internal class CollectionRenderer
         // Podcast button (only shown when collection has items)
         if (collection.Items.Count > 0)
         {
-            var buttonWidth = Math.Min(45, width - 12);
-
-            if (height < 20 || buttonWidth < 40)
-            {
-                // Compact mode: single centered line
-                var compactPad = Math.Max(0, (width - 35) / 2);
-                _helpers.WriteLine($"{new string(' ', compactPad)}{p.HeaderTitleFg.AnsiFg}\u266b  Turn this list into a podcast {p.SecondaryText.AnsiFg}[p]{Reset}");
-            }
-            else
-            {
-                // Full rounded box
-                var pad = Math.Max(0, (width - buttonWidth) / 2);
-                var innerWidth = buttonWidth - 2;
-                var labelPart = "\u266b  Turn this list into a podcast";
-                var hintPart = "[p]";
-                var spacing = Math.Max(1, innerWidth - labelPart.Length - hintPart.Length - 2);
-                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
-                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u2502{Reset} {p.HeaderTitleFg.AnsiFg}{labelPart}{Reset}{new string(' ', spacing)}{p.SecondaryText.AnsiFg}{hintPart}{Reset} {p.PromptFg.AnsiFg}\u2502{Reset}");
-                _helpers.WriteLine($"{new string(' ', pad)}{p.PromptFg.AnsiFg}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
-            }
-
-            _helpers.WriteLine();
+            _podcastCtaRenderer.Render(options);
         }
 
         var useSeparators = height >= 30;
@@ -219,11 +200,11 @@ internal class CollectionRenderer
         return useSeparators ? (remainingHeight + 1) / linesPerItem : remainingHeight;
     }
 
-    internal static int GetCollectionItemsVisibleCount(int terminalHeight)
+    internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80)
     {
         const int headerLines = 5;
         const int statusBarLines = 3;
-        var podcastButtonLines = terminalHeight < 20 ? 2 : 4;
+        var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
         var useSeparators = terminalHeight >= 30;
         var linesPerItem = useSeparators ? 3 : 2;
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
