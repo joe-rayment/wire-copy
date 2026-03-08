@@ -61,6 +61,22 @@ public class LinkExtractor : ILinkExtractor
         "article", "div", "li", "section"
     };
 
+    private static readonly HashSet<string> SectionContainerTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "section", "article"
+    };
+
+    private static readonly HashSet<string> HeadingTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "h1", "h2", "h3", "h4", "h5", "h6"
+    };
+
+    private static readonly HashSet<string> GenericSectionTitles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "more", "also", "trending", "most read", "most popular",
+        "recommended", "related", "see also", "latest", "you might like"
+    };
+
     private readonly ILogger<LinkExtractor> _logger;
 
     public LinkExtractor(ILogger<LinkExtractor> logger)
@@ -161,6 +177,16 @@ public class LinkExtractor : ILinkExtractor
                     if (author != null || pubDate != null)
                     {
                         linkInfo = linkInfo with { Author = author, PublishedDate = pubDate };
+                    }
+
+                    // Extract section title for content links only
+                    if (linkInfo.Type == LinkType.Content)
+                    {
+                        var sectionTitle = ExtractSectionTitle(anchor);
+                        if (sectionTitle != null)
+                        {
+                            linkInfo = linkInfo with { SectionTitle = sectionTitle };
+                        }
                     }
 
                     links.Add(linkInfo);
@@ -341,9 +367,10 @@ public class LinkExtractor : ILinkExtractor
             // Use non-image-alt status if any real text was found
             var isFromImage = realTexts.Count == 0 && imageTexts.Count > 0;
 
-            // Propagate author/date from first link that has them
+            // Propagate author/date/sectionTitle from first link that has them
             var author = group.Select(g => g.Link.Author).FirstOrDefault(a => a != null);
             var pubDate = group.Select(g => g.Link.PublishedDate).FirstOrDefault(d => d != null);
+            var sectionTitle = group.Select(g => g.Link.SectionTitle).FirstOrDefault(s => s != null);
 
             var mergedLink = firstLink with
             {
@@ -351,7 +378,8 @@ public class LinkExtractor : ILinkExtractor
                 ImportanceScore = maxImportance,
                 IsFromImageAlt = isFromImage,
                 Author = author,
-                PublishedDate = pubDate
+                PublishedDate = pubDate,
+                SectionTitle = sectionTitle
             };
 
             merged.Add((mergedLink, firstIndex));
@@ -378,17 +406,20 @@ public class LinkExtractor : ILinkExtractor
                     result[existingIndex] = link with
                     {
                         Author = link.Author ?? existing.Author,
-                        PublishedDate = link.PublishedDate ?? existing.PublishedDate
+                        PublishedDate = link.PublishedDate ?? existing.PublishedDate,
+                        SectionTitle = link.SectionTitle ?? existing.SectionTitle
                     };
                 }
                 else if ((existing.Author == null && link.Author != null) ||
-                         (existing.PublishedDate == null && link.PublishedDate != null))
+                         (existing.PublishedDate == null && link.PublishedDate != null) ||
+                         (existing.SectionTitle == null && link.SectionTitle != null))
                 {
                     // Propagate metadata to existing entry if it's missing
                     result[existingIndex] = existing with
                     {
                         Author = existing.Author ?? link.Author,
-                        PublishedDate = existing.PublishedDate ?? link.PublishedDate
+                        PublishedDate = existing.PublishedDate ?? link.PublishedDate,
+                        SectionTitle = existing.SectionTitle ?? link.SectionTitle
                     };
                 }
             }
@@ -420,6 +451,102 @@ public class LinkExtractor : ILinkExtractor
         var pubDate = ExtractPublishedDate(container);
 
         return (author, pubDate);
+    }
+
+    /// <summary>
+    /// Extracts the nearest section heading for a content link by walking up the DOM.
+    /// Checks section/article/div[role=region] containers for aria-label or direct child headings.
+    /// </summary>
+    internal static string? ExtractSectionTitle(HtmlNode anchor)
+    {
+        var current = anchor.ParentNode;
+        var depth = 0;
+
+        while (current != null && depth < 5 && current.Name != "#document")
+        {
+            if (IsSectionContainer(current))
+            {
+                // Check aria-label first
+                var ariaLabel = current.GetAttributeValue("aria-label", null);
+                if (!string.IsNullOrWhiteSpace(ariaLabel) && IsValidSectionTitle(ariaLabel))
+                {
+                    return ariaLabel.Trim();
+                }
+
+                // Check direct child headings (h1-h6)
+                var heading = FindDirectChildHeading(current);
+                if (heading != null)
+                {
+                    return heading;
+                }
+            }
+
+            current = current.ParentNode;
+            depth++;
+        }
+
+        return null;
+    }
+
+    private static bool IsSectionContainer(HtmlNode node)
+    {
+        if (SectionContainerTags.Contains(node.Name))
+        {
+            return true;
+        }
+
+        // div with role="region"
+        if (node.Name.Equals("div", StringComparison.OrdinalIgnoreCase))
+        {
+            var role = node.GetAttributeValue("role", string.Empty);
+            if (role.Equals("region", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? FindDirectChildHeading(HtmlNode container)
+    {
+        foreach (var child in container.ChildNodes)
+        {
+            if (HeadingTags.Contains(child.Name))
+            {
+                var text = child.InnerText?.Trim();
+                text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+
+                if (IsValidSectionTitle(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsValidSectionTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return false;
+        }
+
+        var trimmed = title.Trim();
+
+        if (trimmed.Length < 3 || trimmed.Length > 80)
+        {
+            return false;
+        }
+
+        if (GenericSectionTitles.Contains(trimmed))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
