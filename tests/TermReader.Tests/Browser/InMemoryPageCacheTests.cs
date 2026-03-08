@@ -197,6 +197,18 @@ public class InMemoryPageCacheTests : IDisposable
     }
 
     [Fact]
+    public void GetCachedUrls_IncludesBothRequestAndFinalUrls()
+    {
+        // Simulate a redirect: request URL differs from final URL
+        var result = CreateResult("https://example.com/final-page", "<html>redirected</html>");
+        _cache.Put("https://example.com/short-link", result);
+
+        var urls = _cache.GetCachedUrls();
+        urls.Should().Contain("https://example.com/short-link", "request URL should be included");
+        urls.Should().Contain("https://example.com/final-page", "final URL should be included");
+    }
+
+    [Fact]
     public void GetCachedAt_ReturnsTimestampForCachedUrl()
     {
         var before = DateTime.UtcNow;

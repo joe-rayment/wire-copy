@@ -173,10 +173,19 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public IReadOnlySet<string> GetCachedUrls()
     {
-        return _entries
-            .Where(kvp => !kvp.Value.Metadata.IsExpired)
-            .Select(kvp => kvp.Value.Metadata.FinalUrl)
-            .ToHashSet();
+        var urls = new HashSet<string>();
+        foreach (var kvp in _entries)
+        {
+            if (kvp.Value.Metadata.IsExpired)
+            {
+                continue;
+            }
+
+            urls.Add(kvp.Value.Metadata.RequestUrl);
+            urls.Add(kvp.Value.Metadata.FinalUrl);
+        }
+
+        return urls;
     }
 
     public DateTime? GetCachedAt(string url)
