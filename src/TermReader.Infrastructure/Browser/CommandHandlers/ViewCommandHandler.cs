@@ -40,6 +40,7 @@ internal static class ViewCommandHandler
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current + WidthStep, MinContentWidth, MaxContentWidth);
+        ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);
@@ -49,6 +50,7 @@ internal static class ViewCommandHandler
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current - WidthStep, MinContentWidth, MaxContentWidth);
+        ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);
@@ -57,6 +59,7 @@ internal static class ViewCommandHandler
     public static async Task HandleResetWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.ContentWidthOverride = null;
+        ctx.NavigationService.SetStatusMessage($"Width: {DefaultContentWidth} (default)");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct);

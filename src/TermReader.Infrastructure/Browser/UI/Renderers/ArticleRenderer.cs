@@ -114,7 +114,7 @@ internal class ArticleRenderer
             ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}"
             : string.Empty;
 
-        var hints = "+/-:width v:links b:back ?:help";
+        var hints = "h/l:width v:links b:back ?:help";
 
         _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{cacheBadge}{searchInfo} | {hints}{Reset}");
     }

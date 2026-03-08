@@ -97,14 +97,21 @@ public class TerminalInputHandler : IInputHandler
  Shortcuts
  ══════════════════════════════════════════════════════════════
 
- Navigation
+ Navigation (all views)
    j / ↓           Move down / scroll
    k / ↑           Move up / scroll
-   h / ←           Collapse node
-   l / →           Expand node
    Enter           Follow link / open item
-   Space           Toggle expand/collapse
    b / Backspace   Go back
+
+ Link Tree View
+   h / ←           Collapse group
+   l / →           Expand group
+   Space           Toggle expand/collapse
+
+ Reader View
+   h / ← / -       Narrow width
+   l / → / +       Widen width
+   0               Reset width
 
  Scrolling
    Ctrl+d          Page down
@@ -116,10 +123,6 @@ public class TerminalInputHandler : IInputHandler
    v / Tab         Toggle Link View ↔ Reader View
    r               Reader View
    t               Link Tree View
-
- Reader Width
-   + / =           Widen       - / _           Narrow
-   0               Reset
 
  Search & Commands
    /               Search
