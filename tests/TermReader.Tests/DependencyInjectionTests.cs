@@ -216,6 +216,14 @@ public class DependencyInjectionTests
         service.Should().BeAssignableTo<IPodcastPublisher>();
     }
 
+    [Fact]
+    public void ServiceProvider_ShouldResolveIPodcastOrchestrator()
+    {
+        var service = _serviceProvider.GetService<IPodcastOrchestrator>();
+        service.Should().NotBeNull();
+        service.Should().BeAssignableTo<IPodcastOrchestrator>();
+    }
+
     private static IConfiguration GetConfiguration()
     {
         var configValues = new Dictionary<string, string?>
