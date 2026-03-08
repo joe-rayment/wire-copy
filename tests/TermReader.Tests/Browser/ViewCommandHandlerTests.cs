@@ -321,4 +321,39 @@ public class ViewCommandHandlerTests
     }
 
     #endregion
+
+    #region Width Change Status Messages
+
+    [Fact]
+    public async Task HandleIncreaseWidth_SetsStatusMessageWithNewWidth()
+    {
+        _ctx.ContentWidthOverride = null; // default = 66
+
+        await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 76");
+    }
+
+    [Fact]
+    public async Task HandleDecreaseWidth_SetsStatusMessageWithNewWidth()
+    {
+        _ctx.ContentWidthOverride = null; // default = 66
+
+        await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 56");
+    }
+
+    [Fact]
+    public async Task HandleResetWidth_SetsStatusMessageWithDefault()
+    {
+        _ctx.ContentWidthOverride = 100;
+
+        await ViewCommandHandler.HandleResetWidth(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 66");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("default");
+    }
+
+    #endregion
 }
