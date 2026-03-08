@@ -41,6 +41,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
     private string? _pendingCurrentPageUrl;
 
+    // Progress tracking: all eligible content URLs from the current page
+    private List<string> _allEligibleUrls = [];
+    private List<string> _needsJsUrls = [];
+
     public BackgroundPreloadService(
         IPageCache cache,
         IIdleDetector idleDetector,
@@ -143,6 +147,34 @@ internal sealed class BackgroundPreloadService : IPreloadService
         SignalQueueChanged();
     }
 
+    public PreloadProgress GetProgress()
+    {
+        List<string> eligible;
+        List<string> needsJs;
+
+        lock (_queueLock)
+        {
+            eligible = _allEligibleUrls;
+            needsJs = _needsJsUrls;
+        }
+
+        var cachedCount = 0;
+        foreach (var url in eligible)
+        {
+            if (_cache.Contains(url))
+            {
+                cachedCount++;
+            }
+        }
+
+        return new PreloadProgress
+        {
+            TotalCacheableLinks = eligible.Count,
+            CachedCount = cachedCount,
+            NeedsBrowserCount = needsJs.Count
+        };
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -182,6 +214,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         string currentPageUrl)
     {
         var items = new List<PreloadItem>();
+        var allEligible = new List<string>();
+        var needsJs = new List<string>();
 
         for (var i = 0; i < visibleNodes.Count; i++)
         {
@@ -205,6 +239,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
+            // Track for progress: this is a same-origin content link
+            allEligible.Add(url);
+
+            // Track needs-JS urls separately for progress reporting
+            var origin = UrlNormalizer.GetOrigin(url);
+            if (origin != null && _needsJsDomains.ContainsKey(origin))
+            {
+                needsJs.Add(url);
+                continue;
+            }
+
             // Skip already cached
             if (_cache.Contains(url))
             {
@@ -212,7 +257,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
             }
 
             // Skip circuit-broken domains (with TTL recovery)
-            var origin = UrlNormalizer.GetOrigin(url);
             if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
             {
                 if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
@@ -224,17 +268,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 _circuitBrokenDomains.TryRemove(origin, out _);
             }
 
-            // Skip domains that need JS rendering (empty article shells via HTTP)
-            if (origin != null && _needsJsDomains.ContainsKey(origin))
-            {
-                continue;
-            }
-
             items.Add(new PreloadItem(url, i));
         }
 
         // Sort by original list index (top-to-bottom)
         items.Sort((a, b) => a.ListIndex.CompareTo(b.ListIndex));
+
+        // Update progress tracking state
+        lock (_queueLock)
+        {
+            _allEligibleUrls = allEligible;
+            _needsJsUrls = needsJs;
+        }
 
         return items;
     }
