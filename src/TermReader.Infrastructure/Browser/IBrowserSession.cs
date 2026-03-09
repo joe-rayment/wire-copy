@@ -30,4 +30,10 @@ public interface IBrowserSession : IBrowserSessionControl
     /// allowing it to be reused by subsequent calls.
     /// </summary>
     void ReleaseDriver();
+
+    /// <summary>
+    /// Restores a minimized browser window to normal size for interactive use.
+    /// No-op if headless or no active driver.
+    /// </summary>
+    void RestoreWindow();
 }
