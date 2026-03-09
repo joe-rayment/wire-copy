@@ -63,6 +63,26 @@ internal static class PodcastCommandHandler
         var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
         var gcsConfig = scope.ServiceProvider
             .GetRequiredService<IOptions<GcsConfiguration>>().Value;
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+        // Hydrate persisted settings if not already configured
+        if (!ttsService.IsConfigured)
+        {
+            var savedKey = settingsStore.Get("OpenAiApiKey");
+            if (!string.IsNullOrWhiteSpace(savedKey))
+            {
+                ttsService.SetApiKeyOverride(savedKey);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+        {
+            var savedBucket = settingsStore.Get("GcsBucketName");
+            if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
+            {
+                gcsConfig.BucketName = savedBucket;
+            }
+        }
 
         // Pre-flight cache analysis for cost estimation
         CacheAnalysis? cacheAnalysis = null;
@@ -84,6 +104,7 @@ internal static class PodcastCommandHandler
             collection,
             ttsService,
             gcsConfig,
+            settingsStore,
             cacheAnalysis,
             ct);
 
@@ -119,6 +140,7 @@ internal static class PodcastCommandHandler
         Domain.Entities.Collections.Collection collection,
         ITtsService ttsService,
         GcsConfiguration gcsConfig,
+        IUserSettingsStore settingsStore,
         CacheAnalysis? cacheAnalysis,
         CancellationToken ct)
     {
@@ -238,6 +260,10 @@ internal static class PodcastCommandHandler
                     {
                         ttsService.SetApiKeyOverride(apiKey.Trim());
                         isTtsConfigured = ttsService.IsConfigured;
+                        if (isTtsConfigured)
+                        {
+                            settingsStore.Set("OpenAiApiKey", apiKey.Trim(), encrypt: true);
+                        }
                     }
 
                     continue;
@@ -257,6 +283,7 @@ internal static class PodcastCommandHandler
                     {
                         gcsConfig.BucketName = trimmed;
                         isGcsConfigured = true;
+                        settingsStore.Set("GcsBucketName", trimmed);
                     }
                 }
 
