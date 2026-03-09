@@ -29,6 +29,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
     private readonly ConcurrentDictionary<string, bool> _needsJsDomains = new();
+    private readonly ConcurrentDictionary<string, DateTime> _lastRequestByDomain = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
     private readonly Timer _debounceTimer;
@@ -157,8 +158,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
                 await PreloadUrlAsync(item.Url, cancellationToken);
 
-                // Rate limit between pre-loads
-                await WaitForSignalAsync(TimeSpan.FromMilliseconds(_config.PreloadDelayMs), cancellationToken);
+                // Rate limit between pre-loads (adaptive: shorter delay for cross-domain)
+                var delayMs = GetAdaptiveDelay(item.Url);
+                await WaitForSignalAsync(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -624,6 +626,65 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             return PageLoadResult.Failure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Returns the appropriate delay after fetching a URL, based on whether the next
+    /// dequeued item targets the same domain or a different one.
+    /// </summary>
+    internal int GetAdaptiveDelay(string lastFetchedUrl)
+    {
+        if (!_config.AdaptiveRateLimitEnabled)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        var lastOrigin = UrlNormalizer.GetOrigin(lastFetchedUrl);
+        if (lastOrigin == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // Record this domain's last request time
+        _lastRequestByDomain[lastOrigin] = DateTime.UtcNow;
+
+        // Peek at the next item to decide delay
+        PreloadItem? nextItem;
+        lock (_queueLock)
+        {
+            nextItem = _queue.Count > 0 ? _queue[0] : null;
+        }
+
+        if (nextItem == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        var nextOrigin = UrlNormalizer.GetOrigin(nextItem.Url);
+        if (nextOrigin == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // Same domain → full delay; different domain → shorter delay
+        if (string.Equals(lastOrigin, nextOrigin, StringComparison.OrdinalIgnoreCase))
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // For cross-domain, also check if we've recently hit this domain
+        if (_lastRequestByDomain.TryGetValue(nextOrigin, out var lastRequest))
+        {
+            var elapsed = (int)(DateTime.UtcNow - lastRequest).TotalMilliseconds;
+            var remaining = _config.PreloadDelayMs - elapsed;
+            if (remaining > _config.CrossDomainDelayMs)
+            {
+                // We hit this domain recently — wait the remaining same-domain cooldown
+                return remaining;
+            }
+        }
+
+        return _config.CrossDomainDelayMs;
     }
 
     internal sealed record PreloadItem(string Url, int ListIndex);

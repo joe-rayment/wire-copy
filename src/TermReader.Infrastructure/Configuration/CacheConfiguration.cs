@@ -46,4 +46,16 @@ public class CacheConfiguration
     /// Cooldown in seconds before retrying a circuit-broken domain. Default: 5 minutes.
     /// </summary>
     public int CircuitBreakerCooldownSeconds { get; init; } = 300;
+
+    /// <summary>
+    /// When enabled, uses shorter delay for cross-domain requests (different domain than the last
+    /// request) while keeping full delay for same-domain requests. Default: true.
+    /// </summary>
+    public bool AdaptiveRateLimitEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Delay between pre-load requests to different domains in milliseconds. Default: 1500ms.
+    /// Only used when <see cref="AdaptiveRateLimitEnabled"/> is true.
+    /// </summary>
+    public int CrossDomainDelayMs { get; init; } = 1500;
 }
