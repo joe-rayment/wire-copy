@@ -104,18 +104,15 @@ internal sealed class OpenAiTtsService : ITtsService
                 chunks.Count,
                 chunk.Length);
 
-            var chunkAudio = await GenerateChunkWithRetryAsync(
+            var chunkResult = await GenerateChunkWithRetryAsync(
                 audioClient, chunk, voice, options, i + 1, chunks.Count, cancellationToken);
 
-            if (chunkAudio == null)
+            if (!chunkResult.Success)
             {
-                return TtsGenerationResult.Failure(
-                    $"Failed to generate audio for chunk {i + 1}/{chunks.Count} after {_config.MaxRetries} retries.",
-                    totalCharsProcessed,
-                    i);
+                return TtsGenerationResult.Failure(chunkResult.ErrorMessage!, totalCharsProcessed, i);
             }
 
-            allAudioSegments.Add(chunkAudio);
+            allAudioSegments.Add(chunkResult.AudioData!);
             totalCharsProcessed += chunk.Length;
 
             progress?.Report(new TtsProgress
@@ -214,7 +211,7 @@ internal sealed class OpenAiTtsService : ITtsService
         _apiKeyOverride = apiKey;
     }
 
-    private async Task<byte[]?> GenerateChunkWithRetryAsync(
+    private async Task<ChunkGenerationResult> GenerateChunkWithRetryAsync(
         AudioClient audioClient,
         string chunk,
         GeneratedSpeechVoice voice,
@@ -228,7 +225,7 @@ internal sealed class OpenAiTtsService : ITtsService
             try
             {
                 var result = await audioClient.GenerateSpeechAsync(chunk, voice, options, cancellationToken);
-                return result.Value.ToArray();
+                return ChunkGenerationResult.Ok(result.Value.ToArray());
             }
             catch (ClientResultException ex) when (ex.Status == 429 || ex.Status >= 500)
             {
@@ -241,7 +238,9 @@ internal sealed class OpenAiTtsService : ITtsService
                         totalChunks,
                         attempt + 1,
                         ex.Status);
-                    return null;
+                    var kind = ex.Status == 429 ? "rate limited" : "server error";
+                    return ChunkGenerationResult.Fail(
+                        $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries ({kind}).");
                 }
 
                 var delayMs = _config.RetryBaseDelayMs * (int)Math.Pow(2, attempt);
@@ -255,16 +254,26 @@ internal sealed class OpenAiTtsService : ITtsService
 
                 await Task.Delay(delayMs, cancellationToken);
             }
-            catch (ClientResultException ex) when (ex.Status is 400 or 401 or 403)
+            catch (ClientResultException ex) when (ex.Status is 401 or 403)
             {
-                // Non-retryable client errors
                 _logger.LogError(
                     ex,
-                    "Chunk {ChunkNumber}/{TotalChunks} failed with non-retryable error (HTTP {Status})",
+                    "Chunk {ChunkNumber}/{TotalChunks} failed with auth error (HTTP {Status})",
                     chunkNumber,
                     totalChunks,
                     ex.Status);
-                return null;
+                return ChunkGenerationResult.Fail(
+                    $"Authentication failed for chunk {chunkNumber}/{totalChunks} \u2014 check your API key.");
+            }
+            catch (ClientResultException ex) when (ex.Status == 400)
+            {
+                _logger.LogError(
+                    ex,
+                    "Chunk {ChunkNumber}/{TotalChunks} failed with bad request (HTTP 400)",
+                    chunkNumber,
+                    totalChunks);
+                return ChunkGenerationResult.Fail(
+                    $"Bad request for chunk {chunkNumber}/{totalChunks}: {ex.Message}");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -274,11 +283,20 @@ internal sealed class OpenAiTtsService : ITtsService
                     chunkNumber,
                     totalChunks,
                     ex.Message);
-                return null;
+                return ChunkGenerationResult.Fail(
+                    $"Unexpected error generating chunk {chunkNumber}/{totalChunks}: {ex.Message}");
             }
         }
 
-        return null;
+        return ChunkGenerationResult.Fail(
+            $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries.");
+    }
+
+    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
+    {
+        public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
+
+        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
     }
 
     private AudioClient CreateAudioClient()
