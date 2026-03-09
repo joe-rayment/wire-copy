@@ -36,6 +36,11 @@ public record PodcastProgress
     /// Gets an optional status message for the current step.
     /// </summary>
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Whether the current article was served from the TTS audio cache.
+    /// </summary>
+    public bool IsFromCache { get; init; }
 }
 
 /// <summary>

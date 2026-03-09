@@ -149,6 +149,15 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 {
                     // Cache hit — use cached audio file directly
                     audioPath = cached.AudioFilePath;
+                    progress?.Report(new PodcastProgress
+                    {
+                        Phase = PodcastPhase.GeneratingAudio,
+                        CurrentArticle = i + 1,
+                        TotalArticles = articles.Count,
+                        ArticleTitle = article.Title,
+                        PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
+                        IsFromCache = true,
+                    });
                     _logger.LogInformation(
                         "Using cached audio for '{Title}' (key={Key})",
                         article.Title,
