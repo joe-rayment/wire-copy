@@ -187,7 +187,7 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false)
     {
         EnsureKeyReaderStarted();
 
@@ -230,7 +230,8 @@ public class TerminalInputHandler : IInputHandler
 
                         // Redraw the input line
                         Console.SetCursorPosition(prompt.Length, row);
-                        Console.Write(input.ToString() + " ");
+                        var display = isSecret ? new string('*', input.Length) : input.ToString();
+                        Console.Write(display + " ");
                         Console.SetCursorPosition(prompt.Length + input.Length, row);
                     }
 
@@ -241,7 +242,7 @@ public class TerminalInputHandler : IInputHandler
                 if (keyInfo.KeyChar >= 32)
                 {
                     input.Append(keyInfo.KeyChar);
-                    Console.Write(keyInfo.KeyChar);
+                    Console.Write(isSecret ? '*' : keyInfo.KeyChar);
                 }
             }
         }

@@ -44,6 +44,7 @@ public interface IInputHandler
     /// </summary>
     /// <param name="prompt">Prompt character (e.g. ":" or "/").</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="isSecret">When true, echoes '*' instead of the actual character.</param>
     /// <returns>User-entered text, or null if cancelled (Escape).</returns>
-    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default);
+    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false);
 }
