@@ -167,10 +167,17 @@ public class CollectionNavigationStateTests
     }
 
     [Fact]
-    public void CollectionItemSelectedIndex_ClampsNegativeToZero()
+    public void CollectionItemSelectedIndex_AllowsNegativeOneForCtaFocus()
     {
         _sut.CollectionItemSelectedIndex = -1;
-        _sut.CollectionItemSelectedIndex.Should().Be(0);
+        _sut.CollectionItemSelectedIndex.Should().Be(-1);
+    }
+
+    [Fact]
+    public void CollectionItemSelectedIndex_ClampsBelowNegativeOneToNegativeOne()
+    {
+        _sut.CollectionItemSelectedIndex = -5;
+        _sut.CollectionItemSelectedIndex.Should().Be(-1);
     }
 
     #endregion

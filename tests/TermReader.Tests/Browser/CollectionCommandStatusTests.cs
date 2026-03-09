@@ -162,6 +162,7 @@ public class CollectionCommandStatusTests
         collection.AddItem("https://example.com/article", "Old Article");
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
+        _navService.CollectionItemSelectedIndex = 0;
         _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("y");
 
@@ -177,6 +178,7 @@ public class CollectionCommandStatusTests
         collection.AddItem("https://example.com/article", "Old Article");
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
+        _navService.CollectionItemSelectedIndex = 0;
         _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("n");
 

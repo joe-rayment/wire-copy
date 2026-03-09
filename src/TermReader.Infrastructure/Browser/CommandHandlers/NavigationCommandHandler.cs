@@ -72,8 +72,10 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.CollectionItems)
         {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            var minIdx = activeCol != null && activeCol.Items.Count > 0 ? -1 : 0;
             ctx.NavigationService.CollectionItemSelectedIndex =
-                Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, 0);
+                Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, minIdx);
             AdjustCollectionItemScroll(ctx, options);
         }
         else if (viewMode == ViewMode.Hierarchical)
@@ -160,8 +162,9 @@ internal static class NavigationCommandHandler
             {
                 var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
                 var halfPage = Math.Max(1, maxVisible / 2);
+                var minIdx = activeCol.Items.Count > 0 ? -1 : 0;
                 ctx.NavigationService.CollectionItemSelectedIndex =
-                    Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - halfPage, 0);
+                    Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - halfPage, minIdx);
                 AdjustCollectionItemScroll(ctx, options);
             }
         }
@@ -199,7 +202,9 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.CollectionItems)
         {
-            ctx.NavigationService.CollectionItemSelectedIndex = 0;
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            ctx.NavigationService.CollectionItemSelectedIndex =
+                activeCol != null && activeCol.Items.Count > 0 ? -1 : 0;
             ctx.NavigationService.CollectionItemScrollOffset = 0;
         }
         else
@@ -357,10 +362,18 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.CollectionItems)
         {
-            var activeCol = ctx.NavigationService.ActiveCollection;
-            if (activeCol != null && ctx.NavigationService.CollectionItemSelectedIndex < activeCol.Items.Count)
+            // CTA button focused — trigger podcast generation
+            if (ctx.NavigationService.CollectionItemSelectedIndex == -1)
             {
-                var selectedItem = activeCol.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
+                return;
+            }
+
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            var activateIdx = ctx.NavigationService.CollectionItemSelectedIndex;
+            if (activeCol != null && activateIdx >= 0 && activateIdx < activeCol.Items.Count)
+            {
+                var selectedItem = activeCol.Items[activateIdx];
                 ctx.NavigationService.SaveCollectionReturnPoint();
                 await ctx.NavigateToAsync(selectedItem.Url, options, ct);
 

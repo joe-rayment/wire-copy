@@ -19,6 +19,7 @@ internal class PodcastCtaRenderer
     private const string PlayIcon = "\u25b6\u25b6";
     private const string Label = "Generate Podcast";
     private const string KeyHint = "[p]";
+    private const string SelectedKeyHint = "[Enter]";
     private const int MinButtonWidth = 40;
     private const int MaxButtonWidth = 72;
 
@@ -130,7 +131,7 @@ internal class PodcastCtaRenderer
         var (_, fgAnsi, hintAnsi, dimmed) = GetStateColors(p, state);
 
         var content = $" {PlayIcon}  {Label} ";
-        var hint = KeyHint;
+        var hint = state == PodcastCtaState.Selected ? SelectedKeyHint : KeyHint;
         var totalLen = content.Length + hint.Length;
         var pad = Math.Max(0, (width - totalLen) / 2);
 
@@ -159,7 +160,8 @@ internal class PodcastCtaRenderer
         PodcastCtaState state)
     {
         var iconLabel = $" {PlayIcon}  {Label} ";
-        var hint = $" {KeyHint} ";
+        var activeHint = state == PodcastCtaState.Selected ? SelectedKeyHint : KeyHint;
+        var hint = $" {activeHint} ";
         var unconfiguredHint = " Setup required ";
         var trailingText = state == PodcastCtaState.Unconfigured ? unconfiguredHint : hint;
         var innerSpace = Math.Max(1, buttonWidth - iconLabel.Length - trailingText.Length);
@@ -210,6 +212,11 @@ internal class PodcastCtaRenderer
                 p.SecondaryText.AnsiFg,
                 p.SecondaryText.AnsiFg,
                 true),
+            PodcastCtaState.Selected => (
+                p.SelectedItemFg.AnsiBg,
+                p.SelectedItemBg.AnsiFg,
+                p.SelectedItemBg.AnsiFg,
+                false),
             _ => (
                 p.SelectedItemBg.AnsiBg,
                 p.SelectedItemFg.AnsiFg,

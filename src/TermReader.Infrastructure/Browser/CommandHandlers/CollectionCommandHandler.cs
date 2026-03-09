@@ -150,9 +150,10 @@ internal static class CollectionCommandHandler
         if (viewMode == ViewMode.CollectionItems)
         {
             var col = ctx.NavigationService.ActiveCollection;
-            if (col != null && ctx.NavigationService.CollectionItemSelectedIndex < col.Items.Count)
+            var deleteIdx = ctx.NavigationService.CollectionItemSelectedIndex;
+            if (col != null && deleteIdx >= 0 && deleteIdx < col.Items.Count)
             {
-                var item = col.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                var item = col.Items[deleteIdx];
                 var confirm = await ctx.InputHandler.PromptForInputAsync(
                     $"Remove \"{item.Title}\"? (y/n): ", ct);
                 if (!string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
@@ -264,9 +265,10 @@ internal static class CollectionCommandHandler
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
         {
             var col = ctx.NavigationService.ActiveCollection;
-            if (col != null && ctx.NavigationService.CollectionItemSelectedIndex < col.Items.Count)
+            var reorderUpIdx = ctx.NavigationService.CollectionItemSelectedIndex;
+            if (col != null && reorderUpIdx >= 0 && reorderUpIdx < col.Items.Count)
             {
-                var item = col.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                var item = col.Items[reorderUpIdx];
                 try
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
@@ -296,9 +298,10 @@ internal static class CollectionCommandHandler
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
         {
             var col = ctx.NavigationService.ActiveCollection;
-            if (col != null && ctx.NavigationService.CollectionItemSelectedIndex < col.Items.Count)
+            var reorderDownIdx = ctx.NavigationService.CollectionItemSelectedIndex;
+            if (col != null && reorderDownIdx >= 0 && reorderDownIdx < col.Items.Count)
             {
-                var item = col.Items[ctx.NavigationService.CollectionItemSelectedIndex];
+                var item = col.Items[reorderDownIdx];
                 try
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
