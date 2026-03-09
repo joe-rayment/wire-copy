@@ -1059,30 +1059,71 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Notifies the pre-load service of the current selection in the hierarchical view.
+    /// Notifies the pre-load service of the current selection, adapting to the active view mode.
     /// </summary>
     private void NotifyPreloadSelectionChanged()
     {
-        if (_navigationService.CurrentContext.ViewMode != ViewMode.Hierarchical)
+        var viewMode = _navigationService.CurrentContext.ViewMode;
+
+        switch (viewMode)
         {
-            return;
+            case ViewMode.CollectionItems:
+            {
+                var collection = _navigationService.ActiveCollection;
+                if (collection == null || collection.Items.Count == 0)
+                {
+                    return;
+                }
+
+                var urls = collection.Items.Select(item => item.Url).ToList();
+                _preloadService.NotifyCollectionChanged(
+                    _navigationService.CollectionItemSelectedIndex,
+                    urls);
+                break;
+            }
+
+            case ViewMode.Hierarchical:
+            {
+                // When viewing an article opened from a collection, let the collection queue continue
+                if (_navigationService.HasCollectionReturnPoint)
+                {
+                    return;
+                }
+
+                var page = _navigationService.CurrentPage;
+                var tree = page?.LinkTree;
+                if (tree == null)
+                {
+                    return;
+                }
+
+                var visibleNodes = tree.GetVisibleNodes().ToList();
+                var selectedNode = tree.CurrentSelection;
+                var selectedIndex = selectedNode != null ? visibleNodes.IndexOf(selectedNode) : 0;
+
+                _preloadService.NotifySelectionChanged(
+                    Math.Max(0, selectedIndex),
+                    visibleNodes,
+                    page!.Url);
+                break;
+            }
+
+            case ViewMode.Readable:
+            {
+                // When reading an article opened from a collection, let the collection queue continue
+                if (_navigationService.HasCollectionReturnPoint)
+                {
+                    return;
+                }
+
+                break;
+            }
+
+            case ViewMode.Launcher:
+            case ViewMode.CollectionList:
+                _preloadService.ClearQueue();
+                break;
         }
-
-        var page = _navigationService.CurrentPage;
-        var tree = page?.LinkTree;
-        if (tree == null)
-        {
-            return;
-        }
-
-        var visibleNodes = tree.GetVisibleNodes().ToList();
-        var selectedNode = tree.CurrentSelection;
-        var selectedIndex = selectedNode != null ? visibleNodes.IndexOf(selectedNode) : 0;
-
-        _preloadService.NotifySelectionChanged(
-            Math.Max(0, selectedIndex),
-            visibleNodes,
-            page!.Url);
     }
 
     /// <summary>
