@@ -451,6 +451,226 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region BuildCollectionQueue
+
+    [Fact]
+    public void BuildCollectionQueue_SortedByProximityToSelected()
+    {
+        var urls = new List<string>
+        {
+            "https://a.com/1",
+            "https://b.com/2",
+            "https://c.com/3",
+            "https://d.com/4",
+            "https://e.com/5",
+        };
+
+        var queue = _service.BuildCollectionQueue(2, urls);
+
+        // Selected index is 2, so item at index 2 (distance 0) should come first
+        queue[0].Url.Should().Be("https://c.com/3");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_AllowsCrossOriginUrls()
+    {
+        // Unlike BuildQueue, collection queue has no same-origin filter
+        var urls = new List<string>
+        {
+            "https://site-a.com/article",
+            "https://site-b.com/article",
+            "https://site-c.com/article",
+        };
+
+        var queue = _service.BuildCollectionQueue(0, urls);
+
+        queue.Should().HaveCount(3);
+        queue.Select(i => i.Url).Should().Contain("https://site-a.com/article");
+        queue.Select(i => i.Url).Should().Contain("https://site-b.com/article");
+        queue.Select(i => i.Url).Should().Contain("https://site-c.com/article");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_SkipsCachedUrls()
+    {
+        _cache.Contains("https://cached.com/article").Returns(true);
+
+        var urls = new List<string>
+        {
+            "https://cached.com/article",
+            "https://uncached.com/article",
+        };
+
+        var queue = _service.BuildCollectionQueue(0, urls);
+
+        queue.Should().ContainSingle();
+        queue[0].Url.Should().Be("https://uncached.com/article");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_SkipsCircuitBrokenDomains()
+    {
+        // Break the circuit for a domain via reflection
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_circuitBrokenDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, DateTime>)field!.GetValue(_service)!;
+        dict["https://broken.com"] = DateTime.UtcNow;
+
+        var urls = new List<string>
+        {
+            "https://broken.com/article",
+            "https://working.com/article",
+        };
+
+        var queue = _service.BuildCollectionQueue(0, urls);
+
+        queue.Should().ContainSingle();
+        queue[0].Url.Should().Be("https://working.com/article");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_SkipsNeedsJsDomains()
+    {
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, bool>)field!.GetValue(_service)!;
+        dict["https://jsonly.com"] = true;
+
+        var urls = new List<string>
+        {
+            "https://jsonly.com/article",
+            "https://static.com/article",
+        };
+
+        var queue = _service.BuildCollectionQueue(0, urls);
+
+        queue.Should().ContainSingle();
+        queue[0].Url.Should().Be("https://static.com/article");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_EmptyUrls_ReturnsEmpty()
+    {
+        var queue = _service.BuildCollectionQueue(0, new List<string>());
+        queue.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_SkipsEmptyUrls()
+    {
+        var urls = new List<string> { "", "https://valid.com/article", null! };
+
+        var queue = _service.BuildCollectionQueue(0, urls);
+
+        queue.Should().ContainSingle();
+        queue[0].Url.Should().Be("https://valid.com/article");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_UpdatesProgressTracking()
+    {
+        var urls = new List<string>
+        {
+            "https://a.com/1",
+            "https://b.com/2",
+        };
+
+        _service.BuildCollectionQueue(0, urls);
+
+        var progress = _service.GetProgress();
+        progress.TotalCacheableLinks.Should().Be(2);
+    }
+
+    #endregion
+
+    #region ClearQueue
+
+    [Fact]
+    public void ClearQueue_EmptiesQueueAndProgress()
+    {
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+        _service.BuildQueue(0, nodes, "https://example.com");
+
+        _service.GetProgress().TotalCacheableLinks.Should().Be(2);
+
+        _service.ClearQueue();
+
+        _service.GetProgress().TotalCacheableLinks.Should().Be(0);
+        _service.GetProgress().CachedCount.Should().Be(0);
+        _service.GetProgress().NeedsBrowserCount.Should().Be(0);
+    }
+
+    #endregion
+
+    #region Debounce: Collection vs Link-Tree Mode
+
+    [Fact]
+    public async Task NotifyCollectionChanged_DebouncesAndBuildsCollectionQueue()
+    {
+        var urls1 = new List<string> { "https://a.com/1" };
+        var urls2 = new List<string> { "https://b.com/1", "https://c.com/2", "https://d.com/3" };
+
+        // Rapid-fire collection changes
+        _service.NotifyCollectionChanged(0, urls1);
+        _service.NotifyCollectionChanged(0, urls2);
+
+        // Wait for debounce (200ms + margin)
+        await Task.Delay(350);
+
+        // Should reflect the latest call
+        var queueField = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+
+        internalQueue.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task Debounce_CollectionOverridesLinkTree()
+    {
+        // First: link-tree notification
+        var nodes = CreateContentNodes("https://example.com/a1");
+        _service.NotifySelectionChanged(0, nodes, "https://example.com");
+
+        // Then immediately: collection notification (should override)
+        var urls = new List<string> { "https://col.com/1", "https://col.com/2" };
+        _service.NotifyCollectionChanged(0, urls);
+
+        await Task.Delay(350);
+
+        var queueField = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+
+        // Should contain collection URLs, not link-tree
+        internalQueue.Should().HaveCount(2);
+        internalQueue.Select(i => i.Url).Should().Contain("https://col.com/1");
+    }
+
+    [Fact]
+    public async Task Debounce_LinkTreeOverridesCollection()
+    {
+        // First: collection notification
+        var urls = new List<string> { "https://col.com/1", "https://col.com/2" };
+        _service.NotifyCollectionChanged(0, urls);
+
+        // Then immediately: link-tree notification (should override)
+        var nodes = CreateContentNodes("https://example.com/a1");
+        _service.NotifySelectionChanged(0, nodes, "https://example.com");
+
+        await Task.Delay(350);
+
+        var queueField = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+
+        // Should contain link-tree URL, not collection
+        internalQueue.Should().ContainSingle();
+        internalQueue[0].Url.Should().Be("https://example.com/a1");
+    }
+
+    #endregion
+
     #region Adaptive Rate Limiting
 
     [Fact]

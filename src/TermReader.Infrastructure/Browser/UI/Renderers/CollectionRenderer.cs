@@ -164,7 +164,7 @@ internal class CollectionRenderer
 
                 var isCached = options.CachedUrls?.Contains(item.Url) == true;
                 var cacheSuffix = isCached ? " \u00b7 cached" : string.Empty;
-                var domainMaxWidth = width - 10 - cacheSuffix.Length;
+                var domainMaxWidth = Math.Max(1, width - 10 - cacheSuffix.Length);
 
                 var displayTitle = RenderHelpers.TruncateText(item.Title, width - 10);
                 var displayDomain = RenderHelpers.TruncateText(domain, domainMaxWidth);
