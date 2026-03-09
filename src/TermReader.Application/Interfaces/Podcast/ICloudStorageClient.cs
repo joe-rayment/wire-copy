@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using TermReader.Application.DTOs.Podcast;
+
 namespace TermReader.Application.Interfaces.Podcast;
 
 /// <summary>
@@ -61,4 +63,14 @@ public interface ICloudStorageClient
     /// <param name="objectName">The object name.</param>
     /// <returns>The public URL of the object.</returns>
     string GetPublicUrl(string objectName);
+
+    /// <summary>
+    /// Validates the cloud storage connection by checking credentials, bucket access, and write permissions.
+    /// </summary>
+    /// <param name="bucketName">The bucket name to validate.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result indicating success or the type of failure.</returns>
+    Task<CloudStorageValidationResult> ValidateConnectionAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default);
 }

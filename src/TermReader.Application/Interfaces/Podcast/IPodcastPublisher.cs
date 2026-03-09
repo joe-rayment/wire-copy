@@ -31,4 +31,15 @@ public interface IPodcastPublisher
     Task<string?> GetExistingFeedUrlAsync(
         string title,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates an empty but valid RSS feed for a new bucket, so the user gets a subscribable feed URL immediately.
+    /// Returns the existing feed URL if one already exists.
+    /// </summary>
+    /// <param name="podcast">The podcast channel metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The publish result with the feed URL.</returns>
+    Task<FeedPublishResult> BootstrapFeedAsync(
+        PodcastMetadata podcast,
+        CancellationToken cancellationToken = default);
 }

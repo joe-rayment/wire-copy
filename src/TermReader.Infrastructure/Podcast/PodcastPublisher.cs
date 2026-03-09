@@ -113,14 +113,17 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             var mergedEpisodes = MergeEpisodes(existingEpisodes, newEpisodeMetadata);
 
             // Step 5: Generate feed XML with all episodes
+            var feedObjectPath = $"{feedBasePath}/feed.xml";
+            var feedUrl = _storage.GetPublicUrl(feedObjectPath);
+            var enrichedPodcast = podcast with { FeedUrl = feedUrl };
+
             var feedXml = await _feedGenerator.GenerateFeedXmlAsync(
-                podcast,
+                enrichedPodcast,
                 mergedEpisodes,
                 cancellationToken);
 
             // Step 6: Upload feed.xml
-            var feedObjectPath = $"{feedBasePath}/feed.xml";
-            var feedUrl = await _storage.UploadStringAsync(
+            await _storage.UploadStringAsync(
                 feedXml,
                 feedObjectPath,
                 "application/rss+xml",
@@ -142,6 +145,66 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         {
             _logger.LogError(ex, "Failed to publish podcast feed: {Message}", ex.Message);
             return FeedPublishResult.Failure($"Publish failed: {ex.Message}");
+        }
+    }
+
+    public async Task<FeedPublishResult> BootstrapFeedAsync(
+        PodcastMetadata podcast,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(podcast);
+
+        try
+        {
+            // Check for existing feed first to avoid clobbering
+            var existingUrl = await GetExistingFeedUrlAsync(podcast.Title, cancellationToken);
+            if (existingUrl != null)
+            {
+                _logger.LogInformation("Existing feed found for '{Title}': {Url}", podcast.Title, existingUrl);
+                return FeedPublishResult.Successful(existingUrl, 0);
+            }
+
+            _logger.LogInformation("Bootstrapping empty feed for '{Title}'", podcast.Title);
+
+            // Get or create feed UUID
+            var feedUuid = await GetOrCreateFeedUuidAsync(podcast.Title, cancellationToken);
+            var feedBasePath = $"podcasts/{feedUuid}";
+
+            // Compute feed URL so we can set it on the metadata for atom:link
+            var feedObjectPath = $"{feedBasePath}/feed.xml";
+            var feedUrl = _storage.GetPublicUrl(feedObjectPath);
+
+            // Enrich metadata with feed URL for atom:link rel=self
+            var enrichedPodcast = podcast with { FeedUrl = feedUrl };
+
+            // Generate empty feed
+            var feedXml = await _feedGenerator.GenerateFeedXmlAsync(
+                enrichedPodcast,
+                Array.Empty<EpisodeMetadata>(),
+                cancellationToken);
+
+            // Upload feed
+            await _storage.UploadStringAsync(
+                feedXml,
+                feedObjectPath,
+                "application/rss+xml",
+                cancellationToken);
+
+            // Update manifest and feed index
+            await UpdateManifestAsync(feedBasePath, podcast, [], cancellationToken);
+            await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken);
+
+            _logger.LogInformation("Bootstrapped empty feed at {FeedUrl}", feedUrl);
+            return FeedPublishResult.Successful(feedUrl, 0);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to bootstrap feed: {Message}", ex.Message);
+            return FeedPublishResult.Failure($"Feed bootstrap failed: {ex.Message}");
         }
     }
 
