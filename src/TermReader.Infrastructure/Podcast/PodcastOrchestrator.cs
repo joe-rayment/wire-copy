@@ -34,6 +34,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     // Cache extracted articles from AnalyzeCacheStatusAsync so GeneratePodcastAsync
     // can reuse them instead of re-extracting (each extraction has rate-limit delays).
     private IReadOnlyList<ExtractedArticle>? _cachedArticles;
+    private IReadOnlyList<ArticleFailure>? _cachedExtractionFailures;
     private string? _cachedCollectionName;
 
     public PodcastOrchestrator(
@@ -78,10 +79,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
         // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
         IReadOnlyList<ExtractedArticle> articles;
+        IReadOnlyList<ArticleFailure> extractionFailures;
         if (_cachedArticles != null && _cachedCollectionName == collection.Name)
         {
             articles = _cachedArticles;
+            extractionFailures = _cachedExtractionFailures ?? [];
             _cachedArticles = null;
+            _cachedExtractionFailures = null;
             _cachedCollectionName = null;
 
             _logger.LogInformation(
@@ -115,10 +119,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                         PercentComplete = (int)(p.Current * 10.0 / p.Total),
                     })),
                 cancellationToken);
-        }
 
-        // Collect content extraction failures for diagnostics
-        var extractionFailures = _contentProvider.LastExtractionFailures;
+            extractionFailures = _contentProvider.LastExtractionFailures;
+        }
 
         if (articles.Count == 0)
         {
@@ -138,7 +141,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         {
             return PodcastResult.Failure(
                 $"Estimated cost ${totalCost:F4} exceeds budget ${_ttsConfig.MaxBudgetUsd:F2}. " +
-                $"Reduce articles or increase MaxBudgetUsd.");
+                $"Reduce articles or increase MaxBudgetUsd.",
+                failedArticleDetails: extractionFailures);
         }
 
         _logger.LogInformation(
@@ -277,7 +281,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             if (!assemblyResult.Success || string.IsNullOrEmpty(assemblyResult.OutputPath))
             {
                 return PodcastResult.Failure(
-                    $"M4B assembly failed: {assemblyResult.ErrorMessage}");
+                    $"M4B assembly failed: {assemblyResult.ErrorMessage}",
+                    failedArticleDetails: allFailures);
             }
 
             // Step 6: Publish
@@ -365,7 +370,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Podcast generation failed: {Message}", ex.Message);
-            return PodcastResult.Failure($"Podcast generation failed: {ex.Message}");
+            return PodcastResult.Failure(
+                $"Podcast generation failed: {ex.Message}",
+                failedArticleDetails: extractionFailures.Concat(ttsFailures).ToList());
         }
         finally
         {
@@ -391,6 +398,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
         // Cache for reuse by GeneratePodcastAsync to avoid double extraction
         _cachedArticles = articles;
+        _cachedExtractionFailures = _contentProvider.LastExtractionFailures;
         _cachedCollectionName = collection.Name;
 
         if (articles.Count == 0)
