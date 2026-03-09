@@ -27,6 +27,7 @@ internal sealed class ReadingListContentProvider
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly ILogger<ReadingListContentProvider> _logger;
+    private List<ArticleFailure> _lastFailures = [];
 
     public ReadingListContentProvider(
         IPageLoader pageLoader,
@@ -50,20 +51,18 @@ internal sealed class ReadingListContentProvider
     /// </summary>
     public IReadOnlyList<ArticleFailure> LastExtractionFailures => _lastFailures;
 
-    private List<ArticleFailure> _lastFailures = [];
-
     /// <summary>
     /// Loads and extracts readable content from all items in a collection.
     /// Skips items that fail to load or don't contain article content.
     /// Failures are available via <see cref="LastExtractionFailures"/> after this call.
     /// </summary>
     /// <param name="collection">The reading list collection.</param>
-    /// <param name="progress">Optional progress callback reporting (current, total, title).</param>
+    /// <param name="progress">Optional progress callback reporting per-article extraction status.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Ordered list of extracted article content.</returns>
     public async Task<IReadOnlyList<ExtractedArticle>> GetAllArticleContentAsync(
         Collection collection,
-        IProgress<(int Current, int Total, string Title)>? progress = null,
+        IProgress<ContentExtractionProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(collection);
@@ -88,11 +87,36 @@ internal sealed class ReadingListContentProvider
             cancellationToken.ThrowIfCancellationRequested();
 
             var item = items[i];
-            progress?.Report((i + 1, items.Count, item.Title));
+            Action<string>? reportMethod = progress != null
+                ? method => progress.Report(new ContentExtractionProgress
+                {
+                    Current = i + 1,
+                    Total = items.Count,
+                    Title = item.Title,
+                    ExtractionMethod = method,
+                })
+                : null;
+
+            progress?.Report(new ContentExtractionProgress
+            {
+                Current = i + 1,
+                Total = items.Count,
+                Title = item.Title,
+            });
 
             try
             {
-                var (article, fetchMethod) = await LoadAndExtractAsync(item, cancellationToken);
+                var (article, fetchMethod) = await LoadAndExtractAsync(item, reportMethod, cancellationToken);
+
+                progress?.Report(new ContentExtractionProgress
+                {
+                    Current = i + 1,
+                    Total = items.Count,
+                    Title = item.Title,
+                    IsCompleted = true,
+                    IsSuccess = article != null,
+                });
+
                 if (article != null)
                 {
                     results.Add(article);
@@ -130,6 +154,14 @@ internal sealed class ReadingListContentProvider
             }
             catch (Exception ex)
             {
+                progress?.Report(new ContentExtractionProgress
+                {
+                    Current = i + 1,
+                    Total = items.Count,
+                    Title = item.Title,
+                    IsCompleted = true,
+                });
+
                 _logger.LogWarning(
                     ex,
                     "Failed to load item {Index}/{Total}: '{Title}' - {Message}",
@@ -157,11 +189,13 @@ internal sealed class ReadingListContentProvider
 
     private async Task<(ExtractedArticle? Article, FetchMethod FetchMethod)> LoadAndExtractAsync(
         CollectionItem item,
+        Action<string>? reportMethod,
         CancellationToken cancellationToken)
     {
         // Wait for any in-flight preload before fetching
         if (!_pageCache.Contains(item.Url))
         {
+            reportMethod?.Invoke("preload");
             var preloadResult = await _preloadService.WaitForInFlightAsync(
                 item.Url, InFlightWaitTimeout, cancellationToken);
             if (preloadResult is { Success: true } && !string.IsNullOrEmpty(preloadResult.Html))
@@ -176,6 +210,7 @@ internal sealed class ReadingListContentProvider
         }
 
         // Layer 1: Initial load (HTTP/cached)
+        reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "HTTP");
         var loadResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = item.Url },
             cancellationToken);
@@ -195,6 +230,7 @@ internal sealed class ReadingListContentProvider
         // Layer 2: If HTTP/cached returned no content (JS shell), retry with Selenium
         if (loadResult.FetchMethod != FetchMethod.Selenium)
         {
+            reportMethod?.Invoke("Selenium");
             _logger.LogInformation(
                 "No readable content from {Method}, retrying with Selenium: {Url}",
                 loadResult.FetchMethod,
@@ -225,6 +261,7 @@ internal sealed class ReadingListContentProvider
             !string.IsNullOrEmpty(loadResult.Html) &&
             PageLoader.IsBotChallengePage(loadResult.Html))
         {
+            reportMethod?.Invoke("headed");
             _logger.LogWarning(
                 "Bot challenge detected in headless mode, retrying headed: {Url}",
                 item.Url);

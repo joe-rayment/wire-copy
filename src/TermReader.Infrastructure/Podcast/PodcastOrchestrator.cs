@@ -109,13 +109,16 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             articles = await _contentProvider.GetAllArticleContentAsync(
                 collection,
-                new Progress<(int Current, int Total, string Title)>(p =>
+                new Progress<ContentExtractionProgress>(p =>
                     progress?.Report(new PodcastProgress
                     {
                         Phase = PodcastPhase.CachingContent,
                         CurrentArticle = p.Current,
                         TotalArticles = p.Total,
                         ArticleTitle = p.Title,
+                        ExtractionMethod = p.ExtractionMethod,
+                        IsArticleComplete = p.IsCompleted,
+                        IsArticleSuccess = p.IsSuccess,
                         PercentComplete = (int)(p.Current * 10.0 / p.Total),
                     })),
                 cancellationToken);

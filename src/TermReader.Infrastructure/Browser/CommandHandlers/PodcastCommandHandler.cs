@@ -437,8 +437,14 @@ internal static class PodcastCommandHandler
                     {
                         gcsConfig.BucketName = trimmed;
                         bucketError = null;
-                        try { settingsStore.Set("GcsBucketName", trimmed); }
-                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist bucket name"); }
+                        try
+                        {
+                            settingsStore.Set("GcsBucketName", trimmed);
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+                        }
                     }
                     else
                     {
@@ -472,8 +478,15 @@ internal static class PodcastCommandHandler
                     if (validation.IsValid)
                     {
                         Console.Write($"\r  {p.PromptFg.AnsiFg}API key verified     {Reset}");
-                        try { settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true); }
-                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist API key"); }
+                        try
+                        {
+                            settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true);
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Logger.LogWarning(ex, "Failed to persist API key");
+                        }
+
                         await Task.Delay(800, ct);
                     }
                     else
@@ -553,8 +566,14 @@ internal static class PodcastCommandHandler
                         gcsConfig.BucketName = trimmed;
                         isGcsConfigured = true;
                         bucketError = null;
-                        try { settingsStore.Set("GcsBucketName", trimmed); }
-                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist bucket name"); }
+                        try
+                        {
+                            settingsStore.Set("GcsBucketName", trimmed);
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+                        }
                     }
                     else
                     {
@@ -591,10 +610,46 @@ internal static class PodcastCommandHandler
         var animFrame = 0;
 
         var lastProcessingIndex = -1;
+        var lastPhase = PodcastPhase.CachingContent;
         var progress = new Progress<PodcastProgress>(p =>
         {
             Volatile.Write(ref latestProgress, p);
 
+            // Phase transition: reset article statuses when moving to GeneratingAudio
+            if (p.Phase == PodcastPhase.GeneratingAudio && lastPhase == PodcastPhase.CachingContent)
+            {
+                for (var i = 0; i < articleCount; i++)
+                {
+                    if (statuses[i].State != ArticleState.Failed)
+                    {
+                        statuses[i].State = ArticleState.Pending;
+                        statuses[i].Method = null;
+                    }
+                }
+
+                lastProcessingIndex = -1;
+            }
+
+            lastPhase = p.Phase;
+
+            // CachingContent phase: track per-article content loading
+            if (p.Phase == PodcastPhase.CachingContent && p.CurrentArticle > 0 && p.CurrentArticle <= articleCount)
+            {
+                var idx = p.CurrentArticle - 1;
+
+                if (p.IsArticleComplete)
+                {
+                    statuses[idx].State = p.IsArticleSuccess ? ArticleState.Completed : ArticleState.Failed;
+                    statuses[idx].Method = null;
+                }
+                else
+                {
+                    statuses[idx].State = ArticleState.Processing;
+                    statuses[idx].Method = p.ExtractionMethod;
+                }
+            }
+
+            // GeneratingAudio phase: track per-article audio generation
             if (p.Phase == PodcastPhase.GeneratingAudio && p.CurrentArticle > 0 && p.CurrentArticle <= articleCount)
             {
                 var idx = p.CurrentArticle - 1;
@@ -1096,10 +1151,15 @@ internal static class PodcastCommandHandler
         var maxArticleLines = Math.Max(1, terminalHeight - helpers.LinesWritten - 4);
         var articleCount = Math.Min(statuses.Length, maxArticleLines);
 
+        var isCaching = progress?.Phase == PodcastPhase.CachingContent;
+
         for (var i = 0; i < articleCount; i++)
         {
             var status = statuses[i];
             var displayTitle = RenderHelpers.TruncateText(status.Title, width - 10);
+            var methodSuffix = status.Method != null
+                ? $" {p.SecondaryText.AnsiFg}({status.Method}){Reset}"
+                : string.Empty;
 
             var line = status.State switch
             {
@@ -1107,6 +1167,10 @@ internal static class PodcastCommandHandler
                     $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}",
                 ArticleState.Completed =>
                     $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle}",
+                ArticleState.Processing when isCaching =>
+                    $"  {p.HeaderTitleFg.AnsiFg}\u21bb{Reset} {displayTitle}" +
+                    $"{methodSuffix}" +
+                    $"{p.SecondaryText.AnsiFg}{AnimationFrames[animFrame]}{Reset}",
                 ArticleState.Processing =>
                     $"  {p.HeaderTitleFg.AnsiFg}\u266b{Reset} {displayTitle}" +
                     $"{p.SecondaryText.AnsiFg}{AnimationFrames[animFrame]}{Reset}",
@@ -1161,5 +1225,7 @@ internal static class PodcastCommandHandler
         public required string Title { get; init; }
 
         public ArticleState State { get; set; }
+
+        public string? Method { get; set; }
     }
 }
