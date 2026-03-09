@@ -453,7 +453,7 @@ public class BrowserOrchestrator : IBrowserService
             Use256Colors = use256,
             CachedUrls = _pageCache.GetCachedUrls(),
             CacheProgress = _preloadService.GetProgress(),
-            PodcastButtonState = IsTtsConfigured() ? 0 : 3, // 0=Idle, 3=Unconfigured
+            PodcastButtonState = GetPodcastButtonState(),
         };
     }
 
@@ -475,6 +475,21 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         return _ttsService?.IsConfigured ?? false;
+    }
+
+    /// <summary>
+    /// Returns the podcast button state integer for RenderOptions.
+    /// 0=Idle, 3=Unconfigured, 4=Selected (CTA focused via j/k).
+    /// </summary>
+    private int GetPodcastButtonState()
+    {
+        if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
+            && _navigationService.CollectionItemSelectedIndex == -1)
+        {
+            return 4; // Selected
+        }
+
+        return IsTtsConfigured() ? 0 : 3; // Idle or Unconfigured
     }
 
     /// <summary>

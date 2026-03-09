@@ -363,7 +363,7 @@ public class ScrollSelectionCoordinationTests
     }
 
     [Fact]
-    public async Task CollectionItems_MoveUp_ClampsToZero()
+    public async Task CollectionItems_MoveUp_MovesToCtaButtonAtNegativeOne()
     {
         var collection = CreateCollectionWithItems(10);
         _navigationService.EnterCollections();
@@ -372,7 +372,7 @@ public class ScrollSelectionCoordinationTests
 
         await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CollectionItemSelectedIndex.Should().Be(0);
+        _navigationService.CollectionItemSelectedIndex.Should().Be(-1);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
     }
 
@@ -388,6 +388,7 @@ public class ScrollSelectionCoordinationTests
         var collection = CreateCollectionWithItems(maxVisible * 3);
         _navigationService.EnterCollections();
         _navigationService.EnterCollection(collection);
+        _navigationService.CollectionItemSelectedIndex = 0;
 
         await NavigationCommandHandler.HandlePageDown(_ctx, _options, CancellationToken.None);
 
@@ -424,7 +425,7 @@ public class ScrollSelectionCoordinationTests
     }
 
     [Fact]
-    public async Task CollectionItems_PageUp_ClampsToZero()
+    public async Task CollectionItems_PageUp_ClampsToCtaButton()
     {
         var collection = CreateCollectionWithItems(25);
         _navigationService.EnterCollections();
@@ -433,7 +434,7 @@ public class ScrollSelectionCoordinationTests
 
         await NavigationCommandHandler.HandlePageUp(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CollectionItemSelectedIndex.Should().Be(0);
+        _navigationService.CollectionItemSelectedIndex.Should().Be(-1);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
     }
 
@@ -442,7 +443,7 @@ public class ScrollSelectionCoordinationTests
     #region CollectionItems - GoToTop/GoToBottom
 
     [Fact]
-    public async Task CollectionItems_GoToTop_ResetsBothSelectionAndScroll()
+    public async Task CollectionItems_GoToTop_ResetsToCtaButtonAndScroll()
     {
         var collection = CreateCollectionWithItems(25);
         _navigationService.EnterCollections();
@@ -452,7 +453,7 @@ public class ScrollSelectionCoordinationTests
 
         await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CollectionItemSelectedIndex.Should().Be(0);
+        _navigationService.CollectionItemSelectedIndex.Should().Be(-1);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
     }
 
@@ -614,7 +615,7 @@ public class ScrollSelectionCoordinationTests
     }
 
     [Fact]
-    public async Task CollectionItems_SelectionNeverNegative_AfterRepeatedPageUp()
+    public async Task CollectionItems_SelectionClampsToCtaButton_AfterRepeatedPageUp()
     {
         var collection = CreateCollectionWithItems(20);
         _navigationService.EnterCollections();
@@ -625,7 +626,7 @@ public class ScrollSelectionCoordinationTests
             await NavigationCommandHandler.HandlePageUp(_ctx, _options, CancellationToken.None);
         }
 
-        _navigationService.CollectionItemSelectedIndex.Should().BeGreaterOrEqualTo(0);
+        _navigationService.CollectionItemSelectedIndex.Should().BeGreaterOrEqualTo(-1);
         _navigationService.CollectionItemScrollOffset.Should().BeGreaterOrEqualTo(0);
     }
 

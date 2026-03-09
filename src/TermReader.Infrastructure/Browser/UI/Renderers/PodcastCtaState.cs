@@ -26,4 +26,9 @@ internal enum PodcastCtaState
     /// TTS API key is not configured — renders muted with "Setup required" subtitle.
     /// </summary>
     Unconfigured,
+
+    /// <summary>
+    /// CTA button is focused via j/k navigation — renders with selection highlight.
+    /// </summary>
+    Selected,
 }

@@ -51,11 +51,12 @@ public class CollectionNavigationState
 
     /// <summary>
     /// Gets or sets the selected index in the collection items list.
+    /// -1 indicates the podcast CTA button is focused.
     /// </summary>
     public int CollectionItemSelectedIndex
     {
         get => _collectionItemSelectedIndex;
-        set => _collectionItemSelectedIndex = Math.Max(0, value);
+        set => _collectionItemSelectedIndex = Math.Max(-1, value);
     }
 
     /// <summary>
@@ -111,7 +112,7 @@ public class CollectionNavigationState
     public void EnterCollection(Collection collection)
     {
         _activeCollection = collection;
-        _collectionItemSelectedIndex = 0;
+        _collectionItemSelectedIndex = collection.Items.Count > 0 ? -1 : 0;
         _collectionItemScrollOffset = 0;
 
         _logger.LogDebug("Entered collection: {Name}", collection.Name);
