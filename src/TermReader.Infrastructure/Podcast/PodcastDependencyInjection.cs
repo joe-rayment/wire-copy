@@ -8,6 +8,7 @@ using TermReader.Application.Interfaces.Audio;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Configuration.Validation;
+using TermReader.Infrastructure.Podcast.Cache;
 
 namespace TermReader.Infrastructure.Podcast;
 
@@ -36,6 +37,10 @@ public static class PodcastDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(GcsConfiguration.SectionName).Bind(opts));
 
+        services.AddOptions<TtsAudioCacheConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(TtsAudioCacheConfiguration.SectionName).Bind(opts));
+
         // Register configuration validators
         services.AddSingleton<IValidateOptions<OpenAiTtsConfiguration>, OpenAiTtsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
@@ -47,6 +52,7 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IPodcastPublisher, PodcastPublisher>();
+        services.AddSingleton<ITtsAudioCache, FileSystemTtsAudioCache>();
         services.AddSingleton<ReadingListContentProvider>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
 

@@ -22,4 +22,15 @@ public interface IPodcastOrchestrator
         Collection collection,
         IProgress<PodcastProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Analyzes cache coverage for articles in a collection.
+    /// Used for pre-flight cost estimation on the confirmation screen.
+    /// </summary>
+    /// <param name="collection">The reading list collection to analyze.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Cache analysis with per-article status and cost estimates.</returns>
+    Task<CacheAnalysis> AnalyzeCacheStatusAsync(
+        Collection collection,
+        CancellationToken cancellationToken = default);
 }
