@@ -196,15 +196,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                         ttsResult.CharactersProcessed);
                 }
 
-                // Estimate duration from character count (150 WPM, 5 chars/word)
-                var estimatedDuration = TimeSpan.FromMinutes(
-                    article.CleanedText.Length / (150.0 * 5.0));
-
+                // Duration left as TimeSpan.Zero so M4bAudioAssembler probes
+                // the actual audio file with FFProbe for accurate chapter markers.
                 segments.Add(new ArticleAudioSegment
                 {
                     Title = article.Title,
                     AudioFilePath = audioPath,
-                    Duration = estimatedDuration,
+                    Duration = TimeSpan.Zero,
                     SourceUrl = article.Url,
                 });
             }
