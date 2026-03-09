@@ -19,21 +19,28 @@ namespace TermReader.Infrastructure.Podcast;
 internal sealed class ReadingListContentProvider
 {
     private const int NetworkFetchDelayMs = 3000;
+    private static readonly TimeSpan InFlightWaitTimeout = TimeSpan.FromSeconds(15);
 
     private readonly IPageLoader _pageLoader;
     private readonly IReadableContentExtractor _contentExtractor;
     private readonly BrowserConfiguration _browserConfig;
+    private readonly IPreloadService _preloadService;
+    private readonly IPageCache _pageCache;
     private readonly ILogger<ReadingListContentProvider> _logger;
 
     public ReadingListContentProvider(
         IPageLoader pageLoader,
         IReadableContentExtractor contentExtractor,
         IOptions<BrowserConfiguration> browserConfig,
+        IPreloadService preloadService,
+        IPageCache pageCache,
         ILogger<ReadingListContentProvider> logger)
     {
         _pageLoader = pageLoader;
         _contentExtractor = contentExtractor;
         _browserConfig = browserConfig.Value;
+        _preloadService = preloadService;
+        _pageCache = pageCache;
         _logger = logger;
     }
 
@@ -152,6 +159,22 @@ internal sealed class ReadingListContentProvider
         CollectionItem item,
         CancellationToken cancellationToken)
     {
+        // Wait for any in-flight preload before fetching
+        if (!_pageCache.Contains(item.Url))
+        {
+            var preloadResult = await _preloadService.WaitForInFlightAsync(
+                item.Url, InFlightWaitTimeout, cancellationToken);
+            if (preloadResult is { Success: true } && !string.IsNullOrEmpty(preloadResult.Html))
+            {
+                _logger.LogDebug("Using completed in-flight preload for {Url}", item.Url);
+                var preloadArticle = await TryExtractArticleAsync(preloadResult, item.Url, cancellationToken);
+                if (preloadArticle != null)
+                {
+                    return (preloadArticle, FetchMethod.Cached);
+                }
+            }
+        }
+
         // Layer 1: Initial load (HTTP/cached)
         var loadResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = item.Url },
