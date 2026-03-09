@@ -26,6 +26,12 @@ public record NavigationCommand
     /// Optional parameters for the command.
     /// </summary>
     public Dictionary<string, object>? Parameters { get; init; }
+
+    /// <summary>
+    /// The raw key character that produced this command (when available).
+    /// Useful for screens that need to distinguish keys sharing a CommandType.
+    /// </summary>
+    public char? RawKeyChar { get; init; }
 }
 
 /// <summary>

@@ -197,7 +197,7 @@ internal static class PodcastCommandHandler
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Credentials{Reset}");
 
             var ttsIndicator = isTtsConfigured
-                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} OpenAI TTS API key     {p.PromptFg.AnsiFg}configured{Reset}"
+                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} OpenAI TTS API key     {p.PromptFg.AnsiFg}configured{Reset}  {p.SecondaryText.AnsiFg}[a] change{Reset}"
                 : $"    {p.ErrorFg.AnsiFg}\u25cb{Reset} OpenAI TTS API key     {p.ErrorFg.AnsiFg}not set{Reset}";
             helpers.WriteLine(ttsIndicator);
 
@@ -207,7 +207,7 @@ internal static class PodcastCommandHandler
             }
 
             var gcsIndicator = isGcsConfigured
-                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}"
+                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}  {p.SecondaryText.AnsiFg}[b] change{Reset}"
                 : $"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not set (local-only){Reset}";
             helpers.WriteLine(gcsIndicator);
 
@@ -285,11 +285,16 @@ internal static class PodcastCommandHandler
             else
             {
                 hints.Append($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}");
+                hints.Append($"{p.PrimaryText.AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}:change API key   {Reset}");
             }
 
             if (!isGcsConfigured)
             {
                 hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}set bucket   {Reset}");
+            }
+            else
+            {
+                hints.Append($"{p.PrimaryText.AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:change bucket   {Reset}");
             }
 
             hints.Append($"{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
@@ -305,9 +310,70 @@ internal static class PodcastCommandHandler
                 continue;
             }
 
+            // [b] re-enter GCS bucket (only when already configured; raw 'b' key)
+            if (command.Type == CommandType.GoBack && command.RawKeyChar == 'b' && isGcsConfigured)
+            {
+                bucketError = null;
+                var bucketName = await ctx.InputHandler.PromptForInputAsync(
+                    "GCS bucket name (e.g. my-podcast-feed): ", ct);
+                if (!string.IsNullOrWhiteSpace(bucketName))
+                {
+                    var trimmed = bucketName.Trim();
+                    if (GcsConfiguration.IsValidBucketName(trimmed))
+                    {
+                        gcsConfig.BucketName = trimmed;
+                        bucketError = null;
+                        try { settingsStore.Set("GcsBucketName", trimmed); }
+                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist bucket name"); }
+                    }
+                    else
+                    {
+                        bucketError = $"Invalid: \"{trimmed}\" \u2014 must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots";
+                        isGcsConfigured = false;
+                        gcsConfig.BucketName = null;
+                    }
+                }
+
+                continue;
+            }
+
             if (command.Type is CommandType.GoBack or CommandType.Quit)
             {
                 return false;
+            }
+
+            // [a] re-enter API key when already configured
+            if (command.Type == CommandType.AddBookmark && isTtsConfigured)
+            {
+                var apiKey = await ctx.InputHandler.PromptForInputAsync(
+                    "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    var trimmedKey = apiKey.Trim();
+                    ttsService.SetApiKeyOverride(trimmedKey);
+
+                    Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
+                    var validation = await ttsService.ValidateApiKeyAsync(ct);
+
+                    if (validation.IsValid)
+                    {
+                        Console.Write($"\r  {p.PromptFg.AnsiFg}API key verified     {Reset}");
+                        try { settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true); }
+                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist API key"); }
+                        await Task.Delay(800, ct);
+                    }
+                    else
+                    {
+                        Console.Write(
+                            $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
+                            new string(' ', 20));
+                        await Task.Delay(2000, ct);
+                        ttsService.SetApiKeyOverride(string.Empty);
+                        isTtsConfigured = false;
+                    }
+                }
+
+                continue;
             }
 
             if (command.Type == CommandType.ActivateLink)

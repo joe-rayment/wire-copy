@@ -75,6 +75,11 @@ public class TerminalInputHandler : IInputHandler
             }
 
             var command = MapKeyInfoToCommand(keyInfo);
+            if (keyInfo.KeyChar >= 32)
+            {
+                command = command with { RawKeyChar = keyInfo.KeyChar };
+            }
+
             if (command.Type != CommandType.NoOp)
             {
                 _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
