@@ -44,14 +44,14 @@ internal sealed class OpenAiTtsService : ITtsService
         ArgumentNullException.ThrowIfNull(text);
 
         var charCount = text.Length;
-        var chunks = TextChunker.ChunkText(text, _config.MaxChunkSize);
+        var chunkCount = (int)Math.Ceiling((double)charCount / _config.MaxChunkSize);
         var costUsd = charCount * CostPerMillionChars / 1_000_000m;
         var estimatedMinutes = charCount / (WordsPerMinute * AverageCharsPerWord);
 
         return new TtsCostEstimate
         {
             CharacterCount = charCount,
-            ChunkCount = chunks.Count,
+            ChunkCount = chunkCount,
             EstimatedCostUsd = costUsd,
             EstimatedDurationMinutes = estimatedMinutes,
         };

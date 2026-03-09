@@ -12,6 +12,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.ValueObjects.Audio;
 using TermReader.Domain.ValueObjects.Podcast;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Storage;
 
 namespace TermReader.Infrastructure.Podcast;
 
@@ -23,6 +24,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 {
     private readonly ReadingListContentProvider _contentProvider;
     private readonly ITtsService _ttsService;
+    private readonly ITtsAudioCache _audioCache;
     private readonly IAudioAssembler _audioAssembler;
     private readonly IPodcastPublisher _publisher;
     private readonly PodcastConfiguration _podcastConfig;
@@ -32,6 +34,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     public PodcastOrchestrator(
         ReadingListContentProvider contentProvider,
         ITtsService ttsService,
+        ITtsAudioCache audioCache,
         IAudioAssembler audioAssembler,
         IPodcastPublisher publisher,
         IOptions<PodcastConfiguration> podcastConfig,
@@ -40,6 +43,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     {
         _contentProvider = contentProvider;
         _ttsService = ttsService;
+        _audioCache = audioCache;
         _audioAssembler = audioAssembler;
         _publisher = publisher;
         _podcastConfig = podcastConfig.Value;
@@ -93,12 +97,12 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             return PodcastResult.Failure("No readable articles found in the collection.");
         }
 
-        // Step 3: Estimate cost and check budget
-        var totalCost = 0m;
-        foreach (var article in articles)
-        {
-            totalCost += _ttsService.EstimateCost(article.CleanedText).EstimatedCostUsd;
-        }
+        // Step 3: Estimate cost (accounting for cached articles) and check budget
+        var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
+            articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+            cancellationToken);
+
+        var totalCost = cacheAnalysis.EstimatedCost;
 
         if (totalCost > _ttsConfig.MaxBudgetUsd)
         {
@@ -108,19 +112,18 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
 
         _logger.LogInformation(
-            "Estimated TTS cost: ${Cost:F4} for {Count} articles",
+            "Estimated TTS cost: ${Cost:F4} for {Count} articles ({Cached} cached, {Uncached} need generation)",
             totalCost,
-            articles.Count);
+            articles.Count,
+            cacheAnalysis.CachedArticles,
+            cacheAnalysis.UncachedArticles);
 
         // Step 4: Generate TTS audio for each article
-        var tempDir = Path.Combine(
-            _podcastConfig.TempDirectory ?? Path.GetTempPath(),
-            $"termreader-podcast-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
+        var tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
 
         var segments = new List<ArticleAudioSegment>();
         var articlesFailed = 0;
-        var succeeded = false;
+        var keepTempDir = false;
 
         try
         {
@@ -138,24 +141,51 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
                 });
 
-                var ttsResult = await _ttsService.GenerateAudioAsync(
-                    article.CleanedText,
-                    article.Title,
-                    cancellationToken: cancellationToken);
+                // Check cache first
+                var cached = await _audioCache.TryGetAsync(article.CleanedText, article.Url, cancellationToken);
+                string audioPath;
 
-                if (!ttsResult.Success || ttsResult.AudioData == null)
+                if (cached != null)
                 {
-                    _logger.LogWarning(
-                        "TTS failed for '{Title}': {Error}",
+                    // Cache hit — use cached audio file directly
+                    audioPath = cached.AudioFilePath;
+                    _logger.LogInformation(
+                        "Using cached audio for '{Title}' (key={Key})",
                         article.Title,
-                        ttsResult.ErrorMessage);
-                    articlesFailed++;
-                    continue;
+                        cached.CacheKey);
                 }
+                else
+                {
+                    // Cache miss — generate via TTS API
+                    var ttsResult = await _ttsService.GenerateAudioAsync(
+                        article.CleanedText,
+                        article.Title,
+                        cancellationToken: cancellationToken);
 
-                // Save audio to temp file
-                var audioPath = Path.Combine(tempDir, $"segment-{i:D3}.aac");
-                await File.WriteAllBytesAsync(audioPath, ttsResult.AudioData, cancellationToken);
+                    if (!ttsResult.Success || ttsResult.AudioData == null)
+                    {
+                        _logger.LogWarning(
+                            "TTS failed for '{Title}': {Error}",
+                            article.Title,
+                            ttsResult.ErrorMessage);
+                        articlesFailed++;
+                        continue;
+                    }
+
+                    // Store in cache
+                    var cacheEntry = await _audioCache.PutAsync(
+                        article.CleanedText,
+                        article.Url,
+                        article.Title,
+                        ttsResult.AudioData,
+                        cancellationToken);
+                    audioPath = cacheEntry.AudioFilePath;
+
+                    _logger.LogInformation(
+                        "Generated and cached audio for '{Title}' ({Chars} chars)",
+                        article.Title,
+                        ttsResult.CharactersProcessed);
+                }
 
                 // Estimate duration from character count (150 WPM, 5 chars/word)
                 var estimatedDuration = TimeSpan.FromMinutes(
@@ -168,11 +198,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     Duration = estimatedDuration,
                     SourceUrl = article.Url,
                 });
-
-                _logger.LogInformation(
-                    "Generated audio for '{Title}' ({Chars} chars)",
-                    article.Title,
-                    ttsResult.CharactersProcessed);
             }
 
             if (segments.Count == 0)
@@ -188,7 +213,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 Message = "Assembling M4B audiobook...",
             });
 
-            var outputPath = Path.Combine(tempDir, $"{SanitizeFileName(collection.Name)}.m4b");
+            var outputPath = tempFiles.GetTempFilePath($"{SanitizeFileName(collection.Name)}.m4b");
             var assemblyRequest = new AssemblyRequest
             {
                 Segments = segments,
@@ -258,7 +283,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 Message = publishResult.Success ? "Done!" : "Published locally only.",
             });
 
-            succeeded = true;
+            // Keep temp dir so the M4B output survives dispose
+            keepTempDir = true;
 
             if (!publishResult.Success)
             {
@@ -295,44 +321,42 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
         finally
         {
-            // Clean up temp segment files; keep the M4B if pipeline succeeded
-            CleanupTempSegments(tempDir, succeeded);
+            if (!keepTempDir)
+            {
+                // On failure/cancellation, clean up temp directory
+                tempFiles.Dispose();
+            }
+
+            // Audio segment files are managed by the TTS cache — do not delete them here.
         }
     }
 
-    private void CleanupTempSegments(string tempDir, bool keepOutputFiles)
+    public async Task<CacheAnalysis> AnalyzeCacheStatusAsync(
+        Collection collection,
+        CancellationToken cancellationToken = default)
     {
-        try
+        ArgumentNullException.ThrowIfNull(collection);
+
+        var articles = await _contentProvider.GetAllArticleContentAsync(
+            collection,
+            cancellationToken: cancellationToken);
+
+        if (articles.Count == 0)
         {
-            if (!Directory.Exists(tempDir))
+            return new CacheAnalysis
             {
-                return;
-            }
-
-            if (!keepOutputFiles)
-            {
-                Directory.Delete(tempDir, recursive: true);
-                _logger.LogDebug("Cleaned up temp directory: {TempDir}", tempDir);
-                return;
-            }
-
-            // On success, delete only segment files but keep the M4B output
-            foreach (var segmentFile in Directory.GetFiles(tempDir, "segment-*.aac"))
-            {
-                File.Delete(segmentFile);
-            }
-
-            _logger.LogDebug("Cleaned up temp segment files in: {TempDir}", tempDir);
+                TotalArticles = 0,
+                CachedArticles = 0,
+                UncachedArticles = 0,
+                EstimatedCost = 0,
+                ArticleStatuses = [],
+            };
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to clean up temp directory: {TempDir}", tempDir);
-        }
+
+        return await _audioCache.AnalyzeCollectionAsync(
+            articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+            cancellationToken);
     }
 
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c));
-    }
+    private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
 }
