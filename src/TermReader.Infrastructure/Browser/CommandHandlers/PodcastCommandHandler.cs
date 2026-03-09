@@ -72,6 +72,28 @@ internal static class PodcastCommandHandler
             if (!string.IsNullOrWhiteSpace(savedKey))
             {
                 ttsService.SetApiKeyOverride(savedKey);
+
+                // Validate the saved key still works (5s timeout — don't block on network issues)
+                try
+                {
+                    using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    validationCts.CancelAfter(TimeSpan.FromSeconds(5));
+                    var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token);
+
+                    if (!validation.IsValid && validation.ErrorCode is "invalid_key" or "insufficient_credits")
+                    {
+                        ctx.Logger.LogWarning(
+                            "Saved API key is no longer valid ({ErrorCode}), clearing", validation.ErrorCode);
+                        settingsStore.Remove("OpenAiApiKey");
+                        ttsService.SetApiKeyOverride(string.Empty);
+                        ctx.NavigationService.SetStatusMessage("Saved API key is no longer valid");
+                    }
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Validation timed out (network unreachable) — proceed with saved key
+                    ctx.Logger.LogDebug("API key validation timed out, proceeding with saved key");
+                }
             }
         }
 
