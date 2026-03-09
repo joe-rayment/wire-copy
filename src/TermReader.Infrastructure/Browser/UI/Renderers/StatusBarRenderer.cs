@@ -110,8 +110,8 @@ internal class StatusBarRenderer
 
     private static string FormatCacheBadge(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
     {
-        // In hierarchical view, show preload progress instead of per-page cache badge
-        if (mode == ViewMode.Hierarchical && progress != null && progress.TotalCacheableLinks > 0)
+        // In hierarchical or collection items view, show preload progress instead of per-page cache badge
+        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null && progress.TotalCacheableLinks > 0)
         {
             if (progress.IsComplete)
             {
