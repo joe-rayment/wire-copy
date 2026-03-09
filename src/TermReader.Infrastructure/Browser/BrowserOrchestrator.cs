@@ -44,6 +44,10 @@ public class BrowserOrchestrator : IBrowserService
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
 
+    // Lazily resolved TTS service for checking IsConfigured state
+    private ITtsService? _ttsService;
+    private bool _ttsServiceResolved;
+
     // Shared context for command handlers (single source of truth for mutable state)
     private readonly CommandContext _commandContext;
 
@@ -448,8 +452,29 @@ public class BrowserOrchestrator : IBrowserService
                 : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
             Use256Colors = use256,
             CachedUrls = _pageCache.GetCachedUrls(),
-            CacheProgress = _preloadService.GetProgress()
+            CacheProgress = _preloadService.GetProgress(),
+            PodcastButtonState = IsTtsConfigured() ? 0 : 3, // 0=Idle, 3=Unconfigured
         };
+    }
+
+    private bool IsTtsConfigured()
+    {
+        if (!_ttsServiceResolved)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                _ttsService = scope.ServiceProvider.GetService<ITtsService>();
+            }
+            catch
+            {
+                // Podcast services may not be registered
+            }
+
+            _ttsServiceResolved = true;
+        }
+
+        return _ttsService?.IsConfigured ?? false;
     }
 
     /// <summary>
