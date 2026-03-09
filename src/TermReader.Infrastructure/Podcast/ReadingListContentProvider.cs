@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.DTOs.Podcast;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
@@ -37,8 +38,17 @@ internal sealed class ReadingListContentProvider
     }
 
     /// <summary>
+    /// Gets article failures from the most recent extraction.
+    /// Populated after each call to <see cref="GetAllArticleContentAsync"/>.
+    /// </summary>
+    public IReadOnlyList<ArticleFailure> LastExtractionFailures => _lastFailures;
+
+    private List<ArticleFailure> _lastFailures = [];
+
+    /// <summary>
     /// Loads and extracts readable content from all items in a collection.
     /// Skips items that fail to load or don't contain article content.
+    /// Failures are available via <see cref="LastExtractionFailures"/> after this call.
     /// </summary>
     /// <param name="collection">The reading list collection.</param>
     /// <param name="progress">Optional progress callback reporting (current, total, title).</param>
@@ -52,6 +62,8 @@ internal sealed class ReadingListContentProvider
         ArgumentNullException.ThrowIfNull(collection);
 
         var items = collection.Items;
+        _lastFailures = [];
+
         if (items.Count == 0)
         {
             return [];
@@ -91,6 +103,12 @@ internal sealed class ReadingListContentProvider
                         i + 1,
                         items.Count,
                         item.Title);
+                    _lastFailures.Add(new ArticleFailure
+                    {
+                        Title = item.Title,
+                        Url = item.Url,
+                        Reason = "No readable content found after all extraction attempts",
+                    });
                 }
 
                 // Rate limit when fetching from network to respect robots.txt and avoid bot detection
@@ -112,6 +130,12 @@ internal sealed class ReadingListContentProvider
                     items.Count,
                     item.Title,
                     ex.Message);
+                _lastFailures.Add(new ArticleFailure
+                {
+                    Title = item.Title,
+                    Url = item.Url,
+                    Reason = ex.Message,
+                });
             }
         }
 

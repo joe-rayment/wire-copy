@@ -135,7 +135,7 @@ internal static class PodcastCommandHandler
                 ttsService.SetApiKeyOverride(string.Empty);
             }
 
-            await ShowErrorScreenAsync(ctx, options, error, ct);
+            await ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct);
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
@@ -556,6 +556,7 @@ internal static class PodcastCommandHandler
         CommandContext ctx,
         RenderOptions options,
         string errorMessage,
+        IReadOnlyList<ArticleFailure> failedArticles,
         CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -568,10 +569,49 @@ internal static class PodcastCommandHandler
             RenderBox(helpers, p, "Podcast Error", width);
             helpers.WriteLine();
 
+            // Error summary
             var wrappedLines = RenderHelpers.WrapText(errorMessage, width - 4);
             foreach (var line in wrappedLines)
             {
                 helpers.WriteLine($"  {p.ErrorFg.AnsiFg}{line}{Reset}");
+            }
+
+            helpers.WriteLine();
+
+            // Per-article failure details
+            if (failedArticles.Count > 0)
+            {
+                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Failed articles:{Reset}");
+
+                var maxArticleLines = Math.Max(1,
+                    options.TerminalHeight - helpers.LinesWritten - 10);
+                var displayCount = Math.Min(failedArticles.Count, maxArticleLines);
+
+                for (var i = 0; i < displayCount; i++)
+                {
+                    var failure = failedArticles[i];
+                    var displayTitle = RenderHelpers.TruncateText(failure.Title, width - 8);
+                    helpers.WriteLine(
+                        $"    {p.ErrorFg.AnsiFg}\u2717{Reset} {p.PrimaryText.AnsiFg}{displayTitle}{Reset}");
+                    var reason = RenderHelpers.TruncateText(failure.Reason, width - 10);
+                    helpers.WriteLine(
+                        $"      {p.SecondaryText.AnsiFg}{reason}{Reset}");
+                }
+
+                if (failedArticles.Count > displayCount)
+                {
+                    helpers.WriteLine(
+                        $"    {p.SecondaryText.AnsiFg}... and {failedArticles.Count - displayCount} more{Reset}");
+                }
+
+                helpers.WriteLine();
+            }
+
+            // Actionable suggestions based on error type
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}What to try:{Reset}");
+            foreach (var suggestion in GetSuggestionsForError(errorMessage, failedArticles))
+            {
+                helpers.WriteLine($"    {p.SecondaryText.AnsiFg}\u2022 {suggestion}{Reset}");
             }
 
             helpers.WriteLine();
@@ -591,6 +631,56 @@ internal static class PodcastCommandHandler
                 break;
             }
         }
+    }
+
+    private static List<string> GetSuggestionsForError(
+        string errorMessage,
+        IReadOnlyList<ArticleFailure> failedArticles)
+    {
+        var suggestions = new List<string>();
+
+        if (errorMessage.Contains("No readable articles", StringComparison.OrdinalIgnoreCase))
+        {
+            suggestions.Add("Open articles in the browser first to populate the page cache");
+            suggestions.Add("Some sites block automated content extraction");
+            if (failedArticles.Any(f => f.Reason.Contains("bot", StringComparison.OrdinalIgnoreCase) ||
+                                        f.Reason.Contains("challenge", StringComparison.OrdinalIgnoreCase)))
+            {
+                suggestions.Add("Try browsing the blocked articles manually to pass bot checks");
+            }
+        }
+        else if (errorMessage.Contains("FFmpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            suggestions.Add("Install FFmpeg: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)");
+            suggestions.Add("Ensure ffmpeg is available in your PATH");
+        }
+        else if (errorMessage.Contains("budget", StringComparison.OrdinalIgnoreCase) ||
+                 errorMessage.Contains("cost", StringComparison.OrdinalIgnoreCase))
+        {
+            suggestions.Add("Remove some articles from the collection to reduce cost");
+            suggestions.Add("Increase MaxBudgetUsd in configuration");
+        }
+        else if (errorMessage.Contains("API key", StringComparison.OrdinalIgnoreCase) ||
+                 errorMessage.Contains("not configured", StringComparison.OrdinalIgnoreCase) ||
+                 errorMessage.Contains("401", StringComparison.Ordinal) ||
+                 errorMessage.Contains("403", StringComparison.Ordinal))
+        {
+            suggestions.Add("Check your OpenAI API key is valid at platform.openai.com/api-keys");
+            suggestions.Add("Ensure your account has sufficient credits");
+        }
+        else if (errorMessage.Contains("TTS", StringComparison.OrdinalIgnoreCase))
+        {
+            suggestions.Add("Check your OpenAI API key and account status");
+            suggestions.Add("Try again — transient API errors are common");
+        }
+
+        if (suggestions.Count == 0)
+        {
+            suggestions.Add("Try again — the error may be transient");
+            suggestions.Add("Check the application logs for more details");
+        }
+
+        return suggestions;
     }
 
     private static void RenderBox(RenderHelpers helpers, ThemePalette p, string title, int width)
