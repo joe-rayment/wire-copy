@@ -30,6 +30,7 @@ internal static class PodcastCommandHandler
         Processing,
         Completed,
         Failed,
+        Cached,
     }
 
     public static async Task HandleGeneratePodcast(
@@ -63,12 +64,27 @@ internal static class PodcastCommandHandler
         var gcsConfig = scope.ServiceProvider
             .GetRequiredService<IOptions<GcsConfiguration>>().Value;
 
+        // Pre-flight cache analysis for cost estimation
+        CacheAnalysis? cacheAnalysis = null;
+        if (ttsService.IsConfigured)
+        {
+            try
+            {
+                cacheAnalysis = await orchestrator.AnalyzeCacheStatusAsync(collection, ct);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Cache analysis failed, continuing without it");
+            }
+        }
+
         var confirmed = await ShowConfirmationScreenAsync(
             ctx,
             options,
             collection,
             ttsService,
             gcsConfig,
+            cacheAnalysis,
             ct);
 
         if (!confirmed)
@@ -103,6 +119,7 @@ internal static class PodcastCommandHandler
         Domain.Entities.Collections.Collection collection,
         ITtsService ttsService,
         GcsConfiguration gcsConfig,
+        CacheAnalysis? cacheAnalysis,
         CancellationToken ct)
     {
         var isTtsConfigured = ttsService.IsConfigured;
@@ -140,6 +157,40 @@ internal static class PodcastCommandHandler
             if (!isGcsConfigured)
             {
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed publishing{Reset}");
+            }
+
+            if (cacheAnalysis != null)
+            {
+                helpers.WriteLine();
+                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Cache{Reset}");
+                helpers.WriteLine(
+                    $"    {p.PromptFg.AnsiFg}{cacheAnalysis.CachedArticles}{Reset}" +
+                    $"{p.SecondaryText.AnsiFg} of {cacheAnalysis.TotalArticles} articles cached{Reset}");
+
+                if (cacheAnalysis.UncachedArticles > 0)
+                {
+                    helpers.WriteLine(
+                        $"    {p.SecondaryText.AnsiFg}Estimated cost for remaining:{Reset} " +
+                        $"{p.PrimaryText.AnsiFg}${cacheAnalysis.EstimatedCost:F4}{Reset}");
+
+                    // Estimate time: ~150 WPM * 5 chars/word = 750 chars/min for reading,
+                    // but generation is roughly real-time, so use character count
+                    var uncachedChars = cacheAnalysis.ArticleStatuses
+                        .Where(s => !s.IsCached)
+                        .Sum(s => s.EstimatedCost * 1_000_000m / 15.0m); // reverse cost to char count
+                    var estimatedMinutes = (int)Math.Ceiling((double)uncachedChars / (150.0 * 5.0));
+                    if (estimatedMinutes > 0)
+                    {
+                        helpers.WriteLine(
+                            $"    {p.SecondaryText.AnsiFg}Estimated time:{Reset} " +
+                            $"{p.PrimaryText.AnsiFg}~{estimatedMinutes} min{Reset}");
+                    }
+                }
+                else
+                {
+                    helpers.WriteLine(
+                        $"    {p.PromptFg.AnsiFg}All articles cached \u2014 no API cost{Reset}");
+                }
             }
 
             helpers.WriteLine();
@@ -252,7 +303,7 @@ internal static class PodcastCommandHandler
                     statuses[lastProcessingIndex].State = ArticleState.Completed;
                 }
 
-                statuses[idx].State = ArticleState.Processing;
+                statuses[idx].State = p.IsFromCache ? ArticleState.Cached : ArticleState.Processing;
                 lastProcessingIndex = idx;
             }
         });
@@ -559,6 +610,8 @@ internal static class PodcastCommandHandler
 
             var line = status.State switch
             {
+                ArticleState.Cached =>
+                    $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}",
                 ArticleState.Completed =>
                     $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle}",
                 ArticleState.Processing =>
