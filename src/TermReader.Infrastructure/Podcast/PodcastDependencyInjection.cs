@@ -45,6 +45,7 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IValidateOptions<OpenAiTtsConfiguration>, OpenAiTtsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
         services.AddSingleton<IValidateOptions<GcsConfiguration>, GcsConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<TtsAudioCacheConfiguration>, TtsAudioCacheConfigurationValidator>();
 
         // Register services
         services.AddSingleton<ITtsService, OpenAiTtsService>();
