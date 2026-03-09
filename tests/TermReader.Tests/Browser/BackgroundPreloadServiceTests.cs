@@ -451,7 +451,143 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region Adaptive Rate Limiting
+
+    [Fact]
+    public void GetAdaptiveDelay_Disabled_ReturnsFullDelay()
+    {
+        var config = new CacheConfiguration { AdaptiveRateLimitEnabled = false, PreloadDelayMs = 4000 };
+        var service = CreateService(config);
+
+        var delay = service.GetAdaptiveDelay("https://example.com/a1");
+
+        delay.Should().Be(4000);
+    }
+
+    [Fact]
+    public void GetAdaptiveDelay_EmptyQueue_ReturnsFullDelay()
+    {
+        var config = new CacheConfiguration { AdaptiveRateLimitEnabled = true, PreloadDelayMs = 4000 };
+        var service = CreateService(config);
+
+        // No items in queue
+        var delay = service.GetAdaptiveDelay("https://example.com/a1");
+
+        delay.Should().Be(4000);
+    }
+
+    [Fact]
+    public void GetAdaptiveDelay_SameDomainNext_ReturnsFullDelay()
+    {
+        var config = new CacheConfiguration
+        {
+            AdaptiveRateLimitEnabled = true,
+            PreloadDelayMs = 4000,
+            CrossDomainDelayMs = 1500,
+        };
+        var service = CreateService(config);
+
+        // Queue up same-domain items
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2");
+        service.BuildQueue(0, nodes, "https://example.com");
+
+        // Simulate having fetched a1, so a2 (same domain) is next
+        var delay = service.GetAdaptiveDelay("https://example.com/a1");
+
+        delay.Should().Be(4000);
+    }
+
+    [Fact]
+    public void GetAdaptiveDelay_DifferentDomainNext_ReturnsCrossDomainDelay()
+    {
+        var config = new CacheConfiguration
+        {
+            AdaptiveRateLimitEnabled = true,
+            PreloadDelayMs = 4000,
+            CrossDomainDelayMs = 1500,
+        };
+        var service = CreateService(config);
+
+        // Build collection queue — simulate that other.com/b1 was already dequeued,
+        // so the next item in queue is another.com/c1 (different domain)
+        var urls = new List<string> { "https://other.com/b1", "https://another.com/c1" };
+        var queue = service.BuildCollectionQueue(0, urls);
+        queue.RemoveAll(i => i.Url == "https://other.com/b1"); // Already fetched
+        SetInternalQueue(service, queue);
+
+        // After fetching from other.com, next is another.com (different domain)
+        var delay = service.GetAdaptiveDelay("https://other.com/b1");
+
+        delay.Should().Be(1500);
+    }
+
+    [Fact]
+    public void GetAdaptiveDelay_DifferentDomainButRecentlyHit_ReturnsRemainingCooldown()
+    {
+        var config = new CacheConfiguration
+        {
+            AdaptiveRateLimitEnabled = true,
+            PreloadDelayMs = 4000,
+            CrossDomainDelayMs = 1500,
+        };
+        var service = CreateService(config);
+
+        // Pre-populate lastRequestByDomain for next domain via reflection
+        var lastRequestField = typeof(BackgroundPreloadService)
+            .GetField("_lastRequestByDomain", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, DateTime>)lastRequestField!.GetValue(service)!;
+        // Simulate that we hit "https://another.com" 1 second ago
+        dict["https://another.com"] = DateTime.UtcNow.AddMilliseconds(-1000);
+
+        // Queue with another.com as next
+        var urls = new List<string> { "https://another.com/c1" };
+        var queue = service.BuildCollectionQueue(0, urls);
+        SetInternalQueue(service, queue);
+
+        var delay = service.GetAdaptiveDelay("https://other.com/b1");
+
+        // Remaining cooldown: 4000 - 1000 = 3000, which is > 1500 (CrossDomainDelayMs)
+        delay.Should().BeInRange(2500, 3500, "should respect per-domain cooldown");
+    }
+
+    [Fact]
+    public void GetAdaptiveDelay_RecordsDomainTimestamp()
+    {
+        var config = new CacheConfiguration { AdaptiveRateLimitEnabled = true };
+        var service = CreateService(config);
+
+        // Build queue so there's something next
+        var urls = new List<string> { "https://other.com/b1" };
+        service.BuildCollectionQueue(0, urls);
+
+        service.GetAdaptiveDelay("https://example.com/a1");
+
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_lastRequestByDomain", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dict = (ConcurrentDictionary<string, DateTime>)field!.GetValue(service)!;
+        dict.Should().ContainKey("https://example.com");
+    }
+
+    #endregion
+
     #region Helpers
+
+    private static void SetInternalQueue(BackgroundPreloadService service, List<BackgroundPreloadService.PreloadItem> queue)
+    {
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        field!.SetValue(service, queue);
+    }
+
+    private static BackgroundPreloadService CreateService(CacheConfiguration config)
+    {
+        return new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            config,
+            NullLogger<BackgroundPreloadService>.Instance);
+    }
 
     private static List<LinkNode> CreateContentNodes(params string[] urls)
     {
