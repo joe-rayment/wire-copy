@@ -55,4 +55,10 @@ public record RenderOptions
     /// Current pre-load progress for showing in the status bar.
     /// </summary>
     public PreloadProgress? CacheProgress { get; init; }
+
+    /// <summary>
+    /// Visual state of the podcast CTA button (0=Idle, 1=Pressed, 2=Disabled, 3=Unconfigured).
+    /// Mapped to PodcastCtaState enum in the rendering layer.
+    /// </summary>
+    public int PodcastButtonState { get; init; }
 }

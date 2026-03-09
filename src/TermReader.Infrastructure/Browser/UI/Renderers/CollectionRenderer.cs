@@ -126,7 +126,7 @@ internal class CollectionRenderer
         // Podcast button (only shown when collection has items)
         if (collection.Items.Count > 0)
         {
-            _podcastCtaRenderer.Render(options);
+            _podcastCtaRenderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
         }
 
         var useSeparators = height >= 30;
