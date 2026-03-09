@@ -158,7 +158,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress);
         _helpers.ClearRemainingLines();
     }
 

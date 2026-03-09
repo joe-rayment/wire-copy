@@ -135,6 +135,56 @@ public class CacheRenderingTests
 
     #endregion
 
+    #region StatusBarRenderer - CollectionItems Cache Progress
+
+    [Fact]
+    public void StatusBar_CollectionItems_ShowsCachingProgress()
+    {
+        var context = new NavigationContext { ViewMode = ViewMode.CollectionItems };
+        var progress = new PreloadProgress
+        {
+            TotalCacheableLinks = 8,
+            CachedCount = 5,
+            NeedsBrowserCount = 0,
+        };
+
+        var output = CaptureConsoleOutput(() =>
+            _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
+
+        output.Should().Contain("caching 5/8");
+    }
+
+    [Fact]
+    public void StatusBar_CollectionItems_ShowsAllCached_WhenComplete()
+    {
+        var context = new NavigationContext { ViewMode = ViewMode.CollectionItems };
+        var progress = new PreloadProgress
+        {
+            TotalCacheableLinks = 4,
+            CachedCount = 4,
+            NeedsBrowserCount = 0,
+        };
+
+        var output = CaptureConsoleOutput(() =>
+            _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
+
+        output.Should().Contain("all cached");
+    }
+
+    [Fact]
+    public void StatusBar_CollectionItems_NoCacheBadge_WhenNoProgress()
+    {
+        var context = new NavigationContext { ViewMode = ViewMode.CollectionItems };
+
+        var output = CaptureConsoleOutput(() =>
+            _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120));
+
+        output.Should().NotContain("caching");
+        output.Should().NotContain("all cached");
+    }
+
+    #endregion
+
     #region StatusBarRenderer - Non-Hierarchical Per-Page Cache Badge
 
     [Fact]
