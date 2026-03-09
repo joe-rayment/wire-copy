@@ -101,6 +101,27 @@ public sealed class BrowserSession : IBrowserSession
         // or when a crash is detected.
     }
 
+    public void RestoreWindow()
+    {
+        lock (_lock)
+        {
+            if (_driver == null || _driverIsHeadless)
+            {
+                return;
+            }
+
+            try
+            {
+                _driver.Manage().Window.Size = new System.Drawing.Size(1400, 900);
+                _driver.Manage().Window.Position = new System.Drawing.Point(0, 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to restore browser window (non-fatal)");
+            }
+        }
+    }
+
     public void Dispose()
     {
         lock (_lock)
@@ -206,7 +227,8 @@ public sealed class BrowserSession : IBrowserSession
         }
         else
         {
-            options.AddArgument("--window-size=1400,900");
+            options.AddArgument("--window-size=800,600");
+            options.AddArgument("--window-position=9999,9999");
         }
 
         if (_browserConfig.DisableImages)
@@ -235,6 +257,20 @@ public sealed class BrowserSession : IBrowserSession
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
             window.navigator.chrome = {runtime: {}};
         ");
+
+        // Minimize headed browser so it doesn't cover the terminal.
+        // Interactive refresh (Shift+I) will restore when user needs to interact.
+        if (!headless)
+        {
+            try
+            {
+                driver.Manage().Window.Minimize();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to minimize browser window (non-fatal)");
+            }
+        }
 
         return driver;
     }

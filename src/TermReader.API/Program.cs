@@ -7,10 +7,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Collections;
+using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Persistence;
 using Serilog;
@@ -97,18 +99,24 @@ public class Program
 
             // Eagerly warm up the browser session in the background so the first
             // browser-fallback page load avoids the cold-start penalty.
-            var session = host.Services.GetRequiredService<IBrowserSessionControl>();
-            _ = Task.Run(async () =>
+            // Skip warmup in headed mode to avoid a visible Chrome window appearing
+            // before the user navigates anywhere.
+            var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
+            if (browserConfig.Headless)
             {
-                try
+                var session = host.Services.GetRequiredService<IBrowserSessionControl>();
+                _ = Task.Run(async () =>
                 {
-                    await session.WarmUpAsync();
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Browser warmup failed (non-fatal)");
-                }
-            });
+                    try
+                    {
+                        await session.WarmUpAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Browser warmup failed (non-fatal)");
+                    }
+                });
+            }
 
             var browser = host.Services.GetRequiredService<IBrowserService>();
             await browser.RunAsync(url);

@@ -576,6 +576,12 @@ public class BrowserOrchestrator : IBrowserService
         {
             _renderer.RenderInteractiveRefresh(url);
 
+            // Restore the browser window for interactive use (may have been minimized)
+            if (_browserSession is IBrowserSession browserSession)
+            {
+                browserSession.RestoreWindow();
+            }
+
             // Force headed mode for interactive refresh
             var loadResult = await _pageLoader.LoadAsync(
                 new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
