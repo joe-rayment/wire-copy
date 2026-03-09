@@ -31,6 +31,11 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     private readonly OpenAiTtsConfiguration _ttsConfig;
     private readonly ILogger<PodcastOrchestrator> _logger;
 
+    // Cache extracted articles from AnalyzeCacheStatusAsync so GeneratePodcastAsync
+    // can reuse them instead of re-extracting (each extraction has rate-limit delays).
+    private IReadOnlyList<ExtractedArticle>? _cachedArticles;
+    private string? _cachedCollectionName;
+
     public PodcastOrchestrator(
         ReadingListContentProvider contentProvider,
         ITtsService ttsService,
@@ -71,26 +76,46 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
         }
 
-        // Step 2: Extract article content
-        progress?.Report(new PodcastProgress
+        // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
+        IReadOnlyList<ExtractedArticle> articles;
+        if (_cachedArticles != null && _cachedCollectionName == collection.Name)
         {
-            Phase = PodcastPhase.CachingContent,
-            Message = "Loading articles...",
-            PercentComplete = 0,
-        });
+            articles = _cachedArticles;
+            _cachedArticles = null;
+            _cachedCollectionName = null;
 
-        var articles = await _contentProvider.GetAllArticleContentAsync(
-            collection,
-            new Progress<(int Current, int Total, string Title)>(p =>
-                progress?.Report(new PodcastProgress
-                {
-                    Phase = PodcastPhase.CachingContent,
-                    CurrentArticle = p.Current,
-                    TotalArticles = p.Total,
-                    ArticleTitle = p.Title,
-                    PercentComplete = (int)(p.Current * 10.0 / p.Total),
-                })),
-            cancellationToken);
+            _logger.LogInformation(
+                "Reusing {Count} articles from cache analysis phase", articles.Count);
+
+            progress?.Report(new PodcastProgress
+            {
+                Phase = PodcastPhase.CachingContent,
+                Message = "Articles loaded (cached from analysis)",
+                PercentComplete = 10,
+            });
+        }
+        else
+        {
+            progress?.Report(new PodcastProgress
+            {
+                Phase = PodcastPhase.CachingContent,
+                Message = "Loading articles...",
+                PercentComplete = 0,
+            });
+
+            articles = await _contentProvider.GetAllArticleContentAsync(
+                collection,
+                new Progress<(int Current, int Total, string Title)>(p =>
+                    progress?.Report(new PodcastProgress
+                    {
+                        Phase = PodcastPhase.CachingContent,
+                        CurrentArticle = p.Current,
+                        TotalArticles = p.Total,
+                        ArticleTitle = p.Title,
+                        PercentComplete = (int)(p.Current * 10.0 / p.Total),
+                    })),
+                cancellationToken);
+        }
 
         if (articles.Count == 0)
         {
@@ -347,6 +372,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         var articles = await _contentProvider.GetAllArticleContentAsync(
             collection,
             cancellationToken: cancellationToken);
+
+        // Cache for reuse by GeneratePodcastAsync to avoid double extraction
+        _cachedArticles = articles;
+        _cachedCollectionName = collection.Name;
 
         if (articles.Count == 0)
         {
