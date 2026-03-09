@@ -265,7 +265,7 @@ internal static class PodcastCommandHandler
                 if (!isTtsConfigured)
                 {
                     var apiKey = await ctx.InputHandler.PromptForInputAsync(
-                        "OpenAI API key (platform.openai.com/api-keys): ", ct);
+                        "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
                     if (!string.IsNullOrWhiteSpace(apiKey))
                     {
                         ttsService.SetApiKeyOverride(apiKey.Trim());
