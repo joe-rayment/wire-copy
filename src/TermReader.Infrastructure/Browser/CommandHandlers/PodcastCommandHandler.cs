@@ -532,6 +532,8 @@ internal static class PodcastCommandHandler
             CopyToClipboardOsc52(result.FeedUrl);
         }
 
+        var scrollOffset = 0;
+
         while (!ct.IsCancellationRequested)
         {
             var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -539,36 +541,35 @@ internal static class PodcastCommandHandler
             helpers.Clear();
 
             var width = Math.Max(20, options.TerminalWidth - 2);
-            RenderBox(helpers, p, "Podcast Ready!", width);
-            helpers.WriteLine();
 
-            var duration = FormatDuration(result.TotalDuration);
-            var fileSize = FormatFileSize(result.FileSizeBytes);
-            helpers.WriteLine(
-                $"  {p.HeaderTitleFg.AnsiFg}\u266b{Reset} {p.PrimaryText.AnsiFg}" +
-                $"{result.ArticlesProcessed} articles \u00bb\u00bb\u00bb {duration} \u00bb\u00bb\u00bb {fileSize}{Reset}");
-            helpers.WriteLine();
+            // Build all content lines, then render a scrollable window
+            var lines = BuildCompletionLines(p, result, width);
 
-            if (result.ArticlesFailed > 0)
+            // Reserve 2 lines for key hints at bottom
+            var viewportHeight = options.TerminalHeight - 2;
+            var maxScroll = Math.Max(0, lines.Count - viewportHeight);
+            scrollOffset = Math.Clamp(scrollOffset, 0, maxScroll);
+
+            var visibleCount = Math.Min(lines.Count - scrollOffset, viewportHeight);
+            for (var i = 0; i < visibleCount; i++)
             {
-                helpers.WriteLine($"  {p.ErrorFg.AnsiFg}{result.ArticlesFailed} article(s) failed{Reset}");
+                helpers.WriteLine(lines[scrollOffset + i]);
+            }
+
+            // Pad remaining viewport
+            for (var i = visibleCount; i < viewportHeight; i++)
+            {
                 helpers.WriteLine();
             }
 
-            if (!string.IsNullOrEmpty(result.LocalFilePath))
+            // Key hints
+            var hints = $"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}";
+            if (maxScroll > 0)
             {
-                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}File:{Reset}  {p.PrimaryText.AnsiFg}{result.LocalFilePath}{Reset}");
+                hints += $"   {p.PrimaryText.AnsiFg}j/k{Reset}{p.SecondaryText.AnsiFg}:scroll{Reset}";
             }
 
-            if (!string.IsNullOrEmpty(result.FeedUrl))
-            {
-                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Feed:{Reset}  {p.PromptFg.AnsiFg}{result.FeedUrl}{Reset}");
-                helpers.WriteLine();
-                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Feed URL copied to clipboard{Reset}");
-            }
-
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
+            helpers.WriteLine(hints);
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);
@@ -583,7 +584,106 @@ internal static class PodcastCommandHandler
             {
                 break;
             }
+
+            if (command.Type == CommandType.MoveDown)
+            {
+                scrollOffset = Math.Min(scrollOffset + 1, maxScroll);
+            }
+            else if (command.Type == CommandType.MoveUp)
+            {
+                scrollOffset = Math.Max(scrollOffset - 1, 0);
+            }
+            else if (command.Type == CommandType.PageDown)
+            {
+                scrollOffset = Math.Min(scrollOffset + (viewportHeight / 2), maxScroll);
+            }
+            else if (command.Type == CommandType.PageUp)
+            {
+                scrollOffset = Math.Max(scrollOffset - (viewportHeight / 2), 0);
+            }
         }
+    }
+
+    private static List<string> BuildCompletionLines(
+        ThemePalette p,
+        PodcastResult result,
+        int width)
+    {
+        var lines = new List<string>();
+
+        // Box header
+        lines.Add(string.Empty);
+        lines.Add($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
+        var boxTitle = RenderHelpers.TruncateText("Podcast Ready!", width - 4);
+        lines.Add(
+            $"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}" +
+            $"{boxTitle.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+        lines.Add($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
+        lines.Add(string.Empty);
+
+        // --- Summary ---
+        var duration = FormatDuration(result.TotalDuration);
+        var fileSize = FormatFileSize(result.FileSizeBytes);
+        lines.Add(
+            $"  {p.HeaderTitleFg.AnsiFg}\u266b{Reset} {p.PrimaryText.AnsiFg}" +
+            $"{result.ArticlesProcessed} articles \u00bb\u00bb\u00bb {duration} \u00bb\u00bb\u00bb {fileSize}{Reset}");
+
+        if (result.ArticlesCached > 0)
+        {
+            lines.Add(
+                $"    {p.SecondaryText.AnsiFg}{result.ArticlesCached} from cache{Reset}");
+        }
+
+        if (result.TotalCost > 0)
+        {
+            lines.Add(
+                $"    {p.SecondaryText.AnsiFg}API cost: ${result.TotalCost:F4}{Reset}");
+        }
+
+        if (result.ArticlesFailed > 0)
+        {
+            lines.Add(
+                $"    {p.ErrorFg.AnsiFg}{result.ArticlesFailed} article(s) failed{Reset}");
+        }
+
+        lines.Add(string.Empty);
+
+        // --- File ---
+        if (!string.IsNullOrEmpty(result.LocalFilePath))
+        {
+            lines.Add($"  {p.SecondaryText.AnsiFg}File{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}{result.LocalFilePath}{Reset}");
+            lines.Add(string.Empty);
+        }
+
+        // --- Feed + subscription instructions ---
+        if (!string.IsNullOrEmpty(result.FeedUrl))
+        {
+            lines.Add($"  {p.SecondaryText.AnsiFg}Feed{Reset}");
+            lines.Add($"    {p.PromptFg.AnsiFg}{result.FeedUrl}{Reset}");
+            lines.Add($"    {p.SecondaryText.AnsiFg}Feed URL copied to clipboard{Reset}");
+            lines.Add(string.Empty);
+            lines.Add($"  {p.SecondaryText.AnsiFg}Subscribe{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}Apple Podcasts / Overcast (iOS){Reset}");
+            lines.Add($"      {p.SecondaryText.AnsiFg}Add show by URL \u2192 paste feed URL{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}Pocket Casts (Android){Reset}");
+            lines.Add($"      {p.SecondaryText.AnsiFg}Search \u2192 \u201cAdd by URL\u201d \u2192 paste feed URL{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}Desktop RSS readers{Reset}");
+            lines.Add($"      {p.SecondaryText.AnsiFg}Add feed/subscription \u2192 paste feed URL{Reset}");
+        }
+        else
+        {
+            // Local-only instructions
+            lines.Add($"  {p.SecondaryText.AnsiFg}Listen{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}VLC{Reset}{p.SecondaryText.AnsiFg} \u2014 File \u2192 Open, supports chapters{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}Apple Books{Reset}{p.SecondaryText.AnsiFg} \u2014 drag M4B file into library{Reset}");
+            lines.Add(string.Empty);
+            lines.Add($"    {p.SecondaryText.AnsiFg}Configure a GCS bucket to publish as RSS feed{Reset}");
+        }
+
+        lines.Add(string.Empty);
+
+        return lines;
     }
 
     private static async Task ShowErrorScreenAsync(

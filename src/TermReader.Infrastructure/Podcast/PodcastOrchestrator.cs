@@ -351,6 +351,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     articlesProcessed: segments.Count,
                     articlesFailed: allFailures.Count,
                     fileSizeBytes: assemblyResult.FileSizeBytes,
+                    articlesCached: cacheAnalysis.CachedArticles,
+                    totalCost: totalCost,
                     failedArticleDetails: allFailures);
             }
 
@@ -361,6 +363,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 articlesProcessed: segments.Count,
                 articlesFailed: allFailures.Count,
                 fileSizeBytes: assemblyResult.FileSizeBytes,
+                articlesCached: cacheAnalysis.CachedArticles,
+                totalCost: totalCost,
                 failedArticleDetails: allFailures);
         }
         catch (OperationCanceledException)
