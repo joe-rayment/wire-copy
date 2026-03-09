@@ -117,9 +117,14 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 cancellationToken);
         }
 
+        // Collect content extraction failures for diagnostics
+        var extractionFailures = _contentProvider.LastExtractionFailures;
+
         if (articles.Count == 0)
         {
-            return PodcastResult.Failure("No readable articles found in the collection.");
+            return PodcastResult.Failure(
+                "No readable articles found in the collection.",
+                failedArticleDetails: extractionFailures);
         }
 
         // Step 3: Estimate cost (accounting for cached articles) and check budget
@@ -147,7 +152,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         var tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
 
         var segments = new List<ArticleAudioSegment>();
-        var articlesFailed = 0;
+        var ttsFailures = new List<ArticleFailure>();
         var keepTempDir = false;
 
         try
@@ -202,7 +207,12 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                             "TTS failed for '{Title}': {Error}",
                             article.Title,
                             ttsResult.ErrorMessage);
-                        articlesFailed++;
+                        ttsFailures.Add(new ArticleFailure
+                        {
+                            Title = article.Title,
+                            Url = article.Url,
+                            Reason = ttsResult.ErrorMessage ?? "TTS generation failed",
+                        });
                         continue;
                     }
 
@@ -232,9 +242,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 });
             }
 
+            var allFailures = extractionFailures.Concat(ttsFailures).ToList();
+
             if (segments.Count == 0)
             {
-                return PodcastResult.Failure("All articles failed TTS generation.");
+                return PodcastResult.Failure(
+                    "All articles failed TTS generation.",
+                    failedArticleDetails: allFailures);
             }
 
             // Step 5: Assemble M4B
@@ -330,8 +344,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     localFilePath: assemblyResult.OutputPath,
                     totalDuration: assemblyResult.TotalDuration,
                     articlesProcessed: segments.Count,
-                    articlesFailed: articlesFailed,
-                    fileSizeBytes: assemblyResult.FileSizeBytes);
+                    articlesFailed: allFailures.Count,
+                    fileSizeBytes: assemblyResult.FileSizeBytes,
+                    failedArticleDetails: allFailures);
             }
 
             return PodcastResult.Successful(
@@ -339,8 +354,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 localFilePath: assemblyResult.OutputPath,
                 totalDuration: assemblyResult.TotalDuration,
                 articlesProcessed: segments.Count,
-                articlesFailed: articlesFailed,
-                fileSizeBytes: assemblyResult.FileSizeBytes);
+                articlesFailed: allFailures.Count,
+                fileSizeBytes: assemblyResult.FileSizeBytes,
+                failedArticleDetails: allFailures);
         }
         catch (OperationCanceledException)
         {

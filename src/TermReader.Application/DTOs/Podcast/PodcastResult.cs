@@ -48,6 +48,11 @@ public record PodcastResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Gets per-article failure details (content extraction or TTS failures).
+    /// </summary>
+    public IReadOnlyList<ArticleFailure> FailedArticleDetails { get; init; } = [];
+
+    /// <summary>
     /// Creates a successful result.
     /// </summary>
     public static PodcastResult Successful(
@@ -56,7 +61,8 @@ public record PodcastResult
         TimeSpan totalDuration,
         int articlesProcessed,
         int articlesFailed,
-        long fileSizeBytes) => new()
+        long fileSizeBytes,
+        IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
     {
         Success = true,
         FeedUrl = feedUrl,
@@ -65,15 +71,20 @@ public record PodcastResult
         ArticlesProcessed = articlesProcessed,
         ArticlesFailed = articlesFailed,
         FileSizeBytes = fileSizeBytes,
+        FailedArticleDetails = failedArticleDetails ?? [],
     };
 
     /// <summary>
     /// Creates a failure result.
     /// </summary>
-    public static PodcastResult Failure(string errorMessage, string? localFilePath = null) => new()
+    public static PodcastResult Failure(
+        string errorMessage,
+        string? localFilePath = null,
+        IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
     {
         Success = false,
         ErrorMessage = errorMessage,
         LocalFilePath = localFilePath,
+        FailedArticleDetails = failedArticleDetails ?? [],
     };
 }
