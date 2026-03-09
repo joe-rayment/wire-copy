@@ -41,6 +41,24 @@ public record PodcastProgress
     /// Whether the current article was served from the TTS audio cache.
     /// </summary>
     public bool IsFromCache { get; init; }
+
+    /// <summary>
+    /// Gets the content extraction method being used (e.g., "cache", "HTTP", "Selenium", "headed").
+    /// Only set during <see cref="PodcastPhase.CachingContent"/>.
+    /// </summary>
+    public string? ExtractionMethod { get; init; }
+
+    /// <summary>
+    /// Gets whether content extraction is complete for the current article.
+    /// Only set during <see cref="PodcastPhase.CachingContent"/>.
+    /// </summary>
+    public bool IsArticleComplete { get; init; }
+
+    /// <summary>
+    /// Gets whether content extraction succeeded for the current article.
+    /// Only meaningful when <see cref="IsArticleComplete"/> is true.
+    /// </summary>
+    public bool IsArticleSuccess { get; init; }
 }
 
 /// <summary>
