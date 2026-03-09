@@ -68,6 +68,7 @@ public class NavigationCommandHandlerScrollTests
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = _lineCacheManager,
             ThemeProvider = themeProvider,
+            PreloadService = Substitute.For<IPreloadService>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,

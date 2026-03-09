@@ -59,6 +59,7 @@ public class SearchCommandHandlerTests
             PageCache = Substitute.For<IPageCache>(),
             LineCacheManager = new LineCacheManager(_navigationService, themeProvider),
             ThemeProvider = themeProvider,
+            PreloadService = Substitute.For<IPreloadService>(),
             NavigateToAsync = (url, _, _) =>
             {
                 _navigatedUrl = url;

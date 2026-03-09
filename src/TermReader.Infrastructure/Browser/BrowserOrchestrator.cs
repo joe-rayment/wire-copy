@@ -96,6 +96,7 @@ public class BrowserOrchestrator : IBrowserService
             PageCache = _pageCache,
             LineCacheManager = _lineCacheManager,
             ThemeProvider = themeProvider,
+            PreloadService = _preloadService,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
