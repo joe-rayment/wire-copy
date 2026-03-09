@@ -279,48 +279,16 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Track for progress: this is a same-origin content link
-            allEligible.Add(url);
-
-            // Track needs-JS urls separately for progress reporting
-            var origin = UrlNormalizer.GetOrigin(url);
-            if (origin != null && _needsJsDomains.ContainsKey(origin))
-            {
-                needsJs.Add(url);
-                continue;
-            }
-
-            // Skip already cached
-            if (_cache.Contains(url))
+            if (!TryAddEligibleUrl(url, i, allEligible, needsJs, items))
             {
                 continue;
             }
-
-            // Skip circuit-broken domains (with TTL recovery)
-            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
-            {
-                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
-                {
-                    continue;
-                }
-
-                // Cooldown elapsed — allow retry
-                _circuitBrokenDomains.TryRemove(origin, out _);
-            }
-
-            items.Add(new PreloadItem(url, i));
         }
 
         // Sort by original list index (top-to-bottom)
         items.Sort((a, b) => a.ListIndex.CompareTo(b.ListIndex));
 
-        // Update progress tracking state
-        lock (_queueLock)
-        {
-            _allEligibleUrls = allEligible;
-            _needsJsUrls = needsJs;
-        }
-
+        UpdateProgressTracking(allEligible, needsJs);
         return items;
     }
 
@@ -340,34 +308,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            allEligible.Add(url);
-
-            // Skip domains known to need JS (Selenium)
-            var origin = UrlNormalizer.GetOrigin(url);
-            if (origin != null && _needsJsDomains.ContainsKey(origin))
-            {
-                needsJs.Add(url);
-                continue;
-            }
-
-            // Skip already cached
-            if (_cache.Contains(url))
-            {
-                continue;
-            }
-
-            // Skip circuit-broken domains
-            if (origin != null && _circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
-            {
-                if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
-                {
-                    continue;
-                }
-
-                _circuitBrokenDomains.TryRemove(origin, out _);
-            }
-
-            items.Add(new PreloadItem(url, i));
+            TryAddEligibleUrl(url, i, allEligible, needsJs, items);
         }
 
         // Sort by distance from selected index (closest first)
@@ -375,14 +316,72 @@ internal sealed class BackgroundPreloadService : IPreloadService
             Math.Abs(a.ListIndex - selectedIndex).CompareTo(
                 Math.Abs(b.ListIndex - selectedIndex)));
 
-        // Update progress tracking state
+        UpdateProgressTracking(allEligible, needsJs);
+        return items;
+    }
+
+    private bool TryAddEligibleUrl(
+        string url,
+        int listIndex,
+        List<string> allEligible,
+        List<string> needsJs,
+        List<PreloadItem> items)
+    {
+        allEligible.Add(url);
+
+        if (IsDomainNeedsJs(url))
+        {
+            needsJs.Add(url);
+            return false;
+        }
+
+        if (IsUrlCached(url))
+        {
+            return false;
+        }
+
+        if (IsDomainCircuitBroken(url))
+        {
+            return false;
+        }
+
+        items.Add(new PreloadItem(url, listIndex));
+        return true;
+    }
+
+    private bool IsUrlCached(string url) => _cache.Contains(url);
+
+    private bool IsDomainNeedsJs(string url)
+    {
+        var origin = UrlNormalizer.GetOrigin(url);
+        return origin != null && _needsJsDomains.ContainsKey(origin);
+    }
+
+    private bool IsDomainCircuitBroken(string url)
+    {
+        var origin = UrlNormalizer.GetOrigin(url);
+        if (origin == null || !_circuitBrokenDomains.TryGetValue(origin, out var brokenAt))
+        {
+            return false;
+        }
+
+        if (DateTime.UtcNow - brokenAt < TimeSpan.FromSeconds(_config.CircuitBreakerCooldownSeconds))
+        {
+            return true;
+        }
+
+        // Cooldown elapsed — allow retry
+        _circuitBrokenDomains.TryRemove(origin, out _);
+        return false;
+    }
+
+    private void UpdateProgressTracking(List<string> allEligible, List<string> needsJs)
+    {
         lock (_queueLock)
         {
             _allEligibleUrls = allEligible;
             _needsJsUrls = needsJs;
         }
-
-        return items;
     }
 
     private static PageMetadata ExtractMetadata(string html)
