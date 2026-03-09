@@ -52,6 +52,11 @@ internal static class PodcastCommandHandler
             return;
         }
 
+        // Press feedback: render one frame with inverted button colors, then continue
+        var pressedOptions = options with { PodcastButtonState = 1 }; // 1 = Pressed
+        await ctx.RenderCurrentPageAsync(pressedOptions, ct);
+        await Task.Delay(100, ct);
+
         using var scope = ctx.ScopeFactory.CreateScope();
         var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
