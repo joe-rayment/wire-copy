@@ -22,6 +22,13 @@ public interface ITtsService
     TtsCostEstimate EstimateCost(string text);
 
     /// <summary>
+    /// Validates the current API key by making a minimal test call.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A validation result indicating whether the key is valid.</returns>
+    Task<TtsValidationResult> ValidateApiKeyAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets a runtime API key override, allowing the UI to inject credentials.
     /// </summary>
     /// <param name="apiKey">The API key to use.</param>

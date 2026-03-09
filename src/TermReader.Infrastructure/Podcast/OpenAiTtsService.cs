@@ -148,6 +148,64 @@ internal sealed class OpenAiTtsService : ITtsService
         return TtsGenerationResult.Successful(concatenated, totalCharsProcessed, chunks.Count);
     }
 
+    /// <inheritdoc />
+    public async Task<TtsValidationResult> ValidateApiKeyAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsConfigured)
+        {
+            return TtsValidationResult.Invalid("No API key configured.", "no_key");
+        }
+
+        try
+        {
+            var audioClient = CreateAudioClient();
+            var options = CreateSpeechOptions();
+            var voice = MapVoice(_config.Voice);
+
+            // Minimal TTS call (~4 chars, cost ~$0.00006) to validate the full pipeline.
+            var result = await audioClient.GenerateSpeechAsync("test", voice, options, cancellationToken);
+
+            // Discard audio bytes — we only care that the call succeeded.
+            _ = result.Value;
+
+            _logger.LogInformation("API key validation succeeded");
+            return TtsValidationResult.Valid();
+        }
+        catch (ClientResultException ex) when (ex.Status == 401)
+        {
+            _logger.LogWarning("API key validation failed: invalid key (HTTP 401)");
+            return TtsValidationResult.Invalid("Invalid API key.", "invalid_key");
+        }
+        catch (ClientResultException ex) when (ex.Status == 403)
+        {
+            _logger.LogWarning("API key validation failed: insufficient permissions (HTTP 403)");
+            return TtsValidationResult.Invalid(
+                "API key lacks permissions or account has insufficient credits.", "insufficient_credits");
+        }
+        catch (ClientResultException ex) when (ex.Status == 429)
+        {
+            _logger.LogWarning("API key validation: rate limited (HTTP 429) — key is likely valid");
+            return TtsValidationResult.Invalid(
+                "Rate limited — key is valid but try again shortly.", "rate_limited");
+        }
+        catch (ClientResultException ex) when (ex.Status >= 500)
+        {
+            _logger.LogWarning(ex, "API key validation: server error (HTTP {Status})", ex.Status);
+            return TtsValidationResult.Invalid(
+                "OpenAI service error — key may be valid, try again.", "server_error");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "API key validation failed with unexpected error: {Message}", ex.Message);
+            return TtsValidationResult.Invalid(
+                $"Validation failed: {ex.Message}", "network_error");
+        }
+    }
+
     /// <summary>
     /// Allows runtime injection of an API key from the UI prompt.
     /// </summary>
