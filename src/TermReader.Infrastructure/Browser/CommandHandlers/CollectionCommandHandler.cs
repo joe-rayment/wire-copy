@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -12,6 +14,8 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class CollectionCommandHandler
 {
+    private const string Reset = "\x1b[0m";
+
     public static async Task HandleSaveToCollection(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
@@ -233,9 +237,8 @@ internal static class CollectionCommandHandler
             return;
         }
 
-        var confirm = await ctx.InputHandler.PromptForInputAsync(
-            $"Clear all {col.Items.Count} items from \"{col.Name}\"? (y/n): ", ct);
-        if (!string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+        var confirmed = await ShowClearConfirmationAsync(ctx, options, col, ct);
+        if (!confirmed)
         {
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
@@ -258,6 +261,81 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task<bool> ShowClearConfirmationAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Domain.Entities.Collections.Collection collection,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+
+            // Title box (error-colored for destructive action)
+            helpers.WriteLine();
+            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
+            var title = RenderHelpers.TruncateText("Clear Collection", width - 4);
+            helpers.WriteLine(
+                $"{p.ErrorFg.AnsiFg}\u2502 {title.PadRight(width - 4)} \u2502{Reset}");
+            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
+            helpers.WriteLine();
+
+            // Warning
+            helpers.WriteLine(
+                $"  {p.ErrorFg.AnsiFg}\u26a0  This will permanently remove all {collection.Items.Count} " +
+                $"article(s) from \"{collection.Name}\".{Reset}");
+            helpers.WriteLine();
+
+            // Article list
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Articles to remove:{Reset}");
+
+            // Reserve lines for prompt area (instruction + prompt + padding)
+            var maxArticleLines = Math.Max(1, options.TerminalHeight - helpers.LinesWritten - 5);
+            var articleCount = Math.Min(collection.Items.Count, maxArticleLines);
+
+            for (var i = 0; i < articleCount; i++)
+            {
+                var item = collection.Items[i];
+                var displayTitle = RenderHelpers.TruncateText(item.Title, width - 8);
+                helpers.WriteLine($"    {p.ErrorFg.AnsiFg}\u2022{Reset} {p.PrimaryText.AnsiFg}{displayTitle}{Reset}");
+            }
+
+            if (collection.Items.Count > articleCount)
+            {
+                helpers.WriteLine(
+                    $"    {p.SecondaryText.AnsiFg}... and {collection.Items.Count - articleCount} more{Reset}");
+            }
+
+            helpers.WriteLine();
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}Type {p.ErrorFg.AnsiFg}clear{p.SecondaryText.AnsiFg} to confirm, " +
+                $"or press {p.PrimaryText.AnsiFg}Esc{p.SecondaryText.AnsiFg} to cancel{Reset}");
+            helpers.ClearRemainingLines();
+
+            // Text input at the bottom of the screen
+            var response = await ctx.InputHandler.PromptForInputAsync("> ", ct);
+
+            if (response == null)
+            {
+                // Escape pressed
+                return false;
+            }
+
+            if (string.Equals(response.Trim(), "clear", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Wrong input — loop to re-render the modal
+        }
+
+        return false;
     }
 
     public static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
