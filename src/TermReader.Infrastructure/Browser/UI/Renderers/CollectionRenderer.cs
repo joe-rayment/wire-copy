@@ -162,19 +162,24 @@ internal class CollectionRenderer
                     domain = item.Url;
                 }
 
+                var isCached = options.CachedUrls?.Contains(item.Url) == true;
+                var cacheSuffix = isCached ? " \u00b7 cached" : string.Empty;
+                var domainMaxWidth = width - 10 - cacheSuffix.Length;
+
                 var displayTitle = RenderHelpers.TruncateText(item.Title, width - 10);
-                var displayDomain = RenderHelpers.TruncateText(domain, width - 10);
+                var displayDomain = RenderHelpers.TruncateText(domain, domainMaxWidth);
 
                 if (isSelected)
                 {
                     _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {marker} {displayTitle} \x1b[27m{Reset}");
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain} \x1b[27m{Reset}");
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain}{cacheSuffix} \x1b[27m{Reset}");
                 }
                 else
                 {
                     var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
                     _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}");
-                    _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}");
+                    var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
+                    _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
                 }
 
                 if (useSeparators && i < endIndex - 1)
