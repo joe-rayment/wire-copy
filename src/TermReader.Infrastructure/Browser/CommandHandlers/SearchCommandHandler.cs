@@ -191,7 +191,7 @@ internal static class SearchCommandHandler
                 return;
 
             case "clear":
-                await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
+                await HandleClearCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return;
 
             case "export":
@@ -403,6 +403,71 @@ internal static class SearchCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
             ctx.NavigationService.SetStatusMessage("Failed to save bucket name");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleClearCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
+    {
+        var setting = subcommand?.Trim().ToLowerInvariant();
+
+        switch (setting)
+        {
+            case "apikey":
+                await HandleClearApiKey(ctx, options, ct);
+                break;
+
+            case "bucket":
+                await HandleClearBucket(ctx, options, ct);
+                break;
+
+            default:
+                // No recognized subcommand — delegate to existing collection clear behavior
+                await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
+                break;
+        }
+    }
+
+    private static async Task HandleClearApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Remove("OpenAiApiKey");
+
+            var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+            ttsService.SetApiKeyOverride(string.Empty);
+
+            ctx.NavigationService.SetStatusMessage("API key cleared");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to remove API key");
+            ctx.NavigationService.SetStatusMessage("Failed to clear API key");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleClearBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Remove("GcsBucketName");
+
+            var gcsConfig = scope.ServiceProvider.GetRequiredService<IOptions<GcsConfiguration>>().Value;
+            gcsConfig.BucketName = null;
+
+            ctx.NavigationService.SetStatusMessage("Bucket name cleared");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to remove bucket name");
+            ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

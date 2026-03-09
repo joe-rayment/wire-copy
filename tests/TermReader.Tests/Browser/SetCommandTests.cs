@@ -272,4 +272,50 @@ public class SetCommandTests
     }
 
     #endregion
+
+    #region :clear apikey
+
+    [Fact]
+    public async Task ClearApiKey_RemovesFromStore()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "clear apikey", _options, CancellationToken.None);
+
+        _settingsStore.Received(1).Remove("OpenAiApiKey");
+        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("cleared");
+    }
+
+    #endregion
+
+    #region :clear bucket
+
+    [Fact]
+    public async Task ClearBucket_RemovesFromStoreAndClearsConfig()
+    {
+        _gcsConfig.BucketName = "old-bucket";
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "clear bucket", _options, CancellationToken.None);
+
+        _settingsStore.Received(1).Remove("GcsBucketName");
+        _gcsConfig.BucketName.Should().BeNull();
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("cleared");
+    }
+
+    #endregion
+
+    #region :clear (no subcommand - delegates to collection clear)
+
+    [Fact]
+    public async Task Clear_NoSubcommand_DoesNotTouchSettings()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "clear", _options, CancellationToken.None);
+
+        _settingsStore.DidNotReceive().Remove(Arg.Any<string>());
+        _renderCalled.Should().BeTrue();
+    }
+
+    #endregion
 }
