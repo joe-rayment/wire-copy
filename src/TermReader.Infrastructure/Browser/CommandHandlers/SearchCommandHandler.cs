@@ -2,9 +2,11 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Storage;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
@@ -204,6 +206,10 @@ internal static class SearchCommandHandler
                 await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
                 return;
 
+            case "set":
+                await HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                return;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
@@ -290,6 +296,113 @@ internal static class SearchCommandHandler
 
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleSetCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
+    {
+        var setting = subcommand?.Trim().ToLowerInvariant();
+
+        switch (setting)
+        {
+            case "apikey":
+                await HandleSetApiKey(ctx, options, ct);
+                break;
+
+            case "bucket":
+                await HandleSetBucket(ctx, options, ct);
+                break;
+
+            default:
+                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                break;
+        }
+    }
+
+    private static async Task HandleSetApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var apiKey = await ctx.InputHandler.PromptForInputAsync(
+            "OpenAI API key: ", ct, isSecret: true);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var trimmedKey = apiKey.Trim();
+
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+        ttsService.SetApiKeyOverride(trimmedKey);
+
+        ctx.NavigationService.SetStatusMessage("Verifying API key...");
+        await ctx.RenderCurrentPageAsync(options, ct);
+
+        var validation = await ttsService.ValidateApiKeyAsync(ct);
+
+        if (validation.IsValid)
+        {
+            try
+            {
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true);
+                ctx.NavigationService.SetStatusMessage("API key saved");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to persist API key");
+                ctx.NavigationService.SetStatusMessage("API key verified but failed to save");
+            }
+        }
+        else
+        {
+            ttsService.SetApiKeyOverride(string.Empty);
+            ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid API key");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleSetBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var bucketName = await ctx.InputHandler.PromptForInputAsync(
+            "GCS bucket name: ", ct);
+
+        if (string.IsNullOrWhiteSpace(bucketName))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var trimmed = bucketName.Trim();
+
+        if (!GcsConfiguration.IsValidBucketName(trimmed))
+        {
+            ctx.NavigationService.SetStatusMessage(
+                $"Invalid: \"{trimmed}\" \u2014 must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Set("GcsBucketName", trimmed);
+
+            var gcsConfig = scope.ServiceProvider.GetRequiredService<IOptions<GcsConfiguration>>().Value;
+            gcsConfig.BucketName = trimmed;
+
+            ctx.NavigationService.SetStatusMessage($"Bucket set to \"{trimmed}\"");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+            ctx.NavigationService.SetStatusMessage("Failed to save bucket name");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
