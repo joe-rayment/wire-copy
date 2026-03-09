@@ -61,4 +61,15 @@ public interface IPreloadService : IDisposable
     /// Gets current pre-loading progress for display in the UI.
     /// </summary>
     PreloadProgress GetProgress();
+
+    /// <summary>
+    /// Waits for an in-flight preload of the given URL to complete.
+    /// Returns the result if successful, or null if no preload is in progress
+    /// or the timeout expires.
+    /// </summary>
+    /// <param name="url">The URL to wait for.</param>
+    /// <param name="timeout">Maximum time to wait.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The preload result, or null if not available.</returns>
+    Task<PageLoadResult?> WaitForInFlightAsync(string url, TimeSpan timeout, CancellationToken cancellationToken);
 }

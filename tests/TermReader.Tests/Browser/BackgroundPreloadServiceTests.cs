@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
@@ -825,6 +826,83 @@ public class BackgroundPreloadServiceTests
         }
 
         return root.Children.ToList();
+    }
+
+    #endregion
+
+    #region WaitForInFlightAsync
+
+    [Fact]
+    public async Task WaitForInFlightAsync_NoInFlight_ReturnsNull()
+    {
+        var result = await _service.WaitForInFlightAsync(
+            "https://example.com/page1",
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WaitForInFlightAsync_TimesOut_ReturnsNull()
+    {
+        // Use reflection to inject a long-running task into _inFlight
+        var inFlight = GetInFlightDictionary();
+        var tcs = new TaskCompletionSource<PageLoadResult>();
+        inFlight["https://example.com/slow"] = tcs.Task;
+
+        var result = await _service.WaitForInFlightAsync(
+            "https://example.com/slow",
+            TimeSpan.FromMilliseconds(50),
+            CancellationToken.None);
+
+        result.Should().BeNull();
+
+        // Cleanup
+        tcs.TrySetCanceled();
+    }
+
+    [Fact]
+    public async Task WaitForInFlightAsync_FaultedInFlight_ReturnsNull()
+    {
+        var inFlight = GetInFlightDictionary();
+        var tcs = new TaskCompletionSource<PageLoadResult>();
+        tcs.SetException(new HttpRequestException("Connection refused"));
+        inFlight["https://example.com/error"] = tcs.Task;
+
+        var result = await _service.WaitForInFlightAsync(
+            "https://example.com/error",
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WaitForInFlightAsync_CompletedInFlight_ReturnsResult()
+    {
+        var inFlight = GetInFlightDictionary();
+        var expected = PageLoadResult.Successful(
+            "https://example.com/ready",
+            "<html>content</html>",
+            new PageMetadata { Title = "Ready" });
+
+        inFlight["https://example.com/ready"] = Task.FromResult(expected);
+
+        var result = await _service.WaitForInFlightAsync(
+            "https://example.com/ready",
+            TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.Url.Should().Be("https://example.com/ready");
+    }
+
+    private ConcurrentDictionary<string, Task<PageLoadResult>> GetInFlightDictionary()
+    {
+        var field = typeof(BackgroundPreloadService)
+            .GetField("_inFlight", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return (ConcurrentDictionary<string, Task<PageLoadResult>>)field!.GetValue(_service)!;
     }
 
     #endregion

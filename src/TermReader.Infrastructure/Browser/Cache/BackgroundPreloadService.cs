@@ -217,6 +217,38 @@ internal sealed class BackgroundPreloadService : IPreloadService
         };
     }
 
+    /// <inheritdoc />
+    public async Task<PageLoadResult?> WaitForInFlightAsync(string url, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var normalizedUrl = UrlNormalizer.Normalize(url);
+
+        if (!_inFlight.TryGetValue(normalizedUrl, out var inFlightTask))
+        {
+            return null;
+        }
+
+        _logger.LogDebug("Waiting for in-flight preload: {Url} (timeout: {Timeout}s)", url, timeout.TotalSeconds);
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+
+            var result = await inFlightTask.WaitAsync(cts.Token);
+            return result;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug("Timed out waiting for in-flight preload: {Url}", url);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "In-flight preload failed for {Url}, falling back to normal fetch", url);
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
