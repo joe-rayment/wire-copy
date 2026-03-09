@@ -43,6 +43,16 @@ public record PodcastResult
     public long FileSizeBytes { get; init; }
 
     /// <summary>
+    /// Gets the number of articles served from the TTS cache.
+    /// </summary>
+    public int ArticlesCached { get; init; }
+
+    /// <summary>
+    /// Gets the estimated TTS API cost in USD.
+    /// </summary>
+    public decimal TotalCost { get; init; }
+
+    /// <summary>
     /// Gets an optional error message if the pipeline failed.
     /// </summary>
     public string? ErrorMessage { get; init; }
@@ -62,6 +72,8 @@ public record PodcastResult
         int articlesProcessed,
         int articlesFailed,
         long fileSizeBytes,
+        int articlesCached = 0,
+        decimal totalCost = 0m,
         IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
     {
         Success = true,
@@ -71,6 +83,8 @@ public record PodcastResult
         ArticlesProcessed = articlesProcessed,
         ArticlesFailed = articlesFailed,
         FileSizeBytes = fileSizeBytes,
+        ArticlesCached = articlesCached,
+        TotalCost = totalCost,
         FailedArticleDetails = failedArticleDetails ?? [],
     };
 
