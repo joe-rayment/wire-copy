@@ -77,6 +77,11 @@ public class CollectionNavigationState
     }
 
     /// <summary>
+    /// Gets whether there is a saved collection return point (article opened from collection).
+    /// </summary>
+    public bool HasReturnPoint => _collectionReturnPoint != null;
+
+    /// <summary>
     /// Gets the view mode that was active before entering collections.
     /// </summary>
     public ViewMode PreCollectionsViewMode => _preCollectionsViewMode;

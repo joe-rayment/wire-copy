@@ -370,4 +370,56 @@ public class NavigationServiceCollectionTests
     }
 
     #endregion
+
+    #region HasCollectionReturnPoint
+
+    [Fact]
+    public void HasCollectionReturnPoint_Initially_ReturnsFalse()
+    {
+        _sut.HasCollectionReturnPoint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasCollectionReturnPoint_AfterSave_ReturnsTrue()
+    {
+        var page = CreateTestPage("https://example.com", "Test");
+        _sut.NavigateTo(page);
+        _sut.EnterCollections();
+
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://article.com/1", "Article 1");
+        _sut.EnterCollection(collection);
+        _sut.SaveCollectionReturnPoint();
+
+        _sut.HasCollectionReturnPoint.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasCollectionReturnPoint_AfterRestore_ReturnsFalse()
+    {
+        var page = CreateTestPage("https://example.com", "Test");
+        _sut.NavigateTo(page);
+        _sut.EnterCollections();
+
+        var collection = Collection.Create("Test");
+        _sut.EnterCollection(collection);
+        _sut.SaveCollectionReturnPoint();
+
+        var articlePage = CreateTestPage("https://article.com", "Article");
+        _sut.NavigateTo(articlePage);
+        _sut.TryRestoreCollectionReturnPoint();
+
+        _sut.HasCollectionReturnPoint.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasCollectionReturnPoint_NoActiveCollection_ReturnsFalse()
+    {
+        _sut.EnterCollections();
+        _sut.SaveCollectionReturnPoint();
+
+        _sut.HasCollectionReturnPoint.Should().BeFalse();
+    }
+
+    #endregion
 }
