@@ -32,6 +32,8 @@ internal class CommandContext
 
     public required IThemeProvider ThemeProvider { get; init; }
 
+    public required IPreloadService PreloadService { get; init; }
+
     // Mutable shared state
     public IReadOnlyList<Collection>? Collections { get; set; }
 
