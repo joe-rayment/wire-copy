@@ -284,6 +284,11 @@ public class NavigationService : INavigationService
     public bool InCollectionsMode => _collectionState.InCollectionsMode;
 
     /// <summary>
+    /// Gets whether there is a saved collection return point (article opened from collection).
+    /// </summary>
+    public bool HasCollectionReturnPoint => _collectionState.HasReturnPoint;
+
+    /// <summary>
     /// Gets or sets the selected index in the collection list.
     /// </summary>
     public int CollectionSelectedIndex
