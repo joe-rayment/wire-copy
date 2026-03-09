@@ -97,6 +97,103 @@ public class PodcastButtonStateTests
 
     #endregion
 
+    #region CollectionRenderer cache indicator
+
+    [Fact]
+    public void CollectionRenderer_CachedItem_DoesNotThrow()
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var renderer = new CollectionRenderer(helpers, themeProvider);
+
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test");
+        collection.AddItem("https://example.com/1", "Article 1");
+        collection.AddItem("https://example.com/2", "Article 2");
+
+        var cachedUrls = new HashSet<string> { "https://example.com/1" };
+        var options = new RenderOptions
+        {
+            TerminalWidth = 80,
+            TerminalHeight = 30,
+            CachedUrls = cachedUrls,
+        };
+
+        var act = () => renderer.RenderCollectionItems(collection, 0, 0, options);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void CollectionRenderer_CachedSelectedItem_DoesNotThrow()
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var renderer = new CollectionRenderer(helpers, themeProvider);
+
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test");
+        collection.AddItem("https://example.com/1", "Article 1");
+
+        var cachedUrls = new HashSet<string> { "https://example.com/1" };
+        var options = new RenderOptions
+        {
+            TerminalWidth = 80,
+            TerminalHeight = 30,
+            CachedUrls = cachedUrls,
+        };
+
+        // Selected item (index 0 == first item)
+        var act = () => renderer.RenderCollectionItems(collection, 0, 0, options);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void CollectionRenderer_NullCachedUrls_DoesNotThrow()
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var renderer = new CollectionRenderer(helpers, themeProvider);
+
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test");
+        collection.AddItem("https://example.com/1", "Article 1");
+
+        var options = new RenderOptions
+        {
+            TerminalWidth = 80,
+            TerminalHeight = 30,
+            CachedUrls = null,
+        };
+
+        var act = () => renderer.RenderCollectionItems(collection, 0, 0, options);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void CollectionRenderer_NarrowTerminal_CachedItem_DoesNotThrow()
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var renderer = new CollectionRenderer(helpers, themeProvider);
+
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test");
+        collection.AddItem("https://example.com/1", "Article 1");
+
+        var cachedUrls = new HashSet<string> { "https://example.com/1" };
+        var options = new RenderOptions
+        {
+            TerminalWidth = 40, // Narrow terminal
+            TerminalHeight = 30,
+            CachedUrls = cachedUrls,
+        };
+
+        var act = () => renderer.RenderCollectionItems(collection, 0, 0, options);
+        act.Should().NotThrow();
+    }
+
+    #endregion
+
     #region CollectionRenderer integration with PodcastButtonState
 
     [Theory]
