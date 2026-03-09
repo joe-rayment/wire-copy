@@ -47,6 +47,9 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IValidateOptions<GcsConfiguration>, GcsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<TtsAudioCacheConfiguration>, TtsAudioCacheConfigurationValidator>();
 
+        // Register user settings store (must be before services that consume it)
+        services.AddSingleton<IUserSettingsStore, UserSettingsStore>();
+
         // Register services
         services.AddSingleton<ITtsService, OpenAiTtsService>();
         services.AddSingleton<IAudioAssembler, M4bAudioAssembler>();
