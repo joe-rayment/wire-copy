@@ -296,12 +296,39 @@ internal static class PodcastCommandHandler
                         "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
                     if (!string.IsNullOrWhiteSpace(apiKey))
                     {
-                        ttsService.SetApiKeyOverride(apiKey.Trim());
-                        isTtsConfigured = ttsService.IsConfigured;
-                        if (isTtsConfigured)
+                        var trimmedKey = apiKey.Trim();
+                        ttsService.SetApiKeyOverride(trimmedKey);
+
+                        // Validate with a minimal API call before persisting
+                        Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
+                        var validation = await ttsService.ValidateApiKeyAsync(ct);
+
+                        if (validation.IsValid)
                         {
-                            try { settingsStore.Set("OpenAiApiKey", apiKey.Trim(), encrypt: true); }
-                            catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist API key"); }
+                            Console.Write($"\r  {p.PromptFg.AnsiFg}API key verified     {Reset}");
+                            isTtsConfigured = true;
+
+                            try
+                            {
+                                settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true);
+                            }
+                            catch (Exception ex)
+                            {
+                                ctx.Logger.LogWarning(ex, "Failed to persist API key");
+                            }
+
+                            await Task.Delay(800, ct);
+                        }
+                        else
+                        {
+                            Console.Write(
+                                $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
+                                new string(' ', 20));
+                            await Task.Delay(2000, ct);
+
+                            // Revert — do not persist invalid keys
+                            ttsService.SetApiKeyOverride(string.Empty);
+                            isTtsConfigured = false;
                         }
                     }
 
@@ -663,13 +690,14 @@ internal static class PodcastCommandHandler
             lines.Add($"    {p.PromptFg.AnsiFg}{result.FeedUrl}{Reset}");
             lines.Add($"    {p.SecondaryText.AnsiFg}Feed URL copied to clipboard{Reset}");
             lines.Add(string.Empty);
-            lines.Add($"  {p.SecondaryText.AnsiFg}Subscribe{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}Apple Podcasts / Overcast (iOS){Reset}");
-            lines.Add($"      {p.SecondaryText.AnsiFg}Add show by URL \u2192 paste feed URL{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}Pocket Casts (Android){Reset}");
-            lines.Add($"      {p.SecondaryText.AnsiFg}Search \u2192 \u201cAdd by URL\u201d \u2192 paste feed URL{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}Desktop RSS readers{Reset}");
-            lines.Add($"      {p.SecondaryText.AnsiFg}Add feed/subscription \u2192 paste feed URL{Reset}");
+            lines.Add($"  {p.SecondaryText.AnsiFg}What\u2019s next{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}1.{Reset} {p.PrimaryText.AnsiFg}Subscribe in your podcast app{Reset}");
+            lines.Add($"       {p.SecondaryText.AnsiFg}Apple Podcasts / Overcast \u2192 Add show by URL \u2192 paste{Reset}");
+            lines.Add($"       {p.SecondaryText.AnsiFg}Pocket Casts \u2192 Search \u2192 \u201cAdd by URL\u201d \u2192 paste{Reset}");
+            lines.Add($"       {p.SecondaryText.AnsiFg}Any RSS reader \u2192 Add feed \u2192 paste{Reset}");
+            lines.Add($"    {p.PrimaryText.AnsiFg}2.{Reset} {p.PrimaryText.AnsiFg}Take a walk{Reset}");
+            lines.Add($"       {p.SecondaryText.AnsiFg}Next time you generate, subscribe first and go do{Reset}");
+            lines.Add($"       {p.SecondaryText.AnsiFg}something else. The episode will be waiting for you.{Reset}");
         }
         else
         {
