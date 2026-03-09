@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using System.ClientModel;
+using FFMpegCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI;
@@ -133,7 +134,9 @@ internal sealed class OpenAiTtsService : ITtsService
             }
         }
 
-        var concatenated = ConcatenateAudioSegments(allAudioSegments);
+        var concatenated = allAudioSegments.Count == 1
+            ? allAudioSegments[0]
+            : await ConcatenateWithFfmpegAsync(allAudioSegments, cancellationToken);
 
         _logger.LogInformation(
             "TTS generation complete for '{Title}': {Chars} chars, {Chunks} chunks, {Bytes} bytes",
@@ -286,18 +289,49 @@ internal sealed class OpenAiTtsService : ITtsService
         };
     }
 
-    private static byte[] ConcatenateAudioSegments(List<byte[]> segments)
+    /// <summary>
+    /// Concatenates multiple audio segments using FFmpeg's concat demuxer.
+    /// Raw byte concatenation is invalid for container formats like M4A/AAC;
+    /// FFmpeg properly re-muxes the streams into a single valid file.
+    /// </summary>
+    private async Task<byte[]> ConcatenateWithFfmpegAsync(
+        List<byte[]> segments,
+        CancellationToken cancellationToken)
     {
-        var totalLength = segments.Sum(s => s.Length);
-        var result = new byte[totalLength];
-        var offset = 0;
+        using var tempManager = new TempFileManager(null, _logger);
 
-        foreach (var segment in segments)
+        var ext = GetFileExtension();
+        var chunkPaths = new List<string>(segments.Count);
+
+        for (var i = 0; i < segments.Count; i++)
         {
-            Buffer.BlockCopy(segment, 0, result, offset, segment.Length);
-            offset += segment.Length;
+            var chunkPath = tempManager.GetTempFilePath($"chunk-{i:D4}{ext}");
+            await File.WriteAllBytesAsync(chunkPath, segments[i], cancellationToken);
+            chunkPaths.Add(chunkPath);
         }
 
-        return result;
+        var outputPath = tempManager.GetTempFilePath($"concatenated{ext}");
+
+        await FFMpegArguments
+            .FromDemuxConcatInput(chunkPaths)
+            .OutputToFile(outputPath, overwrite: true, options => options
+                .WithCustomArgument("-c copy"))
+            .ProcessAsynchronously(throwOnError: true);
+
+        return await File.ReadAllBytesAsync(outputPath, cancellationToken);
+    }
+
+    private string GetFileExtension()
+    {
+        return _config.OutputFormat.ToLowerInvariant() switch
+        {
+            "mp3" => ".mp3",
+            "opus" => ".ogg",
+            "aac" => ".m4a",
+            "flac" => ".flac",
+            "wav" => ".wav",
+            "pcm" => ".pcm",
+            _ => ".m4a",
+        };
     }
 }
