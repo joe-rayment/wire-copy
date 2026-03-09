@@ -16,8 +16,9 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 {
     private readonly GcsConfiguration _config;
     private readonly ILogger<GcsStorageClient> _logger;
+    private readonly SemaphoreSlim _initLock = new(1, 1);
     private StorageClient? _client;
-    private bool _bucketEnsured;
+    private string? _ensuredBucketName;
 
     public GcsStorageClient(IOptions<GcsConfiguration> config, ILogger<GcsStorageClient> logger)
     {
@@ -139,55 +140,82 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             return _client;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (!string.IsNullOrWhiteSpace(_config.ServiceAccountKeyPath))
+        await _initLock.WaitAsync(cancellationToken);
+        try
         {
-            var credential = GoogleCredential.FromFile(_config.ServiceAccountKeyPath);
-            _client = await StorageClient.CreateAsync(credential);
-        }
-        else
-        {
-            _client = await StorageClient.CreateAsync();
-        }
+            if (_client != null)
+            {
+                return _client;
+            }
 
-        return _client;
+            if (!string.IsNullOrWhiteSpace(_config.ServiceAccountKeyPath))
+            {
+                var credential = GoogleCredential.FromFile(_config.ServiceAccountKeyPath);
+                _client = await StorageClient.CreateAsync(credential);
+            }
+            else
+            {
+                _client = await StorageClient.CreateAsync();
+            }
+
+            return _client;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
 
     private async Task EnsureBucketAsync(StorageClient client, CancellationToken cancellationToken)
     {
-        if (_bucketEnsured || !_config.CreateBucketIfNotExists)
+        var currentBucket = _config.BucketName;
+
+        if (_ensuredBucketName == currentBucket || !_config.CreateBucketIfNotExists)
         {
-            _bucketEnsured = true;
+            _ensuredBucketName = currentBucket;
             return;
         }
 
+        await _initLock.WaitAsync(cancellationToken);
         try
         {
-            await client.GetBucketAsync(_config.BucketName, cancellationToken: cancellationToken);
-            _bucketEnsured = true;
-        }
-        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            _logger.LogInformation("Creating bucket {Bucket} in {Location}", _config.BucketName, _config.BucketLocation);
+            // Double-check after acquiring lock
+            if (_ensuredBucketName == currentBucket)
+            {
+                return;
+            }
 
-            await client.CreateBucketAsync(
-                _config.ProjectId,
-                new Google.Apis.Storage.v1.Data.Bucket
-                {
-                    Name = _config.BucketName,
-                    Location = _config.BucketLocation,
-                    IamConfiguration = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData
+            try
+            {
+                await client.GetBucketAsync(currentBucket, cancellationToken: cancellationToken);
+                _ensuredBucketName = currentBucket;
+            }
+            catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("Creating bucket {Bucket} in {Location}", currentBucket, _config.BucketLocation);
+
+                await client.CreateBucketAsync(
+                    _config.ProjectId,
+                    new Google.Apis.Storage.v1.Data.Bucket
                     {
-                        UniformBucketLevelAccess = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData.UniformBucketLevelAccessData
+                        Name = currentBucket,
+                        Location = _config.BucketLocation,
+                        IamConfiguration = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData
                         {
-                            Enabled = true,
+                            UniformBucketLevelAccess = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData.UniformBucketLevelAccessData
+                            {
+                                Enabled = true,
+                            },
                         },
                     },
-                },
-                cancellationToken: cancellationToken);
+                    cancellationToken: cancellationToken);
 
-            _bucketEnsured = true;
+                _ensuredBucketName = currentBucket;
+            }
+        }
+        finally
+        {
+            _initLock.Release();
         }
     }
 }

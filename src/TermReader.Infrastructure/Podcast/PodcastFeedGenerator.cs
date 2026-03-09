@@ -13,6 +13,7 @@ namespace TermReader.Infrastructure.Podcast;
 /// </summary>
 internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
 {
+    private static readonly XNamespace Atom = "http://www.w3.org/2005/Atom";
     private static readonly XNamespace Itunes = "http://www.itunes.com/dtds/podcast-1.0.dtd";
     private static readonly XNamespace Podcast = "https://podcastindex.org/namespace/1.0";
     private static readonly XNamespace Psc = "http://podlove.org/simple-chapters";
@@ -51,6 +52,7 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
 
         var rss = new XElement("rss",
             new XAttribute("version", "2.0"),
+            new XAttribute(XNamespace.Xmlns + "atom", Atom),
             new XAttribute(XNamespace.Xmlns + "itunes", Itunes),
             new XAttribute(XNamespace.Xmlns + "podcast", Podcast),
             new XAttribute(XNamespace.Xmlns + "psc", Psc),
@@ -80,6 +82,15 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
             new XElement(Itunes + "explicit", podcast.Explicit ? "yes" : "no"),
             new XElement(Itunes + "type", "episodic"),
             new XElement(Podcast + "locked", "yes"));
+
+        if (!string.IsNullOrEmpty(podcast.FeedUrl))
+        {
+            channel.Add(new XElement("link", podcast.FeedUrl));
+            channel.Add(new XElement(Atom + "link",
+                new XAttribute("href", podcast.FeedUrl),
+                new XAttribute("rel", "self"),
+                new XAttribute("type", "application/rss+xml")));
+        }
 
         if (!string.IsNullOrEmpty(podcast.Category))
         {

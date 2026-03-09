@@ -41,4 +41,9 @@ public record PodcastMetadata
     /// Gets whether the podcast contains explicit content.
     /// </summary>
     public bool Explicit { get; init; }
+
+    /// <summary>
+    /// Gets the feed URL for atom:link rel=self. Optional; omitted from feed if null.
+    /// </summary>
+    public string? FeedUrl { get; init; }
 }
