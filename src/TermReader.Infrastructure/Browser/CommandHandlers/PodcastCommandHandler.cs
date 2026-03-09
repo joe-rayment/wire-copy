@@ -125,7 +125,17 @@ internal static class PodcastCommandHandler
 
         if (!result.Success)
         {
-            await ShowErrorScreenAsync(ctx, options, result.ErrorMessage ?? "Unknown error", ct);
+            // If TTS failed due to auth error, clear the persisted key so user is re-prompted
+            var error = result.ErrorMessage ?? "Unknown error";
+            if (error.Contains("401", StringComparison.Ordinal) ||
+                error.Contains("403", StringComparison.Ordinal) ||
+                error.Contains("not configured", StringComparison.OrdinalIgnoreCase))
+            {
+                settingsStore.Remove("OpenAiApiKey");
+                ttsService.SetApiKeyOverride(string.Empty);
+            }
+
+            await ShowErrorScreenAsync(ctx, options, error, ct);
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
@@ -262,7 +272,8 @@ internal static class PodcastCommandHandler
                         isTtsConfigured = ttsService.IsConfigured;
                         if (isTtsConfigured)
                         {
-                            settingsStore.Set("OpenAiApiKey", apiKey.Trim(), encrypt: true);
+                            try { settingsStore.Set("OpenAiApiKey", apiKey.Trim(), encrypt: true); }
+                            catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist API key"); }
                         }
                     }
 
@@ -283,7 +294,8 @@ internal static class PodcastCommandHandler
                     {
                         gcsConfig.BucketName = trimmed;
                         isGcsConfigured = true;
-                        settingsStore.Set("GcsBucketName", trimmed);
+                        try { settingsStore.Set("GcsBucketName", trimmed); }
+                        catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist bucket name"); }
                     }
                 }
 
