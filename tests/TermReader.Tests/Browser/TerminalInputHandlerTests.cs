@@ -213,6 +213,13 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
+    public void MapKeyToCommand_ShiftX_ReturnsClearCollection()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.X, ConsoleModifiers.Shift);
+        result.Type.Should().Be(CommandType.ClearCollection);
+    }
+
+    [Fact]
     public void MapKeyToCommand_ShiftUnknown_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, ConsoleModifiers.Shift);
