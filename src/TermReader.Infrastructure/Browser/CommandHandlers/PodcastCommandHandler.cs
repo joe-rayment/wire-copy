@@ -120,6 +120,15 @@ internal static class PodcastCommandHandler
             }
         }
 
+        // Show cache-wait screen if preloading is still in progress
+        var skippedWait = await ShowCacheWaitScreenAsync(ctx, options, collection, ct);
+
+        // Re-fetch render options in case terminal resized during wait
+        if (!skippedWait)
+        {
+            options = ctx.GetCurrentRenderOptions();
+        }
+
         var confirmed = await ShowConfirmationScreenAsync(
             ctx,
             options,
@@ -164,6 +173,111 @@ internal static class PodcastCommandHandler
 
         await ShowCompletionScreenAsync(ctx, options, result, ct);
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    /// <summary>
+    /// Shows a cache-wait screen while the preload service caches collection articles.
+    /// Returns true if the screen was skipped (already complete), false if user waited.
+    /// </summary>
+    private static async Task<bool> ShowCacheWaitScreenAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Domain.Entities.Collections.Collection collection,
+        CancellationToken ct)
+    {
+        const int maxWaitMs = 120_000;
+        const int pollIntervalMs = 500;
+
+        // Use preload service's progress as the authoritative "done" signal
+        // (it tracks needs-browser URLs internally)
+        var preloadProgress = ctx.PreloadService.GetProgress();
+        if (preloadProgress.IsComplete)
+        {
+            return true;
+        }
+
+        var animFrame = 0;
+        var elapsed = 0;
+        Task<NavigationCommand>? pendingKeyTask = null;
+
+        while (!ct.IsCancellationRequested && elapsed < maxWaitMs)
+        {
+            var progress = CollectionCacheHelper.GetProgress(collection, ctx.PageCache, ctx.PreloadService);
+
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            RenderBox(helpers, p, "Caching Articles", width);
+            helpers.WriteLine();
+
+            // Progress summary
+            var dots = AnimationFrames[animFrame % AnimationFrames.Length];
+            helpers.WriteLine(
+                $"  {p.PrimaryText.AnsiFg}{progress.CachedCount}{Reset}" +
+                $"{p.SecondaryText.AnsiFg} of {progress.Total} cached{dots}{Reset}");
+            helpers.WriteLine();
+
+            // Per-article status indicators
+            var maxTitleLen = Math.Max(10, width - 10);
+            foreach (var article in progress.Articles)
+            {
+                var (indicator, color) = article.State switch
+                {
+                    ArticleCacheState.Cached => ("\u2713", p.PromptFg),
+                    ArticleCacheState.Caching => ("\u27f3", p.SecondaryText),
+                    ArticleCacheState.NeedsBrowser => ("\u25b8", p.ErrorFg),
+                    _ => ("\u00b7", p.SecondaryText)
+                };
+
+                var title = RenderHelpers.TruncateText(article.Title, maxTitleLen);
+                helpers.WriteLine($"    {color.AnsiFg}{indicator}{Reset} {p.PrimaryText.AnsiFg}{title}{Reset}");
+            }
+
+            // Key hints
+            helpers.WriteLine();
+            helpers.WriteLine(
+                $"  {p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:skip waiting{Reset}");
+
+            helpers.ClearRemainingLines();
+
+            // Check preload service's progress (authoritative for needs-browser tracking)
+            preloadProgress = ctx.PreloadService.GetProgress();
+            if (preloadProgress.IsComplete)
+            {
+                break;
+            }
+
+            // Poll: wait for key press or tick
+            pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var tickTask = Task.Delay(pollIntervalMs, tickCts.Token);
+            var completed = await Task.WhenAny(pendingKeyTask, tickTask);
+            await tickCts.CancelAsync();
+
+            if (completed == pendingKeyTask)
+            {
+                var command = await pendingKeyTask;
+                pendingKeyTask = null;
+
+                if (command.Type == CommandType.TerminalResized)
+                {
+                    options = ctx.GetCurrentRenderOptions();
+                    continue;
+                }
+
+                if (command.Type is CommandType.GoBack or CommandType.Quit)
+                {
+                    break;
+                }
+            }
+
+            animFrame++;
+            elapsed += pollIntervalMs;
+        }
+
+        return false;
     }
 
     private static async Task<bool> ShowConfirmationScreenAsync(
