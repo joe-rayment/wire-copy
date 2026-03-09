@@ -156,6 +156,7 @@ internal static class PodcastCommandHandler
     {
         var isTtsConfigured = ttsService.IsConfigured;
         var isGcsConfigured = !string.IsNullOrWhiteSpace(gcsConfig.BucketName);
+        string? bucketError = null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -169,16 +170,18 @@ internal static class PodcastCommandHandler
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Collection:{Reset}   {p.PrimaryText.AnsiFg}{collection.Name}{Reset}");
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Articles:{Reset}     {p.PrimaryText.AnsiFg}{collection.Items.Count}{Reset}");
             helpers.WriteLine();
+
+            // --- Credentials ---
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Credentials{Reset}");
 
             var ttsIndicator = isTtsConfigured
                 ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} OpenAI TTS API key     {p.PromptFg.AnsiFg}configured{Reset}"
-                : $"    {p.ErrorFg.AnsiFg}\u25cb{Reset} OpenAI TTS API key     {p.ErrorFg.AnsiFg}not found{Reset}";
+                : $"    {p.ErrorFg.AnsiFg}\u25cb{Reset} OpenAI TTS API key     {p.ErrorFg.AnsiFg}not set{Reset}";
             helpers.WriteLine(ttsIndicator);
 
             if (!isTtsConfigured)
             {
-                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required for text-to-speech audio generation{Reset}");
+                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required \u2014 get a key at platform.openai.com/api-keys{Reset}");
             }
 
             var gcsIndicator = isGcsConfigured
@@ -188,13 +191,38 @@ internal static class PodcastCommandHandler
 
             if (!isGcsConfigured)
             {
-                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed publishing{Reset}");
+                if (bucketError != null)
+                {
+                    helpers.WriteLine($"      {p.ErrorFg.AnsiFg}{bucketError}{Reset}");
+                }
+                else
+                {
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed for podcast apps{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3\u201363 chars, lowercase, a\u2013z/0\u20139/hyphens/dots){Reset}");
+                }
             }
 
+            // --- Output ---
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Output{Reset}");
+            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}M4B audiobook with chapter markers per article{Reset}");
+
+            if (isGcsConfigured)
+            {
+                helpers.WriteLine(
+                    $"    {p.SecondaryText.AnsiFg}Feed:{Reset} " +
+                    $"{p.PromptFg.AnsiFg}storage.googleapis.com/{gcsConfig.BucketName}/podcasts/\u2026/feed.xml{Reset}");
+            }
+            else
+            {
+                helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Saved locally \u2014 configure GCS bucket for RSS feed{Reset}");
+            }
+
+            // --- Cache / Cost ---
             if (cacheAnalysis != null)
             {
                 helpers.WriteLine();
-                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Cache{Reset}");
+                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Estimate{Reset}");
                 helpers.WriteLine(
                     $"    {p.PromptFg.AnsiFg}{cacheAnalysis.CachedArticles}{Reset}" +
                     $"{p.SecondaryText.AnsiFg} of {cacheAnalysis.TotalArticles} articles cached{Reset}");
@@ -202,19 +230,18 @@ internal static class PodcastCommandHandler
                 if (cacheAnalysis.UncachedArticles > 0)
                 {
                     helpers.WriteLine(
-                        $"    {p.SecondaryText.AnsiFg}Estimated cost for remaining:{Reset} " +
+                        $"    {p.SecondaryText.AnsiFg}Cost for remaining:{Reset} " +
                         $"{p.PrimaryText.AnsiFg}${cacheAnalysis.EstimatedCost:F4}{Reset}");
 
-                    // Estimate time: ~150 WPM * 5 chars/word = 750 chars/min for reading,
-                    // but generation is roughly real-time, so use character count
+                    // Estimate time: reverse cost to char count, then use ~750 chars/min
                     var uncachedChars = cacheAnalysis.ArticleStatuses
                         .Where(s => !s.IsCached)
-                        .Sum(s => s.EstimatedCost * 1_000_000m / 15.0m); // reverse cost to char count
+                        .Sum(s => s.EstimatedCost * 1_000_000m / 15.0m);
                     var estimatedMinutes = (int)Math.Ceiling((double)uncachedChars / (150.0 * 5.0));
                     if (estimatedMinutes > 0)
                     {
                         helpers.WriteLine(
-                            $"    {p.SecondaryText.AnsiFg}Estimated time:{Reset} " +
+                            $"    {p.SecondaryText.AnsiFg}Time:{Reset} " +
                             $"{p.PrimaryText.AnsiFg}~{estimatedMinutes} min{Reset}");
                     }
                 }
@@ -225,6 +252,7 @@ internal static class PodcastCommandHandler
                 }
             }
 
+            // --- Key hints ---
             helpers.WriteLine();
 
             var hints = new StringBuilder();
@@ -285,8 +313,9 @@ internal static class PodcastCommandHandler
 
             if (command.Type == CommandType.OpenCommandLine && !isGcsConfigured)
             {
+                bucketError = null;
                 var bucketName = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS bucket name: ", ct);
+                    "GCS bucket name (e.g. my-podcast-feed): ", ct);
                 if (!string.IsNullOrWhiteSpace(bucketName))
                 {
                     var trimmed = bucketName.Trim();
@@ -294,8 +323,13 @@ internal static class PodcastCommandHandler
                     {
                         gcsConfig.BucketName = trimmed;
                         isGcsConfigured = true;
+                        bucketError = null;
                         try { settingsStore.Set("GcsBucketName", trimmed); }
                         catch (Exception ex) { ctx.Logger.LogWarning(ex, "Failed to persist bucket name"); }
+                    }
+                    else
+                    {
+                        bucketError = $"Invalid: \"{trimmed}\" \u2014 must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots";
                     }
                 }
 
