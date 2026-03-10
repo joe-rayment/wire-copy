@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.DTOs.Podcast;
 using TermReader.Application.Interfaces;
+using TermReader.Application.Interfaces.Audio;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
@@ -108,6 +109,35 @@ internal static class PodcastCommandHandler
             }
         }
 
+        // Pre-flight FFmpeg check: fail fast before slow cache analysis
+        var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
+        if (!await audioAssembler.ValidatePrerequisitesAsync(ct))
+        {
+            await ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        // Pre-flight GCS validation: check credentials BEFORE slow cache analysis
+        string? preflight_bucketError = null;
+        string? preflight_feedUrl = null;
+        string? preflight_feedStatusNote = null;
+        if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+        {
+            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+
+            if (success)
+            {
+                preflight_feedUrl = url;
+                preflight_feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+            }
+            else if (error != null)
+            {
+                preflight_bucketError = error;
+            }
+        }
+
         // Pre-flight cache analysis for cost estimation (with progress UI)
         CacheAnalysis? cacheAnalysis = null;
         if (ttsService.IsConfigured)
@@ -133,6 +163,9 @@ internal static class PodcastCommandHandler
             gcsConfig,
             settingsStore,
             cacheAnalysis,
+            preflight_bucketError,
+            preflight_feedUrl,
+            preflight_feedStatusNote,
             ct);
 
         if (!confirmed)
@@ -506,31 +539,16 @@ internal static class PodcastCommandHandler
         GcsConfiguration gcsConfig,
         IUserSettingsStore settingsStore,
         CacheAnalysis? cacheAnalysis,
+        string? preflightBucketError,
+        string? preflightFeedUrl,
+        string? preflightFeedStatusNote,
         CancellationToken ct)
     {
         var isTtsConfigured = ttsService.IsConfigured;
         var isGcsConfigured = !string.IsNullOrWhiteSpace(gcsConfig.BucketName);
-        string? bucketError = null;
-        string? feedUrl = null;
-        string? feedStatusNote = null;
-
-        // If bucket was pre-loaded from UserSettingsStore, validate and bootstrap
-        // to populate feedUrl with the real URL (otherwise it stays null).
-        if (isGcsConfigured)
-        {
-            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
-
-            if (success)
-            {
-                feedUrl = url;
-                feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
-            }
-            else if (error != null)
-            {
-                bucketError = error;
-            }
-        }
+        var bucketError = preflightBucketError;
+        var feedUrl = preflightFeedUrl;
+        var feedStatusNote = preflightFeedStatusNote;
 
         while (!ct.IsCancellationRequested)
         {
@@ -559,7 +577,7 @@ internal static class PodcastCommandHandler
             }
 
             var gcsIndicator = isGcsConfigured
-                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}  {p.SecondaryText.AnsiFg}[b] change{Reset}"
+                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}  {p.SecondaryText.AnsiFg}[:] change{Reset}"
                 : $"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not set (local-only){Reset}";
             helpers.WriteLine(gcsIndicator);
 
