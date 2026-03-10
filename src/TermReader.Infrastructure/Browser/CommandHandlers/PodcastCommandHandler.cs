@@ -369,12 +369,12 @@ internal static class PodcastCommandHandler
                 helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Estimate{Reset}");
                 helpers.WriteLine(
                     $"    {p.PromptFg.AnsiFg}{cacheAnalysis.CachedArticles}{Reset}" +
-                    $"{p.SecondaryText.AnsiFg} of {cacheAnalysis.TotalArticles} articles cached{Reset}");
+                    $"{p.SecondaryText.AnsiFg} of {cacheAnalysis.TotalArticles} articles have audio generated{Reset}");
 
                 if (cacheAnalysis.UncachedArticles > 0)
                 {
                     helpers.WriteLine(
-                        $"    {p.SecondaryText.AnsiFg}Cost for remaining:{Reset} " +
+                        $"    {p.SecondaryText.AnsiFg}TTS cost for {cacheAnalysis.UncachedArticles} articles:{Reset} " +
                         $"{p.PrimaryText.AnsiFg}${cacheAnalysis.EstimatedCost:F4}{Reset}");
 
                     // Estimate time: reverse cost to char count, then use ~750 chars/min
@@ -392,7 +392,7 @@ internal static class PodcastCommandHandler
                 else
                 {
                     helpers.WriteLine(
-                        $"    {p.PromptFg.AnsiFg}All articles cached \u2014 no API cost{Reset}");
+                        $"    {p.PromptFg.AnsiFg}All audio already generated \u2014 no TTS cost{Reset}");
                 }
             }
 
