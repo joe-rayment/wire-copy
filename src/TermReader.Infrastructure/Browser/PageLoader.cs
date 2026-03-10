@@ -255,7 +255,7 @@ public class PageLoader : IPageLoader
     private static string? ExtractCanonicalUrl(HtmlDocument doc)
     {
         var node = doc.DocumentNode.SelectSingleNode("//link[@rel='canonical']");
-        return node?.GetAttributeValue("href", null);
+        return node?.GetAttributeValue("href", null!);
     }
 
     private static DateTime? ParsePublishedDate(HtmlDocument doc)
@@ -268,7 +268,7 @@ public class PageLoader : IPageLoader
         var node = doc.DocumentNode.SelectSingleNode("//link[@rel='icon']") ??
                    doc.DocumentNode.SelectSingleNode("//link[@rel='shortcut icon']");
 
-        var href = node?.GetAttributeValue("href", null);
+        var href = node?.GetAttributeValue("href", null!);
 
         if (string.IsNullOrWhiteSpace(href))
         {
@@ -398,6 +398,11 @@ public class PageLoader : IPageLoader
         {
             _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
             return PageLoadResult.Failure($"Browser error: {ex.Message}");
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogWarning(ex, "Browser session disposed during page load: {Url}", request.Url);
+            return PageLoadResult.Failure("Browser session is no longer available");
         }
     }
 

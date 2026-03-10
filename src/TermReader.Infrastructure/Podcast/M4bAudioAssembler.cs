@@ -16,7 +16,9 @@ namespace TermReader.Infrastructure.Podcast;
 /// Assembles multiple audio segments into a single M4B file with Nero chapter markers
 /// and embedded metadata using FFMpegCore and ATL.NET.
 /// </summary>
+#pragma warning disable S101 // "M4b" is the audio file format name
 internal sealed class M4bAudioAssembler : IAudioAssembler
+#pragma warning restore S101
 {
     private readonly PodcastConfiguration _config;
     private readonly ILogger<M4bAudioAssembler> _logger;
@@ -31,7 +33,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
     {
         try
         {
-            var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "ffmpeg",
                 Arguments = "-version",
@@ -68,12 +70,10 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         }
 
         // Validate that all segment files exist
-        foreach (var segment in request.Segments)
+        var missingSegment = request.Segments.FirstOrDefault(s => !File.Exists(s.AudioFilePath));
+        if (missingSegment != null)
         {
-            if (!File.Exists(segment.AudioFilePath))
-            {
-                return AssemblyResult.Failure($"Audio file not found: {segment.AudioFilePath}");
-            }
+            return AssemblyResult.Failure($"Audio file not found: {missingSegment.AudioFilePath}");
         }
 
         using var tempManager = new TempFileManager(_config.TempDirectory, _logger);
@@ -250,5 +250,4 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         var numStr = bitrate.TrimEnd('k', 'K');
         return int.TryParse(numStr, out var value) ? value : 64;
     }
-
 }

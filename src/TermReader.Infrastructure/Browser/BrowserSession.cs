@@ -105,7 +105,7 @@ public sealed class BrowserSession : IBrowserSession
     {
         lock (_lock)
         {
-            if (_driver == null || _driverIsHeadless)
+            if (_disposed || _driver == null || _driverIsHeadless)
             {
                 return;
             }

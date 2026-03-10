@@ -400,18 +400,41 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     {
         ArgumentNullException.ThrowIfNull(collection);
 
-        var articles = await _contentProvider.GetAllArticleContentAsync(
-            collection,
-            progress,
-            cancellationToken);
-
-        // Cache for reuse by GeneratePodcastAsync to avoid double extraction
-        _cachedArticles = articles;
-        _cachedExtractionFailures = _contentProvider.LastExtractionFailures;
-        _cachedCollectionName = collection.Name;
-
-        if (articles.Count == 0)
+        try
         {
+            var articles = await _contentProvider.GetAllArticleContentAsync(
+                collection,
+                progress,
+                cancellationToken);
+
+            // Cache for reuse by GeneratePodcastAsync to avoid double extraction
+            _cachedArticles = articles;
+            _cachedExtractionFailures = _contentProvider.LastExtractionFailures;
+            _cachedCollectionName = collection.Name;
+
+            if (articles.Count == 0)
+            {
+                return new CacheAnalysis
+                {
+                    TotalArticles = 0,
+                    CachedArticles = 0,
+                    UncachedArticles = 0,
+                    EstimatedCost = 0,
+                    ArticleStatuses = [],
+                };
+            }
+
+            return await _audioCache.AnalyzeCollectionAsync(
+                articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cache analysis failed unexpectedly");
             return new CacheAnalysis
             {
                 TotalArticles = 0,
@@ -421,10 +444,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 ArticleStatuses = [],
             };
         }
-
-        return await _audioCache.AnalyzeCollectionAsync(
-            articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
-            cancellationToken);
     }
 
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
