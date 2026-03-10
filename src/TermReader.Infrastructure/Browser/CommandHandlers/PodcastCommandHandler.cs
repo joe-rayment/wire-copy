@@ -374,7 +374,11 @@ internal static class PodcastCommandHandler
                     {
                         ctx.Logger.LogWarning("Analysis task did not respond to cancellation within 5s, detaching");
                         _ = analysisTask.ContinueWith(
-                            static _ => { }, TaskContinuationOptions.OnlyOnFaulted);
+                            t => ctx.Logger.LogWarning(
+                                t.Exception?.InnerException,
+                                "Detached analysis task faulted: {Message}",
+                                t.Exception?.InnerException?.Message),
+                            TaskContinuationOptions.OnlyOnFaulted);
                     }
                 }
                 catch (OperationCanceledException)
@@ -1035,6 +1039,10 @@ internal static class PodcastCommandHandler
                 catch (OperationCanceledException)
                 {
                     // Expected
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Generation task faulted during cleanup: {Message}", ex.Message);
                 }
             }
         }

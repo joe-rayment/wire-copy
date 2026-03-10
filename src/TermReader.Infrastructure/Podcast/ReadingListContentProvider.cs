@@ -259,117 +259,152 @@ internal sealed class ReadingListContentProvider
         }
 
         // Wait for any in-flight preload before fetching
-        if (!_pageCache.Contains(item.Url))
+        try
         {
-            reportMethod?.Invoke("preload");
-            var preloadResult = await _preloadService.WaitForInFlightAsync(
-                item.Url, InFlightWaitTimeout, cancellationToken);
-            if (preloadResult is { Success: true } && !string.IsNullOrEmpty(preloadResult.Html))
+            if (!_pageCache.Contains(item.Url))
             {
-                _logger.LogDebug("Using completed in-flight preload for {Url}", item.Url);
-                var preloadArticle = await TryExtractArticleAsync(preloadResult, item.Url, cancellationToken);
-                if (preloadArticle != null)
+                reportMethod?.Invoke("preload");
+                var preloadResult = await _preloadService.WaitForInFlightAsync(
+                    item.Url, InFlightWaitTimeout, cancellationToken);
+                if (preloadResult is { Success: true } && !string.IsNullOrEmpty(preloadResult.Html))
                 {
-                    return (preloadArticle, FetchMethod.Cached);
-                }
-            }
-        }
-
-        // Layer 1: Initial load (HTTP/cached)
-        reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "HTTP");
-        var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = item.Url },
-            cancellationToken);
-
-        if (!loadResult.Success || string.IsNullOrEmpty(loadResult.Html))
-        {
-            _logger.LogDebug("Page load failed for {Url}: {Error}", item.Url, loadResult.ErrorMessage);
-            return (null, loadResult.FetchMethod);
-        }
-
-        var article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
-        if (article != null)
-        {
-            return (article, loadResult.FetchMethod);
-        }
-
-        // Layer 2: If HTTP/cached returned no content (JS shell), retry with Selenium
-        // Skip Selenium layers if the driver has already crashed during this extraction run
-        if (loadResult.FetchMethod != FetchMethod.Selenium && !_seleniumDriverCrashed)
-        {
-            reportMethod?.Invoke("Selenium");
-            _logger.LogInformation(
-                "No readable content from {Method}, retrying with Selenium: {Url}",
-                loadResult.FetchMethod,
-                item.Url);
-
-            loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest
-                {
-                    Url = item.Url,
-                    Headless = _browserConfig.Headless,
-                    ForceRefresh = true,
-                },
-                cancellationToken);
-
-            if (IsDriverCrashFailure(loadResult))
-            {
-                _seleniumDriverCrashed = true;
-                _logger.LogWarning("Selenium driver crashed, skipping browser layers for remaining articles");
-            }
-            else if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
-            {
-                article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
-                if (article != null)
-                {
-                    return (article, loadResult.FetchMethod);
-                }
-            }
-        }
-
-        // Layer 3: If Selenium hit a bot challenge (resolved or not), retry headed with fresh navigation
-        if (!_seleniumDriverCrashed)
-        {
-            var isBotChallengeFailure = !loadResult.Success &&
-                loadResult.ErrorMessage?.Contains("Bot challenge", StringComparison.OrdinalIgnoreCase) == true;
-            var isBotChallengeContent = loadResult.Success &&
-                !string.IsNullOrEmpty(loadResult.Html) &&
-                PageLoader.IsBotChallengePage(loadResult.Html);
-
-            if (isBotChallengeFailure || isBotChallengeContent)
-            {
-                _browserSession.RestoreWindow();
-                reportMethod?.Invoke("bot challenge \u2014 check browser");
-                _logger.LogWarning(
-                    "Bot challenge detected, restoring browser window for user intervention: {Url}",
-                    item.Url);
-
-                loadResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest
+                    _logger.LogDebug("Using completed in-flight preload for {Url}", item.Url);
+                    var preloadArticle = await TryExtractArticleAsync(preloadResult, item.Url, cancellationToken);
+                    if (preloadArticle != null)
                     {
-                        Url = item.Url,
-                        Headless = false,
-                        ForceRefresh = true,
-                    },
-                    cancellationToken);
-
-                if (IsDriverCrashFailure(loadResult))
-                {
-                    _seleniumDriverCrashed = true;
-                    _logger.LogWarning("Selenium driver crashed during bot challenge retry");
-                }
-                else if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
-                {
-                    article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
-                    if (article != null)
-                    {
-                        return (article, loadResult.FetchMethod);
+                        return (preloadArticle, FetchMethod.Cached);
                     }
                 }
             }
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Preload wait failed for {Url}, falling through to Layer 1", item.Url);
+        }
 
-        return (null, loadResult.FetchMethod);
+        var lastFetchMethod = FetchMethod.Http;
+        PageLoadResult? lastLoadResult = null;
+
+        // Layer 1: Initial load (HTTP/cached)
+        try
+        {
+            reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "HTTP");
+            lastLoadResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = item.Url },
+                cancellationToken);
+            lastFetchMethod = lastLoadResult.FetchMethod;
+
+            if (!lastLoadResult.Success || string.IsNullOrEmpty(lastLoadResult.Html))
+            {
+                _logger.LogDebug("Page load failed for {Url}: {Error}", item.Url, lastLoadResult.ErrorMessage);
+            }
+            else
+            {
+                var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                if (article != null)
+                {
+                    return (article, lastLoadResult.FetchMethod);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Layer 1 (HTTP) failed for {Url}, falling through to Selenium", item.Url);
+        }
+
+        // Layer 2: If HTTP/cached returned no content (JS shell), retry with Selenium
+        // Skip Selenium layers if the driver has already crashed during this extraction run
+        if (lastFetchMethod != FetchMethod.Selenium && !_seleniumDriverCrashed)
+        {
+            try
+            {
+                reportMethod?.Invoke("Selenium");
+                _logger.LogInformation(
+                    "No readable content from {Method}, retrying with Selenium: {Url}",
+                    lastFetchMethod,
+                    item.Url);
+
+                lastLoadResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest
+                    {
+                        Url = item.Url,
+                        Headless = _browserConfig.Headless,
+                        ForceRefresh = true,
+                    },
+                    cancellationToken);
+                lastFetchMethod = lastLoadResult.FetchMethod;
+
+                if (IsDriverCrashFailure(lastLoadResult))
+                {
+                    _seleniumDriverCrashed = true;
+                    _logger.LogWarning("Selenium driver crashed, skipping browser layers for remaining articles");
+                }
+                else if (lastLoadResult.Success && !string.IsNullOrEmpty(lastLoadResult.Html))
+                {
+                    var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                    if (article != null)
+                    {
+                        return (article, lastLoadResult.FetchMethod);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Layer 2 (Selenium) failed for {Url}, falling through to Layer 3", item.Url);
+            }
+        }
+
+        // Layer 3: If Selenium hit a bot challenge (resolved or not), retry headed with fresh navigation
+        if (!_seleniumDriverCrashed && lastLoadResult != null)
+        {
+            var isBotChallengeFailure = !lastLoadResult.Success &&
+                lastLoadResult.ErrorMessage?.Contains("Bot challenge", StringComparison.OrdinalIgnoreCase) == true;
+            var isBotChallengeContent = lastLoadResult.Success &&
+                !string.IsNullOrEmpty(lastLoadResult.Html) &&
+                PageLoader.IsBotChallengePage(lastLoadResult.Html);
+
+            if (isBotChallengeFailure || isBotChallengeContent)
+            {
+                try
+                {
+                    _browserSession.RestoreWindow();
+                    reportMethod?.Invoke("bot challenge \u2014 check browser");
+                    _logger.LogWarning(
+                        "Bot challenge detected, restoring browser window for user intervention: {Url}",
+                        item.Url);
+
+                    lastLoadResult = await _pageLoader.LoadAsync(
+                        new PageLoadRequest
+                        {
+                            Url = item.Url,
+                            Headless = false,
+                            ForceRefresh = true,
+                        },
+                        cancellationToken);
+                    lastFetchMethod = lastLoadResult.FetchMethod;
+
+                    if (IsDriverCrashFailure(lastLoadResult))
+                    {
+                        _seleniumDriverCrashed = true;
+                        _logger.LogWarning("Selenium driver crashed during bot challenge retry");
+                    }
+                    else if (lastLoadResult.Success && !string.IsNullOrEmpty(lastLoadResult.Html))
+                    {
+                        var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                        if (article != null)
+                        {
+                            return (article, lastLoadResult.FetchMethod);
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Layer 3 (bot challenge) failed for {Url}", item.Url);
+                }
+            }
+        }
+
+        return (null, lastFetchMethod);
     }
 
     private async Task<ExtractedArticle?> TryExtractArticleAsync(
@@ -377,32 +412,40 @@ internal sealed class ReadingListContentProvider
         string url,
         CancellationToken cancellationToken)
     {
-        var content = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
-        if (content == null || string.IsNullOrWhiteSpace(content.CleanedText))
-        {
-            return null;
-        }
-
-        var article = new ExtractedArticle
-        {
-            Title = content.Title,
-            CleanedText = content.CleanedText,
-            Author = content.Author,
-            Url = url,
-            WordCount = content.WordCount,
-            PublishedDate = content.PublishedDate,
-        };
-
-        // Persist extracted content so future invocations skip re-extraction
         try
         {
-            await _articleCache.PutAsync(url, article, cancellationToken);
+            var content = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+            if (content == null || string.IsNullOrWhiteSpace(content.CleanedText))
+            {
+                return null;
+            }
+
+            var article = new ExtractedArticle
+            {
+                Title = content.Title,
+                CleanedText = content.CleanedText,
+                Author = content.Author,
+                Url = url,
+                WordCount = content.WordCount,
+                PublishedDate = content.PublishedDate,
+            };
+
+            // Persist extracted content so future invocations skip re-extraction
+            try
+            {
+                await _articleCache.PutAsync(url, article, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Failed to cache article content for {Url}", url);
+            }
+
+            return article;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Failed to cache article content for {Url}", url);
+            _logger.LogWarning(ex, "Content extraction threw for {Url}", url);
+            return null;
         }
-
-        return article;
     }
 }

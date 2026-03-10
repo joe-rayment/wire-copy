@@ -77,93 +77,94 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
         }
 
-        // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
-        IReadOnlyList<ExtractedArticle> articles;
-        IReadOnlyList<ArticleFailure> extractionFailures;
-        if (_cachedArticles != null && _cachedCollectionName == collection.Name)
-        {
-            articles = _cachedArticles;
-            extractionFailures = _cachedExtractionFailures ?? [];
-            _cachedArticles = null;
-            _cachedExtractionFailures = null;
-            _cachedCollectionName = null;
-
-            _logger.LogInformation(
-                "Reusing {Count} articles from cache analysis phase", articles.Count);
-
-            progress?.Report(new PodcastProgress
-            {
-                Phase = PodcastPhase.CachingContent,
-                Message = "Articles loaded (cached from analysis)",
-                PercentComplete = 10,
-            });
-        }
-        else
-        {
-            progress?.Report(new PodcastProgress
-            {
-                Phase = PodcastPhase.CachingContent,
-                Message = "Loading articles...",
-                PercentComplete = 0,
-            });
-
-            articles = await _contentProvider.GetAllArticleContentAsync(
-                collection,
-                new Progress<ContentExtractionProgress>(p =>
-                    progress?.Report(new PodcastProgress
-                    {
-                        Phase = PodcastPhase.CachingContent,
-                        CurrentArticle = p.Current,
-                        TotalArticles = p.Total,
-                        ArticleTitle = p.Title,
-                        ExtractionMethod = p.ExtractionMethod,
-                        IsArticleComplete = p.IsCompleted,
-                        IsArticleSuccess = p.IsSuccess,
-                        PercentComplete = (int)(p.Current * 10.0 / p.Total),
-                    })),
-                cancellationToken);
-
-            extractionFailures = _contentProvider.LastExtractionFailures;
-        }
-
-        if (articles.Count == 0)
-        {
-            return PodcastResult.Failure(
-                "No readable articles found in the collection.",
-                failedArticleDetails: extractionFailures);
-        }
-
-        // Step 3: Estimate cost (accounting for cached articles) and check budget
-        var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
-            articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
-            cancellationToken);
-
-        var totalCost = cacheAnalysis.EstimatedCost;
-
-        if (totalCost > _ttsConfig.MaxBudgetUsd)
-        {
-            return PodcastResult.Failure(
-                $"Estimated cost ${totalCost:F4} exceeds budget ${_ttsConfig.MaxBudgetUsd:F2}. " +
-                $"Reduce articles or increase MaxBudgetUsd.",
-                failedArticleDetails: extractionFailures);
-        }
-
-        _logger.LogInformation(
-            "Estimated TTS cost: ${Cost:F4} for {Count} articles ({Cached} cached, {Uncached} need generation)",
-            totalCost,
-            articles.Count,
-            cacheAnalysis.CachedArticles,
-            cacheAnalysis.UncachedArticles);
-
-        // Step 4: Generate TTS audio for each article
-        var tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
-
+        // All pipeline state declared up-front so catch/finally blocks can access them
+        IReadOnlyList<ArticleFailure> extractionFailures = [];
         var segments = new List<ArticleAudioSegment>();
         var ttsFailures = new List<ArticleFailure>();
+        TempFileManager? tempFiles = null;
         var keepTempDir = false;
 
         try
         {
+            // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
+            IReadOnlyList<ExtractedArticle> articles;
+            if (_cachedArticles != null && _cachedCollectionName == collection.Name)
+            {
+                articles = _cachedArticles;
+                extractionFailures = _cachedExtractionFailures ?? [];
+                _cachedArticles = null;
+                _cachedExtractionFailures = null;
+                _cachedCollectionName = null;
+
+                _logger.LogInformation(
+                    "Reusing {Count} articles from cache analysis phase", articles.Count);
+
+                progress?.Report(new PodcastProgress
+                {
+                    Phase = PodcastPhase.CachingContent,
+                    Message = "Articles loaded (cached from analysis)",
+                    PercentComplete = 10,
+                });
+            }
+            else
+            {
+                progress?.Report(new PodcastProgress
+                {
+                    Phase = PodcastPhase.CachingContent,
+                    Message = "Loading articles...",
+                    PercentComplete = 0,
+                });
+
+                articles = await _contentProvider.GetAllArticleContentAsync(
+                    collection,
+                    new Progress<ContentExtractionProgress>(p =>
+                        progress?.Report(new PodcastProgress
+                        {
+                            Phase = PodcastPhase.CachingContent,
+                            CurrentArticle = p.Current,
+                            TotalArticles = p.Total,
+                            ArticleTitle = p.Title,
+                            ExtractionMethod = p.ExtractionMethod,
+                            IsArticleComplete = p.IsCompleted,
+                            IsArticleSuccess = p.IsSuccess,
+                            PercentComplete = (int)(p.Current * 10.0 / p.Total),
+                        })),
+                    cancellationToken);
+
+                extractionFailures = _contentProvider.LastExtractionFailures;
+            }
+
+            if (articles.Count == 0)
+            {
+                return PodcastResult.Failure(
+                    "No readable articles found in the collection.",
+                    failedArticleDetails: extractionFailures);
+            }
+
+            // Step 3: Estimate cost (accounting for cached articles) and check budget
+            var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
+                articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+                cancellationToken);
+
+            var totalCost = cacheAnalysis.EstimatedCost;
+
+            if (totalCost > _ttsConfig.MaxBudgetUsd)
+            {
+                return PodcastResult.Failure(
+                    $"Estimated cost ${totalCost:F4} exceeds budget ${_ttsConfig.MaxBudgetUsd:F2}. " +
+                    $"Reduce articles or increase MaxBudgetUsd.",
+                    failedArticleDetails: extractionFailures);
+            }
+
+            _logger.LogInformation(
+                "Estimated TTS cost: ${Cost:F4} for {Count} articles ({Cached} cached, {Uncached} need generation)",
+                totalCost,
+                articles.Count,
+                cacheAnalysis.CachedArticles,
+                cacheAnalysis.UncachedArticles);
+
+            // Step 4: Generate TTS audio for each article
+            tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
             for (var i = 0; i < articles.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -386,7 +387,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             if (!keepTempDir)
             {
                 // On failure/cancellation, clean up temp directory
-                tempFiles.Dispose();
+                tempFiles?.Dispose();
             }
 
             // Audio segment files are managed by the TTS cache — do not delete them here.
