@@ -57,6 +57,7 @@ public static class PodcastDependencyInjection
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IPodcastPublisher, PodcastPublisher>();
         services.AddSingleton<ITtsAudioCache, FileSystemTtsAudioCache>();
+        services.AddSingleton<IArticleContentCache, ArticleContentCache>();
         services.AddSingleton<ReadingListContentProvider>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
 

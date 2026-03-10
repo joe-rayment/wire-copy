@@ -9,6 +9,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Podcast.Cache;
 
 namespace TermReader.Infrastructure.Podcast;
 
@@ -27,6 +28,7 @@ internal sealed class ReadingListContentProvider
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
+    private readonly IArticleContentCache _articleCache;
     private readonly ILogger<ReadingListContentProvider> _logger;
     private List<ArticleFailure> _lastFailures = [];
 
@@ -37,6 +39,7 @@ internal sealed class ReadingListContentProvider
         IPreloadService preloadService,
         IPageCache pageCache,
         IBrowserSession browserSession,
+        IArticleContentCache articleCache,
         ILogger<ReadingListContentProvider> logger)
     {
         _pageLoader = pageLoader;
@@ -45,6 +48,7 @@ internal sealed class ReadingListContentProvider
         _preloadService = preloadService;
         _pageCache = pageCache;
         _browserSession = browserSession;
+        _articleCache = articleCache;
         _logger = logger;
     }
 
@@ -195,6 +199,22 @@ internal sealed class ReadingListContentProvider
         Action<string>? reportMethod,
         CancellationToken cancellationToken)
     {
+        // Check persistent article content cache before any network calls
+        try
+        {
+            var cachedArticle = await _articleCache.TryGetAsync(item.Url, cancellationToken);
+            if (cachedArticle != null)
+            {
+                reportMethod?.Invoke("content cache");
+                _logger.LogDebug("Using cached article content for {Url}", item.Url);
+                return (cachedArticle, FetchMethod.Cached);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Article content cache read failed for {Url}, falling through to extraction", item.Url);
+        }
+
         // Wait for any in-flight preload before fetching
         if (!_pageCache.Contains(item.Url))
         {
@@ -306,7 +326,7 @@ internal sealed class ReadingListContentProvider
             return null;
         }
 
-        return new ExtractedArticle
+        var article = new ExtractedArticle
         {
             Title = content.Title,
             CleanedText = content.CleanedText,
@@ -315,5 +335,17 @@ internal sealed class ReadingListContentProvider
             WordCount = content.WordCount,
             PublishedDate = content.PublishedDate,
         };
+
+        // Persist extracted content so future invocations skip re-extraction
+        try
+        {
+            await _articleCache.PutAsync(url, article, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to cache article content for {Url}", url);
+        }
+
+        return article;
     }
 }

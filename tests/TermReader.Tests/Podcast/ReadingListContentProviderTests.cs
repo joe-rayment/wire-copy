@@ -14,6 +14,7 @@ using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
+using TermReader.Infrastructure.Podcast.Cache;
 using Xunit;
 
 namespace TermReader.Tests.Podcast;
@@ -26,6 +27,7 @@ public class ReadingListContentProviderTests
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
+    private readonly IArticleContentCache _articleCache;
     private readonly ReadingListContentProvider _provider;
 
     public ReadingListContentProviderTests()
@@ -35,6 +37,7 @@ public class ReadingListContentProviderTests
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
+        _articleCache = Substitute.For<IArticleContentCache>();
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
@@ -45,6 +48,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
+            _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
     }
 
@@ -215,6 +219,186 @@ public class ReadingListContentProviderTests
 
     #endregion
 
+    #region Article Content Cache
+
+    [Fact]
+    public async Task LoadAndExtract_ReturnsFromContentCache_WhenCacheHit()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        var cachedArticle = new ExtractedArticle
+        {
+            Title = "Cached Article",
+            CleanedText = "Cached text content.",
+            Url = url,
+            WordCount = 3,
+        };
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(cachedArticle);
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        results[0].Title.Should().Be("Cached Article");
+        results[0].CleanedText.Should().Be("Cached text content.");
+        // Should NOT have called any page loading or extraction
+        await _pageLoader.DidNotReceive().LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+        await _contentExtractor.DidNotReceive().ExtractAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _preloadService.DidNotReceive().WaitForInFlightAsync(
+            Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_SkipsNetworkDelay_WhenContentCacheHit()
+    {
+        var collection = CreateCollection(
+            "https://example.com/article1",
+            "https://example.com/article2");
+
+        _articleCache.TryGetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Cached",
+                CleanedText = "Text.",
+                Url = "https://example.com",
+                WordCount = 1,
+            });
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await _provider.GetAllArticleContentAsync(collection);
+        sw.Stop();
+
+        // Both articles should be served from content cache with no 3s network delay
+        sw.ElapsedMilliseconds.Should().BeLessThan(2000);
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_CachesExtractedArticle_OnSuccessfulExtraction()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        await _articleCache.Received(1).PutAsync(
+            url,
+            Arg.Is<ExtractedArticle>(a => a.Title == "Test Article"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_FallsThrough_WhenContentCacheMiss()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        results[0].Title.Should().Be("Test Article");
+        await _pageLoader.Received(1).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_ReportsContentCacheMethod_WhenCacheHit()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Cached",
+                CleanedText = "Text.",
+                Url = url,
+                WordCount = 1,
+            });
+
+        var progressReports = new List<ContentExtractionProgress>();
+        var progress = new Progress<ContentExtractionProgress>(p => progressReports.Add(p));
+
+        await _provider.GetAllArticleContentAsync(collection, progress);
+
+        // Allow async progress reports to complete
+        await Task.Delay(100);
+
+        progressReports.Should().Contain(p =>
+            p.ExtractionMethod != null &&
+            p.ExtractionMethod.Contains("content cache", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_FallsThrough_WhenContentCacheThrows()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns<ExtractedArticle?>(_ => throw new InvalidOperationException("Corrupt cache"));
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1, "cache read failure should not prevent extraction");
+        results[0].Title.Should().Be("Test Article");
+        await _pageLoader.Received(1).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_StillReturnsArticle_WhenCachePutThrows()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _articleCache.PutAsync(url, Arg.Any<ExtractedArticle>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new IOException("Disk full"));
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1, "cache write failure should not prevent article return");
+        results[0].Title.Should().Be("Test Article");
+    }
+
+    #endregion
+
     #region Layer 3 Bot Challenge Retry
 
     [Fact]
@@ -282,6 +466,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
+            _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
         _pageCache.Contains(url).Returns(false);
