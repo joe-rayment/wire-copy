@@ -164,6 +164,12 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                     CloudStorageValidationErrorType.CredentialsInvalid,
                     "Invalid credentials. Check your service account key or application default credentials.");
             }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("credentials", StringComparison.OrdinalIgnoreCase))
+            {
+                return CloudStorageValidationResult.Invalid(
+                    CloudStorageValidationErrorType.CredentialsInvalid,
+                    "No GCP credentials found. Set up Application Default Credentials or configure a service account key.");
+            }
 
             // Step 2: Bucket read - verify bucket exists (or create)
             try
