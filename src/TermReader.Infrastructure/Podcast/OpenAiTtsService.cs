@@ -136,9 +136,21 @@ internal sealed class OpenAiTtsService : ITtsService
             }
         }
 
-        var concatenated = allAudioSegments.Count == 1
-            ? allAudioSegments[0]
-            : await ConcatenateWithFfmpegAsync(allAudioSegments, cancellationToken);
+        byte[] concatenated;
+        try
+        {
+            concatenated = allAudioSegments.Count == 1
+                ? allAudioSegments[0]
+                : await ConcatenateWithFfmpegAsync(allAudioSegments, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "FFmpeg concatenation failed: {Message}", ex.Message);
+            return TtsGenerationResult.Failure(
+                $"Audio concatenation failed: {ex.Message}",
+                totalCharsProcessed,
+                chunks.Count);
+        }
 
         _logger.LogInformation(
             "TTS generation complete for '{Title}': {Chars} chars, {Chunks} chunks, {Bytes} bytes",
@@ -214,13 +226,6 @@ internal sealed class OpenAiTtsService : ITtsService
     public void SetApiKeyOverride(string apiKey)
     {
         _apiKeyOverride = apiKey;
-    }
-
-    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
-    {
-        public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
-
-        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
     }
 
     #pragma warning disable OPENAI001 // Experimental voices
@@ -429,5 +434,12 @@ internal sealed class OpenAiTtsService : ITtsService
             "pcm" => ".pcm",
             _ => ".m4a",
         };
+    }
+
+    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
+    {
+        public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
+
+        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
     }
 }

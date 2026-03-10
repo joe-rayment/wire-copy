@@ -125,7 +125,15 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
             var outputDir = Path.GetDirectoryName(request.OutputPath);
             if (!string.IsNullOrEmpty(outputDir))
             {
-                Directory.CreateDirectory(outputDir);
+                try
+                {
+                    Directory.CreateDirectory(outputDir);
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+                {
+                    return AssemblyResult.Failure(
+                        $"Cannot create output directory '{outputDir}': {ex.Message}");
+                }
             }
 
             _logger.LogInformation("Concatenating {Count} segments into M4B...", segmentPaths.Count);
@@ -227,15 +235,26 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
             track.Year = metadata.PublishedDate.Value.Year;
         }
 
-        // Embed cover art if provided
-        if (!string.IsNullOrEmpty(metadata.CoverArtPath) && File.Exists(metadata.CoverArtPath))
+        // Embed cover art if provided (with size limit and TOCTOU-safe read)
+        if (!string.IsNullOrEmpty(metadata.CoverArtPath))
         {
-            var pictureData = File.ReadAllBytes(metadata.CoverArtPath);
-
-            track.EmbeddedPictures.Add(PictureInfo.fromBinaryData(
-                pictureData,
-                PictureInfo.PIC_TYPE.Front,
-                ATL.AudioData.MetaDataIOFactory.TagType.NATIVE));
+            try
+            {
+                const long maxCoverArtBytes = 10 * 1024 * 1024; // 10 MB
+                var coverInfo = new FileInfo(metadata.CoverArtPath);
+                if (coverInfo.Exists && coverInfo.Length <= maxCoverArtBytes)
+                {
+                    var pictureData = File.ReadAllBytes(metadata.CoverArtPath);
+                    track.EmbeddedPictures.Add(PictureInfo.fromBinaryData(
+                        pictureData,
+                        PictureInfo.PIC_TYPE.Front,
+                        ATL.AudioData.MetaDataIOFactory.TagType.NATIVE));
+                }
+            }
+            catch (Exception)
+            {
+                // Cover art is optional — skip on any IO error
+            }
         }
 
         if (!track.Save())
