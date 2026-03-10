@@ -21,6 +21,7 @@ internal sealed class ReadingListContentProvider
 {
     private const int NetworkFetchDelayMs = 3000;
     private static readonly TimeSpan InFlightWaitTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan PerArticleTimeout = TimeSpan.FromSeconds(60);
 
     private readonly IPageLoader _pageLoader;
     private readonly IReadableContentExtractor _contentExtractor;
@@ -31,6 +32,7 @@ internal sealed class ReadingListContentProvider
     private readonly IArticleContentCache _articleCache;
     private readonly ILogger<ReadingListContentProvider> _logger;
     private List<ArticleFailure> _lastFailures = [];
+    private bool _seleniumDriverCrashed;
 
     public ReadingListContentProvider(
         IPageLoader pageLoader,
@@ -76,6 +78,7 @@ internal sealed class ReadingListContentProvider
 
         var items = collection.Items;
         _lastFailures = [];
+        _seleniumDriverCrashed = false;
 
         if (items.Count == 0)
         {
@@ -113,7 +116,9 @@ internal sealed class ReadingListContentProvider
 
             try
             {
-                var (article, fetchMethod) = await LoadAndExtractAsync(item, reportMethod, cancellationToken);
+                using var articleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                articleCts.CancelAfter(PerArticleTimeout);
+                var (article, fetchMethod) = await LoadAndExtractAsync(item, reportMethod, articleCts.Token);
 
                 progress?.Report(new ContentExtractionProgress
                 {
@@ -155,6 +160,29 @@ internal sealed class ReadingListContentProvider
                     await Task.Delay(NetworkFetchDelayMs, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Per-article timeout — log and continue to next article
+                progress?.Report(new ContentExtractionProgress
+                {
+                    Current = i + 1,
+                    Total = items.Count,
+                    Title = item.Title,
+                    IsCompleted = true,
+                });
+
+                _logger.LogWarning(
+                    "Article extraction timed out for {Index}/{Total}: '{Title}'",
+                    i + 1,
+                    items.Count,
+                    item.Title);
+                _lastFailures.Add(new ArticleFailure
+                {
+                    Title = item.Title,
+                    Url = item.Url,
+                    Reason = $"Extraction timed out after {PerArticleTimeout.TotalSeconds}s",
+                });
+            }
             catch (OperationCanceledException)
             {
                 throw;
@@ -192,6 +220,21 @@ internal sealed class ReadingListContentProvider
             collection.Name);
 
         return results;
+    }
+
+    private static bool IsDriverCrashFailure(PageLoadResult result)
+    {
+        if (result.Success)
+        {
+            return false;
+        }
+
+        var error = result.ErrorMessage;
+        return error != null &&
+            (error.Contains("session is no longer available", StringComparison.OrdinalIgnoreCase) ||
+             error.Contains("session not created", StringComparison.OrdinalIgnoreCase) ||
+             error.Contains("unable to connect", StringComparison.OrdinalIgnoreCase) ||
+             error.Contains("disconnected", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<(ExtractedArticle? Article, FetchMethod FetchMethod)> LoadAndExtractAsync(
@@ -251,7 +294,8 @@ internal sealed class ReadingListContentProvider
         }
 
         // Layer 2: If HTTP/cached returned no content (JS shell), retry with Selenium
-        if (loadResult.FetchMethod != FetchMethod.Selenium)
+        // Skip Selenium layers if the driver has already crashed during this extraction run
+        if (loadResult.FetchMethod != FetchMethod.Selenium && !_seleniumDriverCrashed)
         {
             reportMethod?.Invoke("Selenium");
             _logger.LogInformation(
@@ -268,7 +312,12 @@ internal sealed class ReadingListContentProvider
                 },
                 cancellationToken);
 
-            if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
+            if (IsDriverCrashFailure(loadResult))
+            {
+                _seleniumDriverCrashed = true;
+                _logger.LogWarning("Selenium driver crashed, skipping browser layers for remaining articles");
+            }
+            else if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
             {
                 article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
                 if (article != null)
@@ -279,35 +328,43 @@ internal sealed class ReadingListContentProvider
         }
 
         // Layer 3: If Selenium hit a bot challenge (resolved or not), retry headed with fresh navigation
-        var isBotChallengeFailure = !loadResult.Success &&
-            loadResult.ErrorMessage?.Contains("Bot challenge", StringComparison.OrdinalIgnoreCase) == true;
-        var isBotChallengeContent = loadResult.Success &&
-            !string.IsNullOrEmpty(loadResult.Html) &&
-            PageLoader.IsBotChallengePage(loadResult.Html);
-
-        if (isBotChallengeFailure || isBotChallengeContent)
+        if (!_seleniumDriverCrashed)
         {
-            _browserSession.RestoreWindow();
-            reportMethod?.Invoke("bot challenge \u2014 check browser");
-            _logger.LogWarning(
-                "Bot challenge detected, restoring browser window for user intervention: {Url}",
-                item.Url);
+            var isBotChallengeFailure = !loadResult.Success &&
+                loadResult.ErrorMessage?.Contains("Bot challenge", StringComparison.OrdinalIgnoreCase) == true;
+            var isBotChallengeContent = loadResult.Success &&
+                !string.IsNullOrEmpty(loadResult.Html) &&
+                PageLoader.IsBotChallengePage(loadResult.Html);
 
-            loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest
-                {
-                    Url = item.Url,
-                    Headless = false,
-                    ForceRefresh = true,
-                },
-                cancellationToken);
-
-            if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
+            if (isBotChallengeFailure || isBotChallengeContent)
             {
-                article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
-                if (article != null)
+                _browserSession.RestoreWindow();
+                reportMethod?.Invoke("bot challenge \u2014 check browser");
+                _logger.LogWarning(
+                    "Bot challenge detected, restoring browser window for user intervention: {Url}",
+                    item.Url);
+
+                loadResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest
+                    {
+                        Url = item.Url,
+                        Headless = false,
+                        ForceRefresh = true,
+                    },
+                    cancellationToken);
+
+                if (IsDriverCrashFailure(loadResult))
                 {
-                    return (article, loadResult.FetchMethod);
+                    _seleniumDriverCrashed = true;
+                    _logger.LogWarning("Selenium driver crashed during bot challenge retry");
+                }
+                else if (loadResult.Success && !string.IsNullOrEmpty(loadResult.Html))
+                {
+                    article = await TryExtractArticleAsync(loadResult, item.Url, cancellationToken);
+                    if (article != null)
+                    {
+                        return (article, loadResult.FetchMethod);
+                    }
                 }
             }
         }

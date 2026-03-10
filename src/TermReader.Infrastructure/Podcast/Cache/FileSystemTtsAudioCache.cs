@@ -22,6 +22,12 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
     private const int ConfigHashLength = 8;
     private const decimal CostPerMillionChars = 15.0m;
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     private readonly string _basePath;
     private readonly string _audioDir;
     private readonly string _indexPath;
@@ -201,6 +207,22 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 ArticleStatuses = statuses,
             };
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to analyze collection cache status");
+            return new CacheAnalysis
+            {
+                TotalArticles = articles.Count,
+                CachedArticles = 0,
+                UncachedArticles = articles.Count,
+                EstimatedCost = 0,
+                ArticleStatuses = [],
+            };
+        }
         finally
         {
             _lock.Release();
@@ -219,6 +241,15 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 EntryCount = _index.Count,
                 TotalSizeBytes = _index.Values.Sum(e => e.FileSizeBytes),
             };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get cache stats");
+            return new TtsCacheStats { EntryCount = 0, TotalSizeBytes = 0 };
         }
         finally
         {
@@ -274,6 +305,14 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
             await SaveIndexAsync(cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to evict cache entries");
+        }
         finally
         {
             _lock.Release();
@@ -297,10 +336,48 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
             _logger.LogInformation("Cleared all cache entries");
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear cache");
+        }
         finally
         {
             _lock.Release();
         }
+    }
+
+    private static string ComputeHash(string input)
+    {
+        // Use IncrementalHash to avoid allocating a byte[] for the entire input.
+        // Process the string in chunks to bound memory usage for large articles.
+        const int chunkSize = 4096;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var encoder = Encoding.UTF8.GetEncoder();
+        var charSpan = input.AsSpan();
+        Span<byte> buffer = stackalloc byte[chunkSize * 4]; // max 4 bytes per UTF-8 char
+
+        while (charSpan.Length > 0)
+        {
+            var charsToProcess = Math.Min(charSpan.Length, chunkSize);
+            var chunk = charSpan[..charsToProcess];
+            var isFinal = charsToProcess == charSpan.Length;
+            var bytesWritten = encoder.GetBytes(chunk, buffer, isFinal);
+            hash.AppendData(buffer[..bytesWritten]);
+            charSpan = charSpan[charsToProcess..];
+        }
+
+        Span<byte> hashBytes = stackalloc byte[32];
+        hash.GetHashAndReset(hashBytes);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static decimal EstimateCost(string text)
+    {
+        return text.Length * CostPerMillionChars / 1_000_000m;
     }
 
     private async Task EnsureIndexLoadedAsync(CancellationToken cancellationToken)
@@ -350,17 +427,6 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         Directory.CreateDirectory(_audioDir);
     }
 
-    private static string ComputeHash(string input)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
-
-    private static decimal EstimateCost(string text)
-    {
-        return text.Length * CostPerMillionChars / 1_000_000m;
-    }
-
     private void TryDeleteFile(string path)
     {
         try
@@ -376,25 +442,27 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         }
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     /// <summary>
     /// Internal index entry with additional metadata not exposed in the public DTO.
     /// </summary>
     private sealed class CacheIndexEntry
     {
         public string CacheKey { get; set; } = string.Empty;
+
         public string AudioFilePath { get; set; } = string.Empty;
+
         public long FileSizeBytes { get; set; }
+
         public DateTime CachedAtUtc { get; set; }
+
         public DateTime LastAccessedAtUtc { get; set; }
+
         public string ContentHash { get; set; } = string.Empty;
+
         public string TtsConfigHash { get; set; } = string.Empty;
+
         public string Url { get; set; } = string.Empty;
+
         public string Title { get; set; } = string.Empty;
     }
 }

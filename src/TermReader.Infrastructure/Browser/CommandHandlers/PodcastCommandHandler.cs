@@ -308,7 +308,11 @@ internal static class PodcastCommandHandler
                         await analysisCts.CancelAsync();
                         try
                         {
-                            await analysisTask;
+                            var finishedTask = await Task.WhenAny(analysisTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                            if (finishedTask == analysisTask)
+                            {
+                                await analysisTask;
+                            }
                         }
                         catch (OperationCanceledException)
                         {
@@ -359,11 +363,27 @@ internal static class PodcastCommandHandler
                 await analysisCts.CancelAsync();
                 try
                 {
-                    await analysisTask;
+                    // Use a timeout so we don't hang if the task ignores cancellation
+                    // (e.g. stuck in a synchronous Selenium call)
+                    var completed = await Task.WhenAny(analysisTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                    if (completed == analysisTask)
+                    {
+                        await analysisTask;
+                    }
+                    else
+                    {
+                        ctx.Logger.LogWarning("Analysis task did not respond to cancellation within 5s, detaching");
+                        _ = analysisTask.ContinueWith(
+                            static _ => { }, TaskContinuationOptions.OnlyOnFaulted);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
                     // Expected — task cancelled during cleanup
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Error awaiting analysis task during cleanup");
                 }
             }
         }
