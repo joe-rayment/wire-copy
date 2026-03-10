@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using OpenQA.Selenium;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Configuration;
@@ -25,9 +26,10 @@ public class PageLoaderTests
         _browserSession = Substitute.For<IBrowserSession>();
     }
 
-    private PageLoader CreateSut(HttpClient? httpClient = null)
+    private PageLoader CreateSut(HttpClient? httpClient = null, BrowserConfiguration? config = null)
     {
-        return new PageLoader(_browserConfig, _logger, _browserSession, httpClient);
+        var options = config != null ? Options.Create(config) : _browserConfig;
+        return new PageLoader(options, _logger, _browserSession, httpClient);
     }
 
     private static HttpClient CreateMockHttpClient(HttpStatusCode statusCode, string content)
@@ -408,6 +410,143 @@ public class PageLoaderTests
         // Assert
         result.Success.Should().BeTrue();
         result.Metadata!.Description.Should().Be("It's a great day & more");
+    }
+
+    [Fact]
+    public async Task BrowserFetch_BotChallengeResolves_ReturnsResolvedContent()
+    {
+        // Arrange - Fast polling for test speed
+        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 5000 };
+        var sut = CreateSut(httpClient: null, config: config);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
+        var resolvedHtml = "<html><head><title>Real Page</title></head><body><p>Real content here</p></body></html>";
+
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+
+        // First call returns challenge, second returns resolved
+        var callCount = 0;
+        driver.PageSource.Returns(_ =>
+        {
+            callCount++;
+            return callCount <= 1 ? challengeHtml : resolvedHtml;
+        });
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should have polled and returned the resolved content
+        result.Success.Should().BeTrue();
+        result.Html.Should().Be(resolvedHtml);
+        result.Metadata!.Title.Should().Be("Real Page");
+    }
+
+    [Fact]
+    public async Task BrowserFetch_BotChallengeNeverResolves_ReturnsFailure()
+    {
+        // Arrange - Very short max wait so the test completes quickly
+        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 100 };
+        var sut = CreateSut(httpClient: null, config: config);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
+
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+        driver.PageSource.Returns(challengeHtml);
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should return failure after polling times out
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Bot challenge");
+    }
+
+    [Fact]
+    public async Task BrowserFetch_BotChallengePolling_WebDriverException_ReturnsFailure()
+    {
+        // Arrange - Browser crashes during polling
+        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 5000 };
+        var sut = CreateSut(httpClient: null, config: config);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
+
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+
+        // First call returns challenge, second throws (browser crash)
+        var callCount = 0;
+        driver.PageSource.Returns(_ =>
+        {
+            callCount++;
+            if (callCount <= 1)
+            {
+                return challengeHtml;
+            }
+
+            throw new OpenQA.Selenium.WebDriverException("Session lost");
+        });
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should return failure when browser crashes during polling
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Bot challenge");
+    }
+
+    [Fact]
+    public async Task BrowserFetch_NoBotChallenge_ReturnsImmediately()
+    {
+        // Arrange
+        var sut = CreateSut(httpClient: null);
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        var normalHtml = "<html><head><title>Normal Page</title></head><body><p>Content</p></body></html>";
+
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+        driver.PageSource.Returns(normalHtml);
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should return immediately without polling
+        result.Success.Should().BeTrue();
+        result.Html.Should().Be(normalHtml);
+        result.Metadata!.Title.Should().Be("Normal Page");
     }
 
     /// <summary>

@@ -374,7 +374,19 @@ public class PageLoader : IPageLoader
 
             if (IsBotChallengePage(html))
             {
-                _logger.LogWarning("Bot challenge page detected after browser load: {Url}", request.Url);
+                _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
+                var resolved = await PollForChallengeResolutionAsync(driver, request.Url, cancellationToken);
+                if (resolved != null)
+                {
+                    html = resolved;
+                    finalUrl = driver.Url;
+                    _logger.LogInformation("Bot challenge resolved after polling: {Url}", finalUrl);
+                }
+                else
+                {
+                    _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
+                    return PageLoadResult.Failure("Bot challenge could not be resolved");
+                }
             }
 
             var metadata = ExtractMetadata(html, finalUrl);
@@ -387,6 +399,44 @@ public class PageLoader : IPageLoader
             _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
             return PageLoadResult.Failure($"Browser error: {ex.Message}");
         }
+    }
+
+    private async Task<string?> PollForChallengeResolutionAsync(
+        IWebDriver driver,
+        string url,
+        CancellationToken cancellationToken)
+    {
+        var pollIntervalMs = _browserConfig.BotChallengePollIntervalMs;
+        var maxWaitMs = _browserConfig.BotChallengeMaxWaitMs;
+        var sw = Stopwatch.StartNew();
+
+        while (sw.ElapsedMilliseconds < maxWaitMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await Task.Delay(pollIntervalMs, cancellationToken);
+
+            try
+            {
+                var currentHtml = driver.PageSource;
+                if (!IsBotChallengePage(currentHtml))
+                {
+                    return currentHtml;
+                }
+
+                _logger.LogDebug(
+                    "Bot challenge still present after {ElapsedMs}ms, continuing to poll: {Url}",
+                    sw.ElapsedMilliseconds,
+                    url);
+            }
+            catch (WebDriverException ex)
+            {
+                _logger.LogWarning(ex, "Error polling page source during challenge resolution: {Url}", url);
+                return null;
+            }
+        }
+
+        return null;
     }
 
     private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)
