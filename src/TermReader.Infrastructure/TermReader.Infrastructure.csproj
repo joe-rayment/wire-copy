@@ -47,6 +47,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="TermReader.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -54,8 +55,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AnalysisLevel>latest</AnalysisLevel>
-    <!-- Disable code style enforcement in build to prevent warnings from failing build -->
-    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
