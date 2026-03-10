@@ -298,6 +298,24 @@ internal static class PodcastCommandHandler
         string? feedUrl = null;
         string? feedStatusNote = null;
 
+        // If bucket was pre-loaded from UserSettingsStore, validate and bootstrap
+        // to populate feedUrl with the real URL (otherwise it stays null).
+        if (isGcsConfigured)
+        {
+            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+
+            if (success)
+            {
+                feedUrl = url;
+                feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+            }
+            else if (error != null)
+            {
+                bucketError = error;
+            }
+        }
+
         while (!ct.IsCancellationRequested)
         {
             var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
