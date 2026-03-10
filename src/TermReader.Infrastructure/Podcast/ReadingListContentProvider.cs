@@ -26,6 +26,7 @@ internal sealed class ReadingListContentProvider
     private readonly BrowserConfiguration _browserConfig;
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
+    private readonly IBrowserSession _browserSession;
     private readonly ILogger<ReadingListContentProvider> _logger;
     private List<ArticleFailure> _lastFailures = [];
 
@@ -35,6 +36,7 @@ internal sealed class ReadingListContentProvider
         IOptions<BrowserConfiguration> browserConfig,
         IPreloadService preloadService,
         IPageCache pageCache,
+        IBrowserSession browserSession,
         ILogger<ReadingListContentProvider> logger)
     {
         _pageLoader = pageLoader;
@@ -42,6 +44,7 @@ internal sealed class ReadingListContentProvider
         _browserConfig = browserConfig.Value;
         _preloadService = preloadService;
         _pageCache = pageCache;
+        _browserSession = browserSession;
         _logger = logger;
     }
 
@@ -264,9 +267,10 @@ internal sealed class ReadingListContentProvider
 
         if (isBotChallengeFailure || isBotChallengeContent)
         {
-            reportMethod?.Invoke("headed");
+            _browserSession.RestoreWindow();
+            reportMethod?.Invoke("bot challenge \u2014 check browser");
             _logger.LogWarning(
-                "Bot challenge detected, retrying with headed browser: {Url}",
+                "Bot challenge detected, restoring browser window for user intervention: {Url}",
                 item.Url);
 
             loadResult = await _pageLoader.LoadAsync(
