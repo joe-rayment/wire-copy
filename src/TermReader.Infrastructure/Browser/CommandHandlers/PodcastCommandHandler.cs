@@ -108,18 +108,12 @@ internal static class PodcastCommandHandler
             }
         }
 
-        // Pre-flight cache analysis for cost estimation
+        // Pre-flight cache analysis for cost estimation (with progress UI)
         CacheAnalysis? cacheAnalysis = null;
         if (ttsService.IsConfigured)
         {
-            try
-            {
-                cacheAnalysis = await orchestrator.AnalyzeCacheStatusAsync(collection, ct);
-            }
-            catch (Exception ex)
-            {
-                ctx.Logger.LogWarning(ex, "Cache analysis failed, continuing without it");
-            }
+            cacheAnalysis = await ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct);
+            options = ctx.GetCurrentRenderOptions();
         }
 
         // Show cache-wait screen if preloading is still in progress
@@ -175,6 +169,204 @@ internal static class PodcastCommandHandler
 
         await ShowCompletionScreenAsync(ctx, options, result, ct);
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    /// <summary>
+    /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
+    /// for cache/cost analysis. Returns null if the user cancels or the analysis fails.
+    /// </summary>
+    private static async Task<CacheAnalysis?> ShowCacheAnalysisScreenAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Domain.Entities.Collections.Collection collection,
+        IPodcastOrchestrator orchestrator,
+        CancellationToken ct)
+    {
+        var articleCount = collection.Items.Count;
+        var statuses = new ArticleStatus[articleCount];
+        for (var i = 0; i < articleCount; i++)
+        {
+            statuses[i] = new ArticleStatus
+            {
+                Title = collection.Items[i].Title,
+                State = ArticleState.Pending,
+            };
+        }
+
+        var animFrame = 0;
+
+        var progress = new Progress<ContentExtractionProgress>(p =>
+        {
+            if (p.Current < 1 || p.Current > articleCount)
+            {
+                return;
+            }
+
+            var idx = p.Current - 1;
+            if (p.IsCompleted)
+            {
+                statuses[idx].State = p.IsSuccess ? ArticleState.Completed : ArticleState.Failed;
+                statuses[idx].Method = null;
+            }
+            else
+            {
+                statuses[idx].State = ArticleState.Processing;
+                statuses[idx].Method = p.ExtractionMethod;
+            }
+        });
+
+        using var analysisCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var analysisTask = orchestrator.AnalyzeCacheStatusAsync(collection, progress, analysisCts.Token);
+        Task<NavigationCommand>? pendingKeyTask = null;
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+                var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+                helpers.Clear();
+
+                var width = Math.Max(20, options.TerminalWidth - 2);
+                RenderBox(helpers, palette, "Analyzing Articles", width);
+                helpers.WriteLine();
+
+                var completedCount = statuses.Count(s => s.State is ArticleState.Completed or ArticleState.Failed);
+                var dots = AnimationFrames[animFrame % AnimationFrames.Length];
+                helpers.WriteLine(
+                    $"  {palette.PrimaryText.AnsiFg}{completedCount}{Reset}" +
+                    $"{palette.SecondaryText.AnsiFg} of {articleCount} analyzed{dots}{Reset}");
+                helpers.WriteLine();
+
+                var maxArticleLines = Math.Max(1, options.TerminalHeight - helpers.LinesWritten - 4);
+                var displayCount = Math.Min(articleCount, maxArticleLines);
+                var maxTitleLen = Math.Max(10, width - 10);
+
+                for (var i = 0; i < displayCount; i++)
+                {
+                    var status = statuses[i];
+                    var displayTitle = RenderHelpers.TruncateText(status.Title, maxTitleLen);
+                    var methodSuffix = status.Method != null
+                        ? $" {palette.SecondaryText.AnsiFg}({status.Method}){Reset}"
+                        : string.Empty;
+
+                    var line = status.State switch
+                    {
+                        ArticleState.Completed =>
+                            $"  {palette.PromptFg.AnsiFg}\u2713{Reset} {displayTitle}",
+                        ArticleState.Processing =>
+                            $"  {palette.HeaderTitleFg.AnsiFg}\u21bb{Reset} {displayTitle}" +
+                            $"{methodSuffix}" +
+                            $"{palette.SecondaryText.AnsiFg}{AnimationFrames[animFrame]}{Reset}",
+                        ArticleState.Failed =>
+                            $"  {palette.ErrorFg.AnsiFg}\u2717{Reset} {displayTitle}",
+                        _ =>
+                            $"  {palette.SecondaryText.AnsiFg}  {displayTitle}{Reset}",
+                    };
+
+                    helpers.WriteLine(line);
+                }
+
+                if (articleCount > displayCount)
+                {
+                    helpers.WriteLine(
+                        $"  {palette.SecondaryText.AnsiFg}... and {articleCount - displayCount} more{Reset}");
+                }
+
+                helpers.WriteLine();
+                helpers.WriteLine(
+                    $"  {palette.PrimaryText.AnsiFg}Esc{Reset}{palette.SecondaryText.AnsiFg}:skip{Reset}");
+                helpers.ClearRemainingLines();
+
+                pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+                var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                Task completed;
+                try
+                {
+                    var tickTask = Task.Delay(AnimationIntervalMs, tickCts.Token);
+                    completed = await Task.WhenAny(pendingKeyTask, analysisTask, tickTask);
+                    await tickCts.CancelAsync();
+                }
+                finally
+                {
+                    tickCts.Dispose();
+                }
+
+                if (completed == pendingKeyTask)
+                {
+                    var command = await pendingKeyTask;
+                    pendingKeyTask = null;
+
+                    if (command.Type == CommandType.TerminalResized)
+                    {
+                        options = ctx.GetCurrentRenderOptions();
+                        continue;
+                    }
+
+                    if (command.Type is CommandType.GoBack or CommandType.Quit)
+                    {
+                        await analysisCts.CancelAsync();
+                        try
+                        {
+                            await analysisTask;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Expected — user skipped analysis
+                        }
+
+                        return null;
+                    }
+                }
+                else if (completed == analysisTask)
+                {
+                    break;
+                }
+                else
+                {
+                    animFrame = (animFrame + 1) % AnimationFrames.Length;
+                }
+            }
+
+            if (analysisTask.IsCompleted)
+            {
+                try
+                {
+                    return await analysisTask;
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Cache analysis failed, continuing without it");
+                    return null;
+                }
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Cache analysis screen failed");
+            return null;
+        }
+        finally
+        {
+            if (!analysisTask.IsCompleted)
+            {
+                await analysisCts.CancelAsync();
+                try
+                {
+                    await analysisTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected — task cancelled during cleanup
+                }
+            }
+        }
     }
 
     /// <summary>

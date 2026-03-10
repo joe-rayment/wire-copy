@@ -395,13 +395,15 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
     public async Task<CacheAnalysis> AnalyzeCacheStatusAsync(
         Collection collection,
+        IProgress<ContentExtractionProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(collection);
 
         var articles = await _contentProvider.GetAllArticleContentAsync(
             collection,
-            cancellationToken: cancellationToken);
+            progress,
+            cancellationToken);
 
         // Cache for reuse by GeneratePodcastAsync to avoid double extraction
         _cachedArticles = articles;
