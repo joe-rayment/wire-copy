@@ -28,9 +28,11 @@ public interface IPodcastOrchestrator
     /// Used for pre-flight cost estimation on the confirmation screen.
     /// </summary>
     /// <param name="collection">The reading list collection to analyze.</param>
+    /// <param name="progress">Optional progress callback for UI updates during content extraction.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Cache analysis with per-article status and cost estimates.</returns>
     Task<CacheAnalysis> AnalyzeCacheStatusAsync(
         Collection collection,
+        IProgress<ContentExtractionProgress>? progress = null,
         CancellationToken cancellationToken = default);
 }
