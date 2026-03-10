@@ -43,6 +43,18 @@ public class BrowserConfiguration
     /// </summary>
     public int HttpTimeoutMs { get; init; } = 3000;
 
+    /// <summary>
+    /// Gets the interval (ms) between bot challenge page polls.
+    /// After detecting a bot challenge, the browser re-checks the page source at this interval.
+    /// </summary>
+    public int BotChallengePollIntervalMs { get; init; } = 3000;
+
+    /// <summary>
+    /// Gets the maximum wait time (ms) for a bot challenge to auto-resolve.
+    /// If the challenge persists beyond this duration, the page load is reported as a failure.
+    /// </summary>
+    public int BotChallengeMaxWaitMs { get; init; } = 60000;
+
     public string[] ExperimentalOptions { get; init; } =
     [
         "excludeSwitches", "enable-automation",
