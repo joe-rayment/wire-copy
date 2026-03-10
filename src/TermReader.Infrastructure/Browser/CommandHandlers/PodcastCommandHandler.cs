@@ -1436,6 +1436,12 @@ internal static class PodcastCommandHandler
             Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
             return (false, null, false, null);
         }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "GCS bucket validation failed unexpectedly");
+            Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+            return (false, null, false, $"Bucket validation failed: {ex.Message}");
+        }
 
         if (!validationResult.IsValid)
         {
