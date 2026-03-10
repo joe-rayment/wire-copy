@@ -364,11 +364,19 @@ internal static class PodcastCommandHandler
 
             if (isGcsConfigured)
             {
-                var displayUrl = feedUrl
-                    ?? $"storage.googleapis.com/{gcsConfig.BucketName}/podcasts/\u2026/feed.xml";
-                helpers.WriteLine(
-                    $"    {p.SecondaryText.AnsiFg}Feed:{Reset} " +
-                    $"{p.PromptFg.AnsiFg}{displayUrl}{Reset}");
+                if (feedUrl != null)
+                {
+                    var maxUrlWidth = Math.Max(20, width - 12);
+                    var displayUrl = RenderHelpers.TruncateUrl(feedUrl, maxUrlWidth);
+                    helpers.WriteLine(
+                        $"    {p.SecondaryText.AnsiFg}Feed:{Reset} " +
+                        $"{p.PromptFg.AnsiFg}{displayUrl}{Reset}");
+                }
+                else
+                {
+                    helpers.WriteLine(
+                        $"    {p.SecondaryText.AnsiFg}Feed: pending verification{Reset}");
+                }
 
                 if (feedStatusNote != null)
                 {
