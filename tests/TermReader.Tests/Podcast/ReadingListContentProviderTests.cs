@@ -561,4 +561,237 @@ public class ReadingListContentProviderTests
     }
 
     #endregion
+
+    #region Cancellation and Timeout
+
+    [Fact]
+    public async Task GetAllArticleContentAsync_GlobalCancellation_ThrowsOperationCanceledException()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var collection = CreateCollection("https://example.com/a");
+        Func<Task> act = () => _provider.GetAllArticleContentAsync(collection, cancellationToken: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task GetAllArticleContentAsync_PerArticleTimeout_ContinuesToNextArticle()
+    {
+        var url1 = "https://example.com/slow";
+        var url2 = "https://example.com/fast";
+        var collection = CreateCollection(url1, url2);
+
+        // First article: simulate timeout by throwing OperationCanceledException
+        // from a non-global token (per-article timeout)
+        _articleCache.TryGetAsync(url1, Arg.Any<CancellationToken>())
+            .Returns<ExtractedArticle?>(callInfo =>
+            {
+                var token = callInfo.ArgAt<CancellationToken>(1);
+                throw new OperationCanceledException(token);
+            });
+
+        // Second article: succeeds from cache
+        _articleCache.TryGetAsync(url2, Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Fast Article",
+                CleanedText = "Content.",
+                Url = url2,
+                WordCount = 1,
+            });
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        results[0].Title.Should().Be("Fast Article");
+    }
+
+    [Fact]
+    public async Task GetAllArticleContentAsync_PerArticleTimeout_RecordsFailure()
+    {
+        var url = "https://example.com/slow";
+        var collection = CreateCollection(url);
+
+        // Simulate per-article timeout
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns<ExtractedArticle?>(callInfo =>
+            {
+                var token = callInfo.ArgAt<CancellationToken>(1);
+                throw new OperationCanceledException(token);
+            });
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        _provider.LastExtractionFailures.Should().ContainSingle();
+        _provider.LastExtractionFailures[0].Url.Should().Be(url);
+        _provider.LastExtractionFailures[0].Reason.Should().Contain("timed out");
+    }
+
+    [Fact]
+    public async Task GetAllArticleContentAsync_GlobalCancellation_DoesNotCatchAsTimeout()
+    {
+        var url = "https://example.com/a";
+        var collection = CreateCollection(url);
+
+        using var cts = new CancellationTokenSource();
+
+        // Simulate that the global token is cancelled during cache lookup
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                await cts.CancelAsync();
+                callInfo.ArgAt<CancellationToken>(1).ThrowIfCancellationRequested();
+                return (ExtractedArticle?)null;
+            });
+
+        Func<Task> act = () => _provider.GetAllArticleContentAsync(collection, cancellationToken: cts.Token);
+
+        // Global cancellation should propagate, not be caught as per-article timeout
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    #endregion
+
+    #region Layer Fallback Error Propagation
+
+    [Fact]
+    public async Task LoadAndExtract_Layer1Throws_FallsThroughToLayer2()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    throw new HttpRequestException("DNS resolution failed");
+                }
+
+                // Layer 2 succeeds
+                return CreateSuccessResult(url);
+            });
+
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        callCount.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_DriverCrash_SkipsSeleniumForRemainingArticles()
+    {
+        var url1 = "https://example.com/article1";
+        var url2 = "https://example.com/article2";
+        var collection = CreateCollection(url1, url2);
+
+        _articleCache.TryGetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(Arg.Any<string>()).Returns(false);
+        _preloadService.WaitForInFlightAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // Layer 1 for article 1: no content
+                    return PageLoadResult.Successful(url1, "<html></html>", new PageMetadata { Title = "Test" });
+                }
+
+                if (callCount == 2)
+                {
+                    // Layer 2 for article 1: driver crash
+                    return PageLoadResult.Failure("session is no longer available");
+                }
+
+                // All subsequent calls (article 2): no content
+                return PageLoadResult.Successful(url2, "<html></html>", new PageMetadata { Title = "Test" });
+            });
+
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ReadableContent?)null);
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        // Article 1: Layer 1 + Layer 2 (crash) = 2 calls
+        // Article 2: Layer 1 only (selenium skipped due to crash) = 1 call
+        callCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_GenericException_RecordsFailureAndContinues()
+    {
+        var url1 = "https://example.com/failing";
+        var url2 = "https://example.com/good";
+        var collection = CreateCollection(url1, url2);
+
+        // First article: all layers throw
+        _articleCache.TryGetAsync(url1, Arg.Any<CancellationToken>())
+            .Returns<ExtractedArticle?>(_ => throw new InvalidOperationException("Corrupt data"));
+        _pageCache.Contains(url1).Returns(false);
+        _preloadService.WaitForInFlightAsync(url1, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns<PageLoadResult?>(_ => throw new InvalidOperationException("Preload error"));
+        _pageLoader.LoadAsync(
+                Arg.Is<PageLoadRequest>(r => r.Url == url1),
+                Arg.Any<CancellationToken>())
+            .Returns<PageLoadResult>(_ => throw new InvalidOperationException("Load error"));
+
+        // Second article: succeeds from cache
+        _articleCache.TryGetAsync(url2, Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Good Article",
+                CleanedText = "Content.",
+                Url = url2,
+                WordCount = 1,
+            });
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        results[0].Title.Should().Be("Good Article");
+        _provider.LastExtractionFailures.Should().ContainSingle(f => f.Url == url1);
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_AllLayersFail_ReturnsEmptyWithFailures()
+    {
+        var url = "https://example.com/failing";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        // All pageLoader calls return failure or no extractable content
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Failure("Connection refused"));
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().BeEmpty();
+        _provider.LastExtractionFailures.Should().ContainSingle();
+        _provider.LastExtractionFailures[0].Reason.Should().Contain("No readable content");
+    }
+
+    #endregion
 }
