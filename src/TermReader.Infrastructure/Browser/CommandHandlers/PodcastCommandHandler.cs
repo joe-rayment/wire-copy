@@ -22,7 +22,9 @@ internal static class PodcastCommandHandler
 {
     private const string Reset = "\x1b[0m";
     private const int AnimationIntervalMs = 500;
+    private const int SpinnerIntervalMs = 250;
     private static readonly string[] AnimationFrames = [".", "..", "..."];
+    private static readonly string[] SpinnerFrames = ["\u25d0", "\u25d3", "\u25d1", "\u25d2"];
 
     private enum ArticleState
     {
@@ -293,6 +295,8 @@ internal static class PodcastCommandHandler
         var isTtsConfigured = ttsService.IsConfigured;
         var isGcsConfigured = !string.IsNullOrWhiteSpace(gcsConfig.BucketName);
         string? bucketError = null;
+        string? feedUrl = null;
+        string? feedStatusNote = null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -325,17 +329,14 @@ internal static class PodcastCommandHandler
                 : $"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not set (local-only){Reset}";
             helpers.WriteLine(gcsIndicator);
 
-            if (!isGcsConfigured)
+            if (bucketError != null)
             {
-                if (bucketError != null)
-                {
-                    helpers.WriteLine($"      {p.ErrorFg.AnsiFg}{bucketError}{Reset}");
-                }
-                else
-                {
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed for podcast apps{Reset}");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3\u201363 chars, lowercase, a\u2013z/0\u20139/hyphens/dots){Reset}");
-                }
+                helpers.WriteLine($"      {p.ErrorFg.AnsiFg}{bucketError}{Reset}");
+            }
+            else if (!isGcsConfigured)
+            {
+                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed for podcast apps{Reset}");
+                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3\u201363 chars, lowercase, a\u2013z/0\u20139/hyphens/dots){Reset}");
             }
 
             // --- Output ---
@@ -345,9 +346,16 @@ internal static class PodcastCommandHandler
 
             if (isGcsConfigured)
             {
+                var displayUrl = feedUrl
+                    ?? $"storage.googleapis.com/{gcsConfig.BucketName}/podcasts/\u2026/feed.xml";
                 helpers.WriteLine(
                     $"    {p.SecondaryText.AnsiFg}Feed:{Reset} " +
-                    $"{p.PromptFg.AnsiFg}storage.googleapis.com/{gcsConfig.BucketName}/podcasts/\u2026/feed.xml{Reset}");
+                    $"{p.PromptFg.AnsiFg}{displayUrl}{Reset}");
+
+                if (feedStatusNote != null)
+                {
+                    helpers.WriteLine($"    {p.SecondaryText.AnsiFg}{feedStatusNote}{Reset}");
+                }
             }
             else
             {
@@ -408,7 +416,7 @@ internal static class PodcastCommandHandler
             }
             else
             {
-                hints.Append($"{p.PrimaryText.AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:change bucket   {Reset}");
+                hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}change bucket   {Reset}");
             }
 
             hints.Append($"{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
@@ -421,39 +429,6 @@ internal static class PodcastCommandHandler
             if (command.Type == CommandType.TerminalResized)
             {
                 options = ctx.GetCurrentRenderOptions();
-                continue;
-            }
-
-            // [b] re-enter GCS bucket (only when already configured; raw 'b' key)
-            if (command.Type == CommandType.GoBack && command.RawKeyChar == 'b' && isGcsConfigured)
-            {
-                bucketError = null;
-                var bucketName = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS bucket name (e.g. my-podcast-feed): ", ct);
-                if (!string.IsNullOrWhiteSpace(bucketName))
-                {
-                    var trimmed = bucketName.Trim();
-                    if (GcsConfiguration.IsValidBucketName(trimmed))
-                    {
-                        gcsConfig.BucketName = trimmed;
-                        bucketError = null;
-                        try
-                        {
-                            settingsStore.Set("GcsBucketName", trimmed);
-                        }
-                        catch (Exception ex)
-                        {
-                            ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
-                        }
-                    }
-                    else
-                    {
-                        bucketError = $"Invalid: \"{trimmed}\" \u2014 must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots";
-                        isGcsConfigured = false;
-                        gcsConfig.BucketName = null;
-                    }
-                }
-
                 continue;
             }
 
@@ -553,27 +528,60 @@ internal static class PodcastCommandHandler
                 return true;
             }
 
-            if (command.Type == CommandType.OpenCommandLine && !isGcsConfigured)
+            if (command.Type == CommandType.OpenCommandLine)
             {
                 bucketError = null;
                 var bucketName = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS bucket name (e.g. my-podcast-feed): ", ct);
+                    "GCS bucket name (e.g. my-podcast-feed, or 'clear' to remove): ", ct);
                 if (!string.IsNullOrWhiteSpace(bucketName))
                 {
                     var trimmed = bucketName.Trim();
-                    if (GcsConfiguration.IsValidBucketName(trimmed))
+
+                    // Handle clear bucket
+                    if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase) && isGcsConfigured)
                     {
-                        gcsConfig.BucketName = trimmed;
-                        isGcsConfigured = true;
+                        gcsConfig.BucketName = null;
+                        isGcsConfigured = false;
+                        feedUrl = null;
+                        feedStatusNote = null;
                         bucketError = null;
                         try
                         {
-                            settingsStore.Set("GcsBucketName", trimmed);
+                            settingsStore.Remove("GcsBucketName");
                         }
                         catch (Exception ex)
                         {
-                            ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+                            ctx.Logger.LogWarning(ex, "Failed to remove persisted bucket name");
                         }
+                    }
+                    else if (GcsConfiguration.IsValidBucketName(trimmed))
+                    {
+                        var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                            ctx, options, trimmed, gcsConfig, ct);
+                        if (success)
+                        {
+                            gcsConfig.BucketName = trimmed;
+                            isGcsConfigured = true;
+                            bucketError = null;
+                            feedUrl = url;
+                            feedStatusNote = feedExisted
+                                ? "Existing feed found \u2014 new episodes will be appended"
+                                : "New feed created";
+                            try
+                            {
+                                settingsStore.Set("GcsBucketName", trimmed);
+                            }
+                            catch (Exception ex)
+                            {
+                                ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+                            }
+                        }
+                        else if (error != null)
+                        {
+                            bucketError = error;
+                        }
+
+                        // else: cancelled (Escape) — no error, just re-render
                     }
                     else
                     {
@@ -1100,6 +1108,139 @@ internal static class PodcastCommandHandler
         }
 
         return suggestions;
+    }
+
+    private static async Task<(bool Success, string? FeedUrl, bool FeedExisted, string? Error)> ValidateAndBootstrapBucketAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string bucketName,
+        GcsConfiguration gcsConfig,
+        CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+        var publisher = scope.ServiceProvider.GetRequiredService<IPodcastPublisher>();
+        var podcastConfig = scope.ServiceProvider
+            .GetRequiredService<IOptions<PodcastConfiguration>>().Value;
+
+        var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // Phase 1: Validate GCS connection with spinner
+        using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var validationTask = cloudStorage.ValidateConnectionAsync(bucketName, validationCts.Token);
+
+        var spinnerFrame = 0;
+        Task<NavigationCommand>? pendingKeyTask = null;
+
+        while (!ct.IsCancellationRequested)
+        {
+            var spinner = SpinnerFrames[spinnerFrame % SpinnerFrames.Length];
+            Console.Write($"\r      {p.SecondaryText.AnsiFg}{spinner} verifying {bucketName}...{Reset}    ");
+
+            pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var tickTask = Task.Delay(SpinnerIntervalMs, tickCts.Token);
+            var completed = await Task.WhenAny(validationTask, pendingKeyTask, tickTask);
+            await tickCts.CancelAsync();
+
+            if (completed == pendingKeyTask)
+            {
+                var command = await pendingKeyTask;
+                pendingKeyTask = null;
+
+                if (command.Type == CommandType.TerminalResized)
+                {
+                    options = ctx.GetCurrentRenderOptions();
+                    continue;
+                }
+
+                if (command.Type is CommandType.GoBack or CommandType.Quit)
+                {
+                    await validationCts.CancelAsync();
+                    try
+                    {
+                        await validationTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected when cancelling validation
+                    }
+
+                    Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+                    return (false, null, false, null);
+                }
+            }
+            else if (completed == validationTask)
+            {
+                break;
+            }
+            else
+            {
+                spinnerFrame++;
+            }
+        }
+
+        CloudStorageValidationResult validationResult;
+        try
+        {
+            validationResult = await validationTask;
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+            return (false, null, false, null);
+        }
+
+        if (!validationResult.IsValid)
+        {
+            Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+            return (false, null, false, validationResult.ErrorMessage ?? "Bucket validation failed");
+        }
+
+        // Phase 2: Bootstrap feed
+        Console.Write(
+            $"\r      {p.SecondaryText.AnsiFg}{SpinnerFrames[0]} setting up feed...{Reset}    ");
+
+        var metadata = new Domain.ValueObjects.Podcast.PodcastMetadata
+        {
+            Title = podcastConfig.Title,
+            Description = podcastConfig.Description,
+            Author = podcastConfig.Author,
+            Language = podcastConfig.Language,
+            ImageUrl = podcastConfig.ImageUrl ?? string.Empty,
+            Category = podcastConfig.Category,
+            Explicit = podcastConfig.Explicit,
+        };
+
+        // Temporarily set bucket name for the publisher to use
+        var previousBucketName = gcsConfig.BucketName;
+        gcsConfig.BucketName = bucketName;
+
+        try
+        {
+            // Check if feed already exists before bootstrapping
+            var existingUrl = await publisher.GetExistingFeedUrlAsync(podcastConfig.Title, ct);
+            var feedExisted = existingUrl != null;
+
+            var feedResult = await publisher.BootstrapFeedAsync(metadata, ct);
+            Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+
+            if (feedResult.Success)
+            {
+                return (true, feedResult.FeedUrl, feedExisted, null);
+            }
+
+            // Revert since bootstrap failed
+            gcsConfig.BucketName = previousBucketName;
+            return (false, null, false, feedResult.ErrorMessage ?? "Feed setup failed");
+        }
+        catch (Exception ex)
+        {
+            gcsConfig.BucketName = previousBucketName;
+            ctx.Logger.LogWarning(ex, "Feed bootstrap failed for bucket {Bucket}", bucketName);
+            Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+            return (false, null, false, $"Feed setup failed: {ex.Message}");
+        }
     }
 
     private static void RenderBox(RenderHelpers helpers, ThemePalette p, string title, int width)
