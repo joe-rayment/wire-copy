@@ -148,7 +148,9 @@ docker-compose up
 - Use Nero chapters format for M4B compatibility
 
 ### Testing Strategy
-- Mock all external dependencies (never call real APIs in tests)
+- **Tests must reflect real-world usage.** Never mock away or remove layers just to make tests pass. If a test can only pass by replacing the component that would actually fail in production, the test is worse than useless — it provides false confidence. A crash caused by missing GCP credentials went undetected because every test mocked `ICloudStorageClient`, hiding the fact that `StorageClient.CreateAsync()` throws `InvalidOperationException` (not the exceptions the code caught). This wasted significant time and resources.
+- When testing error handling, ensure tests exercise the actual exception types that real dependencies throw — not just the ones you expect. Use integration tests or realistic fakes where mocks would hide failure modes.
+- Mock external network calls (never call real APIs in tests), but don't mock away error-handling boundaries. If a component catches specific exception types, test that it handles all exception types the real dependency can throw.
 - Store HTML fixtures for parser testing
 - Integration tests marked with appropriate Skip attributes
 - Test coverage target: >80%
