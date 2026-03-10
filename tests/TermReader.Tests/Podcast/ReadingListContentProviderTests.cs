@@ -5,11 +5,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.DTOs.Podcast;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using Xunit;
@@ -23,6 +25,7 @@ public class ReadingListContentProviderTests
     private readonly IReadableContentExtractor _contentExtractor;
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
+    private readonly IBrowserSession _browserSession;
     private readonly ReadingListContentProvider _provider;
 
     public ReadingListContentProviderTests()
@@ -31,6 +34,7 @@ public class ReadingListContentProviderTests
         _contentExtractor = Substitute.For<IReadableContentExtractor>();
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
+        _browserSession = Substitute.For<IBrowserSession>();
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
@@ -40,6 +44,7 @@ public class ReadingListContentProviderTests
             browserConfig,
             _preloadService,
             _pageCache,
+            _browserSession,
             NullLogger<ReadingListContentProvider>.Instance);
     }
 
@@ -276,6 +281,7 @@ public class ReadingListContentProviderTests
             headedConfig,
             _preloadService,
             _pageCache,
+            _browserSession,
             NullLogger<ReadingListContentProvider>.Instance);
 
         _pageCache.Contains(url).Returns(false);
@@ -316,6 +322,57 @@ public class ReadingListContentProviderTests
         // In headed mode, Layer 3 should still fire (previously was dead code)
         results.Should().HaveCount(1);
         await _pageLoader.Received(3).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_BotChallengeFailure_RestoresWindowAndNotifiesUser()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    return PageLoadResult.Successful(url, "<html><body><noscript>Please enable JavaScript</noscript></body></html>", new PageMetadata { Title = "Test" });
+                }
+
+                if (callCount == 2)
+                {
+                    return PageLoadResult.Failure("Bot challenge could not be resolved");
+                }
+
+                return CreateSuccessResult(url);
+            });
+
+        var extractCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                extractCount++;
+                return extractCount >= 2 ? CreateReadableContent() : null;
+            });
+
+        // Track progress reports to verify user notification
+        var progressReports = new List<ContentExtractionProgress>();
+        var progress = new Progress<ContentExtractionProgress>(p => progressReports.Add(p));
+
+        await _provider.GetAllArticleContentAsync(collection, progress);
+
+        // Verify RestoreWindow was called
+        _browserSession.Received(1).RestoreWindow();
+
+        // Verify progress reported the bot challenge message
+        progressReports.Should().Contain(p =>
+            p.ExtractionMethod != null &&
+            p.ExtractionMethod.Contains("bot challenge", StringComparison.OrdinalIgnoreCase));
     }
 
     #endregion
