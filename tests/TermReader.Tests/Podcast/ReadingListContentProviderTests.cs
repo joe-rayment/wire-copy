@@ -209,4 +209,114 @@ public class ReadingListContentProviderTests
     }
 
     #endregion
+
+    #region Layer 3 Bot Challenge Retry
+
+    [Fact]
+    public async Task LoadAndExtract_BotChallengeFailure_RetriesWithHeadedBrowser()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        // Layer 1: HTTP fails → JS required
+        // Layer 2: Selenium returns bot challenge failure (polling timed out)
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // Layer 1: HTTP returns JS-required → no content extracted
+                    return PageLoadResult.Successful(url, "<html><body><noscript>Please enable JavaScript</noscript></body></html>", new PageMetadata { Title = "Test" });
+                }
+
+                if (callCount == 2)
+                {
+                    // Layer 2: Selenium bot challenge failure
+                    return PageLoadResult.Failure("Bot challenge could not be resolved");
+                }
+
+                // Layer 3: Headed retry succeeds
+                return CreateSuccessResult(url);
+            });
+
+        // First extraction returns null (JS shell), third succeeds
+        var extractCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                extractCount++;
+                return extractCount >= 2 ? CreateReadableContent() : null;
+            });
+
+        var results = await _provider.GetAllArticleContentAsync(collection);
+
+        results.Should().HaveCount(1);
+        results[0].Title.Should().Be("Test Article");
+        // 3 calls: HTTP, Selenium (bot challenge), headed retry
+        await _pageLoader.Received(3).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAndExtract_BotChallengeFailure_InHeadedMode_StillRetries()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        // Create provider with Headless = false (headed mode)
+        var headedConfig = Options.Create(new BrowserConfiguration { Headless = false });
+        var headedProvider = new ReadingListContentProvider(
+            _pageLoader,
+            _contentExtractor,
+            headedConfig,
+            _preloadService,
+            _pageCache,
+            NullLogger<ReadingListContentProvider>.Instance);
+
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // Layer 1: HTTP fails → JS required
+                    return PageLoadResult.Successful(url, "<html><body><noscript>Please enable JavaScript</noscript></body></html>", new PageMetadata { Title = "Test" });
+                }
+
+                if (callCount == 2)
+                {
+                    // Layer 2: Selenium bot challenge failure
+                    return PageLoadResult.Failure("Bot challenge could not be resolved");
+                }
+
+                // Layer 3: Retry succeeds
+                return CreateSuccessResult(url);
+            });
+
+        var extractCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                extractCount++;
+                return extractCount >= 2 ? CreateReadableContent() : null;
+            });
+
+        var results = await headedProvider.GetAllArticleContentAsync(collection);
+
+        // In headed mode, Layer 3 should still fire (previously was dead code)
+        results.Should().HaveCount(1);
+        await _pageLoader.Received(3).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion
 }

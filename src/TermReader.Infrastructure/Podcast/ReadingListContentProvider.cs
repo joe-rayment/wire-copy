@@ -255,15 +255,18 @@ internal sealed class ReadingListContentProvider
             }
         }
 
-        // Layer 3: If headless Selenium got a bot challenge, retry headed
-        if (_browserConfig.Headless &&
-            loadResult.Success &&
+        // Layer 3: If Selenium hit a bot challenge (resolved or not), retry headed with fresh navigation
+        var isBotChallengeFailure = !loadResult.Success &&
+            loadResult.ErrorMessage?.Contains("Bot challenge", StringComparison.OrdinalIgnoreCase) == true;
+        var isBotChallengeContent = loadResult.Success &&
             !string.IsNullOrEmpty(loadResult.Html) &&
-            PageLoader.IsBotChallengePage(loadResult.Html))
+            PageLoader.IsBotChallengePage(loadResult.Html);
+
+        if (isBotChallengeFailure || isBotChallengeContent)
         {
             reportMethod?.Invoke("headed");
             _logger.LogWarning(
-                "Bot challenge detected in headless mode, retrying headed: {Url}",
+                "Bot challenge detected, retrying with headed browser: {Url}",
                 item.Url);
 
             loadResult = await _pageLoader.LoadAsync(
