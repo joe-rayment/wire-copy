@@ -22,13 +22,18 @@ internal sealed class OpenAiTtsService : ITtsService
     private const double AverageCharsPerWord = 5.0;
 
     private readonly OpenAiTtsConfiguration _config;
+    private readonly IUserSettingsStore? _settingsStore;
     private readonly ILogger<OpenAiTtsService> _logger;
     private string? _apiKeyOverride;
 
-    public OpenAiTtsService(IOptions<OpenAiTtsConfiguration> config, ILogger<OpenAiTtsService> logger)
+    public OpenAiTtsService(
+        IOptions<OpenAiTtsConfiguration> config,
+        ILogger<OpenAiTtsService> logger,
+        IUserSettingsStore? settingsStore = null)
     {
         _config = config.Value;
         _logger = logger;
+        _settingsStore = settingsStore;
     }
 
     public bool IsConfigured
@@ -211,6 +216,47 @@ internal sealed class OpenAiTtsService : ITtsService
         _apiKeyOverride = apiKey;
     }
 
+    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
+    {
+        public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
+
+        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
+    }
+
+    #pragma warning disable OPENAI001 // Experimental voices
+    private static GeneratedSpeechVoice MapVoice(string voice)
+    {
+        return voice.ToLowerInvariant() switch
+        {
+            "alloy" => GeneratedSpeechVoice.Alloy,
+            "ash" => GeneratedSpeechVoice.Ash,
+            "ballad" => GeneratedSpeechVoice.Ballad,
+            "coral" => GeneratedSpeechVoice.Coral,
+            "echo" => GeneratedSpeechVoice.Echo,
+            "fable" => GeneratedSpeechVoice.Fable,
+            "onyx" => GeneratedSpeechVoice.Onyx,
+            "nova" => GeneratedSpeechVoice.Nova,
+            "sage" => GeneratedSpeechVoice.Sage,
+            "shimmer" => GeneratedSpeechVoice.Shimmer,
+            _ => GeneratedSpeechVoice.Nova,
+        };
+    }
+    #pragma warning restore OPENAI001
+
+    private static GeneratedSpeechFormat MapFormat(string format)
+    {
+        return format.ToLowerInvariant() switch
+        {
+            "mp3" => GeneratedSpeechFormat.Mp3,
+            "opus" => GeneratedSpeechFormat.Opus,
+            "aac" => GeneratedSpeechFormat.Aac,
+            "flac" => GeneratedSpeechFormat.Flac,
+            "wav" => GeneratedSpeechFormat.Wav,
+            "pcm" => GeneratedSpeechFormat.Pcm,
+            _ => GeneratedSpeechFormat.Aac,
+        };
+    }
+
     private async Task<ChunkGenerationResult> GenerateChunkWithRetryAsync(
         AudioClient audioClient,
         string chunk,
@@ -292,13 +338,6 @@ internal sealed class OpenAiTtsService : ITtsService
             $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries.");
     }
 
-    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
-    {
-        public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
-
-        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
-    }
-
     private AudioClient CreateAudioClient()
     {
         var apiKey = GetEffectiveApiKey()!;
@@ -328,41 +367,22 @@ internal sealed class OpenAiTtsService : ITtsService
             return _config.ApiKey;
         }
 
-        return Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-    }
-
-    #pragma warning disable OPENAI001 // Experimental voices
-    private static GeneratedSpeechVoice MapVoice(string voice)
-    {
-        return voice.ToLowerInvariant() switch
+        var envKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (!string.IsNullOrWhiteSpace(envKey))
         {
-            "alloy" => GeneratedSpeechVoice.Alloy,
-            "ash" => GeneratedSpeechVoice.Ash,
-            "ballad" => GeneratedSpeechVoice.Ballad,
-            "coral" => GeneratedSpeechVoice.Coral,
-            "echo" => GeneratedSpeechVoice.Echo,
-            "fable" => GeneratedSpeechVoice.Fable,
-            "onyx" => GeneratedSpeechVoice.Onyx,
-            "nova" => GeneratedSpeechVoice.Nova,
-            "sage" => GeneratedSpeechVoice.Sage,
-            "shimmer" => GeneratedSpeechVoice.Shimmer,
-            _ => GeneratedSpeechVoice.Nova,
-        };
-    }
-    #pragma warning restore OPENAI001
+            return envKey;
+        }
 
-    private static GeneratedSpeechFormat MapFormat(string format)
-    {
-        return format.ToLowerInvariant() switch
+        // Check persisted settings (saved via :set apikey) as final fallback.
+        // When found, promote to runtime override so subsequent calls are instant.
+        var savedKey = _settingsStore?.Get("OpenAiApiKey");
+        if (!string.IsNullOrWhiteSpace(savedKey))
         {
-            "mp3" => GeneratedSpeechFormat.Mp3,
-            "opus" => GeneratedSpeechFormat.Opus,
-            "aac" => GeneratedSpeechFormat.Aac,
-            "flac" => GeneratedSpeechFormat.Flac,
-            "wav" => GeneratedSpeechFormat.Wav,
-            "pcm" => GeneratedSpeechFormat.Pcm,
-            _ => GeneratedSpeechFormat.Aac,
-        };
+            _apiKeyOverride = savedKey;
+            return savedKey;
+        }
+
+        return null;
     }
 
     /// <summary>
