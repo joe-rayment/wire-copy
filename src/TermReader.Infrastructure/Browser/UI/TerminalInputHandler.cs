@@ -21,6 +21,8 @@ public class TerminalInputHandler : IInputHandler
     private readonly Channel<ConsoleKeyInfo> _keyChannel = Channel.CreateUnbounded<ConsoleKeyInfo>();
     private bool _waitingForSecondKey; // For 'gg' command
     private bool _keyReaderStarted;
+    private Task<ConsoleKeyInfo>? _pendingKeyTask;
+    private Task<bool>? _pendingResizeTask;
 
     public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, ILogger<TerminalInputHandler> logger)
     {
@@ -35,14 +37,28 @@ public class TerminalInputHandler : IInputHandler
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            // Race keyboard channel against resize channel
-            var keyTask = _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
-            var resizeTask = _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
-
-            var completed = await Task.WhenAny(keyTask, resizeTask).ConfigureAwait(false);
-
-            if (completed == resizeTask)
+            // Reuse pending tasks from previous iterations to avoid dropping
+            // channel items consumed by abandoned ReadAsync operations.
+            // Clear faulted/cancelled tasks so a fresh read can be created.
+            if (_pendingKeyTask is { IsFaulted: true } or { IsCanceled: true })
             {
+                _pendingKeyTask = null;
+            }
+
+            if (_pendingResizeTask is { IsFaulted: true } or { IsCanceled: true })
+            {
+                _pendingResizeTask = null;
+            }
+
+            _pendingKeyTask ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
+            _pendingResizeTask ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
+
+            var completed = await Task.WhenAny(_pendingKeyTask, _pendingResizeTask).ConfigureAwait(false);
+
+            if (completed == _pendingResizeTask)
+            {
+                _pendingResizeTask = null;
+
                 // Drain any additional resize events (coalesce rapid resizes)
                 while (_resizeDetector.Resizes.TryRead(out _))
                 {
@@ -52,7 +68,8 @@ public class TerminalInputHandler : IInputHandler
                 return new NavigationCommand { Type = CommandType.TerminalResized };
             }
 
-            var keyInfo = await keyTask.ConfigureAwait(false);
+            var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
+            _pendingKeyTask = null;
 
             // Handle 'gg' for go to top
             if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
@@ -195,6 +212,10 @@ public class TerminalInputHandler : IInputHandler
     public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false)
     {
         EnsureKeyReaderStarted();
+
+        // Drain any pending key/resize tasks so they don't compete with
+        // PromptForInputAsync's direct channel reads.
+        DrainPendingTasks();
 
         try
         {
@@ -382,5 +403,28 @@ public class TerminalInputHandler : IInputHandler
             Name = "TermReader-KeyReader"
         };
         thread.Start();
+    }
+
+    /// <summary>
+    /// Clears any pending key/resize tasks so that other methods
+    /// (e.g. PromptForInputAsync) can safely read from the channel directly.
+    /// If the pending key task already completed, pushes the key back into the channel.
+    /// </summary>
+    private void DrainPendingTasks()
+    {
+        if (_pendingKeyTask != null)
+        {
+            // If already completed, consume the result so the channel item isn't lost
+            if (_pendingKeyTask.IsCompletedSuccessfully)
+            {
+                // Push the already-read key back into the channel
+                _keyChannel.Writer.TryWrite(_pendingKeyTask.Result);
+            }
+
+            _pendingKeyTask = null;
+        }
+
+        // Resize events are coalesced; safe to discard any pending resize read
+        _pendingResizeTask = null;
     }
 }
