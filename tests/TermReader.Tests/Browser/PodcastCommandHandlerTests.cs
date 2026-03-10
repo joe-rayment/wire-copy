@@ -10,6 +10,7 @@ using TermReader.Application.DTOs;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.DTOs.Podcast;
 using TermReader.Application.Interfaces;
+using TermReader.Application.Interfaces.Audio;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Entities.Collections;
@@ -42,6 +43,7 @@ public class PodcastCommandHandlerTests
     private readonly IPodcastOrchestrator _orchestrator;
     private readonly IUserSettingsStore _settingsStore;
     private readonly GcsConfiguration _gcsConfig;
+    private readonly IAudioAssembler _audioAssembler;
     private readonly IPreloadService _preloadService;
     private readonly CommandContext _ctx;
     private readonly RenderOptions _options;
@@ -61,6 +63,8 @@ public class PodcastCommandHandlerTests
         _inputHandler = Substitute.For<IInputHandler>();
         _ttsService = Substitute.For<ITtsService>();
         _orchestrator = Substitute.For<IPodcastOrchestrator>();
+        _audioAssembler = Substitute.For<IAudioAssembler>();
+        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
         _settingsStore = Substitute.For<IUserSettingsStore>();
         _gcsConfig = new GcsConfiguration();
         _preloadService = Substitute.For<IPreloadService>();
@@ -803,6 +807,7 @@ public class PodcastCommandHandlerTests
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
             .Returns(Options.Create(_gcsConfig));
+        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
         serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(cloudStorage);
         serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(publisher);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))

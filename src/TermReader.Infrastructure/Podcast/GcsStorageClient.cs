@@ -164,8 +164,9 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                     CloudStorageValidationErrorType.CredentialsInvalid,
                     "Invalid credentials. Check your service account key or application default credentials.");
             }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("credentials", StringComparison.OrdinalIgnoreCase))
+            catch (InvalidOperationException ex)
             {
+                _logger.LogDebug(ex, "GCS client creation failed with InvalidOperationException");
                 return CloudStorageValidationResult.Invalid(
                     CloudStorageValidationErrorType.CredentialsInvalid,
                     "No GCP credentials found. Set up Application Default Credentials or configure a service account key.");
@@ -261,6 +262,13 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             return CloudStorageValidationResult.Invalid(
                 CloudStorageValidationErrorType.NetworkError,
                 $"Network error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unexpected error during GCS validation for bucket {Bucket}", bucketName);
+            return CloudStorageValidationResult.Invalid(
+                CloudStorageValidationErrorType.NetworkError,
+                $"Validation failed: {ex.Message}");
         }
     }
 
