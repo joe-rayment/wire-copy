@@ -50,7 +50,7 @@ public interface IPageCache
     CacheStats GetStats();
 
     /// <summary>
-    /// Gets the set of currently cached URLs (both request and final/redirect URLs).
+    /// Gets the set of currently cached request URLs.
     /// Used by renderers to show cache indicators.
     /// </summary>
     IReadOnlySet<string> GetCachedUrls();

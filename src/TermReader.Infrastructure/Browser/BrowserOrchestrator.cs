@@ -128,7 +128,7 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _logger.LogInformation("Using in-flight preload result for {Url}", url);
                 _lastLoadFetchMethod = FetchMethod.Cached;
-                var inFlightPage = await BuildPageFromLoadResultAsync(inFlightResult, cancellationToken);
+                var inFlightPage = await BuildPageFromLoadResultAsync(inFlightResult, url, cancellationToken);
                 if (inFlightPage.HasReadableContent())
                 {
                     return inFlightPage;
@@ -157,7 +157,7 @@ public class BrowserOrchestrator : IBrowserService
 
         _lastLoadFetchMethod = loadResult.FetchMethod;
 
-        var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
+        var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
         // Bot challenge handling: if Selenium returned a challenge page in headed mode,
         // wait for the user to solve it in the visible browser window
@@ -165,7 +165,7 @@ public class BrowserOrchestrator : IBrowserService
         if (challengeResult != null)
         {
             _lastLoadFetchMethod = challengeResult.FetchMethod;
-            page = await BuildPageFromLoadResultAsync(challengeResult, cancellationToken);
+            page = await BuildPageFromLoadResultAsync(challengeResult, url, cancellationToken);
         }
 
         // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
@@ -186,7 +186,7 @@ public class BrowserOrchestrator : IBrowserService
             if (retryResult.Success)
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
-                page = await BuildPageFromLoadResultAsync(retryResult, cancellationToken);
+                page = await BuildPageFromLoadResultAsync(retryResult, url, cancellationToken);
             }
         }
 
@@ -211,7 +211,7 @@ public class BrowserOrchestrator : IBrowserService
             if (headedResult.Success)
             {
                 _lastLoadFetchMethod = headedResult.FetchMethod;
-                page = await BuildPageFromLoadResultAsync(headedResult, cancellationToken);
+                page = await BuildPageFromLoadResultAsync(headedResult, url, cancellationToken);
             }
         }
 
@@ -533,10 +533,10 @@ public class BrowserOrchestrator : IBrowserService
     /// <summary>
     /// Builds a Page entity from a PageLoadResult, extracting links, tree, and readable content.
     /// </summary>
-    private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, CancellationToken cancellationToken)
+    private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, string requestedUrl, CancellationToken cancellationToken)
     {
         var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
-        var page = Page.Create(loadResult.Url, loadResult.Html, metadata);
+        var page = Page.Create(requestedUrl, loadResult.Html, metadata);
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
         var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
@@ -605,7 +605,7 @@ public class BrowserOrchestrator : IBrowserService
                 throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
             }
 
-            var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
+            var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
             _navigationService.NavigateTo(page);
             _navigationService.SetCacheInfo(false, null);
@@ -671,7 +671,7 @@ public class BrowserOrchestrator : IBrowserService
             }
 
             // Accept: build page, cache, and re-render
-            var page = await BuildPageFromLoadResultAsync(loadResult, cancellationToken);
+            var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
             _pageCache.Put(url, loadResult);
             _navigationService.NavigateTo(page);

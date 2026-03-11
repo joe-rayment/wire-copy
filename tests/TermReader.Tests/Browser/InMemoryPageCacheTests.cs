@@ -66,14 +66,14 @@ public class InMemoryPageCacheTests : IDisposable
     }
 
     [Fact]
-    public void Put_IndexesByFinalUrl()
+    public void Put_DoesNotIndexByFinalUrl()
     {
         var result = CreateResult("https://example.com/final", "<html>test</html>");
         _cache.Put("https://example.com/redirect", result);
 
-        // Should be findable by both request URL and final URL
+        // Should only be findable by request URL, not by final URL
         _cache.TryGet("https://example.com/redirect").Should().NotBeNull();
-        _cache.TryGet("https://example.com/final").Should().NotBeNull();
+        _cache.TryGet("https://example.com/final").Should().BeNull();
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public class InMemoryPageCacheTests : IDisposable
     }
 
     [Fact]
-    public void GetCachedUrls_IncludesBothRequestAndFinalUrls()
+    public void GetCachedUrls_IncludesOnlyRequestUrls()
     {
         // Simulate a redirect: request URL differs from final URL
         var result = CreateResult("https://example.com/final-page", "<html>redirected</html>");
@@ -205,7 +205,32 @@ public class InMemoryPageCacheTests : IDisposable
 
         var urls = _cache.GetCachedUrls();
         urls.Should().Contain("https://example.com/short-link", "request URL should be included");
-        urls.Should().Contain("https://example.com/final-page", "final URL should be included");
+        urls.Should().NotContain("https://example.com/final-page", "final URL should not be included");
+    }
+
+    [Fact]
+    public void Put_AfterRedirect_OnlyRequestUrlReturnsEntry()
+    {
+        // Simulate a redirect: the page at /old redirects to /new
+        var result = CreateResult("https://example.com/new", "<html>redirected content</html>");
+        _cache.Put("https://example.com/old", result);
+
+        // Only the request URL should return the cached entry
+        var cachedByRequest = _cache.TryGet("https://example.com/old");
+        cachedByRequest.Should().NotBeNull();
+        cachedByRequest!.Html.Should().Be("<html>redirected content</html>");
+
+        // The final/redirect URL should NOT return the cached entry
+        _cache.TryGet("https://example.com/new").Should().BeNull();
+
+        // Contains should also reflect request-only indexing
+        _cache.Contains("https://example.com/old").Should().BeTrue();
+        _cache.Contains("https://example.com/new").Should().BeFalse();
+
+        // GetCachedUrls should only include the request URL
+        var urls = _cache.GetCachedUrls();
+        urls.Should().Contain("https://example.com/old");
+        urls.Should().NotContain("https://example.com/new");
     }
 
     [Fact]
