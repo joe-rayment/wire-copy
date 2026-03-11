@@ -13,6 +13,7 @@ using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Podcast;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -157,6 +158,9 @@ internal static class PodcastCommandHandler
                 options = ctx.GetCurrentRenderOptions();
             }
 
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+            var gcsClient = cloudStorage as GcsStorageClient;
+
             var confirmed = await ShowConfirmationScreenAsync(
                 ctx,
                 options,
@@ -164,6 +168,7 @@ internal static class PodcastCommandHandler
                 ttsService,
                 gcsConfig,
                 settingsStore,
+                gcsClient,
                 cacheAnalysis,
                 preflight_bucketError,
                 preflight_feedUrl,
@@ -551,6 +556,7 @@ internal static class PodcastCommandHandler
         ITtsService ttsService,
         GcsConfiguration gcsConfig,
         IUserSettingsStore settingsStore,
+        GcsStorageClient? gcsClient,
         CacheAnalysis? cacheAnalysis,
         string? preflightBucketError,
         string? preflightFeedUrl,
@@ -562,6 +568,8 @@ internal static class PodcastCommandHandler
         var bucketError = preflightBucketError;
         var feedUrl = preflightFeedUrl;
         var feedStatusNote = preflightFeedStatusNote;
+        var keyPath = gcsClient?.GetServiceAccountKeyPath();
+        var isKeyConfigured = !string.IsNullOrWhiteSpace(keyPath);
 
         while (!ct.IsCancellationRequested)
         {
@@ -587,6 +595,22 @@ internal static class PodcastCommandHandler
             if (!isTtsConfigured)
             {
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required \u2014 get a key at platform.openai.com/api-keys{Reset}");
+            }
+
+            if (gcsClient != null)
+            {
+                if (isKeyConfigured)
+                {
+                    var displayPath = keyPath!.Length > 40 ? "..." + keyPath[^37..] : keyPath;
+                    helpers.WriteLine($"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS service account    {p.PromptFg.AnsiFg}{displayPath}{Reset}  {p.SecondaryText.AnsiFg}[k] change{Reset}");
+                }
+                else
+                {
+                    helpers.WriteLine($"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS service account    {p.SecondaryText.AnsiFg}not set{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}1. Create service account at console.cloud.google.com{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}2. Grant Storage Object Admin role on your bucket{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}3. Download JSON key \u2192 press [k] to set path{Reset}");
+                }
             }
 
             var gcsIndicator = isGcsConfigured
@@ -692,6 +716,11 @@ internal static class PodcastCommandHandler
                 hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}change bucket   {Reset}");
             }
 
+            if (gcsClient != null)
+            {
+                hints.Append($"{p.PrimaryText.AnsiFg}k{Reset}{p.SecondaryText.AnsiFg}:{(isKeyConfigured ? "change" : "set")} key   {Reset}");
+            }
+
             hints.Append($"{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
             helpers.WriteLine(hints.ToString());
 
@@ -745,6 +774,63 @@ internal static class PodcastCommandHandler
                         await Task.Delay(2000, ct);
                         ttsService.SetApiKeyOverride(string.Empty);
                         isTtsConfigured = false;
+                    }
+                }
+
+                continue;
+            }
+
+            // [k] set/change GCS service account key
+            if (command.RawKeyChar == 'k' && gcsClient != null)
+            {
+                var keyInput = await ctx.InputHandler.PromptForInputAsync(
+                    "GCS service account key file path: ", ct);
+                if (!string.IsNullOrWhiteSpace(keyInput))
+                {
+                    var trimmed = keyInput.Trim();
+
+                    // Expand ~ to home directory
+                    if (trimmed.StartsWith('~'))
+                    {
+                        trimmed = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                            trimmed[1..].TrimStart('/'));
+                    }
+
+                    trimmed = Path.GetFullPath(trimmed);
+                    var validation = GcsStorageClient.ValidateKeyFile(trimmed);
+                    if (validation.IsValid)
+                    {
+                        gcsClient.SetServiceAccountKeyPath(trimmed);
+                        keyPath = trimmed;
+                        isKeyConfigured = true;
+
+                        Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");
+                        await Task.Delay(800, ct);
+
+                        // Re-validate bucket if one is configured
+                        if (isGcsConfigured)
+                        {
+                            bucketError = null;
+                            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+                            if (success)
+                            {
+                                feedUrl = url;
+                                feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+                            }
+                            else if (error != null)
+                            {
+                                bucketError = error;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Console.Write(
+                            $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage}{Reset}" +
+                            new string(' ', 20));
+                        await Task.Delay(2000, ct);
                     }
                 }
 
