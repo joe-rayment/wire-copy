@@ -53,15 +53,48 @@ public static class BrowserDependencyInjection
         services.AddSingleton<ICookieManager, CookieManager>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
-        // Register HTTP client for PageLoader with automatic decompression
+        // Register HTTP client for PageLoader with automatic decompression and stored cookies
         services.AddHttpClient("BrowserPageLoader")
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            .ConfigurePrimaryHttpMessageHandler(sp =>
             {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 10,
-                UseCookies = true,
-                CookieContainer = new CookieContainer()
+                var container = new CookieContainer();
+
+                try
+                {
+                    var cookieManager = sp.GetRequiredService<ICookieManager>();
+                    var storedCookies = cookieManager.LoadCookiesAsync().GetAwaiter().GetResult();
+
+                    foreach (var cookie in storedCookies)
+                    {
+                        try
+                        {
+                            container.Add(new System.Net.Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
+                        }
+                        catch (Exception)
+                        {
+                            // Skip invalid cookies silently
+                        }
+                    }
+
+                    if (storedCookies.Count > 0)
+                    {
+                        var logger = sp.GetRequiredService<ILogger<PageLoader>>();
+                        logger.LogDebug("Injected {Count} stored cookies into HTTP client", storedCookies.Count);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Cookie loading failure should never prevent HttpClient creation
+                }
+
+                return new HttpClientHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+                    AllowAutoRedirect = true,
+                    MaxAutomaticRedirections = 10,
+                    UseCookies = true,
+                    CookieContainer = container
+                };
             });
 
         // Register browser session (shared WebDriver lifecycle)

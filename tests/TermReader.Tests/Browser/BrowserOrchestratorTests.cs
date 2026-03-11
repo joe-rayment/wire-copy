@@ -86,6 +86,7 @@ public class BrowserOrchestratorTests
             Substitute.For<IPageCache>(),
             Substitute.For<IPreloadService>(),
             Substitute.For<IIdleDetector>(),
+            Substitute.For<ICookieManager>(),
             _browserConfig,
             _logger);
     }
@@ -337,6 +338,7 @@ public class BrowserOrchestratorNavigationTests
             Substitute.For<IPageCache>(),
             Substitute.For<IPreloadService>(),
             Substitute.For<IIdleDetector>(),
+            Substitute.For<ICookieManager>(),
             _browserConfig,
             _logger);
     }
