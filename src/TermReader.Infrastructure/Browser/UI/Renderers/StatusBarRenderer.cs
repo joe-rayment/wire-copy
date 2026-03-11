@@ -76,11 +76,13 @@ internal class StatusBarRenderer
                 ("Enter", "open"),
                 ("s", "save"),
                 ("A", "save-all"),
+                ("R", "refresh"),
                 ("v", "reader"),
                 ("?", "help")),
             ViewMode.Readable => FormatHints(
                 p,
                 ("h/l", "width"),
+                ("R", "refresh"),
                 ("v", "links"),
                 ("b", "back"),
                 ("?", "help")),

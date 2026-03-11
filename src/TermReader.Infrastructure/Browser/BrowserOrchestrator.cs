@@ -299,8 +299,14 @@ public class BrowserOrchestrator : IBrowserService
             Console.CursorVisible = false;
 
             // Start resize detection and pre-loading in the background
-            _ = _resizeDetector.StartAsync(cancellationToken);
-            _ = _preloadService.StartAsync(cancellationToken);
+            _ = _resizeDetector.StartAsync(cancellationToken)
+                .ContinueWith(
+                    t => _logger.LogError(t.Exception, "Background service faulted: ResizeDetector"),
+                    TaskContinuationOptions.OnlyOnFaulted);
+            _ = _preloadService.StartAsync(cancellationToken)
+                .ContinueWith(
+                    t => _logger.LogError(t.Exception, "Background service faulted: PreloadService"),
+                    TaskContinuationOptions.OnlyOnFaulted);
 
             var options = GetCurrentRenderOptions();
 
@@ -337,7 +343,15 @@ public class BrowserOrchestrator : IBrowserService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in browser loop");
-            _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
+
+            try
+            {
+                _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
+            }
+            catch (Exception innerEx)
+            {
+                _logger.LogDebug(innerEx, "Failed to render error screen");
+            }
         }
         finally
         {
@@ -902,53 +916,69 @@ public class BrowserOrchestrator : IBrowserService
 
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)
     {
-        var viewMode = _navigationService.CurrentContext.ViewMode;
-
-        // Launcher view doesn't require a page - render directly
-        if (viewMode == ViewMode.Launcher)
+        try
         {
-            _renderer.RenderLauncher(
-                _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
-                _navigationService.LauncherSelectedIndex,
-                _navigationService.LauncherScrollOffset,
-                options);
-            return;
-        }
+            var viewMode = _navigationService.CurrentContext.ViewMode;
 
-        // Collection views don't require a page - render directly
-        if (viewMode == ViewMode.CollectionList)
-        {
-            _renderer.RenderCollectionList(
-                _commandContext.Collections?.ToList() ?? new List<Collection>(),
-                _navigationService.CollectionSelectedIndex,
-                _commandContext.DefaultCollectionId,
-                _navigationService.CollectionListScrollOffset,
-                options);
-            return;
-        }
-
-        if (viewMode == ViewMode.CollectionItems)
-        {
-            var activeCollection = _navigationService.ActiveCollection;
-            if (activeCollection != null)
+            // Launcher view doesn't require a page - render directly
+            if (viewMode == ViewMode.Launcher)
             {
-                _renderer.RenderCollectionItems(
-                    activeCollection,
-                    _navigationService.CollectionItemSelectedIndex,
-                    _navigationService.CollectionItemScrollOffset,
+                _renderer.RenderLauncher(
+                    _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                    _navigationService.LauncherSelectedIndex,
+                    _navigationService.LauncherScrollOffset,
                     options);
+                return;
             }
 
-            return;
-        }
+            // Collection views don't require a page - render directly
+            if (viewMode == ViewMode.CollectionList)
+            {
+                _renderer.RenderCollectionList(
+                    _commandContext.Collections?.ToList() ?? new List<Collection>(),
+                    _navigationService.CollectionSelectedIndex,
+                    _commandContext.DefaultCollectionId,
+                    _navigationService.CollectionListScrollOffset,
+                    options);
+                return;
+            }
 
-        var page = _navigationService.CurrentPage;
-        if (page == null)
+            if (viewMode == ViewMode.CollectionItems)
+            {
+                var activeCollection = _navigationService.ActiveCollection;
+                if (activeCollection != null)
+                {
+                    _renderer.RenderCollectionItems(
+                        activeCollection,
+                        _navigationService.CollectionItemSelectedIndex,
+                        _navigationService.CollectionItemScrollOffset,
+                        options);
+                }
+
+                return;
+            }
+
+            var page = _navigationService.CurrentPage;
+            if (page == null)
+            {
+                return;
+            }
+
+            await RenderAsync(page, viewMode, options, cancellationToken);
+        }
+        catch (Exception ex)
         {
-            return;
-        }
+            _logger.LogWarning(ex, "Render failed for current page");
 
-        await RenderAsync(page, viewMode, options, cancellationToken);
+            try
+            {
+                await Console.Error.WriteLineAsync($"Render error: {ex.Message}");
+            }
+            catch
+            {
+                // Avoid double fault if stderr write also fails
+            }
+        }
     }
 
     /// <summary>

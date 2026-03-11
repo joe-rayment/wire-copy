@@ -114,8 +114,17 @@ internal class ArticleRenderer
             ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}"
             : string.Empty;
 
-        var hints = "h/l:width v:links b:back ?:help";
+        var hints = "h/l:width R:refresh v:links b:back ?:help";
 
-        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{cacheBadge}{searchInfo} | {hints}{Reset}");
+        var url = context.CurrentPage?.Url;
+        var urlInfo = string.Empty;
+        if (!string.IsNullOrEmpty(url))
+        {
+            var maxUrlWidth = Math.Max(10, width - 60);
+            var displayUrl = RenderHelpers.TruncateUrl(url, maxUrlWidth);
+            urlInfo = $" {p.SecondaryText.AnsiFg}{displayUrl}{Reset}";
+        }
+
+        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{cacheBadge}{searchInfo}{urlInfo} | {hints}{Reset}");
     }
 }
