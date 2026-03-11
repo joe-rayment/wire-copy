@@ -33,4 +33,10 @@ public record PageLoadRequest
     /// Whether to bypass the cache and force a fresh network fetch.
     /// </summary>
     public bool ForceRefresh { get; init; }
+
+    /// <summary>
+    /// Whether to skip the HTTP fetch and go straight to Selenium.
+    /// Used for known-paywalled domains where cookies are needed for authentication.
+    /// </summary>
+    public bool ForceBrowser { get; init; }
 }

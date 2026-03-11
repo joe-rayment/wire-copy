@@ -44,6 +44,32 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@id, 'paywall')]"
     };
 
+    private static readonly string[] ContentAreaSelectors =
+    {
+        "//*[@itemprop='articleBody']",
+        "//*[contains(@class, 'article-body')]",
+        "//*[contains(@class, 'article-content')]",
+        "//*[contains(@class, 'entry-content')]",
+        "//*[contains(@class, 'post-content')]",
+        "//*[contains(@class, 'story-body')]",
+        "//*[contains(@class, 'story-content')]",
+        "//*[contains(@class, 'article__body')]",
+        "//*[contains(@class, 'article-text')]",
+        "//*[contains(@class, 'body-content')]",
+        "//*[contains(@class, 'main-content')]",
+        "//*[contains(@class, 'single-content')]",
+        "//*[contains(@class, 'post__content')]",
+        "//*[contains(@class, 'page-content')]",
+        "//*[contains(@class, 'field-body')]",
+        "//*[contains(@class, 'text-content')]",
+        "//article",
+        "//*[@role='article']",
+        "//*[@role='main']",
+        "//main",
+        "//*[@id='content']",
+        "//*[@class='content']"
+    };
+
     private static readonly string[] PaywallTextPatterns =
     {
         "subscribe to the times",
@@ -131,7 +157,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             var title = ExtractTitle(doc);
             var author = ExtractAuthor(doc);
             var publishedDate = ExtractPublishedDate(doc);
-            var paragraphs = ExtractParagraphs(doc);
+            var paragraphs = ExtractParagraphs(doc, url);
 
             if (paragraphs.Count == 0)
             {
@@ -614,38 +640,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
     }
 
-    private static HtmlNode? FindContentArea(HtmlDocument doc)
-    {
-        // Try common content area selectors (ordered by specificity)
-        var contentSelectors = new[]
-        {
-            "//*[@itemprop='articleBody']",
-            "//*[contains(@class, 'article-body')]",
-            "//*[contains(@class, 'article-content')]",
-            "//*[contains(@class, 'entry-content')]",
-            "//*[contains(@class, 'post-content')]",
-            "//*[contains(@class, 'story-body')]",
-            "//*[contains(@class, 'story-content')]",
-            "//article",
-            "//*[@role='article']",
-            "//*[@role='main']",
-            "//main",
-            "//*[@id='content']",
-            "//*[@class='content']"
-        };
-
-        foreach (var selector in contentSelectors)
-        {
-            var node = doc.DocumentNode.SelectSingleNode(selector);
-            if (node != null)
-            {
-                return node;
-            }
-        }
-
-        return null;
-    }
-
     private static bool IsInsideBoilerplate(HtmlNode node)
     {
         var current = node.ParentNode;
@@ -715,6 +709,97 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return paragraphs;
     }
 
+    private static List<string> ExtractSemanticParagraphs(HtmlNode contentArea)
+    {
+        var paragraphs = new List<string>();
+        var seen = new HashSet<string>();
+        var paragraphNodes = contentArea.SelectNodes(".//p | .//blockquote | .//li") ?? Enumerable.Empty<HtmlNode>();
+
+        foreach (var node in paragraphNodes)
+        {
+            if (IsInsideBoilerplate(node))
+            {
+                continue;
+            }
+
+            var text = CleanText(node.InnerText);
+
+            if (!string.IsNullOrWhiteSpace(text) && text.Length > 50 && seen.Add(text))
+            {
+                if (node.Name.Equals("blockquote", StringComparison.OrdinalIgnoreCase))
+                {
+                    paragraphs.Add($"\u201c{text}\u201d");
+                }
+                else
+                {
+                    paragraphs.Add(text);
+                }
+            }
+        }
+
+        return paragraphs;
+    }
+
+    private static List<string> FindLargestParagraphBlock(HtmlDocument doc)
+    {
+        var allParagraphs = doc.DocumentNode.SelectNodes("//p");
+        if (allParagraphs == null || allParagraphs.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        // Group consecutive <p> elements by their parent
+        var groups = new List<List<HtmlNode>>();
+        List<HtmlNode>? currentGroup = null;
+        HtmlNode? lastParent = null;
+
+        foreach (var p in allParagraphs)
+        {
+            if (IsInsideBoilerplate(p))
+            {
+                continue;
+            }
+
+            var parent = p.ParentNode;
+            if (parent != lastParent)
+            {
+                currentGroup = new List<HtmlNode>();
+                groups.Add(currentGroup);
+                lastParent = parent;
+            }
+
+            currentGroup!.Add(p);
+        }
+
+        // Score each group: total text length of substantial paragraphs
+        List<string>? bestBlock = null;
+        var bestScore = 0;
+
+        foreach (var group in groups)
+        {
+            var blockParagraphs = new List<string>();
+            var totalLength = 0;
+
+            foreach (var p in group)
+            {
+                var text = CleanText(p.InnerText);
+                if (!string.IsNullOrWhiteSpace(text) && text.Length > 50)
+                {
+                    blockParagraphs.Add(text);
+                    totalLength += text.Length;
+                }
+            }
+
+            if (blockParagraphs.Count >= 3 && totalLength > bestScore)
+            {
+                bestScore = totalLength;
+                bestBlock = blockParagraphs;
+            }
+        }
+
+        return bestBlock ?? new List<string>();
+    }
+
     private static string? GetDirectTextContent(HtmlNode node)
     {
         // Collect text from direct text nodes and inline elements only
@@ -770,76 +855,98 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     [GeneratedRegex(@"(?<=[.!?])\s+")]
     private static partial Regex SentenceRegex();
 
-    private List<string> ExtractParagraphs(HtmlDocument doc)
+    private List<(HtmlNode Node, string Selector)> FindAllContentAreas(HtmlDocument doc, string? url = null)
+    {
+        var results = new List<(HtmlNode Node, string Selector)>();
+
+        foreach (var selector in ContentAreaSelectors)
+        {
+            var node = doc.DocumentNode.SelectSingleNode(selector);
+            if (node != null)
+            {
+                results.Add((node, selector));
+            }
+        }
+
+        if (results.Count > 0)
+        {
+            _logger.LogDebug("Content area matched by selector: {Selector} for {Url}", results[0].Selector, url ?? "unknown");
+        }
+        else
+        {
+            _logger.LogDebug("No content area selector matched for {Url}", url ?? "unknown");
+        }
+
+        return results;
+    }
+
+    private List<string> ExtractParagraphs(HtmlDocument doc, string? url = null)
     {
         // Remove boilerplate content first
         RemoveBoilerplate(doc);
 
-        // Try to find the main content area
-        var contentArea = FindContentArea(doc);
-        if (contentArea == null)
+        // Try to find the main content areas (ordered by specificity)
+        var contentAreas = FindAllContentAreas(doc, url);
+
+        // Level 1: Try semantic elements in each content area
+        foreach (var (area, selector) in contentAreas)
         {
-            _logger.LogDebug("No content area found, using full document");
-            contentArea = doc.DocumentNode;
+            var paragraphs = ExtractSemanticParagraphs(area);
+            if (paragraphs.Count >= 3)
+            {
+                _logger.LogDebug("Level 1 extraction succeeded with selector {Selector} ({Count} paragraphs)", selector, paragraphs.Count);
+                return paragraphs;
+            }
         }
 
-        // Extract paragraphs from multiple element types
-        var paragraphs = new List<string>();
-        var seen = new HashSet<string>();
-        var paragraphNodes = contentArea.SelectNodes(".//p | .//blockquote | .//li") ?? Enumerable.Empty<HtmlNode>();
-
-        foreach (var node in paragraphNodes)
+        // Use best content area or full document for remaining levels
+        var contentArea = contentAreas.Count > 0 ? contentAreas[0].Node : doc.DocumentNode;
+        if (contentAreas.Count == 0)
         {
-            // Skip if inside a boilerplate element
-            if (IsInsideBoilerplate(node))
+            _logger.LogDebug("No content area found, using full document");
+        }
+
+        // Try Level 1 on the chosen area (may be full document if no areas matched)
+        var level1Paragraphs = ExtractSemanticParagraphs(contentArea);
+        if (level1Paragraphs.Count >= 3)
+        {
+            return level1Paragraphs;
+        }
+
+        // Level 2: Try divs with direct text content
+        var seen = new HashSet<string>(level1Paragraphs);
+        var paragraphsWithDivs = new List<string>(level1Paragraphs);
+        var divNodes = contentArea.SelectNodes(".//div") ?? Enumerable.Empty<HtmlNode>();
+        foreach (var div in divNodes)
+        {
+            if (IsInsideBoilerplate(div))
             {
                 continue;
             }
 
-            var text = CleanText(node.InnerText);
-
-            // Filter out very short paragraphs (likely navigation or metadata)
-            if (!string.IsNullOrWhiteSpace(text) && text.Length > 50 && seen.Add(text))
+            var directText = GetDirectTextContent(div);
+            if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
             {
-                // Prefix blockquotes for reader view clarity
-                if (node.Name.Equals("blockquote", StringComparison.OrdinalIgnoreCase))
-                {
-                    paragraphs.Add($"\u201c{text}\u201d");
-                }
-                else
-                {
-                    paragraphs.Add(text);
-                }
+                paragraphsWithDivs.Add(directText);
             }
         }
 
-        // If standard elements yielded few results, try divs with direct text content
-        if (paragraphs.Count < 3)
+        if (paragraphsWithDivs.Count >= 3)
         {
-            var divNodes = contentArea.SelectNodes(".//div") ?? Enumerable.Empty<HtmlNode>();
-            foreach (var div in divNodes)
-            {
-                if (IsInsideBoilerplate(div))
-                {
-                    continue;
-                }
-
-                // Only consider divs that have direct text (not just child elements)
-                var directText = GetDirectTextContent(div);
-                if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
-                {
-                    paragraphs.Add(directText);
-                }
-            }
+            return paragraphsWithDivs;
         }
 
-        // If we didn't get enough paragraphs, try a more aggressive approach
-        if (paragraphs.Count < 3)
+        // Level 2.5: Largest paragraph block heuristic
+        var largestBlock = FindLargestParagraphBlock(doc);
+        if (largestBlock.Count >= 3)
         {
-            _logger.LogDebug("Few paragraphs found ({Count}), trying alternative extraction", paragraphs.Count);
-            paragraphs = ExtractParagraphsAlternative(contentArea);
+            _logger.LogDebug("Largest paragraph block heuristic found {Count} paragraphs", largestBlock.Count);
+            return largestBlock;
         }
 
-        return paragraphs;
+        // Level 3: Aggressive alternative extraction
+        _logger.LogDebug("Few paragraphs found ({Count}), trying alternative extraction", paragraphsWithDivs.Count);
+        var alternative = ExtractParagraphsAlternative(contentArea);
+        return alternative.Count > paragraphsWithDivs.Count ? alternative : paragraphsWithDivs;
     }
 }

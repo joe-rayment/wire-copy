@@ -525,4 +525,95 @@ public class ReadableContentTests
     }
 
     #endregion
+
+    #region Improved Extraction
+
+    [Fact]
+    public async Task ExtractParagraphs_FindsContent_InBemStyleContainers()
+    {
+        // Arrange - HTML using BEM class naming (article__body)
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var p1 = "This is the first paragraph of the article with plenty of content to read through.";
+        var p2 = "The second paragraph continues the story with additional details and information for readers.";
+        var p3 = "A third paragraph wraps up the section with concluding thoughts and final remarks here.";
+        var html = $@"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='article__body'>
+                    <p>{p1}</p>
+                    <p>{p2}</p>
+                    <p>{p3}</p>
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Paragraphs.Should().HaveCount(3);
+        result.Paragraphs[0].Should().Contain("first paragraph");
+    }
+
+    [Fact]
+    public async Task ExtractParagraphs_FallsToNextContentArea_WhenFirstHasFewParagraphs()
+    {
+        // Arrange - Two content areas: first has 1 paragraph, second has 5
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var shortP = "This is a single paragraph in the first content area with enough characters to count.";
+        var longPs = string.Join("\n", Enumerable.Range(1, 5).Select(i =>
+            $"<p>Paragraph number {i} in the second content area with substantial text content for extraction testing.</p>"));
+        var html = $@"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='article-body'>
+                    <p>{shortP}</p>
+                </div>
+                <div class='entry-content'>
+                    {longPs}
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3, "should fall through to second content area with more paragraphs");
+    }
+
+    [Fact]
+    public async Task ExtractParagraphs_LargestParagraphBlock_FindsArticleBody()
+    {
+        // Arrange - Article body paragraphs scattered among nav/sidebar elements
+        // The main content is in a plain div with no special class, but has the largest block of <p> tags
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var articleParagraphs = string.Join("\n", Enumerable.Range(1, 5).Select(i =>
+            $"<p>This is article paragraph {i} with substantial text content that exceeds the minimum threshold for extraction.</p>"));
+        var html = $@"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='wrapper'>
+                    <div class='top-section'>
+                        <p>Short nav text here</p>
+                    </div>
+                    <div class='story-area'>
+                        {articleParagraphs}
+                    </div>
+                    <div class='bottom-section'>
+                        <p>Footer text here</p>
+                    </div>
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3, "largest paragraph block heuristic should find the main article body");
+        result.Paragraphs.Should().Contain(p => p.Contains("article paragraph"));
+    }
+
+    #endregion
 }

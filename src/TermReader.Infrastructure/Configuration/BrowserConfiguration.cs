@@ -55,6 +55,12 @@ public class BrowserConfiguration
     /// </summary>
     public int BotChallengeMaxWaitMs { get; init; } = 60000;
 
+    /// <summary>
+    /// Domains known to require authenticated browser sessions (paywall).
+    /// When cookies exist for these domains, skip HTTP and use Selenium directly.
+    /// </summary>
+    public string[] PaywalledDomains { get; init; } = ["nytimes.com", "wsj.com", "washingtonpost.com", "theathletic.com"];
+
     public string[] ExperimentalOptions { get; init; } =
     [
         "excludeSwitches", "enable-automation",
