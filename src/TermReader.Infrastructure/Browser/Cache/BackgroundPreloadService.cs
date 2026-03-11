@@ -67,6 +67,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
 
+    /// <inheritdoc />
+    public event Action? ProgressChanged;
+
     public void NotifyPageLoaded(Page page)
     {
         // Page loaded — queue will be rebuilt on next selection change
@@ -674,6 +677,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 {
                     _cache.Put(url, result);
                     _logger.LogDebug("Pre-loaded and cached: {Url}", url);
+
+                    try
+                    {
+                        ProgressChanged?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "ProgressChanged handler error");
+                    }
                 }
             }
             else

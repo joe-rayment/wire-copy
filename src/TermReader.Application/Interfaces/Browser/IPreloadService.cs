@@ -70,6 +70,13 @@ public interface IPreloadService : IDisposable
     PreloadProgress GetProgress();
 
     /// <summary>
+    /// Raised after each successful preload fetch that changes the cache state.
+    /// Subscribers can use this to trigger a UI refresh of the status bar.
+    /// Fires on a background thread — subscribers must handle thread safety.
+    /// </summary>
+    event Action? ProgressChanged;
+
+    /// <summary>
     /// Waits for an in-flight preload of the given URL to complete.
     /// Returns the result if successful, or null if no preload is in progress
     /// or the timeout expires.
