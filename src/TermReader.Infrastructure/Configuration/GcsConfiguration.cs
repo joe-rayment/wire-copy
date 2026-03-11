@@ -18,8 +18,8 @@ public partial class GcsConfiguration
     public string? BucketName { get; set; }
 
     /// <summary>
-    /// Gets the path to a GCS service account key JSON file.
-    /// Nullable; uses Application Default Credentials if not set.
+    /// Gets the path to a GCS service account key JSON file (from config file).
+    /// At runtime, the key path stored in UserSettingsStore takes precedence.
     /// </summary>
     public string? ServiceAccountKeyPath { get; init; }
 

@@ -1,10 +1,12 @@
 // Educational and personal use only.
 
+using System.Text.Json;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Storage.V1;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Podcast;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Infrastructure.Configuration;
 
@@ -15,15 +17,26 @@ namespace TermReader.Infrastructure.Podcast;
 /// </summary>
 internal sealed class GcsStorageClient : ICloudStorageClient
 {
+    private const string ServiceAccountKeySettingsKey = "GcsServiceAccountKeyPath";
+
+    private static readonly string[] RequiredKeyFileFields =
+        ["type", "project_id", "client_email", "private_key"];
+
     private readonly GcsConfiguration _config;
+    private readonly IUserSettingsStore _settingsStore;
     private readonly ILogger<GcsStorageClient> _logger;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private StorageClient? _client;
+    private string? _cachedKeyPath;
     private string? _ensuredBucketName;
 
-    public GcsStorageClient(IOptions<GcsConfiguration> config, ILogger<GcsStorageClient> logger)
+    public GcsStorageClient(
+        IOptions<GcsConfiguration> config,
+        IUserSettingsStore settingsStore,
+        ILogger<GcsStorageClient> logger)
     {
         _config = config.Value;
+        _settingsStore = settingsStore;
         _logger = logger;
     }
 
@@ -152,24 +165,28 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             {
                 client = await GetClientAsync(ct);
             }
-            catch (FileNotFoundException)
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (FileNotFoundException ex)
             {
                 return CloudStorageValidationResult.Invalid(
                     CloudStorageValidationErrorType.CredentialsInvalid,
-                    "Service account key file not found. Check the configured key path.");
+                    $"Service account key file not found at: {ex.FileName}");
             }
             catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.Unauthorized)
             {
                 return CloudStorageValidationResult.Invalid(
                     CloudStorageValidationErrorType.CredentialsInvalid,
-                    "Invalid credentials. Check your service account key or application default credentials.");
+                    $"Service account authentication failed: {ex.Message}");
             }
             catch (InvalidOperationException ex)
             {
                 _logger.LogDebug(ex, "GCS client creation failed with InvalidOperationException");
                 return CloudStorageValidationResult.Invalid(
                     CloudStorageValidationErrorType.CredentialsInvalid,
-                    "No GCP credentials found. Set up Application Default Credentials or configure a service account key.");
+                    "GCS service account key not configured. Use :set key to set the key file path.");
             }
 
             // Step 2: Bucket read - verify bucket exists (or create)
@@ -285,21 +302,147 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         {
             return await GetClientAsync(cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (InvalidOperationException ex)
         {
             throw new InvalidOperationException(
-                "No GCP credentials found. Set up a service account key or Application Default Credentials.", ex);
+                "GCS service account key not configured. Use :set key to set the key file path.", ex);
         }
         catch (FileNotFoundException ex)
         {
             throw new FileNotFoundException(
-                "Service account key file not found. Check the configured key path.", ex.FileName, ex);
+                $"Service account key file not found at: {ex.FileName}", ex.FileName, ex);
         }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Invalid service account key file: {ex.Message}", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Service account authentication failed: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Sets the service account key file path after validating the file.
+    /// The path is stored encrypted in user settings.
+    /// </summary>
+    /// <param name="path">Absolute path to the service account key JSON file.</param>
+    /// <returns>A validation result indicating success or describing the error.</returns>
+    public ServiceAccountKeyValidationResult SetServiceAccountKeyPath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        var validation = ValidateKeyFile(path);
+        if (!validation.IsValid)
+        {
+            return validation;
+        }
+
+        _settingsStore.Set(ServiceAccountKeySettingsKey, path, encrypt: true);
+
+        // Invalidate the cached client so the next call picks up the new key
+        _client = null;
+        _cachedKeyPath = null;
+        _ensuredBucketName = null;
+
+        _logger.LogInformation("Service account key path updated");
+        return ServiceAccountKeyValidationResult.Valid();
+    }
+
+    /// <summary>
+    /// Returns the stored service account key path, or null if not configured.
+    /// </summary>
+    public string? GetServiceAccountKeyPath()
+    {
+        return _settingsStore.Get(ServiceAccountKeySettingsKey)
+               ?? _config.ServiceAccountKeyPath;
+    }
+
+    /// <summary>
+    /// Removes the stored service account key path from settings and invalidates the cached client.
+    /// </summary>
+    public void ClearServiceAccountKey()
+    {
+        _settingsStore.Remove(ServiceAccountKeySettingsKey);
+        _client = null;
+        _cachedKeyPath = null;
+        _ensuredBucketName = null;
+
+        _logger.LogInformation("Service account key path cleared");
+    }
+
+    /// <summary>
+    /// Validates a service account key file without storing it.
+    /// </summary>
+    /// <param name="path">Absolute path to the service account key JSON file.</param>
+    /// <returns>A validation result with clear error messages if invalid.</returns>
+    public static ServiceAccountKeyValidationResult ValidateKeyFile(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!File.Exists(path))
+        {
+            return ServiceAccountKeyValidationResult.Invalid($"File not found: {path}");
+        }
+
+        string json;
+        try
+        {
+            json = File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            return ServiceAccountKeyValidationResult.Invalid($"Cannot read file: {ex.Message}");
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return ServiceAccountKeyValidationResult.Invalid("File is not valid JSON");
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            foreach (var field in RequiredKeyFileFields)
+            {
+                if (!root.TryGetProperty(field, out var prop)
+                    || prop.ValueKind == JsonValueKind.Null
+                    || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
+                {
+                    return ServiceAccountKeyValidationResult.Invalid(
+                        $"Invalid service account key file: missing '{field}'");
+                }
+            }
+
+            if (root.TryGetProperty("type", out var typeProp)
+                && typeProp.GetString() != "service_account")
+            {
+                return ServiceAccountKeyValidationResult.Invalid(
+                    $"Invalid key file: 'type' must be 'service_account', got '{typeProp.GetString()}'");
+            }
+        }
+
+        return ServiceAccountKeyValidationResult.Valid();
     }
 
     private async Task<StorageClient> GetClientAsync(CancellationToken cancellationToken)
     {
-        if (_client != null)
+        var keyPath = GetServiceAccountKeyPath();
+
+        // If the key path changed, invalidate the cached client
+        if (_client != null && _cachedKeyPath == keyPath)
         {
             return _client;
         }
@@ -307,20 +450,28 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         await _initLock.WaitAsync(cancellationToken);
         try
         {
-            if (_client != null)
+            // Double-check after lock acquisition
+            keyPath = GetServiceAccountKeyPath();
+            if (_client != null && _cachedKeyPath == keyPath)
             {
                 return _client;
             }
 
-            if (!string.IsNullOrWhiteSpace(_config.ServiceAccountKeyPath))
+            if (string.IsNullOrWhiteSpace(keyPath))
             {
-                var credential = GoogleCredential.FromFile(_config.ServiceAccountKeyPath);
-                _client = await StorageClient.CreateAsync(credential);
+                throw new InvalidOperationException(
+                    "GCS service account key not configured. Use :set key to set the key file path.");
             }
-            else
+
+            if (!File.Exists(keyPath))
             {
-                _client = await StorageClient.CreateAsync();
+                throw new FileNotFoundException(
+                    $"Service account key file not found: {keyPath}", keyPath);
             }
+
+            var credential = GoogleCredential.FromFile(keyPath);
+            _client = await StorageClient.CreateAsync(credential);
+            _cachedKeyPath = keyPath;
 
             return _client;
         }
@@ -388,4 +539,18 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             _initLock.Release();
         }
     }
+}
+
+/// <summary>
+/// Result of validating a GCS service account key file.
+/// </summary>
+public sealed record ServiceAccountKeyValidationResult
+{
+    public bool IsValid { get; private init; }
+    public string? ErrorMessage { get; private init; }
+
+    public static ServiceAccountKeyValidationResult Valid() => new() { IsValid = true };
+
+    public static ServiceAccountKeyValidationResult Invalid(string errorMessage) =>
+        new() { IsValid = false, ErrorMessage = errorMessage };
 }
