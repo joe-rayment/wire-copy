@@ -10,6 +10,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Browser.Cache;
 using TermReader.Infrastructure.Configuration;
 using Xunit;
@@ -375,6 +376,47 @@ public class BackgroundPreloadServiceTests
         var queue = service.BuildQueue(0, nodes, "https://example.com");
 
         queue.Should().HaveCount(1);
+    }
+
+    #endregion
+
+    #region Content Quality Gate
+
+    [Fact]
+    public void HasSufficientContent_UsedByPreloadService_RejectsEmptyPages()
+    {
+        // Verifies that the same HasSufficientContent check used by CachingPageLoader
+        // is accessible and works for the preload service's quality gate
+        var emptyHtml = "<html><body><p>short</p></body></html>";
+        CachingPageLoader.HasSufficientContent(emptyHtml).Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasSufficientContent_UsedByPreloadService_AcceptsRichContent()
+    {
+        var richHtml = "<html><body>" +
+            string.Join(" ", Enumerable.Range(1, 100).Select(i => $"<p>This is paragraph number {i} with enough words to be substantial content.</p>")) +
+            "</body></html>";
+        CachingPageLoader.HasSufficientContent(richHtml).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasSufficientContent_JsShellWithoutArticleMarkup_ReturnsFalse()
+    {
+        // JS shell pages without article indicators pass IsEmptyArticleShell
+        // but should be caught by HasSufficientContent
+        var jsShellHtml = @"<html>
+            <head><title>App</title></head>
+            <body>
+                <div id='root'></div>
+                <script src='/app.js'></script>
+                <noscript>Enable JavaScript</noscript>
+            </body></html>";
+
+        ReadableContentExtractor.IsEmptyArticleShell(jsShellHtml).Should().BeFalse(
+            "no article indicators, so IsEmptyArticleShell does not flag it");
+        CachingPageLoader.HasSufficientContent(jsShellHtml).Should().BeFalse(
+            "HasSufficientContent catches it as a quality gate");
     }
 
     #endregion

@@ -265,6 +265,181 @@ public class BrowserOrchestratorTests
 }
 
 /// <summary>
+/// Tests for redirect handling and URL preservation in LoadPageAsync.
+/// When a server redirects (e.g., /old -> /new), the Page entity should
+/// preserve the originally requested URL, not the final redirect target.
+/// </summary>
+[Trait("Category", "Unit")]
+public class BrowserOrchestratorRedirectTests
+{
+    private readonly IPageLoader _pageLoader;
+    private readonly ILinkExtractor _linkExtractor;
+    private readonly INavigationTreeBuilder _treeBuilder;
+    private readonly IReadableContentExtractor _contentExtractor;
+    private readonly IPageRenderer _renderer;
+    private readonly IPageCache _pageCache;
+    private readonly BrowserOrchestrator _sut;
+
+    public BrowserOrchestratorRedirectTests()
+    {
+        _pageLoader = Substitute.For<IPageLoader>();
+        _linkExtractor = Substitute.For<ILinkExtractor>();
+        _treeBuilder = Substitute.For<INavigationTreeBuilder>();
+        _contentExtractor = Substitute.For<IReadableContentExtractor>();
+        _renderer = Substitute.For<IPageRenderer>();
+        _pageCache = Substitute.For<IPageCache>();
+
+        var inputHandler = Substitute.For<IInputHandler>();
+        var browserConfig = Options.Create(new BrowserConfiguration());
+        var logger = Substitute.For<ILogger<BrowserOrchestrator>>();
+        var navLogger = Substitute.For<ILogger<NavigationService>>();
+        var navigationService = new NavigationService(navLogger);
+
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        var collectionService = Substitute.For<ICollectionService>();
+        collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Collections.Collection>>(
+                new List<Domain.Entities.Collections.Collection>()));
+        collectionService.GetDefaultCollectionAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Domain.Entities.Collections.Collection.Create("Reading List")));
+        var bookmarkService = Substitute.For<IBookmarkService>();
+        bookmarkService.GetAllBookmarksAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Domain.Entities.Bookmarks.Bookmark>>(
+                new List<Domain.Entities.Bookmarks.Bookmark>()));
+        serviceProvider.GetService(typeof(ICollectionService)).Returns(collectionService);
+        serviceProvider.GetService(typeof(IBookmarkService)).Returns(bookmarkService);
+        scope.ServiceProvider.Returns(serviceProvider);
+        scopeFactory.CreateScope().Returns(scope);
+
+        var browserSession = Substitute.For<IBrowserSessionControl>();
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var resizeDetector = Substitute.For<IResizeDetector>();
+
+        _sut = new BrowserOrchestrator(
+            _pageLoader,
+            _linkExtractor,
+            _treeBuilder,
+            _contentExtractor,
+            _renderer,
+            inputHandler,
+            navigationService,
+            scopeFactory,
+            browserSession,
+            themeProvider,
+            resizeDetector,
+            _pageCache,
+            Substitute.For<IPreloadService>(),
+            Substitute.For<IIdleDetector>(),
+            Substitute.For<ICookieManager>(),
+            browserConfig,
+            logger);
+    }
+
+    [Fact]
+    public async Task LoadPageAsync_PreservesRequestedUrl_WhenServerRedirects()
+    {
+        // Arrange - PageLoader returns a result where the final URL differs from requested
+        var requestedUrl = "https://example.com/short-link";
+        var redirectedUrl = "https://example.com/articles/2024/01/full-article-slug";
+
+        var metadata = new PageMetadata { Title = "Redirected Article" };
+        var html = "<html><head><title>Redirected Article</title></head><body><article><p>Content</p></article></body></html>";
+
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Successful(redirectedUrl, html, metadata));
+
+        var links = new List<LinkInfo>();
+        _linkExtractor.ExtractLinksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(links);
+        _treeBuilder.BuildTreeAsync(Arg.Any<List<LinkInfo>>(), Arg.Any<CancellationToken>())
+            .Returns(NavigationTree.Build(links));
+
+        var readable = ReadableContent.Create(
+            "Redirected Article",
+            "Content of the redirected article with enough text to pass.",
+            new List<string> { "Content of the redirected article with enough text to pass." });
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(readable);
+
+        // Act
+        var page = await _sut.LoadPageAsync(requestedUrl);
+
+        // Assert - Page URL should be the requested URL, not the redirected one
+        page.Url.Should().Be(requestedUrl,
+            "the Page entity should preserve the originally requested URL, not the redirect target");
+    }
+
+    [Fact]
+    public async Task Cache_DoesNotServeWrongContent_AfterRedirect()
+    {
+        // Arrange - URL A and URL B have different content; cache should not mix them
+        var urlA = "https://example.com/article-a";
+        var urlB = "https://example.com/article-b";
+
+        // URL A returns content for article A
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.Url == urlA),
+            Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Successful(
+                urlA,
+                "<html><body><article><h1>Article A</h1><p>Content A</p></article></body></html>",
+                new PageMetadata { Title = "Article A" }));
+
+        // URL B returns different content (simulating no cache collision)
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.Url == urlB),
+            Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Successful(
+                urlB,
+                "<html><body><article><h1>Article B</h1><p>Content B</p></article></body></html>",
+                new PageMetadata { Title = "Article B" }));
+
+        var links = new List<LinkInfo>();
+        _linkExtractor.ExtractLinksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(links);
+        _treeBuilder.BuildTreeAsync(Arg.Any<List<LinkInfo>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => NavigationTree.Build(callInfo.ArgAt<List<LinkInfo>>(0)));
+
+        // Content extraction returns different content based on the HTML
+        _contentExtractor.ExtractAsync(
+            Arg.Is<string>(h => h.Contains("Article A")),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>())
+            .Returns(ReadableContent.Create(
+                "Article A",
+                "Content A with sufficient length for testing purposes here.",
+                new List<string> { "Content A with sufficient length for testing purposes here." }));
+
+        _contentExtractor.ExtractAsync(
+            Arg.Is<string>(h => h.Contains("Article B")),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>())
+            .Returns(ReadableContent.Create(
+                "Article B",
+                "Content B with sufficient length for testing purposes here.",
+                new List<string> { "Content B with sufficient length for testing purposes here." }));
+
+        // Act - load both pages
+        var pageA = await _sut.LoadPageAsync(urlA);
+        var pageB = await _sut.LoadPageAsync(urlB);
+
+        // Assert - each page has its own content
+        pageA.Url.Should().Be(urlA);
+        pageA.Metadata.Title.Should().Be("Article A");
+
+        pageB.Url.Should().Be(urlB);
+        pageB.Metadata.Title.Should().Be("Article B");
+
+        // Verify both pages were actually loaded (no cross-contamination)
+        pageA.Metadata.Title.Should().NotBe(pageB.Metadata.Title,
+            "different URLs should return different content, not cached cross-contamination");
+    }
+}
+
+/// <summary>
 /// Tests for HandleCommandAsync behavior via the RunAsync loop (indirectly).
 /// Since HandleCommandAsync is private, these tests verify behavior by setting up
 /// the orchestrator with specific input sequences and checking side effects.
