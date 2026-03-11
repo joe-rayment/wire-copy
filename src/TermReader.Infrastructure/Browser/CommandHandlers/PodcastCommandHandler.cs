@@ -56,152 +56,165 @@ internal static class PodcastCommandHandler
             return;
         }
 
-        // Press feedback: render one frame with inverted button colors, then continue
-        var pressedOptions = options with { PodcastButtonState = 1 }; // 1 = Pressed
-        await ctx.RenderCurrentPageAsync(pressedOptions, ct);
-        await Task.Delay(100, ct);
-
-        using var scope = ctx.ScopeFactory.CreateScope();
-        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
-        var gcsConfig = scope.ServiceProvider
-            .GetRequiredService<IOptions<GcsConfiguration>>().Value;
-        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-
-        // Hydrate persisted settings if not already configured
-        if (!ttsService.IsConfigured)
+        try
         {
-            var savedKey = settingsStore.Get("OpenAiApiKey");
-            if (!string.IsNullOrWhiteSpace(savedKey))
+            // Press feedback: render one frame with inverted button colors, then continue
+            var pressedOptions = options with { PodcastButtonState = 1 }; // 1 = Pressed
+            await ctx.RenderCurrentPageAsync(pressedOptions, ct);
+            await Task.Delay(100, ct);
+
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
+            var gcsConfig = scope.ServiceProvider
+                .GetRequiredService<IOptions<GcsConfiguration>>().Value;
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+            // Hydrate persisted settings if not already configured
+            if (!ttsService.IsConfigured)
             {
-                ttsService.SetApiKeyOverride(savedKey);
-
-                // Validate the saved key still works (5s timeout — don't block on network issues)
-                try
+                var savedKey = settingsStore.Get("OpenAiApiKey");
+                if (!string.IsNullOrWhiteSpace(savedKey))
                 {
-                    using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    validationCts.CancelAfter(TimeSpan.FromSeconds(5));
-                    var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token);
+                    ttsService.SetApiKeyOverride(savedKey);
 
-                    if (!validation.IsValid && validation.ErrorCode is "invalid_key" or "insufficient_credits")
+                    // Validate the saved key still works (5s timeout — don't block on network issues)
+                    try
                     {
-                        ctx.Logger.LogWarning(
-                            "Saved API key is no longer valid ({ErrorCode}), clearing", validation.ErrorCode);
-                        settingsStore.Remove("OpenAiApiKey");
-                        ttsService.SetApiKeyOverride(string.Empty);
-                        ctx.NavigationService.SetStatusMessage("Saved API key is no longer valid");
+                        using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        validationCts.CancelAfter(TimeSpan.FromSeconds(5));
+                        var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token);
+
+                        if (!validation.IsValid && validation.ErrorCode is "invalid_key" or "insufficient_credits")
+                        {
+                            ctx.Logger.LogWarning(
+                                "Saved API key is no longer valid ({ErrorCode}), clearing", validation.ErrorCode);
+                            settingsStore.Remove("OpenAiApiKey");
+                            ttsService.SetApiKeyOverride(string.Empty);
+                            ctx.NavigationService.SetStatusMessage("Saved API key is no longer valid");
+                        }
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        // Validation timed out (network unreachable) — proceed with saved key
+                        ctx.Logger.LogDebug("API key validation timed out, proceeding with saved key");
                     }
                 }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            }
+
+            if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+            {
+                var savedBucket = settingsStore.Get("GcsBucketName");
+                if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
                 {
-                    // Validation timed out (network unreachable) — proceed with saved key
-                    ctx.Logger.LogDebug("API key validation timed out, proceeding with saved key");
+                    gcsConfig.BucketName = savedBucket;
                 }
             }
-        }
 
-        if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
-        {
-            var savedBucket = settingsStore.Get("GcsBucketName");
-            if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
+            // Pre-flight FFmpeg check: fail fast before slow cache analysis
+            var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
+            if (!await audioAssembler.ValidatePrerequisitesAsync(ct))
             {
-                gcsConfig.BucketName = savedBucket;
-            }
-        }
-
-        // Pre-flight FFmpeg check: fail fast before slow cache analysis
-        var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
-        if (!await audioAssembler.ValidatePrerequisitesAsync(ct))
-        {
-            await ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
-
-        // Pre-flight GCS validation: check credentials BEFORE slow cache analysis
-        string? preflight_bucketError = null;
-        string? preflight_feedUrl = null;
-        string? preflight_feedStatusNote = null;
-        if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
-        {
-            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
-
-            if (success)
-            {
-                preflight_feedUrl = url;
-                preflight_feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
-            }
-            else if (error != null)
-            {
-                preflight_bucketError = error;
-            }
-        }
-
-        // Pre-flight cache analysis for cost estimation (with progress UI)
-        CacheAnalysis? cacheAnalysis = null;
-        if (ttsService.IsConfigured)
-        {
-            cacheAnalysis = await ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct);
-            options = ctx.GetCurrentRenderOptions();
-        }
-
-        // Show cache-wait screen if preloading is still in progress
-        var skippedWait = await ShowCacheWaitScreenAsync(ctx, options, collection, ct);
-
-        // Re-fetch render options in case terminal resized during wait
-        if (!skippedWait)
-        {
-            options = ctx.GetCurrentRenderOptions();
-        }
-
-        var confirmed = await ShowConfirmationScreenAsync(
-            ctx,
-            options,
-            collection,
-            ttsService,
-            gcsConfig,
-            settingsStore,
-            cacheAnalysis,
-            preflight_bucketError,
-            preflight_feedUrl,
-            preflight_feedStatusNote,
-            ct);
-
-        if (!confirmed)
-        {
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
-
-        var result = await ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct);
-
-        if (result == null)
-        {
-            ctx.NavigationService.SetStatusMessage("Podcast generation cancelled");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
-
-        if (!result.Success)
-        {
-            // If TTS failed due to auth error, clear the persisted key so user is re-prompted
-            var error = result.ErrorMessage ?? "Unknown error";
-            if (error.Contains("401", StringComparison.Ordinal) ||
-                error.Contains("403", StringComparison.Ordinal) ||
-                error.Contains("not configured", StringComparison.OrdinalIgnoreCase))
-            {
-                settingsStore.Remove("OpenAiApiKey");
-                ttsService.SetApiKeyOverride(string.Empty);
+                await ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct);
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
             }
 
-            await ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
+            // Pre-flight GCS validation: check credentials BEFORE slow cache analysis
+            string? preflight_bucketError = null;
+            string? preflight_feedUrl = null;
+            string? preflight_feedStatusNote = null;
+            if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+            {
+                var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                    ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
 
-        await ShowCompletionScreenAsync(ctx, options, result, ct);
-        await ctx.RenderCurrentPageAsync(options, ct);
+                if (success)
+                {
+                    preflight_feedUrl = url;
+                    preflight_feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+                }
+                else if (error != null)
+                {
+                    preflight_bucketError = error;
+                }
+            }
+
+            // Pre-flight cache analysis for cost estimation (with progress UI)
+            CacheAnalysis? cacheAnalysis = null;
+            if (ttsService.IsConfigured)
+            {
+                cacheAnalysis = await ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct);
+                options = ctx.GetCurrentRenderOptions();
+            }
+
+            // Show cache-wait screen if preloading is still in progress
+            var skippedWait = await ShowCacheWaitScreenAsync(ctx, options, collection, ct);
+
+            // Re-fetch render options in case terminal resized during wait
+            if (!skippedWait)
+            {
+                options = ctx.GetCurrentRenderOptions();
+            }
+
+            var confirmed = await ShowConfirmationScreenAsync(
+                ctx,
+                options,
+                collection,
+                ttsService,
+                gcsConfig,
+                settingsStore,
+                cacheAnalysis,
+                preflight_bucketError,
+                preflight_feedUrl,
+                preflight_feedStatusNote,
+                ct);
+
+            if (!confirmed)
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var result = await ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct);
+
+            if (result == null)
+            {
+                ctx.NavigationService.SetStatusMessage("Podcast generation cancelled");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            if (!result.Success)
+            {
+                // If TTS failed due to auth error, clear the persisted key so user is re-prompted
+                var error = result.ErrorMessage ?? "Unknown error";
+                if (error.Contains("401", StringComparison.Ordinal) ||
+                    error.Contains("403", StringComparison.Ordinal) ||
+                    error.Contains("not configured", StringComparison.OrdinalIgnoreCase))
+                {
+                    settingsStore.Remove("OpenAiApiKey");
+                    ttsService.SetApiKeyOverride(string.Empty);
+                }
+
+                await ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct);
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            await ShowCompletionScreenAsync(ctx, options, result, ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogError(ex, "Podcast generation failed with unexpected error");
+            ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}");
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
     }
 
     /// <summary>

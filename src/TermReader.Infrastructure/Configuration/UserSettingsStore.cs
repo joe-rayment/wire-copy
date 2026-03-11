@@ -28,7 +28,7 @@ internal sealed class UserSettingsStore : IUserSettingsStore
     private readonly IDataProtector _protector;
     private readonly ILogger<UserSettingsStore> _logger;
     private readonly object _lock = new();
-    private Dictionary<string, SettingsEntry> _entries;
+    private readonly Dictionary<string, SettingsEntry> _entries;
 
     public UserSettingsStore(IDataProtectionProvider dataProtection, ILogger<UserSettingsStore> logger)
     {
@@ -121,9 +121,9 @@ internal sealed class UserSettingsStore : IUserSettingsStore
             File.WriteAllText(tempPath, json);
             File.Move(tempPath, SettingsPath, overwrite: true);
         }
-        catch (IOException ex)
+        catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to save settings to {Path}", SettingsPath);
+            _logger.LogWarning(ex, "Failed to save settings to disk");
         }
     }
 

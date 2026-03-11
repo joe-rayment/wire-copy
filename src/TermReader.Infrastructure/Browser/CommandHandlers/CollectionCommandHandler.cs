@@ -263,81 +263,6 @@ internal static class CollectionCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
-    private static async Task<bool> ShowClearConfirmationAsync(
-        CommandContext ctx,
-        RenderOptions options,
-        Domain.Entities.Collections.Collection collection,
-        CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
-
-            var width = Math.Max(20, options.TerminalWidth - 2);
-
-            // Title box (error-colored for destructive action)
-            helpers.WriteLine();
-            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
-            var title = RenderHelpers.TruncateText("Clear Collection", width - 4);
-            helpers.WriteLine(
-                $"{p.ErrorFg.AnsiFg}\u2502 {title.PadRight(width - 4)} \u2502{Reset}");
-            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
-            helpers.WriteLine();
-
-            // Warning
-            helpers.WriteLine(
-                $"  {p.ErrorFg.AnsiFg}\u26a0  This will permanently remove all {collection.Items.Count} " +
-                $"article(s) from \"{collection.Name}\".{Reset}");
-            helpers.WriteLine();
-
-            // Article list
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Articles to remove:{Reset}");
-
-            // Reserve lines for prompt area (instruction + prompt + padding)
-            var maxArticleLines = Math.Max(1, options.TerminalHeight - helpers.LinesWritten - 5);
-            var articleCount = Math.Min(collection.Items.Count, maxArticleLines);
-
-            for (var i = 0; i < articleCount; i++)
-            {
-                var item = collection.Items[i];
-                var displayTitle = RenderHelpers.TruncateText(item.Title, width - 8);
-                helpers.WriteLine($"    {p.ErrorFg.AnsiFg}\u2022{Reset} {p.PrimaryText.AnsiFg}{displayTitle}{Reset}");
-            }
-
-            if (collection.Items.Count > articleCount)
-            {
-                helpers.WriteLine(
-                    $"    {p.SecondaryText.AnsiFg}... and {collection.Items.Count - articleCount} more{Reset}");
-            }
-
-            helpers.WriteLine();
-            helpers.WriteLine(
-                $"  {p.SecondaryText.AnsiFg}Type {p.ErrorFg.AnsiFg}clear{p.SecondaryText.AnsiFg} to confirm, " +
-                $"or press {p.PrimaryText.AnsiFg}Esc{p.SecondaryText.AnsiFg} to cancel{Reset}");
-            helpers.ClearRemainingLines();
-
-            // Text input at the bottom of the screen
-            var response = await ctx.InputHandler.PromptForInputAsync("> ", ct);
-
-            if (response == null)
-            {
-                // Escape pressed
-                return false;
-            }
-
-            if (string.Equals(response.Trim(), "clear", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            // Wrong input — loop to re-render the modal
-        }
-
-        return false;
-    }
-
     public static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionItems)
@@ -413,11 +338,22 @@ internal static class CollectionCommandHandler
             using var scope = ctx.ScopeFactory.CreateScope();
             var service = ctx.CreateCollectionService(scope);
 
-            // Purge expired Reading List items (16-hour auto-expiry)
-            var purged = await service.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
-            if (purged > 0)
+            // Purge expired Reading List items (16-hour auto-expiry) — non-critical
+            try
             {
-                ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
+                var purged = await service.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
+                if (purged > 0)
+                {
+                    ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to purge expired Reading List items; continuing");
             }
 
             // Go directly to Reading List items view (skip CollectionList)
@@ -427,12 +363,91 @@ internal static class CollectionCommandHandler
             await ctx.RefreshCollectionsAsync(ct);
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             ctx.Logger.LogError(ex, "Failed to open Reading List");
-            ctx.NavigationService.ExitCollections();
+            ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+    }
+
+    private static async Task<bool> ShowClearConfirmationAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Domain.Entities.Collections.Collection collection,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+
+            // Title box (error-colored for destructive action)
+            helpers.WriteLine();
+            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
+            var title = RenderHelpers.TruncateText("Clear Collection", width - 4);
+            helpers.WriteLine(
+                $"{p.ErrorFg.AnsiFg}\u2502 {title.PadRight(width - 4)} \u2502{Reset}");
+            helpers.WriteLine($"{p.ErrorFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
+            helpers.WriteLine();
+
+            // Warning
+            helpers.WriteLine(
+                $"  {p.ErrorFg.AnsiFg}\u26a0  This will permanently remove all {collection.Items.Count} " +
+                $"article(s) from \"{collection.Name}\".{Reset}");
+            helpers.WriteLine();
+
+            // Article list
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Articles to remove:{Reset}");
+
+            // Reserve lines for prompt area (instruction + prompt + padding)
+            var maxArticleLines = Math.Max(1, options.TerminalHeight - helpers.LinesWritten - 5);
+            var articleCount = Math.Min(collection.Items.Count, maxArticleLines);
+
+            for (var i = 0; i < articleCount; i++)
+            {
+                var item = collection.Items[i];
+                var displayTitle = RenderHelpers.TruncateText(item.Title, width - 8);
+                helpers.WriteLine($"    {p.ErrorFg.AnsiFg}\u2022{Reset} {p.PrimaryText.AnsiFg}{displayTitle}{Reset}");
+            }
+
+            if (collection.Items.Count > articleCount)
+            {
+                helpers.WriteLine(
+                    $"    {p.SecondaryText.AnsiFg}... and {collection.Items.Count - articleCount} more{Reset}");
+            }
+
+            helpers.WriteLine();
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}Type {p.ErrorFg.AnsiFg}clear{p.SecondaryText.AnsiFg} to confirm, " +
+                $"or press {p.PrimaryText.AnsiFg}Esc{p.SecondaryText.AnsiFg} to cancel{Reset}");
+            helpers.ClearRemainingLines();
+
+            // Text input at the bottom of the screen
+            var response = await ctx.InputHandler.PromptForInputAsync("> ", ct);
+
+            if (response == null)
+            {
+                // Escape pressed
+                return false;
+            }
+
+            if (string.Equals(response.Trim(), "clear", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Wrong input — loop to re-render the modal
+        }
+
+        return false;
     }
 
     private static int IndexOfItemById(IReadOnlyList<Domain.Entities.Collections.CollectionItem> items, Guid id)
