@@ -136,7 +136,8 @@ internal static class TextChunker
         var sentences = new List<string>();
         var current = new StringBuilder();
 
-        for (var i = 0; i < text.Length; i++)
+        var i = 0;
+        while (i < text.Length)
         {
             current.Append(text[i]);
 
@@ -153,6 +154,8 @@ internal static class TextChunker
                     i++;
                 }
             }
+
+            i++;
         }
 
         if (current.Length > 0)

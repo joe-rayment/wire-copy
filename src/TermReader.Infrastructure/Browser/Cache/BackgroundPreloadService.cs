@@ -35,6 +35,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly Timer _debounceTimer;
     private List<PreloadItem> _queue = [];
     private volatile bool _paused;
+    private volatile bool _eagerMode;
     private volatile bool _disposed;
 
     // Debounce state: stores the latest selection change parameters
@@ -133,6 +134,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
+    public void EnableEagerMode()
+    {
+        _eagerMode = true;
+        SignalQueueChanged();
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Background pre-load service started");
@@ -141,8 +148,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             try
             {
-                // Wait once for user to become idle before starting a batch
-                await _idleDetector.WaitForIdleAsync(cancellationToken);
+                // Wait once for user to become idle before starting a batch (skip in eager mode)
+                if (!_eagerMode)
+                {
+                    await _idleDetector.WaitForIdleAsync(cancellationToken);
+                }
 
                 // Process the entire queue while user stays idle
                 while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && _idleDetector.IsIdle)
@@ -159,6 +169,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     var delayMs = GetAdaptiveDelay(item.Url);
                     await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
                 }
+
+                // Batch complete (queue drained) — reset eager mode
+                _eagerMode = false;
 
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
                 await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);

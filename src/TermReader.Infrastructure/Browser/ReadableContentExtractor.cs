@@ -208,7 +208,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // Fall back to og:title or <title>
-        var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null);
+        var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!);
         if (!string.IsNullOrWhiteSpace(ogTitle))
         {
             return CleanText(ogTitle);
@@ -221,7 +221,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     private static string? ExtractAuthor(HtmlDocument doc)
     {
         // 1. meta[name="author"] — most reliable when it's a real name (not URL)
-        var metaNameAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", null);
+        var metaNameAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", null!);
         if (!string.IsNullOrWhiteSpace(metaNameAuthor) && !IsUrl(metaNameAuthor))
         {
             return CleanAuthorText(metaNameAuthor);
@@ -270,7 +270,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // 5. article:author meta (OG spec — typically a URL)
-        var articleAuthor = doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", null);
+        var articleAuthor = doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", null!);
         if (!string.IsNullOrWhiteSpace(articleAuthor))
         {
             if (!IsUrl(articleAuthor))
@@ -444,9 +444,9 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     private static DateTime? ExtractPublishedDate(HtmlDocument doc)
     {
         // Try meta tags with date info
-        var metaDate = doc.DocumentNode.SelectSingleNode("//meta[@property='article:published_time']")?.GetAttributeValue("content", null) ??
-                      doc.DocumentNode.SelectSingleNode("//meta[@name='pubdate']")?.GetAttributeValue("content", null) ??
-                      doc.DocumentNode.SelectSingleNode("//meta[@name='publishdate']")?.GetAttributeValue("content", null);
+        var metaDate = doc.DocumentNode.SelectSingleNode("//meta[@property='article:published_time']")?.GetAttributeValue("content", null!) ??
+                      doc.DocumentNode.SelectSingleNode("//meta[@name='pubdate']")?.GetAttributeValue("content", null!) ??
+                      doc.DocumentNode.SelectSingleNode("//meta[@name='publishdate']")?.GetAttributeValue("content", null!);
 
         if (DateTime.TryParse(metaDate, out var date))
         {
@@ -456,7 +456,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         // Try time elements
         var timeNode = doc.DocumentNode.SelectSingleNode("//time[@datetime]") ??
                        doc.DocumentNode.SelectSingleNode("//time[@itemprop='datePublished']");
-        var timeAttr = timeNode?.GetAttributeValue("datetime", null);
+        var timeAttr = timeNode?.GetAttributeValue("datetime", null!);
         if (DateTime.TryParse(timeAttr, out date))
         {
             return date;
@@ -464,7 +464,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // Try itemprop datePublished
         var datePublished = doc.DocumentNode.SelectSingleNode("//*[@itemprop='datePublished']");
-        var contentAttr = datePublished?.GetAttributeValue("content", null) ?? CleanText(datePublished?.InnerText);
+        var contentAttr = datePublished?.GetAttributeValue("content", null!) ?? CleanText(datePublished?.InnerText);
         if (DateTime.TryParse(contentAttr, out date))
         {
             return date;

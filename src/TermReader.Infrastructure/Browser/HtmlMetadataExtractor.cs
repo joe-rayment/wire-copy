@@ -19,7 +19,7 @@ internal static class HtmlMetadataExtractor
         var node = doc.DocumentNode.SelectSingleNode($"//meta[@name='{name}']") ??
                    doc.DocumentNode.SelectSingleNode($"//meta[@property='{name}']");
 
-        var value = node?.GetAttributeValue("content", null);
+        var value = node?.GetAttributeValue("content", null!);
         return value != null ? WebUtility.HtmlDecode(value) : null;
     }
 

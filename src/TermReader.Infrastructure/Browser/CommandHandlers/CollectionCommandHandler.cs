@@ -361,6 +361,7 @@ internal static class CollectionCommandHandler
             ctx.NavigationService.EnterCollections();
             ctx.NavigationService.EnterCollection(readingList);
             await ctx.RefreshCollectionsAsync(ct);
+            ctx.PreloadService.EnableEagerMode();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
         catch (OperationCanceledException)

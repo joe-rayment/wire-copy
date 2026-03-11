@@ -20,7 +20,6 @@ internal static class CollectionCacheHelper
         IPageCache pageCache,
         IPreloadService preloadService)
     {
-        var progress = preloadService.GetProgress();
         var cachedUrls = pageCache.GetCachedUrls();
 
         var articles = collection.Items.Select(item =>

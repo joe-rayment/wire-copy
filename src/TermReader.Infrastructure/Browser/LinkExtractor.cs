@@ -90,6 +90,11 @@ public class LinkExtractor : ILinkExtractor
 
         _logger.LogDebug("ExtractLinksAsync: html length = {Length}, baseUrl = {BaseUrl}", html?.Length ?? 0, baseUrl);
 
+        if (string.IsNullOrEmpty(html))
+        {
+            return Task.FromResult(links);
+        }
+
         try
         {
             var doc = new HtmlDocument();
@@ -163,7 +168,7 @@ public class LinkExtractor : ILinkExtractor
                     var linkInfo = ClassifyLink(absoluteUrl, displayText, parentSelector, baseUrl);
 
                     // Set ARIA label if present
-                    var ariaLabel = anchor.GetAttributeValue("aria-label", null);
+                    var ariaLabel = anchor.GetAttributeValue("aria-label", null!);
                     if (!string.IsNullOrWhiteSpace(ariaLabel))
                     {
                         linkInfo = linkInfo with { AriaLabel = ariaLabel };
@@ -467,7 +472,7 @@ public class LinkExtractor : ILinkExtractor
             if (IsSectionContainer(current))
             {
                 // Check aria-label first
-                var ariaLabel = current.GetAttributeValue("aria-label", null);
+                var ariaLabel = current.GetAttributeValue("aria-label", null!);
                 if (!string.IsNullOrWhiteSpace(ariaLabel) && IsValidSectionTitle(ariaLabel))
                 {
                     return ariaLabel.Trim();
@@ -486,6 +491,29 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Extracts page-level author and date from JSON-LD, meta tags, and other page-wide indicators.
+    /// Used as fallback when per-link container extraction doesn't find metadata.
+    /// </summary>
+    internal static (string? Author, DateTime? PublishedDate) ExtractPageLevelMetadata(HtmlDocument doc)
+    {
+        var author = ExtractPageAuthorFromJsonLd(doc);
+        var pubDate = ExtractPageDateFromMeta(doc);
+
+        if (author == null)
+        {
+            // Fallback to meta[name="author"]
+            var authorMeta = doc.DocumentNode.SelectSingleNode("//meta[@name='author']");
+            var content = authorMeta?.GetAttributeValue("content", null!);
+            if (!string.IsNullOrWhiteSpace(content) && !content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                author = content.Trim();
+            }
+        }
+
+        return (author, pubDate);
     }
 
     private static bool IsSectionContainer(HtmlNode node)
@@ -510,17 +538,14 @@ public class LinkExtractor : ILinkExtractor
 
     private static string? FindDirectChildHeading(HtmlNode container)
     {
-        foreach (var child in container.ChildNodes)
+        foreach (var child in container.ChildNodes.Where(child => HeadingTags.Contains(child.Name)))
         {
-            if (HeadingTags.Contains(child.Name))
-            {
-                var text = child.InnerText?.Trim();
-                text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+            var text = child.InnerText?.Trim();
+            text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
 
-                if (IsValidSectionTitle(text))
-                {
-                    return text;
-                }
+            if (IsValidSectionTitle(text))
+            {
+                return text;
             }
         }
 
@@ -547,29 +572,6 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Extracts page-level author and date from JSON-LD, meta tags, and other page-wide indicators.
-    /// Used as fallback when per-link container extraction doesn't find metadata.
-    /// </summary>
-    internal static (string? Author, DateTime? PublishedDate) ExtractPageLevelMetadata(HtmlDocument doc)
-    {
-        var author = ExtractPageAuthorFromJsonLd(doc);
-        var pubDate = ExtractPageDateFromMeta(doc);
-
-        if (author == null)
-        {
-            // Fallback to meta[name="author"]
-            var authorMeta = doc.DocumentNode.SelectSingleNode("//meta[@name='author']");
-            var content = authorMeta?.GetAttributeValue("content", null);
-            if (!string.IsNullOrWhiteSpace(content) && !content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                author = content.Trim();
-            }
-        }
-
-        return (author, pubDate);
     }
 
     private static string? ExtractPageAuthorFromJsonLd(HtmlDocument doc)
@@ -660,7 +662,7 @@ public class LinkExtractor : ILinkExtractor
         foreach (var selector in dateSelectors)
         {
             var node = doc.DocumentNode.SelectSingleNode(selector);
-            var content = node?.GetAttributeValue("content", null);
+            var content = node?.GetAttributeValue("content", null!);
             if (!string.IsNullOrWhiteSpace(content) &&
                 DateTimeOffset.TryParse(
                     content,

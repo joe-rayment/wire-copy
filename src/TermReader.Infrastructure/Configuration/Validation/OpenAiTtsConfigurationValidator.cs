@@ -9,6 +9,16 @@ namespace TermReader.Infrastructure.Configuration.Validation;
 /// </summary>
 public class OpenAiTtsConfigurationValidator : IValidateOptions<OpenAiTtsConfiguration>
 {
+    private static readonly HashSet<string> ValidVoices = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
+    };
+
+    private static readonly HashSet<string> ValidOutputFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "mp3", "opus", "aac", "flac", "wav", "pcm",
+    };
+
     public ValidateOptionsResult Validate(string? name, OpenAiTtsConfiguration options)
     {
         var errors = new List<string>();
@@ -63,14 +73,4 @@ public class OpenAiTtsConfigurationValidator : IValidateOptions<OpenAiTtsConfigu
             ? ValidateOptionsResult.Fail(errors)
             : ValidateOptionsResult.Success;
     }
-
-    private static readonly HashSet<string> ValidVoices = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-    };
-
-    private static readonly HashSet<string> ValidOutputFormats = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "mp3", "opus", "aac", "flac", "wav", "pcm",
-    };
 }
