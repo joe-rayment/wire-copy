@@ -969,15 +969,7 @@ public class BrowserOrchestrator : IBrowserService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Render failed for current page");
-
-            try
-            {
-                await Console.Error.WriteLineAsync($"Render error: {ex.Message}");
-            }
-            catch
-            {
-                // Avoid double fault if stderr write also fails
-            }
+            _navigationService.SetStatusMessage($"Render error: {ex.Message}");
         }
     }
 

@@ -123,7 +123,7 @@ internal sealed class UserSettingsStore : IUserSettingsStore
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to save settings to disk");
+            _logger.LogWarning(ex, "Failed to save settings to {Path}", SettingsPath);
         }
     }
 
