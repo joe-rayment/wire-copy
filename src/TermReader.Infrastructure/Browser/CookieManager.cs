@@ -115,6 +115,98 @@ public class CookieManager : ICookieManager
         }
     }
 
+    public async Task<IReadOnlyList<StoredCookie>> LoadCookiesAsync()
+    {
+        try
+        {
+            if (!File.Exists(_cookieFilePath))
+            {
+                _logger.LogDebug("No cookie file found at {Path}, returning empty list", _cookieFilePath);
+                return Array.Empty<StoredCookie>();
+            }
+
+            var json = await File.ReadAllTextAsync(_cookieFilePath);
+            CookieStorage? storage;
+
+            try
+            {
+                storage = JsonSerializer.Deserialize<CookieStorage>(json);
+            }
+            catch (JsonException)
+            {
+                // Try to deserialize as old format (List<CookieData>)
+                var oldCookies = JsonSerializer.Deserialize<List<CookieData>>(json);
+                if (oldCookies != null)
+                {
+                    storage = new CookieStorage
+                    {
+                        Version = 1,
+                        CreatedAt = File.GetCreationTimeUtc(_cookieFilePath),
+                        Cookies = oldCookies
+                    };
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to deserialize cookies in any format");
+                    return Array.Empty<StoredCookie>();
+                }
+            }
+
+            if (storage == null)
+            {
+                return Array.Empty<StoredCookie>();
+            }
+
+            List<CookieData>? cookieDataList = null;
+
+            if (storage.Version == 2 && storage.EncryptedData != null)
+            {
+                try
+                {
+                    var decrypted = _encryptionService.Decrypt(storage.EncryptedData);
+                    var cookieContainer = JsonSerializer.Deserialize<CookieDataContainer>(decrypted);
+                    cookieDataList = cookieContainer?.Cookies;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to decrypt cookies for loading");
+                    return Array.Empty<StoredCookie>();
+                }
+            }
+            else if (storage.Version == 1 && storage.Cookies != null)
+            {
+                cookieDataList = storage.Cookies;
+            }
+
+            if (cookieDataList == null || cookieDataList.Count == 0)
+            {
+                return Array.Empty<StoredCookie>();
+            }
+
+            var now = DateTime.UtcNow;
+            var result = cookieDataList
+                .Where(c => !c.Expiry.HasValue || c.Expiry.Value > now)
+                .Select(c => new StoredCookie(c.Name, c.Value, c.Domain, c.Path, c.Expiry))
+                .ToList();
+
+            _logger.LogDebug(
+                "Loaded {Count} cookies ({Filtered} expired filtered out)",
+                result.Count,
+                cookieDataList.Count - result.Count);
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error loading cookies, returning empty list");
+            return Array.Empty<StoredCookie>();
+        }
+    }
+
     public Task<bool> ClearCookiesAsync()
     {
         try

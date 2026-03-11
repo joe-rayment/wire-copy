@@ -16,6 +16,11 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public partial class ReadableContentExtractor : IReadableContentExtractor
 {
+    /// <summary>
+    /// Minimum paragraph count to consider content non-truncated when paywall indicators are present.
+    /// </summary>
+    private const int PaywallTruncationThreshold = 5;
+
     private static readonly HashSet<string> ArticleIndicators = new(StringComparer.OrdinalIgnoreCase)
     {
         "article", "post", "entry", "story", "news", "blog"
@@ -26,6 +31,28 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "nav", "navigation", "menu", "sidebar", "footer", "header", "ad", "advertisement",
         "comment", "comments", "related", "share", "social", "promo", "newsletter",
         "sponsor", "promoted", "popup", "modal", "banner"
+    };
+
+    private static readonly string[] PaywallElementSelectors =
+    {
+        "//*[contains(@class, 'gateway')]",
+        "//*[contains(@class, 'expanded-dock')]",
+        "//*[contains(@class, 'subscriber-gate')]",
+        "//*[contains(@class, 'paywall')]",
+        "//*[contains(@class, 'subscribe-wall')]",
+        "//*[contains(@id, 'gateway')]",
+        "//*[contains(@id, 'paywall')]"
+    };
+
+    private static readonly string[] PaywallTextPatterns =
+    {
+        "subscribe to the times",
+        "subscribe to continue reading",
+        "already a subscriber? log in",
+        "subscribers can read",
+        "this article is for subscribers",
+        "to read the full article",
+        "sign in to read"
     };
 
     private readonly ILogger<ReadableContentExtractor> _logger;
@@ -97,6 +124,10 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
+            // Detect paywall before boilerplate removal (which strips paywall elements)
+            var paywallDoc = new HtmlDocument();
+            paywallDoc.LoadHtml(html);
+
             var title = ExtractTitle(doc);
             var author = ExtractAuthor(doc);
             var publishedDate = ExtractPublishedDate(doc);
@@ -108,6 +139,12 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 return Task.FromResult<ReadableContent?>(null);
             }
 
+            var isPaywalled = DetectPaywall(paywallDoc, paragraphs.Count);
+            if (isPaywalled)
+            {
+                _logger.LogInformation("Paywall detected for {Url} ({ParagraphCount} paragraphs)", url, paragraphs.Count);
+            }
+
             var cleanedText = string.Join("\n\n", paragraphs);
 
             var content = ReadableContent.Create(
@@ -115,13 +152,15 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 cleanedText,
                 paragraphs,
                 author,
-                publishedDate);
+                publishedDate,
+                isPaywalled);
 
             _logger.LogInformation(
-                "Extracted readable content: {Title} ({WordCount} words, {ReadTime} min read)",
+                "Extracted readable content: {Title} ({WordCount} words, {ReadTime} min read{Paywall})",
                 content.Title,
                 content.WordCount,
-                content.EstimatedReadingMinutes);
+                content.EstimatedReadingMinutes,
+                content.IsPaywalled ? ", paywalled" : string.Empty);
 
             return Task.FromResult<ReadableContent?>(content);
         }
@@ -181,6 +220,39 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Detects whether a page is paywalled by checking for paywall indicator elements
+    /// and text patterns, combined with content truncation heuristics.
+    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated.
+    /// </summary>
+    internal static bool DetectPaywall(HtmlDocument doc, int paragraphCount)
+    {
+        // Check for paywall indicator elements via XPath
+        var hasPaywallElement = PaywallElementSelectors.Any(
+            selector => doc.DocumentNode.SelectSingleNode(selector) != null);
+
+        // Check for paywall text patterns in the full document text
+        var hasPaywallText = false;
+        if (!hasPaywallElement)
+        {
+            var fullText = doc.DocumentNode.InnerText;
+            if (!string.IsNullOrEmpty(fullText))
+            {
+                var lowerText = fullText.ToLowerInvariant();
+                hasPaywallText = PaywallTextPatterns.Any(
+                    pattern => lowerText.Contains(pattern, StringComparison.Ordinal));
+            }
+        }
+
+        // Only flag as paywalled if an indicator is found AND content looks truncated
+        if (!hasPaywallElement && !hasPaywallText)
+        {
+            return false;
+        }
+
+        return paragraphCount < PaywallTruncationThreshold;
     }
 
     private static string? ExtractTitle(HtmlDocument doc)
@@ -518,6 +590,12 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             "//*[contains(@class, 'modal')]",
             "//*[contains(@class, 'overlay')]",
             "//*[contains(@class, 'paywall')]",
+
+            // Paywall and subscription gates
+            "//*[contains(@class, 'gateway')]",
+            "//*[contains(@class, 'expanded-dock')]",
+            "//*[contains(@class, 'subscriber-gate')]",
+            "//*[contains(@class, 'subscribe-wall')]",
 
             // Scripts and styles
             "//script", "//style", "//noscript"

@@ -43,18 +43,25 @@ public class ReadableContent
     /// </summary>
     public int EstimatedReadingMinutes { get; private set; }
 
+    /// <summary>
+    /// Whether paywall indicators were detected and content appears truncated.
+    /// </summary>
+    public bool IsPaywalled { get; private set; }
+
     private ReadableContent(
         string title,
         string cleanedText,
         List<string> paragraphs,
         string? author = null,
-        DateTime? publishedDate = null)
+        DateTime? publishedDate = null,
+        bool isPaywalled = false)
     {
         Title = title;
         CleanedText = cleanedText;
         Paragraphs = paragraphs;
         Author = author;
         PublishedDate = publishedDate;
+        IsPaywalled = isPaywalled;
 
         // Calculate word count
         WordCount = cleanedText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
@@ -71,7 +78,8 @@ public class ReadableContent
         string cleanedText,
         List<string> paragraphs,
         string? author = null,
-        DateTime? publishedDate = null)
+        DateTime? publishedDate = null,
+        bool isPaywalled = false)
     {
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty", nameof(title));
@@ -82,7 +90,7 @@ public class ReadableContent
         if (paragraphs == null || paragraphs.Count == 0)
             throw new ArgumentException("Paragraphs cannot be empty", nameof(paragraphs));
 
-        return new ReadableContent(title, cleanedText, paragraphs, author, publishedDate);
+        return new ReadableContent(title, cleanedText, paragraphs, author, publishedDate, isPaywalled);
     }
 
     /// <summary>

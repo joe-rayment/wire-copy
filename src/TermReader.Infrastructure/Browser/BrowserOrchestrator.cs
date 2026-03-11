@@ -38,6 +38,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IPageCache _pageCache;
     private readonly IPreloadService _preloadService;
     private readonly IIdleDetector _idleDetector;
+    private readonly ICookieManager _cookieManager;
     private readonly ILogger<BrowserOrchestrator> _logger;
     private readonly LineCacheManager _lineCacheManager;
 
@@ -66,6 +67,7 @@ public class BrowserOrchestrator : IBrowserService
         IPageCache pageCache,
         IPreloadService preloadService,
         IIdleDetector idleDetector,
+        ICookieManager cookieManager,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -83,6 +85,7 @@ public class BrowserOrchestrator : IBrowserService
         _pageCache = pageCache;
         _preloadService = preloadService;
         _idleDetector = idleDetector;
+        _cookieManager = cookieManager;
         _logger = logger;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
@@ -187,6 +190,36 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
                 page = await BuildPageFromLoadResultAsync(retryResult, url, cancellationToken);
+            }
+        }
+
+        // Paywall fallback: if content is paywalled and was fetched via HTTP, retry with
+        // Selenium (which has cookie support) if cookies are available
+        if (page.ReadableContent?.IsPaywalled == true && _lastLoadFetchMethod != FetchMethod.Selenium)
+        {
+            var cookieInfo = await _cookieManager.GetCookieInfoAsync();
+            if (cookieInfo is { Exists: true, IsExpired: false })
+            {
+                _logger.LogInformation(
+                    "Paywall detected, retrying with authenticated session: {Url}", url);
+
+                _pageCache.Remove(url);
+                _renderer.RenderLoading(url);
+
+                var paywallRetryResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                    cancellationToken);
+
+                if (paywallRetryResult.Success)
+                {
+                    _lastLoadFetchMethod = paywallRetryResult.FetchMethod;
+                    page = await BuildPageFromLoadResultAsync(paywallRetryResult, url, cancellationToken);
+                }
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Paywall detected but no valid cookies available: {Url}", url);
             }
         }
 

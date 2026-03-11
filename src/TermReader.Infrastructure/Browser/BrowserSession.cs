@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
+using TermReader.Application.Interfaces;
 using TermReader.Infrastructure.Configuration;
 
 namespace TermReader.Infrastructure.Browser;
@@ -19,6 +20,7 @@ public sealed class BrowserSession : IBrowserSession
 {
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
+    private readonly ICookieManager _cookieManager;
     private readonly object _lock = new();
     private IWebDriver? _driver;
     private bool _driverIsHeadless;
@@ -27,10 +29,12 @@ public sealed class BrowserSession : IBrowserSession
 
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
-        ILogger<BrowserSession> logger)
+        ILogger<BrowserSession> logger,
+        ICookieManager cookieManager)
     {
         _browserConfig = browserConfig.Value;
         _logger = logger;
+        _cookieManager = cookieManager;
     }
 
     public bool HasActiveDriver
@@ -82,6 +86,7 @@ public sealed class BrowserSession : IBrowserSession
             _logger.LogInformation("Creating new WebDriver session (headless={Headless})", headless);
             _driver = CreateWebDriver(headless);
             _driverIsHeadless = headless;
+            InjectStoredCookies(_driver);
             return _driver;
         }
     }
@@ -191,6 +196,61 @@ public sealed class BrowserSession : IBrowserSession
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Error force-killing driver process (PID={Pid})", _driverServicePid.Value);
+        }
+    }
+
+    private void InjectStoredCookies(IWebDriver driver)
+    {
+        try
+        {
+            var cookies = _cookieManager.LoadCookiesAsync().GetAwaiter().GetResult();
+            if (cookies.Count == 0)
+            {
+                return;
+            }
+
+            // Group cookies by domain so we can navigate to each domain once
+            var cookiesByDomain = cookies
+                .GroupBy(c => c.Domain.TrimStart('.'))
+                .ToList();
+
+            var injectedCount = 0;
+
+            foreach (var domainGroup in cookiesByDomain)
+            {
+                try
+                {
+                    // WebDriver requires being on the domain before setting cookies
+                    driver.Navigate().GoToUrl($"https://{domainGroup.Key}");
+
+                    foreach (var cookie in domainGroup)
+                    {
+                        try
+                        {
+                            var seleniumCookie = cookie.Expiry.HasValue
+                                ? new OpenQA.Selenium.Cookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path, cookie.Expiry.Value)
+                                : new OpenQA.Selenium.Cookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path, null);
+
+                            driver.Manage().Cookies.AddCookie(seleniumCookie);
+                            injectedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "Failed to inject cookie {Name} for domain {Domain}", cookie.Name, cookie.Domain);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to navigate to domain {Domain} for cookie injection", domainGroup.Key);
+                }
+            }
+
+            _logger.LogDebug("Injected {Count} stored cookies into WebDriver", injectedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to inject stored cookies into WebDriver (non-fatal)");
         }
     }
 
