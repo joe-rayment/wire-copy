@@ -120,12 +120,35 @@ public class BrowserOrchestrator : IBrowserService
         if (!_pageCache.Contains(url))
         {
             _renderer.RenderLoading(url);
+
+            // Check if preload service has an in-flight fetch for this URL
+            var inFlightResult = await _preloadService.WaitForInFlightAsync(
+                url, TimeSpan.FromSeconds(3), cancellationToken);
+            if (inFlightResult != null && inFlightResult.Success)
+            {
+                _logger.LogInformation("Using in-flight preload result for {Url}", url);
+                _lastLoadFetchMethod = FetchMethod.Cached;
+                var inFlightPage = await BuildPageFromLoadResultAsync(inFlightResult, cancellationToken);
+                if (inFlightPage.HasReadableContent())
+                {
+                    return inFlightPage;
+                }
+
+                _logger.LogDebug("In-flight preload result had no readable content, proceeding with normal load");
+            }
         }
 
         // Load the page HTML
         var loadResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = url, Headless = _browserConfig.Headless },
             cancellationToken);
+
+        _logger.LogDebug(
+            "LoadPageAsync initial load: url={Url}, success={Success}, method={Method}, contentLength={Length}",
+            url,
+            loadResult.Success,
+            loadResult.FetchMethod,
+            loadResult.Html?.Length ?? 0);
 
         if (!loadResult.Success)
         {
@@ -524,6 +547,12 @@ public class BrowserOrchestrator : IBrowserService
         {
             page.SetReadableContent(readable);
         }
+
+        _logger.LogDebug(
+            "BuildPage: loadResultUrl={Url}, hasReadable={HasReadable}, paragraphs={Count}",
+            loadResult.Url,
+            page.HasReadableContent(),
+            page.ReadableContent?.Paragraphs.Count ?? 0);
 
         return page;
     }

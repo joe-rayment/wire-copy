@@ -35,15 +35,6 @@ internal class LineCacheManager
     public int CachedWidth => _cachedWidth;
 
     /// <summary>
-    /// Pre-populates the cache for testing purposes.
-    /// </summary>
-    internal void SetCacheForTesting(List<string> lines, int width)
-    {
-        _cachedLines = lines;
-        _cachedWidth = width;
-    }
-
-    /// <summary>
     /// Ensures the line cache is populated and matches the current content width.
     /// Rebuilds if width changed or cache is empty.
     /// </summary>
@@ -202,5 +193,14 @@ internal class LineCacheManager
     internal static int VisibleLength(string text)
     {
         return AnsiEscapeRegex.Replace(text, string.Empty).Length;
+    }
+
+    /// <summary>
+    /// Pre-populates the cache for testing purposes.
+    /// </summary>
+    internal void SetCacheForTesting(List<string> lines, int width)
+    {
+        _cachedLines = lines;
+        _cachedWidth = width;
     }
 }

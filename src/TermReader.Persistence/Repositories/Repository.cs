@@ -13,14 +13,24 @@ namespace TermReader.Persistence.Repositories;
 public class Repository<T> : IRepository<T>
     where T : class
 {
-    protected readonly AppDbContext _context;
-    protected readonly DbSet<T> _dbSet;
+    private readonly AppDbContext _context;
+    private readonly DbSet<T> _dbSet;
 
     public Repository(AppDbContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _dbSet = context.Set<T>();
     }
+
+    /// <summary>
+    /// Gets the database context.
+    /// </summary>
+    protected AppDbContext Context => _context;
+
+    /// <summary>
+    /// Gets the database set for the entity type.
+    /// </summary>
+    protected DbSet<T> DbSet => _dbSet;
 
     public virtual async Task<T?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {

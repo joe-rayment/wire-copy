@@ -161,148 +161,6 @@ internal class LinkTreeRenderer
         RenderTopLevelGroupHeader(node, isSelected, options);
     }
 
-    /// <summary>
-    /// Renders a sub-section header with visually lighter style than top-level groups.
-    /// Standard mode (cardHeight >= 2): blank line + thin-rule title line.
-    /// Compact mode (cardHeight == 1): single thin-rule title line.
-    /// Format: ' ─ Title (count) ────────'
-    /// </summary>
-    private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Max(1, options.TerminalWidth - 2);
-        var availableLines = Math.Max(3, options.TerminalHeight - 9);
-        var cardHeight = GetCardHeight(availableLines);
-        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
-        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
-        var childCount = node.Children.Count;
-        var showCount = !isExpanded || childCount >= 5;
-        var countSuffix = showCount ? $" ({childCount})" : string.Empty;
-        var headerLabel = $"\u2500 {collapseIndicator} {node.Link.DisplayText}{countSuffix} ";
-
-        // Fill remaining width with thin rule
-        var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
-        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
-        var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
-
-        if (cardHeight >= 2)
-        {
-            // Line 0: blank line
-            if (isSelected)
-            {
-                _helpers.WriteLine(
-                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
-                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
-            }
-            else
-            {
-                _helpers.WriteLine();
-            }
-        }
-
-        // Header line
-        if (isSelected)
-        {
-            var sb = new StringBuilder();
-            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
-            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{truncLine}");
-            sb.Append($"{new string(' ', Math.Max(0, width - 1 - truncLine.Length))}{Reset}");
-            _helpers.WriteLine(sb.ToString());
-        }
-        else
-        {
-            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncLine}{Reset}");
-        }
-    }
-
-    /// <summary>
-    /// Renders a top-level group header (Navigation, External, Footer).
-    /// Standard mode (cardHeight >= 2): blank line + header text [+ thin rule for expanded].
-    /// Compact mode (cardHeight == 1): single line.
-    /// Selected headers get accent bar and highlight background.
-    /// </summary>
-    private void RenderTopLevelGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var width = Math.Max(1, options.TerminalWidth - 2);
-        var availableLines = Math.Max(3, options.TerminalHeight - 9);
-        var cardHeight = GetCardHeight(availableLines);
-        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
-        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
-        var childCount = node.Children.Count;
-        var headerText = $"{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
-
-        if (cardHeight == 1)
-        {
-            // Compact: 1 line for both expanded and collapsed
-            var truncText = RenderHelpers.TruncateText(headerText, width - 2);
-            if (isSelected)
-            {
-                var sb = new StringBuilder();
-                sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
-                sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncText}");
-                sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncText.Length))}{Reset}");
-                _helpers.WriteLine(sb.ToString());
-            }
-            else
-            {
-                var color = isExpanded ? $"{p.PrimaryText.AnsiFg}{Bold}" : p.SecondaryText.AnsiFg;
-                _helpers.WriteLine($" {color}{truncText}{Reset}");
-            }
-
-            return;
-        }
-
-        // Standard/Expanded card mode: blank line + header text [+ thin rule for expanded]
-        var truncHeader = RenderHelpers.TruncateText(headerText, width - 2);
-
-        // Line 0: blank line
-        if (isSelected)
-        {
-            _helpers.WriteLine(
-                $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
-                $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
-        }
-        else
-        {
-            _helpers.WriteLine();
-        }
-
-        // Line 1: header text with collapse indicator and child count
-        if (isSelected)
-        {
-            var sb = new StringBuilder();
-            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
-            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncHeader}");
-            sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncHeader.Length))}{Reset}");
-            _helpers.WriteLine(sb.ToString());
-        }
-        else if (isExpanded)
-        {
-            _helpers.WriteLine($" {p.PrimaryText.AnsiFg}{Bold}{truncHeader}{Reset}");
-        }
-        else
-        {
-            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncHeader}{Reset}");
-        }
-
-        // Line 2: thin rule (only for expanded groups in standard+ mode)
-        if (isExpanded)
-        {
-            var ruleWidth = Math.Max(1, width - 2);
-            if (isSelected)
-            {
-                _helpers.WriteLine(
-                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
-                    $"{p.SelectedItemBg.AnsiBg} {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
-            }
-            else
-            {
-                _helpers.WriteLine($" {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
-            }
-        }
-    }
-
     internal static int GetCardHeight(int availableLines)
     {
         if (availableLines < 10)
@@ -598,6 +456,148 @@ internal class LinkTreeRenderer
         }
 
         return GetLinesForGroupHeader(node, cardHeight);
+    }
+
+    /// <summary>
+    /// Renders a sub-section header with visually lighter style than top-level groups.
+    /// Standard mode (cardHeight >= 2): blank line + thin-rule title line.
+    /// Compact mode (cardHeight == 1): single thin-rule title line.
+    /// Format: ' ─ Title (count) ────────'
+    /// </summary>
+    private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var availableLines = Math.Max(3, options.TerminalHeight - 9);
+        var cardHeight = GetCardHeight(availableLines);
+        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
+        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
+        var childCount = node.Children.Count;
+        var showCount = !isExpanded || childCount >= 5;
+        var countSuffix = showCount ? $" ({childCount})" : string.Empty;
+        var headerLabel = $"\u2500 {collapseIndicator} {node.Link.DisplayText}{countSuffix} ";
+
+        // Fill remaining width with thin rule
+        var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
+        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
+        var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
+
+        if (cardHeight >= 2)
+        {
+            // Line 0: blank line
+            if (isSelected)
+            {
+                _helpers.WriteLine(
+                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
+            }
+            else
+            {
+                _helpers.WriteLine();
+            }
+        }
+
+        // Header line
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{truncLine}");
+            sb.Append($"{new string(' ', Math.Max(0, width - 1 - truncLine.Length))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else
+        {
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncLine}{Reset}");
+        }
+    }
+
+    /// <summary>
+    /// Renders a top-level group header (Navigation, External, Footer).
+    /// Standard mode (cardHeight >= 2): blank line + header text [+ thin rule for expanded].
+    /// Compact mode (cardHeight == 1): single line.
+    /// Selected headers get accent bar and highlight background.
+    /// </summary>
+    private void RenderTopLevelGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var availableLines = Math.Max(3, options.TerminalHeight - 9);
+        var cardHeight = GetCardHeight(availableLines);
+        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
+        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
+        var childCount = node.Children.Count;
+        var headerText = $"{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
+
+        if (cardHeight == 1)
+        {
+            // Compact: 1 line for both expanded and collapsed
+            var truncText = RenderHelpers.TruncateText(headerText, width - 2);
+            if (isSelected)
+            {
+                var sb = new StringBuilder();
+                sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+                sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncText}");
+                sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncText.Length))}{Reset}");
+                _helpers.WriteLine(sb.ToString());
+            }
+            else
+            {
+                var color = isExpanded ? $"{p.PrimaryText.AnsiFg}{Bold}" : p.SecondaryText.AnsiFg;
+                _helpers.WriteLine($" {color}{truncText}{Reset}");
+            }
+
+            return;
+        }
+
+        // Standard/Expanded card mode: blank line + header text [+ thin rule for expanded]
+        var truncHeader = RenderHelpers.TruncateText(headerText, width - 2);
+
+        // Line 0: blank line
+        if (isSelected)
+        {
+            _helpers.WriteLine(
+                $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
+                $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
+        }
+        else
+        {
+            _helpers.WriteLine();
+        }
+
+        // Line 1: header text with collapse indicator and child count
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncHeader}");
+            sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncHeader.Length))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else if (isExpanded)
+        {
+            _helpers.WriteLine($" {p.PrimaryText.AnsiFg}{Bold}{truncHeader}{Reset}");
+        }
+        else
+        {
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncHeader}{Reset}");
+        }
+
+        // Line 2: thin rule (only for expanded groups in standard+ mode)
+        if (isExpanded)
+        {
+            var ruleWidth = Math.Max(1, width - 2);
+            if (isSelected)
+            {
+                _helpers.WriteLine(
+                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg} {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
+            }
+            else
+            {
+                _helpers.WriteLine($" {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
+            }
+        }
     }
 
     private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null)

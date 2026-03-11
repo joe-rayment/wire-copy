@@ -33,6 +33,25 @@ internal class PodcastCtaRenderer
     }
 
     /// <summary>
+    /// Gets the number of lines the CTA occupies at the given terminal dimensions.
+    /// Used by layout calculations to reserve space.
+    /// </summary>
+    public static int GetCtaLineCount(int terminalWidth, int terminalHeight)
+    {
+        if (terminalHeight < 20 || terminalWidth - 2 < 35)
+        {
+            return 1;
+        }
+
+        if (terminalHeight < 24 || terminalWidth - 2 < 50)
+        {
+            return 3;
+        }
+
+        return 5;
+    }
+
+    /// <summary>
     /// Renders the podcast CTA button at the current cursor position.
     /// Automatically selects the appropriate tier based on terminal dimensions.
     /// </summary>
@@ -56,23 +75,43 @@ internal class PodcastCtaRenderer
         }
     }
 
-    /// <summary>
-    /// Gets the number of lines the CTA occupies at the given terminal dimensions.
-    /// Used by layout calculations to reserve space.
-    /// </summary>
-    public static int GetCtaLineCount(int terminalWidth, int terminalHeight)
+    private static int ComputeButtonWidth(int terminalWidth)
     {
-        if (terminalHeight < 20 || terminalWidth - 2 < 35)
-        {
-            return 1;
-        }
+        return Math.Clamp(terminalWidth - 12, MinButtonWidth, MaxButtonWidth);
+    }
 
-        if (terminalHeight < 24 || terminalWidth - 2 < 50)
+    private static (string BgAnsi, string FgAnsi, string HintAnsi, bool Dimmed) GetStateColors(
+        ThemePalette p,
+        PodcastCtaState state)
+    {
+        return state switch
         {
-            return 3;
-        }
-
-        return 5;
+            PodcastCtaState.Pressed => (
+                p.SelectedItemBg.AnsiBg,
+                p.SelectedItemFg.AnsiFg,
+                p.SelectedItemFg.AnsiFg,
+                false),
+            PodcastCtaState.Disabled => (
+                p.SelectedItemBg.AnsiBg,
+                p.SecondaryText.AnsiFg,
+                p.SecondaryText.AnsiFg,
+                true),
+            PodcastCtaState.Unconfigured => (
+                p.SelectedItemBg.AnsiBg,
+                p.SecondaryText.AnsiFg,
+                p.SecondaryText.AnsiFg,
+                true),
+            PodcastCtaState.Selected => (
+                p.SelectedItemFg.AnsiBg,
+                p.SelectedItemBg.AnsiFg,
+                p.SelectedItemBg.AnsiFg,
+                false),
+            _ => (
+                p.SelectedItemBg.AnsiBg,
+                p.SelectedItemFg.AnsiFg,
+                p.PrimaryText.AnsiFg,
+                false),
+        };
     }
 
     /// <summary>
@@ -184,44 +223,5 @@ internal class PodcastCtaRenderer
 
         sb.Append(Reset);
         _helpers.WriteLine(sb.ToString());
-    }
-
-    private static int ComputeButtonWidth(int terminalWidth)
-    {
-        return Math.Clamp(terminalWidth - 12, MinButtonWidth, MaxButtonWidth);
-    }
-
-    private static (string BgAnsi, string FgAnsi, string HintAnsi, bool Dimmed) GetStateColors(
-        ThemePalette p,
-        PodcastCtaState state)
-    {
-        return state switch
-        {
-            PodcastCtaState.Pressed => (
-                p.SelectedItemBg.AnsiBg,
-                p.SelectedItemFg.AnsiFg,
-                p.SelectedItemFg.AnsiFg,
-                false),
-            PodcastCtaState.Disabled => (
-                p.SelectedItemBg.AnsiBg,
-                p.SecondaryText.AnsiFg,
-                p.SecondaryText.AnsiFg,
-                true),
-            PodcastCtaState.Unconfigured => (
-                p.SelectedItemBg.AnsiBg,
-                p.SecondaryText.AnsiFg,
-                p.SecondaryText.AnsiFg,
-                true),
-            PodcastCtaState.Selected => (
-                p.SelectedItemFg.AnsiBg,
-                p.SelectedItemBg.AnsiFg,
-                p.SelectedItemBg.AnsiFg,
-                false),
-            _ => (
-                p.SelectedItemBg.AnsiBg,
-                p.SelectedItemFg.AnsiFg,
-                p.PrimaryText.AnsiFg,
-                false),
-        };
     }
 }

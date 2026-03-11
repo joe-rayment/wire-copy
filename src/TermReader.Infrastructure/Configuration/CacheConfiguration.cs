@@ -38,9 +38,9 @@ public class CacheConfiguration
     public int IdleThresholdMs { get; init; } = 2000;
 
     /// <summary>
-    /// Delay between pre-load requests in milliseconds. Default: 4 seconds.
+    /// Delay between pre-load requests in milliseconds. Default: 2 seconds.
     /// </summary>
-    public int PreloadDelayMs { get; init; } = 4000;
+    public int PreloadDelayMs { get; init; } = 2000;
 
     /// <summary>
     /// Cooldown in seconds before retrying a circuit-broken domain. Default: 5 minutes.
@@ -58,4 +58,15 @@ public class CacheConfiguration
     /// Only used when <see cref="AdaptiveRateLimitEnabled"/> is true.
     /// </summary>
     public int CrossDomainDelayMs { get; init; } = 1500;
+
+    /// <summary>
+    /// Whether to persist cache entries to disk across app restarts. Default: true.
+    /// </summary>
+    public bool DiskCacheEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Directory for disk cache files. Default: {LocalAppData}/TermReader/page-cache/.
+    /// When null, the default path is used.
+    /// </summary>
+    public string? DiskCachePath { get; init; }
 }

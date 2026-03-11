@@ -74,7 +74,24 @@ public static class BrowserDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(CacheConfiguration.SectionName).Bind(opts));
         services.AddSingleton<IValidateOptions<CacheConfiguration>, CacheConfigurationValidator>();
-        services.AddSingleton<IPageCache, InMemoryPageCache>();
+        services.AddSingleton<IPageCache>(sp =>
+        {
+            var cacheConfig = sp.GetRequiredService<IOptions<CacheConfiguration>>();
+            var cacheLogger = sp.GetRequiredService<ILogger<InMemoryPageCache>>();
+
+            DiskCacheStore? diskStore = null;
+            if (cacheConfig.Value.DiskCacheEnabled)
+            {
+                var diskPath = cacheConfig.Value.DiskCachePath
+                    ?? Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "TermReader",
+                        "page-cache");
+                diskStore = new DiskCacheStore(diskPath, cacheLogger);
+            }
+
+            return new InMemoryPageCache(cacheConfig, cacheLogger, diskStore);
+        });
 
         // Register browser infrastructure services with caching decorator
         services.AddSingleton<IPageLoader>(sp =>

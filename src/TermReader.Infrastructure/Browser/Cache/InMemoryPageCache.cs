@@ -12,7 +12,7 @@ using TermReader.Infrastructure.Configuration;
 namespace TermReader.Infrastructure.Browser.Cache;
 
 /// <summary>
-/// In-memory page cache with LRU + TTL + size-cap eviction.
+/// In-memory page cache with LRU + TTL + size-cap eviction and optional disk persistence.
 /// Thread-safe via ConcurrentDictionary and Interlocked operations.
 /// </summary>
 public sealed class InMemoryPageCache : IPageCache, IDisposable
@@ -21,6 +21,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
     private readonly ConcurrentDictionary<string, string> _normalizedUrlCache = new();
     private readonly CacheConfiguration _config;
     private readonly ILogger<InMemoryPageCache> _logger;
+    private readonly DiskCacheStore? _diskStore;
     private readonly Timer _evictionTimer;
 
     private long _totalSizeBytes;
@@ -30,9 +31,20 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
     public InMemoryPageCache(
         IOptions<CacheConfiguration> config,
         ILogger<InMemoryPageCache> logger)
+        : this(config, logger, diskStore: null)
+    {
+    }
+
+    internal InMemoryPageCache(
+        IOptions<CacheConfiguration> config,
+        ILogger<InMemoryPageCache> logger,
+        DiskCacheStore? diskStore)
     {
         _config = config.Value;
         _logger = logger;
+        _diskStore = diskStore;
+
+        LoadFromDisk();
 
         _evictionTimer = new Timer(
             EvictionSweep,
@@ -66,6 +78,11 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             "Cache hit for {Url} (cached {Age} ago)",
             url,
             DateTime.UtcNow - entry.Metadata.CachedAtUtc);
+        _logger.LogDebug(
+            "Cache hit key={Key}, requestUrl={RequestUrl}, finalUrl={FinalUrl}",
+            key,
+            entry.Metadata.RequestUrl,
+            entry.Metadata.FinalUrl);
 
         return entry.Result;
     }
@@ -125,6 +142,12 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         if (!string.Equals(key, finalKey, StringComparison.Ordinal))
         {
             _entries.TryAdd(finalKey, entry);
+            _logger.LogDebug(
+                "Cache alias created: {RequestKey} -> {FinalKey} (redirect from {RequestUrl} to {FinalUrl})",
+                key,
+                finalKey,
+                requestUrl,
+                result.Url);
         }
 
         _logger.LogDebug(
@@ -132,6 +155,9 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             requestUrl,
             entrySize,
             Interlocked.Read(ref _totalSizeBytes));
+
+        // Persist to disk asynchronously
+        PersistToDisk(key, result, metadata);
     }
 
     public bool Remove(string url)
@@ -152,6 +178,9 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         _entries.Clear();
         _normalizedUrlCache.Clear();
         Interlocked.Exchange(ref _totalSizeBytes, 0);
+
+        _diskStore?.ClearAll();
+
         _logger.LogInformation(
             "Cache cleared: {Count} entries, {Size} bytes freed",
             stats.EntryCount,
@@ -173,16 +202,16 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public IReadOnlySet<string> GetCachedUrls()
     {
-        var urls = new HashSet<string>();
-        foreach (var kvp in _entries)
-        {
-            if (kvp.Value.Metadata.IsExpired)
-            {
-                continue;
-            }
+        var metadata = _entries
+            .Where(kvp => !kvp.Value.Metadata.IsExpired)
+            .Select(kvp => kvp.Value.Metadata)
+            .ToList();
 
-            urls.Add(kvp.Value.Metadata.RequestUrl);
-            urls.Add(kvp.Value.Metadata.FinalUrl);
+        var urls = new HashSet<string>();
+        foreach (var m in metadata)
+        {
+            urls.Add(m.RequestUrl);
+            urls.Add(m.FinalUrl);
         }
 
         return urls;
@@ -238,6 +267,9 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             {
                 _entries.TryRemove(aliasKey, out _);
             }
+
+            // Remove from disk
+            _diskStore?.Delete(removed.Metadata.NormalizedUrl);
 
             return true;
         }
@@ -317,6 +349,61 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         {
             _logger.LogWarning(ex, "Error during eviction sweep");
         }
+    }
+
+    private void LoadFromDisk()
+    {
+        if (_diskStore == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var entries = _diskStore.LoadAll();
+
+            foreach (var (result, metadata) in entries)
+            {
+                var key = metadata.NormalizedUrl;
+                var entry = new CacheEntry(result, metadata);
+
+                if (_entries.TryAdd(key, entry))
+                {
+                    Interlocked.Add(ref _totalSizeBytes, metadata.SizeBytes);
+                }
+
+                // Also add alias for final URL if different
+                var finalKey = NormalizeUrl(metadata.FinalUrl);
+                if (!string.Equals(key, finalKey, StringComparison.Ordinal))
+                {
+                    _entries.TryAdd(finalKey, entry);
+                }
+            }
+
+            // Evict if loaded entries exceed limits
+            EvictToFit(0);
+
+            _logger.LogInformation(
+                "Loaded {Count} page cache entries from disk ({Size} bytes)",
+                _entries.Count,
+                Interlocked.Read(ref _totalSizeBytes));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load page cache from disk, starting fresh");
+        }
+    }
+
+    private void PersistToDisk(string normalizedUrl, PageLoadResult result, CacheEntryMetadata metadata)
+    {
+        if (_diskStore == null)
+        {
+            return;
+        }
+
+        // Snapshot metadata to avoid data race with LastAccessedAtUtc updates on TryGet
+        var metadataSnapshot = metadata with { };
+        ThreadPool.QueueUserWorkItem(_ => _diskStore.Write(normalizedUrl, result, metadataSnapshot));
     }
 
     private sealed record CacheEntry(PageLoadResult Result, CacheEntryMetadata Metadata);

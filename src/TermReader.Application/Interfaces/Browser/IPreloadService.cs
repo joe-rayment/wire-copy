@@ -42,6 +42,13 @@ public interface IPreloadService : IDisposable
     void ClearQueue();
 
     /// <summary>
+    /// Enables eager mode so the next preload batch skips the idle wait
+    /// and processes the queue immediately. Resets automatically after
+    /// the batch completes (queue drained).
+    /// </summary>
+    void EnableEagerMode();
+
+    /// <summary>
     /// Starts the background pre-loading loop.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token to stop pre-loading.</param>
