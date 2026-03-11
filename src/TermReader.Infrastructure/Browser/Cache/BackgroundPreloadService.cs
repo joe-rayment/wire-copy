@@ -141,26 +141,27 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             try
             {
+                // Wait once for user to become idle before starting a batch
                 await _idleDetector.WaitForIdleAsync(cancellationToken);
 
-                var item = DequeueNext();
-                if (item == null)
+                // Process the entire queue while user stays idle
+                while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && _idleDetector.IsIdle)
                 {
-                    // No items to pre-load; wait for queue change or short timeout
-                    await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
-                    continue;
+                    var item = DequeueNext();
+                    if (item == null)
+                    {
+                        break;
+                    }
+
+                    await PreloadUrlAsync(item.Url, cancellationToken);
+
+                    // Rate limit between pre-loads (adaptive delay), but NO idle re-check
+                    var delayMs = GetAdaptiveDelay(item.Url);
+                    await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
                 }
 
-                if (_paused)
-                {
-                    continue;
-                }
-
-                await PreloadUrlAsync(item.Url, cancellationToken);
-
-                // Rate limit between pre-loads (adaptive: shorter delay for cross-domain)
-                var delayMs = GetAdaptiveDelay(item.Url);
-                await WaitForSignalAsync(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
+                // Either queue is empty, user is active, or paused — wait for signal before next batch
+                await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -200,14 +201,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             needsJs = _needsJsUrls;
         }
 
-        var cachedCount = 0;
-        foreach (var url in eligible)
-        {
-            if (_cache.Contains(url))
-            {
-                cachedCount++;
-            }
-        }
+        var cachedCount = eligible.Count(url => _cache.Contains(url));
 
         return new PreloadProgress
         {
@@ -313,10 +307,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            if (!TryAddEligibleUrl(url, i, allEligible, needsJs, items))
-            {
-                continue;
-            }
+            TryAddEligibleUrl(url, i, allEligible, needsJs, items);
         }
 
         // Sort by original list index (top-to-bottom)
@@ -354,7 +345,94 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return items;
     }
 
-    private bool TryAddEligibleUrl(
+    /// <summary>
+    /// Returns the appropriate delay after fetching a URL, based on whether the next
+    /// dequeued item targets the same domain or a different one.
+    /// </summary>
+    internal int GetAdaptiveDelay(string lastFetchedUrl)
+    {
+        if (!_config.AdaptiveRateLimitEnabled)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        var lastOrigin = UrlNormalizer.GetOrigin(lastFetchedUrl);
+        if (lastOrigin == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // Record this domain's last request time
+        _lastRequestByDomain[lastOrigin] = DateTime.UtcNow;
+
+        // Peek at the next item to decide delay
+        PreloadItem? nextItem;
+        lock (_queueLock)
+        {
+            nextItem = _queue.Count > 0 ? _queue[0] : null;
+        }
+
+        if (nextItem == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        var nextOrigin = UrlNormalizer.GetOrigin(nextItem.Url);
+        if (nextOrigin == null)
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // Same domain → full delay; different domain → shorter delay
+        if (string.Equals(lastOrigin, nextOrigin, StringComparison.OrdinalIgnoreCase))
+        {
+            return _config.PreloadDelayMs;
+        }
+
+        // For cross-domain, also check if we've recently hit this domain
+        if (_lastRequestByDomain.TryGetValue(nextOrigin, out var lastRequest))
+        {
+            var elapsed = (int)(DateTime.UtcNow - lastRequest).TotalMilliseconds;
+            var remaining = _config.PreloadDelayMs - elapsed;
+            if (remaining > _config.CrossDomainDelayMs)
+            {
+                // We hit this domain recently — wait the remaining same-domain cooldown
+                return remaining;
+            }
+        }
+
+        return _config.CrossDomainDelayMs;
+    }
+
+    private static PageMetadata ExtractMetadata(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var title = ExtractMetaContent(doc, "og:title");
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+            title = titleNode?.InnerText.Trim();
+            if (title != null)
+            {
+                title = WebUtility.HtmlDecode(title);
+            }
+        }
+
+        return new PageMetadata
+        {
+            Title = title ?? "Untitled",
+            Description = ExtractMetaContent(doc, "description") ?? ExtractMetaContent(doc, "og:description")
+        };
+    }
+
+    private static string? ExtractMetaContent(HtmlDocument doc, string name)
+    {
+        return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
+    }
+
+    private void TryAddEligibleUrl(
         string url,
         int listIndex,
         List<string> allEligible,
@@ -366,21 +444,20 @@ internal sealed class BackgroundPreloadService : IPreloadService
         if (IsDomainNeedsJs(url))
         {
             needsJs.Add(url);
-            return false;
+            return;
         }
 
         if (IsUrlCached(url))
         {
-            return false;
+            return;
         }
 
         if (IsDomainCircuitBroken(url))
         {
-            return false;
+            return;
         }
 
         items.Add(new PreloadItem(url, listIndex));
-        return true;
     }
 
     private bool IsUrlCached(string url) => _cache.Contains(url);
@@ -416,34 +493,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
             _allEligibleUrls = allEligible;
             _needsJsUrls = needsJs;
         }
-    }
-
-    private static PageMetadata ExtractMetadata(string html)
-    {
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
-
-        var title = ExtractMetaContent(doc, "og:title");
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            var titleNode = doc.DocumentNode.SelectSingleNode("//title");
-            title = titleNode?.InnerText.Trim();
-            if (title != null)
-            {
-                title = WebUtility.HtmlDecode(title);
-            }
-        }
-
-        return new PageMetadata
-        {
-            Title = title ?? "Untitled",
-            Description = ExtractMetaContent(doc, "description") ?? ExtractMetaContent(doc, "og:description")
-        };
-    }
-
-    private static string? ExtractMetaContent(HtmlDocument doc, string name)
-    {
-        return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
     }
 
     private void OnDebounceElapsed(object? state)
@@ -658,65 +707,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             return PageLoadResult.Failure(ex.Message);
         }
-    }
-
-    /// <summary>
-    /// Returns the appropriate delay after fetching a URL, based on whether the next
-    /// dequeued item targets the same domain or a different one.
-    /// </summary>
-    internal int GetAdaptiveDelay(string lastFetchedUrl)
-    {
-        if (!_config.AdaptiveRateLimitEnabled)
-        {
-            return _config.PreloadDelayMs;
-        }
-
-        var lastOrigin = UrlNormalizer.GetOrigin(lastFetchedUrl);
-        if (lastOrigin == null)
-        {
-            return _config.PreloadDelayMs;
-        }
-
-        // Record this domain's last request time
-        _lastRequestByDomain[lastOrigin] = DateTime.UtcNow;
-
-        // Peek at the next item to decide delay
-        PreloadItem? nextItem;
-        lock (_queueLock)
-        {
-            nextItem = _queue.Count > 0 ? _queue[0] : null;
-        }
-
-        if (nextItem == null)
-        {
-            return _config.PreloadDelayMs;
-        }
-
-        var nextOrigin = UrlNormalizer.GetOrigin(nextItem.Url);
-        if (nextOrigin == null)
-        {
-            return _config.PreloadDelayMs;
-        }
-
-        // Same domain → full delay; different domain → shorter delay
-        if (string.Equals(lastOrigin, nextOrigin, StringComparison.OrdinalIgnoreCase))
-        {
-            return _config.PreloadDelayMs;
-        }
-
-        // For cross-domain, also check if we've recently hit this domain
-        if (_lastRequestByDomain.TryGetValue(nextOrigin, out var lastRequest))
-        {
-            var elapsed = (int)(DateTime.UtcNow - lastRequest).TotalMilliseconds;
-            var remaining = _config.PreloadDelayMs - elapsed;
-            if (remaining > _config.CrossDomainDelayMs)
-            {
-                // We hit this domain recently — wait the remaining same-domain cooldown
-                return remaining;
-            }
-        }
-
-        return _config.CrossDomainDelayMs;
     }
 
     internal sealed record PreloadItem(string Url, int ListIndex);
