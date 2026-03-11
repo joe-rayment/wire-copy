@@ -5,8 +5,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
+using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Storage;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
@@ -315,8 +317,12 @@ internal static class SearchCommandHandler
                 await HandleSetBucket(ctx, options, ct);
                 break;
 
+            case "key":
+                await HandleSetKey(ctx, options, ct);
+                break;
+
             default:
-                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket");
+                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key");
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
         }
@@ -422,6 +428,10 @@ internal static class SearchCommandHandler
                 await HandleClearBucket(ctx, options, ct);
                 break;
 
+            case "key":
+                await HandleClearKey(ctx, options, ct);
+                break;
+
             default:
                 // No recognized subcommand — delegate to existing collection clear behavior
                 await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
@@ -468,6 +478,98 @@ internal static class SearchCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Failed to remove bucket name");
             ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var keyPath = await ctx.InputHandler.PromptForInputAsync(
+            "GCS service account key file path: ", ct);
+
+        if (string.IsNullOrWhiteSpace(keyPath))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var trimmed = keyPath.Trim();
+
+        // Expand ~ to home directory
+        if (trimmed.StartsWith('~'))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            trimmed = Path.Combine(home, trimmed[1..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+
+        trimmed = Path.GetFullPath(trimmed);
+
+        var validation = GcsStorageClient.ValidateKeyFile(trimmed);
+        if (!validation.IsValid)
+        {
+            ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid key file");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+
+            if (cloudStorage is GcsStorageClient gcsClient)
+            {
+                var result = gcsClient.SetServiceAccountKeyPath(trimmed);
+                if (result.IsValid)
+                {
+                    ctx.NavigationService.SetStatusMessage("Service account key saved");
+                }
+                else
+                {
+                    ctx.NavigationService.SetStatusMessage(result.ErrorMessage ?? "Failed to set key");
+                }
+            }
+            else
+            {
+                // Fallback: store directly in settings
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                settingsStore.Set("GcsServiceAccountKeyPath", trimmed, encrypt: true);
+                ctx.NavigationService.SetStatusMessage("Service account key path saved");
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist service account key path");
+            ctx.NavigationService.SetStatusMessage("Failed to save key path");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleClearKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+
+            if (cloudStorage is GcsStorageClient gcsClient)
+            {
+                gcsClient.ClearServiceAccountKey();
+            }
+            else
+            {
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                settingsStore.Remove("GcsServiceAccountKeyPath");
+            }
+
+            ctx.NavigationService.SetStatusMessage("Service account key cleared");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to remove service account key");
+            ctx.NavigationService.SetStatusMessage("Failed to clear service account key");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

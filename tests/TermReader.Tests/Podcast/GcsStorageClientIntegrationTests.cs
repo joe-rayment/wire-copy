@@ -3,6 +3,8 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using TermReader.Application.Interfaces;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using Xunit;
@@ -28,7 +30,8 @@ public class GcsStorageClientIntegrationTests : IDisposable
             BucketName = BucketName,
             CreateBucketIfNotExists = false,
         });
-        return new GcsStorageClient(config, NullLogger<GcsStorageClient>.Instance);
+        var settingsStore = Substitute.For<IUserSettingsStore>();
+        return new GcsStorageClient(config, settingsStore, NullLogger<GcsStorageClient>.Instance);
     }
 
     public void Dispose()
