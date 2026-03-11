@@ -36,7 +36,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         ArgumentNullException.ThrowIfNull(localFilePath);
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
         await EnsureBucketAsync(client, cancellationToken);
 
         await using var stream = File.OpenRead(localFilePath);
@@ -67,7 +67,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
         await EnsureBucketAsync(client, cancellationToken);
 
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
@@ -94,7 +94,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     {
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
 
         try
         {
@@ -116,7 +116,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     {
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
 
         try
         {
@@ -181,6 +181,13 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             {
                 if (_config.CreateBucketIfNotExists)
                 {
+                    if (string.IsNullOrWhiteSpace(_config.ProjectId))
+                    {
+                        return CloudStorageValidationResult.Invalid(
+                            CloudStorageValidationErrorType.BucketCreationFailed,
+                            "GCP Project ID is required to create buckets. Set 'Gcs:ProjectId' in configuration.");
+                    }
+
                     try
                     {
                         await client.CreateBucketAsync(
@@ -272,6 +279,24 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         }
     }
 
+    private async Task<StorageClient> GetClientWithDiagnosticsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await GetClientAsync(cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                "No GCP credentials found. Set up a service account key or Application Default Credentials.", ex);
+        }
+        catch (FileNotFoundException ex)
+        {
+            throw new FileNotFoundException(
+                "Service account key file not found. Check the configured key path.", ex.FileName, ex);
+        }
+    }
+
     private async Task<StorageClient> GetClientAsync(CancellationToken cancellationToken)
     {
         if (_client != null)
@@ -332,6 +357,12 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 _logger.LogInformation("Creating bucket {Bucket} in {Location}", currentBucket, _config.BucketLocation);
+
+                if (string.IsNullOrWhiteSpace(_config.ProjectId))
+                {
+                    throw new InvalidOperationException(
+                        "GCP Project ID is required to create buckets. Set 'Gcs:ProjectId' in configuration.");
+                }
 
                 await client.CreateBucketAsync(
                     _config.ProjectId,

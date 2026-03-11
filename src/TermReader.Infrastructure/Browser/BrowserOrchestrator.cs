@@ -724,152 +724,165 @@ public class BrowserOrchestrator : IBrowserService
     {
         _idleDetector.RecordActivity();
 
-        // Handle launcher-specific commands first
-        if (_navigationService.InLauncherMode)
+        try
         {
-            return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
+            // Handle launcher-specific commands first
+            if (_navigationService.InLauncherMode)
+            {
+                return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
+            }
+
+            // Remap h/l (CollapseNode/ExpandNode) to width controls in Reader View
+            var commandType = RemapForViewMode(command.Type);
+
+            switch (commandType)
+            {
+                case CommandType.Quit:
+                    return false;
+
+                case CommandType.MoveDown:
+                    await NavigationCommandHandler.HandleMoveDown(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.MoveUp:
+                    await NavigationCommandHandler.HandleMoveUp(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ExpandNode:
+                    await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.CollapseNode:
+                    await NavigationCommandHandler.HandleCollapseNode(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ToggleNode:
+                    await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ActivateLink:
+                    await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.GoBack:
+                    await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.GoForward:
+                    await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.PageDown:
+                    await NavigationCommandHandler.HandlePageDown(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.PageUp:
+                    await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.GoToTop:
+                    await NavigationCommandHandler.HandleGoToTop(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.GoToBottom:
+                    await NavigationCommandHandler.HandleGoToBottom(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.Refresh:
+                    await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ForceRefresh:
+                    await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.InteractiveRefresh:
+                    await NavigationCommandHandler.HandleInteractiveRefresh(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.Navigate:
+                    await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken);
+                    break;
+
+                case CommandType.SwitchView:
+                    await ViewCommandHandler.HandleSwitchView(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SwitchToHierarchical:
+                    await ViewCommandHandler.HandleSwitchToHierarchical(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SwitchToReadable:
+                    await ViewCommandHandler.HandleSwitchToReadable(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ShowHelp:
+                    await ViewCommandHandler.HandleShowHelp(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.IncreaseWidth:
+                    await ViewCommandHandler.HandleIncreaseWidth(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.DecreaseWidth:
+                    await ViewCommandHandler.HandleDecreaseWidth(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ResetWidth:
+                    await ViewCommandHandler.HandleResetWidth(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.OpenLauncher:
+                    await ViewCommandHandler.HandleOpenLauncher(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.CycleTheme:
+                    await ViewCommandHandler.HandleCycleTheme(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.TerminalResized:
+                    await ViewCommandHandler.HandleTerminalResized(_commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.OpenCommandLine:
+                    await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.Search:
+                    await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SearchNext:
+                    await SearchCommandHandler.HandleSearchNext(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SearchPrevious:
+                    await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.SaveToCollection:
+                    await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SaveToSpecific:
+                    await CollectionCommandHandler.HandleSaveToSpecific(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.SaveAllToReadingList:
+                    await CollectionCommandHandler.HandleSaveAllToReadingList(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.OpenCollections:
+                    await CollectionCommandHandler.HandleOpenCollections(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.DeleteItem:
+                    await CollectionCommandHandler.HandleDeleteItem(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ReorderUp:
+                    await CollectionCommandHandler.HandleReorderUp(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ReorderDown:
+                    await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ClearCollection:
+                    await CollectionCommandHandler.HandleClearCollection(_commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.GeneratePodcast:
+                    await PodcastCommandHandler.HandleGeneratePodcast(
+                        _commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.AddBookmark:
+                    // Only handle in launcher mode (handled above), ignore in other views
+                    break;
+            }
+
+            // Notify pre-loader of selection changes in hierarchical view
+            NotifyPreloadSelectionChanged();
+
+            return true;
         }
-
-        // Remap h/l (CollapseNode/ExpandNode) to width controls in Reader View
-        var commandType = RemapForViewMode(command.Type);
-
-        switch (commandType)
+        catch (OperationCanceledException)
         {
-            case CommandType.Quit:
-                return false;
-
-            case CommandType.MoveDown:
-                await NavigationCommandHandler.HandleMoveDown(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.MoveUp:
-                await NavigationCommandHandler.HandleMoveUp(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ExpandNode:
-                await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.CollapseNode:
-                await NavigationCommandHandler.HandleCollapseNode(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ToggleNode:
-                await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ActivateLink:
-                await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.GoBack:
-                await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.GoForward:
-                await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.PageDown:
-                await NavigationCommandHandler.HandlePageDown(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.PageUp:
-                await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.GoToTop:
-                await NavigationCommandHandler.HandleGoToTop(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.GoToBottom:
-                await NavigationCommandHandler.HandleGoToBottom(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.Refresh:
-                await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ForceRefresh:
-                await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.InteractiveRefresh:
-                await NavigationCommandHandler.HandleInteractiveRefresh(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.Navigate:
-                await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken);
-                break;
-
-            case CommandType.SwitchView:
-                await ViewCommandHandler.HandleSwitchView(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SwitchToHierarchical:
-                await ViewCommandHandler.HandleSwitchToHierarchical(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SwitchToReadable:
-                await ViewCommandHandler.HandleSwitchToReadable(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ShowHelp:
-                await ViewCommandHandler.HandleShowHelp(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.IncreaseWidth:
-                await ViewCommandHandler.HandleIncreaseWidth(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.DecreaseWidth:
-                await ViewCommandHandler.HandleDecreaseWidth(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ResetWidth:
-                await ViewCommandHandler.HandleResetWidth(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.OpenLauncher:
-                await ViewCommandHandler.HandleOpenLauncher(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.CycleTheme:
-                await ViewCommandHandler.HandleCycleTheme(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.TerminalResized:
-                await ViewCommandHandler.HandleTerminalResized(_commandContext, options, cancellationToken);
-                break;
-
-            case CommandType.OpenCommandLine:
-                await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.Search:
-                await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SearchNext:
-                await SearchCommandHandler.HandleSearchNext(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SearchPrevious:
-                await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken);
-                break;
-
-            case CommandType.SaveToCollection:
-                await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SaveToSpecific:
-                await CollectionCommandHandler.HandleSaveToSpecific(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.SaveAllToReadingList:
-                await CollectionCommandHandler.HandleSaveAllToReadingList(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.OpenCollections:
-                await CollectionCommandHandler.HandleOpenCollections(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.DeleteItem:
-                await CollectionCommandHandler.HandleDeleteItem(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ReorderUp:
-                await CollectionCommandHandler.HandleReorderUp(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ReorderDown:
-                await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
-                break;
-            case CommandType.ClearCollection:
-                await CollectionCommandHandler.HandleClearCollection(_commandContext, options, cancellationToken);
-                break;
-
-            case CommandType.GeneratePodcast:
-                await PodcastCommandHandler.HandleGeneratePodcast(
-                    _commandContext, options, cancellationToken);
-                break;
-
-            case CommandType.AddBookmark:
-                // Only handle in launcher mode (handled above), ignore in other views
-                break;
+            throw;
         }
-
-        // Notify pre-loader of selection changes in hierarchical view
-        NotifyPreloadSelectionChanged();
-
-        return true;
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Command handler failed for {CommandType}", command.Type);
+            _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
+            return true;
+        }
     }
 
     private CommandType RemapForViewMode(CommandType commandType)
