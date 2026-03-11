@@ -141,9 +141,28 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
+        // For known-paywalled domains with available cookies, skip HTTP and use Selenium directly
+        var forceBrowser = false;
+        if (IsPaywalledDomain(url))
+        {
+            var cookies = await _cookieManager.LoadCookiesAsync();
+            var host = new Uri(url).Host;
+            var cookieDomain = cookies.FirstOrDefault(c =>
+            {
+                var d = c.Domain.TrimStart('.');
+                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
+            });
+            if (cookieDomain != null)
+            {
+                _logger.LogInformation("Paywalled domain with cookies detected, using Selenium: {Url}", url);
+                forceBrowser = true;
+            }
+        }
+
         // Load the page HTML
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless },
+            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = forceBrowser },
             cancellationToken);
 
         _logger.LogDebug(
@@ -546,6 +565,34 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         return _ttsService?.IsConfigured ?? false;
+    }
+
+    /// <summary>
+    /// Checks whether the given URL belongs to a known paywalled domain.
+    /// Matches both exact domain (e.g., "nytimes.com") and subdomains (e.g., "www.nytimes.com").
+    /// </summary>
+    private bool IsPaywalledDomain(string url)
+    {
+        if (_browserConfig.PaywalledDomains.Length == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var host = new Uri(url).Host;
+            return _browserConfig.PaywalledDomains.Any(d =>
+                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

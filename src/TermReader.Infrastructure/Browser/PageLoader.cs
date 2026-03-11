@@ -83,7 +83,12 @@ public class PageLoader : IPageLoader
         try
         {
             // First try simple HTTP fetch (faster, no browser overhead)
-            if (_httpClient != null)
+            // Skip HTTP when ForceBrowser is set (e.g., paywalled domains with cookies)
+            if (request.ForceBrowser)
+            {
+                _logger.LogInformation("ForceBrowser set, skipping HTTP fetch for {Url}", request.Url);
+            }
+            else if (_httpClient != null)
             {
                 _logger.LogInformation("HttpClient available, attempting HTTP fetch for {Url}", request.Url);
                 var httpSw = Stopwatch.StartNew();
@@ -121,7 +126,7 @@ public class PageLoader : IPageLoader
         }
         catch (OperationCanceledException)
         {
-            return PageLoadResult.Failure("Operation cancelled");
+            throw;
         }
         catch (Exception ex)
         {
