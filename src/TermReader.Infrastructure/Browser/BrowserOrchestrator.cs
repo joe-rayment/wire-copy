@@ -49,6 +49,10 @@ public class BrowserOrchestrator : IBrowserService
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
 
+    // Live preload progress indicator: set by background thread, read by main loop
+    private volatile bool _progressDirty;
+    private DateTime _lastProgressRender = DateTime.MinValue;
+
     // Shared context for command handlers (single source of truth for mutable state)
     private readonly CommandContext _commandContext;
 
@@ -88,6 +92,9 @@ public class BrowserOrchestrator : IBrowserService
         _cookieManager = cookieManager;
         _logger = logger;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
+
+        // Subscribe to preload progress changes for live status bar updates
+        _preloadService.ProgressChanged += OnPreloadProgressChanged;
 
         _commandContext = new CommandContext
         {
@@ -396,18 +403,38 @@ public class BrowserOrchestrator : IBrowserService
                 await EnterLauncherAsync(options, cancellationToken);
             }
 
-            // Main input loop
+            // Main input loop — races user input against a periodic progress check
+            // so the status bar can update live during background preloading.
+            Task<NavigationCommand>? pendingInput = null;
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Re-read terminal dimensions on every iteration to handle resize
                 options = GetCurrentRenderOptions();
 
-                var command = await _inputHandler.WaitForInputAsync(cancellationToken);
-                var shouldContinue = await HandleCommandAsync(command, options, cancellationToken);
+                // Start waiting for input if not already waiting
+                pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
-                if (!shouldContinue)
+                // Race input against a 500ms timer for progress checks
+                var completed = await Task.WhenAny(
+                    pendingInput,
+                    Task.Delay(500, cancellationToken));
+
+                if (completed == pendingInput)
                 {
-                    break;
+                    // User input received — process it
+                    var command = await pendingInput;
+                    pendingInput = null;
+
+                    var shouldContinue = await HandleCommandAsync(command, options, cancellationToken);
+                    if (!shouldContinue)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    // Timer elapsed — check for progress update
+                    await CheckAndRenderProgressAsync(options, cancellationToken);
                 }
             }
         }
@@ -1221,6 +1248,59 @@ public class BrowserOrchestrator : IBrowserService
         else if (gridRow >= currentOffset + contentHeight)
         {
             _navigationService.SetScrollOffset(gridRow - contentHeight + 1);
+        }
+    }
+
+    /// <summary>
+    /// Called on a background thread when the preload service caches a new page.
+    /// Sets a dirty flag that the main input loop checks periodically.
+    /// </summary>
+    private void OnPreloadProgressChanged()
+    {
+        _progressDirty = true;
+    }
+
+    /// <summary>
+    /// Checks whether preload progress has changed and enough time has elapsed
+    /// since the last progress-driven render (debounce to at most once per second).
+    /// If so, re-renders the current page to update the status bar.
+    /// </summary>
+    private async Task CheckAndRenderProgressAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        if (!_progressDirty)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastProgressRender).TotalMilliseconds < 1000)
+        {
+            return;
+        }
+
+        _progressDirty = false;
+        _lastProgressRender = now;
+
+        // Only refresh for views that display preload progress
+        var viewMode = _navigationService.CurrentContext.ViewMode;
+        if (viewMode != ViewMode.Hierarchical && viewMode != ViewMode.CollectionItems)
+        {
+            return;
+        }
+
+        try
+        {
+            // Re-read options to get fresh CacheProgress
+            var freshOptions = GetCurrentRenderOptions();
+            await RenderCurrentPageAsync(freshOptions, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error rendering progress update");
         }
     }
 
