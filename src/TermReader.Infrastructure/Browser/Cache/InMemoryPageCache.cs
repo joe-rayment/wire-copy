@@ -137,19 +137,6 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             }
         }
 
-        // Also index by final URL if different from request URL
-        var finalKey = NormalizeUrl(result.Url);
-        if (!string.Equals(key, finalKey, StringComparison.Ordinal))
-        {
-            _entries.TryAdd(finalKey, entry);
-            _logger.LogDebug(
-                "Cache alias created: {RequestKey} -> {FinalKey} (redirect from {RequestUrl} to {FinalUrl})",
-                key,
-                finalKey,
-                requestUrl,
-                result.Url);
-        }
-
         _logger.LogDebug(
             "Cached {Url} ({Size} bytes, total: {Total} bytes)",
             requestUrl,
@@ -202,19 +189,10 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
     public IReadOnlySet<string> GetCachedUrls()
     {
-        var metadata = _entries
+        return _entries
             .Where(kvp => !kvp.Value.Metadata.IsExpired)
-            .Select(kvp => kvp.Value.Metadata)
-            .ToList();
-
-        var urls = new HashSet<string>();
-        foreach (var m in metadata)
-        {
-            urls.Add(m.RequestUrl);
-            urls.Add(m.FinalUrl);
-        }
-
-        return urls;
+            .Select(kvp => kvp.Value.Metadata.RequestUrl)
+            .ToHashSet();
     }
 
     public DateTime? GetCachedAt(string url)
@@ -253,20 +231,6 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         if (_entries.TryRemove(key, out var removed))
         {
             Interlocked.Add(ref _totalSizeBytes, -removed.Metadata.SizeBytes);
-
-            // Clean up alias key (same entry indexed under both request and final URL)
-            var normalizedUrl = removed.Metadata.NormalizedUrl;
-            var finalKey = NormalizeUrl(removed.Metadata.FinalUrl);
-            var aliasKey = string.Equals(key, normalizedUrl, StringComparison.Ordinal)
-                ? finalKey
-                : normalizedUrl;
-
-            if (!string.Equals(key, aliasKey, StringComparison.Ordinal) &&
-                _entries.TryGetValue(aliasKey, out var aliasEntry) &&
-                ReferenceEquals(aliasEntry, removed))
-            {
-                _entries.TryRemove(aliasKey, out _);
-            }
 
             // Remove from disk
             _diskStore?.Delete(removed.Metadata.NormalizedUrl);
@@ -370,13 +334,6 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
                 if (_entries.TryAdd(key, entry))
                 {
                     Interlocked.Add(ref _totalSizeBytes, metadata.SizeBytes);
-                }
-
-                // Also add alias for final URL if different
-                var finalKey = NormalizeUrl(metadata.FinalUrl);
-                if (!string.Equals(key, finalKey, StringComparison.Ordinal))
-                {
-                    _entries.TryAdd(finalKey, entry);
                 }
             }
 
