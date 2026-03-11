@@ -654,6 +654,22 @@ internal sealed class BackgroundPreloadService : IPreloadService
                             origin);
                     }
                 }
+                else if (!CachingPageLoader.HasSufficientContent(result.Html))
+                {
+                    // Page passed the article shell check but has too little visible text.
+                    // This catches JS shells without article markup, empty pages, and pages
+                    // where content is loaded dynamically. Mark the domain as needing JS
+                    // so future preloads for this domain are skipped.
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                    }
+
+                    _logger.LogDebug(
+                        "Skipping cache for preloaded URL with insufficient content: {Url}",
+                        url);
+                }
                 else
                 {
                     _cache.Put(url, result);

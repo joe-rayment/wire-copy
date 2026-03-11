@@ -83,6 +83,9 @@ public class CachingPageLoader : IPageLoader
     /// <summary>
     /// Checks whether the cached HTML has enough visible text content to be a real article.
     /// Paywall pages, JS shells, and bot challenge pages typically have very few words.
+    /// This serves as a read-side quality gate. BackgroundPreloadService also calls this
+    /// before caching preloaded pages, so most low-quality entries are prevented at write time.
+    /// This check remains as a safety net for entries cached before the write-side gate existed.
     /// </summary>
     internal static bool HasSufficientContent(string? html, int minWordCount = 50)
     {
