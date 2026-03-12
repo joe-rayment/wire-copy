@@ -82,7 +82,13 @@ public class PageLoader : IPageLoader
 
         try
         {
-            // First try simple HTTP fetch (faster, no browser overhead)
+            // PreferSelenium: try Selenium first, fall back to HTTP
+            if (request.PreferSelenium && !request.ForceBrowser)
+            {
+                return await LoadSeleniumFirstAsync(request, totalSw, cancellationToken);
+            }
+
+            // Default path: try HTTP first, fall back to Selenium
             // Skip HTTP when ForceBrowser is set (e.g., paywalled domains with cookies)
             if (request.ForceBrowser)
             {
@@ -294,6 +300,59 @@ public class PageLoader : IPageLoader
         }
 
         return href;
+    }
+
+    private async Task<PageLoadResult> LoadSeleniumFirstAsync(
+        PageLoadRequest request,
+        Stopwatch totalSw,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("PreferSelenium set, attempting browser fetch first for {Url}", request.Url);
+        var browserSw = Stopwatch.StartNew();
+        var browserResult = await BrowserFetchAsync(request, cancellationToken);
+        browserSw.Stop();
+
+        if (browserResult.Success)
+        {
+            totalSw.Stop();
+            _logger.LogDebug(
+                "Page loaded in {ElapsedMs}ms via browser (PreferSelenium): {Url}",
+                totalSw.ElapsedMilliseconds,
+                request.Url);
+            return browserResult;
+        }
+
+        _logger.LogInformation(
+            "Browser fetch failed in {ElapsedMs}ms ({Error}), falling back to HTTP",
+            browserSw.ElapsedMilliseconds,
+            browserResult.ErrorMessage);
+
+        if (_httpClient != null)
+        {
+            var httpSw = Stopwatch.StartNew();
+            var httpResult = await TryHttpFetchAsync(request, cancellationToken);
+            httpSw.Stop();
+            totalSw.Stop();
+
+            if (httpResult.Success)
+            {
+                _logger.LogDebug(
+                    "Page loaded in {ElapsedMs}ms via HTTP fallback (PreferSelenium): {Url}",
+                    totalSw.ElapsedMilliseconds,
+                    request.Url);
+                return httpResult;
+            }
+
+            _logger.LogInformation(
+                "HTTP fallback also failed in {ElapsedMs}ms ({Error})",
+                httpSw.ElapsedMilliseconds,
+                httpResult.ErrorMessage);
+            return httpResult;
+        }
+
+        _logger.LogInformation("No HttpClient available for fallback after browser failure");
+        totalSw.Stop();
+        return browserResult;
     }
 
     private async Task<PageLoadResult> TryHttpFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
