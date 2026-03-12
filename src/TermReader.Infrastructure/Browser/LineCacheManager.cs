@@ -54,7 +54,7 @@ internal class LineCacheManager
         }
 
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette);
+        var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette, page.Url);
         var contentLines = WrapAllContent(page.ReadableContent, contentWidth);
         headlineLines.AddRange(contentLines);
         _cachedLines = headlineLines;
@@ -141,7 +141,7 @@ internal class LineCacheManager
     /// matching the launcher tile label style. These lines are prepended to the line cache
     /// so the headline scrolls with the content.
     /// </summary>
-    internal static List<string> BuildHeadlineLines(ReadableContent content, int maxWidth, ThemePalette palette)
+    internal static List<string> BuildHeadlineLines(ReadableContent content, int maxWidth, ThemePalette palette, string? pageUrl = null)
     {
         const string bold = "\x1b[1m";
         const string dim = "\x1b[2m";
@@ -161,6 +161,12 @@ internal class LineCacheManager
         if (!string.IsNullOrEmpty(metadata))
         {
             lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{metadata}{reset}");
+        }
+
+        if (!string.IsNullOrEmpty(pageUrl))
+        {
+            var domain = UI.Renderers.LauncherRenderer.ExtractDomain(pageUrl);
+            lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{domain}{reset}");
         }
 
         lines.Add(string.Empty);
