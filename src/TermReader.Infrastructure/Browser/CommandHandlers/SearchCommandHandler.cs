@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Podcast;
+using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
@@ -95,10 +96,7 @@ internal static class SearchCommandHandler
                 return true;
 
             case "help" or "h":
-                Console.Write("\x1b[H\x1b[2J");
-                Console.WriteLine(ctx.InputHandler.GetHelpText());
-                Console.ReadKey(intercept: true);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ViewCommandHandler.HandleShowHelp(ctx, options, ct);
                 return true;
 
             case "open" or "go" or "o":
@@ -172,21 +170,35 @@ internal static class SearchCommandHandler
                 return true;
 
             case "rename":
-                if (parts.Length > 1 && ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionList &&
-                    ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
+                if (parts.Length > 1)
                 {
-                    var renameCol = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
-                    try
+                    Collection? renameCol = null;
+                    var renameViewMode = ctx.NavigationService.CurrentContext.ViewMode;
+
+                    if (renameViewMode == ViewMode.CollectionList &&
+                        ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
                     {
-                        using var scope = ctx.ScopeFactory.CreateScope();
-                        var service = ctx.CreateCollectionService(scope);
-                        await service.RenameCollectionAsync(renameCol.Id, parts[1], ct);
-                        await ctx.RefreshCollectionsAsync(ct);
-                        ctx.Logger.LogInformation("Renamed collection to: {Name}", parts[1]);
+                        renameCol = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
                     }
-                    catch (Exception ex)
+                    else if (renameViewMode == ViewMode.CollectionItems)
                     {
-                        ctx.Logger.LogWarning(ex, "Failed to rename collection");
+                        renameCol = ctx.NavigationService.ActiveCollection;
+                    }
+
+                    if (renameCol != null)
+                    {
+                        try
+                        {
+                            using var scope = ctx.ScopeFactory.CreateScope();
+                            var service = ctx.CreateCollectionService(scope);
+                            await service.RenameCollectionAsync(renameCol.Id, parts[1], ct);
+                            await ctx.RefreshCollectionsAsync(ct);
+                            ctx.Logger.LogInformation("Renamed collection to: {Name}", parts[1]);
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Logger.LogWarning(ex, "Failed to rename collection");
+                        }
                     }
                 }
 
