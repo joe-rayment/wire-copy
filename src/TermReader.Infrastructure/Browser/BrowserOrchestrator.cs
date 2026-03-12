@@ -971,7 +971,11 @@ public class BrowserOrchestrator : IBrowserService
                     break;
 
                 case CommandType.OpenCommandLine:
-                    await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken);
+                    if (!await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken))
+                    {
+                        return false;
+                    }
+
                     break;
                 case CommandType.Search:
                     await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken);
