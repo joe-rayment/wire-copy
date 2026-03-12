@@ -155,6 +155,64 @@ public class SearchCommandHandlerTests
 
     #endregion
 
+    #region Search blocked in collection views
+
+    [Fact]
+    public async Task HandleSearch_InCollectionList_SetsStatusMessageAndDoesNotPrompt()
+    {
+        _navigationService.EnterCollections();
+
+        await SearchCommandHandler.HandleSearch(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Search not available in collections");
+        _navigationService.CurrentContext.SearchQuery.Should().BeNull();
+        _renderCalled.Should().BeTrue();
+        await _inputHandler.DidNotReceive().PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleSearch_InCollectionItems_SetsStatusMessageAndDoesNotPrompt()
+    {
+        _navigationService.EnterCollections();
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test Collection");
+        _navigationService.EnterCollection(collection);
+
+        await SearchCommandHandler.HandleSearch(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Search not available in collections");
+        _navigationService.CurrentContext.SearchQuery.Should().BeNull();
+        _renderCalled.Should().BeTrue();
+        await _inputHandler.DidNotReceive().PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleSearchNext_InCollectionList_DoesNothing()
+    {
+        _navigationService.SetSearchQuery("test");
+        _navigationService.EnterCollections();
+
+        await SearchCommandHandler.HandleSearchNext(_ctx, _options, CancellationToken.None);
+
+        _lastScrollToSearchMatchIndex.Should().BeNull();
+        _renderCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HandleSearchPrevious_InCollectionItems_DoesNothing()
+    {
+        _navigationService.SetSearchQuery("test");
+        _navigationService.EnterCollections();
+        var collection = TermReader.Domain.Entities.Collections.Collection.Create("Test");
+        _navigationService.EnterCollection(collection);
+
+        await SearchCommandHandler.HandleSearchPrevious(_ctx, _options, CancellationToken.None);
+
+        _lastScrollToSearchMatchIndex.Should().BeNull();
+        _renderCalled.Should().BeFalse();
+    }
+
+    #endregion
+
     #region HandleCommandLineInput
 
     [Fact]
