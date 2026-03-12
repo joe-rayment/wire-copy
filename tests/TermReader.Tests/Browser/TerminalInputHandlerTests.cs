@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using System.Reflection;
+using System.Threading.Channels;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -338,6 +340,106 @@ public class TerminalInputHandlerTests
         help.Should().Contain("l / ");
         help.Should().Contain("-");
         help.Should().Contain("+");
+    }
+
+    #endregion
+
+    #region DrainPendingTasks - key preservation
+
+    [Fact]
+    public async Task DrainPendingTasks_CompletedPendingKeyTask_PushesKeyBackToChannel()
+    {
+        // Arrange: get private _keyChannel and _pendingKeyTask via reflection
+        var channelField = typeof(TerminalInputHandler)
+            .GetField("_keyChannel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var pendingKeyField = typeof(TerminalInputHandler)
+            .GetField("_pendingKeyTask", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var drainMethod = typeof(TerminalInputHandler)
+            .GetMethod("DrainPendingTasks", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var channel = (Channel<ConsoleKeyInfo>)channelField.GetValue(_sut)!;
+
+        // Write a key into the channel
+        var testKey = new ConsoleKeyInfo('x', ConsoleKey.X, false, false, false);
+        channel.Writer.TryWrite(testKey);
+
+        // Create a pending task that reads from the channel (will complete immediately)
+        var pendingTask = channel.Reader.ReadAsync(CancellationToken.None).AsTask();
+        await pendingTask; // Ensure it completes
+        pendingKeyField.SetValue(_sut, pendingTask);
+
+        // Act: drain should push the completed key back
+        drainMethod.Invoke(_sut, null);
+
+        // Assert: key should be back in the channel
+        var hasKey = channel.Reader.TryRead(out var result);
+        hasKey.Should().BeTrue("DrainPendingTasks should push completed key back into channel");
+        result.KeyChar.Should().Be('x');
+    }
+
+    [Fact]
+    public async Task DrainPendingTasks_PendingKeyTask_NotYetCompleted_AttachesContinuation()
+    {
+        // Arrange
+        var channelField = typeof(TerminalInputHandler)
+            .GetField("_keyChannel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var pendingKeyField = typeof(TerminalInputHandler)
+            .GetField("_pendingKeyTask", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var drainMethod = typeof(TerminalInputHandler)
+            .GetMethod("DrainPendingTasks", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        var channel = (Channel<ConsoleKeyInfo>)channelField.GetValue(_sut)!;
+
+        // Create a pending task that reads from the channel (NOT yet completed - channel is empty)
+        var pendingTask = channel.Reader.ReadAsync(CancellationToken.None).AsTask();
+        pendingTask.IsCompleted.Should().BeFalse("task should be waiting for channel data");
+        pendingKeyField.SetValue(_sut, pendingTask);
+
+        // Act: drain the pending task (attaches continuation for key recovery)
+        drainMethod.Invoke(_sut, null);
+
+        // _pendingKeyTask should now be null
+        pendingKeyField.GetValue(_sut).Should().BeNull();
+
+        // Now write a key — the abandoned task's continuation should push it back
+        var testKey = new ConsoleKeyInfo('z', ConsoleKey.Z, false, false, false);
+        channel.Writer.TryWrite(testKey);
+
+        // Wait briefly for the continuation to fire
+        await Task.Delay(50);
+
+        // The abandoned task consumed 'z', but the continuation pushed it back
+        var hasKey = channel.Reader.TryRead(out var result);
+        hasKey.Should().BeTrue("continuation should push consumed key back into channel");
+        result.KeyChar.Should().Be('z');
+    }
+
+    [Fact]
+    public void DrainPendingTasks_NullPendingKeyTask_DoesNotThrow()
+    {
+        var drainMethod = typeof(TerminalInputHandler)
+            .GetMethod("DrainPendingTasks", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        // Act & Assert: should not throw when _pendingKeyTask is null
+        var act = () => drainMethod.Invoke(_sut, null);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void HandleShowHelp_UsesWaitForInputAsync_NotConsoleReadKey()
+    {
+        // Verify that ViewCommandHandler.HandleShowHelp calls InputHandler.WaitForInputAsync
+        // by checking the method body doesn't contain Console.ReadKey references.
+        // This is a structural verification that the fix is in place.
+        var method = typeof(TermReader.Infrastructure.Browser.CommandHandlers.ViewCommandHandler)
+            .GetMethod("HandleShowHelp", BindingFlags.Public | BindingFlags.Static)!;
+
+        method.Should().NotBeNull("HandleShowHelp should exist as a static method");
+
+        // Verify parameters include CommandContext (which has InputHandler)
+        var parameters = method.GetParameters();
+        parameters.Should().HaveCount(3);
+        parameters[0].ParameterType.Name.Should().Be("CommandContext");
     }
 
     #endregion

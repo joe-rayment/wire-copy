@@ -657,7 +657,10 @@ public class LinkExtractorTests
     [Theory]
     [InlineData("Short Nav Link", LinkType.Navigation)]
     [InlineData("About Us", LinkType.Navigation)]
-    [InlineData("A Link That Is Exactly Forty Nine Characters Long", LinkType.Navigation)]
+    [InlineData("Home", LinkType.Navigation)]
+    [InlineData("Privacy Policy Terms", LinkType.Navigation)]
+    [InlineData("Bay Area Considers the Unthinkable", LinkType.Content)]  // 34 chars - real headline
+    [InlineData("A Link That Is Exactly Forty Nine Characters Long", LinkType.Content)]
     [InlineData("A Fifty Character Title That Describes a Real Story", LinkType.Content)]
     [InlineData("Major Policy Change Announced by Government Officials Today in Ottawa", LinkType.Content)]
     public void ClassifyLink_TextLengthHeuristic_ClassifiesCorrectly(string displayText, LinkType expected)
@@ -671,6 +674,36 @@ public class LinkExtractorTests
 
         // Assert
         result.Type.Should().Be(expected);
+    }
+
+    [Fact]
+    public void ClassifyLink_ArticleUrlPattern_ShortHeadline_ShouldBeContent()
+    {
+        // Arrange - URL with date pattern indicates article, even with short text
+        var url = "https://example.com/2024/01/15/short-headline";
+        var displayText = "Short Headline";  // 14 chars - under 25, but URL pattern is article
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector: null, baseUrl);
+
+        // Assert - URL date pattern should make this Content
+        result.Type.Should().Be(LinkType.Content);
+    }
+
+    [Fact]
+    public void ClassifyLink_NonArticleUrl_ShortText_ShouldBeNavigation()
+    {
+        // Arrange - short text, no semantic parent, no article URL pattern
+        var url = "https://example.com/section/about";
+        var displayText = "About This Site";  // 15 chars
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector: null, baseUrl);
+
+        // Assert - short text with generic URL should be Navigation
+        result.Type.Should().Be(LinkType.Navigation);
     }
 
     [Fact]
@@ -771,6 +804,84 @@ public class LinkExtractorTests
 
         var related2 = links.First(l => l.Url.Contains("related-2"));
         related2.Type.Should().Be(LinkType.Navigation, "link inside <aside class='related'> should be Navigation");
+    }
+
+    #endregion
+
+    #region Section Title Extraction Tests
+
+    [Fact]
+    public async Task ExtractSectionTitle_HeadingNestedInWrapperDiv_ShouldExtractTitle()
+    {
+        // Arrange — heading is at depth 2 inside section (section > div > h2)
+        var html = @"
+            <html>
+            <body>
+                <section>
+                    <div class=""section-header"">
+                        <h2>World News</h2>
+                    </div>
+                    <a href=""https://example.com/2024/01/15/world-story"">Major International Development Unfolds Across Multiple Continents</a>
+                </section>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].SectionTitle.Should().Be("World News",
+            "heading nested in a wrapper div (depth 2) should be extracted as section title");
+    }
+
+    [Fact]
+    public async Task ExtractSectionTitle_DivWithDataTestId_ShouldBeRecognizedAsSectionContainer()
+    {
+        // Arrange — div with data-testid attribute should be recognized as section container
+        var html = @"
+            <html>
+            <body>
+                <div data-testid=""block-opinion"">
+                    <h3>Opinion</h3>
+                    <a href=""https://example.com/2024/01/15/opinion-piece"">A Thoughtful Analysis of Current Events and Their Implications</a>
+                </div>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].SectionTitle.Should().Be("Opinion",
+            "div with data-testid should be recognized as a section container");
+    }
+
+    [Fact]
+    public async Task ExtractSectionTitle_DivWithSectionClass_ShouldBeRecognizedAsSectionContainer()
+    {
+        // Arrange — div whose class contains "section" should be recognized
+        var html = @"
+            <html>
+            <body>
+                <div class=""news-section"">
+                    <h2>Technology</h2>
+                    <a href=""https://example.com/2024/01/15/tech-story"">Revolutionary New Technology Changes the Way People Work and Live</a>
+                </div>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].SectionTitle.Should().Be("Technology",
+            "div with class containing 'section' should be recognized as a section container");
     }
 
     #endregion

@@ -505,4 +505,73 @@ public class ContentQualityGateTests
     }
 
     #endregion
+
+    #region NYT-style content extraction
+
+    [Fact]
+    public async Task ExtractAsync_NytStyleStoryBodyCompanionColumn_ExtractsParagraphs()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <main>
+                    <div class='StoryBodyCompanionColumn'>
+                        <div class='css-53u6y8'>
+                            <p class='css-at9mc1'>The recent surge in oil prices has sent shockwaves through global markets, affecting everything from gasoline prices at the pump to the cost of heating homes during winter months.</p>
+                            <p class='css-at9mc1'>Analysts say the price increase is driven by a combination of geopolitical tensions in the Middle East and production cuts by OPEC member nations that have restricted supply significantly.</p>
+                            <p class='css-at9mc1'>The impact on consumers has been immediate, with many households reporting that their monthly energy bills have increased by as much as thirty percent compared to the same period last year.</p>
+                            <p class='css-at9mc1'>Energy experts warn that prices could continue to rise unless there is a diplomatic resolution to the ongoing conflicts or a significant increase in production from non-OPEC countries.</p>
+                        </div>
+                    </div>
+                </main>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/2024/01/15/business/oil-prices.html");
+
+        result.Should().NotBeNull("NYT StoryBodyCompanionColumn should be recognized as content area");
+        result!.Paragraphs.Should().HaveCountGreaterOrEqualTo(3);
+        result.Paragraphs[0].Should().Contain("oil prices");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DataTestIdArticleBody_ExtractsParagraphs()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div data-testid='article-body'>
+                    <p>The new legislation aims to address longstanding concerns about data privacy in the digital age, requiring companies to obtain explicit consent before collecting personal information.</p>
+                    <p>Privacy advocates have praised the bill as a significant step forward, noting that it aligns with similar regulations already in place in the European Union under the General Data Protection Regulation.</p>
+                    <p>Tech industry representatives have expressed concerns about the compliance costs, arguing that smaller companies may struggle to implement the required changes within the proposed timeline.</p>
+                    <p>Congressional leaders from both parties have expressed support for the bill, suggesting it could receive bipartisan approval when it comes to a floor vote later this month.</p>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/2024/01/15/technology/data-privacy.html");
+
+        result.Should().NotBeNull("data-testid='article-body' should be recognized as content area");
+        result!.Paragraphs.Should().HaveCountGreaterOrEqualTo(3);
+    }
+
+    [Fact]
+    public void IsArticlePage_NytStoryBodyCompanionColumn_ReturnsTrue()
+    {
+        var html = @"<html><head></head>
+            <body>
+                <div class='StoryBodyCompanionColumn'>
+                    <p>Article content here with sufficient text.</p>
+                    <p>Second paragraph with more meaningful content for the reader.</p>
+                    <p>Third paragraph ensures we have enough content to detect this as an article page.</p>
+                </div>
+            </body></html>";
+
+        ReadableContentExtractor.IsArticlePage(html)
+            .Should().BeTrue("page with StoryBodyCompanionColumn should be recognized as article");
+    }
+
+    #endregion
 }
