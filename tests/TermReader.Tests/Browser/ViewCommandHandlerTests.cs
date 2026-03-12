@@ -141,6 +141,41 @@ public class ViewCommandHandlerTests
         _navigationService.CurrentContext.ViewMode.Should().Be(ViewMode.Readable);
     }
 
+    [Theory]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchView))]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchToHierarchical))]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchToReadable))]
+    public async Task ViewModeKeys_InCollectionItems_AreNoOps(string methodName)
+    {
+        var collection = Domain.Entities.Collections.Collection.Create("Test Collection");
+        collection.AddItem("https://example.com", "Test Item");
+        _navigationService.EnterCollections();
+        _navigationService.EnterCollection(collection);
+        _navigationService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionItems);
+
+        var method = typeof(ViewCommandHandler).GetMethod(methodName)!;
+        await (Task)method.Invoke(null, [_ctx, _options, CancellationToken.None])!;
+
+        _navigationService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionItems,
+            $"{methodName} should be a no-op in CollectionItems view");
+    }
+
+    [Theory]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchView))]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchToHierarchical))]
+    [InlineData(nameof(ViewCommandHandler.HandleSwitchToReadable))]
+    public async Task ViewModeKeys_InCollectionList_AreNoOps(string methodName)
+    {
+        _navigationService.EnterCollections();
+        _navigationService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionList);
+
+        var method = typeof(ViewCommandHandler).GetMethod(methodName)!;
+        await (Task)method.Invoke(null, [_ctx, _options, CancellationToken.None])!;
+
+        _navigationService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionList,
+            $"{methodName} should be a no-op in CollectionList view");
+    }
+
     #endregion
 
     #region HandleIncreaseWidth
