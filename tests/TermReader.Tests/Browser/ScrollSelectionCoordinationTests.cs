@@ -444,7 +444,7 @@ public class ScrollSelectionCoordinationTests
     #region CollectionItems - GoToTop/GoToBottom
 
     [Fact]
-    public async Task CollectionItems_GoToTop_ResetsToCtaButtonAndScroll()
+    public async Task CollectionItems_GoToTop_ResetsToFirstItemAndScroll()
     {
         var collection = CreateCollectionWithItems(25);
         _navigationService.EnterCollections();
@@ -454,7 +454,7 @@ public class ScrollSelectionCoordinationTests
 
         await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CollectionItemSelectedIndex.Should().Be(-1);
+        _navigationService.CollectionItemSelectedIndex.Should().Be(0);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
     }
 
