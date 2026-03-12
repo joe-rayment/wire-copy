@@ -343,6 +343,55 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return totalContentLength < PaywallMinContentLength;
     }
 
+    /// <summary>
+    /// Validates that extracted paragraphs represent coherent article content rather than
+    /// garbage text from JS fragments, table cells, comment sections, or template boilerplate.
+    /// </summary>
+    internal static bool ValidateContentQuality(IReadOnlyList<string> paragraphs)
+    {
+        if (paragraphs.Count == 0)
+        {
+            return false;
+        }
+
+        // Reject if total word count < 100 (not enough content to be a real article)
+        var totalWords = paragraphs.Sum(p => p.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
+        if (totalWords < 100)
+        {
+            return false;
+        }
+
+        // Reject if average paragraph length < 50 chars (likely fragmented garbage)
+        var averageLength = paragraphs.Average(p => p.Length);
+        if (averageLength < 50)
+        {
+            return false;
+        }
+
+        // Reject if >50% of paragraphs start with the same word (repeated template text)
+        var firstWords = paragraphs
+            .Select(p => p.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant())
+            .Where(w => w != null)
+            .GroupBy(w => w)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault();
+
+        if (firstWords != null && firstWords.Count() > paragraphs.Count / 2)
+        {
+            return false;
+        }
+
+        // Reject if >30% of total text is non-alphabetic characters (JS/code content)
+        var totalChars = paragraphs.Sum(p => p.Length);
+        var alphabeticChars = paragraphs.Sum(p => p.Count(char.IsLetter));
+        if (totalChars > 0 && (double)alphabeticChars / totalChars < 0.70)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private static string? ExtractTitle(HtmlDocument doc)
     {
         // Try article-specific title selectors
@@ -1007,15 +1056,29 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // Level 2.5: Largest paragraph block heuristic
         var largestBlock = FindLargestParagraphBlock(doc);
-        if (largestBlock.Count >= 3)
+        if (largestBlock.Count >= 3 && ValidateContentQuality(largestBlock))
         {
             _logger.LogDebug("Largest paragraph block heuristic found {Count} paragraphs", largestBlock.Count);
             return largestBlock;
+        }
+        else if (largestBlock.Count >= 3)
+        {
+            _logger.LogDebug("Largest paragraph block failed quality validation ({Count} paragraphs)", largestBlock.Count);
         }
 
         // Level 3: Aggressive alternative extraction
         _logger.LogDebug("Few paragraphs found ({Count}), trying alternative extraction", paragraphsWithDivs.Count);
         var alternative = ExtractParagraphsAlternative(contentArea);
-        return alternative.Count > paragraphsWithDivs.Count ? alternative : paragraphsWithDivs;
+        if (alternative.Count > paragraphsWithDivs.Count && ValidateContentQuality(alternative))
+        {
+            return alternative;
+        }
+        else if (alternative.Count > paragraphsWithDivs.Count)
+        {
+            _logger.LogDebug("Alternative extraction failed quality validation ({Count} paragraphs)", alternative.Count);
+        }
+
+        // Return whatever we have from earlier levels (may be empty, handled by caller)
+        return paragraphsWithDivs;
     }
 }
