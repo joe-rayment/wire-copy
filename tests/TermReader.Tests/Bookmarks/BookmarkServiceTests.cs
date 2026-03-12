@@ -120,6 +120,82 @@ public class BookmarkServiceTests : TestDatabaseFixture
 
     #endregion
 
+    #region MoveBookmarkUpAsync
+
+    [Fact]
+    public async Task MoveBookmarkUpAsync_SwapsWithPrevious()
+    {
+        var first = await _sut.AddBookmarkAsync("First", "https://first.com");
+        var second = await _sut.AddBookmarkAsync("Second", "https://second.com");
+
+        await _sut.MoveBookmarkUpAsync(second.Id);
+
+        var all = await _sut.GetAllBookmarksAsync();
+        all[0].Name.Should().Be("Second");
+        all[1].Name.Should().Be("First");
+    }
+
+    [Fact]
+    public async Task MoveBookmarkUpAsync_AtTop_DoesNothing()
+    {
+        var first = await _sut.AddBookmarkAsync("First", "https://first.com");
+        await _sut.AddBookmarkAsync("Second", "https://second.com");
+
+        await _sut.MoveBookmarkUpAsync(first.Id);
+
+        var all = await _sut.GetAllBookmarksAsync();
+        all[0].Name.Should().Be("First");
+        all[1].Name.Should().Be("Second");
+    }
+
+    [Fact]
+    public async Task MoveBookmarkUpAsync_WithInvalidId_ThrowsException()
+    {
+        var act = () => _sut.MoveBookmarkUpAsync(Guid.NewGuid());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    #endregion
+
+    #region MoveBookmarkDownAsync
+
+    [Fact]
+    public async Task MoveBookmarkDownAsync_SwapsWithNext()
+    {
+        var first = await _sut.AddBookmarkAsync("First", "https://first.com");
+        await _sut.AddBookmarkAsync("Second", "https://second.com");
+
+        await _sut.MoveBookmarkDownAsync(first.Id);
+
+        var all = await _sut.GetAllBookmarksAsync();
+        all[0].Name.Should().Be("Second");
+        all[1].Name.Should().Be("First");
+    }
+
+    [Fact]
+    public async Task MoveBookmarkDownAsync_AtBottom_DoesNothing()
+    {
+        await _sut.AddBookmarkAsync("First", "https://first.com");
+        var second = await _sut.AddBookmarkAsync("Second", "https://second.com");
+
+        await _sut.MoveBookmarkDownAsync(second.Id);
+
+        var all = await _sut.GetAllBookmarksAsync();
+        all[0].Name.Should().Be("First");
+        all[1].Name.Should().Be("Second");
+    }
+
+    [Fact]
+    public async Task MoveBookmarkDownAsync_WithInvalidId_ThrowsException()
+    {
+        var act = () => _sut.MoveBookmarkDownAsync(Guid.NewGuid());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    #endregion
+
     #region EnsureSeededAsync
 
     [Fact]
