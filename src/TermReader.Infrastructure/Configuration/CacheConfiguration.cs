@@ -60,6 +60,12 @@ public class CacheConfiguration
     public int CrossDomainDelayMs { get; init; } = 1500;
 
     /// <summary>
+    /// Maximum number of links to pre-load per page/collection. Default: 20.
+    /// After priority sorting, only the top N items are kept in the queue.
+    /// </summary>
+    public int MaxPreloadLinks { get; init; } = 20;
+
+    /// <summary>
     /// Whether to persist cache entries to disk across app restarts. Default: true.
     /// </summary>
     public bool DiskCacheEnabled { get; init; } = true;
