@@ -197,36 +197,35 @@ public class ContentQualityGateTests
     {
         // Arrange - Page that falls through L1, L2, L2.5 and hits L3.
         // L1 fails: no <p>/<blockquote>/<li> with >50 chars text.
-        // L2 fails: no <div> elements at all, so no divs with direct text.
-        // L2.5 fails: no <p> elements, so FindLargestParagraphBlock returns empty.
-        // L3 (ExtractParagraphsAlternative): finds text nodes >100 chars in <section> elements,
+        // L2 fails: no <div>/<section> elements with direct text >50 chars.
+        // L2.5a fails: text density scoring yields no candidate with >=3 substantial blocks.
+        // L2.5b fails: no <p> elements, so FindLargestParagraphBlock returns empty.
+        // L3 (ExtractParagraphsAlternative): finds text nodes >100 chars in <details> elements,
         // but the content is JS-like garbage with >30% non-alphabetic chars, failing quality gate.
         //
-        // Uses <section> instead of <div>/<span> to avoid L2's GetDirectTextContent path
-        // (L2 searches ".//div" and includes inline elements like <span> as direct text).
+        // Uses <details> to avoid L2's search of <div>/<section> elements.
         var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
         var extractor = new ReadableContentExtractor(logger);
 
-        // Each section has >100 chars of JS-like content with normal spacing (enough words to
-        // pass the 100-word check) but dense symbols that fail the 70% alphabetic ratio check.
-        // Combined: ~230 words, ~0.33 alphabetic ratio (well below 0.70 threshold).
-        var jsGarbageSections = new[]
+        // Each details element has >100 chars of JS-like content with normal spacing (enough words
+        // to pass the 100-word check) but dense symbols that fail the 70% alphabetic ratio check.
+        var jsGarbageDetails = new[]
         {
-            @"<section>var x = fn() { return [1, 2, 3].map(i =&gt; i * 2 + 1); }; var y = { k1: 'v1', k2: [4, 5, 6], k3: fn(a, b) { return a &gt; b ? a : b; } };</section>",
-            @"<section>if (x !== null &amp;&amp; y &gt;= 10) { z = arr.reduce((a, b) =&gt; a + b, 0); } else { z = x ? [1, 2, 3] : []; w = { a: 1, b: 2, c: { d: 3, e: [4, 5] } }; }</section>",
-            @"<section>const { a, b, ...rest } = obj; let q = [1, 2, ...a, ...b]; r = { ...rest, x: 10, y: 20 }; s = q.filter(v =&gt; v &gt; 5).map(v =&gt; v * 2);</section>",
-            @"<section>for (let i = 0; i &lt; arr.length; i++) { if (arr[i] % 2 === 0) { res.push(arr[i] * 3 + 1); } else { res.push(arr[i] / 2 - 1); } cnt++; }</section>",
-            @"<section>switch (x) { case 1: y = [2, 3]; break; case 2: y = { a: 4, b: 5 }; break; default: y = fn(x) =&gt; x * x + x / 2 - 1; z = !y ? 0 : 1; }</section>",
-            @"<section>obj = { fn: (x, y) =&gt; { return x ** 2 + y ** 2; }, g: [1, 2, 3].join(','), h: ""k=v&amp;a=b&amp;c=d"", i: typeof x !== 'undefined' ? x : null };</section>"
+            @"<details>var x = fn() { return [1, 2, 3].map(i =&gt; i * 2 + 1); }; var y = { k1: 'v1', k2: [4, 5, 6], k3: fn(a, b) { return a &gt; b ? a : b; } };</details>",
+            @"<details>if (x !== null &amp;&amp; y &gt;= 10) { z = arr.reduce((a, b) =&gt; a + b, 0); } else { z = x ? [1, 2, 3] : []; w = { a: 1, b: 2, c: { d: 3, e: [4, 5] } }; }</details>",
+            @"<details>const { a, b, ...rest } = obj; let q = [1, 2, ...a, ...b]; r = { ...rest, x: 10, y: 20 }; s = q.filter(v =&gt; v &gt; 5).map(v =&gt; v * 2);</details>",
+            @"<details>for (let i = 0; i &lt; arr.length; i++) { if (arr[i] % 2 === 0) { res.push(arr[i] * 3 + 1); } else { res.push(arr[i] / 2 - 1); } cnt++; }</details>",
+            @"<details>switch (x) { case 1: y = [2, 3]; break; case 2: y = { a: 4, b: 5 }; break; default: y = fn(x) =&gt; x * x + x / 2 - 1; z = !y ? 0 : 1; }</details>",
+            @"<details>obj = { fn: (x, y) =&gt; { return x ** 2 + y ** 2; }, g: [1, 2, 3].join(','), h: ""k=v&amp;a=b&amp;c=d"", i: typeof x !== 'undefined' ? x : null };</details>"
         };
 
         var html = $@"<html><head><meta property='og:type' content='article' /></head>
             <body>
-                <section class='wrapper'>
-                    <section class='js-bundle'>
-                        {string.Join("\n", jsGarbageSections)}
-                    </section>
-                </section>
+                <details class='wrapper'>
+                    <details class='js-bundle'>
+                        {string.Join("\n", jsGarbageDetails)}
+                    </details>
+                </details>
             </body></html>";
 
         // Act
@@ -238,45 +237,39 @@ public class ContentQualityGateTests
     }
 
     [Fact]
-    public async Task ExtractAsync_Level3_AcceptsValidTextNodesWhenUpperLevelsFail()
+    public async Task ExtractAsync_Level2_AcceptsValidProseInSections()
     {
-        // Arrange - Same structure that forces L3, but with genuine prose as text nodes.
-        // L1 fails: no <p>/<blockquote>/<li> with >50 chars text.
-        // L2 fails: no <div> elements at all.
-        // L2.5 fails: no <p> elements, so FindLargestParagraphBlock returns empty.
-        // L3 picks up text nodes inside <section> elements and they pass all quality checks.
-        //
-        // Uses <section> wrappers (not <div>) to bypass L2 entirely, same as rejection test.
+        // Arrange - Page with valid prose in <section> elements (no <p> tags).
+        // Level 2 now searches both <div> and <section> elements, so this content
+        // is picked up directly. Each section has an inline <span> child with prose.
         var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
         var extractor = new ReadableContentExtractor(logger);
 
-        // Real prose as direct text inside <section> elements, each >100 chars.
-        // Good alphabetic ratio, varied first words, sufficient average paragraph length.
         var proseSections = new[]
         {
-            "<section>Scientists at the marine research station announced a remarkable discovery this week. A previously unknown species of deep-sea jellyfish was found thriving near hydrothermal vents at extreme depths.</section>",
-            "<section>The creature displays an unusual bioluminescent pattern that researchers believe serves as both a defense mechanism and a method of communication with others of its kind in the darkness below.</section>",
-            "<section>Funding for the expedition came from an international coalition of universities and conservation groups. Researchers spent nearly three months aboard a specially equipped vessel in the southern Pacific Ocean.</section>",
-            "<section>Marine biologists emphasized that the finding highlights vast gaps in our understanding of ocean ecosystems. Entire communities of organisms may exist in regions that remain completely unexplored today.</section>",
-            "<section>Publication of the formal species description is expected later this year in a leading peer-reviewed journal. Several follow-up expeditions are already being planned for the next research season ahead.</section>",
-            "<section>Conservation advocates have called for expanded protections around deep-sea hydrothermal vent systems. They argue that mining and industrial activities could devastate fragile habitats before they are even cataloged.</section>"
+            "<section><span>Scientists at the marine research station announced a remarkable discovery this week. A previously unknown species of deep-sea jellyfish was found thriving near hydrothermal vents at extreme depths.</span></section>",
+            "<section><span>The creature displays an unusual bioluminescent pattern that researchers believe serves as both a defense mechanism and a method of communication with others of its kind in the darkness below.</span></section>",
+            "<section><span>Funding for the expedition came from an international coalition of universities and conservation groups. Researchers spent nearly three months aboard a specially equipped vessel in the southern Pacific Ocean.</span></section>",
+            "<section><span>Marine biologists emphasized that the finding highlights vast gaps in our understanding of ocean ecosystems. Entire communities of organisms may exist in regions that remain completely unexplored today.</span></section>",
+            "<section><span>Publication of the formal species description is expected later this year in a leading peer-reviewed journal. Several follow-up expeditions are already being planned for the next research season ahead.</span></section>",
+            "<section><span>Conservation advocates have called for expanded protections around deep-sea hydrothermal vent systems. They argue that mining and industrial activities could devastate fragile habitats before they are even cataloged.</span></section>"
         };
 
         var html = $@"<html><head><meta property='og:type' content='article' /></head>
             <body>
-                <section class='wrapper'>
-                    <section class='text-block'>
+                <div class='wrapper'>
+                    <div class='text-block'>
                         {string.Join("\n", proseSections)}
-                    </section>
-                </section>
+                    </div>
+                </div>
             </body></html>";
 
         // Act
         var result = await extractor.ExtractAsync(html, "https://example.com/article");
 
-        // Assert - L3 should extract valid prose and quality gate should accept it
+        // Assert - Level 2 should extract valid prose from <section> elements
         result.Should().NotBeNull(
-            "Level 3 extraction of valid prose text nodes should pass quality validation");
+            "Level 2 extraction of valid prose in <section> elements should succeed");
         result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3,
             "enough prose content should produce multiple paragraphs");
     }
@@ -571,6 +564,274 @@ public class ContentQualityGateTests
 
         ReadableContentExtractor.IsArticlePage(html)
             .Should().BeTrue("page with StoryBodyCompanionColumn should be recognized as article");
+    }
+
+    #endregion
+
+    #region JS-heavy page extraction (text density scoring)
+
+    [Fact]
+    public async Task ExtractAsync_ContentInSectionsNotDivs_ExtractsViaLevel2()
+    {
+        // Page where article content is in <section> elements with <span> text,
+        // not in <div> or <p> tags. Before the fix, Level 2 only searched <div> elements
+        // and would miss <section>-based content entirely.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div id='root'>
+                    <div class='article-zone' data-content-region='body'>
+                        <section class='block'>
+                            <span class='graf'>The Arctic is experiencing unprecedented changes as rising global temperatures
+                            accelerate the melting of permafrost and sea ice, fundamentally altering ecosystems that have
+                            remained stable for millennia.</span>
+                        </section>
+                        <section class='block'>
+                            <span class='graf'>Research teams from universities across Scandinavia have documented a dramatic
+                            shift in wildlife migration patterns, with species previously confined to temperate regions
+                            now being observed hundreds of kilometers north of their historical range.</span>
+                        </section>
+                        <section class='block'>
+                            <span class='graf'>The loss of sea ice is particularly concerning for marine mammals such as
+                            polar bears and walruses that depend on ice platforms for hunting and resting throughout
+                            the long Arctic winter season.</span>
+                        </section>
+                        <section class='block'>
+                            <span class='graf'>Indigenous communities in northern Canada and Siberia report that traditional
+                            knowledge about seasonal patterns is becoming less reliable as weather becomes more
+                            unpredictable and permafrost thaw destabilizes infrastructure.</span>
+                        </section>
+                    </div>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/arctic-article");
+
+        result.Should().NotBeNull("content in <section> elements should be extracted via Level 2");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+        result.Paragraphs[0].Should().Contain("Arctic");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_TextDensityScoring_FindsBestContainer()
+    {
+        // Page with NO content area selectors matching, NO <p> tags,
+        // and content spread across <section> elements within a high-density container.
+        // A low-density noise container has short divs.
+        // Text density scoring should pick the content container over the noise.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div id='app'>
+                    <div class='noise-widget'>
+                        <div class='item'><a href='/'>Home</a> <a href='/about'>About</a> <a href='/contact'>Contact Us Today</a></div>
+                        <div class='item'><a href='/news'>News</a> <a href='/sports'>Sports</a> <a href='/tech'>Technology</a></div>
+                    </div>
+                    <div class='custom-article-wrapper'>
+                        <section class='text-chunk'>
+                            <span>Scientists at a leading marine research laboratory announced a remarkable breakthrough
+                            in understanding deep ocean ecosystems this week. The discovery could reshape conservation
+                            strategies for vulnerable marine habitats around the world.</span>
+                        </section>
+                        <section class='text-chunk'>
+                            <span>The research team spent nearly three years collecting samples from hydrothermal vents
+                            located thousands of meters below the surface of the eastern Pacific Ocean, using remotely
+                            operated vehicles equipped with specialized collection instruments.</span>
+                        </section>
+                        <section class='text-chunk'>
+                            <span>Their findings reveal a complex web of symbiotic relationships between chemosynthetic
+                            bacteria and larger organisms that was previously unknown to science. These relationships
+                            challenge existing theoretical models of deep-sea ecology significantly.</span>
+                        </section>
+                        <section class='text-chunk'>
+                            <span>Funding for the expedition was provided by an international consortium of research
+                            institutions and government agencies committed to advancing knowledge of ocean biodiversity
+                            and protecting fragile marine ecosystems for future generations.</span>
+                        </section>
+                    </div>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/ocean-article");
+
+        result.Should().NotBeNull("text density scoring should find the article container");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+        result.Paragraphs[0].Should().Contain("marine");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WordPressGutenberg_ExtractsParagraphs()
+    {
+        // WordPress Gutenberg page with wp-block-post-content wrapper
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='site-content'>
+                    <div class='wp-block-post-content'>
+                        <p>The city council voted unanimously to approve a comprehensive infrastructure modernization plan that will affect transportation, utilities, and public spaces across the metropolitan area over the next decade.</p>
+                        <p>The plan includes significant upgrades to the aging water system, which engineers say has reached the end of its useful life after more than sixty years of continuous service to residents and businesses.</p>
+                        <p>Transportation improvements will focus on expanding public transit options, including new bus rapid transit corridors and dedicated bicycle lanes connecting residential neighborhoods to commercial districts.</p>
+                        <p>Funding for the estimated four billion dollar initiative will come from a combination of federal grants, municipal bonds, and a modest increase in property tax assessments phased in over five years.</p>
+                    </div>
+                    <div class='wp-block-latest-posts'>
+                        <p>Latest: Weather forecast for the weekend</p>
+                        <p>Latest: Sports scores from last night</p>
+                    </div>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/city-plan");
+
+        result.Should().NotBeNull("wp-block-post-content should be recognized as content area");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+        result.Paragraphs[0].Should().Contain("city council");
+        // Should not include the "Latest:" noise from wp-block-latest-posts
+        result.Paragraphs.Should().NotContain(p => p.Contains("Latest:"));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_SubstackAvailableContent_ExtractsParagraphs()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='post'>
+                    <div class='available-content'>
+                        <p>The debate over artificial intelligence regulation has intensified in recent weeks as lawmakers from both parties introduced competing proposals to govern the rapidly evolving technology sector.</p>
+                        <p>Proponents of stricter regulation argue that without clear guidelines, AI systems could be deployed in ways that harm consumers, perpetuate bias, and undermine democratic institutions and processes.</p>
+                        <p>Technology industry leaders have pushed back, contending that overly prescriptive rules could stifle innovation and put domestic companies at a competitive disadvantage relative to international rivals.</p>
+                        <p>Independent researchers have called for a balanced approach that promotes transparency and accountability while preserving the flexibility needed for continued advancement in the field.</p>
+                    </div>
+                    <div class='paywall'>
+                        <p>Subscribe to continue reading this post.</p>
+                    </div>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.substack.com/p/ai-regulation");
+
+        result.Should().NotBeNull("Substack available-content should be recognized as content area");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+        result.Paragraphs[0].Should().Contain("artificial intelligence");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_GhostCms_ExtractsParagraphs()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div class='gh-content gh-canvas'>
+                    <p>A comprehensive study of renewable energy adoption rates across thirty countries reveals striking differences in the pace of transition away from fossil fuels, highlighting the complex interplay of policy, economics, and public opinion.</p>
+                    <p>Countries with strong government incentives and established manufacturing capabilities for solar panels and wind turbines have seen the fastest adoption rates over the past five years, outpacing initial projections.</p>
+                    <p>The study also found that public acceptance of renewable energy infrastructure varies significantly by region, with rural communities often expressing more concerns about visual impact and land use changes than urban populations.</p>
+                    <p>Researchers recommend a multi-pronged approach that combines financial incentives with community engagement and workforce development programs to accelerate the transition while maintaining public support.</p>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.ghost.io/renewable-energy");
+
+        result.Should().NotBeNull("Ghost gh-content should be recognized as content area");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DataContentRegion_ExtractsParagraphs()
+    {
+        // Page using data-content-region attribute (common in modern SPAs)
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div id='__next'>
+                    <div class='custom-wrapper' data-content-region='body'>
+                        <p>Astronomers using the James Webb Space Telescope have captured unprecedented images of a distant galaxy cluster that formed within the first billion years after the Big Bang, providing new insights into early cosmic evolution.</p>
+                        <p>The observations reveal structures that current models of galaxy formation did not predict, suggesting that the processes driving the assembly of stars and galaxies in the early universe were more efficient than previously thought.</p>
+                        <p>The international team of researchers published their findings in a special edition of the journal Nature, accompanied by detailed spectroscopic analyses that confirm the extreme age of the observed structures.</p>
+                        <p>Follow-up observations are planned for the next observation cycle to determine whether similar structures exist in other regions of the early universe, which could have profound implications for cosmological theory.</p>
+                    </div>
+                </div>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/space-discovery");
+
+        result.Should().NotBeNull("data-content-region='body' should be recognized as content area");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public void IsArticlePage_WordPressGutenberg_ReturnsTrue()
+    {
+        var html = @"<html><body>
+            <div class='wp-block-post-content'>
+                <p>Article content with enough text to be substantial.</p>
+                <p>More article content for testing the detection.</p>
+                <p>Third paragraph ensures we pass the threshold check.</p>
+            </div></body></html>";
+
+        ReadableContentExtractor.IsArticlePage(html)
+            .Should().BeTrue("page with wp-block-post-content should be recognized as article");
+    }
+
+    [Fact]
+    public void IsArticlePage_GhostCms_ReturnsTrue()
+    {
+        var html = @"<html><body>
+            <div class='gh-content'>
+                <p>Article content here.</p>
+            </div></body></html>";
+
+        ReadableContentExtractor.IsArticlePage(html)
+            .Should().BeTrue("page with gh-content should be recognized as article");
+    }
+
+    [Fact]
+    public void IsArticlePage_DataContentRegion_ReturnsTrue()
+    {
+        var html = @"<html><body>
+            <div data-content-region='body'>
+                <p>Article content here.</p>
+            </div></body></html>";
+
+        ReadableContentExtractor.IsArticlePage(html)
+            .Should().BeTrue("page with data-content-region='body' should be recognized as article");
+    }
+
+    [Fact]
+    public void HasExtractableContent_TextDensityFindsBestContainer_ReturnsTrue()
+    {
+        // Page with no standard selectors, content in sections within a dense container.
+        // Each paragraph needs enough words so total exceeds 100-word quality gate threshold.
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <div id='app'>
+                    <div class='custom-article-zone'>
+                        <section class='chunk'>
+                            <span>Scientists at a leading marine research laboratory announced a remarkable breakthrough in understanding deep ocean ecosystems this week. The discovery of previously unknown symbiotic relationships between chemosynthetic bacteria and larger organisms could reshape conservation strategies for vulnerable marine habitats around the world.</span>
+                        </section>
+                        <section class='chunk'>
+                            <span>The research team spent nearly three years collecting samples from hydrothermal vents located thousands of meters below the surface of the eastern Pacific Ocean, using remotely operated vehicles equipped with specialized collection instruments designed to preserve delicate biological specimens during ascent.</span>
+                        </section>
+                        <section class='chunk'>
+                            <span>Their findings reveal a complex web of ecological dependencies that was previously unknown to science and challenge existing theoretical models of deep-sea ecology significantly. Funding for the expedition was provided by an international consortium of research institutions and government agencies committed to advancing knowledge of ocean biodiversity.</span>
+                        </section>
+                    </div>
+                </div>
+            </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html)
+            .Should().BeTrue("text density scoring should find content in section-based containers");
     }
 
     #endregion
