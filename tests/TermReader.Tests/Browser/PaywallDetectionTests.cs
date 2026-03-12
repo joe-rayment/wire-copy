@@ -19,7 +19,7 @@ public class PaywallDetectionTests
     [Fact]
     public void DetectPaywall_ReturnsTrue_WhenPaywallElementsAndFewParagraphs()
     {
-        // Arrange - NYT-style gateway class with fewer than 5 paragraphs
+        // Arrange - NYT-style gateway class with fewer than 3 short paragraphs
         var html = @"
             <html>
             <body>
@@ -36,17 +36,23 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string>
+        {
+            "First paragraph of the article with some content.",
+            "Second paragraph continues the story."
+        };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 2);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
-        result.Should().BeTrue("paywall element present and only 2 paragraphs (< 5 threshold)");
+        result.Should().BeTrue("paywall element present, only 2 paragraphs, and short total content");
     }
 
     [Fact]
     public void DetectPaywall_ReturnsFalse_WhenPaywallElementsButEnoughParagraphs()
     {
-        // Arrange - paywall class present but content has >= 5 paragraphs (full article)
+        // Arrange - paywall class present but content has >= 3 paragraphs (full article)
         var html = @"
             <html>
             <body>
@@ -67,8 +73,14 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string>
+        {
+            "Paragraph one.", "Paragraph two.", "Paragraph three.",
+            "Paragraph four.", "Paragraph five.", "Paragraph six."
+        };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 6);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeFalse("enough paragraphs indicate full content despite paywall element");
@@ -94,8 +106,10 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string> { "A brief preview of the article." };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 1);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeTrue("paywall text pattern detected and only 1 paragraph (truncated)");
@@ -119,8 +133,14 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string>
+        {
+            "First paragraph of a freely accessible article.",
+            "Second paragraph with more details."
+        };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 2);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeFalse("no paywall elements or text patterns found");
@@ -145,8 +165,10 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string> { "Teaser content only." };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 1);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeTrue("subscriber-gate class is a paywall indicator");
@@ -171,8 +193,10 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string> { "Short preview." };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 1);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeTrue("id containing 'paywall' is a paywall indicator");
@@ -181,7 +205,7 @@ public class PaywallDetectionTests
     [Fact]
     public void DetectPaywall_ReturnsFalse_WhenPaywallTextButEnoughParagraphs()
     {
-        // Arrange - paywall text present but content is complete
+        // Arrange - paywall text present but content has >= 3 paragraphs (full article)
         var html = @"
             <html>
             <body>
@@ -201,8 +225,17 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string>
+        {
+            "Full paragraph one of the article.",
+            "Full paragraph two of the article.",
+            "Full paragraph three of the article.",
+            "Full paragraph four of the article.",
+            "Full paragraph five of the article."
+        };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 5);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeFalse("5 paragraphs meets the threshold even with paywall text");
@@ -228,8 +261,14 @@ public class PaywallDetectionTests
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
 
+        var paragraphs = new List<string>
+        {
+            "Article teaser.",
+            "Second short paragraph."
+        };
+
         // Act
-        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphCount: 2);
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
         result.Should().BeTrue("expanded-dock class is a paywall indicator");
@@ -242,9 +281,9 @@ public class PaywallDetectionTests
     [Fact]
     public async Task ExtractAsync_SetsIsPaywalled_WhenPaywallDetected()
     {
-        // Arrange - article with paywall class and truncated content (< 5 substantial paragraphs)
-        // Each paragraph must be >50 chars for ExtractParagraphs to keep them, and we need at
-        // least 3 paragraphs for IsArticle heuristic, but fewer than 5 for paywall truncation.
+        // Arrange - article with paywall class and truncated content (< 3 substantial paragraphs
+        // and total content < 500 chars). We need >= 3 <p> tags so IsArticle returns true,
+        // but only 2 should be substantial (> 50 chars) to simulate a teaser.
         var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
         var extractor = new ReadableContentExtractor(logger);
         var longText = new string('x', 60);
@@ -255,7 +294,7 @@ public class PaywallDetectionTests
                     <h1>Breaking News Article</h1>
                     <p>{longText} first paragraph content here with more words.</p>
                     <p>{longText} second paragraph content here with more words.</p>
-                    <p>{longText} third paragraph content here with more words.</p>
+                    <p>Short.</p>
                 </article>
                 <div class='gateway-content'>
                     <h2>Subscribe to The Times</h2>
@@ -268,7 +307,45 @@ public class PaywallDetectionTests
 
         // Assert
         result.Should().NotBeNull();
-        result!.IsPaywalled.Should().BeTrue("gateway element + few paragraphs = paywalled");
+        result!.IsPaywalled.Should().BeTrue("gateway element + few short paragraphs = paywalled");
+    }
+
+    [Fact]
+    public void DetectPaywall_ReturnsFalse_WhenPaywallTextButSubstantialContent()
+    {
+        // Arrange - short article (2 paragraphs) with subscription CTA text,
+        // but paragraphs are substantive (total >= 500 chars). This is the false-positive
+        // scenario: a legitimately short article with a subscription footer.
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <p>A substantive paragraph about an important topic with enough detail to be meaningful.</p>
+                    <p>Another paragraph with more details and context about the same topic.</p>
+                </article>
+                <footer>
+                    <p>Subscribe to continue reading more articles from our publication.</p>
+                </footer>
+            </body>
+            </html>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Two paragraphs with total content >= 500 chars
+        var paragraphs = new List<string>
+        {
+            new string('A', 260) + " substantive paragraph about an important topic.",
+            new string('B', 260) + " another paragraph with more details and context."
+        };
+
+        // Act
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
+
+        // Assert
+        result.Should().BeFalse(
+            "even though paywall text is present and paragraph count is low, " +
+            "the total content length (>= 500 chars) indicates a real short article, not a truncated teaser");
     }
 
     [Fact]
