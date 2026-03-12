@@ -119,6 +119,16 @@ public class CollectionNavigationState
     }
 
     /// <summary>
+    /// Updates the active collection reference without resetting scroll/index state.
+    /// Used during refresh to swap in the updated collection object while preserving UI position.
+    /// </summary>
+    public void UpdateActiveCollection(Collection collection)
+    {
+        _activeCollection = collection;
+        _logger.LogDebug("Updated active collection reference: {Name}", collection.Name);
+    }
+
+    /// <summary>
     /// Exits from CollectionItems back to CollectionList.
     /// </summary>
     public void ExitToCollectionList()
