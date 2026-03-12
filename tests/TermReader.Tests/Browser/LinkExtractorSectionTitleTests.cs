@@ -416,7 +416,7 @@ public class LinkExtractorSectionTitleTests
     #region ExtractSectionTitle — non-direct child headings
 
     [Fact]
-    public void ExtractSectionTitle_HeadingNestedInDiv_ReturnsNull()
+    public void ExtractSectionTitle_HeadingNestedInDiv_FindsHeadingAtDepth2()
     {
         var html = @"
             <section>
@@ -432,7 +432,7 @@ public class LinkExtractorSectionTitleTests
 
         var result = LinkExtractor.ExtractSectionTitle(anchor);
 
-        result.Should().BeNull("only direct child headings of section containers should be considered");
+        result.Should().Be("Nested Heading", "headings nested up to depth 2 should be found");
     }
 
     #endregion

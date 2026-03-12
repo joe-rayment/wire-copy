@@ -418,16 +418,31 @@ public class TerminalInputHandler : IInputHandler
     /// Clears any pending key/resize tasks so that other methods
     /// (e.g. PromptForInputAsync) can safely read from the channel directly.
     /// If the pending key task already completed, pushes the key back into the channel.
+    /// If it's still awaiting, attaches a continuation to push the key back when it arrives.
     /// </summary>
     private void DrainPendingTasks()
     {
         if (_pendingKeyTask != null)
         {
-            // If already completed, consume the result so the channel item isn't lost
             if (_pendingKeyTask.IsCompletedSuccessfully)
             {
                 // Push the already-read key back into the channel
                 _keyChannel.Writer.TryWrite(_pendingKeyTask.Result);
+            }
+            else if (!_pendingKeyTask.IsCompleted)
+            {
+                // Task is still awaiting a key from the channel reader.
+                // Attach a continuation so the key isn't lost when it eventually arrives.
+                var channel = _keyChannel;
+                _pendingKeyTask.ContinueWith(
+                    t =>
+                    {
+                        if (t.IsCompletedSuccessfully)
+                        {
+                            channel.Writer.TryWrite(t.Result);
+                        }
+                    },
+                    TaskContinuationOptions.ExecuteSynchronously);
             }
 
             _pendingKeyTask = null;

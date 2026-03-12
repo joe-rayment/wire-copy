@@ -73,6 +73,12 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'page-content')]",
         "//*[contains(@class, 'field-body')]",
         "//*[contains(@class, 'text-content')]",
+        // NYT / React SSR patterns
+        "//*[contains(@class, 'StoryBodyCompanionColumn')]",
+        "//*[contains(@class, 'story-body-supplemental')]",
+        "//*[contains(@data-testid, 'article-body')]",
+        "//*[@name='articleBody']",
+        // Generic semantic elements
         "//article",
         "//*[@role='article']",
         "//*[@role='main']",
@@ -308,7 +314,9 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         if (lowerHtml.Contains("entry-content") ||
             lowerHtml.Contains("post-content") ||
             lowerHtml.Contains("article-body") ||
-            lowerHtml.Contains("article-content"))
+            lowerHtml.Contains("article-content") ||
+            lowerHtml.Contains("storybodycompanioncolumn") ||
+            lowerHtml.Contains("data-testid=\"article-body\""))
         {
             return true;
         }

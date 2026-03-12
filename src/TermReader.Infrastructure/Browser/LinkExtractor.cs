@@ -532,6 +532,25 @@ public class LinkExtractor : ILinkExtractor
             {
                 return true;
             }
+
+            // div with data-testid or data-block attributes
+            var dataTestId = node.GetAttributeValue("data-testid", string.Empty);
+            var dataBlock = node.GetAttributeValue("data-block", string.Empty);
+            if (!string.IsNullOrWhiteSpace(dataTestId) || !string.IsNullOrWhiteSpace(dataBlock))
+            {
+                return true;
+            }
+
+            // div whose CSS class contains "section" or "group" (case-insensitive)
+            var classAttr = node.GetAttributeValue("class", string.Empty);
+            if (!string.IsNullOrWhiteSpace(classAttr))
+            {
+                var classLower = classAttr.ToLowerInvariant();
+                if (classLower.Contains("section") || classLower.Contains("group"))
+                {
+                    return true;
+                }
+            }
         }
 
         return false;
@@ -539,18 +558,55 @@ public class LinkExtractor : ILinkExtractor
 
     private static string? FindDirectChildHeading(HtmlNode container)
     {
-        foreach (var child in container.ChildNodes.Where(child => HeadingTags.Contains(child.Name)))
-        {
-            var text = child.InnerText?.Trim();
-            text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+        // Search descendants up to depth 2 (direct children and their children).
+        // Prefer the shallowest heading found.
+        string? bestHeading = null;
+        var bestDepth = int.MaxValue;
 
-            if (IsValidSectionTitle(text))
+        SearchHeadingsAtDepth(container, 1, 2, ref bestHeading, ref bestDepth);
+
+        return bestHeading;
+    }
+
+    private static void SearchHeadingsAtDepth(
+        HtmlNode node,
+        int currentDepth,
+        int maxDepth,
+        ref string? bestHeading,
+        ref int bestDepth)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            if (HeadingTags.Contains(child.Name))
             {
-                return text;
+                var text = child.InnerText?.Trim();
+                text = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+
+                if (IsValidSectionTitle(text) && currentDepth < bestDepth)
+                {
+                    bestHeading = text;
+                    bestDepth = currentDepth;
+
+                    // Can't do better than depth 1
+                    if (currentDepth == 1)
+                    {
+                        return;
+                    }
+                }
+            }
+
+            // Recurse into non-heading children if we haven't reached max depth
+            if (currentDepth < maxDepth && !HeadingTags.Contains(child.Name))
+            {
+                SearchHeadingsAtDepth(child, currentDepth + 1, maxDepth, ref bestHeading, ref bestDepth);
+
+                // Early exit if we found a depth-1 heading via another branch
+                if (bestDepth == 1)
+                {
+                    return;
+                }
             }
         }
-
-        return null;
     }
 
     private static bool IsValidSectionTitle(string title)
@@ -794,30 +850,36 @@ public class LinkExtractor : ILinkExtractor
             // Check for content elements FIRST (article, main are most specific)
             // This prevents "home-header" from incorrectly matching navigation
             if (tagNames.Any(tag => ContentParentTags.Contains(tag)) ||
-                classNames.Any(cls => ContentClasses.Contains(cls)))
+                classNames.Any(cls => MatchesClassSet(cls, ContentClasses)))
             {
                 return LinkType.Content;
             }
 
             // Check for footer elements
             if (tagNames.Any(tag => FooterParentTags.Contains(tag)) ||
-                classNames.Any(cls => FooterClasses.Contains(cls)))
+                classNames.Any(cls => MatchesClassSet(cls, FooterClasses)))
             {
                 return LinkType.Footer;
             }
 
             // Check for navigation elements (nav, header tags - NOT class names containing "header")
             if (tagNames.Any(tag => NavigationParentTags.Contains(tag)) ||
-                classNames.Any(cls => NavigationClasses.Contains(cls)))
+                classNames.Any(cls => MatchesClassSet(cls, NavigationClasses)))
             {
                 return LinkType.Navigation;
             }
         }
 
+        // Check if URL path looks like an article (date patterns common in news sites)
+        if (IsArticleUrlPattern(url))
+        {
+            return LinkType.Content;
+        }
+
         // Heuristic based on display text length
-        // Short text (< 50 chars) is more likely to be navigation
-        // Longer text is more likely to be content (article titles)
-        if (displayText.Length < 50)
+        // Very short text (< 25 chars) is more likely to be navigation (Home, About, Contact, etc.)
+        // Text >= 25 chars with no other signals defaults to Content (probable headline)
+        if (displayText.Length < 25)
         {
             return LinkType.Navigation;
         }
@@ -887,6 +949,43 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks if a CSS class matches any member of a class set, supporting compound
+    /// class names (e.g., "related-stories" matches "related" in the set).
+    /// Uses hyphen-delimited segment matching to handle BEM-style naming.
+    /// </summary>
+    private static bool MatchesClassSet(string className, HashSet<string> classSet)
+    {
+        if (classSet.Contains(className))
+        {
+            return true;
+        }
+
+        // Check if any set member is a prefix segment of the compound class name
+        // e.g., "related-stories" → split by '-' → ["related", "stories"] → "related" is in set
+        var segments = className.Split('-');
+        return segments.Any(segment => classSet.Contains(segment));
+    }
+
+    /// <summary>
+    /// Checks if a URL path matches common article URL patterns (date-based paths).
+    /// Examples: /2024/01/15/article-slug, /news/2024/01/story
+    /// </summary>
+    private static bool IsArticleUrlPattern(string url)
+    {
+        try
+        {
+            var path = new Uri(url).AbsolutePath;
+            // Match date patterns: /YYYY/MM/DD/ or /YYYY/MM/
+            return System.Text.RegularExpressions.Regex.IsMatch(
+                path, @"/\d{4}/\d{2}/(\d{2}/)?");
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsExternalLink(string url, string baseUrl)
