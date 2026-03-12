@@ -21,10 +21,11 @@ internal static class CollectionCacheHelper
         IPreloadService preloadService)
     {
         var cachedUrls = pageCache.GetCachedUrls();
+        var articleCachedUrls = preloadService.GetArticleCachedUrls();
 
         var articles = collection.Items.Select(item =>
         {
-            var state = cachedUrls.Contains(item.Url)
+            var state = cachedUrls.Contains(item.Url) || articleCachedUrls.Contains(item.Url)
                 ? ArticleCacheState.Cached
                 : ArticleCacheState.Pending;
 
