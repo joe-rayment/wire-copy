@@ -23,11 +23,13 @@ internal sealed class DiskCacheStore
     };
 
     private readonly string _cacheDirectory;
+    private readonly long _maxDiskSizeBytes;
     private readonly ILogger _logger;
 
-    public DiskCacheStore(string cacheDirectory, ILogger logger)
+    public DiskCacheStore(string cacheDirectory, ILogger logger, long maxDiskSizeBytes = 500L * 1024 * 1024)
     {
         _cacheDirectory = cacheDirectory;
+        _maxDiskSizeBytes = maxDiskSizeBytes;
         _logger = logger;
     }
 
@@ -123,6 +125,9 @@ internal sealed class DiskCacheStore
         }
 
         _logger.LogInformation("Loaded {Count} cache entries from disk", results.Count);
+
+        EnforceSizeLimit();
+
         return results;
     }
 
@@ -161,6 +166,8 @@ internal sealed class DiskCacheStore
 
             File.WriteAllText(tmpPath, json);
             File.Move(tmpPath, filePath, overwrite: true);
+
+            EnforceSizeLimit();
         }
         catch (Exception ex)
         {
@@ -226,6 +233,59 @@ internal sealed class DiskCacheStore
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to clear disk cache");
+        }
+    }
+
+    /// <summary>
+    /// Evicts oldest cache files (by last write time) until total disk usage
+    /// is within <see cref="_maxDiskSizeBytes"/>. No-op when the limit is 0 (disabled).
+    /// </summary>
+    internal void EnforceSizeLimit()
+    {
+        if (_maxDiskSizeBytes <= 0 || !Directory.Exists(_cacheDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            var files = new DirectoryInfo(_cacheDirectory)
+                .GetFiles("*.json")
+                .Select(f => new { File = f, f.Length, f.LastWriteTimeUtc })
+                .OrderBy(f => f.LastWriteTimeUtc)
+                .ToList();
+
+            var totalSize = files.Sum(f => f.Length);
+
+            var evicted = 0;
+            while (totalSize > _maxDiskSizeBytes && evicted < files.Count)
+            {
+                var oldest = files[evicted];
+                try
+                {
+                    oldest.File.Delete();
+                    totalSize -= oldest.Length;
+                    evicted++;
+                }
+                catch
+                {
+                    // Best effort eviction; skip files that can't be deleted
+                    evicted++;
+                }
+            }
+
+            if (evicted > 0)
+            {
+                _logger.LogInformation(
+                    "Disk cache eviction: removed {Count} oldest files, total size now {Size} bytes (limit: {Limit} bytes)",
+                    evicted,
+                    totalSize,
+                    _maxDiskSizeBytes);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enforce disk cache size limit");
         }
     }
 

@@ -75,4 +75,11 @@ public class CacheConfiguration
     /// When null, the default path is used.
     /// </summary>
     public string? DiskCachePath { get; init; }
+
+    /// <summary>
+    /// Maximum total size of all disk cache files in bytes. Default: 500 MB.
+    /// When the limit is exceeded, the oldest files (by last write time) are evicted first.
+    /// Set to 0 to disable disk size enforcement.
+    /// </summary>
+    public long MaxDiskSizeBytes { get; init; } = 500L * 1024 * 1024;
 }
