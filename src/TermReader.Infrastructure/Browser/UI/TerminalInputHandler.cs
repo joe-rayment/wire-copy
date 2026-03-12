@@ -160,16 +160,20 @@ public class TerminalInputHandler : IInputHandler
 
  Reading List
    s               Save to Reading List
-   A               Save all links to Reading List
-   S               Save to specific collection
+   Shift+A         Save all links to Reading List
+   Shift+S         Save to specific collection
    d               Delete / remove item
-   J / K           Reorder items
-   X               Clear all items from collection
+   Shift+J / K     Reorder items
+   Shift+X         Clear all items from collection
    p               Generate podcast from collection
+   :new <name>     Create new collection
+   :rename <name>  Rename current collection
+   :clear          Clear current collection
+   :export [fmt]   Export collection (urls, opml)
 
  Cache
-   R               Force-refresh (bypass cache)
-   I               Interactive refresh (headed browser for captcha/login)
+   Shift+R         Force-refresh (bypass cache)
+   Shift+I         Interactive refresh (headed browser for captcha/login)
    F5              Smart refresh (use cache if available)
 
  General
