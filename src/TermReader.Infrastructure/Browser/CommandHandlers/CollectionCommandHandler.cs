@@ -114,32 +114,36 @@ internal static class CollectionCommandHandler
 
     public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical)
+        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.Hierarchical)
         {
-            var tree = ctx.NavigationService.CurrentPage?.LinkTree;
-            if (tree != null)
-            {
-                var visibleNodes = tree.GetVisibleNodes()
-                    .Where(n => !n.IsGroupHeader && !string.IsNullOrEmpty(n.Link.Url))
-                    .Select(n => (n.Link.Url, n.Link.DisplayText))
-                    .ToList();
+            ctx.NavigationService.SetStatusMessage("Switch to link view (t) to save all links");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
 
-                if (visibleNodes.Count > 0)
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+        if (tree != null)
+        {
+            var visibleNodes = tree.GetVisibleNodes()
+                .Where(n => !n.IsGroupHeader && !string.IsNullOrEmpty(n.Link.Url))
+                .Select(n => (n.Link.Url, n.Link.DisplayText))
+                .ToList();
+
+            if (visibleNodes.Count > 0)
+            {
+                try
                 {
-                    try
-                    {
-                        using var scope = ctx.ScopeFactory.CreateScope();
-                        var service = ctx.CreateCollectionService(scope);
-                        await service.SaveAllToReadingListAsync(visibleNodes, ct);
-                        ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
-                        ctx.NavigationService.SetStatusMessage(
-                            $"Saved {visibleNodes.Count} links to Reading List");
-                    }
-                    catch (Exception ex)
-                    {
-                        ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
-                        ctx.NavigationService.SetStatusMessage("Failed to save");
-                    }
+                    using var scope = ctx.ScopeFactory.CreateScope();
+                    var service = ctx.CreateCollectionService(scope);
+                    await service.SaveAllToReadingListAsync(visibleNodes, ct);
+                    ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
+                    ctx.NavigationService.SetStatusMessage(
+                        $"Saved {visibleNodes.Count} links to Reading List");
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
+                    ctx.NavigationService.SetStatusMessage("Failed to save");
                 }
             }
         }
@@ -337,24 +341,6 @@ internal static class CollectionCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var service = ctx.CreateCollectionService(scope);
-
-            // Purge expired Reading List items (16-hour auto-expiry) — non-critical
-            try
-            {
-                var purged = await service.PurgeExpiredReadingListItemsAsync(TimeSpan.FromHours(16), ct);
-                if (purged > 0)
-                {
-                    ctx.Logger.LogInformation("Purged {Count} expired Reading List items", purged);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ctx.Logger.LogWarning(ex, "Failed to purge expired Reading List items; continuing");
-            }
 
             // Go directly to Reading List items view (skip CollectionList)
             var readingList = await service.GetReadingListAsync(ct);
