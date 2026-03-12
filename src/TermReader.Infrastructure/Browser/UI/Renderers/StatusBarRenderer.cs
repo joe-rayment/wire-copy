@@ -60,7 +60,7 @@ internal class StatusBarRenderer
         {
             ViewMode.Hierarchical => "LinkView",
             ViewMode.Readable => "ReaderView",
-            ViewMode.CollectionList => "Reading List",
+            ViewMode.CollectionList => "Collections",
             ViewMode.CollectionItems => "Reading List",
             ViewMode.Launcher => "Launcher",
             _ => "Browser"
