@@ -740,7 +740,7 @@ internal static class PodcastCommandHandler
             }
 
             // [a] re-enter API key when already configured
-            if (command.Type == CommandType.AddBookmark && isTtsConfigured)
+            if (command.RawKeyChar == 'a' && isTtsConfigured)
             {
                 var apiKey = await ctx.InputHandler.PromptForInputAsync(
                     "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
