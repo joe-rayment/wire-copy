@@ -336,6 +336,169 @@ public class DiskCacheStoreTests : IDisposable
         cache.TryGet("https://example.com/memory-only").Should().NotBeNull();
     }
 
+    [Fact]
+    public void EnforceSizeLimit_EvictsOldestFilesWhenOverLimit()
+    {
+        // Create a store with a very small disk limit
+        var dir = Path.Combine(Path.GetTempPath(), "termreader-test-sizelimit-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Write 5 entries, each ~500+ bytes on disk, with staggered mtime
+            var store = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: long.MaxValue);
+            for (int i = 0; i < 5; i++)
+            {
+                var url = $"https://example.com/size-{i}";
+                var (result, metadata) = CreateEntry(url, $"<html>{'X' + new string('Y', 200)}</html>");
+                store.Write(metadata.NormalizedUrl, result, metadata);
+
+                // Stagger last write times so ordering is deterministic
+                var filePath = store.GetFilePath(metadata.NormalizedUrl);
+                File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow.AddMinutes(-50 + (i * 10)));
+            }
+
+            // Measure total size of all 5 files
+            var totalSize = new DirectoryInfo(dir).GetFiles("*.json").Sum(f => f.Length);
+            totalSize.Should().BeGreaterThan(0);
+
+            // Set a limit that fits ~2 files (40% of total)
+            var twoFileLimit = (long)(totalSize * 0.4);
+            var limitedStore = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: twoFileLimit);
+            limitedStore.EnforceSizeLimit();
+
+            var remainingFiles = Directory.GetFiles(dir, "*.json");
+            remainingFiles.Length.Should().BeLessThan(5, "oldest files should have been evicted");
+
+            var remainingSize = remainingFiles.Sum(f => new FileInfo(f).Length);
+            remainingSize.Should().BeLessOrEqualTo(twoFileLimit, "total disk size should be within limit");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void EnforceSizeLimit_NoopWhenUnderLimit()
+    {
+        // Write entries with the default (large) limit
+        for (int i = 0; i < 3; i++)
+        {
+            var url = $"https://example.com/noop-{i}";
+            var (result, metadata) = CreateEntry(url, $"<html>small entry {i}</html>");
+            _store.Write(metadata.NormalizedUrl, result, metadata);
+        }
+
+        // All 3 files should still exist (default 500MB limit is not reached)
+        Directory.GetFiles(_cacheDir, "*.json").Length.Should().Be(3);
+    }
+
+    [Fact]
+    public void EnforceSizeLimit_NoopWhenLimitIsZero()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "termreader-test-nolimit-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: 0);
+            for (int i = 0; i < 3; i++)
+            {
+                var url = $"https://example.com/nolimit-{i}";
+                var (result, metadata) = CreateEntry(url, $"<html>entry {i}</html>");
+                store.Write(metadata.NormalizedUrl, result, metadata);
+            }
+
+            // With limit=0 (disabled), no eviction should happen
+            Directory.GetFiles(dir, "*.json").Length.Should().Be(3);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Write_EnforcesSizeLimitAfterWrite()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "termreader-test-writeevict-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Write 2 files without limit to measure their size
+            var unlimitedStore = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: long.MaxValue);
+            var url1 = "https://example.com/evict-write-1";
+            var (result1, meta1) = CreateEntry(url1, "<html>" + new string('A', 500) + "</html>");
+            unlimitedStore.Write(meta1.NormalizedUrl, result1, meta1);
+            File.SetLastWriteTimeUtc(unlimitedStore.GetFilePath(meta1.NormalizedUrl), DateTime.UtcNow.AddMinutes(-10));
+
+            var singleFileSize = new FileInfo(unlimitedStore.GetFilePath(meta1.NormalizedUrl)).Length;
+
+            // Now create a store with a limit that fits only ~1.5 files
+            var limitedStore = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: (long)(singleFileSize * 1.5));
+
+            // Write a second entry; this should trigger eviction of the first (oldest)
+            var url2 = "https://example.com/evict-write-2";
+            var (result2, meta2) = CreateEntry(url2, "<html>" + new string('B', 500) + "</html>");
+            limitedStore.Write(meta2.NormalizedUrl, result2, meta2);
+
+            var remaining = Directory.GetFiles(dir, "*.json");
+            remaining.Length.Should().Be(1, "only the newest file should remain after eviction");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void LoadAll_EnforcesSizeLimitAfterLoad()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "termreader-test-loadevict-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Write 5 entries without limit
+            var unlimitedStore = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: long.MaxValue);
+            for (int i = 0; i < 5; i++)
+            {
+                var url = $"https://example.com/load-evict-{i}";
+                var (result, metadata) = CreateEntry(url, $"<html>{new string('Z', 300)}</html>");
+                unlimitedStore.Write(metadata.NormalizedUrl, result, metadata);
+                File.SetLastWriteTimeUtc(unlimitedStore.GetFilePath(metadata.NormalizedUrl), DateTime.UtcNow.AddMinutes(-50 + (i * 10)));
+            }
+
+            var totalSize = new DirectoryInfo(dir).GetFiles("*.json").Sum(f => f.Length);
+            var oneFileSize = totalSize / 5;
+
+            // Create a limited store that fits ~2 files
+            var limitedStore = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance, maxDiskSizeBytes: oneFileSize * 2 + 10);
+            var loaded = limitedStore.LoadAll();
+
+            // LoadAll should have triggered eviction
+            var remaining = Directory.GetFiles(dir, "*.json");
+            remaining.Length.Should().BeLessOrEqualTo(2);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void MaxDiskSizeBytes_DefaultIs500MB()
+    {
+        var config = new CacheConfiguration();
+        config.MaxDiskSizeBytes.Should().Be(500L * 1024 * 1024);
+    }
+
     private static (PageLoadResult Result, CacheEntryMetadata Metadata) CreateEntry(string url, string html)
     {
         var result = PageLoadResult.Successful(url, html, new PageMetadata { Title = "Test" });

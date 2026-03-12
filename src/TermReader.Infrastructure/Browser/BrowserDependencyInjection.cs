@@ -123,7 +123,7 @@ public static class BrowserDependencyInjection
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "TermReader",
                         "page-cache");
-                diskStore = new DiskCacheStore(diskPath, cacheLogger);
+                diskStore = new DiskCacheStore(diskPath, cacheLogger, cacheConfig.Value.MaxDiskSizeBytes);
             }
 
             return new InMemoryPageCache(cacheConfig, cacheLogger, diskStore);
