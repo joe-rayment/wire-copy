@@ -757,5 +757,208 @@ public class ReadableContentTests
         extractor.IsArticle(html).Should().BeFalse("empty/trivially short paragraphs should not count as article content");
     }
 
+    [Fact]
+    public void IsArticle_NavigationArticleClass_ReturnsFalse()
+    {
+        // class="navigation-article" should NOT match the "article" indicator
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property=""og:type"" content=""website"" /></head>
+        <body>
+            <nav class=""navigation-article"">
+                <a href=""/page1"">Page 1</a>
+                <a href=""/page2"">Page 2</a>
+            </nav>
+            <div class=""article-list"">
+                <p>Short desc</p>
+                <p>Another</p>
+            </div>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("hyphenated class names like 'navigation-article' and 'article-list' should not match the 'article' indicator");
+    }
+
+    [Fact]
+    public void IsArticle_ExactArticleClass_ReturnsTrue()
+    {
+        // class="article" (exact) should match
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head></head>
+        <body>
+            <div class=""article"">
+                <p>Short content</p>
+            </div>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("exact class 'article' should match");
+    }
+
+    [Fact]
+    public void IsArticle_ArticleInMultipleClasses_ReturnsTrue()
+    {
+        // class="main article sidebar" should match — "article" is exact within space-separated list
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head></head>
+        <body>
+            <div class=""main article sidebar"">
+                <p>Short content</p>
+            </div>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("'article' as a space-separated class token should match");
+    }
+
+    [Fact]
+    public void IsArticle_ExactArticleId_ReturnsTrue()
+    {
+        // id="article" should match
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head></head>
+        <body>
+            <div id=""article"">
+                <p>Short content</p>
+            </div>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("exact id 'article' should match");
+    }
+
+    [Fact]
+    public void IsArticle_HyphenatedArticleId_ReturnsFalse()
+    {
+        // id="article-wrapper" should NOT match "article" indicator
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property=""og:type"" content=""website"" /></head>
+        <body>
+            <div id=""article-wrapper"">
+                <p>Short</p>
+            </div>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("hyphenated id 'article-wrapper' should not match 'article' indicator");
+    }
+
+    #endregion
+
+    #region HasExtractableContent
+
+    [Fact]
+    public void HasExtractableContent_ArticleWithSubstantialParagraphs_ReturnsTrue()
+    {
+        var p1 = "This is the first paragraph of the article with plenty of content to read through carefully.";
+        var p2 = "The second paragraph continues with additional details and information for readers to enjoy fully.";
+        var p3 = "A third paragraph wraps up the section with concluding thoughts and final remarks for everyone.";
+        var html = $@"<html><body>
+            <article>
+                <h1>Real Article</h1>
+                <p>{p1}</p>
+                <p>{p2}</p>
+                <p>{p3}</p>
+            </article>
+        </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
+            "article tag with 3+ substantial paragraphs should be extractable");
+    }
+
+    [Fact]
+    public void HasExtractableContent_JsShellWithArticleIndicators_ReturnsFalse()
+    {
+        // Simulates a JS-rendered page: has og:type=article but no article paragraphs
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <nav><a href='/'>Home</a><a href='/news'>News</a></nav>
+                <div id='root'></div>
+                <footer><p>Copyright 2026 Example Corp. All rights reserved. Terms and conditions apply.</p></footer>
+            </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeFalse(
+            "JS shell page with only nav/footer text should NOT have extractable content");
+    }
+
+    [Fact]
+    public void HasExtractableContent_EmptyString_ReturnsFalse()
+    {
+        ReadableContentExtractor.HasExtractableContent("").Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasExtractableContent_MainRoleWithContent_ReturnsTrue()
+    {
+        var p1 = "This is the first paragraph with enough content to be considered substantial by the extractor.";
+        var p2 = "Second paragraph also has sufficient length to pass the threshold for extraction purposes.";
+        var p3 = "Third paragraph rounds out the article with concluding thoughts about the topic at hand.";
+        var html = $@"<html><body>
+            <div role='main'>
+                <p>{p1}</p>
+                <p>{p2}</p>
+                <p>{p3}</p>
+            </div>
+        </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasExtractableContent_LargestParagraphBlockInPlainDiv_ReturnsTrue()
+    {
+        // Content is in a plain div (no special selectors) but has a large block of paragraphs.
+        // Each paragraph needs >50 chars, total must be 100+ words (ValidateContentQuality),
+        // and paragraphs must not all start with the same word.
+        var html = @"<html><body>
+            <div class='story-area'>
+                <p>First paragraph describes the opening scene where the protagonist arrives at the grand hotel overlooking the coast on a beautiful summer morning with clear skies.</p>
+                <p>Meanwhile, the detective examines the evidence found at the crime scene and pieces together the timeline carefully, noting each detail in a small leather notebook.</p>
+                <p>Several witnesses reported seeing a dark figure near the entrance shortly before midnight on that fateful evening, though none could identify the individual clearly.</p>
+                <p>Forensic analysis revealed traces of an unusual chemical compound on the windowsill that puzzled the entire investigative team and prompted further laboratory testing.</p>
+                <p>Ultimately, the resolution came from an unexpected source when a security camera captured the crucial moment on tape, revealing the identity of the perpetrator.</p>
+            </div>
+        </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
+            "largest paragraph block heuristic should find the content");
+    }
+
+    #endregion
+
+    #region IsArticlePage (static)
+
+    [Fact]
+    public void IsArticlePage_MatchesInstanceIsArticle()
+    {
+        // IsArticlePage (static) should produce the same result as IsArticle (instance)
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var articleHtml = @"<html><head><meta property='og:type' content='article' /></head><body></body></html>";
+        var nonArticleHtml = @"<html><body><p>Short text</p></body></html>";
+
+        ReadableContentExtractor.IsArticlePage(articleHtml).Should().Be(extractor.IsArticle(articleHtml));
+        ReadableContentExtractor.IsArticlePage(nonArticleHtml).Should().Be(extractor.IsArticle(nonArticleHtml));
+    }
+
+    [Fact]
+    public void IsArticlePage_OgTypeArticle_ReturnsTrue()
+    {
+        var html = @"<html><head><meta property='og:type' content='article' /></head><body></body></html>";
+        ReadableContentExtractor.IsArticlePage(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsArticlePage_NoArticleIndicators_ReturnsFalse()
+    {
+        var html = @"<html><body><div>Just a page</div></body></html>";
+        ReadableContentExtractor.IsArticlePage(html).Should().BeFalse();
+    }
+
     #endregion
 }

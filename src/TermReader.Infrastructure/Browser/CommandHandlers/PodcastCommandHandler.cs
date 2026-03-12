@@ -42,23 +42,23 @@ internal static class PodcastCommandHandler
         RenderOptions options,
         CancellationToken ct)
     {
-        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
-        {
-            ctx.NavigationService.SetStatusMessage("Open a collection first, then press p");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
-
-        var collection = ctx.NavigationService.ActiveCollection;
-        if (collection == null || collection.Items.Count == 0)
-        {
-            ctx.NavigationService.SetStatusMessage("No articles to generate podcast from");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
-
         try
         {
+            if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
+            {
+                ctx.NavigationService.SetStatusMessage("Open a collection first, then press p");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var collection = ctx.NavigationService.ActiveCollection;
+            if (collection == null || collection.Items.Count == 0)
+            {
+                ctx.NavigationService.SetStatusMessage("No articles to generate podcast from");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
             // Press feedback: render one frame with inverted button colors, then continue
             var pressedOptions = options with { PodcastButtonState = 1 }; // 1 = Pressed
             await ctx.RenderCurrentPageAsync(pressedOptions, ct);
@@ -217,8 +217,16 @@ internal static class PodcastCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogError(ex, "Podcast generation failed with unexpected error");
-            ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            try
+            {
+                ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}");
+                await ctx.RenderCurrentPageAsync(options, ct);
+            }
+            catch (Exception renderEx)
+            {
+                // Last-resort: if even the error UI fails, just log it
+                ctx.Logger.LogError(renderEx, "Failed to render podcast error screen");
+            }
         }
     }
 

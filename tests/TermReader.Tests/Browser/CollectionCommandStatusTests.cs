@@ -284,6 +284,61 @@ public class CollectionCommandStatusTests
 
     #endregion
 
+    #region HandleOpenCollections
+
+    [Fact]
+    public async Task HandleOpenCollections_CallsGetReadingListAsync_NotGetDefaultCollectionAsync()
+    {
+        // Arrange: GetReadingListAsync returns a collection named "Reading List"
+        var readingList = Collection.Create("Reading List");
+        readingList.AddItem("https://example.com/saved", "Saved Article");
+        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
+            .Returns(readingList);
+
+        // Act
+        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
+
+        // Assert: GetReadingListAsync was called, NOT GetDefaultCollectionAsync
+        await _collectionService.Received(1).GetReadingListAsync(Arg.Any<CancellationToken>());
+        await _collectionService.DidNotReceive().GetDefaultCollectionAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleOpenCollections_NavigatesToReadingListCollection()
+    {
+        // Arrange
+        var readingList = Collection.Create("Reading List");
+        readingList.AddItem("https://example.com/saved", "Saved Article");
+        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
+            .Returns(readingList);
+
+        // Act
+        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
+
+        // Assert: navigation entered CollectionItems view with the Reading List
+        _navService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionItems);
+        _navService.ActiveCollection.Should().NotBeNull();
+        _navService.ActiveCollection!.Name.Should().Be("Reading List");
+        _navService.ActiveCollection.Items.Should().HaveCount(1);
+        _navService.ActiveCollection.Items[0].Url.Should().Be("https://example.com/saved");
+    }
+
+    [Fact]
+    public async Task HandleOpenCollections_Failure_ShowsErrorMessage()
+    {
+        // Arrange
+        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
+            .Returns<Collection>(_ => throw new InvalidOperationException("DB error"));
+
+        // Act
+        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
+
+        // Assert
+        _lastStatusMessage.Should().Contain("Failed to load collections");
+    }
+
+    #endregion
+
     #region Helpers
 
     private void SetupHierarchicalWithSelectedLink(string title, string url)

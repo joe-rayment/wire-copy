@@ -342,4 +342,89 @@ public class FileSystemTtsAudioCacheTests : IDisposable
     }
 
     #endregion
+
+    #region Corrupt cache resilience
+
+    [Fact]
+    public async Task AnalyzeCollectionAsync_CorruptIndexFile_ReturnsGracefulFallback()
+    {
+        // Put a valid entry first, so an index file exists
+        await _cache.PutAsync("text one", "https://example.com/1", "A1", new byte[] { 1 });
+
+        // Create a new cache instance with corrupt index
+        var indexDir = Path.Combine(_tempDir, "index");
+        if (Directory.Exists(indexDir))
+        {
+            foreach (var file in Directory.GetFiles(indexDir, "*.json"))
+            {
+                await File.WriteAllTextAsync(file, "NOT VALID JSON {{{{}}}}");
+            }
+        }
+        else
+        {
+            // Index might be at cache root
+            var indexFiles = Directory.GetFiles(_tempDir, "*.json");
+            foreach (var file in indexFiles)
+            {
+                await File.WriteAllTextAsync(file, "NOT VALID JSON {{{{}}}}");
+            }
+        }
+
+        var cacheConfig = Options.Create(new TtsAudioCacheConfiguration
+        {
+            BasePath = _tempDir,
+            MaxSizeBytes = 10 * 1024 * 1024,
+            Ttl = TimeSpan.FromHours(1),
+        });
+        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
+        {
+            Voice = "nova",
+            Model = "tts-1",
+            Speed = 1.0f,
+            OutputFormat = "aac",
+        });
+        var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
+        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+
+        var articles = new List<(string Url, string Title, string Text)>
+        {
+            ("https://example.com/1", "Article 1", "Text of article one"),
+        };
+
+        // Should NOT throw — catch block returns graceful fallback
+        var analysis = await corruptCache.AnalyzeCollectionAsync(articles);
+
+        analysis.Should().NotBeNull();
+        analysis.TotalArticles.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TryGetAsync_CorruptIndexFile_ReturnsNull()
+    {
+        // Put a valid entry first
+        await _cache.PutAsync("text", "https://example.com", "Title", new byte[] { 1 });
+
+        // Corrupt the index
+        var indexFiles = Directory.GetFiles(_tempDir, "*.json", SearchOption.AllDirectories);
+        foreach (var file in indexFiles)
+        {
+            await File.WriteAllTextAsync(file, "CORRUPT {{{");
+        }
+
+        var cacheConfig = Options.Create(new TtsAudioCacheConfiguration
+        {
+            BasePath = _tempDir,
+            Ttl = TimeSpan.FromHours(1),
+        });
+        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { Voice = "nova", Model = "tts-1", Speed = 1.0f, OutputFormat = "aac" });
+        var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
+        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+
+        // Should NOT throw — catch block returns null
+        var result = await corruptCache.TryGetAsync("text", "https://example.com");
+
+        result.Should().BeNull("corrupt index should gracefully return null");
+    }
+
+    #endregion
 }

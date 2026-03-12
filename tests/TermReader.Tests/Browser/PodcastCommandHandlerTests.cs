@@ -698,6 +698,69 @@ public class PodcastCommandHandlerTests
 
     #endregion
 
+    #region GCS Credential Failures (d0dl / erj0)
+
+    [Fact]
+    public async Task HandleGeneratePodcast_GcsValidationThrows_DoesNotCrash()
+    {
+        // GCS validation throws (simulating missing credentials)
+        var cloudStorage = Substitute.For<ICloudStorageClient>();
+        cloudStorage.ValidateConnectionAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("No GCP credentials found"));
+
+        var failingScopeFactory = CreateScopeFactoryWith(cloudStorage);
+        var gcsConfig = new GcsConfiguration { BucketName = "test-bucket" };
+        var ctx = CreateCommandContextWith(failingScopeFactory, gcsConfig);
+
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/article1", "Art1");
+        ctx.NavigationService.EnterCollection(collection);
+
+        SetupInputQueue(Cmd(CommandType.GoBack));
+
+        // Should NOT throw — outer try/catch handles the error
+        await PodcastCommandHandler.HandleGeneratePodcast(ctx, _options, CancellationToken.None);
+
+        _renderCalled.Should().BeTrue("should render error screen, not crash");
+    }
+
+    [Fact]
+    public async Task HandleGeneratePodcast_CloudStorageDiMissing_DoesNotCrash()
+    {
+        // Simulate missing ICloudStorageClient in DI (GetRequiredService throws)
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
+        serviceProvider.GetService(typeof(IPodcastOrchestrator)).Returns(_orchestrator);
+        serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
+        serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
+            .Returns(Options.Create(new GcsConfiguration { BucketName = "test-bucket" }));
+        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
+        serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(null as object);
+        serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(null as object);
+        serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))
+            .Returns(Options.Create(new PodcastConfiguration()));
+
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(serviceProvider);
+        var factory = Substitute.For<IServiceScopeFactory>();
+        factory.CreateScope().Returns(scope);
+
+        var ctx = CreateCommandContextWith(factory);
+
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/article1", "Art1");
+        ctx.NavigationService.EnterCollection(collection);
+
+        SetupInputQueue(Cmd(CommandType.GoBack));
+
+        // Should NOT throw — outer try/catch handles the DI failure
+        await PodcastCommandHandler.HandleGeneratePodcast(ctx, _options, CancellationToken.None);
+
+        _renderCalled.Should().BeTrue("should show error, not crash");
+    }
+
+    #endregion
+
     #region Cancellation
 
     [Fact]
@@ -779,6 +842,78 @@ public class PodcastCommandHandlerTests
                 EstimatedCost = 0m,
                 ArticleStatuses = [],
             });
+    }
+
+    private CommandContext CreateCommandContextWith(IServiceScopeFactory scopeFactory, GcsConfiguration? gcsConfig = null)
+    {
+        var navService = new NavigationService(Substitute.For<ILogger<NavigationService>>());
+        var page = Domain.Entities.Browser.Page.Create(
+            "https://example.com",
+            "<html><body>Test</body></html>",
+            new Domain.ValueObjects.Browser.PageMetadata { Title = "Test" });
+        navService.NavigateTo(page);
+
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var lineCacheManager = new LineCacheManager(navService, themeProvider);
+
+        return new CommandContext
+        {
+            NavigationService = navService,
+            Renderer = Substitute.For<IPageRenderer>(),
+            InputHandler = _inputHandler,
+            ScopeFactory = scopeFactory,
+            Logger = Substitute.For<ILogger>(),
+            PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = lineCacheManager,
+            ThemeProvider = themeProvider,
+            PreloadService = _preloadService,
+            NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            RenderCurrentPageAsync = (_, _) =>
+            {
+                _renderCalled = true;
+                return Task.CompletedTask;
+            },
+            RefreshCollectionsAsync = _ => Task.CompletedTask,
+            RefreshBookmarksAsync = _ => Task.CompletedTask,
+            GetCurrentRenderOptions = () => _options,
+            CreateCollectionService = _ => Substitute.For<ICollectionService>(),
+            GetReaderViewportHeight = _ => 20,
+            GetHierarchicalViewportHeight = _ => 20,
+            AdjustScrollForSelection = (_, _) => { },
+            ScrollToSearchMatch = (_, _) => { },
+        };
+    }
+
+    private IServiceScopeFactory CreateScopeFactoryWith(ICloudStorageClient cloudStorageOverride)
+    {
+        var publisher = Substitute.For<IPodcastPublisher>();
+        publisher.GetExistingFeedUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+
+        var podcastConfig = new PodcastConfiguration();
+
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
+        serviceProvider.GetService(typeof(IPodcastOrchestrator)).Returns(_orchestrator);
+        serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
+        serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
+            .Returns(Options.Create(_gcsConfig));
+        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
+        serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(cloudStorageOverride);
+        serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(publisher);
+        serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))
+            .Returns(Options.Create(podcastConfig));
+
+        var scope = Substitute.For<IServiceScope>();
+        scope.ServiceProvider.Returns(serviceProvider);
+
+        var factory = Substitute.For<IServiceScopeFactory>();
+        factory.CreateScope().Returns(scope);
+
+        return factory;
     }
 
     private IServiceScopeFactory CreateScopeFactory()

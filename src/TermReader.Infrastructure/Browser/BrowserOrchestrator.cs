@@ -287,6 +287,57 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
+        // Auto-login fallback: if content is still paywalled, attempt auto-login using stored credentials
+        if (page.ReadableContent?.IsPaywalled == true)
+        {
+            try
+            {
+                using var loginScope = _scopeFactory.CreateScope();
+                var autoLogin = loginScope.ServiceProvider.GetService<IAutoLoginService>();
+                if (autoLogin != null)
+                {
+                    var host = new Uri(url).Host;
+                    var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                        ? host[4..] : host;
+
+                    if (await autoLogin.HasCredentialsAsync(domain, cancellationToken))
+                    {
+                        _logger.LogInformation(
+                            "Paywall detected with stored credentials, attempting auto-login: {Url}", url);
+
+                        var loginResult = await autoLogin.LoginAsync(domain, cancellationToken);
+                        if (loginResult.Success)
+                        {
+                            _logger.LogInformation("Auto-login succeeded for {Domain}, retrying page load", domain);
+                            _pageCache.Remove(url);
+                            _renderer.RenderLoading(url);
+
+                            var autoLoginRetryResult = await _pageLoader.LoadAsync(
+                                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                                cancellationToken);
+
+                            if (autoLoginRetryResult.Success)
+                            {
+                                _lastLoadFetchMethod = autoLoginRetryResult.FetchMethod;
+                                page = await BuildPageFromLoadResultAsync(autoLoginRetryResult, url, cancellationToken);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInformation(
+                                "Auto-login failed for {Domain}: {Error}",
+                                domain,
+                                loginResult.ErrorMessage);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Auto-login attempt failed for {Url}", url);
+            }
+        }
+
         // Headless challenge fallback: if headless Selenium got a bot challenge,
         // retry in headed mode where DataDome is less likely to block
         if (!page.HasReadableContent() &&
@@ -609,6 +660,7 @@ public class BrowserOrchestrator : IBrowserService
             CachedUrls = GetMergedCachedUrls(),
             CacheProgress = _preloadService.GetProgress(),
             PodcastButtonState = GetPodcastButtonState(),
+            CacheUsagePercent = GetCacheUsagePercent(),
         };
     }
 
@@ -660,6 +712,12 @@ public class BrowserOrchestrator : IBrowserService
     /// Returns the union of page-cached URLs and article-cached URLs from preloading.
     /// Used by renderers to show cache indicators for collection items.
     /// </summary>
+    private double GetCacheUsagePercent()
+    {
+        var stats = _pageCache.GetStats();
+        return stats?.UsagePercent ?? 0;
+    }
+
     private IReadOnlySet<string> GetMergedCachedUrls()
     {
         var pageCachedUrls = _pageCache.GetCachedUrls();
@@ -1243,8 +1301,31 @@ public class BrowserOrchestrator : IBrowserService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Render failed for current page");
-            _navigationService.SetStatusMessage($"Render error: {ex.Message}");
+            _logger.LogError(ex, "Render failed for current page");
+
+            try
+            {
+                var url = _navigationService.CurrentPage?.Url ?? "unknown";
+                _renderer.RenderError($"Render error: {ex.Message}", url);
+            }
+            catch (Exception renderEx)
+            {
+                // Renderer itself is broken — write minimal fallback directly
+                _logger.LogError(renderEx, "Fallback render also failed");
+
+                try
+                {
+                    Console.Clear();
+                    Console.WriteLine();
+                    Console.WriteLine("  Error rendering page. Press any key to continue.");
+                    Console.WriteLine($"  Details: {ex.Message}");
+                    Console.WriteLine();
+                }
+                catch
+                {
+                    // Terminal may be in an unusable state; swallow to avoid crash
+                }
+            }
         }
     }
 

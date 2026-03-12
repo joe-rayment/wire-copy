@@ -183,7 +183,10 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             TotalSizeBytes = Interlocked.Read(ref _totalSizeBytes),
             MaxSizeBytes = _config.MaxSizeBytes,
             HitCount = Interlocked.Read(ref _hitCount),
-            MissCount = Interlocked.Read(ref _missCount)
+            MissCount = Interlocked.Read(ref _missCount),
+            DiskCacheFileCount = _diskStore?.GetFileCount() ?? 0,
+            DiskCacheSizeBytes = _diskStore?.GetTotalSizeBytes() ?? 0,
+            MaxDiskSizeBytes = _diskStore?.MaxDiskSizeBytes ?? 0
         };
     }
 

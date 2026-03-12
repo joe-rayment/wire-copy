@@ -751,6 +751,22 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         "Skipping cache for preloaded URL with insufficient content: {Url}",
                         url);
                 }
+                else if (ReadableContentExtractor.IsArticlePage(result.Html) &&
+                         !ReadableContentExtractor.HasExtractableContent(result.Html))
+                {
+                    // Page looks like an article (has article indicators) but has no
+                    // extractable article content. This catches JS-heavy sites like NYT
+                    // that return a shell with nav/header text but no article body.
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                    }
+
+                    _logger.LogDebug(
+                        "Skipping cache for preloaded URL with no extractable article content: {Url}",
+                        url);
+                }
                 else
                 {
                     _cache.Put(url, result);
