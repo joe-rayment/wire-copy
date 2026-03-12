@@ -170,8 +170,27 @@ public static class BrowserDependencyInjection
             var httpClient = httpClientFactory.CreateClient("BrowserPageLoader");
             var cacheConfig = sp.GetRequiredService<IOptions<CacheConfiguration>>();
             var preloadLogger = sp.GetRequiredService<ILogger<Cache.BackgroundPreloadService>>();
+            var contentExtractor = sp.GetRequiredService<IReadableContentExtractor>();
+
+            // Article content cache is optional (only available when podcast services are registered)
+            Podcast.Cache.IArticleContentCache? articleCache = null;
+            try
+            {
+                articleCache = sp.GetService<Podcast.Cache.IArticleContentCache>();
+            }
+            catch
+            {
+                // Podcast services may not be registered
+            }
+
             return new Cache.BackgroundPreloadService(
-                cache, idleDetector, httpClient, cacheConfig.Value, preloadLogger);
+                cache,
+                idleDetector,
+                httpClient,
+                cacheConfig.Value,
+                preloadLogger,
+                contentExtractor,
+                articleCache);
         });
 
         // Register the main orchestrator

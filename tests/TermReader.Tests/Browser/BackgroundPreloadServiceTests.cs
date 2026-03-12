@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
@@ -13,6 +14,8 @@ using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Browser.Cache;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Podcast;
+using TermReader.Infrastructure.Podcast.Cache;
 using Xunit;
 
 namespace TermReader.Tests.Browser;
@@ -945,6 +948,216 @@ public class BackgroundPreloadServiceTests
         var field = typeof(BackgroundPreloadService)
             .GetField("_inFlight", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         return (ConcurrentDictionary<string, Task<PageLoadResult>>)field!.GetValue(_service)!;
+    }
+
+    #endregion
+
+    #region Article Content Extraction During Preload
+
+    [Fact]
+    public async Task PreloadUrl_ArticlePage_ExtractsAndCachesArticleContent()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/article1";
+        var html = "<html><article><p>Article content with enough text to be substantial.</p></article></html>";
+
+        contentExtractor.IsArticle(html).Returns(true);
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Returns(ReadableContent.Create(
+                "Test Article",
+                "Article content with enough text to be substantial.",
+                new List<string> { "Article content with enough text to be substantial." },
+                "Jane Doe",
+                new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)));
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act — call TryExtractAndCacheArticleAsync via reflection (private method)
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert
+        await articleContentCache.Received(1).PutAsync(
+            url,
+            Arg.Is<ExtractedArticle>(a =>
+                a.Title == "Test Article" &&
+                a.CleanedText == "Article content with enough text to be substantial." &&
+                a.Author == "Jane Doe" &&
+                a.Url == url &&
+                a.PublishedDate == new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PreloadUrl_NonArticlePage_SkipsCachePut()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/index";
+        var html = "<html><body><nav>Navigation links</nav></body></html>";
+
+        // ExtractAsync returns null for non-article content
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Returns((ReadableContent?)null);
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert — ExtractAsync was called but PutAsync should not (null result)
+        await contentExtractor.Received(1).ExtractAsync(html, url, Arg.Any<CancellationToken>());
+        await articleContentCache.DidNotReceive().PutAsync(Arg.Any<string>(), Arg.Any<ExtractedArticle>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PreloadUrl_ExtractionReturnsNull_SkipsCachePut()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/article";
+        var html = "<html><article>Too short</article></html>";
+
+        contentExtractor.IsArticle(html).Returns(true);
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Returns((ReadableContent?)null);
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert
+        await articleContentCache.DidNotReceive().PutAsync(Arg.Any<string>(), Arg.Any<ExtractedArticle>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PreloadUrl_ExtractionThrows_DoesNotBreakPreload()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/article";
+        var html = "<html><article><p>Content</p></article></html>";
+
+        contentExtractor.IsArticle(html).Returns(true);
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("Extraction failed"));
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act — should not throw
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var act = async () => await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert
+        await act.Should().NotThrowAsync();
+        await articleContentCache.DidNotReceive().PutAsync(Arg.Any<string>(), Arg.Any<ExtractedArticle>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PreloadUrl_CachePutThrows_DoesNotBreakPreload()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/article";
+        var html = "<html><article><p>Content paragraph.</p></article></html>";
+
+        contentExtractor.IsArticle(html).Returns(true);
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Returns(ReadableContent.Create(
+                "Title",
+                "Content paragraph.",
+                new List<string> { "Content paragraph." }));
+
+        articleContentCache.PutAsync(Arg.Any<string>(), Arg.Any<ExtractedArticle>(), Arg.Any<CancellationToken>())
+            .Throws(new IOException("Disk full"));
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var act = async () => await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert — error swallowed, does not propagate
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task PreloadUrl_NullDependencies_SkipsArticleExtraction()
+    {
+        // Arrange — service without article extraction dependencies (default constructor)
+        var service = CreateService(new CacheConfiguration());
+
+        // Act — should not throw even though articleContentCache and contentExtractor are null
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var act = async () => await (Task)method!.Invoke(service, new object[] { "https://example.com/article", "<html></html>", CancellationToken.None })!;
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task PreloadUrl_ArticleExtraction_PreservesWordCount()
+    {
+        // Arrange
+        var articleContentCache = Substitute.For<IArticleContentCache>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+
+        var url = "https://example.com/article";
+        var html = "<html><article><p>Word one two three four five six seven eight nine ten.</p></article></html>";
+        var cleanedText = "Word one two three four five six seven eight nine ten.";
+
+        contentExtractor.IsArticle(html).Returns(true);
+        contentExtractor.ExtractAsync(html, url, Arg.Any<CancellationToken>())
+            .Returns(ReadableContent.Create(
+                "Word Count Test",
+                cleanedText,
+                new List<string> { cleanedText }));
+
+        var service = CreateServiceWithArticleExtraction(articleContentCache, contentExtractor);
+
+        // Act
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("TryExtractAndCacheArticleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        await (Task)method!.Invoke(service, new object[] { url, html, CancellationToken.None })!;
+
+        // Assert — word count from ReadableContent should be forwarded
+        await articleContentCache.Received(1).PutAsync(
+            url,
+            Arg.Is<ExtractedArticle>(a => a.WordCount > 0 && a.Title == "Word Count Test"),
+            Arg.Any<CancellationToken>());
+    }
+
+    private static BackgroundPreloadService CreateServiceWithArticleExtraction(
+        IArticleContentCache articleContentCache,
+        IReadableContentExtractor contentExtractor)
+    {
+        return new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            contentExtractor,
+            articleContentCache);
     }
 
     #endregion

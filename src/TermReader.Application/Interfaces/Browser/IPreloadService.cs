@@ -86,4 +86,12 @@ public interface IPreloadService : IDisposable
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The preload result, or null if not available.</returns>
     Task<PageLoadResult?> WaitForInFlightAsync(string url, TimeSpan timeout, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the set of URLs that have been extracted and stored in the article content cache
+    /// during background preloading. Used by renderers to show cache indicators for collection
+    /// items that are available in the persistent article cache.
+    /// </summary>
+    /// <returns>Set of original (non-normalized) URLs with article cache entries.</returns>
+    IReadOnlySet<string> GetArticleCachedUrls();
 }

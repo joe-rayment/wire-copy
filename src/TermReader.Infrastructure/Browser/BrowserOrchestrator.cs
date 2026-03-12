@@ -606,7 +606,7 @@ public class BrowserOrchestrator : IBrowserService
                 ? Math.Clamp(Math.Min(_commandContext.ContentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
                 : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
             Use256Colors = use256,
-            CachedUrls = _pageCache.GetCachedUrls(),
+            CachedUrls = GetMergedCachedUrls(),
             CacheProgress = _preloadService.GetProgress(),
             PodcastButtonState = GetPodcastButtonState(),
         };
@@ -654,6 +654,25 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         return _articleContentCache;
+    }
+
+    /// <summary>
+    /// Returns the union of page-cached URLs and article-cached URLs from preloading.
+    /// Used by renderers to show cache indicators for collection items.
+    /// </summary>
+    private IReadOnlySet<string> GetMergedCachedUrls()
+    {
+        var pageCachedUrls = _pageCache.GetCachedUrls();
+        var articleCachedUrls = _preloadService.GetArticleCachedUrls();
+
+        if (articleCachedUrls.Count == 0)
+        {
+            return pageCachedUrls;
+        }
+
+        var merged = new HashSet<string>(pageCachedUrls);
+        merged.UnionWith(articleCachedUrls);
+        return merged;
     }
 
     /// <summary>

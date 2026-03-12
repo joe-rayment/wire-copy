@@ -10,6 +10,8 @@ using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Configuration;
+using TermReader.Infrastructure.Podcast;
+using TermReader.Infrastructure.Podcast.Cache;
 
 namespace TermReader.Infrastructure.Browser.Cache;
 
@@ -24,12 +26,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly IIdleDetector _idleDetector;
     private readonly HttpClient _httpClient;
     private readonly CacheConfiguration _config;
+    private readonly IReadableContentExtractor? _contentExtractor;
+    private readonly IArticleContentCache? _articleContentCache;
     private readonly ILogger<BackgroundPreloadService> _logger;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
     private readonly ConcurrentDictionary<string, bool> _needsJsDomains = new();
     private readonly ConcurrentDictionary<string, DateTime> _lastRequestByDomain = new();
+    private readonly ConcurrentDictionary<string, string> _articleCachedUrls = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
     private readonly Timer _debounceTimer;
@@ -57,13 +62,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
         IIdleDetector idleDetector,
         HttpClient httpClient,
         CacheConfiguration config,
-        ILogger<BackgroundPreloadService> logger)
+        ILogger<BackgroundPreloadService> logger,
+        IReadableContentExtractor? contentExtractor = null,
+        IArticleContentCache? articleContentCache = null)
     {
         _cache = cache;
         _idleDetector = idleDetector;
         _httpClient = httpClient;
         _config = config;
         _logger = logger;
+        _contentExtractor = contentExtractor;
+        _articleContentCache = articleContentCache;
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -217,7 +226,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             needsJs = _needsJsUrls;
         }
 
-        var cachedCount = eligible.Count(url => _cache.Contains(url));
+        var cachedCount = eligible.Count(url => _cache.Contains(url) || IsInArticleCache(url));
 
         return new PreloadProgress
         {
@@ -225,6 +234,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
             CachedCount = cachedCount,
             NeedsBrowserCount = needsJs.Count
         };
+    }
+
+    /// <inheritdoc />
+    public IReadOnlySet<string> GetArticleCachedUrls()
+    {
+        return _articleCachedUrls.Values.ToHashSet();
     }
 
     /// <inheritdoc />
@@ -476,7 +491,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
         items.Add(new PreloadItem(url, listIndex));
     }
 
-    private bool IsUrlCached(string url) => _cache.Contains(url);
+    private bool IsUrlCached(string url) => _cache.Contains(url) || IsInArticleCache(url);
+
+    private bool IsInArticleCache(string url) =>
+        _articleContentCache != null && _articleCachedUrls.ContainsKey(UrlNormalizer.Normalize(url));
 
     private bool IsDomainNeedsJs(string url)
     {
@@ -678,6 +696,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _cache.Put(url, result);
                     _logger.LogDebug("Pre-loaded and cached: {Url}", url);
 
+                    // Bridge to article content cache: extract article and persist
+                    // so collection items served from article cache on navigation.
+                    await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken);
+
                     try
                     {
                         ProgressChanged?.Invoke();
@@ -708,6 +730,55 @@ internal sealed class BackgroundPreloadService : IPreloadService
         finally
         {
             _inFlight.TryRemove(normalizedUrl, out _);
+        }
+    }
+
+    /// <summary>
+    /// Extracts article content from pre-loaded HTML and stores it in the persistent
+    /// article content cache. This bridges the background preload (IPageCache) to the
+    /// article cache (IArticleContentCache) so that collection items can be served
+    /// directly from the article cache on navigation, skipping network I/O entirely.
+    /// </summary>
+    private async Task TryExtractAndCacheArticleAsync(string url, string html, CancellationToken cancellationToken)
+    {
+        if (_contentExtractor == null || _articleContentCache == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken);
+            if (readable == null || readable.IsPaywalled)
+            {
+                return;
+            }
+
+            var article = new ExtractedArticle
+            {
+                Title = readable.Title,
+                CleanedText = readable.CleanedText,
+                Author = readable.Author,
+                Url = url,
+                WordCount = readable.WordCount,
+                PublishedDate = readable.PublishedDate,
+            };
+
+            await _articleContentCache.PutAsync(url, article, cancellationToken);
+            _articleCachedUrls[UrlNormalizer.Normalize(url)] = url;
+            _logger.LogDebug(
+                "Article content cached from preload: {Url} ({Words} words)",
+                url,
+                article.WordCount);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Article extraction failure should not break preloading
+            _logger.LogDebug(ex, "Article extraction/cache failed for preloaded {Url}", url);
         }
     }
 
