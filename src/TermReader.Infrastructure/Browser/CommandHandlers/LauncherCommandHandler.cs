@@ -106,6 +106,14 @@ internal static class LauncherCommandHandler
                 break;
             }
 
+            case CommandType.ReorderUp:
+                await HandleReorderUp(ctx, options, ct);
+                break;
+
+            case CommandType.ReorderDown:
+                await HandleReorderDown(ctx, options, ct);
+                break;
+
             case CommandType.OpenCollections:
                 await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
                 break;
@@ -232,6 +240,80 @@ internal static class LauncherCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var idx = ctx.NavigationService.LauncherSelectedIndex;
+        if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
+        {
+            var bookmark = ctx.Bookmarks[idx];
+            try
+            {
+                using var scope = ctx.ScopeFactory.CreateScope();
+                var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+                await bookmarkService.MoveBookmarkUpAsync(bookmark.Id, ct);
+                await ctx.RefreshBookmarksAsync(ct);
+
+                // Follow the bookmark to its new position
+                if (ctx.Bookmarks != null)
+                {
+                    var newIdx = IndexOfBookmarkById(ctx.Bookmarks, bookmark.Id);
+                    ctx.NavigationService.LauncherSelectedIndex =
+                        newIdx >= 0 ? newIdx : Math.Max(0, idx - 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to move bookmark up");
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleReorderDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var idx = ctx.NavigationService.LauncherSelectedIndex;
+        if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
+        {
+            var bookmark = ctx.Bookmarks[idx];
+            try
+            {
+                using var scope = ctx.ScopeFactory.CreateScope();
+                var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+                await bookmarkService.MoveBookmarkDownAsync(bookmark.Id, ct);
+                await ctx.RefreshBookmarksAsync(ct);
+
+                // Follow the bookmark to its new position
+                if (ctx.Bookmarks != null)
+                {
+                    var newIdx = IndexOfBookmarkById(ctx.Bookmarks, bookmark.Id);
+                    var maxIdx = Math.Max(0, ctx.Bookmarks.Count - 1);
+                    ctx.NavigationService.LauncherSelectedIndex =
+                        newIdx >= 0 ? newIdx : Math.Min(maxIdx, idx + 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to move bookmark down");
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static int IndexOfBookmarkById(IReadOnlyList<Domain.Entities.Bookmarks.Bookmark> bookmarks, Guid id)
+    {
+        for (var i = 0; i < bookmarks.Count; i++)
+        {
+            if (bookmarks[i].Id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private static void AdjustLauncherScroll(CommandContext ctx, RenderOptions options)

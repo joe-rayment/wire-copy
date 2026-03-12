@@ -189,32 +189,40 @@ internal static class SearchCommandHandler
             case "rename":
                 if (parts.Length > 1)
                 {
-                    Collection? renameCol = null;
                     var renameViewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
-                    if (renameViewMode == ViewMode.CollectionList &&
-                        ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
+                    if (renameViewMode == ViewMode.Launcher)
                     {
-                        renameCol = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
+                        await HandleRenameLauncherBookmark(ctx, parts[1], ct);
                     }
-                    else if (renameViewMode == ViewMode.CollectionItems)
+                    else
                     {
-                        renameCol = ctx.NavigationService.ActiveCollection;
-                    }
+                        Collection? renameCol = null;
 
-                    if (renameCol != null)
-                    {
-                        try
+                        if (renameViewMode == ViewMode.CollectionList &&
+                            ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
                         {
-                            using var scope = ctx.ScopeFactory.CreateScope();
-                            var service = ctx.CreateCollectionService(scope);
-                            await service.RenameCollectionAsync(renameCol.Id, parts[1], ct);
-                            await ctx.RefreshCollectionsAsync(ct);
-                            ctx.Logger.LogInformation("Renamed collection to: {Name}", parts[1]);
+                            renameCol = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
                         }
-                        catch (Exception ex)
+                        else if (renameViewMode == ViewMode.CollectionItems)
                         {
-                            ctx.Logger.LogWarning(ex, "Failed to rename collection");
+                            renameCol = ctx.NavigationService.ActiveCollection;
+                        }
+
+                        if (renameCol != null)
+                        {
+                            try
+                            {
+                                using var scope = ctx.ScopeFactory.CreateScope();
+                                var service = ctx.CreateCollectionService(scope);
+                                await service.RenameCollectionAsync(renameCol.Id, parts[1], ct);
+                                await ctx.RefreshCollectionsAsync(ct);
+                                ctx.Logger.LogInformation("Renamed collection to: {Name}", parts[1]);
+                            }
+                            catch (Exception ex)
+                            {
+                                ctx.Logger.LogWarning(ex, "Failed to rename collection");
+                            }
                         }
                     }
                 }
@@ -607,6 +615,30 @@ internal static class SearchCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleRenameLauncherBookmark(
+        CommandContext ctx, string newName, CancellationToken ct)
+    {
+        var idx = ctx.NavigationService.LauncherSelectedIndex;
+        if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
+        {
+            var bookmark = ctx.Bookmarks[idx];
+            try
+            {
+                using var scope = ctx.ScopeFactory.CreateScope();
+                var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+                await bookmarkService.RenameBookmarkAsync(bookmark.Id, newName, ct);
+                await ctx.RefreshBookmarksAsync(ct);
+                ctx.NavigationService.SetStatusMessage($"Renamed to: {newName}");
+                ctx.Logger.LogInformation("Renamed bookmark to: {Name}", newName);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to rename bookmark");
+                ctx.NavigationService.SetStatusMessage("Failed to rename bookmark");
+            }
+        }
     }
 
     private static bool IsCollectionView(CommandContext ctx)

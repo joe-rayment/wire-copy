@@ -48,6 +48,54 @@ public class BookmarkService : IBookmarkService
         _logger.LogInformation("Renamed bookmark to: {Name}", newName);
     }
 
+    public async Task MoveBookmarkUpAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var all = await _repository.GetAllAsync(cancellationToken);
+        var index = IndexOfBookmarkById(all, id);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Bookmark {id} not found");
+        }
+
+        if (index == 0)
+        {
+            return; // Already at the top
+        }
+
+        var current = all[index];
+        var previous = all[index - 1];
+        var tempOrder = current.SortOrder;
+        current.SetSortOrder(previous.SortOrder);
+        previous.SetSortOrder(tempOrder);
+        await _repository.UpdateAsync(current, cancellationToken);
+        await _repository.UpdateAsync(previous, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MoveBookmarkDownAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var all = await _repository.GetAllAsync(cancellationToken);
+        var index = IndexOfBookmarkById(all, id);
+        if (index < 0)
+        {
+            throw new InvalidOperationException($"Bookmark {id} not found");
+        }
+
+        if (index >= all.Count - 1)
+        {
+            return; // Already at the bottom
+        }
+
+        var current = all[index];
+        var next = all[index + 1];
+        var tempOrder = current.SortOrder;
+        current.SetSortOrder(next.SortOrder);
+        next.SetSortOrder(tempOrder);
+        await _repository.UpdateAsync(current, cancellationToken);
+        await _repository.UpdateAsync(next, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var bookmark = await _repository.GetByIdAsync(id, cancellationToken)
@@ -62,5 +110,18 @@ public class BookmarkService : IBookmarkService
     {
         await _repository.SeedDefaultsAsync(cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private static int IndexOfBookmarkById(IReadOnlyList<Bookmark> bookmarks, Guid id)
+    {
+        for (var i = 0; i < bookmarks.Count; i++)
+        {
+            if (bookmarks[i].Id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

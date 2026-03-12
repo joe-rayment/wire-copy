@@ -25,6 +25,16 @@ public interface IBookmarkService
     Task RenameBookmarkAsync(Guid id, string newName, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Moves a bookmark up in the sort order (swaps with the previous bookmark).
+    /// </summary>
+    Task MoveBookmarkUpAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves a bookmark down in the sort order (swaps with the next bookmark).
+    /// </summary>
+    Task MoveBookmarkDownAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes a bookmark.
     /// </summary>
     Task DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default);

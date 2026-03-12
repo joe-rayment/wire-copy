@@ -156,6 +156,8 @@ public class TerminalInputHandler : IInputHandler
    h/j/k/l         Navigate grid
    a               Add bookmark
    d               Delete bookmark
+   Shift+J / K     Reorder bookmarks
+   :rename <name>  Rename selected bookmark
    c               Reading list
    :home           Return to launcher
 
