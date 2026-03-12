@@ -39,67 +39,119 @@ public class BackgroundPreloadServiceTests
             NullLogger<BackgroundPreloadService>.Instance);
     }
 
-    #region BuildQueue - Top-to-Bottom Ordering
+    #region BuildQueue - Proximity-Based Ordering
 
     [Fact]
-    public void BuildQueue_SortedByListIndex()
+    public void BuildQueue_SortedByProximityToSelectedIndex()
     {
         var urls = Enumerable.Range(1, 5).Select(i => $"https://example.com/a{i}").ToArray();
         var nodes = CreateContentNodes(urls);
 
-        var queue = _service.BuildQueue(3, nodes, "https://example.com");
+        // Selected index is 2 (middle); items should be sorted by distance from cursor
+        var queue = _service.BuildQueue(2, nodes, "https://example.com");
 
-        // All items should be sorted by their original list index (top-to-bottom)
-        for (var i = 1; i < queue.Count; i++)
-        {
-            queue[i].ListIndex.Should().BeGreaterThan(queue[i - 1].ListIndex);
-        }
+        queue.Should().HaveCount(5);
+        queue[0].ListIndex.Should().Be(2, "distance 0 from cursor");
+        queue[1].ListIndex.Should().Be(1, "distance 1, tiebreaker: lower index first");
+        queue[2].ListIndex.Should().Be(3, "distance 1, tiebreaker: higher index second");
+        queue[3].ListIndex.Should().Be(0, "distance 2, tiebreaker: lower index first");
+        queue[4].ListIndex.Should().Be(4, "distance 2, tiebreaker: higher index second");
     }
 
     [Fact]
-    public void BuildQueue_PreservesOriginalListIndex()
+    public void BuildQueue_SelectedAtStart_SortsByDistanceFromStart()
     {
         var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2", "https://example.com/a3");
 
-        var queue = _service.BuildQueue(1, nodes, "https://example.com");
+        var queue = _service.BuildQueue(0, nodes, "https://example.com");
 
         queue.Should().HaveCount(3);
-        queue[0].ListIndex.Should().Be(0);
-        queue[1].ListIndex.Should().Be(1);
-        queue[2].ListIndex.Should().Be(2);
+        queue[0].ListIndex.Should().Be(0, "selected item first");
+        queue[1].ListIndex.Should().Be(1, "distance 1");
+        queue[2].ListIndex.Should().Be(2, "distance 2");
     }
 
     [Fact]
-    public void BuildQueue_SelectedIndexDoesNotAffectOrdering()
+    public void BuildQueue_SelectedAtEnd_SortsByDistanceFromEnd()
+    {
+        var nodes = CreateContentNodes("https://example.com/a1", "https://example.com/a2", "https://example.com/a3");
+
+        var queue = _service.BuildQueue(2, nodes, "https://example.com");
+
+        queue.Should().HaveCount(3);
+        queue[0].ListIndex.Should().Be(2, "selected item first");
+        queue[1].ListIndex.Should().Be(1, "distance 1");
+        queue[2].ListIndex.Should().Be(0, "distance 2");
+    }
+
+    [Fact]
+    public void BuildQueue_SelectedIndexAffectsOrdering()
     {
         var urls = Enumerable.Range(1, 5).Select(i => $"https://example.com/a{i}").ToArray();
         var nodes = CreateContentNodes(urls);
 
-        // Regardless of which item is selected, ordering is always top-to-bottom
+        // Different selected indices should produce different orderings
         var queueStart = _service.BuildQueue(0, nodes, "https://example.com");
         var queueEnd = _service.BuildQueue(4, nodes, "https://example.com");
 
-        queueStart.Select(i => i.Url).Should().Equal(queueEnd.Select(i => i.Url));
+        queueStart.Select(i => i.Url).Should().NotEqual(queueEnd.Select(i => i.Url));
     }
 
     [Fact]
-    public void BuildQueue_MixedNodeTypes_ListIndexReflectsOriginalPosition()
+    public void BuildQueue_MixedNodeTypes_SortedByProximity()
     {
         var root = LinkNode.CreateRoot();
         var groupHeader = LinkInfo.CreateGroupHeader(LinkType.Content);
         var article1 = new LinkInfo { Url = "https://example.com/a1", DisplayText = "A1", Type = LinkType.Content, ImportanceScore = 50 };
         var article2 = new LinkInfo { Url = "https://example.com/a2", DisplayText = "A2", Type = LinkType.Content, ImportanceScore = 50 };
-        root.AddChild(groupHeader);  // index 0
+        root.AddChild(groupHeader);  // index 0 (skipped)
         root.AddChild(article1);     // index 1
-        root.AddChild(groupHeader);  // index 2
+        root.AddChild(groupHeader);  // index 2 (skipped)
         root.AddChild(article2);     // index 3
         var nodes = root.Children.ToList();
 
-        var queue = _service.BuildQueue(0, nodes, "https://example.com");
+        // Selected at index 3: article2 (distance 0) should come before article1 (distance 2)
+        var queue = _service.BuildQueue(3, nodes, "https://example.com");
 
         queue.Should().HaveCount(2);
-        queue[0].ListIndex.Should().Be(1, "article1 is at original index 1");
-        queue[1].ListIndex.Should().Be(3, "article2 is at original index 3");
+        queue[0].ListIndex.Should().Be(3, "article2 is at selected index");
+        queue[1].ListIndex.Should().Be(1, "article1 is farther from cursor");
+    }
+
+    #endregion
+
+    #region ComputePriorityScore
+
+    [Theory]
+    [InlineData(5, 5, 0)]   // At cursor: distance 0
+    [InlineData(3, 5, 2)]   // Before cursor: distance 2
+    [InlineData(7, 5, 2)]   // After cursor: distance 2
+    [InlineData(0, 10, 10)] // Far before cursor
+    [InlineData(10, 0, 10)] // Far after cursor
+    public void ComputePriorityScore_ReturnsDistanceFromCursor(int listIndex, int selectedIndex, int expectedScore)
+    {
+        var score = BackgroundPreloadService.ComputePriorityScore(listIndex, selectedIndex);
+
+        score.Should().Be(expectedScore);
+    }
+
+    [Fact]
+    public void ComputePriorityScore_SymmetricAroundCursor()
+    {
+        // Items equidistant on either side of cursor should have equal scores
+        var scoreBefore = BackgroundPreloadService.ComputePriorityScore(3, 5);
+        var scoreAfter = BackgroundPreloadService.ComputePriorityScore(7, 5);
+
+        scoreBefore.Should().Be(scoreAfter);
+    }
+
+    [Fact]
+    public void ComputePriorityScore_CloserItemsHaveLowerScore()
+    {
+        var scoreClose = BackgroundPreloadService.ComputePriorityScore(4, 5);
+        var scoreFar = BackgroundPreloadService.ComputePriorityScore(0, 5);
+
+        scoreClose.Should().BeLessThan(scoreFar);
     }
 
     #endregion
