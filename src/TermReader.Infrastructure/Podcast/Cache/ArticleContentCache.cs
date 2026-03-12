@@ -1,5 +1,7 @@
 // Educational and personal use only.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TermReader.Infrastructure.Browser.Cache;
@@ -8,7 +10,7 @@ namespace TermReader.Infrastructure.Podcast.Cache;
 
 /// <summary>
 /// Disk-based cache for extracted article content.
-/// Stores all entries in a single JSON index file at {LocalAppData}/TermReader/article-cache/index.json.
+/// Stores metadata in {basePath}/index.json and article text in {basePath}/articles/{hash}.txt.
 /// Thread-safe via SemaphoreSlim. Atomic writes via .tmp-then-rename.
 /// </summary>
 internal sealed class ArticleContentCache : IArticleContentCache
@@ -23,6 +25,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
     };
 
     private readonly string _basePath;
+    private readonly string _articlesDir;
     private readonly string _indexPath;
     private readonly TimeSpan _ttl;
     private readonly int _maxEntries;
@@ -44,6 +47,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
         ILogger<ArticleContentCache> logger)
     {
         _basePath = basePath;
+        _articlesDir = Path.Combine(basePath, "articles");
         _indexPath = Path.Combine(basePath, "index.json");
         _ttl = ttl;
         _maxEntries = maxEntries;
@@ -70,6 +74,30 @@ internal sealed class ArticleContentCache : IArticleContentCache
                 return null;
             }
 
+            // Backward compat: serve inline text from old-format entries
+            var cleanedText = entry.CleanedText;
+
+            if (string.IsNullOrEmpty(cleanedText) && !string.IsNullOrEmpty(entry.ArticleFilePath))
+            {
+                if (!File.Exists(entry.ArticleFilePath))
+                {
+                    _logger.LogWarning("Article file missing for {Url}: {Path}, removing entry", url, entry.ArticleFilePath);
+                    _index.Remove(key);
+                    await SaveIndexAsync(cancellationToken);
+                    return null;
+                }
+
+                cleanedText = await File.ReadAllTextAsync(entry.ArticleFilePath, cancellationToken);
+            }
+
+            if (string.IsNullOrEmpty(cleanedText))
+            {
+                _logger.LogWarning("No article text available for {Url}, removing entry", url);
+                _index.Remove(key);
+                await SaveIndexAsync(cancellationToken);
+                return null;
+            }
+
             _logger.LogDebug(
                 "Article content cache hit for {Url} ({Words} words)",
                 url,
@@ -78,7 +106,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
             return new ExtractedArticle
             {
                 Title = entry.Title,
-                CleanedText = entry.CleanedText,
+                CleanedText = cleanedText,
                 Author = entry.Author,
                 Url = entry.Url,
                 WordCount = entry.WordCount,
@@ -99,14 +127,28 @@ internal sealed class ArticleContentCache : IArticleContentCache
         try
         {
             await EnsureIndexLoadedAsync(cancellationToken);
-            EnsureDirectoryExists();
+            EnsureDirectoriesExist();
+
+            // Delete old article file if overwriting an existing entry
+            if (_index.TryGetValue(key, out var existing) && !string.IsNullOrEmpty(existing.ArticleFilePath))
+            {
+                TryDeleteFile(existing.ArticleFilePath);
+            }
+
+            // Write article text to a separate file
+            var articleFileName = ComputeUrlHash(key) + ".txt";
+            var articleFilePath = Path.Combine(_articlesDir, articleFileName);
+
+            var tmpArticlePath = articleFilePath + ".tmp";
+            await File.WriteAllTextAsync(tmpArticlePath, article.CleanedText, cancellationToken);
+            File.Move(tmpArticlePath, articleFilePath, overwrite: true);
 
             var now = DateTime.UtcNow;
             _index[key] = new CacheEntry
             {
                 NormalizedUrl = key,
                 Title = article.Title,
-                CleanedText = article.CleanedText,
+                ArticleFilePath = articleFilePath,
                 Author = article.Author,
                 Url = article.Url,
                 WordCount = article.WordCount,
@@ -122,6 +164,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
 
             foreach (var expired in expiredKeys)
             {
+                DeleteArticleFile(_index[expired]);
                 _index.Remove(expired);
             }
 
@@ -131,6 +174,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
                 var oldest = _index.MinBy(kvp => kvp.Value.CachedAtUtc);
                 if (oldest.Key != null)
                 {
+                    DeleteArticleFile(oldest.Value);
                     _index.Remove(oldest.Key);
                 }
             }
@@ -146,6 +190,12 @@ internal sealed class ArticleContentCache : IArticleContentCache
         {
             _lock.Release();
         }
+    }
+
+    internal static string ComputeUrlHash(string normalizedUrl)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedUrl));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static string GetDefaultBasePath()
@@ -186,7 +236,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
 
     private async Task SaveIndexAsync(CancellationToken cancellationToken)
     {
-        EnsureDirectoryExists();
+        EnsureDirectoriesExist();
 
         var entries = _index.Values.ToList();
         var json = JsonSerializer.Serialize(entries, JsonOptions);
@@ -196,9 +246,33 @@ internal sealed class ArticleContentCache : IArticleContentCache
         File.Move(tmpPath, _indexPath, overwrite: true);
     }
 
-    private void EnsureDirectoryExists()
+    private void EnsureDirectoriesExist()
     {
         Directory.CreateDirectory(_basePath);
+        Directory.CreateDirectory(_articlesDir);
+    }
+
+    private void DeleteArticleFile(CacheEntry entry)
+    {
+        if (!string.IsNullOrEmpty(entry.ArticleFilePath))
+        {
+            TryDeleteFile(entry.ArticleFilePath);
+        }
+    }
+
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete article file: {Path}", path);
+        }
     }
 
     private sealed class CacheEntry
@@ -207,7 +281,20 @@ internal sealed class ArticleContentCache : IArticleContentCache
 
         public string Title { get; set; } = string.Empty;
 
-        public string CleanedText { get; set; } = string.Empty;
+        /// <summary>
+        /// Path to the file containing the article text.
+        /// New-format entries use this instead of inline CleanedText.
+        /// </summary>
+        public string? ArticleFilePath { get; set; }
+
+        /// <summary>
+        /// Legacy field: inline article text from old cache format.
+        /// Retained for backward compatibility during deserialization.
+        /// New entries do not populate this field.
+        /// </summary>
+#pragma warning disable S3459, S1144 // Needed for JSON deserialization of old-format entries
+        public string? CleanedText { get; set; }
+#pragma warning restore S3459, S1144
 
         public string? Author { get; set; }
 

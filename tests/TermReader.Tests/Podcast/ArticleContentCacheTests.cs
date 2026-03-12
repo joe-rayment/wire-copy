@@ -1,7 +1,9 @@
 // Educational and personal use only.
 
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using TermReader.Infrastructure.Browser.Cache;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Podcast.Cache;
 using Xunit;
@@ -266,6 +268,176 @@ public class ArticleContentCacheTests : IDisposable
         result.Should().NotBeNull();
         result!.Author.Should().BeNull();
         result.PublishedDate.Should().BeNull();
+    }
+
+    #endregion
+
+    #region File-Based Storage
+
+    [Fact]
+    public async Task PutAsync_StoresTextInSeparateFile()
+    {
+        await _cache.PutAsync("https://example.com/article", CreateArticle());
+
+        var articlesDir = Path.Combine(_tempDir, "articles");
+        Directory.Exists(articlesDir).Should().BeTrue("articles subdirectory should be created");
+
+        var txtFiles = Directory.GetFiles(articlesDir, "*.txt");
+        txtFiles.Should().HaveCount(1, "one article text file should exist");
+
+        var storedText = await File.ReadAllTextAsync(txtFiles[0]);
+        storedText.Should().Be("Some article text content here.");
+    }
+
+    [Fact]
+    public async Task PutAsync_IndexDoesNotContainCleanedText()
+    {
+        await _cache.PutAsync("https://example.com/article", CreateArticle());
+
+        var indexJson = await File.ReadAllTextAsync(Path.Combine(_tempDir, "index.json"));
+
+        // The index should contain articleFilePath but not the full article text
+        indexJson.Should().Contain("articleFilePath");
+        indexJson.Should().NotContain("Some article text content here.");
+    }
+
+    [Fact]
+    public async Task PutAsync_Overwrite_DeletesOldArticleFile()
+    {
+        var url = "https://example.com/article";
+
+        await _cache.PutAsync(url, CreateArticle(text: "Version 1 text"));
+
+        var articlesDir = Path.Combine(_tempDir, "articles");
+        var filesAfterFirstPut = Directory.GetFiles(articlesDir, "*.txt");
+        filesAfterFirstPut.Should().HaveCount(1);
+
+        // Overwrite same URL — same hash, so same file path (overwritten in place)
+        await _cache.PutAsync(url, CreateArticle(text: "Version 2 text"));
+
+        var filesAfterSecondPut = Directory.GetFiles(articlesDir, "*.txt");
+        filesAfterSecondPut.Should().HaveCount(1, "overwriting same URL should not leave orphan files");
+
+        var storedText = await File.ReadAllTextAsync(filesAfterSecondPut[0]);
+        storedText.Should().Be("Version 2 text");
+    }
+
+    [Fact]
+    public async Task PutAsync_EvictsOldest_DeletesArticleFiles()
+    {
+        var smallCache = new ArticleContentCache(
+            _tempDir,
+            TimeSpan.FromHours(1),
+            2,
+            NullLogger<ArticleContentCache>.Instance);
+
+        await smallCache.PutAsync("https://example.com/1", CreateArticle(title: "Article 1"));
+        await smallCache.PutAsync("https://example.com/2", CreateArticle(title: "Article 2"));
+
+        var articlesDir = Path.Combine(_tempDir, "articles");
+        Directory.GetFiles(articlesDir, "*.txt").Should().HaveCount(2);
+
+        // This should evict Article 1 and delete its file
+        await smallCache.PutAsync("https://example.com/3", CreateArticle(title: "Article 3"));
+
+        Directory.GetFiles(articlesDir, "*.txt").Should().HaveCount(2, "evicted entry's file should be deleted");
+    }
+
+    [Fact]
+    public async Task PutAsync_EvictsExpired_DeletesArticleFiles()
+    {
+        var shortTtlCache = new ArticleContentCache(
+            _tempDir,
+            TimeSpan.Zero,
+            100,
+            NullLogger<ArticleContentCache>.Instance);
+
+        await shortTtlCache.PutAsync("https://example.com/old", CreateArticle(title: "Old"));
+
+        var articlesDir = Path.Combine(_tempDir, "articles");
+        Directory.GetFiles(articlesDir, "*.txt").Should().HaveCount(1);
+
+        // The "old" entry expires immediately; putting a new one should evict it
+        await shortTtlCache.PutAsync("https://example.com/new", CreateArticle(title: "New"));
+
+        Directory.GetFiles(articlesDir, "*.txt").Should().HaveCount(1, "expired entry's file should be deleted");
+    }
+
+    #endregion
+
+    #region Self-Healing
+
+    [Fact]
+    public async Task TryGetAsync_MissingArticleFile_ReturnsNullAndRemovesEntry()
+    {
+        await _cache.PutAsync("https://example.com/article", CreateArticle());
+
+        // Delete the article file to simulate corruption
+        var articlesDir = Path.Combine(_tempDir, "articles");
+        foreach (var file in Directory.GetFiles(articlesDir, "*.txt"))
+        {
+            File.Delete(file);
+        }
+
+        var result = await _cache.TryGetAsync("https://example.com/article");
+
+        result.Should().BeNull("entry should be removed when article file is missing");
+
+        // Verify the index was cleaned up by loading a fresh instance
+        var freshCache = new ArticleContentCache(
+            _tempDir,
+            TimeSpan.FromHours(1),
+            100,
+            NullLogger<ArticleContentCache>.Instance);
+
+        var freshResult = await freshCache.TryGetAsync("https://example.com/article");
+        freshResult.Should().BeNull("entry should have been removed from persisted index");
+    }
+
+    #endregion
+
+    #region Backward Compatibility
+
+    [Fact]
+    public async Task TryGetAsync_OldFormatWithInlineText_ServesContent()
+    {
+        // Simulate old-format index.json with inline CleanedText and no ArticleFilePath
+        var oldFormatEntries = new[]
+        {
+            new
+            {
+                normalizedUrl = UrlNormalizer.Normalize("https://example.com/legacy"),
+                title = "Legacy Article",
+                cleanedText = "This is legacy inline content.",
+                author = "Old Author",
+                url = "https://example.com/legacy",
+                wordCount = 5,
+                publishedDate = (DateTime?)new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+                cachedAtUtc = DateTime.UtcNow,
+            },
+        };
+
+        var json = JsonSerializer.Serialize(oldFormatEntries, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        });
+
+        Directory.CreateDirectory(_tempDir);
+        await File.WriteAllTextAsync(Path.Combine(_tempDir, "index.json"), json);
+
+        var cache = new ArticleContentCache(
+            _tempDir,
+            TimeSpan.FromHours(1),
+            100,
+            NullLogger<ArticleContentCache>.Instance);
+
+        var result = await cache.TryGetAsync("https://example.com/legacy");
+
+        result.Should().NotBeNull("old-format entries with inline text should still be served");
+        result!.Title.Should().Be("Legacy Article");
+        result.CleanedText.Should().Be("This is legacy inline content.");
+        result.Author.Should().Be("Old Author");
     }
 
     #endregion
