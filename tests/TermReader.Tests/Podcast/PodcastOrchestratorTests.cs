@@ -1068,6 +1068,67 @@ public class PodcastOrchestratorTests : IDisposable
         await _articleCache.Received().TryGetAsync(url, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task GeneratePodcastAsync_AwaitsPendingAnalysis_WhenAnalysisStillRunning()
+    {
+        // Simulate: AnalyzeCacheStatusAsync started but the user skips the UI
+        // before extraction finishes. GeneratePodcastAsync should await the
+        // pending task and reuse its cached articles — NOT call extraction again.
+        var url = "https://example.com/article1";
+        var article = CreateExtractedArticle(url);
+
+        // Use a TCS to control when the article cache responds, simulating slow extraction
+        var extractionGate = new TaskCompletionSource<ExtractedArticle?>();
+        var callCount = 0;
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var currentCall = Interlocked.Increment(ref callCount);
+                if (currentCall == 1)
+                {
+                    // First call (from AnalyzeCacheStatusAsync) — block until gate opens
+                    return extractionGate.Task;
+                }
+
+                // Subsequent calls should NOT happen if caching works correctly,
+                // but return the article if they do so the test doesn't hang
+                return Task.FromResult<ExtractedArticle?>(article);
+            });
+
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+        SetupTtsGeneration();
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var collection = CreateCollection(url);
+
+        // Start analysis but do NOT await it — simulates user skipping the analysis UI
+        var analysisTask = _sut.AnalyzeCacheStatusAsync(collection);
+
+        // At this point the analysis task is blocked on the extraction gate.
+        // Now call GeneratePodcastAsync which should detect the pending analysis
+        // and await it rather than re-extracting.
+        var generateTask = _sut.GeneratePodcastAsync(collection);
+
+        // Release the gate so the analysis extraction completes
+        extractionGate.SetResult(article);
+
+        // Both tasks should now complete
+        await analysisTask;
+        var result = await generateTask;
+
+        result.Success.Should().BeTrue();
+
+        // The article cache should have been called exactly once — during the
+        // analysis phase. GeneratePodcastAsync should have reused the cached
+        // articles from analysis rather than calling extraction again.
+        callCount.Should().Be(1,
+            "GetAllArticleContentAsync should only have been called once (during AnalyzeCacheStatusAsync); " +
+            "GeneratePodcastAsync should reuse cached articles from the pending analysis");
+    }
+
     #endregion
 
     #region AnalyzeCacheStatusAsync

@@ -310,6 +310,7 @@ public class TerminalInputHandler : IInputHandler
             '-' or '_' => new NavigationCommand { Type = CommandType.DecreaseWidth },
             '0' => new NavigationCommand { Type = CommandType.ResetWidth },
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
+            'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
         };
     }

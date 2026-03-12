@@ -192,5 +192,94 @@ public class ContentQualityGateTests
         result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
     }
 
+    [Fact]
+    public async Task ExtractAsync_Level3_RejectsGarbageJsTextNodes()
+    {
+        // Arrange - Page that falls through L1, L2, L2.5 and hits L3.
+        // L1 fails: no <p>/<blockquote>/<li> with >50 chars text.
+        // L2 fails: no <div> elements at all, so no divs with direct text.
+        // L2.5 fails: no <p> elements, so FindLargestParagraphBlock returns empty.
+        // L3 (ExtractParagraphsAlternative): finds text nodes >100 chars in <section> elements,
+        // but the content is JS-like garbage with >30% non-alphabetic chars, failing quality gate.
+        //
+        // Uses <section> instead of <div>/<span> to avoid L2's GetDirectTextContent path
+        // (L2 searches ".//div" and includes inline elements like <span> as direct text).
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        // Each section has >100 chars of JS-like content with normal spacing (enough words to
+        // pass the 100-word check) but dense symbols that fail the 70% alphabetic ratio check.
+        // Combined: ~230 words, ~0.33 alphabetic ratio (well below 0.70 threshold).
+        var jsGarbageSections = new[]
+        {
+            @"<section>var x = fn() { return [1, 2, 3].map(i =&gt; i * 2 + 1); }; var y = { k1: 'v1', k2: [4, 5, 6], k3: fn(a, b) { return a &gt; b ? a : b; } };</section>",
+            @"<section>if (x !== null &amp;&amp; y &gt;= 10) { z = arr.reduce((a, b) =&gt; a + b, 0); } else { z = x ? [1, 2, 3] : []; w = { a: 1, b: 2, c: { d: 3, e: [4, 5] } }; }</section>",
+            @"<section>const { a, b, ...rest } = obj; let q = [1, 2, ...a, ...b]; r = { ...rest, x: 10, y: 20 }; s = q.filter(v =&gt; v &gt; 5).map(v =&gt; v * 2);</section>",
+            @"<section>for (let i = 0; i &lt; arr.length; i++) { if (arr[i] % 2 === 0) { res.push(arr[i] * 3 + 1); } else { res.push(arr[i] / 2 - 1); } cnt++; }</section>",
+            @"<section>switch (x) { case 1: y = [2, 3]; break; case 2: y = { a: 4, b: 5 }; break; default: y = fn(x) =&gt; x * x + x / 2 - 1; z = !y ? 0 : 1; }</section>",
+            @"<section>obj = { fn: (x, y) =&gt; { return x ** 2 + y ** 2; }, g: [1, 2, 3].join(','), h: ""k=v&amp;a=b&amp;c=d"", i: typeof x !== 'undefined' ? x : null };</section>"
+        };
+
+        var html = $@"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <section class='wrapper'>
+                    <section class='js-bundle'>
+                        {string.Join("\n", jsGarbageSections)}
+                    </section>
+                </section>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert - L3 quality gate should reject JS garbage (non-alphabetic ratio > 30%)
+        result.Should().BeNull(
+            "Level 3 extraction of JS text nodes should fail the alphabetic ratio quality check");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_Level3_AcceptsValidTextNodesWhenUpperLevelsFail()
+    {
+        // Arrange - Same structure that forces L3, but with genuine prose as text nodes.
+        // L1 fails: no <p>/<blockquote>/<li> with >50 chars text.
+        // L2 fails: no <div> elements at all.
+        // L2.5 fails: no <p> elements, so FindLargestParagraphBlock returns empty.
+        // L3 picks up text nodes inside <section> elements and they pass all quality checks.
+        //
+        // Uses <section> wrappers (not <div>) to bypass L2 entirely, same as rejection test.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        // Real prose as direct text inside <section> elements, each >100 chars.
+        // Good alphabetic ratio, varied first words, sufficient average paragraph length.
+        var proseSections = new[]
+        {
+            "<section>Scientists at the marine research station announced a remarkable discovery this week. A previously unknown species of deep-sea jellyfish was found thriving near hydrothermal vents at extreme depths.</section>",
+            "<section>The creature displays an unusual bioluminescent pattern that researchers believe serves as both a defense mechanism and a method of communication with others of its kind in the darkness below.</section>",
+            "<section>Funding for the expedition came from an international coalition of universities and conservation groups. Researchers spent nearly three months aboard a specially equipped vessel in the southern Pacific Ocean.</section>",
+            "<section>Marine biologists emphasized that the finding highlights vast gaps in our understanding of ocean ecosystems. Entire communities of organisms may exist in regions that remain completely unexplored today.</section>",
+            "<section>Publication of the formal species description is expected later this year in a leading peer-reviewed journal. Several follow-up expeditions are already being planned for the next research season ahead.</section>",
+            "<section>Conservation advocates have called for expanded protections around deep-sea hydrothermal vent systems. They argue that mining and industrial activities could devastate fragile habitats before they are even cataloged.</section>"
+        };
+
+        var html = $@"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <section class='wrapper'>
+                    <section class='text-block'>
+                        {string.Join("\n", proseSections)}
+                    </section>
+                </section>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert - L3 should extract valid prose and quality gate should accept it
+        result.Should().NotBeNull(
+            "Level 3 extraction of valid prose text nodes should pass quality validation");
+        result!.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3,
+            "enough prose content should produce multiple paragraphs");
+    }
+
     #endregion
 }

@@ -257,6 +257,10 @@ internal static class SearchCommandHandler
                 await HandleCredentialCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return true;
 
+            case "dump" or "dump-html":
+                await ViewCommandHandler.HandleDumpHtml(ctx, options, ct);
+                return true;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);

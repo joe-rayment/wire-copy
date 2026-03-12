@@ -358,4 +358,113 @@ public class ViewCommandHandlerTests
     }
 
     #endregion
+
+    #region HandleDumpHtml
+
+    [Fact]
+    public async Task HandleDumpHtml_NoPage_SetsStatusMessage()
+    {
+        var navLogger = Substitute.For<ILogger<NavigationService>>();
+        var emptyNav = new NavigationService(navLogger);
+        var ctx = new CommandContext
+        {
+            NavigationService = emptyNav,
+            Renderer = Substitute.For<IPageRenderer>(),
+            InputHandler = Substitute.For<IInputHandler>(),
+            ScopeFactory = Substitute.For<IServiceScopeFactory>(),
+            Logger = Substitute.For<ILogger>(),
+            PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = _lineCacheManager,
+            ThemeProvider = Substitute.For<IThemeProvider>(),
+            PreloadService = Substitute.For<IPreloadService>(),
+            NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
+            RefreshCollectionsAsync = _ => Task.CompletedTask,
+            RefreshBookmarksAsync = _ => Task.CompletedTask,
+            GetCurrentRenderOptions = () => _options,
+            CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
+            GetReaderViewportHeight = _ => 20,
+            GetHierarchicalViewportHeight = _ => 20,
+            AdjustScrollForSelection = (_, _) => { },
+            ScrollToSearchMatch = (_, _) => { },
+        };
+
+        await ViewCommandHandler.HandleDumpHtml(ctx, _options, CancellationToken.None);
+
+        emptyNav.CurrentContext.StatusMessage.Should().Contain("No page loaded");
+    }
+
+    [Fact]
+    public async Task HandleDumpHtml_WithPage_WritesFileAndSetsStatusMessage()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"termreader_test_{Guid.NewGuid():N}");
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            Directory.SetCurrentDirectory(tempDir);
+
+            await ViewCommandHandler.HandleDumpHtml(_ctx, _options, CancellationToken.None);
+
+            var fixturesDir = Path.Combine(tempDir, "fixtures");
+            Directory.Exists(fixturesDir).Should().BeTrue();
+            var files = Directory.GetFiles(fixturesDir, "*.html");
+            files.Should().HaveCount(1);
+
+            var content = await File.ReadAllTextAsync(files[0]);
+            content.Should().Contain("<html><body>Test</body></html>");
+
+            var fileName = Path.GetFileName(files[0]);
+            fileName.Should().StartWith("example_com_");
+
+            _navigationService.CurrentContext.StatusMessage.Should().Contain("HTML dumped to fixtures/");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task HandleDumpHtml_SanitizesFileName()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"termreader_test_{Guid.NewGuid():N}");
+        var originalDir = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            Directory.SetCurrentDirectory(tempDir);
+
+            var page = Domain.Entities.Browser.Page.Create(
+                "https://example.com/path/to/article?id=123&foo=bar",
+                "<html>test</html>",
+                new Domain.ValueObjects.Browser.PageMetadata { Title = "Test" });
+            _navigationService.NavigateTo(page);
+
+            await ViewCommandHandler.HandleDumpHtml(_ctx, _options, CancellationToken.None);
+
+            var files = Directory.GetFiles(Path.Combine(tempDir, "fixtures"), "*.html");
+            files.Should().HaveCount(1);
+            var fileName = Path.GetFileName(files[0]);
+            fileName.Should().NotContain("?");
+            fileName.Should().NotContain("&");
+            fileName.Should().NotContain("/");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDir);
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, true);
+            }
+        }
+    }
+
+    #endregion
 }
