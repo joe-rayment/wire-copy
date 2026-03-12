@@ -307,6 +307,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return Array.Exists(indicators, i => lower.Contains(i));
     }
 
+    /// <summary>
+    /// Computes a priority score for a preload item. Lower score = higher priority.
+    /// The score is based on distance from the cursor (selected index).
+    /// </summary>
+    internal static int ComputePriorityScore(int listIndex, int selectedIndex)
+    {
+        return Math.Abs(listIndex - selectedIndex);
+    }
+
     internal List<PreloadItem> BuildQueue(
         int selectedIndex,
         IReadOnlyList<LinkNode> visibleNodes,
@@ -341,8 +350,16 @@ internal sealed class BackgroundPreloadService : IPreloadService
             TryAddEligibleUrl(url, i, allEligible, needsJs, items);
         }
 
-        // Sort by original list index (top-to-bottom)
-        items.Sort((a, b) => a.ListIndex.CompareTo(b.ListIndex));
+        // Sort by priority score: cursor proximity (primary), then list index (tiebreaker)
+        items.Sort((a, b) =>
+        {
+            var scoreA = ComputePriorityScore(a.ListIndex, selectedIndex);
+            var scoreB = ComputePriorityScore(b.ListIndex, selectedIndex);
+
+            // Lower score = higher priority
+            var cmp = scoreA.CompareTo(scoreB);
+            return cmp != 0 ? cmp : a.ListIndex.CompareTo(b.ListIndex);
+        });
 
         UpdateProgressTracking(allEligible, needsJs);
         return items;
