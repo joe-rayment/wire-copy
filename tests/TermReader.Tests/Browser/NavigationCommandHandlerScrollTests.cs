@@ -260,4 +260,27 @@ public class NavigationCommandHandlerScrollTests
     }
 
     #endregion
+
+    #region HandleGoToTop - CollectionItems
+
+    [Fact]
+    public async Task HandleGoToTop_CollectionItems_SetsIndexToFirstItem()
+    {
+        var collection = Domain.Entities.Collections.Collection.Create("Test");
+        collection.AddItem("https://example.com/1", "Item 1");
+        collection.AddItem("https://example.com/2", "Item 2");
+        _navigationService.EnterCollections();
+        _navigationService.EnterCollection(collection);
+
+        // Initially at CTA button (-1), move to item 1
+        _navigationService.CollectionItemSelectedIndex = 1;
+
+        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+
+        // Should go to first item (0), NOT CTA button (-1)
+        _navigationService.CollectionItemSelectedIndex.Should().Be(0,
+            "gg should go to first list item, not CTA button");
+    }
+
+    #endregion
 }

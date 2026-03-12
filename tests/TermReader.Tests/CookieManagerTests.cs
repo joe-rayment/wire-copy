@@ -397,4 +397,139 @@ public class CookieManagerTests : IDisposable
         // Assert
         result.Should().BeEmpty("corrupted encrypted data should not crash, just return empty list");
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task LoadCookiesAsync_ReturnsPlainTextCookies_FromV1Storage()
+    {
+        // Arrange - V1 storage: a plain JSON array of CookieData
+        var cookies = new List<CookieData>
+        {
+            new() { Name = "session", Value = "plain123", Domain = ".example.com", Path = "/" },
+            new() { Name = "pref", Value = "dark", Domain = ".example.com", Path = "/settings" },
+        };
+
+        await File.WriteAllTextAsync(_testCookiePath,
+            JsonSerializer.Serialize(cookies, new JsonSerializerOptions { WriteIndented = true }));
+
+        // Act
+        var result = await _cookieManager.LoadCookiesAsync();
+
+        // Assert
+        result.Should().HaveCount(2, "V1 plain text cookies should be loaded");
+        result[0].Name.Should().Be("session");
+        result[0].Value.Should().Be("plain123");
+        result[1].Name.Should().Be("pref");
+        result[1].Path.Should().Be("/settings");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task LoadCookiesAsync_ReturnsEmptyList_WhenV2EncryptedDataIsNull()
+    {
+        // Arrange - V2 storage with null EncryptedData
+        var storage = new CookieStorage
+        {
+            Version = 2,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(30),
+            EncryptedData = null
+        };
+
+        await File.WriteAllTextAsync(_testCookiePath,
+            JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true }));
+
+        // Act
+        var result = await _cookieManager.LoadCookiesAsync();
+
+        // Assert
+        result.Should().BeEmpty("V2 storage with null encrypted data should return empty list");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task LoadCookiesAsync_KeepsSessionCookies_WithoutExpiry()
+    {
+        // Arrange - session cookies (no expiry) should always be kept
+        var cookies = new List<CookieData>
+        {
+            new() { Name = "session_only", Value = "tok", Domain = ".example.com", Path = "/" },
+        };
+
+        var cookieContainer = new CookieDataContainer
+        {
+            Cookies = cookies,
+            Metadata = new Dictionary<string, string>()
+        };
+
+        var json = JsonSerializer.Serialize(cookieContainer);
+        var encrypted = _encryptionService.Encrypt(json);
+
+        var storage = new CookieStorage
+        {
+            Version = 2,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(30),
+            EncryptedData = encrypted
+        };
+
+        await File.WriteAllTextAsync(_testCookiePath,
+            JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true }));
+
+        // Act
+        var result = await _cookieManager.LoadCookiesAsync();
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].Name.Should().Be("session_only");
+        result[0].Expiry.Should().BeNull("session cookies have no expiry");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task LoadCookiesAsync_LogsExpiredCookieCount()
+    {
+        // Arrange - mix of valid and expired cookies
+        var cookies = new List<CookieData>
+        {
+            new() { Name = "valid1", Value = "v1", Domain = ".example.com", Path = "/", Expiry = DateTime.UtcNow.AddDays(10) },
+            new() { Name = "expired1", Value = "e1", Domain = ".example.com", Path = "/", Expiry = DateTime.UtcNow.AddDays(-1) },
+            new() { Name = "expired2", Value = "e2", Domain = ".example.com", Path = "/", Expiry = DateTime.UtcNow.AddDays(-3) },
+        };
+
+        var cookieContainer = new CookieDataContainer
+        {
+            Cookies = cookies,
+            Metadata = new Dictionary<string, string>()
+        };
+
+        var json = JsonSerializer.Serialize(cookieContainer);
+        var encrypted = _encryptionService.Encrypt(json);
+
+        var storage = new CookieStorage
+        {
+            Version = 2,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(30),
+            EncryptedData = encrypted
+        };
+
+        await File.WriteAllTextAsync(_testCookiePath,
+            JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true }));
+
+        // Act
+        var result = await _cookieManager.LoadCookiesAsync();
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].Name.Should().Be("valid1");
+
+        // Verify logging occurred (check the logger received a Debug-level call)
+        _logger.ReceivedWithAnyArgs().Log(
+            LogLevel.Debug,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
+    }
 }

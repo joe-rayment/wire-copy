@@ -802,11 +802,22 @@ public class BrowserOrchestrator : IBrowserService
             page.SetReadableContent(readable);
         }
 
+        if (!string.Equals(requestedUrl, loadResult.Url, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "URL redirect detected: requested={RequestedUrl}, final={FinalUrl}",
+                requestedUrl,
+                loadResult.Url);
+        }
+
         _logger.LogDebug(
-            "BuildPage: loadResultUrl={Url}, hasReadable={HasReadable}, paragraphs={Count}",
+            "BuildPage: requestedUrl={RequestedUrl}, loadResultUrl={FinalUrl}, fetchMethod={Method}, hasReadable={HasReadable}, paragraphs={Count}, htmlLength={HtmlLength}",
+            requestedUrl,
             loadResult.Url,
+            loadResult.FetchMethod,
             page.HasReadableContent(),
-            page.ReadableContent?.Paragraphs.Count ?? 0);
+            page.ReadableContent?.Paragraphs.Count ?? 0,
+            loadResult.Html?.Length ?? 0);
 
         return page;
     }

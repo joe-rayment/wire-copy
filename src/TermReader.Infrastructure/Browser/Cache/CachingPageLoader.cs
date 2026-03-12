@@ -41,7 +41,11 @@ public class CachingPageLoader : IPageLoader
             {
                 if (HasSufficientContent(cached.Html))
                 {
-                    _logger.LogInformation("Serving from cache: {Url}", request.Url);
+                    _logger.LogInformation(
+                        "Serving from cache: requestUrl={RequestUrl}, cachedFinalUrl={FinalUrl}, contentLength={Length}",
+                        request.Url,
+                        cached.Url,
+                        cached.Html?.Length ?? 0);
                     return cached with { FetchMethod = FetchMethod.Cached };
                 }
 

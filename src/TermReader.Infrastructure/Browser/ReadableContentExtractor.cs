@@ -47,8 +47,12 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'subscriber-gate')]",
         "//*[contains(@class, 'paywall')]",
         "//*[contains(@class, 'subscribe-wall')]",
+        "//*[contains(@class, 'regwall')]",
         "//*[contains(@id, 'gateway')]",
-        "//*[contains(@id, 'paywall')]"
+        "//*[contains(@id, 'paywall')]",
+        "//*[contains(@id, 'regwall')]",
+        "//*[contains(@data-testid, 'paywall')]",
+        "//*[contains(@data-testid, 'gateway')]"
     };
 
     private static readonly string[] ContentAreaSelectors =
@@ -85,7 +89,10 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "subscribers can read",
         "this article is for subscribers",
         "to read the full article",
-        "sign in to read"
+        "sign in to read",
+        "members only",
+        "create a free account",
+        "start your free trial"
     };
 
     private readonly ILogger<ReadableContentExtractor> _logger;
@@ -817,6 +824,9 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             "//*[contains(@class, 'expanded-dock')]",
             "//*[contains(@class, 'subscriber-gate')]",
             "//*[contains(@class, 'subscribe-wall')]",
+            "//*[contains(@class, 'regwall')]",
+            "//*[contains(@data-testid, 'paywall')]",
+            "//*[contains(@data-testid, 'gateway')]",
 
             // Scripts and styles
             "//script", "//style", "//noscript"

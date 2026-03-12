@@ -282,4 +282,227 @@ public class ContentQualityGateTests
     }
 
     #endregion
+
+    #region Paywall detection tests
+
+    [Fact]
+    public async Task ExtractAsync_PaywalledNytPage_SetsIsPaywalled()
+    {
+        // Arrange - NYT-style paywall page: short article with 2 paragraphs (below threshold)
+        // plus a gateway div and "Subscribe to The Times" prompt
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <article>
+                    <h1>Breaking News Story</h1>
+                    <p>The government announced a new policy today that will affect millions of citizens across the country. Officials say the changes are designed to improve public services.</p>
+                    <p>Critics have raised concerns about the cost of implementation and the timeline for the proposed changes to take effect across all regions.</p>
+                </article>
+                <div class='gateway expanded-dock'>
+                    <p>Subscribe to The Times to continue reading this article.</p>
+                    <button>Subscribe Now</button>
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/2024/01/15/article.html");
+
+        // Assert
+        result.Should().NotBeNull("the page has extractable content");
+        result!.IsPaywalled.Should().BeTrue("paywall gateway element and truncated content should flag as paywalled");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_FreeArticle_IsPaywalledIsFalse()
+    {
+        // Arrange - Full article with no paywall indicators
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <article>
+                    <h1>A Fascinating Discovery in Marine Biology</h1>
+                    <p>Scientists at a leading research university have announced a breakthrough in marine biology that could reshape our understanding of deep-sea ecosystems and the organisms that inhabit them.</p>
+                    <p>The research team spent over two years collecting samples from hydrothermal vents located thousands of meters below the surface of the Pacific Ocean near the coast of Chile.</p>
+                    <p>Their findings reveal a complex web of symbiotic relationships between bacteria and larger organisms that was previously unknown to science and challenges existing theories about deep-sea life.</p>
+                    <p>Funding for the expedition was provided by an international consortium of research institutions and government agencies committed to advancing our knowledge of ocean biodiversity.</p>
+                    <p>The lead researcher expressed optimism that the discoveries would lead to new applications in biotechnology and medicine, noting that deep-sea organisms often produce unique chemical compounds.</p>
+                </article>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/free-article");
+
+        // Assert
+        result.Should().NotBeNull("the page has full article content");
+        result!.IsPaywalled.Should().BeFalse("no paywall indicators are present");
+        result.Paragraphs.Count.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_GenericPaywall_SetsIsPaywalled()
+    {
+        // Arrange - Generic paywall page with "Already a subscriber? Log in" and short content
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <article>
+                    <h1>Exclusive Report on Economic Trends</h1>
+                    <p>Economic indicators suggest a significant shift in consumer spending patterns across major metropolitan areas in the United States.</p>
+                </article>
+                <div class='paywall-barrier regwall' data-testid='paywall-prompt'>
+                    <h2>This article is for subscribers</h2>
+                    <p>Already a subscriber? Log in to continue reading.</p>
+                    <p>Create a free account to read this and other premium content.</p>
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/premium-article");
+
+        // Assert
+        result.Should().NotBeNull("the page has some extractable content");
+        result!.IsPaywalled.Should().BeTrue("paywall div with subscriber text and truncated content should flag as paywalled");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_PaywallElementButFullContent_IsNotPaywalled()
+    {
+        // Arrange - Page has a paywall element but sufficient content (not truncated)
+        // This verifies that the detection only flags when content appears truncated
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <article>
+                    <h1>Full Article Despite Paywall Element</h1>
+                    <p>This is the first paragraph of a complete article that has plenty of content for readers to enjoy. The topic covers recent advances in renewable energy technology and their potential impact on global markets.</p>
+                    <p>The second paragraph continues with detailed analysis of solar panel efficiency improvements and cost reductions that have made solar energy competitive with fossil fuels in many regions of the world today.</p>
+                    <p>In the third section we examine wind energy developments, including offshore wind farms that are being built at unprecedented scale in the North Sea and along the eastern seaboard of the United States.</p>
+                    <p>Battery storage technology has also seen remarkable progress, with new lithium-ion alternatives promising longer lifespans, faster charging times, and significantly reduced environmental impact during manufacturing and disposal.</p>
+                </article>
+                <div class='gateway' style='display:none'>
+                    <p>Subscribe for unlimited access</p>
+                </div>
+            </body></html>";
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/full-article");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.IsPaywalled.Should().BeFalse("content has enough paragraphs so it is not flagged as truncated despite paywall element");
+    }
+
+    [Fact]
+    public void DetectPaywall_MembersOnlyText_WithTruncatedContent_ReturnsTrue()
+    {
+        // Direct unit test of DetectPaywall with "members only" text pattern
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(@"<html><body>
+            <p>Preview of the article content here.</p>
+            <div>This content is for members only. Please subscribe to continue.</div>
+        </body></html>");
+
+        var paragraphs = new List<string>
+        {
+            "Preview of the article content here."
+        };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs)
+            .Should().BeTrue("'members only' text pattern with truncated content should be detected");
+    }
+
+    [Fact]
+    public void DetectPaywall_StartYourFreeTrial_WithTruncatedContent_ReturnsTrue()
+    {
+        // Direct unit test of DetectPaywall with "start your free trial" text pattern
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(@"<html><body>
+            <p>First paragraph of a premium article with limited preview.</p>
+            <div>Start your free trial today to read the full story.</div>
+        </body></html>");
+
+        var paragraphs = new List<string>
+        {
+            "First paragraph of a premium article with limited preview."
+        };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs)
+            .Should().BeTrue("'start your free trial' text pattern with truncated content should be detected");
+    }
+
+    [Fact]
+    public void DetectPaywall_RegwallElement_WithTruncatedContent_ReturnsTrue()
+    {
+        // Direct unit test of DetectPaywall with regwall CSS class
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(@"<html><body>
+            <article>
+                <p>Brief introduction to the article topic.</p>
+            </article>
+            <div class='regwall'>
+                <p>Register to read more.</p>
+            </div>
+        </body></html>");
+
+        var paragraphs = new List<string>
+        {
+            "Brief introduction to the article topic."
+        };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs)
+            .Should().BeTrue("regwall CSS class with truncated content should be detected");
+    }
+
+    [Fact]
+    public void DetectPaywall_DataTestIdPaywall_WithTruncatedContent_ReturnsTrue()
+    {
+        // Direct unit test of DetectPaywall with data-testid="paywall"
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(@"<html><body>
+            <article>
+                <p>A short preview of the article is shown here.</p>
+            </article>
+            <div data-testid='paywall-modal'>
+                <p>Subscribe to continue reading.</p>
+            </div>
+        </body></html>");
+
+        var paragraphs = new List<string>
+        {
+            "A short preview of the article is shown here."
+        };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs)
+            .Should().BeTrue("data-testid containing 'paywall' with truncated content should be detected");
+    }
+
+    [Fact]
+    public void DetectPaywall_NoIndicators_ReturnsFalse()
+    {
+        // Direct unit test: no paywall indicators should return false
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(@"<html><body>
+            <article>
+                <p>A normal article with no paywall at all.</p>
+            </article>
+        </body></html>");
+
+        var paragraphs = new List<string>
+        {
+            "A normal article with no paywall at all."
+        };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs)
+            .Should().BeFalse("no paywall indicators should not flag as paywalled");
+    }
+
+    #endregion
 }
