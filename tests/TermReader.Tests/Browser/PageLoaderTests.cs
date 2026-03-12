@@ -549,6 +549,149 @@ public class PageLoaderTests
         result.Metadata!.Title.Should().Be("Normal Page");
     }
 
+    [Fact]
+    public async Task LoadAsync_PreferSelenium_TriesBrowserFirst_ReturnsSuccess()
+    {
+        // Arrange - PreferSelenium should try browser first
+        var html = "<html><head><title>Selenium Page</title></head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, "<html><head><title>HTTP Page</title></head><body>HTTP</body></html>");
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
+
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+        driver.PageSource.Returns(html);
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should have used browser (Selenium) and returned its content
+        result.Success.Should().BeTrue();
+        result.Html.Should().Be(html);
+        result.Metadata!.Title.Should().Be("Selenium Page");
+        result.FetchMethod.Should().Be(Domain.Enums.Browser.FetchMethod.Selenium);
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreferSelenium_BrowserFails_FallsBackToHttp()
+    {
+        // Arrange - Browser fails, should fall back to HTTP
+        var httpHtml = "<html><head><title>HTTP Fallback</title></head><body><p>Fallback content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, httpHtml);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
+            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should have fallen back to HTTP after browser failure
+        result.Success.Should().BeTrue();
+        result.Html.Should().Be(httpHtml);
+        result.Metadata!.Title.Should().Be("HTTP Fallback");
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreferSelenium_BothFail_ReturnsFailure()
+    {
+        // Arrange - Both browser and HTTP fail
+        var httpClient = CreateMockHttpClient(HttpStatusCode.InternalServerError, "Server Error");
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
+            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert
+        result.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreferSelenium_NoHttpClient_BrowserFails_ReturnsFailure()
+    {
+        // Arrange - No HttpClient and browser fails
+        var sut = CreateSut(httpClient: null);
+        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
+            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - No HTTP fallback available, should return browser failure
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Browser error");
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreferSeleniumFalse_DefaultBehavior_TriesHttpFirst()
+    {
+        // Arrange - PreferSelenium=false (default) should try HTTP first
+        var httpHtml = "<html><head><title>HTTP First</title></head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, httpHtml);
+        var sut = CreateSut(httpClient);
+        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = false };
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - Should succeed via HTTP without ever touching browser
+        result.Success.Should().BeTrue();
+        result.Metadata!.Title.Should().Be("HTTP First");
+        _browserSession.DidNotReceive().GetOrCreateDriver(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task LoadAsync_ForceBrowserTrumpsPreferSelenium()
+    {
+        // Arrange - When both ForceBrowser and PreferSelenium are true,
+        // ForceBrowser takes precedence (Selenium-only, no HTTP fallback path)
+        var sut = CreateSut(httpClient: CreateMockHttpClient(HttpStatusCode.OK, "<html><head><title>HTTP</title></head><body>HTTP</body></html>"));
+        var request = new PageLoadRequest { Url = "https://example.com", ForceBrowser = true, PreferSelenium = true };
+
+        var html = "<html><head><title>Browser Page</title></head><body><p>Browser content</p></body></html>";
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var navigation = Substitute.For<INavigation>();
+        driver.Navigate().Returns(navigation);
+        driver.Url.Returns("https://example.com");
+        driver.PageSource.Returns(html);
+
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+
+        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+
+        // Act
+        var result = await sut.LoadAsync(request);
+
+        // Assert - ForceBrowser path should be used (Selenium only, no HTTP at all)
+        result.Success.Should().BeTrue();
+        result.FetchMethod.Should().Be(Domain.Enums.Browser.FetchMethod.Selenium);
+    }
+
+    [Fact]
+    public void PageLoadRequest_PreferSelenium_DefaultsFalse()
+    {
+        // Arrange & Act
+        var request = new PageLoadRequest { Url = "https://example.com" };
+
+        // Assert
+        request.PreferSelenium.Should().BeFalse();
+    }
+
     /// <summary>
     /// Fake HttpMessageHandler for testing HttpClient-based code without real HTTP calls.
     /// </summary>

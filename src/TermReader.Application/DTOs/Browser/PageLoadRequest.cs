@@ -39,4 +39,12 @@ public record PageLoadRequest
     /// Used for known-paywalled domains where cookies are needed for authentication.
     /// </summary>
     public bool ForceBrowser { get; init; }
+
+    /// <summary>
+    /// Whether to prefer Selenium over HTTP for the initial fetch attempt.
+    /// When true, tries Selenium first and falls back to HTTP on failure.
+    /// When false (default), tries HTTP first and falls back to Selenium.
+    /// Unlike <see cref="ForceBrowser"/>, this still allows HTTP as a fallback.
+    /// </summary>
+    public bool PreferSelenium { get; init; }
 }
