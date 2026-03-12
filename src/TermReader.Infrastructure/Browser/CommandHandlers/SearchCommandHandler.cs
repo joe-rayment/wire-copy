@@ -21,6 +21,13 @@ internal static class SearchCommandHandler
 {
     public static async Task HandleSearch(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        if (IsCollectionView(ctx))
+        {
+            ctx.NavigationService.SetStatusMessage("Search not available in collections");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
         var query = await ctx.InputHandler.PromptForInputAsync("/", ct);
         if (!string.IsNullOrWhiteSpace(query))
         {
@@ -33,6 +40,11 @@ internal static class SearchCommandHandler
 
     public static async Task HandleSearchNext(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        if (IsCollectionView(ctx))
+        {
+            return;
+        }
+
         if (!string.IsNullOrEmpty(ctx.NavigationService.CurrentContext.SearchQuery))
         {
             var nextIndex = ctx.NavigationService.CurrentContext.SearchMatchIndex + 1;
@@ -43,6 +55,11 @@ internal static class SearchCommandHandler
 
     public static async Task HandleSearchPrevious(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        if (IsCollectionView(ctx))
+        {
+            return;
+        }
+
         if (!string.IsNullOrEmpty(ctx.NavigationService.CurrentContext.SearchQuery))
         {
             var prevIndex = ctx.NavigationService.CurrentContext.SearchMatchIndex - 1;
@@ -590,6 +607,12 @@ internal static class SearchCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static bool IsCollectionView(CommandContext ctx)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        return viewMode == ViewMode.CollectionList || viewMode == ViewMode.CollectionItems;
     }
 
     private static string NormalizeUrl(string input)
