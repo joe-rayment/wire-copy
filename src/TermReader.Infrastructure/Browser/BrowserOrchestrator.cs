@@ -1446,9 +1446,21 @@ public class BrowserOrchestrator : IBrowserService
                 var updatedActive = collections?.FirstOrDefault(c => c.Id == _navigationService.ActiveCollection.Id);
                 if (updatedActive != null)
                 {
-                    _navigationService.EnterCollection(updatedActive);
-                    var maxIndex = Math.Max(0, updatedActive.Items.Count - 1);
-                    _navigationService.CollectionItemSelectedIndex = Math.Min(savedItemIndex, maxIndex);
+                    // Use UpdateActiveCollection to preserve scroll offset and UI position
+                    _navigationService.UpdateActiveCollection(updatedActive);
+
+                    if (updatedActive.Items.Count == 0)
+                    {
+                        // Empty collection: CTA index (-1) is invalid, reset to 0
+                        _navigationService.CollectionItemSelectedIndex = 0;
+                    }
+                    else
+                    {
+                        // Clamp saved index to valid range; preserve -1 (CTA) when items exist
+                        var maxIndex = updatedActive.Items.Count - 1;
+                        _navigationService.CollectionItemSelectedIndex =
+                            savedItemIndex < 0 ? -1 : Math.Min(savedItemIndex, maxIndex);
+                    }
                 }
             }
         }
