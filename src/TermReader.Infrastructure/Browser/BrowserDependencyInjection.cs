@@ -105,6 +105,9 @@ public static class BrowserDependencyInjection
         // Register WebDriver priority queue (serializes foreground/background access)
         services.AddSingleton<IWebDriverQueue, WebDriverQueue>();
 
+        // Register auto-login service (uses IServiceScopeFactory for scoped ISiteCredentialRepository)
+        services.AddSingleton<IAutoLoginService, AutoLoginService>();
+
         // Register cache configuration and services
         services.AddOptions<CacheConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
