@@ -1210,6 +1210,10 @@ public class BrowserOrchestrator : IBrowserService
                         _commandContext, options, cancellationToken);
                     break;
 
+                case CommandType.DumpHtml:
+                    await ViewCommandHandler.HandleDumpHtml(_commandContext, options, cancellationToken);
+                    break;
+
                 case CommandType.AddBookmark:
                     // Only handle in launcher mode (handled above), ignore in other views
                     break;

@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Domain.Enums.Browser;
 
@@ -124,6 +125,54 @@ internal static class ViewCommandHandler
             }
 
             break;
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleDumpHtml(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        if (page == null || string.IsNullOrEmpty(page.RawHtml))
+        {
+            ctx.NavigationService.SetStatusMessage("No page loaded to dump");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            var fixturesDir = Path.Combine(Directory.GetCurrentDirectory(), "fixtures");
+            Directory.CreateDirectory(fixturesDir);
+
+            var uri = new Uri(page.Url);
+            var domain = uri.Host.Replace(".", "_");
+            var pathSegment = uri.AbsolutePath.Trim('/').Replace("/", "_");
+            if (string.IsNullOrEmpty(pathSegment))
+            {
+                pathSegment = "index";
+            }
+
+            // Sanitize: keep only alphanumeric, underscore, hyphen
+            var safePath = new string(pathSegment.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+            if (safePath.Length > 80)
+            {
+                safePath = safePath[..80];
+            }
+
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            var fileName = $"{domain}_{safePath}_{timestamp}.html";
+            var filePath = Path.Combine(fixturesDir, fileName);
+
+            await File.WriteAllTextAsync(filePath, page.RawHtml, ct);
+
+            ctx.NavigationService.SetStatusMessage($"HTML dumped to fixtures/{fileName}");
+            ctx.Logger.LogInformation("Dumped page HTML to {FilePath} ({Bytes} bytes)", filePath, page.RawHtml.Length);
+        }
+        catch (Exception ex)
+        {
+            ctx.NavigationService.SetStatusMessage($"Dump failed: {ex.Message}");
+            ctx.Logger.LogWarning(ex, "Failed to dump page HTML");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

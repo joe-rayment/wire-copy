@@ -106,6 +106,9 @@ public enum CommandType
     ForceRefresh,
     InteractiveRefresh,
 
+    // Debug/Utility
+    DumpHtml,
+
     // Terminal
-    TerminalResized
+    TerminalResized,
 }
