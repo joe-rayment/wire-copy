@@ -24,7 +24,7 @@ public static class PersistenceDependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite(connectionString));
 
-        services.AddSingleton<ICollectionPreferences, InMemoryCollectionPreferences>();
+        services.AddSingleton<ICollectionPreferences, PersistentCollectionPreferences>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
