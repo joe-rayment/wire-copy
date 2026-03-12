@@ -124,6 +124,7 @@ public class TerminalInputHandler : IInputHandler
    k / ↑           Move up / scroll
    Enter           Follow link / open item
    b / Backspace   Go back
+   Shift+L         Go forward
 
  Link Tree View
    h / ←           Collapse group
@@ -323,6 +324,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.R => new NavigationCommand { Type = CommandType.ForceRefresh },
                 ConsoleKey.I => new NavigationCommand { Type = CommandType.InteractiveRefresh },
                 ConsoleKey.X => new NavigationCommand { Type = CommandType.ClearCollection },
+                ConsoleKey.L => new NavigationCommand { Type = CommandType.GoForward },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }

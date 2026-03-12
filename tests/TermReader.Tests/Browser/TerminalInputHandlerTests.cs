@@ -220,6 +220,13 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
+    public void MapKeyToCommand_ShiftL_ReturnsGoForward()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.L, ConsoleModifiers.Shift);
+        result.Type.Should().Be(CommandType.GoForward);
+    }
+
+    [Fact]
     public void MapKeyToCommand_ShiftUnknown_ReturnsNoOp()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.F12, ConsoleModifiers.Shift);
