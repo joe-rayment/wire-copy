@@ -79,4 +79,11 @@ public class PodcastConfiguration
     /// Gets whether the podcast contains explicit content. Default: false.
     /// </summary>
     public bool Explicit { get; init; } = false;
+
+    /// <summary>
+    /// Gets the minimum word count required for an article to be sent to TTS.
+    /// Articles below this threshold are skipped to avoid generating audio from garbage content.
+    /// Default: 100.
+    /// </summary>
+    public int MinimumWordCount { get; init; } = 100;
 }

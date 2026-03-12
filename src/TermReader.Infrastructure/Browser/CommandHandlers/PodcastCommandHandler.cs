@@ -266,8 +266,10 @@ internal static class PodcastCommandHandler
             }
         });
 
-        using var analysisCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var analysisTask = orchestrator.AnalyzeCacheStatusAsync(collection, progress, analysisCts.Token);
+        // Pass the parent ct — NOT a separate CTS — so the analysis keeps running
+        // even if the user skips the UI. The orchestrator stores the running task
+        // and GeneratePodcastAsync will await it to reuse extracted articles.
+        var analysisTask = orchestrator.AnalyzeCacheStatusAsync(collection, progress, ct);
         Task<NavigationCommand>? pendingKeyTask = null;
 
         try
@@ -356,19 +358,19 @@ internal static class PodcastCommandHandler
 
                     if (command.Type is CommandType.GoBack or CommandType.Quit)
                     {
-                        await analysisCts.CancelAsync();
-                        try
-                        {
-                            var finishedTask = await Task.WhenAny(analysisTask, Task.Delay(TimeSpan.FromSeconds(5)));
-                            if (finishedTask == analysisTask)
-                            {
-                                await analysisTask;
-                            }
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Expected — user skipped analysis
-                        }
+                        // Don't cancel the analysis — let it continue in the background.
+                        // GeneratePodcastAsync will await the pending task to reuse
+                        // extracted articles instead of re-extracting from scratch.
+                        ctx.Logger.LogInformation(
+                            "User skipped analysis UI; extraction continues in background");
+
+                        // Observe exceptions so they don't become unobserved task exceptions
+                        _ = analysisTask.ContinueWith(
+                            t => ctx.Logger.LogWarning(
+                                t.Exception?.InnerException,
+                                "Background analysis task faulted: {Message}",
+                                t.Exception?.InnerException?.Message),
+                            TaskContinuationOptions.OnlyOnFaulted);
 
                         return null;
                     }
@@ -406,41 +408,6 @@ internal static class PodcastCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Cache analysis screen failed");
             return null;
-        }
-        finally
-        {
-            if (!analysisTask.IsCompleted)
-            {
-                await analysisCts.CancelAsync();
-                try
-                {
-                    // Use a timeout so we don't hang if the task ignores cancellation
-                    // (e.g. stuck in a synchronous Selenium call)
-                    var completed = await Task.WhenAny(analysisTask, Task.Delay(TimeSpan.FromSeconds(5)));
-                    if (completed == analysisTask)
-                    {
-                        await analysisTask;
-                    }
-                    else
-                    {
-                        ctx.Logger.LogWarning("Analysis task did not respond to cancellation within 5s, detaching");
-                        _ = analysisTask.ContinueWith(
-                            t => ctx.Logger.LogWarning(
-                                t.Exception?.InnerException,
-                                "Detached analysis task faulted: {Message}",
-                                t.Exception?.InnerException?.Message),
-                            TaskContinuationOptions.OnlyOnFaulted);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected — task cancelled during cleanup
-                }
-                catch (Exception ex)
-                {
-                    ctx.Logger.LogWarning(ex, "Error awaiting analysis task during cleanup");
-                }
-            }
         }
     }
 
