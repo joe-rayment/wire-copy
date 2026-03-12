@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using TermReader.Domain.Entities.Bookmarks;
 using TermReader.Domain.Entities.Collections;
+using TermReader.Domain.Entities.Credentials;
 
 namespace TermReader.Persistence;
 
@@ -23,6 +24,8 @@ public class AppDbContext : DbContext
     public DbSet<CollectionItem> CollectionItems => Set<CollectionItem>();
 
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
+
+    public DbSet<SiteCredential> SiteCredentials => Set<SiteCredential>();
 
     /// <summary>
     /// Ensures the database is created and all migrations are applied.
