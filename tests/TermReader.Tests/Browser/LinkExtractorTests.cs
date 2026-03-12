@@ -651,4 +651,127 @@ public class LinkExtractorTests
     }
 
     #endregion
+
+    #region DetermineLinkType Heuristic Tests
+
+    [Theory]
+    [InlineData("Short Nav Link", LinkType.Navigation)]
+    [InlineData("About Us", LinkType.Navigation)]
+    [InlineData("A Link That Is Exactly Forty Nine Characters Long", LinkType.Navigation)]
+    [InlineData("A Fifty Character Title That Describes a Real Story", LinkType.Content)]
+    [InlineData("Major Policy Change Announced by Government Officials Today in Ottawa", LinkType.Content)]
+    public void ClassifyLink_TextLengthHeuristic_ClassifiesCorrectly(string displayText, LinkType expected)
+    {
+        // Arrange - no parent selector, same domain, so the fallback heuristic applies
+        var url = "https://example.com/some-page";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector: null, baseUrl);
+
+        // Assert
+        result.Type.Should().Be(expected);
+    }
+
+    [Fact]
+    public void ClassifyLink_SidebarRelatedLink_WithLongText_ShouldBeNavigation()
+    {
+        // Arrange - link inside a "related" sidebar with 35+ char title
+        // Previously this would have been misclassified as Content due to the 30-char heuristic
+        var url = "https://example.com/related-article";
+        var displayText = "Related: Why Climate Policy Matters";  // 34 chars - was misclassified
+        var parentSelector = "div.related-stories > ul > li";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector, baseUrl);
+
+        // Assert - "related" class in parent should make this Navigation
+        result.Type.Should().Be(LinkType.Navigation);
+    }
+
+    [Fact]
+    public void ClassifyLink_WidgetLink_WithLongText_ShouldBeNavigation()
+    {
+        // Arrange - link inside a widget container
+        var url = "https://example.com/trending-article";
+        var displayText = "Trending: The Economy Is Changing Fast";  // 38 chars
+        var parentSelector = "aside.widget > div > a";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector, baseUrl);
+
+        // Assert - "widget" class and "aside" tag should make this Navigation
+        result.Type.Should().Be(LinkType.Navigation);
+    }
+
+    [Fact]
+    public void ClassifyLink_RecommendedSidebar_WithLongText_ShouldBeNavigation()
+    {
+        // Arrange - link in a "recommended" section
+        var url = "https://example.com/recommended-article";
+        var displayText = "You Might Also Enjoy This Longer Article Title";  // 47 chars
+        var parentSelector = "section.recommended > div > a";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector, baseUrl);
+
+        // Assert
+        result.Type.Should().Be(LinkType.Navigation);
+    }
+
+    [Fact]
+    public void ClassifyLink_ArticleContainer_WithLongText_ShouldBeContent()
+    {
+        // Arrange - link inside an article container should still be Content
+        var url = "https://example.com/main-story";
+        var displayText = "Government Announces Major Infrastructure Plan";
+        var parentSelector = "article.story > div > h2 > a";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var result = _sut.ClassifyLink(url, displayText, parentSelector, baseUrl);
+
+        // Assert
+        result.Type.Should().Be(LinkType.Content);
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_SidebarRelatedLinks_ShouldBeNavigation()
+    {
+        // Arrange - realistic sidebar with related article links that have 35+ char titles
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <a href=""https://example.com/main-article"">Main Article With a Sufficiently Long Title for Content</a>
+                </article>
+                <aside class=""related"">
+                    <h3>Related Stories</h3>
+                    <a href=""https://example.com/related-1"">Why the Economy Is Shifting Toward Tech</a>
+                    <a href=""https://example.com/related-2"">Scientists Discover New Species in Amazon</a>
+                </aside>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(3);
+
+        var mainLink = links.First(l => l.Url.Contains("main-article"));
+        mainLink.Type.Should().Be(LinkType.Content, "link inside <article> should be Content");
+
+        var related1 = links.First(l => l.Url.Contains("related-1"));
+        related1.Type.Should().Be(LinkType.Navigation, "link inside <aside class='related'> should be Navigation");
+
+        var related2 = links.First(l => l.Url.Contains("related-2"));
+        related2.Type.Should().Be(LinkType.Navigation, "link inside <aside class='related'> should be Navigation");
+    }
+
+    #endregion
 }
