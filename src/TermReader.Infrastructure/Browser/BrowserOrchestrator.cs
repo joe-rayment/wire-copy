@@ -624,10 +624,18 @@ public class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Returns the podcast button state integer for RenderOptions.
-    /// 0=Idle, 3=Unconfigured, 4=Selected (CTA focused via j/k).
+    /// 0=Idle, 2=Disabled, 3=Unconfigured, 4=Selected (CTA focused via j/k).
     /// </summary>
     private int GetPodcastButtonState()
     {
+        // Empty collections → Disabled (dimmed/inactive button)
+        if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
+            && _navigationService.ActiveCollection is { } col
+            && col.Items.Count == 0)
+        {
+            return 2; // Disabled
+        }
+
         if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
             && _navigationService.CollectionItemSelectedIndex == -1)
         {
