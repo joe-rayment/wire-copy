@@ -12,6 +12,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
+using TermReader.Infrastructure.Podcast.Cache;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -48,6 +49,10 @@ public class BrowserOrchestrator : IBrowserService
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
+
+    // Lazily resolved article content cache (may not be registered if podcast services are disabled)
+    private IArticleContentCache? _articleContentCache;
+    private bool _articleContentCacheResolved;
 
     // Live preload progress indicator: set by background thread, read by main loop
     private volatile bool _progressDirty;
@@ -126,6 +131,39 @@ public class BrowserOrchestrator : IBrowserService
     {
         _logger.LogInformation("Loading page: {Url}", url);
         _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.Headless);
+
+        // Article content cache bridge: when navigating from a collection (Reading List),
+        // check the persistent article cache before doing any network I/O.
+        // This avoids re-fetching articles that were already extracted for podcast generation.
+        if (_navigationService.HasCollectionReturnPoint)
+        {
+            var articleCache = ResolveArticleContentCache();
+            if (articleCache != null)
+            {
+                try
+                {
+                    var cachedArticle = await articleCache.TryGetAsync(url, cancellationToken);
+                    if (cachedArticle != null)
+                    {
+                        _logger.LogInformation(
+                            "Article content cache hit for collection item: {Url} ({Words} words)",
+                            url,
+                            cachedArticle.WordCount);
+
+                        _lastLoadFetchMethod = FetchMethod.Cached;
+                        return BuildPageFromCachedArticle(cachedArticle, url);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Article content cache lookup failed for {Url}, falling through to normal load", url);
+                }
+            }
+        }
 
         if (!_pageCache.Contains(url))
         {
@@ -595,6 +633,30 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
+    /// Lazily resolves the article content cache from the DI container.
+    /// Returns null if podcast services are not registered.
+    /// </summary>
+    private IArticleContentCache? ResolveArticleContentCache()
+    {
+        if (!_articleContentCacheResolved)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                _articleContentCache = scope.ServiceProvider.GetService<IArticleContentCache>();
+            }
+            catch
+            {
+                // Podcast services may not be registered
+            }
+
+            _articleContentCacheResolved = true;
+        }
+
+        return _articleContentCache;
+    }
+
+    /// <summary>
     /// Checks whether the given URL belongs to a known paywalled domain.
     /// Matches both exact domain (e.g., "nytimes.com") and subdomains (e.g., "www.nytimes.com").
     /// </summary>
@@ -668,6 +730,52 @@ public class BrowserOrchestrator : IBrowserService
             loadResult.Url,
             page.HasReadableContent(),
             page.ReadableContent?.Paragraphs.Count ?? 0);
+
+        return page;
+    }
+
+    /// <summary>
+    /// Builds a Page entity directly from a cached ExtractedArticle, skipping all network I/O.
+    /// Used when the article content cache has a hit for a collection item URL.
+    /// </summary>
+    private Page BuildPageFromCachedArticle(Podcast.ExtractedArticle article, string url)
+    {
+        // Build minimal HTML for the page entity (required by Page.Create)
+        var html = $"<html><head><title>{System.Net.WebUtility.HtmlEncode(article.Title)}</title></head>"
+                 + $"<body><article>{System.Net.WebUtility.HtmlEncode(article.CleanedText)}</article></body></html>";
+
+        var metadata = new PageMetadata { Title = article.Title };
+        var page = Page.Create(url, html, metadata);
+
+        // Build empty link tree (cached articles don't have link data)
+        page.SetLinkTree(NavigationTree.Build(new List<LinkInfo>()));
+
+        // Convert cached article text into ReadableContent
+        var paragraphs = article.CleanedText
+            .Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .ToList();
+
+        if (paragraphs.Count == 0)
+        {
+            paragraphs.Add(article.CleanedText);
+        }
+
+        var readable = ReadableContent.Create(
+            article.Title,
+            article.CleanedText,
+            paragraphs,
+            article.Author,
+            article.PublishedDate);
+
+        page.SetReadableContent(readable);
+
+        _logger.LogDebug(
+            "BuildPageFromCachedArticle: url={Url}, title={Title}, paragraphs={Count}",
+            url,
+            article.Title,
+            paragraphs.Count);
 
         return page;
     }
