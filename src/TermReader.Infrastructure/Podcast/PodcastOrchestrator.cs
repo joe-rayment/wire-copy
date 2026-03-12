@@ -37,6 +37,11 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     private IReadOnlyList<ArticleFailure>? _cachedExtractionFailures;
     private string? _cachedCollectionName;
 
+    // When the user skips the analysis UI, the extraction may still be running.
+    // Store the task so GeneratePodcastAsync can await it instead of re-extracting.
+    private Task<CacheAnalysis>? _pendingAnalysisTask;
+    private string? _pendingAnalysisCollection;
+
     public PodcastOrchestrator(
         ReadingListContentProvider contentProvider,
         ITtsService ttsService,
@@ -87,6 +92,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         try
         {
             // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
+            // If the user skipped the analysis UI, the extraction may still be running.
+            // Await it to avoid redundant re-extraction.
+            await AwaitPendingAnalysisAsync(collection.Name, cancellationToken);
+
             IReadOnlyList<ExtractedArticle> articles;
             if (_cachedArticles != null && _cachedCollectionName == collection.Name)
             {
@@ -139,6 +148,67 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 return PodcastResult.Failure(
                     "No readable articles found in the collection.",
                     failedArticleDetails: extractionFailures);
+            }
+
+            // Step 2b: Content quality validation — skip articles that are too short or lack a title
+            var qualityFailures = new List<ArticleFailure>();
+            var qualityArticles = new List<ExtractedArticle>();
+
+            foreach (var article in articles)
+            {
+                if (string.IsNullOrWhiteSpace(article.Title))
+                {
+                    _logger.LogWarning(
+                        "Skipping article '{Url}': empty title",
+                        article.Url);
+                    qualityFailures.Add(new ArticleFailure
+                    {
+                        Title = article.Title ?? "(no title)",
+                        Url = article.Url,
+                        Reason = "Article has no title",
+                    });
+                    continue;
+                }
+
+                var wordCount = article.WordCount > 0
+                    ? article.WordCount
+                    : CountWords(article.CleanedText);
+
+                if (wordCount < _podcastConfig.MinimumWordCount)
+                {
+                    _logger.LogWarning(
+                        "Skipping article '{Title}': only {WordCount} words (minimum {Min})",
+                        article.Title,
+                        wordCount,
+                        _podcastConfig.MinimumWordCount);
+                    qualityFailures.Add(new ArticleFailure
+                    {
+                        Title = article.Title,
+                        Url = article.Url,
+                        Reason = $"Content too short ({wordCount} words, minimum {_podcastConfig.MinimumWordCount})",
+                    });
+                    continue;
+                }
+
+                qualityArticles.Add(article);
+            }
+
+            extractionFailures = extractionFailures.Concat(qualityFailures).ToList();
+            articles = qualityArticles;
+
+            if (articles.Count == 0)
+            {
+                return PodcastResult.Failure(
+                    "All articles failed content quality validation.",
+                    failedArticleDetails: extractionFailures);
+            }
+
+            if (qualityFailures.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Content quality gate: {Passed} articles passed, {Failed} skipped",
+                    articles.Count,
+                    qualityFailures.Count);
             }
 
             // Step 3: Estimate cost (accounting for cached articles) and check budget
@@ -394,13 +464,28 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
     }
 
-    public async Task<CacheAnalysis> AnalyzeCacheStatusAsync(
+    public Task<CacheAnalysis> AnalyzeCacheStatusAsync(
         Collection collection,
         IProgress<ContentExtractionProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(collection);
 
+        var task = AnalyzeCacheStatusCoreAsync(collection, progress, cancellationToken);
+
+        // Store the running task so GeneratePodcastAsync can await it if the user
+        // skips the analysis UI before extraction completes.
+        _pendingAnalysisTask = task;
+        _pendingAnalysisCollection = collection.Name;
+
+        return task;
+    }
+
+    private async Task<CacheAnalysis> AnalyzeCacheStatusCoreAsync(
+        Collection collection,
+        IProgress<ContentExtractionProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         try
         {
             var articles = await _contentProvider.GetAllArticleContentAsync(
@@ -447,5 +532,70 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
     }
 
+    /// <summary>
+    /// If AnalyzeCacheStatusAsync was started but the user skipped the UI before it finished,
+    /// await the pending task so its extracted articles are available in _cachedArticles.
+    /// </summary>
+    private async Task AwaitPendingAnalysisAsync(string collectionName, CancellationToken cancellationToken)
+    {
+        var pendingTask = _pendingAnalysisTask;
+        if (pendingTask == null || _pendingAnalysisCollection != collectionName)
+        {
+            return;
+        }
+
+        // Already completed and results were consumed — nothing to wait for
+        if (pendingTask.IsCompleted && _cachedArticles != null)
+        {
+            return;
+        }
+
+        if (!pendingTask.IsCompleted)
+        {
+            _logger.LogInformation("Awaiting background analysis that was still running when user skipped");
+            try
+            {
+                await pendingTask.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Analysis failed — GeneratePodcastAsync will fall back to fresh extraction
+                _logger.LogWarning(ex, "Pending analysis task failed, will re-extract");
+            }
+        }
+
+        _pendingAnalysisTask = null;
+        _pendingAnalysisCollection = null;
+    }
+
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
+
+    private static int CountWords(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        var wordCount = 0;
+        var inWord = false;
+        foreach (var c in text)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                wordCount++;
+            }
+        }
+
+        return wordCount;
+    }
 }

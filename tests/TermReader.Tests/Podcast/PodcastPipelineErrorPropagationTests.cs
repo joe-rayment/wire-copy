@@ -139,14 +139,26 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
         return collection;
     }
 
+    private const string DefaultArticleText =
+        "This is a substantial article with enough words to pass the content quality validation gate. " +
+        "It contains multiple sentences covering various topics to simulate real-world article content. " +
+        "The quick brown fox jumps over the lazy dog near the riverbank on a sunny afternoon in spring. " +
+        "Technology continues to evolve at a rapid pace bringing new innovations to every industry worldwide. " +
+        "Researchers at the university published their findings in a peer-reviewed journal last week. " +
+        "The economic outlook for the coming quarter remains cautiously optimistic according to analysts. " +
+        "Several new policies were announced by the government aimed at improving public infrastructure. " +
+        "Environmental organizations called for stronger regulations to protect endangered species and habitats. " +
+        "The conference attracted hundreds of attendees from around the world eager to learn about advances. " +
+        "In conclusion this article demonstrates that sufficient content length is important for audio generation.";
+
     private static ExtractedArticle CreateArticle(string url, string title = "Test Article")
     {
         return new ExtractedArticle
         {
             Title = title,
-            CleanedText = "Readable article text for testing.",
+            CleanedText = DefaultArticleText,
             Url = url,
-            WordCount = 5,
+            WordCount = DefaultArticleText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length,
         };
     }
 

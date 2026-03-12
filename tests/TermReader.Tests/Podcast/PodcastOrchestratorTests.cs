@@ -148,14 +148,27 @@ public class PodcastOrchestratorTests : IDisposable
         return collection;
     }
 
-    private static ExtractedArticle CreateExtractedArticle(string url, string title = "Test Article", string text = "Some readable article text for TTS processing.")
+    private const string DefaultArticleText =
+        "This is a substantial article with enough words to pass the content quality validation gate. " +
+        "It contains multiple sentences covering various topics to simulate real-world article content. " +
+        "The quick brown fox jumps over the lazy dog near the riverbank on a sunny afternoon in spring. " +
+        "Technology continues to evolve at a rapid pace bringing new innovations to every industry worldwide. " +
+        "Researchers at the university published their findings in a peer-reviewed journal last week. " +
+        "The economic outlook for the coming quarter remains cautiously optimistic according to analysts. " +
+        "Several new policies were announced by the government aimed at improving public infrastructure. " +
+        "Environmental organizations called for stronger regulations to protect endangered species and habitats. " +
+        "The conference attracted hundreds of attendees from around the world eager to learn about advances. " +
+        "In conclusion this article demonstrates that sufficient content length is important for audio generation.";
+
+    private static ExtractedArticle CreateExtractedArticle(string url, string title = "Test Article", string? text = null)
     {
+        var articleText = text ?? DefaultArticleText;
         return new ExtractedArticle
         {
             Title = title,
-            CleanedText = text,
+            CleanedText = articleText,
             Url = url,
-            WordCount = text.Split(' ').Length,
+            WordCount = articleText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length,
         };
     }
 
@@ -1375,6 +1388,159 @@ public class PodcastOrchestratorTests : IDisposable
         lastReport.Should().NotBeNull();
         lastReport!.PercentComplete.Should().Be(100);
         lastReport.Phase.Should().Be(PodcastPhase.Publishing);
+    }
+
+    #endregion
+
+    #region GeneratePodcastAsync — Content Quality Gate
+
+    [Fact]
+    public async Task GeneratePodcastAsync_ArticleBelowMinimumWordCount_IsSkipped()
+    {
+        var goodUrl = "https://example.com/good";
+        var shortUrl = "https://example.com/short";
+
+        var goodArticle = CreateExtractedArticle(goodUrl, "Good Article");
+        var shortArticle = CreateExtractedArticle(shortUrl, "Short Article", "Only a few words.");
+
+        SetupArticleCacheHits(
+            (goodUrl, goodArticle),
+            (shortUrl, shortArticle));
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+        SetupTtsGeneration();
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var collection = CreateCollection(goodUrl, shortUrl);
+        var result = await _sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeTrue();
+        result.ArticlesProcessed.Should().Be(1);
+        result.FailedArticleDetails.Should().Contain(f =>
+            f.Title == "Short Article" && f.Reason.Contains("too short"));
+    }
+
+    [Fact]
+    public async Task GeneratePodcastAsync_ArticleWithEmptyTitle_IsSkipped()
+    {
+        var goodUrl = "https://example.com/good";
+        var noTitleUrl = "https://example.com/no-title";
+
+        var goodArticle = CreateExtractedArticle(goodUrl, "Good Article");
+        var noTitleArticle = new ExtractedArticle
+        {
+            Title = string.Empty,
+            CleanedText = DefaultArticleText,
+            Url = noTitleUrl,
+            WordCount = 120,
+        };
+
+        SetupArticleCacheHits(
+            (goodUrl, goodArticle),
+            (noTitleUrl, noTitleArticle));
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+        SetupTtsGeneration();
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var collection = CreateCollection(goodUrl, noTitleUrl);
+        var result = await _sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeTrue();
+        result.ArticlesProcessed.Should().Be(1);
+        result.FailedArticleDetails.Should().Contain(f =>
+            f.Reason.Contains("no title"));
+    }
+
+    [Fact]
+    public async Task GeneratePodcastAsync_AllArticlesFailQualityCheck_ReturnsFailure()
+    {
+        var url1 = "https://example.com/short1";
+        var url2 = "https://example.com/short2";
+
+        SetupArticleCacheHits(
+            (url1, CreateExtractedArticle(url1, "Short 1", "Too few words.")),
+            (url2, CreateExtractedArticle(url2, "Short 2", "Also too short.")));
+
+        var collection = CreateCollection(url1, url2);
+        var result = await _sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("quality validation");
+        result.FailedArticleDetails.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GeneratePodcastAsync_ArticleWithZeroWordCountProperty_FallsBackToTextCounting()
+    {
+        var url = "https://example.com/zero-wc";
+        var article = new ExtractedArticle
+        {
+            Title = "Zero WordCount Property",
+            CleanedText = DefaultArticleText,
+            Url = url,
+            WordCount = 0, // Property not set; should count from CleanedText
+        };
+
+        SetupArticleCacheHits((url, article));
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+        SetupTtsGeneration();
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var collection = CreateCollection(url);
+        var result = await _sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeTrue();
+        result.ArticlesProcessed.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GeneratePodcastAsync_ArticleExactlyAtMinimumWordCount_IsNotSkipped()
+    {
+        var url = "https://example.com/exact";
+        // Build a string with exactly 100 words
+        var words = Enumerable.Range(1, 100).Select(i => $"word{i}");
+        var exactText = string.Join(" ", words);
+
+        var article = CreateExtractedArticle(url, "Exact Minimum", exactText);
+
+        SetupArticleCacheHits((url, article));
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+        SetupTtsGeneration();
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var collection = CreateCollection(url);
+        var result = await _sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeTrue();
+        result.ArticlesProcessed.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GeneratePodcastAsync_QualitySkippedArticle_DoesNotCallTts()
+    {
+        var url = "https://example.com/short";
+        SetupArticleCacheHits(
+            (url, CreateExtractedArticle(url, "Short Article", "Just three words.")));
+
+        var collection = CreateCollection(url);
+        await _sut.GeneratePodcastAsync(collection);
+
+        await _ttsService.DidNotReceive().GenerateAudioAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<IProgress<TtsProgress>>(),
+            Arg.Any<CancellationToken>());
     }
 
     #endregion
