@@ -202,9 +202,7 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.CollectionItems)
         {
-            var activeCol = ctx.NavigationService.ActiveCollection;
-            ctx.NavigationService.CollectionItemSelectedIndex =
-                activeCol != null && activeCol.Items.Count > 0 ? -1 : 0;
+            ctx.NavigationService.CollectionItemSelectedIndex = 0;
             ctx.NavigationService.CollectionItemScrollOffset = 0;
         }
         else
@@ -268,7 +266,13 @@ internal static class NavigationCommandHandler
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
-        if (viewMode == ViewMode.CollectionItems || viewMode == ViewMode.CollectionList)
+        if (viewMode == ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.ExitToCollectionList();
+            ctx.LineCacheManager.InvalidateLineCache();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        else if (viewMode == ViewMode.CollectionList)
         {
             ctx.NavigationService.ExitCollections();
             ctx.LineCacheManager.InvalidateLineCache();
