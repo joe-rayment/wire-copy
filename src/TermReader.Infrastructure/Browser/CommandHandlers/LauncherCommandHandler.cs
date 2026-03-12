@@ -153,10 +153,7 @@ internal static class LauncherCommandHandler
             }
 
             case CommandType.ShowHelp:
-                Console.Write("\x1b[H\x1b[2J");
-                Console.WriteLine(ctx.InputHandler.GetHelpText());
-                Console.ReadKey(intercept: true);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ViewCommandHandler.HandleShowHelp(ctx, options, ct);
                 break;
 
             case CommandType.PageDown:
