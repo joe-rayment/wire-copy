@@ -27,6 +27,7 @@ public class ReadingListContentProviderTests
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
+    private readonly IWebDriverQueue _webDriverQueue;
     private readonly IArticleContentCache _articleCache;
     private readonly ReadingListContentProvider _provider;
 
@@ -37,7 +38,12 @@ public class ReadingListContentProviderTests
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
+        _webDriverQueue = Substitute.For<IWebDriverQueue>();
         _articleCache = Substitute.For<IArticleContentCache>();
+
+        // Default: AcquireAsync returns a no-op lease
+        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new WebDriverLease(Substitute.For<OpenQA.Selenium.IWebDriver>(), () => { }));
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
@@ -48,6 +54,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
+            _webDriverQueue,
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
     }
@@ -466,6 +473,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
+            _webDriverQueue,
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
@@ -791,6 +799,227 @@ public class ReadingListContentProviderTests
         results.Should().BeEmpty();
         _provider.LastExtractionFailures.Should().ContainSingle();
         _provider.LastExtractionFailures[0].Reason.Should().Contain("No readable content");
+    }
+
+    #endregion
+
+    #region WebDriverQueue Integration
+
+    [Fact]
+    public async Task Layer1_SetsPreferSeleniumTrue_OnPageLoadRequest()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        await _pageLoader.Received(1).LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.PreferSelenium == true),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Layer1_AcquiresBackgroundLease_BeforeLoading()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(true);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        await _webDriverQueue.Received().AcquireAsync(
+            WebDriverPriority.Background,
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Layer2_AcquiresBackgroundLease_ForSeleniumRetry()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // Layer 1: HTTP returns empty content
+                    return PageLoadResult.Successful(url, "<html></html>", new PageMetadata { Title = "Test" });
+                }
+
+                // Layer 2: Selenium succeeds
+                return CreateSuccessResult(url);
+            });
+
+        // Layer 1 extraction returns null, Layer 2 succeeds
+        var extractCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                extractCount++;
+                return extractCount >= 2 ? CreateReadableContent() : null;
+            });
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        // Should have acquired Background lease twice (Layer 1 + Layer 2)
+        await _webDriverQueue.Received(2).AcquireAsync(
+            WebDriverPriority.Background,
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Layer3_AcquiresBackgroundLease_ForBotChallengeRetry()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        var callCount = 0;
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                if (callCount <= 1)
+                {
+                    // Layer 1: JS shell
+                    return PageLoadResult.Successful(url, "<html><body><noscript>JS required</noscript></body></html>", new PageMetadata { Title = "Test" });
+                }
+
+                if (callCount == 2)
+                {
+                    // Layer 2: Bot challenge
+                    return PageLoadResult.Failure("Bot challenge could not be resolved");
+                }
+
+                // Layer 3: Success
+                return CreateSuccessResult(url);
+            });
+
+        var extractCount = 0;
+        _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                extractCount++;
+                return extractCount >= 2 ? CreateReadableContent() : null;
+            });
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        // Layer 1 + Layer 2 + Layer 3 = 3 Background lease acquisitions
+        await _webDriverQueue.Received(3).AcquireAsync(
+            WebDriverPriority.Background,
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WebDriverQueue_LeaseIsDisposed_AfterLoadCompletes()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(true);
+
+        var leaseDisposed = false;
+        var lease = new WebDriverLease(
+            Substitute.For<OpenQA.Selenium.IWebDriver>(),
+            () => leaseDisposed = true);
+        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(lease);
+
+        var loadResult = CreateSuccessResult(url);
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(loadResult);
+        _contentExtractor.ExtractAsync(loadResult.Html, url, Arg.Any<CancellationToken>())
+            .Returns(CreateReadableContent());
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        leaseDisposed.Should().BeTrue("lease should be disposed after the load completes");
+    }
+
+    [Fact]
+    public async Task WebDriverQueue_NeverUsesForegroundPriority()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns((ExtractedArticle?)null);
+        _pageCache.Contains(url).Returns(false);
+        _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns((PageLoadResult?)null);
+
+        // All layers fail so all get exercised
+        _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Failure("Connection refused"));
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        await _webDriverQueue.DidNotReceive().AcquireAsync(
+            WebDriverPriority.Foreground,
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WebDriverQueue_NotAcquired_WhenArticleServedFromContentCache()
+    {
+        var url = "https://example.com/article1";
+        var collection = CreateCollection(url);
+
+        _articleCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Cached",
+                CleanedText = "Text.",
+                Url = url,
+                WordCount = 1,
+            });
+
+        await _provider.GetAllArticleContentAsync(collection);
+
+        await _webDriverQueue.DidNotReceive().AcquireAsync(
+            Arg.Any<WebDriverPriority>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
     }
 
     #endregion

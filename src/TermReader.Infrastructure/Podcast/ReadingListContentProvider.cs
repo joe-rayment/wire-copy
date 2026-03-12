@@ -29,6 +29,7 @@ internal sealed class ReadingListContentProvider
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
+    private readonly IWebDriverQueue _webDriverQueue;
     private readonly IArticleContentCache _articleCache;
     private readonly ILogger<ReadingListContentProvider> _logger;
     private List<ArticleFailure> _lastFailures = [];
@@ -41,6 +42,7 @@ internal sealed class ReadingListContentProvider
         IPreloadService preloadService,
         IPageCache pageCache,
         IBrowserSession browserSession,
+        IWebDriverQueue webDriverQueue,
         IArticleContentCache articleCache,
         ILogger<ReadingListContentProvider> logger)
     {
@@ -50,6 +52,7 @@ internal sealed class ReadingListContentProvider
         _preloadService = preloadService;
         _pageCache = pageCache;
         _browserSession = browserSession;
+        _webDriverQueue = webDriverQueue;
         _articleCache = articleCache;
         _logger = logger;
     }
@@ -285,13 +288,18 @@ internal sealed class ReadingListContentProvider
         var lastFetchMethod = FetchMethod.Http;
         PageLoadResult? lastLoadResult = null;
 
-        // Layer 1: Initial load (HTTP/cached)
+        // Layer 1: Initial load with PreferSelenium (articles usually need JS rendering)
         try
         {
-            reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "HTTP");
-            lastLoadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = item.Url },
-                cancellationToken);
+            reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "Selenium");
+            var request = new PageLoadRequest { Url = item.Url, PreferSelenium = true };
+
+            using (var lease = await _webDriverQueue.AcquireAsync(
+                WebDriverPriority.Background, _browserConfig.Headless, cancellationToken))
+            {
+                lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken);
+            }
+
             lastFetchMethod = lastLoadResult.FetchMethod;
 
             if (!lastLoadResult.Success || string.IsNullOrEmpty(lastLoadResult.Html))
@@ -309,10 +317,10 @@ internal sealed class ReadingListContentProvider
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Layer 1 (HTTP) failed for {Url}, falling through to Selenium", item.Url);
+            _logger.LogWarning(ex, "Layer 1 failed for {Url}, falling through to Layer 2", item.Url);
         }
 
-        // Layer 2: If HTTP/cached returned no content (JS shell), retry with Selenium
+        // Layer 2: If Layer 1 returned no content, retry with Selenium + ForceRefresh
         // Skip Selenium layers if the driver has already crashed during this extraction run
         if (lastFetchMethod != FetchMethod.Selenium && !_seleniumDriverCrashed)
         {
@@ -324,14 +332,20 @@ internal sealed class ReadingListContentProvider
                     lastFetchMethod,
                     item.Url);
 
-                lastLoadResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest
-                    {
-                        Url = item.Url,
-                        Headless = _browserConfig.Headless,
-                        ForceRefresh = true,
-                    },
-                    cancellationToken);
+                using (var lease = await _webDriverQueue.AcquireAsync(
+                    WebDriverPriority.Background, _browserConfig.Headless, cancellationToken))
+                {
+                    lastLoadResult = await _pageLoader.LoadAsync(
+                        new PageLoadRequest
+                        {
+                            Url = item.Url,
+                            Headless = _browserConfig.Headless,
+                            PreferSelenium = true,
+                            ForceRefresh = true,
+                        },
+                        cancellationToken);
+                }
+
                 lastFetchMethod = lastLoadResult.FetchMethod;
 
                 if (IsDriverCrashFailure(lastLoadResult))
@@ -373,14 +387,19 @@ internal sealed class ReadingListContentProvider
                         "Bot challenge detected, restoring browser window for user intervention: {Url}",
                         item.Url);
 
-                    lastLoadResult = await _pageLoader.LoadAsync(
-                        new PageLoadRequest
-                        {
-                            Url = item.Url,
-                            Headless = false,
-                            ForceRefresh = true,
-                        },
-                        cancellationToken);
+                    using (var lease = await _webDriverQueue.AcquireAsync(
+                        WebDriverPriority.Background, false, cancellationToken))
+                    {
+                        lastLoadResult = await _pageLoader.LoadAsync(
+                            new PageLoadRequest
+                            {
+                                Url = item.Url,
+                                Headless = false,
+                                ForceRefresh = true,
+                            },
+                            cancellationToken);
+                    }
+
                     lastFetchMethod = lastLoadResult.FetchMethod;
 
                     if (IsDriverCrashFailure(lastLoadResult))
