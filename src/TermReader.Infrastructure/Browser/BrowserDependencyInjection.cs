@@ -102,6 +102,9 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
         services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
 
+        // Register WebDriver priority queue (serializes foreground/background access)
+        services.AddSingleton<IWebDriverQueue, WebDriverQueue>();
+
         // Register cache configuration and services
         services.AddOptions<CacheConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
