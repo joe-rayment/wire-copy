@@ -616,4 +616,146 @@ public class ReadableContentTests
     }
 
     #endregion
+
+    #region IsArticle
+
+    [Fact]
+    public void IsArticle_OgTypeArticleMetaTag_ReturnsTrue()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><head><meta property=""og:type"" content=""article"" /></head><body><div>Content</div></body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("og:type article meta tag is present");
+    }
+
+    [Fact]
+    public void IsArticle_OgTypeArticleMetaTag_SingleQuotes_ReturnsTrue()
+    {
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><head><meta property='og:type' content='article' /></head><body><div>Content</div></body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("og:type article meta tag with single quotes is present");
+    }
+
+    [Fact]
+    public void IsArticle_OgTypeNotArticle_ReturnsFalse()
+    {
+        // og:type is "website" but the word "article" appears elsewhere on the page
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><head><meta property=""og:type"" content=""website"" /></head>
+            <body><div>Read our latest article about technology</div></body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("og:type is 'website', not 'article' — the word 'article' in body text should not trigger a match");
+    }
+
+    [Fact]
+    public void IsArticle_LinkListPage_WithManyShortParagraphs_ReturnsFalse()
+    {
+        // Index/collection page with many <p> tags but all short (link descriptions)
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><body>
+            <h1>Today's Headlines</h1>
+            <p><a href='/story1'>Story 1</a></p>
+            <p><a href='/story2'>Story 2</a></p>
+            <p><a href='/story3'>Story 3</a></p>
+            <p><a href='/story4'>Story 4</a></p>
+            <p><a href='/story5'>Story 5</a></p>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("short link-list paragraphs should not count as article content");
+    }
+
+    [Fact]
+    public void IsArticle_ParagraphsInSidebar_NotCounted()
+    {
+        // Page with substantial <p> tags only in nav/footer/sidebar
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var longText = new string('x', 60);
+        var html = $@"<html><body>
+            <nav><p>{longText} navigation text here with more content.</p></nav>
+            <aside><p>{longText} sidebar promotional text with details.</p></aside>
+            <footer><p>{longText} footer disclaimer text and legal info.</p></footer>
+            <div>Short main content</div>
+        </body></html>";
+
+        // No <article>, <main>, og:type, or article-class markers. The substantial paragraphs
+        // are only in boilerplate regions, so this should not be classified as an article.
+        extractor.IsArticle(html).Should().BeFalse("substantial paragraphs are only in nav/aside/footer");
+    }
+
+    [Fact]
+    public void IsArticle_SubstantialParagraphsInMain_ReturnsTrue()
+    {
+        // Page with substantial <p> tags inside <main>, no other article indicators
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var longText = new string('x', 60);
+        var html = $@"<html><body>
+            <main>
+                <p>{longText} first paragraph of real article content here.</p>
+                <p>{longText} second paragraph continues with more details.</p>
+                <p>{longText} third paragraph wraps up with conclusions.</p>
+            </main>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeTrue("3 substantial paragraphs inside <main> indicates article content");
+    }
+
+    [Fact]
+    public void IsArticle_SubstantialParagraphsInArticleElement_ReturnsTrue()
+    {
+        // <article> tag also triggers the earlier check, but let's ensure substantial
+        // paragraphs inside <article> work for the paragraph-counting path too
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><body><article><h1>Title</h1></article></body></html>";
+
+        // This triggers via the <article> tag check, not the paragraph count
+        extractor.IsArticle(html).Should().BeTrue("has <article> tag");
+    }
+
+    [Fact]
+    public void IsArticle_FalsePositive_OgTypeWebsiteWithArticleWord_ReturnsFalse()
+    {
+        // Reproduces the original bug: page has og:type "website" and the word "article"
+        // appears in a link or text, causing false positive with substring matching
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html>
+            <head><meta property=""og:type"" content=""website"" /></head>
+            <body>
+                <h1>Index of Articles</h1>
+                <ul>
+                    <li><a href='/article/1'>First article link</a></li>
+                    <li><a href='/article/2'>Second article link</a></li>
+                </ul>
+            </body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("og:type is 'website' and 'article' only appears in text/links, not as an article indicator");
+    }
+
+    [Fact]
+    public void IsArticle_ManyEmptyParagraphTags_ReturnsFalse()
+    {
+        // Page with many <p> tags but they're all empty or trivially short
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+        var html = @"<html><body>
+            <p></p>
+            <p>&nbsp;</p>
+            <p> </p>
+            <p>x</p>
+            <p>short</p>
+            <p>also short</p>
+        </body></html>";
+
+        extractor.IsArticle(html).Should().BeFalse("empty/trivially short paragraphs should not count as article content");
+    }
+
+    #endregion
 }

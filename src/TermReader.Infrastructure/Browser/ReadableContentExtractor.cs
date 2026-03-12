@@ -19,7 +19,14 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// <summary>
     /// Minimum paragraph count to consider content non-truncated when paywall indicators are present.
     /// </summary>
-    private const int PaywallTruncationThreshold = 5;
+    private const int PaywallTruncationThreshold = 3;
+
+    /// <summary>
+    /// Minimum total character count of paragraph text to consider content non-truncated.
+    /// Short articles with substantive paragraphs (>= this length) are not flagged as paywalled
+    /// even if the paragraph count is below the threshold.
+    /// </summary>
+    private const int PaywallMinContentLength = 500;
 
     private static readonly HashSet<string> ArticleIndicators = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -99,7 +106,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // Only check pages that have article indicators
         var hasArticleIndicators = lowerHtml.Contains("<article") ||
-            (lowerHtml.Contains("og:type") && lowerHtml.Contains("article")) ||
+            OgTypeArticleRegex().IsMatch(lowerHtml) ||
             lowerHtml.Contains("article-body") ||
             lowerHtml.Contains("article-content") ||
             lowerHtml.Contains("entry-content") ||
@@ -165,7 +172,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 return Task.FromResult<ReadableContent?>(null);
             }
 
-            var isPaywalled = DetectPaywall(paywallDoc, paragraphs.Count);
+            var isPaywalled = DetectPaywall(paywallDoc, paragraphs);
             if (isPaywalled)
             {
                 _logger.LogInformation("Paywall detected for {Url} ({ParagraphCount} paragraphs)", url, paragraphs.Count);
@@ -201,8 +208,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     {
         var lowerHtml = html.ToLowerInvariant();
 
-        // Check for article-related meta tags
-        if (lowerHtml.Contains("og:type") && lowerHtml.Contains("article"))
+        // Check for article-related meta tags (actual <meta property="og:type" content="article"> tag)
+        if (OgTypeArticleRegex().IsMatch(lowerHtml))
         {
             return true;
         }
@@ -238,9 +245,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return true;
         }
 
-        // Check for sufficient paragraph content
-        var paragraphCount = Regex.Matches(lowerHtml, @"<p[^>]*>").Count;
-        if (paragraphCount >= 3)
+        // Check for sufficient substantial paragraph content (>50 chars, outside boilerplate)
+        if (HasSubstantialParagraphs(html))
         {
             return true;
         }
@@ -249,11 +255,59 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     }
 
     /// <summary>
+    /// Checks whether the HTML contains enough substantial paragraphs to indicate article content.
+    /// Counts only paragraphs with >50 characters of text content, preferring those inside
+    /// &lt;main&gt; or &lt;article&gt; elements when available. When falling back to the full
+    /// document, paragraphs inside boilerplate regions (nav, aside, footer) are excluded.
+    /// </summary>
+    private static bool HasSubstantialParagraphs(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Prefer paragraphs inside <main> or <article> if present
+        var scopeNode = doc.DocumentNode.SelectSingleNode("//main") ??
+                        doc.DocumentNode.SelectSingleNode("//article");
+
+        var usingFullDocument = scopeNode == null;
+        scopeNode ??= doc.DocumentNode;
+
+        var paragraphs = scopeNode.SelectNodes(".//p");
+        if (paragraphs == null)
+        {
+            return false;
+        }
+
+        var substantialCount = 0;
+        foreach (var p in paragraphs)
+        {
+            // When scoped to full document, skip paragraphs in boilerplate regions
+            if (usingFullDocument && IsInsideBoilerplate(p))
+            {
+                continue;
+            }
+
+            var text = p.InnerText?.Trim();
+            if (text != null && text.Length > 50)
+            {
+                substantialCount++;
+                if (substantialCount >= 3)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Detects whether a page is paywalled by checking for paywall indicator elements
     /// and text patterns, combined with content truncation heuristics.
-    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated.
+    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated
+    /// (few paragraphs with little total text).
     /// </summary>
-    internal static bool DetectPaywall(HtmlDocument doc, int paragraphCount)
+    internal static bool DetectPaywall(HtmlDocument doc, IReadOnlyList<string> paragraphs)
     {
         // Check for paywall indicator elements via XPath
         var hasPaywallElement = PaywallElementSelectors.Any(
@@ -278,7 +332,15 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return false;
         }
 
-        return paragraphCount < PaywallTruncationThreshold;
+        // Content with enough paragraphs is not truncated
+        if (paragraphs.Count >= PaywallTruncationThreshold)
+        {
+            return false;
+        }
+
+        // Even with few paragraphs, if total content is substantial it's a real short article
+        var totalContentLength = paragraphs.Sum(p => p.Length);
+        return totalContentLength < PaywallMinContentLength;
     }
 
     private static string? ExtractTitle(HtmlDocument doc)
@@ -854,6 +916,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     [GeneratedRegex(@"(?<=[.!?])\s+")]
     private static partial Regex SentenceRegex();
+
+    /// <summary>
+    /// Matches the actual og:type article meta tag: &lt;meta property="og:type" content="article"&gt;
+    /// Handles both single and double quotes, with optional whitespace between attributes.
+    /// </summary>
+    [GeneratedRegex("""<meta\s[^>]*property\s*=\s*["']og:type["'][^>]*content\s*=\s*["']article["']""")]
+    private static partial Regex OgTypeArticleRegex();
 
     private List<(HtmlNode Node, string Selector)> FindAllContentAreas(HtmlDocument doc, string? url = null)
     {
