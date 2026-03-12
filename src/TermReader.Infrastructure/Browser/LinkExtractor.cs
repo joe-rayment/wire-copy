@@ -26,7 +26,8 @@ public class LinkExtractor : ILinkExtractor
 
     private static readonly HashSet<string> NavigationClasses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "nav", "navigation", "menu", "sidebar", "header", "toolbar"
+        "nav", "navigation", "menu", "sidebar", "header", "toolbar",
+        "related", "widget", "recommended", "trending", "popular", "aside"
     };
 
     private static readonly HashSet<string> FooterClasses = new(StringComparer.OrdinalIgnoreCase)
@@ -816,7 +817,7 @@ public class LinkExtractor : ILinkExtractor
         // Heuristic based on display text length
         // Short text (< 50 chars) is more likely to be navigation
         // Longer text is more likely to be content (article titles)
-        if (displayText.Length < 30)
+        if (displayText.Length < 50)
         {
             return LinkType.Navigation;
         }
