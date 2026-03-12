@@ -78,6 +78,21 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'story-body-supplemental')]",
         "//*[contains(@data-testid, 'article-body')]",
         "//*[@name='articleBody']",
+        // WordPress / Gutenberg
+        "//*[contains(@class, 'wp-block-post-content')]",
+        "//*[contains(@class, 'td-post-content')]",
+        "//*[contains(@class, 'single-post-content')]",
+        // Substack / Ghost / Medium
+        "//*[contains(@class, 'available-content')]",
+        "//*[contains(@class, 'post-full-content')]",
+        "//*[contains(@class, 'gh-content')]",
+        "//*[contains(@class, 'markup')]",
+        // Drupal
+        "//*[contains(@class, 'field--name-body')]",
+        "//*[contains(@class, 'node-content')]",
+        // Data-attribute patterns (React/Vue SPA)
+        "//*[@data-content-type='article-body']",
+        "//*[@data-content-region='body']",
         // Generic semantic elements
         "//article",
         "//*[@role='article']",
@@ -193,6 +208,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             {
                 return true;
             }
+        }
+
+        // Fallback: text density scoring
+        var densityResult = ExtractByTextDensity(doc);
+        if (densityResult.Count >= 3 && ValidateContentQuality(densityResult))
+        {
+            return true;
         }
 
         // Fallback: check for largest paragraph block in full document
@@ -316,7 +338,14 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             lowerHtml.Contains("article-body") ||
             lowerHtml.Contains("article-content") ||
             lowerHtml.Contains("storybodycompanioncolumn") ||
-            lowerHtml.Contains("data-testid=\"article-body\""))
+            lowerHtml.Contains("data-testid=\"article-body\"") ||
+            lowerHtml.Contains("wp-block-post-content") ||
+            lowerHtml.Contains("td-post-content") ||
+            lowerHtml.Contains("gh-content") ||
+            lowerHtml.Contains("post-full-content") ||
+            lowerHtml.Contains("field--name-body") ||
+            lowerHtml.Contains("data-content-type=\"article-body\"") ||
+            lowerHtml.Contains("data-content-region="))
         {
             return true;
         }
@@ -876,6 +905,113 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return false;
     }
 
+    /// <summary>
+    /// Finds the container element with the highest text density (text length / HTML length)
+    /// and extracts paragraphs from it. This helps identify the article body on pages where
+    /// no named content area selector matches, by preferring containers with high text-to-markup
+    /// ratios over navigation-heavy containers.
+    /// </summary>
+    private static List<string> ExtractByTextDensity(HtmlDocument doc)
+    {
+        var candidates = doc.DocumentNode.SelectNodes("//div | //section | //article | //main");
+        if (candidates == null)
+        {
+            return new List<string>();
+        }
+
+        HtmlNode? bestCandidate = null;
+        var bestScore = 0.0;
+
+        foreach (var candidate in candidates)
+        {
+            if (IsInsideBoilerplate(candidate))
+            {
+                continue;
+            }
+
+            var innerHtml = candidate.InnerHtml;
+            var innerText = candidate.InnerText?.Trim();
+            if (string.IsNullOrWhiteSpace(innerText) || innerHtml.Length < 200)
+            {
+                continue;
+            }
+
+            var textLength = innerText.Length;
+            var htmlLength = innerHtml.Length;
+            var density = (double)textLength / htmlLength;
+
+            // Count substantial text blocks (p, blockquote, li, or divs/sections with direct text >50 chars)
+            var substantialCount = CountSubstantialTextBlocks(candidate);
+            if (substantialCount < 3)
+            {
+                continue;
+            }
+
+            // Score: density * sqrt(substantialCount) — rewards both density and content volume
+            var score = density * Math.Sqrt(substantialCount);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestCandidate = candidate;
+            }
+        }
+
+        if (bestCandidate == null)
+        {
+            return new List<string>();
+        }
+
+        // Extract from the best candidate using semantic extraction first, then direct text
+        var paragraphs = ExtractSemanticParagraphs(bestCandidate);
+        if (paragraphs.Count >= 3)
+        {
+            return paragraphs;
+        }
+
+        // Also try direct text from divs/sections within the best candidate
+        var seen = new HashSet<string>(paragraphs);
+        var combined = new List<string>(paragraphs);
+        var blocks = bestCandidate.SelectNodes(".//div | .//section") ?? Enumerable.Empty<HtmlNode>();
+        foreach (var block in blocks)
+        {
+            var directText = GetDirectTextContent(block);
+            if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
+            {
+                combined.Add(directText);
+            }
+        }
+
+        return combined;
+    }
+
+    private static int CountSubstantialTextBlocks(HtmlNode container)
+    {
+        var count = 0;
+
+        // Count semantic elements with >50 chars
+        var semanticNodes = container.SelectNodes(".//p | .//blockquote | .//li");
+        if (semanticNodes != null)
+        {
+            count += semanticNodes.Count(n => (n.InnerText?.Trim().Length ?? 0) > 50);
+        }
+
+        // Count divs/sections with direct text >50 chars
+        var blocks = container.SelectNodes(".//div | .//section");
+        if (blocks != null)
+        {
+            foreach (var block in blocks)
+            {
+                var directText = GetDirectTextContent(block);
+                if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50)
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
     private static List<string> ExtractParagraphsAlternative(HtmlNode contentArea)
     {
         var paragraphs = new List<string>();
@@ -1133,18 +1269,18 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return level1Paragraphs;
         }
 
-        // Level 2: Try divs with direct text content
+        // Level 2: Try divs and sections with direct text content
         var seen = new HashSet<string>(level1Paragraphs);
         var paragraphsWithDivs = new List<string>(level1Paragraphs);
-        var divNodes = contentArea.SelectNodes(".//div") ?? Enumerable.Empty<HtmlNode>();
-        foreach (var div in divNodes)
+        var blockNodes = contentArea.SelectNodes(".//div | .//section") ?? Enumerable.Empty<HtmlNode>();
+        foreach (var block in blockNodes)
         {
-            if (IsInsideBoilerplate(div))
+            if (IsInsideBoilerplate(block))
             {
                 continue;
             }
 
-            var directText = GetDirectTextContent(div);
+            var directText = GetDirectTextContent(block);
             if (!string.IsNullOrWhiteSpace(directText) && directText.Length > 50 && seen.Add(directText))
             {
                 paragraphsWithDivs.Add(directText);
@@ -1156,7 +1292,19 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return paragraphsWithDivs;
         }
 
-        // Level 2.5: Largest paragraph block heuristic
+        // Level 2.5a: Text density scoring — find best container by text-to-HTML ratio
+        var densityResult = ExtractByTextDensity(doc);
+        if (densityResult.Count >= 3 && ValidateContentQuality(densityResult))
+        {
+            _logger.LogDebug("Text density scoring found {Count} paragraphs", densityResult.Count);
+            return densityResult;
+        }
+        else if (densityResult.Count >= 3)
+        {
+            _logger.LogDebug("Text density result failed quality validation ({Count} paragraphs)", densityResult.Count);
+        }
+
+        // Level 2.5b: Largest paragraph block heuristic
         var largestBlock = FindLargestParagraphBlock(doc);
         if (largestBlock.Count >= 3 && ValidateContentQuality(largestBlock))
         {
