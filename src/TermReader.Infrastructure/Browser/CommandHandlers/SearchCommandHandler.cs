@@ -50,20 +50,21 @@ internal static class SearchCommandHandler
         }
     }
 
-    public static async Task HandleOpenCommandLine(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    public static async Task<bool> HandleOpenCommandLine(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
         if (!string.IsNullOrWhiteSpace(input))
         {
-            await HandleCommandLineInput(ctx, input.Trim(), options, ct);
+            return await HandleCommandLineInput(ctx, input.Trim(), options, ct);
         }
         else
         {
             await ctx.RenderCurrentPageAsync(options, ct);
+            return true;
         }
     }
 
-    public static async Task HandleCommandLineInput(CommandContext ctx, string input, RenderOptions options, CancellationToken ct)
+    public static async Task<bool> HandleCommandLineInput(CommandContext ctx, string input, RenderOptions options, CancellationToken ct)
     {
         var parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var command = parts[0].ToLowerInvariant();
@@ -71,7 +72,7 @@ internal static class SearchCommandHandler
         switch (command)
         {
             case "q" or "quit":
-                return;
+                return false;
 
             case "back" or "b":
                 var prevPage = ctx.NavigationService.GoBack();
@@ -81,7 +82,7 @@ internal static class SearchCommandHandler
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
 
-                return;
+                return true;
 
             case "forward" or "f":
                 var fwdPage = ctx.NavigationService.GoForward();
@@ -91,14 +92,14 @@ internal static class SearchCommandHandler
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
 
-                return;
+                return true;
 
             case "help" or "h":
                 Console.Write("\x1b[H\x1b[2J");
                 Console.WriteLine(ctx.InputHandler.GetHelpText());
                 Console.ReadKey(intercept: true);
                 await ctx.RenderCurrentPageAsync(options, ct);
-                return;
+                return true;
 
             case "open" or "go" or "o":
                 if (parts.Length > 1)
@@ -111,13 +112,13 @@ internal static class SearchCommandHandler
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
 
-                return;
+                return true;
 
             case "home":
                 ctx.NavigationService.EnterLauncher();
                 await ctx.RefreshBookmarksAsync(ct);
                 await ctx.RenderCurrentPageAsync(options, ct);
-                return;
+                return true;
 
             case "add":
                 // Delegate to launcher handler's add bookmark
@@ -144,11 +145,11 @@ internal static class SearchCommandHandler
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct);
-                return;
+                return true;
 
             case "collections" or "readlater":
                 await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
-                return;
+                return true;
 
             case "new":
                 if (parts.Length > 1)
@@ -168,7 +169,7 @@ internal static class SearchCommandHandler
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct);
-                return;
+                return true;
 
             case "rename":
                 if (parts.Length > 1 && ctx.NavigationService.CurrentContext.ViewMode == ViewMode.CollectionList &&
@@ -190,32 +191,32 @@ internal static class SearchCommandHandler
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct);
-                return;
+                return true;
 
             case "clear":
                 await HandleClearCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
-                return;
+                return true;
 
             case "export":
                 await HandleExportCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
-                return;
+                return true;
 
             case "cache":
                 await HandleCacheCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
-                return;
+                return true;
 
             case "podcast":
                 await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
-                return;
+                return true;
 
             case "set":
                 await HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
-                return;
+                return true;
 
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
-                return;
+                return true;
         }
     }
 
@@ -224,6 +225,7 @@ internal static class SearchCommandHandler
         var collection = ctx.NavigationService.ActiveCollection;
         if (collection == null)
         {
+            ctx.NavigationService.SetStatusMessage("No active collection to export. Open a collection first.");
             ctx.Logger.LogWarning("No active collection to export. Open a collection first.");
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
@@ -241,6 +243,7 @@ internal static class SearchCommandHandler
             if (exporter == null)
             {
                 var available = string.Join(", ", exporters.Select(e => e.Format));
+                ctx.NavigationService.SetStatusMessage($"Unknown format '{requestedFormat}'. Available: {available}");
                 ctx.Logger.LogWarning("Unknown export format '{Format}'. Available: {Available}", requestedFormat, available);
                 await ctx.RenderCurrentPageAsync(options, ct);
                 return;
@@ -255,10 +258,12 @@ internal static class SearchCommandHandler
             var outputPath = Path.Combine(outputDir, $"{safeName}.{requestedFormat}");
 
             await exporter.ExportAsync(collection, new ExportOptions(outputPath), ct);
+            ctx.NavigationService.SetStatusMessage($"Exported to {outputPath}");
             ctx.Logger.LogInformation("Exported collection '{Name}' to {Path}", collection.Name, outputPath);
         }
         catch (Exception ex)
         {
+            ctx.NavigationService.SetStatusMessage($"Export failed: {ex.Message}");
             ctx.Logger.LogWarning(ex, "Failed to export collection");
         }
 
