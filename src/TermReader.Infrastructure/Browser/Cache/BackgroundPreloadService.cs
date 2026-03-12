@@ -322,7 +322,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         string currentPageUrl)
     {
         var items = new List<PreloadItem>();
-        var allEligible = new List<string>();
+        var allEligibleWithIndex = new List<(string Url, int ListIndex)>();
         var needsJs = new List<string>();
 
         for (var i = 0; i < visibleNodes.Count; i++)
@@ -347,10 +347,30 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            TryAddEligibleUrl(url, i, allEligible, needsJs, items);
+            allEligibleWithIndex.Add((url, i));
+            TryAddEligibleUrl(url, i, needsJs, items);
         }
 
-        // Sort by priority score: cursor proximity (primary), then list index (tiebreaker)
+        // Sort all eligible URLs by priority (cursor proximity)
+        allEligibleWithIndex.Sort((a, b) =>
+        {
+            var scoreA = ComputePriorityScore(a.ListIndex, selectedIndex);
+            var scoreB = ComputePriorityScore(b.ListIndex, selectedIndex);
+            var cmp = scoreA.CompareTo(scoreB);
+            return cmp != 0 ? cmp : a.ListIndex.CompareTo(b.ListIndex);
+        });
+
+        // Apply budget limit to eligible URLs
+        var budget = _config.MaxPreloadLinks;
+        if (allEligibleWithIndex.Count > budget)
+        {
+            allEligibleWithIndex.RemoveRange(budget, allEligibleWithIndex.Count - budget);
+        }
+
+        var budgetedUrls = new HashSet<string>(
+            allEligibleWithIndex.Select(e => e.Url), StringComparer.OrdinalIgnoreCase);
+
+        // Sort queue items by priority score: cursor proximity (primary), then list index (tiebreaker)
         items.Sort((a, b) =>
         {
             var scoreA = ComputePriorityScore(a.ListIndex, selectedIndex);
@@ -361,6 +381,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return cmp != 0 ? cmp : a.ListIndex.CompareTo(b.ListIndex);
         });
 
+        // Trim items and needsJs to the budgeted set
+        items.RemoveAll(item => !budgetedUrls.Contains(item.Url));
+        needsJs.RemoveAll(url => !budgetedUrls.Contains(url));
+
+        var allEligible = allEligibleWithIndex.Select(e => e.Url).ToList();
         UpdateProgressTracking(allEligible, needsJs);
         return items;
     }
@@ -370,7 +395,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         IReadOnlyList<string> urls)
     {
         var items = new List<PreloadItem>();
-        var allEligible = new List<string>();
+        var allEligibleWithIndex = new List<(string Url, int ListIndex)>();
         var needsJs = new List<string>();
 
         for (var i = 0; i < urls.Count; i++)
@@ -381,14 +406,35 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            TryAddEligibleUrl(url, i, allEligible, needsJs, items);
+            allEligibleWithIndex.Add((url, i));
+            TryAddEligibleUrl(url, i, needsJs, items);
         }
 
-        // Sort by distance from selected index (closest first)
+        // Sort all eligible URLs by distance from selected index
+        allEligibleWithIndex.Sort((a, b) =>
+            Math.Abs(a.ListIndex - selectedIndex).CompareTo(
+                Math.Abs(b.ListIndex - selectedIndex)));
+
+        // Apply budget limit to eligible URLs
+        var budget = _config.MaxPreloadLinks;
+        if (allEligibleWithIndex.Count > budget)
+        {
+            allEligibleWithIndex.RemoveRange(budget, allEligibleWithIndex.Count - budget);
+        }
+
+        var budgetedUrls = new HashSet<string>(
+            allEligibleWithIndex.Select(e => e.Url), StringComparer.OrdinalIgnoreCase);
+
+        // Sort queue items by distance from selected index (closest first)
         items.Sort((a, b) =>
             Math.Abs(a.ListIndex - selectedIndex).CompareTo(
                 Math.Abs(b.ListIndex - selectedIndex)));
 
+        // Trim items and needsJs to the budgeted set
+        items.RemoveAll(item => !budgetedUrls.Contains(item.Url));
+        needsJs.RemoveAll(url => !budgetedUrls.Contains(url));
+
+        var allEligible = allEligibleWithIndex.Select(e => e.Url).ToList();
         UpdateProgressTracking(allEligible, needsJs);
         return items;
     }
@@ -483,12 +529,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private void TryAddEligibleUrl(
         string url,
         int listIndex,
-        List<string> allEligible,
         List<string> needsJs,
         List<PreloadItem> items)
     {
-        allEligible.Add(url);
-
         if (IsDomainNeedsJs(url))
         {
             needsJs.Add(url);

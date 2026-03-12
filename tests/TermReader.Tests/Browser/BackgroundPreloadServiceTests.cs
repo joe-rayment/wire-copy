@@ -888,6 +888,131 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region Preload Budget Limit
+
+    [Fact]
+    public void BuildQueue_BudgetLimit_TruncatesQueueToMaxPreloadLinks()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        // Create 10 same-origin content links
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().HaveCount(3, "queue should be truncated to MaxPreloadLinks");
+    }
+
+    [Fact]
+    public void BuildQueue_BudgetLimit_KeepsHighestPriorityItems()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        // Selected index 0 — items closest to cursor (indices 0, 1, 2) should be kept
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Select(i => i.ListIndex).Should().BeEquivalentTo(new[] { 0, 1, 2 });
+    }
+
+    [Fact]
+    public void BuildQueue_BudgetLimit_ProgressReflectsBudget()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        service.BuildQueue(0, nodes, "https://example.com");
+        var progress = service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(3, "progress should reflect the budget, not all eligible URLs");
+    }
+
+    [Fact]
+    public void BuildQueue_UnderBudget_NoTruncation()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 20 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 5).Select(i => $"https://example.com/a{i}").ToArray();
+        var nodes = CreateContentNodes(urls);
+
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().HaveCount(5, "should not truncate when under budget");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_BudgetLimit_TruncatesQueueToMaxPreloadLinks()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://site{i}.com/article").ToList();
+
+        var queue = service.BuildCollectionQueue(0, urls);
+
+        queue.Should().HaveCount(3, "collection queue should be truncated to MaxPreloadLinks");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_BudgetLimit_KeepsClosestToSelected()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://site{i}.com/article").ToList();
+
+        // Selected index 4 — items at indices 4, 3, 5 should be kept (closest first)
+        var queue = service.BuildCollectionQueue(4, urls);
+
+        queue.Select(i => i.ListIndex).Should().BeEquivalentTo(new[] { 3, 4, 5 });
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_BudgetLimit_ProgressReflectsBudget()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 3 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 10).Select(i => $"https://site{i}.com/article").ToList();
+
+        service.BuildCollectionQueue(0, urls);
+        var progress = service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(3, "collection progress should reflect the budget");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_UnderBudget_NoTruncation()
+    {
+        var config = new CacheConfiguration { MaxPreloadLinks = 20 };
+        var service = CreateService(config);
+
+        var urls = Enumerable.Range(1, 5).Select(i => $"https://site{i}.com/article").ToList();
+
+        var queue = service.BuildCollectionQueue(0, urls);
+
+        queue.Should().HaveCount(5, "should not truncate when under budget");
+    }
+
+    [Fact]
+    public void BuildQueue_DefaultBudget_Is20()
+    {
+        var config = new CacheConfiguration();
+
+        config.MaxPreloadLinks.Should().Be(20);
+    }
+
+    #endregion
+
     #region Helpers
 
     private static void SetInternalQueue(BackgroundPreloadService service, List<BackgroundPreloadService.PreloadItem> queue)
