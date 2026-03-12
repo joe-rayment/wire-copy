@@ -55,6 +55,11 @@ public class TerminalPageRenderer : IPageRenderer
         {
             _helpers.WriteLine();
             _helpers.WriteLine("  No links found on this page.");
+            if (page.ReadableContent != null)
+            {
+                _helpers.WriteLine("  Press 'r' to switch to reader view.");
+            }
+
             _helpers.WriteLine();
         }
 
