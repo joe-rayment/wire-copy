@@ -17,6 +17,12 @@ internal static class ViewCommandHandler
 
     public static async Task HandleSwitchView(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        if (viewMode is ViewMode.CollectionList or ViewMode.CollectionItems or ViewMode.Launcher)
+        {
+            return;
+        }
+
         ctx.NavigationService.ToggleViewMode();
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -24,6 +30,12 @@ internal static class ViewCommandHandler
 
     public static async Task HandleSwitchToHierarchical(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        if (viewMode is ViewMode.CollectionList or ViewMode.CollectionItems or ViewMode.Launcher)
+        {
+            return;
+        }
+
         ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -31,6 +43,12 @@ internal static class ViewCommandHandler
 
     public static async Task HandleSwitchToReadable(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        if (viewMode is ViewMode.CollectionList or ViewMode.CollectionItems or ViewMode.Launcher)
+        {
+            return;
+        }
+
         ctx.NavigationService.SetViewMode(ViewMode.Readable);
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct);
