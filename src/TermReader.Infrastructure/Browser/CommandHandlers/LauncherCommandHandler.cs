@@ -115,7 +115,10 @@ internal static class LauncherCommandHandler
                 var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
                 if (!string.IsNullOrWhiteSpace(input))
                 {
-                    await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct);
+                    if (!await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct))
+                    {
+                        return false;
+                    }
                 }
                 else
                 {
@@ -138,6 +141,10 @@ internal static class LauncherCommandHandler
                     if (matchIdx >= 0)
                     {
                         ctx.NavigationService.LauncherSelectedIndex = matchIdx;
+                    }
+                    else
+                    {
+                        ctx.NavigationService.SetStatusMessage($"No bookmarks matching '{query}'");
                     }
                 }
 
