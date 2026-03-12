@@ -231,7 +231,7 @@ public class CollectionCommandStatusTests
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
         _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns("y");
+            .Returns("clear");
 
         await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
 
@@ -248,7 +248,7 @@ public class CollectionCommandStatusTests
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
         _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns("n");
+            .Returns((string?)null);
 
         await CollectionCommandHandler.HandleClearCollection(_ctx, _options, CancellationToken.None);
 
