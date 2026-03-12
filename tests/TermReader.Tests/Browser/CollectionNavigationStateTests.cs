@@ -240,4 +240,75 @@ public class CollectionNavigationStateTests
     }
 
     #endregion
+
+    #region UpdateActiveCollection preserves index
+
+    [Fact]
+    public void UpdateActiveCollection_PreservesSelectedIndex()
+    {
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://a.com", "A");
+        collection.AddItem("https://b.com", "B");
+        collection.AddItem("https://c.com", "C");
+
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+        _sut.EnterCollection(collection);
+        _sut.CollectionItemSelectedIndex = 2; // select last item
+
+        // Simulate refresh with same items
+        var refreshed = Collection.Create("Test");
+        refreshed.AddItem("https://a.com", "A");
+        refreshed.AddItem("https://b.com", "B");
+        refreshed.AddItem("https://c.com", "C");
+
+        _sut.UpdateActiveCollection(refreshed);
+
+        _sut.CollectionItemSelectedIndex.Should().Be(2, "UpdateActiveCollection should not reset selected index");
+        _sut.ActiveCollection.Should().BeSameAs(refreshed);
+    }
+
+    [Fact]
+    public void UpdateActiveCollection_PreservesCtaButtonFocus()
+    {
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://a.com", "A");
+
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+        _sut.EnterCollection(collection);
+        // EnterCollection sets index to -1 (CTA) when items exist
+        _sut.CollectionItemSelectedIndex.Should().Be(-1);
+
+        var refreshed = Collection.Create("Test");
+        refreshed.AddItem("https://a.com", "A");
+        refreshed.AddItem("https://b.com", "B");
+
+        _sut.UpdateActiveCollection(refreshed);
+
+        _sut.CollectionItemSelectedIndex.Should().Be(-1, "CTA button focus should be preserved after refresh");
+    }
+
+    [Fact]
+    public void EnterCollection_SetsCtaForNonEmptyCollection()
+    {
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://a.com", "A");
+
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+        _sut.EnterCollection(collection);
+
+        _sut.CollectionItemSelectedIndex.Should().Be(-1, "CTA button index for non-empty collection");
+    }
+
+    [Fact]
+    public void EnterCollection_SetsZeroForEmptyCollection()
+    {
+        var collection = Collection.Create("Test");
+
+        _sut.EnterCollections(Domain.Enums.Browser.ViewMode.Hierarchical, 0);
+        _sut.EnterCollection(collection);
+
+        _sut.CollectionItemSelectedIndex.Should().Be(0, "empty collection starts at index 0");
+    }
+
+    #endregion
 }

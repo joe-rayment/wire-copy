@@ -144,6 +144,54 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return true;
     }
 
+    /// <summary>
+    /// Checks whether the HTML contains extractable article content.
+    /// Unlike <see cref="IsEmptyArticleShell"/>, which only flags pages with article indicators
+    /// but no paragraphs, this method attempts a lightweight content extraction to verify
+    /// that the page has real readable article text. Returns false for JS shells that have
+    /// boilerplate/navigation text (enough to pass word-count checks) but no article body.
+    /// </summary>
+    /// <param name="html">Raw HTML to check.</param>
+    /// <returns>True if the HTML contains extractable article content; false otherwise.</returns>
+    public static bool HasExtractableContent(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Remove boilerplate so we only check article-area content
+        RemoveBoilerplate(doc);
+
+        // Check for paragraphs in known content area selectors
+        foreach (var selector in ContentAreaSelectors)
+        {
+            var area = doc.DocumentNode.SelectSingleNode(selector);
+            if (area == null)
+            {
+                continue;
+            }
+
+            var paragraphs = ExtractSemanticParagraphs(area);
+            if (paragraphs.Count >= 3)
+            {
+                return true;
+            }
+        }
+
+        // Fallback: check for largest paragraph block in full document
+        var largestBlock = FindLargestParagraphBlock(doc);
+        if (largestBlock.Count >= 3 && ValidateContentQuality(largestBlock))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     public Task<ReadableContent?> ExtractAsync(string html, string url, CancellationToken cancellationToken = default)
     {
         try
@@ -204,7 +252,24 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
     }
 
+    /// <summary>
+    /// Static version of <see cref="IsArticle"/>. Determines if the HTML content appears
+    /// to be an article page based on structural indicators (meta tags, semantic elements,
+    /// content container classes, substantial paragraphs).
+    /// </summary>
+    /// <param name="html">Raw HTML content.</param>
+    /// <returns>True if the page appears to be an article.</returns>
+    public static bool IsArticlePage(string html)
+    {
+        return IsArticleCore(html);
+    }
+
     public bool IsArticle(string html)
+    {
+        return IsArticleCore(html);
+    }
+
+    private static bool IsArticleCore(string html)
     {
         var lowerHtml = html.ToLowerInvariant();
 
@@ -226,12 +291,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return true;
         }
 
-        // Check for common article indicators in classes or IDs
-        if (ArticleIndicators.Any(indicator =>
-            lowerHtml.Contains($"class=\"{indicator}") ||
-            lowerHtml.Contains($"class='{indicator}") ||
-            lowerHtml.Contains($"id=\"{indicator}") ||
-            lowerHtml.Contains($"id='{indicator}")))
+        // Check for common article indicators in classes or IDs (exact match via DOM)
+        if (HasArticleIndicatorElements(html))
         {
             return true;
         }
@@ -295,6 +356,29 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 {
                     return true;
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks whether the HTML contains elements whose class or id exactly matches
+    /// one of the <see cref="ArticleIndicators"/>. Uses DOM parsing so that
+    /// "article-list" or "navigation-article" do NOT match the indicator "article".
+    /// </summary>
+    private static bool HasArticleIndicatorElements(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        foreach (var indicator in ArticleIndicators)
+        {
+            // XPath: element whose space-separated class list contains the exact indicator word
+            var xpath = $".//*[contains(concat(' ', normalize-space(@class), ' '), ' {indicator} ') or translate(@id, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')='{indicator}']";
+            if (doc.DocumentNode.SelectSingleNode(xpath) != null)
+            {
+                return true;
             }
         }
 

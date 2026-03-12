@@ -5,8 +5,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Entities.Collections;
+using TermReader.Domain.Entities.Credentials;
+using TermReader.Domain.Enums;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
@@ -250,6 +253,10 @@ internal static class SearchCommandHandler
                 await HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return true;
 
+            case "cred" or "credentials":
+                await HandleCredentialCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                return true;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
@@ -311,9 +318,30 @@ internal static class SearchCommandHandler
     {
         if (string.IsNullOrWhiteSpace(subcommand))
         {
-            var stats = ctx.PageCache.GetStats();
+            var stats = EnrichCacheStats(ctx);
+            var diskPart = stats.DiskCacheFileCount > 0
+                ? $" | Disk: {stats.DiskCacheFileCount} files, {stats.FormattedDiskSize}/{stats.FormattedMaxDiskSize}"
+                : string.Empty;
+            var articlePart = stats.ArticleCacheCount > 0
+                ? $" | Articles: {stats.ArticleCacheCount}"
+                : string.Empty;
             ctx.NavigationService.SetStatusMessage(
-                $"Cache: {stats.EntryCount} pages, {stats.FormattedSize} / {stats.FormattedMaxSize}, {stats.HitRatePercent}% hit rate");
+                $"Cache: {stats.EntryCount} pages ({stats.UsagePercent}%) | {stats.HitRatePercent}% hit rate{diskPart}{articlePart}");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        if (string.Equals(subcommand, "info", StringComparison.OrdinalIgnoreCase))
+        {
+            var stats = EnrichCacheStats(ctx);
+            var lines = new List<string>
+            {
+                $"Memory: {stats.EntryCount} pages, {stats.FormattedSize}/{stats.FormattedMaxSize} ({stats.UsagePercent}%)",
+                $"Disk: {stats.DiskCacheFileCount} files, {stats.FormattedDiskSize}/{stats.FormattedMaxDiskSize} ({stats.DiskUsagePercent}%)",
+                $"Articles: {stats.ArticleCacheCount} cached",
+                $"Hit rate: {stats.HitRatePercent}% ({stats.HitCount} hits, {stats.MissCount} misses)"
+            };
+            ctx.NavigationService.SetStatusMessage(string.Join(" | ", lines));
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
@@ -343,6 +371,16 @@ internal static class SearchCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    /// <summary>
+    /// Enriches page cache stats with article cache count from the preload service.
+    /// </summary>
+    private static CacheStats EnrichCacheStats(CommandContext ctx)
+    {
+        var stats = ctx.PageCache.GetStats();
+        var articleCount = ctx.PreloadService.GetArticleCachedUrls().Count;
+        return stats with { ArticleCacheCount = articleCount };
     }
 
     private static async Task HandleSetCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
@@ -612,6 +650,321 @@ internal static class SearchCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Failed to remove service account key");
             ctx.NavigationService.SetStatusMessage("Failed to clear service account key");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCredentialCommand(
+        CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
+    {
+        var sub = subcommand?.Trim().ToLowerInvariant();
+
+        // Parse subcommand and optional trailing argument (e.g. "rm nytimes.com")
+        string? subArg = null;
+        if (sub != null)
+        {
+            var subParts = sub.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            sub = subParts[0];
+            subArg = subParts.Length > 1 ? subParts[1].Trim() : null;
+        }
+
+        switch (sub)
+        {
+            case "add":
+                await HandleCredentialAdd(ctx, options, ct);
+                break;
+
+            case "remove" or "rm":
+                await HandleCredentialRemove(ctx, subArg, options, ct);
+                break;
+
+            case "test":
+                await HandleCredentialTest(ctx, subArg, options, ct);
+                break;
+
+            case "edit":
+                await HandleCredentialEdit(ctx, subArg, options, ct);
+                break;
+
+            default:
+                await HandleCredentialList(ctx, options, ct);
+                break;
+        }
+    }
+
+    private static async Task HandleCredentialList(
+        CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
+            var credentials = await repo.GetAllAsync(ct);
+
+            if (credentials.Count == 0)
+            {
+                ctx.NavigationService.SetStatusMessage(
+                    "No stored credentials. Use :cred add to add one.");
+            }
+            else
+            {
+                var list = string.Join(", ", credentials.Select(c =>
+                    $"{c.Domain} ({c.CredentialType})"));
+                ctx.NavigationService.SetStatusMessage($"Stored credentials: {list}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to list credentials");
+            ctx.NavigationService.SetStatusMessage("Failed to list credentials");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCredentialAdd(
+        CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            var domain = await ctx.InputHandler.PromptForInputAsync("Domain (e.g., nytimes.com): ", ct);
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var username = await ctx.InputHandler.PromptForInputAsync("Username/email: ", ct);
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var password = await ctx.InputHandler.PromptForInputAsync("Password: ", ct, isSecret: true);
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var loginUrl = await ctx.InputHandler.PromptForInputAsync("Login URL (Enter to skip): ", ct);
+            var usernameSelector = await ctx.InputHandler.PromptForInputAsync("Username selector (Enter to skip): ", ct);
+            var passwordSelector = await ctx.InputHandler.PromptForInputAsync("Password selector (Enter to skip): ", ct);
+            var submitSelector = await ctx.InputHandler.PromptForInputAsync("Submit selector (Enter to skip): ", ct);
+
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var encryption = scope.ServiceProvider.GetRequiredService<ICookieEncryptionService>();
+            var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var encryptedUsername = encryption.Encrypt(username.Trim());
+            var encryptedPassword = encryption.Encrypt(password.Trim());
+
+            var credential = SiteCredential.Create(
+                domain.Trim(),
+                CredentialType.FormLogin,
+                encryptedUsername,
+                encryptedPassword,
+                usernameSelector?.Trim(),
+                passwordSelector?.Trim(),
+                submitSelector?.Trim(),
+                loginUrl?.Trim());
+
+            await repo.AddAsync(credential, ct);
+            await unitOfWork.SaveChangesAsync(ct);
+
+            ctx.NavigationService.SetStatusMessage($"Credential saved for {credential.Domain}");
+            ctx.Logger.LogInformation("Added credential for domain: {Domain}", credential.Domain);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to add credential");
+            ctx.NavigationService.SetStatusMessage($"Failed to add credential: {ex.Message}");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCredentialRemove(
+        CommandContext ctx, string? domainArg, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            var domain = domainArg;
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to remove: ", ct);
+            }
+
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            domain = domain.Trim().ToLowerInvariant();
+
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var credential = await repo.GetByDomainAsync(domain, ct);
+            if (credential == null)
+            {
+                ctx.NavigationService.SetStatusMessage($"No credential found for {domain}");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            await repo.DeleteAsync(credential.Id, ct);
+            await unitOfWork.SaveChangesAsync(ct);
+
+            ctx.NavigationService.SetStatusMessage($"Credential removed for {domain}");
+            ctx.Logger.LogInformation("Removed credential for domain: {Domain}", domain);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to remove credential");
+            ctx.NavigationService.SetStatusMessage($"Failed to remove credential: {ex.Message}");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCredentialTest(
+        CommandContext ctx, string? domainArg, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            var domain = domainArg;
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to test: ", ct);
+            }
+
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            domain = domain.Trim().ToLowerInvariant();
+
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var autoLogin = scope.ServiceProvider.GetRequiredService<IAutoLoginService>();
+
+            ctx.NavigationService.SetStatusMessage($"Testing login for {domain}...");
+            await ctx.RenderCurrentPageAsync(options, ct);
+
+            var result = await autoLogin.LoginAsync(domain, ct);
+
+            if (result.Success)
+            {
+                ctx.NavigationService.SetStatusMessage($"Login succeeded for {domain}");
+            }
+            else if (result.ManualLoginRequired)
+            {
+                ctx.NavigationService.SetStatusMessage(
+                    $"Manual login required for {domain}: {result.ErrorMessage}");
+            }
+            else
+            {
+                ctx.NavigationService.SetStatusMessage(
+                    $"Login failed for {domain}: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to test credential");
+            ctx.NavigationService.SetStatusMessage($"Login test failed: {ex.Message}");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleCredentialEdit(
+        CommandContext ctx, string? domainArg, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            var domain = domainArg;
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to edit: ", ct);
+            }
+
+            if (string.IsNullOrWhiteSpace(domain))
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            domain = domain.Trim().ToLowerInvariant();
+
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
+            var encryption = scope.ServiceProvider.GetRequiredService<ICookieEncryptionService>();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var credential = await repo.GetByDomainAsync(domain, ct);
+            if (credential == null)
+            {
+                ctx.NavigationService.SetStatusMessage($"No credential found for {domain}");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            // Decrypt current values to show as context
+            var currentUsername = encryption.Decrypt(credential.EncryptedUsername);
+
+            var newUsername = await ctx.InputHandler.PromptForInputAsync(
+                $"Username [{currentUsername}]: ", ct);
+            var newPassword = await ctx.InputHandler.PromptForInputAsync(
+                "New password (Enter to keep): ", ct, isSecret: true);
+            var newLoginUrl = await ctx.InputHandler.PromptForInputAsync(
+                $"Login URL [{credential.LoginUrl ?? "none"}]: ", ct);
+            var newUsernameSelector = await ctx.InputHandler.PromptForInputAsync(
+                $"Username selector [{credential.UsernameSelector ?? "none"}]: ", ct);
+            var newPasswordSelector = await ctx.InputHandler.PromptForInputAsync(
+                $"Password selector [{credential.PasswordSelector ?? "none"}]: ", ct);
+            var newSubmitSelector = await ctx.InputHandler.PromptForInputAsync(
+                $"Submit selector [{credential.SubmitSelector ?? "none"}]: ", ct);
+
+            var usernameToEncrypt = string.IsNullOrWhiteSpace(newUsername)
+                ? currentUsername : newUsername.Trim();
+            var encryptedUsername = encryption.Encrypt(usernameToEncrypt);
+
+            byte[] encryptedPassword;
+            if (string.IsNullOrWhiteSpace(newPassword))
+            {
+                // Keep existing password
+                encryptedPassword = credential.EncryptedPassword;
+            }
+            else
+            {
+                encryptedPassword = encryption.Encrypt(newPassword.Trim());
+            }
+
+            credential.Update(
+                encryptedUsername,
+                encryptedPassword,
+                string.IsNullOrWhiteSpace(newUsernameSelector) ? credential.UsernameSelector : newUsernameSelector.Trim(),
+                string.IsNullOrWhiteSpace(newPasswordSelector) ? credential.PasswordSelector : newPasswordSelector.Trim(),
+                string.IsNullOrWhiteSpace(newSubmitSelector) ? credential.SubmitSelector : newSubmitSelector.Trim(),
+                string.IsNullOrWhiteSpace(newLoginUrl) ? credential.LoginUrl : newLoginUrl.Trim());
+
+            await repo.UpdateAsync(credential, ct);
+            await unitOfWork.SaveChangesAsync(ct);
+
+            ctx.NavigationService.SetStatusMessage($"Credential updated for {domain}");
+            ctx.Logger.LogInformation("Updated credential for domain: {Domain}", domain);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to edit credential");
+            ctx.NavigationService.SetStatusMessage($"Failed to edit credential: {ex.Message}");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);

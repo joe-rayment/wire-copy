@@ -108,6 +108,15 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 TtsConfigHash = _ttsConfigHash,
             };
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve cached audio for {Url}", url);
+            return null;
+        }
         finally
         {
             _lock.Release();

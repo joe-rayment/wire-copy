@@ -34,6 +34,11 @@ internal sealed class DiskCacheStore
     }
 
     /// <summary>
+    /// Gets the configured maximum disk cache size in bytes.
+    /// </summary>
+    public long MaxDiskSizeBytes => _maxDiskSizeBytes;
+
+    /// <summary>
     /// Loads all non-expired cache entries from disk.
     /// Corrupt or expired files are deleted during load.
     /// </summary>
@@ -234,6 +239,34 @@ internal sealed class DiskCacheStore
         {
             _logger.LogWarning(ex, "Failed to clear disk cache");
         }
+    }
+
+    /// <summary>
+    /// Gets the number of .json cache files on disk.
+    /// </summary>
+    public int GetFileCount()
+    {
+        if (!Directory.Exists(_cacheDirectory))
+        {
+            return 0;
+        }
+
+        return Directory.GetFiles(_cacheDirectory, "*.json").Length;
+    }
+
+    /// <summary>
+    /// Gets the total size of all .json cache files on disk in bytes.
+    /// </summary>
+    public long GetTotalSizeBytes()
+    {
+        if (!Directory.Exists(_cacheDirectory))
+        {
+            return 0;
+        }
+
+        return new DirectoryInfo(_cacheDirectory)
+            .EnumerateFiles("*.json")
+            .Sum(f => f.Length);
     }
 
     /// <summary>

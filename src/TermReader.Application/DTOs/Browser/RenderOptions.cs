@@ -61,4 +61,10 @@ public record RenderOptions
     /// Mapped to PodcastCtaState enum in the rendering layer.
     /// </summary>
     public int PodcastButtonState { get; init; }
+
+    /// <summary>
+    /// Memory cache usage percentage (0-100). Used by the status bar to show
+    /// a warning indicator when the cache is nearly full.
+    /// </summary>
+    public double CacheUsagePercent { get; init; }
 }

@@ -1338,4 +1338,137 @@ public class BackgroundPreloadServiceTests
     }
 
     #endregion
+
+    #region Content Validation Before Caching
+
+    /// <summary>
+    /// Generates HTML that looks like an article (has article indicators) with substantial
+    /// extractable content (3+ paragraphs with >50 chars each in a content area).
+    /// </summary>
+    private static string BuildGoodArticleHtml()
+    {
+        var p1 = "This is the first paragraph of the article with plenty of content to read through and understand.";
+        var p2 = "The second paragraph continues the story with additional details and information for readers to enjoy.";
+        var p3 = "A third paragraph wraps up the section with concluding thoughts and final remarks for the audience.";
+        return $@"<html><head><meta property='og:type' content='article' /><title>Good Article</title></head>
+            <body><article>
+                <h1>Good Article Title</h1>
+                <p>{p1}</p>
+                <p>{p2}</p>
+                <p>{p3}</p>
+            </article></body></html>";
+    }
+
+    /// <summary>
+    /// Generates HTML that looks like an article (has article indicators) but has NO
+    /// extractable content — only navigation/boilerplate text. Simulates a JS-heavy
+    /// site that returns a shell page via HTTP.
+    /// </summary>
+    private static string BuildJsShellArticleHtml()
+    {
+        // Has article indicators (og:type=article) and enough total words in nav/header
+        // to pass HasSufficientContent, but no actual article paragraphs in content areas.
+        return @"<html><head><meta property='og:type' content='article' /><title>JS Shell</title></head>
+            <body>
+                <nav>
+                    <a href='/section1'>Section 1</a>
+                    <a href='/section2'>Section 2</a>
+                    <a href='/section3'>Section 3</a>
+                    <a href='/section4'>Section 4</a>
+                    <a href='/section5'>Section 5</a>
+                </nav>
+                <div id='app-root'>
+                    <!-- Content will be rendered by JavaScript -->
+                </div>
+                <footer>
+                    <p>Copyright 2026 Example News. All rights reserved. Terms of Service apply to all content.</p>
+                    <p>Contact us at editor@example.com for inquiries about subscriptions and advertising rates.</p>
+                </footer>
+            </body></html>";
+    }
+
+    [Fact]
+    public void IsArticlePage_GoodArticleHtml_ReturnsTrue()
+    {
+        var html = BuildGoodArticleHtml();
+        ReadableContentExtractor.IsArticlePage(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsArticlePage_JsShellArticleHtml_ReturnsTrue()
+    {
+        // Even the shell page has article indicators (og:type=article)
+        var html = BuildJsShellArticleHtml();
+        ReadableContentExtractor.IsArticlePage(html).Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasExtractableContent_GoodArticleHtml_ReturnsTrue()
+    {
+        var html = BuildGoodArticleHtml();
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
+            "HTML with article tag and 3+ substantial paragraphs should have extractable content");
+    }
+
+    [Fact]
+    public void HasExtractableContent_JsShellArticleHtml_ReturnsFalse()
+    {
+        var html = BuildJsShellArticleHtml();
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeFalse(
+            "JS shell page with only nav/footer text should NOT have extractable content");
+    }
+
+    [Fact]
+    public void HasExtractableContent_EmptyHtml_ReturnsFalse()
+    {
+        ReadableContentExtractor.HasExtractableContent("").Should().BeFalse();
+        ReadableContentExtractor.HasExtractableContent("   ").Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasExtractableContent_NonArticlePlainPage_ReturnsFalse()
+    {
+        // Simple page with no article structure
+        var html = "<html><body><p>Just some text</p></body></html>";
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeFalse(
+            "a page without content area selectors and too few paragraphs has no extractable content");
+    }
+
+    [Fact]
+    public void HasExtractableContent_ArticleWithEntryContent_ReturnsTrue()
+    {
+        var p1 = "This is the first paragraph of the article with plenty of content to read through carefully.";
+        var p2 = "The second paragraph continues with additional details and information for readers to enjoy fully.";
+        var p3 = "A third paragraph wraps up the section with concluding thoughts and final remarks for everyone.";
+        var html = $@"<html><body>
+            <div class='entry-content'>
+                <p>{p1}</p>
+                <p>{p2}</p>
+                <p>{p3}</p>
+            </div>
+        </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
+            "page with entry-content div containing 3+ substantial paragraphs should be extractable");
+    }
+
+    [Fact]
+    public void HasExtractableContent_ArticleBodyInMainRole_ReturnsTrue()
+    {
+        var p1 = "This is the first paragraph of the article with plenty of content to read through carefully.";
+        var p2 = "The second paragraph continues with additional details and information for readers to enjoy fully.";
+        var p3 = "A third paragraph wraps up the section with concluding thoughts and final remarks for everyone.";
+        var html = $@"<html><body>
+            <div role='main'>
+                <p>{p1}</p>
+                <p>{p2}</p>
+                <p>{p3}</p>
+            </div>
+        </body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
+            "page with role=main containing 3+ substantial paragraphs should be extractable");
+    }
+
+    #endregion
 }

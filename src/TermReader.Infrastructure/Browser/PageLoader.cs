@@ -406,6 +406,16 @@ public class PageLoader : IPageLoader
                 return PageLoadResult.Failure("Empty article shell");
             }
 
+            // For pages that look like articles, verify they have extractable content.
+            // JS-heavy sites may return a shell with navigation/header text (passing
+            // word-count checks) but no real article body that can be rendered.
+            if (ReadableContentExtractor.IsArticlePage(html) &&
+                !ReadableContentExtractor.HasExtractableContent(html))
+            {
+                _logger.LogDebug("HTTP response looks like an article but has no extractable content, will use browser fallback");
+                return PageLoadResult.Failure("No extractable content");
+            }
+
             var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
             var metadata = ExtractMetadata(html, finalUrl);
 

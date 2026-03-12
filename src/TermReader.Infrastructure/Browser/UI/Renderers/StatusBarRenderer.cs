@@ -24,7 +24,7 @@ internal class StatusBarRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0, PreloadProgress? cacheProgress = null)
+    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0, PreloadProgress? cacheProgress = null, double cacheUsagePercent = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
@@ -38,12 +38,13 @@ internal class StatusBarRenderer
         var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
         var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
         var cacheBadge = FormatCacheBadge(context, mode, p, cacheProgress);
+        var cacheWarning = FormatCacheWarning(cacheUsagePercent, p);
 
         var statusMsg = !string.IsNullOrEmpty(context.StatusMessage)
             ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
             : string.Empty;
 
-        var statusLine = $"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{cacheBadge}{statusMsg}";
+        var statusLine = $"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{cacheBadge}{cacheWarning}{statusMsg}";
 
         // Truncate the visible content if it would wrap on narrow terminals
         if (RenderHelpers.GetDisplayWidth(statusLine) > width - 1)
@@ -130,6 +131,17 @@ internal class StatusBarRenderer
         }
 
         return string.Empty;
+    }
+
+    private static string FormatCacheWarning(double usagePercent, ThemePalette p)
+    {
+        if (usagePercent < 90)
+        {
+            return string.Empty;
+        }
+
+        // Use the warning color (PromptFg) for high cache usage
+        return $" {p.PromptFg.AnsiFg}[cache {usagePercent:F0}%]{Reset}";
     }
 
     private static string FormatHints(ThemePalette p, params (string Key, string Action)[] hints)
