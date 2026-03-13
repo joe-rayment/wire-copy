@@ -23,6 +23,17 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class SearchCommandHandler
 {
+    private static readonly Dictionary<string, (string LoginUrl, List<LoginStep> Steps)> KnownSiteDefaults = new()
+    {
+        ["nytimes.com"] = (
+            "https://myaccount.nytimes.com/auth/login",
+            new List<LoginStep>
+            {
+                new("#email", StepValueType.Username, "button[data-testid=submit-email]"),
+                new("#password", StepValueType.Password, "button[type=submit]"),
+            }),
+    };
+
     public static async Task HandleSearch(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         if (IsCollectionView(ctx))
@@ -727,17 +738,6 @@ internal static class SearchCommandHandler
 
         await ctx.RenderCurrentPageAsync(options, ct);
     }
-
-    private static readonly Dictionary<string, (string LoginUrl, List<LoginStep> Steps)> KnownSiteDefaults = new()
-    {
-        ["nytimes.com"] = (
-            "https://myaccount.nytimes.com/auth/login",
-            new List<LoginStep>
-            {
-                new("#email", StepValueType.Username, "button[data-testid=submit-email]"),
-                new("#password", StepValueType.Password, "button[type=submit]"),
-            }),
-    };
 
     private static async Task HandleCredentialAdd(
         CommandContext ctx, RenderOptions options, CancellationToken ct)

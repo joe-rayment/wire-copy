@@ -359,7 +359,7 @@ public class BrowserOrchestrator : IBrowserService
         if (!page.HasReadableContent() &&
             loadResult.FetchMethod == FetchMethod.Selenium &&
             _browserConfig.Headless &&
-            PageLoader.IsBotChallengePage(loadResult.Html))
+            PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
         {
             _logger.LogWarning(
                 "Bot challenge detected in headless mode, retrying headed: {Url}",
@@ -549,7 +549,7 @@ public class BrowserOrchestrator : IBrowserService
                 else
                 {
                     // Timer elapsed — check for progress update
-                    await CheckAndRenderProgressAsync(options, cancellationToken);
+                    await CheckAndRenderProgressAsync(cancellationToken);
                 }
             }
         }
@@ -816,16 +816,17 @@ public class BrowserOrchestrator : IBrowserService
     private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, string requestedUrl, CancellationToken cancellationToken)
     {
         var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
+
         // Use the final URL after redirects for Page.Url so that status bar,
         // refresh, and cache lookups all use the correct URL.
         var finalUrl = loadResult.Url ?? requestedUrl;
         var page = Page.Create(finalUrl, loadResult.Html, metadata);
 
-        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
+        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
         var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
         page.SetLinkTree(tree);
 
-        var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+        var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
         if (readable != null)
         {
             page.SetReadableContent(readable);
@@ -1143,7 +1144,7 @@ public class BrowserOrchestrator : IBrowserService
                             var seleniumCookies = driver.Manage().Cookies.AllCookies;
                             var storedCookies = seleniumCookies.Select(c =>
                                 new Application.Interfaces.StoredCookie(
-                                    c.Name, c.Value, c.Domain, c.Path, c.Expiry)).ToList();
+                                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty, c.Expiry)).ToList();
 
                             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
                             _logger.LogInformation(
@@ -1601,7 +1602,7 @@ public class BrowserOrchestrator : IBrowserService
     /// since the last progress-driven render (debounce to at most once per second).
     /// If so, re-renders the current page to update the status bar.
     /// </summary>
-    private async Task CheckAndRenderProgressAsync(RenderOptions options, CancellationToken cancellationToken)
+    private async Task CheckAndRenderProgressAsync(CancellationToken cancellationToken)
     {
         if (!_progressDirty)
         {

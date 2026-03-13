@@ -234,7 +234,11 @@ public class AutoLoginService : IAutoLoginService
 
             _logger.LogDebug(
                 "Executing login step {Step}/{Total} for {Domain}: field={Selector}, type={Type}",
-                stepNum, steps.Count, credential.Domain, step.FieldSelector, step.ValueType);
+                stepNum,
+                steps.Count,
+                credential.Domain,
+                step.FieldSelector,
+                step.ValueType);
 
             // Determine which value to fill
             var value = step.ValueType == StepValueType.Username ? username : password;
@@ -305,8 +309,8 @@ public class AutoLoginService : IAutoLoginService
                 new StoredCookie(
                     c.Name,
                     c.Value,
-                    c.Domain,
-                    c.Path,
+                    c.Domain ?? string.Empty,
+                    c.Path ?? string.Empty,
                     c.Expiry)).ToList();
 
             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);

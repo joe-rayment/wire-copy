@@ -481,6 +481,33 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return task;
     }
 
+    private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
+
+    private static int CountWords(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        var wordCount = 0;
+        var inWord = false;
+        foreach (var c in text)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                wordCount++;
+            }
+        }
+
+        return wordCount;
+    }
+
     private async Task<CacheAnalysis> AnalyzeCacheStatusCoreAsync(
         Collection collection,
         IProgress<ContentExtractionProgress>? progress,
@@ -570,32 +597,5 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
         _pendingAnalysisTask = null;
         _pendingAnalysisCollection = null;
-    }
-
-    private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
-
-    private static int CountWords(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return 0;
-        }
-
-        var wordCount = 0;
-        var inWord = false;
-        foreach (var c in text)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                inWord = false;
-            }
-            else if (!inWord)
-            {
-                inWord = true;
-                wordCount++;
-            }
-        }
-
-        return wordCount;
     }
 }
