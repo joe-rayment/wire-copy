@@ -7,6 +7,7 @@ using OpenQA.Selenium.Support.UI;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums;
+using TermReader.Domain.ValueObjects.Credentials;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -93,6 +94,14 @@ public class AutoLoginService : IAutoLoginService
             // 6. Handle form login
             if (credential.CredentialType == CredentialType.FormLogin)
             {
+                // Multi-step login flow (e.g. NYT: email → Continue → password → Log In)
+                if (credential.IsMultiStep)
+                {
+                    var steps = credential.GetLoginSteps()!;
+                    return await TryMultiStepLoginAsync(driver, credential, username, password, steps, cancellationToken);
+                }
+
+                // Legacy single-step login
                 if (string.IsNullOrEmpty(credential.UsernameSelector) ||
                     string.IsNullOrEmpty(credential.PasswordSelector))
                 {
@@ -205,6 +214,75 @@ public class AutoLoginService : IAutoLoginService
         await CaptureBrowserCookiesAsync(driver, credential.Domain, cancellationToken);
 
         _logger.LogInformation("Login completed for {Domain}, navigated to {Url}", credential.Domain, currentUrl);
+        return AutoLoginResult.Succeeded();
+    }
+
+    private async Task<AutoLoginResult> TryMultiStepLoginAsync(
+        IWebDriver driver,
+        Domain.Entities.Credentials.SiteCredential credential,
+        string username,
+        string password,
+        List<LoginStep> steps,
+        CancellationToken cancellationToken)
+    {
+        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var stepNum = i + 1;
+
+            _logger.LogDebug(
+                "Executing login step {Step}/{Total} for {Domain}: field={Selector}, type={Type}",
+                stepNum, steps.Count, credential.Domain, step.FieldSelector, step.ValueType);
+
+            // Determine which value to fill
+            var value = step.ValueType == StepValueType.Username ? username : password;
+
+            // Wait for and fill the input field
+            var field = wait.Until(d =>
+                d.FindElement(By.CssSelector(step.FieldSelector)));
+            field.Clear();
+            field.SendKeys(value);
+
+            await Task.Delay(500, cancellationToken); // Human-like delay
+
+            // Submit: click button or press Enter
+            if (!string.IsNullOrEmpty(step.SubmitSelector))
+            {
+                var submitButton = wait.Until(d =>
+                    d.FindElement(By.CssSelector(step.SubmitSelector)));
+                submitButton.Click();
+            }
+            else
+            {
+                field.SendKeys(Keys.Return);
+            }
+
+            // Wait for the page to transition between steps
+            await Task.Delay(2000, cancellationToken);
+
+            // After each step (except the last), check for errors
+            if (stepNum < steps.Count && HasLoginErrorOnPage(driver))
+            {
+                return AutoLoginResult.Failed($"Login failed at step {stepNum}: error detected on page");
+            }
+        }
+
+        // Final wait for redirect after last step
+        await Task.Delay(2000, cancellationToken);
+
+        var currentUrl = driver.Url;
+
+        if (IsStillOnLoginPage(currentUrl) && HasLoginErrorOnPage(driver))
+        {
+            return AutoLoginResult.Failed("Login failed: invalid credentials");
+        }
+
+        // Capture and persist browser cookies
+        await CaptureBrowserCookiesAsync(driver, credential.Domain, cancellationToken);
+
+        _logger.LogInformation("Multi-step login completed for {Domain}, navigated to {Url}", credential.Domain, currentUrl);
         return AutoLoginResult.Succeeded();
     }
 

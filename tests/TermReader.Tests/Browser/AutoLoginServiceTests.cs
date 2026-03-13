@@ -10,6 +10,7 @@ using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Credentials;
 using TermReader.Domain.Enums;
+using TermReader.Domain.ValueObjects.Credentials;
 using TermReader.Infrastructure.Browser;
 using Xunit;
 
@@ -79,7 +80,8 @@ public class AutoLoginServiceTests
         string? usernameSelector = "#email",
         string? passwordSelector = "#password",
         string? submitSelector = "#submit",
-        string? loginUrl = null)
+        string? loginUrl = null,
+        List<LoginStep>? loginSteps = null)
     {
         return SiteCredential.Create(
             domain,
@@ -89,7 +91,27 @@ public class AutoLoginServiceTests
             usernameSelector,
             passwordSelector,
             submitSelector,
-            loginUrl);
+            loginUrl,
+            loginSteps);
+    }
+
+    private static SiteCredential CreateMultiStepCredential(
+        string domain = "nytimes.com",
+        string loginUrl = "https://myaccount.nytimes.com/auth/login")
+    {
+        var steps = new List<LoginStep>
+        {
+            new("#email", StepValueType.Username, "button[data-testid=submit-email]"),
+            new("#password", StepValueType.Password, "button[type=submit]"),
+        };
+
+        return CreateCredential(
+            domain: domain,
+            loginUrl: loginUrl,
+            usernameSelector: null,
+            passwordSelector: null,
+            submitSelector: null,
+            loginSteps: steps);
     }
 
     private void SetupSuccessfulLogin(SiteCredential credential)
@@ -541,6 +563,180 @@ public class AutoLoginServiceTests
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Unsupported credential type");
+    }
+
+    #endregion
+
+    #region Login - Multi-Step Login
+
+    [Fact]
+    public async Task Login_ReturnsSuccess_WhenMultiStepLoginCompletes()
+    {
+        var credential = CreateMultiStepCredential();
+        SetupMultiStepLogin(credential);
+
+        var result = await _service.LoginAsync("nytimes.com");
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Login_FillsEmailThenPassword_InMultiStepFlow()
+    {
+        var credential = CreateMultiStepCredential();
+        var emailField = Substitute.For<IWebElement>();
+        var passwordField = Substitute.For<IWebElement>();
+        var continueButton = Substitute.For<IWebElement>();
+        var submitButton = Substitute.For<IWebElement>();
+
+        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
+
+        await _service.LoginAsync("nytimes.com");
+
+        // Step 1: email
+        emailField.Received().Clear();
+        emailField.Received().SendKeys("user@example.com");
+        continueButton.Received().Click();
+
+        // Step 2: password
+        passwordField.Received().Clear();
+        passwordField.Received().SendKeys("s3cret");
+        submitButton.Received().Click();
+    }
+
+    [Fact]
+    public async Task Login_ReturnsFailed_WhenMultiStepLoginDetectsErrorMidFlow()
+    {
+        var credential = CreateMultiStepCredential();
+        var emailField = Substitute.For<IWebElement>();
+        var passwordField = Substitute.For<IWebElement>();
+        var continueButton = Substitute.For<IWebElement>();
+        var submitButton = Substitute.For<IWebElement>();
+
+        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
+
+        // After step 1, page shows error (still on login page with error text)
+        _webDriver.PageSource.Returns(
+            "<html><body>Invalid email. Please try again.</body></html>");
+
+        var result = await _service.LoginAsync("nytimes.com");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("step 1");
+    }
+
+    [Fact]
+    public async Task Login_ReturnsFailed_WhenMultiStepStaysOnLoginPage()
+    {
+        var credential = CreateMultiStepCredential();
+        var emailField = Substitute.For<IWebElement>();
+        var passwordField = Substitute.For<IWebElement>();
+        var continueButton = Substitute.For<IWebElement>();
+        var submitButton = Substitute.For<IWebElement>();
+
+        _credentialRepo.GetByDomainAsync(credential.Domain, Arg.Any<CancellationToken>())
+            .Returns(credential);
+        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
+        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
+
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
+            .Returns(emailField);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
+            .Returns(passwordField);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("submit-email")))
+            .Returns(continueButton);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("button[type=submit]")))
+            .Returns(submitButton);
+
+        _cookieJar.AllCookies.Returns(
+            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
+
+        // No error between steps, but stays on login page with error after all steps complete
+        var pageSourceCalls = 0;
+        _webDriver.PageSource.Returns(_ =>
+        {
+            pageSourceCalls++;
+            // First call (inter-step check): no error
+            // Later calls (final check): error
+            return pageSourceCalls <= 1
+                ? "<html><body>Enter your password</body></html>"
+                : "<html><body>Invalid username or password</body></html>";
+        });
+        _webDriver.Url.Returns("https://myaccount.nytimes.com/auth/login");
+
+        var result = await _service.LoginAsync("nytimes.com");
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("invalid credentials");
+    }
+
+    [Fact]
+    public async Task Login_PressesEnter_WhenMultiStepHasNoSubmitSelector()
+    {
+        var steps = new List<LoginStep>
+        {
+            new("#email", StepValueType.Username), // no submit selector
+        };
+        var credential = CreateCredential(
+            domain: "example.com",
+            loginSteps: steps,
+            usernameSelector: null,
+            passwordSelector: null,
+            submitSelector: null);
+
+        var emailField = Substitute.For<IWebElement>();
+        _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
+            .Returns(credential);
+        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
+        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
+
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
+            .Returns(emailField);
+        _webDriver.Url.Returns("https://example.com/dashboard");
+        _webDriver.PageSource.Returns("<html><body>Dashboard</body></html>");
+        _cookieJar.AllCookies.Returns(
+            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
+
+        await _service.LoginAsync("example.com");
+
+        emailField.Received().SendKeys(Keys.Return);
+    }
+
+    private void SetupMultiStepLogin(SiteCredential credential)
+    {
+        var emailField = Substitute.For<IWebElement>();
+        var passwordField = Substitute.For<IWebElement>();
+        var continueButton = Substitute.For<IWebElement>();
+        var submitButton = Substitute.For<IWebElement>();
+
+        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
+    }
+
+    private void SetupMultiStepElements(
+        SiteCredential credential,
+        IWebElement emailField,
+        IWebElement passwordField,
+        IWebElement continueButton,
+        IWebElement submitButton)
+    {
+        _credentialRepo.GetByDomainAsync(credential.Domain, Arg.Any<CancellationToken>())
+            .Returns(credential);
+        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
+        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
+
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
+            .Returns(emailField);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
+            .Returns(passwordField);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("submit-email")))
+            .Returns(continueButton);
+        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("button[type=submit]")))
+            .Returns(submitButton);
+
+        _webDriver.Url.Returns("https://www.nytimes.com");
+        _webDriver.PageSource.Returns("<html><body>NYT Home</body></html>");
+        _cookieJar.AllCookies.Returns(
+            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
     }
 
     #endregion

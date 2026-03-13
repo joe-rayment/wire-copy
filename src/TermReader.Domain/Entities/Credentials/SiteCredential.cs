@@ -1,6 +1,8 @@
 // Educational and personal use only.
 
+using System.Text.Json;
 using TermReader.Domain.Enums;
+using TermReader.Domain.ValueObjects.Credentials;
 
 namespace TermReader.Domain.Entities.Credentials;
 
@@ -52,6 +54,12 @@ public class SiteCredential
     public string? LoginUrl { get; private set; }
 
     /// <summary>
+    /// JSON-serialized list of login steps for multi-step login flows.
+    /// When non-null, overrides UsernameSelector/PasswordSelector/SubmitSelector.
+    /// </summary>
+    public string? LoginStepsJson { get; private set; }
+
+    /// <summary>
     /// Timestamp when the credential was created.
     /// </summary>
     public DateTime CreatedAt { get; private set; }
@@ -61,6 +69,24 @@ public class SiteCredential
     /// </summary>
     public DateTime UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// Gets the deserialized login steps, or null if not configured.
+    /// </summary>
+    public List<LoginStep>? GetLoginSteps()
+    {
+        if (string.IsNullOrEmpty(LoginStepsJson))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<List<LoginStep>>(LoginStepsJson);
+    }
+
+    /// <summary>
+    /// Returns true when this credential uses a multi-step login flow.
+    /// </summary>
+    public bool IsMultiStep => !string.IsNullOrEmpty(LoginStepsJson);
+
     private SiteCredential(
         string domain,
         CredentialType credentialType,
@@ -69,7 +95,8 @@ public class SiteCredential
         string? usernameSelector,
         string? passwordSelector,
         string? submitSelector,
-        string? loginUrl)
+        string? loginUrl,
+        string? loginStepsJson = null)
     {
         Id = Guid.NewGuid();
         Domain = domain;
@@ -80,6 +107,7 @@ public class SiteCredential
         PasswordSelector = passwordSelector;
         SubmitSelector = submitSelector;
         LoginUrl = loginUrl;
+        LoginStepsJson = loginStepsJson;
         CreatedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
     }
@@ -103,7 +131,8 @@ public class SiteCredential
         string? usernameSelector = null,
         string? passwordSelector = null,
         string? submitSelector = null,
-        string? loginUrl = null)
+        string? loginUrl = null,
+        List<LoginStep>? loginSteps = null)
     {
         if (string.IsNullOrWhiteSpace(domain))
         {
@@ -120,6 +149,10 @@ public class SiteCredential
             throw new ArgumentException("Encrypted password cannot be null or empty", nameof(encryptedPassword));
         }
 
+        string? loginStepsJson = loginSteps is { Count: > 0 }
+            ? JsonSerializer.Serialize(loginSteps)
+            : null;
+
         return new SiteCredential(
             domain.Trim().ToLowerInvariant(),
             credentialType,
@@ -128,7 +161,8 @@ public class SiteCredential
             usernameSelector?.Trim(),
             passwordSelector?.Trim(),
             submitSelector?.Trim(),
-            loginUrl?.Trim());
+            loginUrl?.Trim(),
+            loginStepsJson);
     }
 
     /// <summary>
@@ -140,7 +174,8 @@ public class SiteCredential
         string? usernameSelector = null,
         string? passwordSelector = null,
         string? submitSelector = null,
-        string? loginUrl = null)
+        string? loginUrl = null,
+        List<LoginStep>? loginSteps = null)
     {
         if (encryptedUsername == null || encryptedUsername.Length == 0)
         {
@@ -158,6 +193,9 @@ public class SiteCredential
         PasswordSelector = passwordSelector?.Trim();
         SubmitSelector = submitSelector?.Trim();
         LoginUrl = loginUrl?.Trim();
+        LoginStepsJson = loginSteps is { Count: > 0 }
+            ? JsonSerializer.Serialize(loginSteps)
+            : null;
         UpdatedAt = DateTime.UtcNow;
     }
 }

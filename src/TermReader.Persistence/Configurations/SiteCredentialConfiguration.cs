@@ -45,6 +45,9 @@ public class SiteCredentialConfiguration : IEntityTypeConfiguration<SiteCredenti
         builder.Property(c => c.LoginUrl)
             .HasMaxLength(2000);
 
+        builder.Property(c => c.LoginStepsJson)
+            .HasMaxLength(4000);
+
         builder.Property(c => c.CreatedAt)
             .IsRequired();
 
