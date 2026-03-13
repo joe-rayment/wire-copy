@@ -28,6 +28,14 @@ public interface ICookieManager
     Task<IReadOnlyList<StoredCookie>> LoadCookiesAsync();
 
     /// <summary>
+    /// Saves cookies to persistent storage, encrypting them for security.
+    /// Used to capture browser cookies after a successful login.
+    /// </summary>
+    /// <param name="cookies">The cookies to save.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    Task SaveCookiesAsync(IReadOnlyList<StoredCookie> cookies, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Clears all stored cookies
     /// </summary>
     /// <returns>True if cookies were cleared, false if no cookies existed</returns>

@@ -443,25 +443,23 @@ public class PageLoader : IPageLoader
             // Wait for page to load
             await WaitForPageLoadAsync(driver, request.TimeoutMs, cancellationToken);
 
-            var finalUrl = driver.Url;
-            var html = driver.PageSource;
-
-            if (IsBotChallengePage(html))
+            if (IsBotChallengePage(driver.PageSource))
             {
                 _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
                 var resolved = await PollForChallengeResolutionAsync(driver, request.Url, cancellationToken);
-                if (resolved != null)
-                {
-                    html = resolved;
-                    finalUrl = driver.Url;
-                    _logger.LogInformation("Bot challenge resolved after polling: {Url}", finalUrl);
-                }
-                else
+                if (resolved == null)
                 {
                     _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
                     return PageLoadResult.Failure("Bot challenge could not be resolved");
                 }
+
+                _logger.LogInformation("Bot challenge resolved after polling: {Url}", driver.Url);
             }
+
+            // Dismiss login/subscription overlays that may cover content
+            DismissOverlays(driver, _logger);
+            var finalUrl = driver.Url;
+            var html = driver.PageSource;
 
             var metadata = ExtractMetadata(html, finalUrl);
 
@@ -516,6 +514,82 @@ public class PageLoader : IPageLoader
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Executes JavaScript to dismiss login, subscription, and cookie overlays
+    /// that cover page content. Also restores scrolling on the body element.
+    /// Called after page load and after bot challenge resolution.
+    /// </summary>
+    internal static void DismissOverlays(IWebDriver driver, ILogger logger)
+    {
+        try
+        {
+            var js = (IJavaScriptExecutor)driver;
+            var removedCount = js.ExecuteScript(@"
+                var removed = 0;
+
+                // Selectors targeting paywall, login, and subscription overlays
+                var selectors = [
+                    '[class*=""gateway""]',
+                    '[class*=""regwall""]',
+                    '[class*=""paywall""]',
+                    '[class*=""subscriber-gate""]',
+                    '[class*=""subscribe-wall""]',
+                    '[class*=""expanded-dock""]',
+                    '[data-testid*=""paywall""]',
+                    '[data-testid*=""inline-message""]',
+                    '[data-testid*=""gateway""]',
+                    '[class*=""css-mcm29f""]'
+                ];
+
+                // Remove matching elements (skip if they contain <article> to avoid
+                // removing content wrappers like NYT's vi-gateway-container)
+                selectors.forEach(function(sel) {
+                    document.querySelectorAll(sel).forEach(function(el) {
+                        if (el.querySelector('article')) return;
+                        // Only remove elements that look like overlays (fixed/sticky position
+                        // or covering significant viewport area)
+                        var style = window.getComputedStyle(el);
+                        var isOverlay = style.position === 'fixed' || style.position === 'sticky'
+                            || style.zIndex > 100
+                            || el.offsetHeight > window.innerHeight * 0.3;
+                        if (isOverlay) {
+                            el.remove();
+                            removed++;
+                        }
+                    });
+                });
+
+                // Remove generic fixed/sticky overlays covering viewport
+                document.querySelectorAll('[class*=""modal""], [class*=""overlay""], [class*=""popup""], [class*=""curtain""], [class*=""backdrop""]').forEach(function(el) {
+                    var style = window.getComputedStyle(el);
+                    if ((style.position === 'fixed' || style.position === 'sticky') && style.display !== 'none') {
+                        el.remove();
+                        removed++;
+                    }
+                });
+
+                // Restore scrolling on body and html
+                document.documentElement.style.overflow = '';
+                document.body.style.overflow = '';
+                document.documentElement.style.overflowY = '';
+                document.body.style.overflowY = '';
+                document.documentElement.classList.remove('noscroll', 'no-scroll', 'modal-open', 'overlay-open');
+                document.body.classList.remove('noscroll', 'no-scroll', 'modal-open', 'overlay-open');
+
+                return removed;
+            ")?.ToString();
+
+            if (int.TryParse(removedCount, out var count) && count > 0)
+            {
+                logger.LogInformation("Dismissed {Count} overlay element(s) from page", count);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to dismiss overlays (non-fatal)");
+        }
     }
 
     private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)

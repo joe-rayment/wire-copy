@@ -207,6 +207,55 @@ public class CookieManager : ICookieManager
         }
     }
 
+    public async Task SaveCookiesAsync(IReadOnlyList<StoredCookie> cookies, CancellationToken cancellationToken = default)
+    {
+        var cookieDataList = cookies.Select(c => new CookieData
+        {
+            Name = c.Name,
+            Value = c.Value,
+            Domain = c.Domain,
+            Path = c.Path,
+            Expiry = c.Expiry,
+        }).ToList();
+
+        var container = new CookieDataContainer
+        {
+            Cookies = cookieDataList,
+            Metadata = new Dictionary<string, string>
+            {
+                ["user_agent"] = "TermReader/1.0",
+                ["last_used"] = DateTime.UtcNow.ToString("O"),
+                ["saved_by"] = "BrowserCookieCapture",
+                ["import_time"] = DateTime.UtcNow.ToString("O"),
+            },
+        };
+
+        var json = JsonSerializer.Serialize(container);
+        var encrypted = _encryptionService.Encrypt(json);
+
+        var storage = new CookieStorage
+        {
+            Version = 2,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(30),
+            EncryptedData = encrypted,
+        };
+
+        var directory = System.IO.Path.GetDirectoryName(_cookieFilePath);
+        if (directory != null && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
+
+        _logger.LogInformation(
+            "Saved {Count} browser cookies (expires: {ExpiryDate})",
+            cookies.Count,
+            storage.ExpiresAt);
+    }
+
     public Task<bool> ClearCookiesAsync()
     {
         try

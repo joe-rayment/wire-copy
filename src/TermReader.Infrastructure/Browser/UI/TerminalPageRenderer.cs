@@ -149,6 +149,17 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ClearRemainingLines();
     }
 
+    public void RenderManualLogin(string url, string domain)
+    {
+        _helpers.Clear();
+        _helpers.WriteLine();
+        _helpers.WriteLine($"  Login required for {domain}. Please log in via the browser window.");
+        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
+        _helpers.WriteLine();
+        _helpers.WriteLine("  Waiting for login to complete...");
+        _helpers.ClearRemainingLines();
+    }
+
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;

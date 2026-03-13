@@ -692,6 +692,46 @@ public class PageLoaderTests
         request.PreferSelenium.Should().BeFalse();
     }
 
+    [Fact]
+    public void DismissOverlays_ExecutesJavaScript_DoesNotThrow()
+    {
+        // Arrange
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("2");
+
+        // Act & Assert — should not throw
+        PageLoader.DismissOverlays(driver, _logger);
+        jsExecutor.Received(1).ExecuteScript(Arg.Any<string>());
+    }
+
+    [Fact]
+    public void DismissOverlays_JavaScriptThrows_DoesNotPropagate()
+    {
+        // Arrange — JS execution fails (e.g., page navigating, session lost)
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>())
+            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("Session expired"));
+
+        // Act & Assert — should swallow the exception
+        var act = () => PageLoader.DismissOverlays(driver, _logger);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void DismissOverlays_ReturnsZero_WhenNoOverlaysPresent()
+    {
+        // Arrange — page has no overlays, JS returns 0
+        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
+        var jsExecutor = (IJavaScriptExecutor)driver;
+        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("0");
+
+        // Act — should complete without logging "Dismissed N overlay"
+        PageLoader.DismissOverlays(driver, _logger);
+        jsExecutor.Received(1).ExecuteScript(Arg.Any<string>());
+    }
+
     /// <summary>
     /// Fake HttpMessageHandler for testing HttpClient-based code without real HTTP calls.
     /// </summary>

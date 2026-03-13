@@ -306,9 +306,25 @@ public class BrowserOrchestrator : IBrowserService
                             "Paywall detected with stored credentials, attempting auto-login: {Url}", url);
 
                         var loginResult = await autoLogin.LoginAsync(domain, cancellationToken);
-                        if (loginResult.Success)
+                        if (loginResult.Success || loginResult.ManualLoginRequired)
                         {
-                            _logger.LogInformation("Auto-login succeeded for {Domain}, retrying page load", domain);
+                            if (loginResult.ManualLoginRequired)
+                            {
+                                _logger.LogInformation(
+                                    "Manual login required for {Domain}, waiting for user: {Reason}",
+                                    domain,
+                                    loginResult.ErrorMessage);
+                                var manualLoginOk = await WaitForManualLoginAsync(url, domain, cancellationToken);
+                                if (!manualLoginOk)
+                                {
+                                    _logger.LogInformation("Manual login was not completed for {Domain}", domain);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogInformation("Auto-login succeeded for {Domain}, retrying page load", domain);
+                            }
+
                             _pageCache.Remove(url);
                             _renderer.RenderLoading(url);
 
@@ -361,6 +377,16 @@ public class BrowserOrchestrator : IBrowserService
                 _lastLoadFetchMethod = headedResult.FetchMethod;
                 page = await BuildPageFromLoadResultAsync(headedResult, url, cancellationToken);
             }
+        }
+
+        // If content is still paywalled after all fallback attempts, guide the user
+        if (page.ReadableContent?.IsPaywalled == true)
+        {
+            var host = new Uri(url).Host;
+            var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? host[4..] : host;
+            _navigationService.SetStatusMessage(
+                $"Paywall detected on {domain}. Use :cred add {domain} to store credentials, or Shift+I to log in manually.");
         }
 
         _logger.LogInformation("Page loaded: {Title} - {LinkCount} links, {HasReadable} readable",
@@ -1075,6 +1101,78 @@ public class BrowserOrchestrator : IBrowserService
             cancellationToken);
 
         return retryResult.Success ? retryResult : null;
+    }
+
+    /// <summary>
+    /// Waits for the user to complete a manual login in the browser window.
+    /// Polls the browser URL to detect when the user navigates away from the login page.
+    /// After login is detected, captures cookies for future sessions.
+    /// </summary>
+    private async Task<bool> WaitForManualLoginAsync(string url, string domain, CancellationToken cancellationToken)
+    {
+        _renderer.RenderManualLogin(url, domain);
+        if (_browserSession is IBrowserSession browserSession)
+        {
+            browserSession.RestoreWindow();
+        }
+
+        var timeout = TimeSpan.FromMinutes(3);
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(2000, cancellationToken);
+            try
+            {
+                if (_browserSession is IBrowserSession session && session.HasActiveDriver)
+                {
+                    var driver = session.GetOrCreateDriver(false);
+                    var currentUrl = driver.Url;
+
+                    // Login complete when URL no longer contains login/signin paths
+                    if (!currentUrl.Contains("/login", StringComparison.OrdinalIgnoreCase) &&
+                        !currentUrl.Contains("/signin", StringComparison.OrdinalIgnoreCase) &&
+                        !currentUrl.Contains("/sign-in", StringComparison.OrdinalIgnoreCase) &&
+                        !currentUrl.Contains("/auth/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("Manual login completed for {Domain}, URL is now {Url}", domain, currentUrl);
+
+                        // Capture cookies after successful manual login
+                        try
+                        {
+                            var seleniumCookies = driver.Manage().Cookies.AllCookies;
+                            var storedCookies = seleniumCookies.Select(c =>
+                                new Application.Interfaces.StoredCookie(
+                                    c.Name, c.Value, c.Domain, c.Path, c.Expiry)).ToList();
+
+                            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
+                            _logger.LogInformation(
+                                "Captured {Count} cookies after manual login for {Domain}",
+                                storedCookies.Count,
+                                domain);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to capture cookies after manual login");
+                        }
+
+                        return true;
+                    }
+                }
+                else
+                {
+                    _logger.LogDebug("No active driver for manual login polling, stopping");
+                    break;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Error polling login status");
+                break;
+            }
+        }
+
+        return false;
     }
 
     private async Task<bool> HandleCommandAsync(NavigationCommand command, RenderOptions options, CancellationToken cancellationToken)
