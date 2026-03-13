@@ -981,6 +981,132 @@ public class LinkExtractorTests
 
     #endregion
 
+    #region NYT-Style Section Page Fixture
+
+    [Fact]
+    public async Task ExtractLinksAsync_NytSectionPage_HeadlinesAreContent_InlinesAreNavigation()
+    {
+        // Arrange — NYT Today's Paper style section page with multiple <article> containers
+        var html = @"
+            <html>
+            <head>
+                <script type=""application/ld+json"">{""author"":{""name"":""Brad Plumer""},""datePublished"":""2024-03-09""}</script>
+                <meta property=""article:published_time"" content=""2024-03-09T12:00:00Z"" />
+            </head>
+            <body>
+                <main>
+                    <article>
+                        <h3><a href=""https://nytimes.com/2024/03/09/climate/article-1.html"">Climate Scientists Warn of Accelerating Ice Sheet Loss</a></h3>
+                        <p>New data shows that <a href=""https://nytimes.com/2024/03/09/science/ice-data.html"">causes oil prices to surge</a> across global markets as governments struggle to respond to the growing crisis.</p>
+                        <span class=""byline"">By Brad Plumer</span>
+                        <time datetime=""2024-03-09T10:00:00Z"">March 9, 2024</time>
+                    </article>
+                    <article>
+                        <h3><a href=""https://nytimes.com/2024/03/09/politics/article-2.html"">Senate Passes Sweeping Infrastructure Bill After Months of Debate</a></h3>
+                        <p>The legislation, which <a href=""https://nytimes.com/2024/03/09/politics/told-cbs.html"">told CBS News</a> was the result of bipartisan negotiations, will fund roads, bridges and broadband access.</p>
+                        <span class=""byline"">By Carl Hulse</span>
+                        <time datetime=""2024-03-09T08:00:00Z"">March 9, 2024</time>
+                    </article>
+                    <article>
+                        <h3><a href=""https://nytimes.com/2024/03/09/tech/article-3.html"">Tech Giants Report Record Quarterly Earnings Amid AI Boom</a></h3>
+                        <p>Investors were cautiously optimistic as the industry continues to shift toward AI-driven products and services.</p>
+                        <span class=""byline"">By Erin Griffith</span>
+                        <time datetime=""2024-03-09T07:00:00Z"">March 9, 2024</time>
+                    </article>
+                </main>
+            </body>
+            </html>";
+        var baseUrl = "https://nytimes.com/section/todayspaper";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert — headline links
+        var headlineLinks = links.Where(l => l.Url.Contains("article-")).ToList();
+        headlineLinks.Should().HaveCount(3, "each article container has one headline link");
+        headlineLinks.Should().OnlyContain(l => l.Type == LinkType.Content,
+            "headline links inside <h3> should be Content");
+
+        // Assert — inline links
+        var inlineLinks = links.Where(l => l.Url.Contains("ice-data") || l.Url.Contains("told-cbs")).ToList();
+        inlineLinks.Should().HaveCount(2, "two inline references exist");
+        inlineLinks.Should().OnlyContain(l => l.Type == LinkType.Navigation,
+            "inline references in paragraphs should be Navigation, not Content");
+
+        // Assert — page-level metadata NOT applied uniformly to all links on section page
+        // At most one link should have Brad Plumer (from per-container byline), not all of them
+        var plumerLinks = headlineLinks.Where(l => l.Author != null && l.Author.Contains("Plumer")).ToList();
+        plumerLinks.Count.Should().BeLessOrEqualTo(1,
+            "page-level JSON-LD author should NOT be applied to all links on section pages");
+
+        // The first article's per-container byline should still work
+        var article1 = links.First(l => l.Url.Contains("article-1"));
+        article1.Author.Should().Be("By Brad Plumer",
+            "per-container byline extraction should still work");
+
+        // Other articles should have their own authors
+        var article2 = links.First(l => l.Url.Contains("article-2"));
+        article2.Author.Should().Be("By Carl Hulse");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_NytSectionPage_CorrectLinkCount()
+    {
+        // Arrange — 4 articles, each with one headline link
+        var html = @"
+            <html>
+            <body>
+                <main>
+                    <article><h3><a href=""https://nytimes.com/a1"">First Article Headline About Important News Event</a></h3></article>
+                    <article><h3><a href=""https://nytimes.com/a2"">Second Article With Different Topic Coverage</a></h3></article>
+                    <article><h3><a href=""https://nytimes.com/a3"">Third Article Discussing Science and Technology</a></h3></article>
+                    <article><h3><a href=""https://nytimes.com/a4"">Fourth Article on Political Developments Today</a></h3></article>
+                </main>
+            </body>
+            </html>";
+        var baseUrl = "https://nytimes.com/section/todayspaper";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(4, "each article container contributes exactly one headline link");
+        links.Should().OnlyContain(l => l.Type == LinkType.Content);
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_NytSectionPage_PerArticleMetadataStaysPerArticle()
+    {
+        // Arrange — two articles with different authors
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <h3><a href=""https://nytimes.com/art1"">Article One About Climate With Long Title</a></h3>
+                    <span class=""byline"">By Alice Reporter</span>
+                </article>
+                <article>
+                    <h3><a href=""https://nytimes.com/art2"">Article Two About Economy With Long Title</a></h3>
+                    <span class=""byline"">By Bob Journalist</span>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://nytimes.com/section/todayspaper";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(2);
+        var art1 = links.First(l => l.Url.Contains("art1"));
+        var art2 = links.First(l => l.Url.Contains("art2"));
+
+        art1.Author.Should().Be("By Alice Reporter", "per-container author should stay with its article");
+        art2.Author.Should().Be("By Bob Journalist", "per-container author should stay with its article");
+    }
+
+    #endregion
+
     #region Section Title Extraction Tests
 
     [Fact]

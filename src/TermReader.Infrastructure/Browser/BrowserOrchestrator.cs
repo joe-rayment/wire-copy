@@ -790,7 +790,10 @@ public class BrowserOrchestrator : IBrowserService
     private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, string requestedUrl, CancellationToken cancellationToken)
     {
         var metadata = loadResult.Metadata ?? new PageMetadata { Title = "Untitled" };
-        var page = Page.Create(requestedUrl, loadResult.Html, metadata);
+        // Use the final URL after redirects for Page.Url so that status bar,
+        // refresh, and cache lookups all use the correct URL.
+        var finalUrl = loadResult.Url ?? requestedUrl;
+        var page = Page.Create(finalUrl, loadResult.Html, metadata);
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url, cancellationToken);
         var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);

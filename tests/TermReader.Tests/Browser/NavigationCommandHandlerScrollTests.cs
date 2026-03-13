@@ -6,7 +6,9 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
 using Xunit;
@@ -280,6 +282,59 @@ public class NavigationCommandHandlerScrollTests
         // Should go to first item (0), NOT CTA button (-1)
         _navigationService.CollectionItemSelectedIndex.Should().Be(0,
             "gg should go to first list item, not CTA button");
+    }
+
+    #endregion
+
+    #region HandleGoToTop - Hierarchical with collapsed groups
+
+    [Fact]
+    public async Task HandleGoToTop_Hierarchical_SelectsFirstVisibleNode()
+    {
+        // Arrange — build a tree where Navigation group is first (collapsed by default)
+        // and Content links come after. GetAllNodes returns collapsed children,
+        // but GetVisibleNodes skips them.
+        var groupedLinks = new Dictionary<LinkType, List<LinkInfo>>
+        {
+            [LinkType.Navigation] = new()
+            {
+                new LinkInfo { Url = "https://example.com/nav1", DisplayText = "Home", Type = LinkType.Navigation, ImportanceScore = 30 },
+                new LinkInfo { Url = "https://example.com/nav2", DisplayText = "About", Type = LinkType.Navigation, ImportanceScore = 30 },
+            },
+            [LinkType.Content] = new()
+            {
+                new LinkInfo { Url = "https://example.com/article1", DisplayText = "First Article Headline", Type = LinkType.Content, ImportanceScore = 70 },
+            },
+        };
+
+        var tree = NavigationTree.BuildWithGroups(groupedLinks);
+
+        // Content is first in group order, so first visible node should be the content link
+        var page = Domain.Entities.Browser.Page.Create(
+            "https://example.com",
+            "<html><body>Test</body></html>",
+            new Domain.ValueObjects.Browser.PageMetadata { Title = "Test" });
+        page.SetLinkTree(tree);
+
+        _navigationService.NavigateTo(page);
+        _navigationService.SetViewMode(ViewMode.Hierarchical);
+
+        // Select the last node to simulate being elsewhere in the tree
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var lastVisible = visibleNodes.LastOrDefault();
+        if (lastVisible != null)
+        {
+            tree.SelectNodeById(lastVisible.Id);
+        }
+
+        // Act
+        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+
+        // Assert — selection should be the first VISIBLE node, not a collapsed child
+        var firstVisible = tree.GetVisibleNodes().First();
+        tree.CurrentSelection.Should().Be(firstVisible,
+            "GoToTop should select first visible node, not a collapsed child");
+        tree.CurrentSelection!.IsSelected.Should().BeTrue();
     }
 
     #endregion
