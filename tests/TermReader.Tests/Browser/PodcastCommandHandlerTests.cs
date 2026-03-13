@@ -330,6 +330,50 @@ public class PodcastCommandHandlerTests
         _ttsService.Received().SetApiKeyOverride(string.Empty);
     }
 
+    [Fact]
+    public async Task HandleGeneratePodcast_UnhandledKey_StaysOnConfirmationScreen()
+    {
+        SetupCollectionView();
+        _ttsService.IsConfigured.Returns(false);
+
+        // Send an unhandled key (MoveDown), then GoBack to exit.
+        // If the unhandled key caused exit, the GoBack would never be consumed
+        // and the orchestrator would not be called with GeneratePodcast.
+        var unhandledCmd = new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' };
+        SetupInputQueue(unhandledCmd, Cmd(CommandType.GoBack));
+
+        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
+
+        // Should have rendered (from the GoBack exit path), proving we stayed on the screen
+        _renderCalled.Should().BeTrue();
+        // Should NOT have called GeneratePodcast (we exited via GoBack, not Enter)
+        await _orchestrator.DidNotReceive().GeneratePodcastAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<PodcastProgress>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleGeneratePodcast_MultipleUnhandledKeys_StaysOnConfirmationScreen()
+    {
+        SetupCollectionView();
+        _ttsService.IsConfigured.Returns(false);
+
+        // Send multiple unhandled keys, then GoBack
+        var keys = new[]
+        {
+            new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' },
+            new NavigationCommand { Type = CommandType.MoveUp, RawKeyChar = 'k' },
+            new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'x' },
+            Cmd(CommandType.GoBack),
+        };
+        SetupInputQueue(keys);
+
+        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
+
+        _renderCalled.Should().BeTrue();
+    }
+
     #endregion
 
     #region Cache Analysis Screen
