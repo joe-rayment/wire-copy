@@ -194,7 +194,7 @@ public class NavigationTreeSubGroupTests
     }
 
     [Fact]
-    public void BuildWithGroups_NullAfterNamedSection_PlacedInPrecedingSection()
+    public void BuildWithGroups_NullAfterNamedSection_PlacedAtRoot()
     {
         var links = new Dictionary<LinkType, List<LinkInfo>>
         {
@@ -212,13 +212,15 @@ public class NavigationTreeSubGroupTests
 
         var rootChildren = tree.Root.Children;
 
-        // "No Section" link goes under the preceding World section
-        rootChildren[0].Link.DisplayText.Should().Be("World");
-        rootChildren[0].Children.Should().HaveCount(3);
-        rootChildren[0].Children[2].Link.DisplayText.Should().Be("No Section");
+        // "No Section" link goes directly under root (featured / headerless flow),
+        // not buried under a named section. This ensures front-page articles remain prominent.
+        rootChildren[0].Link.DisplayText.Should().Be("No Section");
 
-        rootChildren[1].Link.DisplayText.Should().Be("Sports");
+        rootChildren[1].Link.DisplayText.Should().Be("World");
         rootChildren[1].Children.Should().HaveCount(2);
+
+        rootChildren[2].Link.DisplayText.Should().Be("Sports");
+        rootChildren[2].Children.Should().HaveCount(2);
     }
 
     #endregion

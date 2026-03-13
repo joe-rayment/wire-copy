@@ -96,8 +96,9 @@ public class NavigationTree
     /// <summary>
     /// Adds content links to root, optionally sub-grouped by SectionTitle.
     /// Sub-sections are created when there are 2+ distinct non-null SectionTitle values
-    /// and 2+ links per section on average. Links with null SectionTitle before
-    /// the first named section are placed as direct children of root.
+    /// and 2+ links per section on average. Links without a SectionTitle are placed
+    /// directly under root (headerless / featured flow). Sections with the same title
+    /// are merged, preserving the order of each section's first occurrence.
     /// </summary>
     private static void AddContentLinks(LinkNode root, List<LinkInfo> links)
     {
@@ -112,29 +113,46 @@ public class NavigationTree
             return;
         }
 
-        // Build sections preserving document order
-        // Links before first named section go directly under root (headerless flow)
-        string? currentSection = null;
-        LinkNode? currentSectionNode = null;
+        // Pre-group links by SectionTitle, preserving first-occurrence order.
+        // Links with null SectionTitle go directly under root (featured/front page).
+        var sectionOrder = new List<string>();
+        var sectionLinks = new Dictionary<string, List<LinkInfo>>(StringComparer.OrdinalIgnoreCase);
+        var headerlessLinks = new List<LinkInfo>();
 
         foreach (var link in links)
         {
-            if (link.SectionTitle != null && link.SectionTitle != currentSection)
+            if (link.SectionTitle == null)
             {
-                // Start a new section
-                currentSection = link.SectionTitle;
-                var sectionHeader = LinkInfo.CreateSubSectionHeader(currentSection, LinkType.Content);
-                currentSectionNode = root.AddChild(sectionHeader);
-            }
-
-            if (currentSectionNode != null)
-            {
-                currentSectionNode.AddChild(link);
+                headerlessLinks.Add(link);
             }
             else
             {
-                // Before any named section: place directly under root
-                root.AddChild(link);
+                if (!sectionLinks.TryGetValue(link.SectionTitle, out var sectionList))
+                {
+                    sectionList = new List<LinkInfo>();
+                    sectionLinks[link.SectionTitle] = sectionList;
+                    sectionOrder.Add(link.SectionTitle);
+                }
+
+                sectionList.Add(link);
+            }
+        }
+
+        // Add headerless links first (featured / front page articles)
+        foreach (var link in headerlessLinks)
+        {
+            root.AddChild(link);
+        }
+
+        // Add each section with a single header, in first-occurrence order
+        foreach (var sectionTitle in sectionOrder)
+        {
+            var sectionHeader = LinkInfo.CreateSubSectionHeader(sectionTitle, LinkType.Content);
+            var sectionNode = root.AddChild(sectionHeader);
+
+            foreach (var link in sectionLinks[sectionTitle])
+            {
+                sectionNode.AddChild(link);
             }
         }
     }
