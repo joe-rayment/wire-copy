@@ -339,7 +339,7 @@ public class BrowserOrchestratorRedirectTests
     }
 
     [Fact]
-    public async Task LoadPageAsync_PreservesRequestedUrl_WhenServerRedirects()
+    public async Task LoadPageAsync_UsesFinalUrl_WhenServerRedirects()
     {
         // Arrange - PageLoader returns a result where the final URL differs from requested
         var requestedUrl = "https://example.com/short-link";
@@ -367,9 +367,10 @@ public class BrowserOrchestratorRedirectTests
         // Act
         var page = await _sut.LoadPageAsync(requestedUrl);
 
-        // Assert - Page URL should be the requested URL, not the redirected one
-        page.Url.Should().Be(requestedUrl,
-            "the Page entity should preserve the originally requested URL, not the redirect target");
+        // Assert - Page URL should be the final URL after redirect, so that status bar,
+        // refresh, and cache lookups all use the correct URL.
+        page.Url.Should().Be(redirectedUrl,
+            "the Page entity should use the final URL after redirect for correct cache/refresh behavior");
     }
 
     [Fact]

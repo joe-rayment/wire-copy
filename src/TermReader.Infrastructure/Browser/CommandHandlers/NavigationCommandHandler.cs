@@ -210,7 +210,7 @@ internal static class NavigationCommandHandler
             ctx.NavigationService.SetScrollOffset(0);
             if (viewMode == ViewMode.Hierarchical && tree != null)
             {
-                var firstNode = tree.GetAllNodes().FirstOrDefault();
+                var firstNode = tree.GetVisibleNodes().FirstOrDefault();
                 if (firstNode != null)
                 {
                     tree.SelectNodeById(firstNode.Id);
