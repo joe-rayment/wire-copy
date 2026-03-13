@@ -821,24 +821,30 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     {
         var boilerplateSelectors = new[]
         {
-            // Semantic elements
-            "//nav", "//header", "//footer", "//aside",
+            // Semantic elements (only top-level, not inside <article>)
+            "//nav", "//footer", "//aside",
+
+            // Top-level header only (not article-internal headers which contain title/summary)
+            "//header[not(ancestor::article)]",
 
             // Navigation and layout
-            "//*[contains(@class, 'nav')]",
             "//*[contains(@class, 'sidebar')]",
             "//*[contains(@class, 'comment')]",
-            "//*[contains(@class, 'related')]",
             "//*[contains(@class, 'share')]",
             "//*[contains(@class, 'social')]",
 
-            // Ads and promotions
-            "//*[contains(@class, 'ad')]",
+            // Ads and promotions — use word-boundary matching for short patterns like "ad"
+            // to avoid matching classes like "heading", "loading", "padding", "breadcrumb"
+            "//*[contains(concat(' ', @class, ' '), ' ad ') or contains(concat(' ', @class, '-'), ' ad-')]",
             "//*[contains(@class, 'advertisement')]",
             "//*[contains(@class, 'promo')]",
             "//*[contains(@class, 'sponsor')]",
             "//*[contains(@class, 'promoted')]",
             "//*[contains(@class, 'newsletter')]",
+
+            // Use word-boundary matching for "nav" and "related" to avoid false positives
+            "//*[contains(concat(' ', @class, ' '), ' nav ') or contains(concat(' ', @class, '-'), ' nav-')]",
+            "//*[contains(concat(' ', @class, ' '), ' related ') or contains(concat(' ', @class, '-'), ' related-')]",
 
             // Cookie consent and overlays
             "//*[contains(@class, 'cookie')]",
@@ -893,13 +899,46 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 return true;
             }
 
-            var classAttr = current.GetAttributeValue("class", string.Empty).ToLowerInvariant();
-            if (BoilerplateClasses.Any(bc => classAttr.Contains(bc)))
+            var classAttr = current.GetAttributeValue("class", string.Empty);
+            if (!string.IsNullOrEmpty(classAttr) && HasBoilerplateClass(classAttr))
             {
                 return true;
             }
 
             current = current.ParentNode;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a class attribute string contains any boilerplate class name.
+    /// Uses word-boundary matching: splits the class attribute on whitespace and hyphens
+    /// to avoid false positives (e.g., "heading" matching "ad", "loading" matching "ad").
+    /// </summary>
+    private static bool HasBoilerplateClass(string classAttr)
+    {
+        // Split class attribute into individual class tokens, then further split on hyphens
+        // to check each segment. E.g., "main-navigation" → ["main", "navigation"]
+        var classTokens = classAttr
+            .Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var token in classTokens)
+        {
+            var tokenLower = token.ToLowerInvariant();
+
+            // Check exact match first (e.g., class="ad")
+            if (BoilerplateClasses.Contains(tokenLower))
+            {
+                return true;
+            }
+
+            // Check hyphenated segments (e.g., "ad-container" → "ad" matches)
+            var segments = tokenLower.Split('-');
+            if (segments.Any(segment => BoilerplateClasses.Contains(segment)))
+            {
+                return true;
+            }
         }
 
         return false;
@@ -1236,6 +1275,37 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return results;
     }
 
+    /// <summary>
+    /// Aggregates paragraphs from ALL elements matching a given XPath selector.
+    /// Handles sites like NYT that split article content across multiple sibling elements
+    /// (e.g., multiple StoryBodyCompanionColumn divs, each with 1-2 paragraphs).
+    /// </summary>
+    private static List<string> AggregateContentAreas(HtmlDocument doc, string selector)
+    {
+        var nodes = doc.DocumentNode.SelectNodes(selector);
+        if (nodes == null || nodes.Count <= 1)
+        {
+            return new List<string>();
+        }
+
+        var paragraphs = new List<string>();
+        var seen = new HashSet<string>();
+
+        foreach (var node in nodes)
+        {
+            var nodeParagraphs = ExtractSemanticParagraphs(node);
+            foreach (var p in nodeParagraphs)
+            {
+                if (seen.Add(p))
+                {
+                    paragraphs.Add(p);
+                }
+            }
+        }
+
+        return paragraphs;
+    }
+
     private List<string> ExtractParagraphs(HtmlDocument doc, string? url = null)
     {
         // Remove boilerplate content first
@@ -1252,6 +1322,19 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             {
                 _logger.LogDebug("Level 1 extraction succeeded with selector {Selector} ({Count} paragraphs)", selector, paragraphs.Count);
                 return paragraphs;
+            }
+        }
+
+        // Level 1.5: Aggregate paragraphs across all elements matching the same selector.
+        // Sites like NYT split articles across multiple StoryBodyCompanionColumn divs,
+        // each with 1-2 paragraphs. Combining them gives the full article.
+        if (contentAreas.Count > 0)
+        {
+            var aggregated = AggregateContentAreas(doc, contentAreas[0].Selector);
+            if (aggregated.Count >= 3)
+            {
+                _logger.LogDebug("Level 1.5 aggregated extraction succeeded with selector {Selector} ({Count} paragraphs)", contentAreas[0].Selector, aggregated.Count);
+                return aggregated;
             }
         }
 

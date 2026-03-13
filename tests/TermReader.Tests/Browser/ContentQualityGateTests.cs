@@ -835,4 +835,106 @@ public class ContentQualityGateTests
     }
 
     #endregion
+
+    #region Boilerplate removal — false positive prevention
+
+    [Fact]
+    public async Task ExtractAsync_ClassContainingAdSubstring_NotRemovedAsBoilerplate()
+    {
+        // "heading", "loading", "padding" all contain "ad" as a substring.
+        // The old boilerplate removal used contains(@class, 'ad') which matched these.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <article>
+                    <div class='heading-wrapper'>
+                        <h1>Test Article</h1>
+                    </div>
+                    <div class='reading-body loading-complete'>
+                        <p>The first paragraph of this article discusses important topics that readers need to understand in the context of global economic developments.</p>
+                        <p>The second paragraph continues with analysis of the situation, providing detailed information about how various factors contribute to the overall picture.</p>
+                        <p>The third paragraph wraps up with conclusions and forward-looking statements about what may happen in the coming months and years ahead.</p>
+                        <p>A fourth paragraph adds additional context and supporting evidence from multiple authoritative sources and expert opinions gathered over time.</p>
+                    </div>
+                </article>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        result.Should().NotBeNull("classes containing 'ad' as a substring should not be treated as ad boilerplate");
+        result!.Paragraphs.Should().HaveCountGreaterOrEqualTo(3);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_NytMultiColumnLayout_AggregatesAcrossColumns()
+    {
+        // NYT splits articles across multiple StoryBodyCompanionColumn divs.
+        // Each column may have 1-2 paragraphs, but together they form the full article.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <main>
+                    <div class='StoryBodyCompanionColumn'>
+                        <div class='css-53u6y8'>
+                            <p>The recent developments in international trade policy have raised concerns among economists about potential impacts on global supply chains and manufacturing sectors.</p>
+                            <p>Trade experts note that the new tariff structure could lead to significant shifts in how companies approach their sourcing strategies and production planning.</p>
+                        </div>
+                    </div>
+                    <figure><img src='photo.jpg' /></figure>
+                    <div class='StoryBodyCompanionColumn'>
+                        <div class='css-53u6y8'>
+                            <p>The domestic impact is already being felt in several key industries, with automotive manufacturers reporting increased costs that could eventually be passed on to consumers.</p>
+                            <p>Meanwhile, agricultural exporters are expressing frustration about retaliatory measures that have reduced their access to previously lucrative overseas markets.</p>
+                        </div>
+                    </div>
+                    <div class='StoryBodyCompanionColumn'>
+                        <div class='css-53u6y8'>
+                            <p>Economists project that the cumulative effect of these trade tensions could reduce gross domestic product growth by up to half a percentage point over the next fiscal year.</p>
+                        </div>
+                    </div>
+                </main>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/2024/03/15/business/trade-policy.html");
+
+        result.Should().NotBeNull("paragraphs split across multiple StoryBodyCompanionColumn divs should be aggregated");
+        result!.Paragraphs.Should().HaveCountGreaterOrEqualTo(4,
+            "all paragraphs from all columns should be combined");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ArticleHeaderPreserved_WhenInsideArticleTag()
+    {
+        // Article-internal <header> contains title and lead paragraph.
+        // Only the site-level header should be removed as boilerplate.
+        var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
+        var extractor = new ReadableContentExtractor(logger);
+
+        var html = @"<html><head><meta property='og:type' content='article' /></head>
+            <body>
+                <header><nav><a href='/'>Home</a></nav></header>
+                <article>
+                    <header>
+                        <h1>Article Title</h1>
+                        <p class='summary'>This is the lead paragraph that provides a summary of the article content and sets up the key themes explored below.</p>
+                    </header>
+                    <section name='articleBody'>
+                        <p>The main body of the article begins here with detailed analysis of the situation and its broader implications for all stakeholders involved.</p>
+                        <p>Further paragraphs continue the analysis with additional evidence and expert commentary that supports the main thesis of the article.</p>
+                        <p>The concluding section brings together the various threads discussed above and offers perspective on what readers should watch for going forward.</p>
+                    </section>
+                </article>
+            </body></html>";
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/news/article");
+
+        result.Should().NotBeNull("article content should be extracted even when article has internal <header>");
+        result!.Paragraphs.Should().HaveCountGreaterOrEqualTo(3);
+    }
+
+    #endregion
 }
