@@ -139,15 +139,6 @@ def _find_chrome() -> str | None:
             except Exception:
                 pass
 
-    # Check Playwright's bundled Chromium (works on arm64)
-    pw_cache = Path.home() / ".cache" / "ms-playwright"
-    if pw_cache.exists():
-        dirs = sorted(pw_cache.glob("chromium-*"), reverse=True)
-        for d in dirs:
-            chrome = d / "chrome-linux" / "chrome"
-            if chrome.exists() and os.access(str(chrome), os.X_OK):
-                return str(chrome)
-
     # Check Selenium cache
     cache_dir = Path.home() / ".cache" / "selenium" / "chrome"
     paths = sorted(glob.glob(str(cache_dir / "linux64" / "*" / "chrome")), reverse=True)
@@ -176,7 +167,7 @@ class CDPBrowser:
         if not chrome_path:
             raise RuntimeError(
                 "Could not find Chrome/Chromium. Install chromium-browser or "
-                "run: python3 -m playwright install chromium"
+                "google-chrome-stable"
             )
 
         # Find an available port
