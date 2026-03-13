@@ -11,6 +11,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Entities.Credentials;
 using TermReader.Domain.Enums;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Credentials;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Storage;
@@ -727,6 +728,17 @@ internal static class SearchCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
+    private static readonly Dictionary<string, (string LoginUrl, List<LoginStep> Steps)> KnownSiteDefaults = new()
+    {
+        ["nytimes.com"] = (
+            "https://myaccount.nytimes.com/auth/login",
+            new List<LoginStep>
+            {
+                new("#email", StepValueType.Username, "button[data-testid=submit-email]"),
+                new("#password", StepValueType.Password, "button[type=submit]"),
+            }),
+    };
+
     private static async Task HandleCredentialAdd(
         CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
@@ -753,10 +765,31 @@ internal static class SearchCommandHandler
                 return;
             }
 
-            var loginUrl = await ctx.InputHandler.PromptForInputAsync("Login URL (Enter to skip): ", ct);
-            var usernameSelector = await ctx.InputHandler.PromptForInputAsync("Username selector (Enter to skip): ", ct);
-            var passwordSelector = await ctx.InputHandler.PromptForInputAsync("Password selector (Enter to skip): ", ct);
-            var submitSelector = await ctx.InputHandler.PromptForInputAsync("Submit selector (Enter to skip): ", ct);
+            // Check for known site defaults (e.g., NYT multi-step login)
+            var normalizedDomain = domain.Trim().ToLowerInvariant();
+            var hasDefaults = KnownSiteDefaults.TryGetValue(normalizedDomain, out var defaults);
+
+            string? loginUrl = null;
+            string? usernameSelector = null;
+            string? passwordSelector = null;
+            string? submitSelector = null;
+            List<LoginStep>? loginSteps = null;
+
+            if (hasDefaults)
+            {
+                loginUrl = defaults.LoginUrl;
+                loginSteps = defaults.Steps;
+                ctx.NavigationService.SetStatusMessage(
+                    $"Using known {normalizedDomain} login flow ({loginSteps.Count}-step)");
+                await ctx.RenderCurrentPageAsync(options, ct);
+            }
+            else
+            {
+                loginUrl = await ctx.InputHandler.PromptForInputAsync("Login URL (Enter to skip): ", ct);
+                usernameSelector = await ctx.InputHandler.PromptForInputAsync("Username selector (Enter to skip): ", ct);
+                passwordSelector = await ctx.InputHandler.PromptForInputAsync("Password selector (Enter to skip): ", ct);
+                submitSelector = await ctx.InputHandler.PromptForInputAsync("Submit selector (Enter to skip): ", ct);
+            }
 
             using var scope = ctx.ScopeFactory.CreateScope();
             var encryption = scope.ServiceProvider.GetRequiredService<ICookieEncryptionService>();
@@ -774,12 +807,16 @@ internal static class SearchCommandHandler
                 usernameSelector?.Trim(),
                 passwordSelector?.Trim(),
                 submitSelector?.Trim(),
-                loginUrl?.Trim());
+                loginUrl?.Trim(),
+                loginSteps);
 
             await repo.AddAsync(credential, ct);
             await unitOfWork.SaveChangesAsync(ct);
 
-            ctx.NavigationService.SetStatusMessage($"Credential saved for {credential.Domain}");
+            var msg = loginSteps != null
+                ? $"Credential saved for {credential.Domain} (multi-step login)"
+                : $"Credential saved for {credential.Domain}";
+            ctx.NavigationService.SetStatusMessage(msg);
             ctx.Logger.LogInformation("Added credential for domain: {Domain}", credential.Domain);
         }
         catch (Exception ex)
