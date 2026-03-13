@@ -925,6 +925,8 @@ internal static class PodcastCommandHandler
 
                 continue;
             }
+
+            // Unhandled key — silently ignore and re-render
         }
 
         return false;
