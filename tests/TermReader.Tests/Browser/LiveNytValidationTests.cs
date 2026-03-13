@@ -27,6 +27,9 @@ public class LiveNytValidationTests
     private static readonly string BbcHtmlPath = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "screenshots", "bbc-article.html");
 
+    private static readonly string NytArticleHtmlPath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "screenshots", "nyt-iran-energy-article.html");
+
     public LiveNytValidationTests()
     {
         var logger = Substitute.For<ILogger<LinkExtractor>>();
@@ -256,6 +259,123 @@ public class LiveNytValidationTests
 
         // Assert
         page.Url.Should().Be(url, "Page.Create should preserve the URL exactly as provided");
+    }
+
+    #endregion
+
+    #region Live NYT Article Reader View Validation
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ShouldExtractTitle()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+        content!.Title.Should().NotBeNullOrWhiteSpace("title should be extracted from the article");
+        content.Title.Should().Contain("German",
+            "the article title is about German industry and energy costs");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ShouldExtractAuthor()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+        content!.Author.Should().NotBeNullOrWhiteSpace("author should be extracted");
+        content.Author.Should().Contain("Nelson",
+            "the article is by Eshe Nelson");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ShouldExtractAtLeastFiveParagraphs()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+        content!.Paragraphs.Should().HaveCountGreaterOrEqualTo(5,
+            "a substantial NYT news article should have at least 5 content paragraphs");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ShouldContainArticleTextNotBoilerplate()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+
+        // Content should reference article topics, not navigation/boilerplate
+        content!.CleanedText.Should().ContainAny("Germany", "energy", "factory", "factories", "industrial",
+            "article text should reference the core topic about German energy costs");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ShouldHaveSubstantialContent()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+        content!.CleanedText.Length.Should().BeGreaterThan(1000,
+            "extracted NYT article content should be substantial, not a truncated snippet");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task NytArticle_ReaderView_ContentShouldNotBeFromRedirectOrSectionPage()
+    {
+        if (!File.Exists(NytArticleHtmlPath))
+            return;
+
+        var html = File.ReadAllText(NytArticleHtmlPath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/03/13/business/energy-environment/iran-energy-costs-germany-factories.html");
+
+        content.Should().NotBeNull("NYT article should be recognized as readable content");
+
+        // Should NOT contain section page indicators
+        content!.CleanedText.Should().NotContain("Today's Paper",
+            "content should be from the article, not a section page");
+
+        // Should contain coherent article prose, not a list of headlines
+        var paragraphs = content.Paragraphs.Where(p => p.Length > 50).ToList();
+        paragraphs.Should().HaveCountGreaterOrEqualTo(3,
+            "article should have multiple substantial paragraphs, not just headline fragments");
     }
 
     #endregion

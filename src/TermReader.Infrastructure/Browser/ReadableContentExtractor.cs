@@ -42,7 +42,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static readonly string[] PaywallElementSelectors =
     {
-        "//*[contains(@class, 'gateway')]",
+        "//*[contains(concat(' ', @class, ' '), ' gateway ') or contains(concat(' ', @class, '-'), ' gateway-')]",
         "//*[contains(@class, 'expanded-dock')]",
         "//*[contains(@class, 'subscriber-gate')]",
         "//*[contains(@class, 'paywall')]",
@@ -51,8 +51,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@id, 'gateway')]",
         "//*[contains(@id, 'paywall')]",
         "//*[contains(@id, 'regwall')]",
-        "//*[contains(@data-testid, 'paywall')]",
-        "//*[contains(@data-testid, 'gateway')]"
+        "//*[contains(@data-testid, 'paywall')]"
     };
 
     private static readonly string[] ContentAreaSelectors =
@@ -862,14 +861,14 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             "//*[contains(@class, 'overlay')]",
             "//*[contains(@class, 'paywall')]",
 
-            // Paywall and subscription gates
-            "//*[contains(@class, 'gateway')]",
+            // Paywall and subscription gates — word-boundary match for "gateway" to avoid
+            // false positives on NYT's "vi-gateway-container" which wraps article content
+            "//*[contains(concat(' ', @class, ' '), ' gateway ') or contains(concat(' ', @class, '-'), ' gateway-')]",
             "//*[contains(@class, 'expanded-dock')]",
             "//*[contains(@class, 'subscriber-gate')]",
             "//*[contains(@class, 'subscribe-wall')]",
             "//*[contains(@class, 'regwall')]",
             "//*[contains(@data-testid, 'paywall')]",
-            "//*[contains(@data-testid, 'gateway')]",
 
             // Scripts and styles
             "//script", "//style", "//noscript"
@@ -1314,7 +1313,21 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         // Try to find the main content areas (ordered by specificity)
         var contentAreas = FindAllContentAreas(doc, url);
 
-        // Level 1: Try semantic elements in each content area
+        // Level 1.5 (before Level 1): Aggregate paragraphs across all elements matching the same selector.
+        // Sites like NYT split articles across multiple StoryBodyCompanionColumn divs,
+        // each with 1-2 paragraphs. Aggregating first ensures we get the full article
+        // rather than returning early with just one fragment that happens to have >= 3 paragraphs.
+        if (contentAreas.Count > 0)
+        {
+            var aggregated = AggregateContentAreas(doc, contentAreas[0].Selector);
+            if (aggregated.Count >= 3)
+            {
+                _logger.LogDebug("Aggregated extraction succeeded with selector {Selector} ({Count} paragraphs)", contentAreas[0].Selector, aggregated.Count);
+                return aggregated;
+            }
+        }
+
+        // Level 1: Try semantic elements in each content area (fallback when aggregation didn't help)
         foreach (var (area, selector) in contentAreas)
         {
             var paragraphs = ExtractSemanticParagraphs(area);
@@ -1322,19 +1335,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             {
                 _logger.LogDebug("Level 1 extraction succeeded with selector {Selector} ({Count} paragraphs)", selector, paragraphs.Count);
                 return paragraphs;
-            }
-        }
-
-        // Level 1.5: Aggregate paragraphs across all elements matching the same selector.
-        // Sites like NYT split articles across multiple StoryBodyCompanionColumn divs,
-        // each with 1-2 paragraphs. Combining them gives the full article.
-        if (contentAreas.Count > 0)
-        {
-            var aggregated = AggregateContentAreas(doc, contentAreas[0].Selector);
-            if (aggregated.Count >= 3)
-            {
-                _logger.LogDebug("Level 1.5 aggregated extraction succeeded with selector {Selector} ({Count} paragraphs)", contentAreas[0].Selector, aggregated.Count);
-                return aggregated;
             }
         }
 
