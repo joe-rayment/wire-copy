@@ -64,7 +64,7 @@ public class LinkExtractor : ILinkExtractor
 
     private static readonly HashSet<string> SectionContainerTags = new(StringComparer.OrdinalIgnoreCase)
     {
-        "section", "article"
+        "section"
     };
 
     private static readonly HashSet<string> HeadingTags = new(StringComparer.OrdinalIgnoreCase)
@@ -529,14 +529,6 @@ public class LinkExtractor : ILinkExtractor
         {
             var role = node.GetAttributeValue("role", string.Empty);
             if (role.Equals("region", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            // div with data-testid or data-block attributes
-            var dataTestId = node.GetAttributeValue("data-testid", string.Empty);
-            var dataBlock = node.GetAttributeValue("data-block", string.Empty);
-            if (!string.IsNullOrWhiteSpace(dataTestId) || !string.IsNullOrWhiteSpace(dataBlock))
             {
                 return true;
             }

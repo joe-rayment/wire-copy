@@ -837,9 +837,11 @@ public class LinkExtractorTests
     }
 
     [Fact]
-    public async Task ExtractSectionTitle_DivWithDataTestId_ShouldBeRecognizedAsSectionContainer()
+    public async Task ExtractSectionTitle_DivWithDataTestId_ShouldNotBeRecognizedAsSectionContainer()
     {
-        // Arrange — div with data-testid attribute should be recognized as section container
+        // data-testid is a React testing attribute, not a semantic section indicator.
+        // On React-heavy sites (e.g., NYT), nearly every wrapper div has data-testid,
+        // which incorrectly turned article headlines into section titles.
         var html = @"
             <html>
             <body>
@@ -856,8 +858,8 @@ public class LinkExtractorTests
 
         // Assert
         links.Should().HaveCount(1);
-        links[0].SectionTitle.Should().Be("Opinion",
-            "div with data-testid should be recognized as a section container");
+        links[0].SectionTitle.Should().BeNull(
+            "data-testid divs are not semantic section containers");
     }
 
     [Fact]

@@ -33,8 +33,10 @@ public class LinkExtractorSectionTitleTests
     }
 
     [Fact]
-    public void ExtractSectionTitle_ArticleWithH3_ReturnsSectionTitle()
+    public void ExtractSectionTitle_ArticleWithH3_ReturnsNull()
     {
+        // <article> wraps individual articles, not sections.
+        // Its heading is the article's own title, not a section name.
         var html = @"
             <article>
                 <h3>World News</h3>
@@ -47,7 +49,7 @@ public class LinkExtractorSectionTitleTests
 
         var result = LinkExtractor.ExtractSectionTitle(anchor);
 
-        result.Should().Be("World News");
+        result.Should().BeNull("article elements are individual items, not section containers");
     }
 
     [Fact]
@@ -552,6 +554,50 @@ public class LinkExtractorSectionTitleTests
 
         LinkExtractor.ExtractSectionTitle(worldAnchor).Should().Be("World");
         LinkExtractor.ExtractSectionTitle(bizAnchor).Should().Be("Business");
+    }
+
+    [Fact]
+    public void ExtractSectionTitle_NytArticleWithDataTestid_SkipsToParentSection()
+    {
+        // NYT wraps articles in <article data-testid> with <div data-testid> wrappers.
+        // These should NOT be section containers; the parent <section> should provide the title.
+        var html = @"
+            <section aria-label=""The Front Page"">
+                <h2>The Front Page</h2>
+                <article data-testid=""block-article"">
+                    <div data-testid=""story-wrapper"">
+                        <h3><a href=""https://nytimes.com/article"">Article Headline Goes Here</a></h3>
+                    </div>
+                </article>
+            </section>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        var anchor = doc.DocumentNode.SelectSingleNode("//a");
+
+        var result = LinkExtractor.ExtractSectionTitle(anchor);
+
+        result.Should().Be("The Front Page",
+            "should skip article/div data-testid containers and find parent section");
+    }
+
+    [Fact]
+    public void ExtractSectionTitle_DivWithDataTestid_NotSectionContainer()
+    {
+        // data-testid is a React testing attribute, not a semantic section indicator
+        var html = @"
+            <div data-testid=""story-card"">
+                <h3>Story Heading</h3>
+                <a href=""https://example.com/story"">Story Link</a>
+            </div>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        var anchor = doc.DocumentNode.SelectSingleNode("//a");
+
+        var result = LinkExtractor.ExtractSectionTitle(anchor);
+
+        result.Should().BeNull("data-testid divs are not semantic section containers");
     }
 
     #endregion
