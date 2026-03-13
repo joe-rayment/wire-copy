@@ -218,10 +218,14 @@ public class LinkTreeLayoutTests
         var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", null);
 
         // cardHeight=3 (compact): metadata line is at index 1
-        var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 1, 80, TestPalette);
+        var line3 = LinkTreeRenderer.BuildCardLine(node, true, 3, 1, 80, TestPalette);
+        line3.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        line3.Should().Contain("Jane Doe");
 
-        line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
-        line.Should().Contain("Jane Doe");
+        // cardHeight=5 (standard): metadata line is at index 3
+        var line5 = LinkTreeRenderer.BuildCardLine(node, true, 5, 3, 80, TestPalette);
+        line5.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        line5.Should().Contain("Jane Doe");
     }
 
     #endregion
@@ -256,12 +260,12 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Standard5Line_AuthorDateOnLine2()
+    public void BuildCardLine_Standard5Line_AuthorDateOnLine3()
     {
         var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", DateTime.Now);
 
-        // cardHeight=5: author+date line is at index 2
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette);
+        // cardHeight=5: author+date line is at index 3 (after title line 1 + title line 2)
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette);
 
         line.Should().Contain("Jane Doe").And.Contain("Today");
     }
@@ -271,9 +275,10 @@ public class LinkTreeLayoutTests
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        // Lines 0, 3 are blank padding; line 4 is a separator rule
+        // Line 0 is blank padding; line 2 is title overflow (blank for short title);
+        // line 3 is author/date (blank for no metadata); line 4 is separator
         LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
         LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().Contain("\u2500");
     }
 
@@ -477,19 +482,22 @@ public class LinkTreeLayoutTests
 
     #endregion
 
-    #region Title truncation in 5-line mode
+    #region Title wrapping in 5-line mode
 
     [Fact]
-    public void BuildCardLine_5Line_LongTitleTruncatedOnLine1()
+    public void BuildCardLine_5Line_LongTitleWrapsToLine2()
     {
-        // Title wider than textWidth should be truncated on line 1 (no wrapping)
+        // Title wider than textWidth wraps to line 2 instead of truncating on line 1
         var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
         var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth / 3));
         var node = CreateLinkNode(longTitle, "https://example.com", LinkType.Content);
 
         var line1 = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 40, TestPalette);
+        var line2 = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 40, TestPalette);
 
-        line1.Should().Contain("...");
+        // Line 1 has first part, line 2 has overflow
+        line1.Should().Contain("word");
+        StripAnsi(line2).Trim().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -499,35 +507,37 @@ public class LinkTreeLayoutTests
 
         var line3 = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 40, TestPalette);
 
-        // Line 3 is blank padding when no author/date metadata
-        line3.Should().HaveLength(40).And.Match(s => s.Trim().Length == 0);
+        // Line 3 is author/date metadata (blank when no author/date)
+        StripAnsi(line3).Trim().Should().BeEmpty();
     }
 
     [Fact]
-    public void BuildCardLine_5Line_VeryLongTitleTruncatedWithEllipsis()
+    public void BuildCardLine_5Line_VeryLongTitle_Line2HasEllipsis()
     {
-        // A title so long it exceeds line width — should be truncated on line 1
+        // A title so long it needs 3+ wrapped lines — line 2 should have ellipsis
         var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
         var veryLongTitle = string.Join(" ", Enumerable.Repeat("longword", textWidth));
         var node = CreateLinkNode(veryLongTitle, "https://example.com", LinkType.Content);
 
-        var line1 = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 40, TestPalette);
+        var line2 = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 40, TestPalette);
 
-        line1.Should().Contain("...");
+        line2.Should().Contain("...");
     }
 
     [Fact]
-    public void BuildCardLine_5Line_Selected_LongTitleTruncatedOnLine1()
+    public void BuildCardLine_5Line_Selected_LongTitleWrapsToLine2()
     {
         var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
         var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth / 3));
         var node = CreateLinkNode(longTitle, "https://example.com", LinkType.Content);
 
         var line1 = LinkTreeRenderer.BuildCardLine(node, true, 5, 1, 40, TestPalette);
+        var line2 = LinkTreeRenderer.BuildCardLine(node, true, 5, 2, 40, TestPalette);
 
-        // Selected title should have highlight background and be truncated
+        // Selected title should have highlight background and wrap
         line1.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
-        line1.Should().Contain("...");
+        line2.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        StripAnsi(line2).Trim().Should().NotBeEmpty();
     }
 
     #endregion
@@ -578,13 +588,14 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_SelectedAndNormal_OverflowLine_SameVisibleWidth()
+    public void BuildCardLine_SelectedAndNormal_TitleLine2_SameVisibleWidth()
     {
         var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
         var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth / 3));
         var node = CreateLinkNode(longTitle, "https://example.com", LinkType.Content);
         const int cellWidth = 40;
 
+        // Line 2 is now title line 2 (overflow) in 5-line mode
         var normalLine = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, cellWidth, TestPalette);
         var selectedLine = LinkTreeRenderer.BuildCardLine(node, true, 5, 2, cellWidth, TestPalette);
 
@@ -615,7 +626,7 @@ public class LinkTreeLayoutTests
     {
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
-        // cardHeight=5: metadata at index 3
+        // cardHeight=5: author/date at index 3
         var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette);
 
         StripAnsi(line).Trim().Should().BeEmpty();

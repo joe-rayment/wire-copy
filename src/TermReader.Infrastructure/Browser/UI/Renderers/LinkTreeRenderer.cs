@@ -331,14 +331,32 @@ internal class LinkTreeRenderer
         sb.Append($"{accentFg}\u258c{Reset}");
 
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var authorDateLineIdx = cardHeight >= 5 ? 2 : -1;
+        var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
+        var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
 
         if (lineIndex == titleLineIdx)
         {
-            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+            var textWidth = GetTitleTextWidth(width);
+            var titleLine = cardHeight >= 5
+                ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
+                : RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
             sb.Append($"{selBg}{selFg}{Bold} {titleLine}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
+        }
+        else if (lineIndex == titleLine2Idx)
+        {
+            var textWidth = GetTitleTextWidth(width);
+            var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
+            if (!string.IsNullOrEmpty(titleLine2))
+            {
+                sb.Append($"{selBg}{selFg}{Bold} {titleLine2}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine2.Length))}{Reset}");
+            }
+            else
+            {
+                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+            }
         }
         else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
         {
@@ -367,7 +385,8 @@ internal class LinkTreeRenderer
         IReadOnlySet<string>? cachedUrls = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var authorDateLineIdx = cardHeight >= 5 ? 2 : -1;
+        var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
+        var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
 
         if (lineIndex == titleLineIdx)
@@ -380,7 +399,10 @@ internal class LinkTreeRenderer
                 LinkType.Footer => palette.LinkFooter.AnsiFg,
                 _ => palette.PrimaryText.AnsiFg
             };
-            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
+            var textWidth = GetTitleTextWidth(width);
+            var titleLine = cardHeight >= 5
+                ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
+                : RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
 
             var isCached = cachedUrls != null &&
                            !string.IsNullOrEmpty(node.Link.Url) &&
@@ -388,6 +410,27 @@ internal class LinkTreeRenderer
             var prefix = isCached ? $"{palette.SecondaryText.AnsiFg}\u25cf{Reset}" : " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
             return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
+        }
+
+        if (lineIndex == titleLine2Idx)
+        {
+            var textWidth = GetTitleTextWidth(width);
+            var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
+            if (!string.IsNullOrEmpty(titleLine2))
+            {
+                var colorFg = node.Link.Type switch
+                {
+                    LinkType.Content => palette.LinkContent.AnsiFg,
+                    LinkType.Navigation => palette.LinkNavigation.AnsiFg,
+                    LinkType.External => palette.LinkExternal.AnsiFg,
+                    LinkType.Footer => palette.LinkFooter.AnsiFg,
+                    _ => palette.PrimaryText.AnsiFg
+                };
+                var pad = new string(' ', Math.Max(0, width - 1 - titleLine2.Length));
+                return $" {colorFg}{titleLine2}{pad}{Reset}";
+            }
+
+            return new string(' ', width);
         }
 
         if (lineIndex == authorDateLineIdx)
