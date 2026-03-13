@@ -415,7 +415,11 @@ public class LinkExtractor : ILinkExtractor
             merged.Add((mergedLink, firstIndex));
         }
 
-        // Phase 2: Cross-parent URL dedup — keep the best representative per URL
+        // Phase 2: Cross-parent URL dedup — first occurrence wins (earlier = higher-ranked section).
+        // HTML document order reflects editorial hierarchy (e.g., "The Front Page" appears before
+        // topic sections). Metadata (author, date, section title) is propagated from later copies
+        // so no information is lost. Only replace the first occurrence when the existing entry is
+        // from an image alt and the later copy has real text (preserving display quality).
         var result = new List<LinkInfo>();
         var seenUrls = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -425,14 +429,9 @@ public class LinkExtractor : ILinkExtractor
             {
                 var existing = result[existingIndex];
 
-                // Replace if new entry has higher importance, same importance but longer text,
-                // or existing is image alt but new one is real text
-                if (link.ImportanceScore > existing.ImportanceScore ||
-                    (link.ImportanceScore == existing.ImportanceScore &&
-                     link.DisplayText.Length > existing.DisplayText.Length) ||
-                    (existing.IsFromImageAlt && !link.IsFromImageAlt))
+                // Only replace if existing is image-alt-only and new one has real text
+                if (existing.IsFromImageAlt && !link.IsFromImageAlt)
                 {
-                    // Preserve metadata from existing if replacement doesn't have it
                     result[existingIndex] = link with
                     {
                         Author = link.Author ?? existing.Author,
@@ -440,11 +439,9 @@ public class LinkExtractor : ILinkExtractor
                         SectionTitle = link.SectionTitle ?? existing.SectionTitle
                     };
                 }
-                else if ((existing.Author == null && link.Author != null) ||
-                         (existing.PublishedDate == null && link.PublishedDate != null) ||
-                         (existing.SectionTitle == null && link.SectionTitle != null))
+                else
                 {
-                    // Propagate metadata to existing entry if it's missing
+                    // Propagate metadata from later copy if the first occurrence is missing it
                     result[existingIndex] = existing with
                     {
                         Author = existing.Author ?? link.Author,
