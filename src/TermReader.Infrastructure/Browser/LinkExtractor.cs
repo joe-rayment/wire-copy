@@ -168,6 +168,21 @@ public class LinkExtractor : ILinkExtractor
 
                     var linkInfo = ClassifyLink(absoluteUrl, displayText, parentSelector, baseUrl);
 
+                    // Refine Content classification: distinguish headline links from inline references
+                    if (linkInfo.Type == LinkType.Content)
+                    {
+                        if (IsHeadlineLink(anchor))
+                        {
+                            // Headline link inside a heading — boost importance
+                            linkInfo = linkInfo with { ImportanceScore = Math.Min(100, linkInfo.ImportanceScore + 15) };
+                        }
+                        else if (IsInlineLink(anchor))
+                        {
+                            // Inline reference within paragraph text — not a standalone article link
+                            linkInfo = linkInfo with { Type = LinkType.Navigation, ImportanceScore = 30 };
+                        }
+                    }
+
                     // Set ARIA label if present
                     var ariaLabel = anchor.GetAttributeValue("aria-label", null!);
                     if (!string.IsNullOrWhiteSpace(ariaLabel))
@@ -203,19 +218,28 @@ public class LinkExtractor : ILinkExtractor
                 }
             }
 
-            // Apply page-level metadata fallback for links without per-container metadata
-            var (pageAuthor, pageDate) = ExtractPageLevelMetadata(doc);
-            for (var i = 0; i < links.Count; i++)
+            // Apply page-level metadata fallback for links without per-container metadata.
+            // Only apply on single-article pages. On section/index pages (multiple <article>
+            // containers), page-level JSON-LD belongs to one article and would incorrectly
+            // be applied to all content links.
+            var articleContainers = doc.DocumentNode.SelectNodes("//article");
+            var isSingleArticlePage = (articleContainers?.Count ?? 0) <= 1;
+
+            if (isSingleArticlePage)
             {
-                var link = links[i];
-                if (link.Type == LinkType.Content && link.Author == null && link.PublishedDate == null &&
-                    (pageAuthor != null || pageDate != null))
+                var (pageAuthor, pageDate) = ExtractPageLevelMetadata(doc);
+                for (var i = 0; i < links.Count; i++)
                 {
-                    links[i] = link with
+                    var link = links[i];
+                    if (link.Type == LinkType.Content && link.Author == null && link.PublishedDate == null &&
+                        (pageAuthor != null || pageDate != null))
                     {
-                        Author = link.Author ?? pageAuthor,
-                        PublishedDate = link.PublishedDate ?? pageDate
-                    };
+                        links[i] = link with
+                        {
+                            Author = link.Author ?? pageAuthor,
+                            PublishedDate = link.PublishedDate ?? pageDate
+                        };
+                    }
                 }
             }
 
@@ -965,6 +989,63 @@ public class LinkExtractor : ILinkExtractor
     /// Checks if a URL path matches common article URL patterns (date-based paths).
     /// Examples: /2024/01/15/article-slug, /news/2024/01/story
     /// </summary>
+    /// <summary>
+    /// Checks if an anchor element is a headline link — inside or containing a heading element (h1-h6).
+    /// Headline links are the primary article links on section/index pages.
+    /// </summary>
+    private static bool IsHeadlineLink(HtmlNode anchor)
+    {
+        // Check if anchor contains a heading
+        if (anchor.SelectSingleNode(".//h1|.//h2|.//h3|.//h4|.//h5|.//h6") != null)
+        {
+            return true;
+        }
+
+        // Check if anchor is inside a heading (walk up 3 levels)
+        var current = anchor.ParentNode;
+        for (var i = 0; i < 3 && current != null && current.Name != "#document"; i++)
+        {
+            if (HeadingTags.Contains(current.Name))
+            {
+                return true;
+            }
+
+            current = current.ParentNode;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if an anchor element is an inline reference within paragraph text.
+    /// Inline links like "causes oil prices to surge" appear inside &lt;p&gt; elements
+    /// with significant surrounding text — they are not standalone article links.
+    /// </summary>
+    private static bool IsInlineLink(HtmlNode anchor)
+    {
+        var current = anchor.ParentNode;
+
+        for (var i = 0; i < 3 && current != null && current.Name != "#document"; i++)
+        {
+            if (current.Name.Equals("p", StringComparison.OrdinalIgnoreCase))
+            {
+                // Paragraph found — check if it has substantial text beyond the anchor
+                var paraText = current.InnerText?.Trim() ?? string.Empty;
+                var anchorText = anchor.InnerText?.Trim() ?? string.Empty;
+
+                // If paragraph has significantly more text than the anchor, it's inline
+                if (paraText.Length > anchorText.Length + 20)
+                {
+                    return true;
+                }
+            }
+
+            current = current.ParentNode;
+        }
+
+        return false;
+    }
+
     private static bool IsArticleUrlPattern(string url)
     {
         try

@@ -316,6 +316,23 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return Math.Abs(listIndex - selectedIndex);
     }
 
+    /// <summary>
+    /// Detects if the server redirected to a different page by comparing the normalized
+    /// paths of the request URL and final URL. Ignores fragment/query differences.
+    /// </summary>
+    internal static bool IsRedirectedUrl(string requestUrl, string finalUrl)
+    {
+        if (string.IsNullOrEmpty(finalUrl))
+        {
+            return false;
+        }
+
+        var normalizedRequest = UrlNormalizer.Normalize(requestUrl);
+        var normalizedFinal = UrlNormalizer.Normalize(finalUrl);
+
+        return !string.Equals(normalizedRequest, normalizedFinal, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal List<PreloadItem> BuildQueue(
         int selectedIndex,
         IReadOnlyList<LinkNode> visibleNodes,
@@ -766,6 +783,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _logger.LogDebug(
                         "Skipping cache for preloaded URL with no extractable article content: {Url}",
                         url);
+                }
+                else if (IsRedirectedUrl(url, result.Url))
+                {
+                    // Server redirected to a different page (e.g., paywalled article → section page).
+                    // Do NOT cache under the original URL — the content doesn't match the request.
+                    _logger.LogDebug(
+                        "Skipping cache for redirected URL: requested={RequestUrl}, redirected={FinalUrl}",
+                        url,
+                        result.Url);
                 }
                 else
                 {

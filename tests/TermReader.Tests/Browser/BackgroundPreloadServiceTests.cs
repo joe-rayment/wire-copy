@@ -267,6 +267,59 @@ public class BackgroundPreloadServiceTests
 
     #endregion
 
+    #region IsRedirectedUrl
+
+    [Fact]
+    public void IsRedirectedUrl_SameUrl_ReturnsFalse()
+    {
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://nytimes.com/2024/01/15/article",
+            "https://nytimes.com/2024/01/15/article").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRedirectedUrl_DifferentPath_ReturnsTrue()
+    {
+        // Article URL redirected to section page
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://nytimes.com/2024/01/15/us/article-slug.html",
+            "https://nytimes.com/section/us").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsRedirectedUrl_TrailingSlashDifference_ReturnsFalse()
+    {
+        // Normalized URLs should be equal regardless of trailing slash
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://example.com/page",
+            "https://example.com/page/").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRedirectedUrl_TrackingParamsDifference_ReturnsFalse()
+    {
+        // Different tracking parameters should normalize to same URL
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://example.com/article?utm_source=twitter",
+            "https://example.com/article?utm_source=google").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRedirectedUrl_NullFinalUrl_ReturnsFalse()
+    {
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://example.com/page", null!).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRedirectedUrl_EmptyFinalUrl_ReturnsFalse()
+    {
+        BackgroundPreloadService.IsRedirectedUrl(
+            "https://example.com/page", "").Should().BeFalse();
+    }
+
+    #endregion
+
     #region Pause / Resume
 
     [Fact]
