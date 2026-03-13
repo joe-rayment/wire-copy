@@ -72,26 +72,32 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'page-content')]",
         "//*[contains(@class, 'field-body')]",
         "//*[contains(@class, 'text-content')]",
+
         // NYT / React SSR patterns
         "//*[contains(@class, 'StoryBodyCompanionColumn')]",
         "//*[contains(@class, 'story-body-supplemental')]",
         "//*[contains(@data-testid, 'article-body')]",
         "//*[@name='articleBody']",
+
         // WordPress / Gutenberg
         "//*[contains(@class, 'wp-block-post-content')]",
         "//*[contains(@class, 'td-post-content')]",
         "//*[contains(@class, 'single-post-content')]",
+
         // Substack / Ghost / Medium
         "//*[contains(@class, 'available-content')]",
         "//*[contains(@class, 'post-full-content')]",
         "//*[contains(@class, 'gh-content')]",
         "//*[contains(@class, 'markup')]",
+
         // Drupal
         "//*[contains(@class, 'field--name-body')]",
         "//*[contains(@class, 'node-content')]",
+
         // Data-attribute patterns (React/Vue SPA)
         "//*[@data-content-type='article-body']",
         "//*[@data-content-region='body']",
+
         // Generic semantic elements
         "//article",
         "//*[@role='article']",
@@ -226,6 +232,18 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         return false;
     }
 
+    /// <summary>
+    /// Static version of <see cref="IsArticle"/>. Determines if the HTML content appears
+    /// to be an article page based on structural indicators (meta tags, semantic elements,
+    /// content container classes, substantial paragraphs).
+    /// </summary>
+    /// <param name="html">Raw HTML content.</param>
+    /// <returns>True if the page appears to be an article.</returns>
+    public static bool IsArticlePage(string html)
+    {
+        return IsArticleCore(html);
+    }
+
     public Task<ReadableContent?> ExtractAsync(string html, string url, CancellationToken cancellationToken = default)
     {
         try
@@ -286,21 +304,100 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
     }
 
-    /// <summary>
-    /// Static version of <see cref="IsArticle"/>. Determines if the HTML content appears
-    /// to be an article page based on structural indicators (meta tags, semantic elements,
-    /// content container classes, substantial paragraphs).
-    /// </summary>
-    /// <param name="html">Raw HTML content.</param>
-    /// <returns>True if the page appears to be an article.</returns>
-    public static bool IsArticlePage(string html)
+    public bool IsArticle(string html)
     {
         return IsArticleCore(html);
     }
 
-    public bool IsArticle(string html)
+    /// <summary>
+    /// Detects whether a page is paywalled by checking for paywall indicator elements
+    /// and text patterns, combined with content truncation heuristics.
+    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated
+    /// (few paragraphs with little total text).
+    /// </summary>
+    internal static bool DetectPaywall(HtmlDocument doc, IReadOnlyList<string> paragraphs)
     {
-        return IsArticleCore(html);
+        // Check for paywall indicator elements via XPath
+        var hasPaywallElement = PaywallElementSelectors.Any(
+            selector => doc.DocumentNode.SelectSingleNode(selector) != null);
+
+        // Check for paywall text patterns in the full document text
+        var hasPaywallText = false;
+        if (!hasPaywallElement)
+        {
+            var fullText = doc.DocumentNode.InnerText;
+            if (!string.IsNullOrEmpty(fullText))
+            {
+                var lowerText = fullText.ToLowerInvariant();
+                hasPaywallText = PaywallTextPatterns.Any(
+                    pattern => lowerText.Contains(pattern, StringComparison.Ordinal));
+            }
+        }
+
+        // Only flag as paywalled if an indicator is found AND content looks truncated
+        if (!hasPaywallElement && !hasPaywallText)
+        {
+            return false;
+        }
+
+        // Content with enough paragraphs is not truncated
+        if (paragraphs.Count >= PaywallTruncationThreshold)
+        {
+            return false;
+        }
+
+        // Even with few paragraphs, if total content is substantial it's a real short article
+        var totalContentLength = paragraphs.Sum(p => p.Length);
+        return totalContentLength < PaywallMinContentLength;
+    }
+
+    /// <summary>
+    /// Validates that extracted paragraphs represent coherent article content rather than
+    /// garbage text from JS fragments, table cells, comment sections, or template boilerplate.
+    /// </summary>
+    internal static bool ValidateContentQuality(IReadOnlyList<string> paragraphs)
+    {
+        if (paragraphs.Count == 0)
+        {
+            return false;
+        }
+
+        // Reject if total word count < 100 (not enough content to be a real article)
+        var totalWords = paragraphs.Sum(p => p.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
+        if (totalWords < 100)
+        {
+            return false;
+        }
+
+        // Reject if average paragraph length < 50 chars (likely fragmented garbage)
+        var averageLength = paragraphs.Average(p => p.Length);
+        if (averageLength < 50)
+        {
+            return false;
+        }
+
+        // Reject if >50% of paragraphs start with the same word (repeated template text)
+        var firstWords = paragraphs
+            .Select(p => p.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant())
+            .Where(w => w != null)
+            .GroupBy(w => w)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault();
+
+        if (firstWords != null && firstWords.Count() > paragraphs.Count / 2)
+        {
+            return false;
+        }
+
+        // Reject if >30% of total text is non-alphabetic characters (JS/code content)
+        var totalChars = paragraphs.Sum(p => p.Length);
+        var alphabeticChars = paragraphs.Sum(p => p.Count(char.IsLetter));
+        if (totalChars > 0 && (double)alphabeticChars / totalChars < 0.70)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsArticleCore(string html)
@@ -426,97 +523,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Detects whether a page is paywalled by checking for paywall indicator elements
-    /// and text patterns, combined with content truncation heuristics.
-    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated
-    /// (few paragraphs with little total text).
-    /// </summary>
-    internal static bool DetectPaywall(HtmlDocument doc, IReadOnlyList<string> paragraphs)
-    {
-        // Check for paywall indicator elements via XPath
-        var hasPaywallElement = PaywallElementSelectors.Any(
-            selector => doc.DocumentNode.SelectSingleNode(selector) != null);
-
-        // Check for paywall text patterns in the full document text
-        var hasPaywallText = false;
-        if (!hasPaywallElement)
-        {
-            var fullText = doc.DocumentNode.InnerText;
-            if (!string.IsNullOrEmpty(fullText))
-            {
-                var lowerText = fullText.ToLowerInvariant();
-                hasPaywallText = PaywallTextPatterns.Any(
-                    pattern => lowerText.Contains(pattern, StringComparison.Ordinal));
-            }
-        }
-
-        // Only flag as paywalled if an indicator is found AND content looks truncated
-        if (!hasPaywallElement && !hasPaywallText)
-        {
-            return false;
-        }
-
-        // Content with enough paragraphs is not truncated
-        if (paragraphs.Count >= PaywallTruncationThreshold)
-        {
-            return false;
-        }
-
-        // Even with few paragraphs, if total content is substantial it's a real short article
-        var totalContentLength = paragraphs.Sum(p => p.Length);
-        return totalContentLength < PaywallMinContentLength;
-    }
-
-    /// <summary>
-    /// Validates that extracted paragraphs represent coherent article content rather than
-    /// garbage text from JS fragments, table cells, comment sections, or template boilerplate.
-    /// </summary>
-    internal static bool ValidateContentQuality(IReadOnlyList<string> paragraphs)
-    {
-        if (paragraphs.Count == 0)
-        {
-            return false;
-        }
-
-        // Reject if total word count < 100 (not enough content to be a real article)
-        var totalWords = paragraphs.Sum(p => p.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
-        if (totalWords < 100)
-        {
-            return false;
-        }
-
-        // Reject if average paragraph length < 50 chars (likely fragmented garbage)
-        var averageLength = paragraphs.Average(p => p.Length);
-        if (averageLength < 50)
-        {
-            return false;
-        }
-
-        // Reject if >50% of paragraphs start with the same word (repeated template text)
-        var firstWords = paragraphs
-            .Select(p => p.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant())
-            .Where(w => w != null)
-            .GroupBy(w => w)
-            .OrderByDescending(g => g.Count())
-            .FirstOrDefault();
-
-        if (firstWords != null && firstWords.Count() > paragraphs.Count / 2)
-        {
-            return false;
-        }
-
-        // Reject if >30% of total text is non-alphabetic characters (JS/code content)
-        var totalChars = paragraphs.Sum(p => p.Length);
-        var alphabeticChars = paragraphs.Sum(p => p.Count(char.IsLetter));
-        if (totalChars > 0 && (double)alphabeticChars / totalChars < 0.70)
-        {
-            return false;
-        }
-
-        return true;
     }
 
     private static string? ExtractTitle(HtmlDocument doc)
@@ -1249,6 +1255,33 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     [GeneratedRegex("""<meta\s[^>]*property\s*=\s*["']og:type["'][^>]*content\s*=\s*["']article["']""")]
     private static partial Regex OgTypeArticleRegex();
 
+    /// <summary>
+    /// Aggregates paragraphs from ALL elements matching a given XPath selector.
+    /// Handles sites like NYT that split article content across multiple sibling elements
+    /// (e.g., multiple StoryBodyCompanionColumn divs, each with 1-2 paragraphs).
+    /// </summary>
+    private static List<string> AggregateContentAreas(HtmlDocument doc, string selector)
+    {
+        var nodes = doc.DocumentNode.SelectNodes(selector);
+        if (nodes == null || nodes.Count <= 1)
+        {
+            return new List<string>();
+        }
+
+        var paragraphs = new List<string>();
+        var seen = new HashSet<string>();
+
+        foreach (var node in nodes)
+        {
+            foreach (var p in ExtractSemanticParagraphs(node).Where(p => seen.Add(p)))
+            {
+                paragraphs.Add(p);
+            }
+        }
+
+        return paragraphs;
+    }
+
     private List<(HtmlNode Node, string Selector)> FindAllContentAreas(HtmlDocument doc, string? url = null)
     {
         var results = new List<(HtmlNode Node, string Selector)>();
@@ -1272,37 +1305,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         return results;
-    }
-
-    /// <summary>
-    /// Aggregates paragraphs from ALL elements matching a given XPath selector.
-    /// Handles sites like NYT that split article content across multiple sibling elements
-    /// (e.g., multiple StoryBodyCompanionColumn divs, each with 1-2 paragraphs).
-    /// </summary>
-    private static List<string> AggregateContentAreas(HtmlDocument doc, string selector)
-    {
-        var nodes = doc.DocumentNode.SelectNodes(selector);
-        if (nodes == null || nodes.Count <= 1)
-        {
-            return new List<string>();
-        }
-
-        var paragraphs = new List<string>();
-        var seen = new HashSet<string>();
-
-        foreach (var node in nodes)
-        {
-            var nodeParagraphs = ExtractSemanticParagraphs(node);
-            foreach (var p in nodeParagraphs)
-            {
-                if (seen.Add(p))
-                {
-                    paragraphs.Add(p);
-                }
-            }
-        }
-
-        return paragraphs;
     }
 
     private List<string> ExtractParagraphs(HtmlDocument doc, string? url = null)

@@ -40,6 +40,66 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         _logger = logger;
     }
 
+    /// <summary>
+    /// Validates a service account key file without storing it.
+    /// </summary>
+    /// <param name="path">Absolute path to the service account key JSON file.</param>
+    /// <returns>A validation result with clear error messages if invalid.</returns>
+    public static ServiceAccountKeyValidationResult ValidateKeyFile(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!File.Exists(path))
+        {
+            return ServiceAccountKeyValidationResult.Invalid($"File not found: {path}");
+        }
+
+        string json;
+        try
+        {
+            json = File.ReadAllText(path);
+        }
+        catch (Exception ex)
+        {
+            return ServiceAccountKeyValidationResult.Invalid($"Cannot read file: {ex.Message}");
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return ServiceAccountKeyValidationResult.Invalid("File is not valid JSON");
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            foreach (var field in RequiredKeyFileFields)
+            {
+                if (!root.TryGetProperty(field, out var prop)
+                    || prop.ValueKind == JsonValueKind.Null
+                    || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
+                {
+                    return ServiceAccountKeyValidationResult.Invalid(
+                        $"Invalid service account key file: missing '{field}'");
+                }
+            }
+
+            if (root.TryGetProperty("type", out var typeProp)
+                && typeProp.GetString() != "service_account")
+            {
+                return ServiceAccountKeyValidationResult.Invalid(
+                    $"Invalid key file: 'type' must be 'service_account', got '{typeProp.GetString()}'");
+            }
+        }
+
+        return ServiceAccountKeyValidationResult.Valid();
+    }
+
     public async Task<string> UploadAsync(
         string localFilePath,
         string objectName,
@@ -164,10 +224,6 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             try
             {
                 client = await GetClientAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
             }
             catch (FileNotFoundException ex)
             {
@@ -296,38 +352,6 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         }
     }
 
-    private async Task<StorageClient> GetClientWithDiagnosticsAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await GetClientAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new InvalidOperationException(
-                "GCS service account key not configured. Use :set key to set the key file path.", ex);
-        }
-        catch (FileNotFoundException ex)
-        {
-            throw new FileNotFoundException(
-                $"Service account key file not found at: {ex.FileName}", ex.FileName, ex);
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidOperationException(
-                $"Invalid service account key file: {ex.Message}", ex);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            throw new InvalidOperationException(
-                $"Service account authentication failed: {ex.Message}", ex);
-        }
-    }
-
     /// <summary>
     /// Sets the service account key file path after validating the file.
     /// The path is stored encrypted in user settings.
@@ -377,64 +401,32 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         _logger.LogInformation("Service account key path cleared");
     }
 
-    /// <summary>
-    /// Validates a service account key file without storing it.
-    /// </summary>
-    /// <param name="path">Absolute path to the service account key JSON file.</param>
-    /// <returns>A validation result with clear error messages if invalid.</returns>
-    public static ServiceAccountKeyValidationResult ValidateKeyFile(string path)
+    private async Task<StorageClient> GetClientWithDiagnosticsAsync(CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(path);
-
-        if (!File.Exists(path))
-        {
-            return ServiceAccountKeyValidationResult.Invalid($"File not found: {path}");
-        }
-
-        string json;
         try
         {
-            json = File.ReadAllText(path);
+            return await GetClientAsync(cancellationToken);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            return ServiceAccountKeyValidationResult.Invalid($"Cannot read file: {ex.Message}");
+            throw new InvalidOperationException(
+                "GCS service account key not configured. Use :set key to set the key file path.", ex);
         }
-
-        JsonDocument doc;
-        try
+        catch (FileNotFoundException ex)
         {
-            doc = JsonDocument.Parse(json);
+            throw new FileNotFoundException(
+                $"Service account key file not found at: {ex.FileName}", ex.FileName, ex);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return ServiceAccountKeyValidationResult.Invalid("File is not valid JSON");
+            throw new InvalidOperationException(
+                $"Invalid service account key file: {ex.Message}", ex);
         }
-
-        using (doc)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var root = doc.RootElement;
-
-            foreach (var field in RequiredKeyFileFields)
-            {
-                if (!root.TryGetProperty(field, out var prop)
-                    || prop.ValueKind == JsonValueKind.Null
-                    || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
-                {
-                    return ServiceAccountKeyValidationResult.Invalid(
-                        $"Invalid service account key file: missing '{field}'");
-                }
-            }
-
-            if (root.TryGetProperty("type", out var typeProp)
-                && typeProp.GetString() != "service_account")
-            {
-                return ServiceAccountKeyValidationResult.Invalid(
-                    $"Invalid key file: 'type' must be 'service_account', got '{typeProp.GetString()}'");
-            }
+            throw new InvalidOperationException(
+                $"Service account authentication failed: {ex.Message}", ex);
         }
-
-        return ServiceAccountKeyValidationResult.Valid();
     }
 
     private async Task<StorageClient> GetClientAsync(CancellationToken cancellationToken)
@@ -539,18 +531,4 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             _initLock.Release();
         }
     }
-}
-
-/// <summary>
-/// Result of validating a GCS service account key file.
-/// </summary>
-public sealed record ServiceAccountKeyValidationResult
-{
-    public bool IsValid { get; private init; }
-    public string? ErrorMessage { get; private init; }
-
-    public static ServiceAccountKeyValidationResult Valid() => new() { IsValid = true };
-
-    public static ServiceAccountKeyValidationResult Invalid(string errorMessage) =>
-        new() { IsValid = false, ErrorMessage = errorMessage };
 }

@@ -1050,6 +1050,7 @@ public class LinkExtractor : ILinkExtractor
         try
         {
             var path = new Uri(url).AbsolutePath;
+
             // Match date patterns: /YYYY/MM/DD/ or /YYYY/MM/
             return System.Text.RegularExpressions.Regex.IsMatch(
                 path, @"/\d{4}/\d{2}/(\d{2}/)?");
