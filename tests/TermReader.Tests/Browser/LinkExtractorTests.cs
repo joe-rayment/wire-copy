@@ -808,6 +808,179 @@ public class LinkExtractorTests
 
     #endregion
 
+    #region Inline vs Headline Link Detection
+
+    [Fact]
+    public async Task ExtractLinksAsync_HeadlineLink_ShouldBeContent()
+    {
+        // Arrange — link inside a heading element inside an article
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <h2><a href=""https://example.com/story"">Major Climate Bill Passes Senate in Historic Vote</a></h2>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].Type.Should().Be(LinkType.Content, "headline links inside headings should remain Content");
+        links[0].ImportanceScore.Should().BeGreaterThan(70, "headline links get an importance boost");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_InlineLink_ShouldBeNavigation()
+    {
+        // Arrange — inline reference link inside a paragraph with surrounding text
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <p>The president <a href=""https://example.com/speech"">told reporters at a press conference</a> that the new policy would take effect immediately and would affect millions of people across the country.</p>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].Type.Should().Be(LinkType.Navigation,
+            "inline reference links inside paragraphs with surrounding text should be Navigation");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_MixedHeadlineAndInlineLinks_ClassifiesCorrectly()
+    {
+        // Arrange — section page with both headline links and inline references
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <h2><a href=""https://example.com/headline-1"">Oil Prices Surge as OPEC Cuts Production Targets</a></h2>
+                    <p>The decision <a href=""https://example.com/inline-1"">causes oil prices to surge</a> across global markets, affecting consumers and businesses alike.</p>
+                    <h3><a href=""https://example.com/headline-2"">Tech Giants Report Record Quarterly Earnings</a></h3>
+                    <p>Analysts say this <a href=""https://example.com/inline-2"">told CBS News</a> that the trend is likely to continue through the next fiscal year.</p>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        var headline1 = links.First(l => l.Url.Contains("headline-1"));
+        var headline2 = links.First(l => l.Url.Contains("headline-2"));
+        var inline1 = links.First(l => l.Url.Contains("inline-1"));
+        var inline2 = links.First(l => l.Url.Contains("inline-2"));
+
+        headline1.Type.Should().Be(LinkType.Content, "h2 headline should be Content");
+        headline2.Type.Should().Be(LinkType.Content, "h3 headline should be Content");
+        inline1.Type.Should().Be(LinkType.Navigation, "inline reference should be Navigation");
+        inline2.Type.Should().Be(LinkType.Navigation, "inline reference should be Navigation");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_StandaloneContentLink_ShouldRemainContent()
+    {
+        // Arrange — standalone link in an article, not inside a heading or paragraph
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <div class=""card"">
+                        <a href=""https://example.com/standalone"">Standalone Article Card With a Long Title Here</a>
+                    </div>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert
+        links.Should().HaveCount(1);
+        links[0].Type.Should().Be(LinkType.Content,
+            "standalone links in article containers that aren't inline should remain Content");
+    }
+
+    #endregion
+
+    #region Section Page Metadata Guard
+
+    [Fact]
+    public async Task ExtractLinksAsync_SectionPage_DoesNotApplyPageMetadataToAllLinks()
+    {
+        // Arrange — section page with multiple <article> containers and a JSON-LD author
+        var html = @"
+            <html>
+            <head>
+                <script type=""application/ld+json"">{""author"":{""name"":""Brad Plumer""},""datePublished"":""2024-03-09""}</script>
+            </head>
+            <body>
+                <article>
+                    <h2><a href=""https://example.com/article-1"">First Article About Climate Change and Its Global Impact</a></h2>
+                </article>
+                <article>
+                    <h2><a href=""https://example.com/article-2"">Second Article About Technology Innovation and AI</a></h2>
+                </article>
+                <article>
+                    <h2><a href=""https://example.com/article-3"">Third Article About Economic Policy Changes</a></h2>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert — page-level metadata should NOT be applied when multiple <article> containers exist
+        links.Should().HaveCount(3);
+        links.Should().OnlyContain(l => l.Author == null,
+            "section page with multiple <article> containers should not apply page-level author to all links");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_SingleArticlePage_AppliesPageMetadata()
+    {
+        // Arrange — single-article page with JSON-LD author
+        var html = @"
+            <html>
+            <head>
+                <script type=""application/ld+json"">{""author"":{""name"":""Jane Doe""},""datePublished"":""2024-03-09""}</script>
+                <meta property=""article:published_time"" content=""2024-03-09T12:00:00Z"" />
+            </head>
+            <body>
+                <article>
+                    <h1>Main Article Title That Is Long Enough</h1>
+                    <p>Article body text with enough words to be meaningful content.</p>
+                    <a href=""https://example.com/related"">Related: Another Story About Similar Topic</a>
+                </article>
+            </body>
+            </html>";
+        var baseUrl = "https://example.com";
+
+        // Act
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        // Assert — single article page should apply page-level metadata
+        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        contentLinks.Should().NotBeEmpty();
+        contentLinks.Should().Contain(l => l.Author == "Jane Doe",
+            "single-article page should apply page-level author as fallback");
+    }
+
+    #endregion
+
     #region Section Title Extraction Tests
 
     [Fact]

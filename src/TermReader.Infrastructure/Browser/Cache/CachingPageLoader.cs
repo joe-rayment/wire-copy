@@ -34,7 +34,17 @@ public class CachingPageLoader : IPageLoader
         PageLoadRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!request.ForceRefresh)
+        if (request.ForceBrowser)
+        {
+            _logger.LogInformation(
+                "ForceBrowser set, bypassing cache (requires Selenium with cookies): {Url}",
+                request.Url);
+        }
+        else if (request.ForceRefresh)
+        {
+            _logger.LogInformation("Force refresh requested, bypassing cache: {Url}", request.Url);
+        }
+        else
         {
             var cached = _cache.TryGet(request.Url);
             if (cached != null)
@@ -54,10 +64,6 @@ public class CachingPageLoader : IPageLoader
                     request.Url);
                 _cache.Remove(request.Url);
             }
-        }
-        else
-        {
-            _logger.LogInformation("Force refresh requested, bypassing cache: {Url}", request.Url);
         }
 
         var result = await _inner.LoadAsync(request, cancellationToken);

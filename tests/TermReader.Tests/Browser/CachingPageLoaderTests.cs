@@ -173,6 +173,36 @@ public class CachingPageLoaderTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_ForceBrowser_BypassesCache()
+    {
+        var url = "https://nytimes.com/article";
+        var cached = CreateResult(url, "<html>cached section page</html>");
+        _cache.Put(url, cached);
+
+        var fresh = CreateResult(url, "<html>real article via Selenium</html>");
+        var request = new PageLoadRequest { Url = url, ForceBrowser = true };
+        _innerLoader.LoadAsync(request, Arg.Any<CancellationToken>()).Returns(fresh);
+
+        var result = await _sut.LoadAsync(request);
+
+        result.Html.Should().Be("<html>real article via Selenium</html>");
+        await _innerLoader.Received(1).LoadAsync(request, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LoadAsync_ForceBrowser_StillCachesResult()
+    {
+        var url = "https://nytimes.com/article";
+        var fresh = CreateResult(url);
+        var request = new PageLoadRequest { Url = url, ForceBrowser = true };
+        _innerLoader.LoadAsync(request, Arg.Any<CancellationToken>()).Returns(fresh);
+
+        await _sut.LoadAsync(request);
+
+        _cache.Contains(url).Should().BeTrue("ForceBrowser bypasses cache read but still stores result");
+    }
+
+    [Fact]
     public async Task GetPageSourceAsync_DelegatesToInner()
     {
         _innerLoader.GetPageSourceAsync("https://example.com", Arg.Any<CancellationToken>())
