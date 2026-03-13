@@ -487,9 +487,12 @@ public class LinkExtractor : ILinkExtractor
     internal static string? ExtractSectionTitle(HtmlNode anchor)
     {
         var current = anchor.ParentNode;
-        var depth = 0;
 
-        while (current != null && depth < 5 && current.Name != "#document")
+        // Walk up the DOM without a depth limit. The IsSectionContainer check
+        // (section tags, div[role=region], div.section/group) is specific enough
+        // that we won't match irrelevant ancestors. A depth limit would miss
+        // deeply nested articles (NYT front page: anchor is 6+ levels below section).
+        while (current != null && current.Name != "#document")
         {
             if (IsSectionContainer(current))
             {
@@ -509,7 +512,6 @@ public class LinkExtractor : ILinkExtractor
             }
 
             current = current.ParentNode;
-            depth++;
         }
 
         return null;
@@ -1115,11 +1117,29 @@ public class LinkExtractor : ILinkExtractor
 
     private static (string Text, bool IsFromImage) GetDisplayTextWithSource(HtmlNode anchor)
     {
+        // If the anchor contains a heading element (h1-h6), prefer the heading text only.
+        // This prevents bylines ("By Author") and summaries from being concatenated with
+        // the headline when the anchor wraps both: <a><h2>Headline</h2><p>By Author</p></a>
+        var heading = anchor.SelectSingleNode(".//h1|.//h2|.//h3|.//h4|.//h5|.//h6");
+        if (heading != null)
+        {
+            var headingText = heading.InnerText?.Trim() ?? string.Empty;
+            headingText = System.Text.RegularExpressions.Regex.Replace(headingText, @"\s+", " ").Trim();
+            headingText = HtmlEntity.DeEntitize(headingText);
+            if (!string.IsNullOrWhiteSpace(headingText))
+            {
+                return (headingText, false);
+            }
+        }
+
         // First try to get direct text content (visible on the page)
         var text = anchor.InnerText?.Trim() ?? string.Empty;
 
         // Clean up whitespace
         text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+
+        // Decode HTML entities (e.g., &amp; → &, &nbsp; → space)
+        text = HtmlEntity.DeEntitize(text);
 
         // If we have actual visible text content, use it
         if (!string.IsNullOrWhiteSpace(text))
@@ -1134,6 +1154,7 @@ public class LinkExtractor : ILinkExtractor
         if (img != null)
         {
             text = img.GetAttributeValue("alt", string.Empty);
+            text = HtmlEntity.DeEntitize(text);
             if (!string.IsNullOrWhiteSpace(text))
             {
                 return (text, true);

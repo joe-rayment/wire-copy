@@ -186,11 +186,54 @@ public class LinkExtractorSectionTitleTests
     }
 
     [Fact]
-    public void ExtractSectionTitle_DeeplyNested_BeyondMaxDepth_ReturnsNull()
+    public void ExtractSectionTitle_NoSectionContainer_ReturnsNull()
     {
+        // No section container in ancestry — just plain divs
+        var html = @"
+            <div>
+                <h2>Not A Section</h2>
+                <div><div><div>
+                    <a href=""https://example.com/article"">Article Title</a>
+                </div></div></div>
+            </div>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        var anchor = doc.DocumentNode.SelectSingleNode("//a");
+
+        var result = LinkExtractor.ExtractSectionTitle(anchor);
+
+        result.Should().BeNull("no section container exists in ancestry");
+    }
+
+    [Fact]
+    public void ExtractSectionTitle_DeeplyNested_FindsSectionAtAnyDepth()
+    {
+        // Anchor is 9 levels deep from section — no depth limit, should still find it
         var html = @"
             <section>
-                <h2>Too Far Away</h2>
+                <h2>Deep Section</h2>
+                <div><div><div><div><div><div><div><div><div>
+                    <a href=""https://example.com/article"">Article Title</a>
+                </div></div></div></div></div></div></div></div></div>
+            </section>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        var anchor = doc.DocumentNode.SelectSingleNode("//a");
+
+        var result = LinkExtractor.ExtractSectionTitle(anchor);
+
+        result.Should().Be("Deep Section", "section container should be found regardless of nesting depth");
+    }
+
+    [Fact]
+    public void ExtractSectionTitle_SixLevelsDeep_MatchesNytDomStructure()
+    {
+        // Matches real NYT DOM: anchor → div → article → li → ol → div → section
+        var html = @"
+            <section>
+                <h2>The Front Page</h2>
                 <div><div><div><div><div><div>
                     <a href=""https://example.com/article"">Article Title</a>
                 </div></div></div></div></div></div>
@@ -202,7 +245,7 @@ public class LinkExtractorSectionTitleTests
 
         var result = LinkExtractor.ExtractSectionTitle(anchor);
 
-        result.Should().BeNull("anchor is more than 5 levels deep from section");
+        result.Should().Be("The Front Page", "anchor is within 8-level walk limit");
     }
 
     #endregion
