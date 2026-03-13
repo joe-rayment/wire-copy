@@ -463,9 +463,9 @@ public class LinkExtractorTests
     }
 
     [Fact]
-    public void GroupLinksByUrl_SameUrlDifferentParent_KeepsBestRepresentative()
+    public void GroupLinksByUrl_SameUrlDifferentParent_FirstOccurrenceWins()
     {
-        // Arrange — same URL in nav and in content area
+        // Arrange — same URL in nav and in content area; first occurrence (earlier section) wins
         var links = new List<LinkInfo>
         {
             new() { Url = "https://example.com/page", DisplayText = "Home", Type = LinkType.Navigation, ImportanceScore = 30, ParentSelector = "nav.main" },
@@ -475,10 +475,49 @@ public class LinkExtractorTests
         // Act
         var result = LinkExtractor.GroupLinksByUrl(links);
 
-        // Assert
+        // Assert — first occurrence wins, preserving document/editorial order
         result.Should().HaveCount(1);
-        result[0].DisplayText.Should().Be("Welcome to Our Homepage");
-        result[0].ImportanceScore.Should().Be(70);
+        result[0].DisplayText.Should().Be("Home");
+        result[0].ImportanceScore.Should().Be(30);
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_SameUrlDifferentParent_ImageAltReplacedByRealText()
+    {
+        // Arrange — first is image alt, second has real text; second replaces
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/page", DisplayText = "Photo caption", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "div.hero", IsFromImageAlt = true },
+            new() { Url = "https://example.com/page", DisplayText = "Article Headline", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "div.content", IsFromImageAlt = false }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert — image-alt is replaced by real text
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Article Headline");
+        result[0].IsFromImageAlt.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GroupLinksByUrl_CrossSectionDedup_PropagatesMetadataFromLaterCopy()
+    {
+        // Arrange — first occurrence has no author, later copy from topic section has author
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://example.com/article", DisplayText = "Headline on Front Page", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "section.front-page", Author = null, SectionTitle = null },
+            new() { Url = "https://example.com/article", DisplayText = "Headline in Business", Type = LinkType.Content, ImportanceScore = 50, ParentSelector = "section.business", Author = "Jane Smith", SectionTitle = "Business" }
+        };
+
+        // Act
+        var result = LinkExtractor.GroupLinksByUrl(links);
+
+        // Assert — first occurrence wins, but metadata propagated from later copy
+        result.Should().HaveCount(1);
+        result[0].DisplayText.Should().Be("Headline on Front Page");
+        result[0].Author.Should().Be("Jane Smith");
+        result[0].SectionTitle.Should().Be("Business");
     }
 
     [Fact]
