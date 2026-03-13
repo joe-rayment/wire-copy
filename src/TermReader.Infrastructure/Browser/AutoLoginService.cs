@@ -21,6 +21,7 @@ public class AutoLoginService : IAutoLoginService
     private readonly ICookieEncryptionService _encryptionService;
     private readonly IWebDriverQueue _webDriverQueue;
     private readonly IBrowserSession _browserSession;
+    private readonly ICookieManager _cookieManager;
     private readonly ILogger<AutoLoginService> _logger;
 
     public AutoLoginService(
@@ -28,12 +29,14 @@ public class AutoLoginService : IAutoLoginService
         ICookieEncryptionService encryptionService,
         IWebDriverQueue webDriverQueue,
         IBrowserSession browserSession,
+        ICookieManager cookieManager,
         ILogger<AutoLoginService> logger)
     {
         _scopeFactory = scopeFactory;
         _encryptionService = encryptionService;
         _webDriverQueue = webDriverQueue;
         _browserSession = browserSession;
+        _cookieManager = cookieManager;
         _logger = logger;
     }
 
@@ -198,14 +201,14 @@ public class AutoLoginService : IAutoLoginService
                 credential.Domain);
         }
 
-        // Log cookie count for diagnostics
-        LogBrowserCookies(driver, credential.Domain);
+        // Capture and persist browser cookies for future sessions
+        await CaptureBrowserCookiesAsync(driver, credential.Domain, cancellationToken);
 
         _logger.LogInformation("Login completed for {Domain}, navigated to {Url}", credential.Domain, currentUrl);
         return AutoLoginResult.Succeeded();
     }
 
-    private void LogBrowserCookies(IWebDriver driver, string domain)
+    private async Task CaptureBrowserCookiesAsync(IWebDriver driver, string domain, CancellationToken cancellationToken)
     {
         try
         {
@@ -214,10 +217,29 @@ public class AutoLoginService : IAutoLoginService
                 "Browser has {Count} cookies after login for {Domain}",
                 seleniumCookies.Count,
                 domain);
+
+            if (seleniumCookies.Count == 0)
+            {
+                return;
+            }
+
+            var storedCookies = seleniumCookies.Select(c =>
+                new StoredCookie(
+                    c.Name,
+                    c.Value,
+                    c.Domain,
+                    c.Path,
+                    c.Expiry)).ToList();
+
+            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
+            _logger.LogInformation(
+                "Persisted {Count} cookies after login for {Domain}",
+                storedCookies.Count,
+                domain);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read cookies after login for {Domain}", domain);
+            _logger.LogWarning(ex, "Failed to capture cookies after login for {Domain}", domain);
         }
     }
 }

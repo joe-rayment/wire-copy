@@ -57,6 +57,13 @@ public interface IPageRenderer
     void RenderInteractiveRefresh(string url);
 
     /// <summary>
+    /// Renders a message telling the user to complete login in the browser window.
+    /// </summary>
+    /// <param name="url">URL that triggered the login requirement.</param>
+    /// <param name="domain">Domain requiring login.</param>
+    void RenderManualLogin(string url, string domain);
+
+    /// <summary>
     /// Renders status bar at bottom of screen.
     /// </summary>
     /// <param name="context">Current navigation context.</param>

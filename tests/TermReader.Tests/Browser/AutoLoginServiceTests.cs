@@ -69,6 +69,7 @@ public class AutoLoginServiceTests
             _encryptionService,
             _webDriverQueue,
             _browserSession,
+            Substitute.For<ICookieManager>(),
             NullLogger<AutoLoginService>.Instance);
     }
 
