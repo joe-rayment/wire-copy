@@ -364,10 +364,11 @@ public class ContentQualityGateTests
     }
 
     [Fact]
-    public async Task ExtractAsync_PaywallElementButFullContent_IsNotPaywalled()
+    public async Task ExtractAsync_PaywallElementWithFullContent_IsPaywalled()
     {
-        // Arrange - Page has a paywall element but sufficient content (not truncated)
-        // This verifies that the detection only flags when content appears truncated
+        // Arrange - Page has a gateway paywall element with full preview content.
+        // Paywall HTML elements are strong indicators — sites like NYT show preview
+        // content before the gate, so we always trust these elements.
         var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
         var extractor = new ReadableContentExtractor(logger);
 
@@ -390,7 +391,7 @@ public class ContentQualityGateTests
 
         // Assert
         result.Should().NotBeNull();
-        result!.IsPaywalled.Should().BeFalse("content has enough paragraphs so it is not flagged as truncated despite paywall element");
+        result!.IsPaywalled.Should().BeTrue("gateway HTML element is a strong paywall indicator regardless of content amount");
     }
 
     [Fact]

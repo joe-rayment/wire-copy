@@ -50,9 +50,11 @@ public class PaywallDetectionTests
     }
 
     [Fact]
-    public void DetectPaywall_ReturnsFalse_WhenPaywallElementsButEnoughParagraphs()
+    public void DetectPaywall_ReturnsTrue_WhenPaywallElementsEvenWithEnoughParagraphs()
     {
-        // Arrange - paywall class present but content has >= 3 paragraphs (full article)
+        // Arrange - paywall class present with 6 paragraphs of preview content.
+        // NYT and similar sites show preview content before the paywall gate,
+        // so paywall HTML elements are always trusted.
         var html = @"
             <html>
             <body>
@@ -83,7 +85,7 @@ public class PaywallDetectionTests
         var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         // Assert
-        result.Should().BeFalse("enough paragraphs indicate full content despite paywall element");
+        result.Should().BeTrue("paywall HTML elements are explicit gate indicators — always trusted");
     }
 
     [Fact]
@@ -346,6 +348,45 @@ public class PaywallDetectionTests
         result.Should().BeFalse(
             "even though paywall text is present and paragraph count is low, " +
             "the total content length (>= 500 chars) indicates a real short article, not a truncated teaser");
+    }
+
+    [Fact]
+    public void DetectPaywall_ReturnsTrue_NytStylePreviewWithGateway()
+    {
+        // NYT shows 5+ paragraphs of preview before the paywall gate.
+        // The gateway element must trigger detection regardless of content amount.
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <p>The first paragraph of a long article about important news.</p>
+                    <p>The second paragraph continues the story with more detail.</p>
+                    <p>A third paragraph adds context and background information.</p>
+                    <p>The fourth paragraph quotes an expert on the topic.</p>
+                    <p>A fifth paragraph wraps up the preview section of the article.</p>
+                </article>
+                <div class='gateway-content' id='gateway-content'>
+                    <h2>Subscribe to The Times</h2>
+                    <p>Already a subscriber? Log in</p>
+                </div>
+            </body>
+            </html>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var paragraphs = new List<string>
+        {
+            "The first paragraph of a long article about important news.",
+            "The second paragraph continues the story with more detail.",
+            "A third paragraph adds context and background information.",
+            "The fourth paragraph quotes an expert on the topic.",
+            "A fifth paragraph wraps up the preview section of the article."
+        };
+
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
+
+        result.Should().BeTrue("gateway element is a strong paywall indicator even with 5 preview paragraphs");
     }
 
     [Fact]
