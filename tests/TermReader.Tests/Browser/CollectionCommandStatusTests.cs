@@ -316,9 +316,26 @@ public class CollectionCommandStatusTests
         // Act
         await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
 
-        // Assert: navigation entered CollectionList view (not CollectionItems)
+        // Assert: with no collections populated, stays on CollectionList
         _navService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionList);
         _navService.ActiveCollection.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HandleOpenCollections_SingleCollection_AutoEnters()
+    {
+        // Arrange: RefreshCollectionsAsync sets exactly one collection
+        var readingList = Collection.Create("Reading List");
+        readingList.AddItem("https://example.com/saved", "Saved Article");
+        _ctx.Collections = new List<Collection> { readingList }.AsReadOnly();
+
+        // Act
+        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
+
+        // Assert: auto-entered the sole collection
+        _navService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionItems);
+        _navService.ActiveCollection.Should().NotBeNull();
+        _navService.ActiveCollection!.Name.Should().Be("Reading List");
     }
 
     [Fact]
