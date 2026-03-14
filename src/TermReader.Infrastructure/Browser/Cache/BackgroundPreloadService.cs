@@ -321,26 +321,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return Math.Abs(listIndex - selectedIndex);
     }
 
-    private bool IsPaywalledDomain(string url)
-    {
-        if (_paywalledDomains.Length == 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            var host = new Uri(url).Host;
-            return _paywalledDomains.Any(d =>
-                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     /// <summary>
     /// Detects if the server redirected to a different page by comparing the normalized
     /// paths of the request URL and final URL. Ignores fragment/query differences.
@@ -566,6 +546,26 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
         return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
+    }
+
+    private bool IsPaywalledDomain(string url)
+    {
+        if (_paywalledDomains.Length == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var host = new Uri(url).Host;
+            return _paywalledDomains.Any(d =>
+                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void TryAddEligibleUrl(

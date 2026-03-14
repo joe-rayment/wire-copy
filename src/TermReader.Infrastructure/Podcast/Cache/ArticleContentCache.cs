@@ -201,7 +201,11 @@ internal sealed class ArticleContentCache : IArticleContentCache
         {
             if (_index.TryGetValue(key, out var entry))
             {
-                TryDeleteFile(entry.ArticleFilePath);
+                if (entry.ArticleFilePath != null)
+                {
+                    TryDeleteFile(entry.ArticleFilePath);
+                }
+
                 _index.Remove(key);
                 await SaveIndexAsync(cancellationToken);
                 _logger.LogDebug("Removed cached article: {Url}", url);
