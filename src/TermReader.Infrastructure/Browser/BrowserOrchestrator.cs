@@ -1680,13 +1680,13 @@ public class BrowserOrchestrator : IBrowserService
                     return;
                 }
 
-                var visibleNodes = tree.GetVisibleNodes().ToList();
+                var allNodes = tree.GetAllNodes().ToList();
                 var selectedNode = tree.CurrentSelection;
-                var selectedIndex = selectedNode != null ? visibleNodes.IndexOf(selectedNode) : 0;
+                var selectedIndex = selectedNode != null ? allNodes.IndexOf(selectedNode) : 0;
 
                 _preloadService.NotifySelectionChanged(
                     Math.Max(0, selectedIndex),
-                    visibleNodes,
+                    allNodes,
                     page!.Url);
                 break;
             }
