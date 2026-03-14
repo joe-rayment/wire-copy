@@ -19,4 +19,9 @@ internal interface IArticleContentCache
     /// Stores extracted article content in the cache, keyed by normalized URL.
     /// </summary>
     Task PutAsync(string url, ExtractedArticle article, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a cached article by URL if it exists.
+    /// </summary>
+    Task RemoveAsync(string url, CancellationToken cancellationToken = default);
 }

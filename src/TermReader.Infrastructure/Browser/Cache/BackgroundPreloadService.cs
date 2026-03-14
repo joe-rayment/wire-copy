@@ -26,6 +26,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly IIdleDetector _idleDetector;
     private readonly HttpClient _httpClient;
     private readonly CacheConfiguration _config;
+    private readonly string[] _paywalledDomains;
     private readonly IReadableContentExtractor? _contentExtractor;
     private readonly IArticleContentCache? _articleContentCache;
     private readonly ILogger<BackgroundPreloadService> _logger;
@@ -64,7 +65,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         CacheConfiguration config,
         ILogger<BackgroundPreloadService> logger,
         IReadableContentExtractor? contentExtractor = null,
-        IArticleContentCache? articleContentCache = null)
+        IArticleContentCache? articleContentCache = null,
+        BrowserConfiguration? browserConfig = null)
     {
         _cache = cache;
         _idleDetector = idleDetector;
@@ -73,6 +75,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _logger = logger;
         _contentExtractor = contentExtractor;
         _articleContentCache = articleContentCache;
+        _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -316,6 +319,26 @@ internal sealed class BackgroundPreloadService : IPreloadService
     internal static int ComputePriorityScore(int listIndex, int selectedIndex)
     {
         return Math.Abs(listIndex - selectedIndex);
+    }
+
+    private bool IsPaywalledDomain(string url)
+    {
+        if (_paywalledDomains.Length == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var host = new Uri(url).Host;
+            return _paywalledDomains.Any(d =>
+                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -855,6 +878,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         if (_contentExtractor == null || _articleContentCache == null)
         {
+            return;
+        }
+
+        // Never article-cache content from paywalled domains via HTTP.
+        // These need Selenium with cookies for full content; HTTP fetch
+        // only gets truncated preview that may not trigger paywall detection.
+        if (IsPaywalledDomain(url))
+        {
+            _logger.LogDebug("Skipping article cache for paywalled domain: {Url}", url);
             return;
         }
 
