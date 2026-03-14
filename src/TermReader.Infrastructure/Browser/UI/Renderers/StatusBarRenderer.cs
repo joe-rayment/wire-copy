@@ -82,13 +82,16 @@ internal class StatusBarRenderer
         return string.Empty;
     }
 
-    internal static string FormatProgressBar(int cached, int total, ThemePalette p)
+    internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false)
     {
         const int barLength = 10;
+        const string ActiveColor = "\x1b[38;5;220m"; // Yellow/amber for active caching
         var filled = total > 0 ? (int)Math.Round((double)cached / total * barLength) : 0;
         var empty = barLength - filled;
         var bar = new string('\u25B0', filled) + new string('\u25B1', empty);
-        return $"{p.PromptFg.AnsiFg}{bar}{Reset} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
+        var barColor = isActive ? ActiveColor : p.PromptFg.AnsiFg;
+        var label = isActive ? "caching" : "cached";
+        return $"{barColor}{bar}{Reset} {p.SecondaryText.AnsiFg}{cached}/{total} {label}{Reset}";
     }
 
     private static string FormatLine2Left(
@@ -169,7 +172,7 @@ internal class StatusBarRenderer
                 return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
             }
 
-            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p);
+            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching);
         }
 
         // Per-page cache badge for other views

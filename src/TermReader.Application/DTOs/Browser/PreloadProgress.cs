@@ -29,4 +29,9 @@ public record PreloadProgress
     /// (cached or identified as needing browser).
     /// </summary>
     public bool IsComplete => CachedCount + NeedsBrowserCount >= TotalCacheableLinks;
+
+    /// <summary>
+    /// Whether the preloader is actively fetching pages right now.
+    /// </summary>
+    public bool IsActivelyFetching { get; init; }
 }

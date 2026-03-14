@@ -227,12 +227,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         var cachedCount = eligible.Count(url => _cache.Contains(url) || IsInArticleCache(url));
+        var hasQueuedWork = _queue.Count > 0 || !_inFlight.IsEmpty;
 
         return new PreloadProgress
         {
             TotalCacheableLinks = eligible.Count,
             CachedCount = cachedCount,
-            NeedsBrowserCount = needsJs.Count
+            NeedsBrowserCount = needsJs.Count,
+            IsActivelyFetching = hasQueuedWork && !_paused,
         };
     }
 
