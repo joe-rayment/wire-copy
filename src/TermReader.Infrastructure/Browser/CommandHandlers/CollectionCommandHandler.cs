@@ -363,6 +363,14 @@ internal static class CollectionCommandHandler
         {
             ctx.NavigationService.EnterCollections();
             await ctx.RefreshCollectionsAsync(ct);
+
+            // Auto-enter the sole collection to skip the list screen
+            if (ctx.Collections is { Count: 1 })
+            {
+                ctx.NavigationService.EnterCollection(ctx.Collections[0]);
+                ctx.PreloadService.EnableEagerMode();
+            }
+
             await ctx.RenderCurrentPageAsync(options, ct);
         }
         catch (OperationCanceledException)
