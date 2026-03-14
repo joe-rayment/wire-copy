@@ -432,7 +432,9 @@ internal static class NavigationCommandHandler
         var page = ctx.NavigationService.CurrentPage;
         if (page != null)
         {
+            var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
             await ctx.NavigateToAsync(page.Url, options, ct);
+            ctx.NavigationService.SetViewMode(viewMode);
         }
     }
 

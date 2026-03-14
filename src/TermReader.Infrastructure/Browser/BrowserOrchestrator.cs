@@ -948,7 +948,7 @@ public class BrowserOrchestrator : IBrowserService
 
             var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
-            _navigationService.NavigateTo(page);
+            _navigationService.ReplaceCurrent(page);
             _navigationService.SetCacheInfo(false, null);
             _lineCacheManager.InvalidateLineCache();
 
@@ -1015,7 +1015,7 @@ public class BrowserOrchestrator : IBrowserService
             var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
             _pageCache.Put(url, loadResult);
-            _navigationService.NavigateTo(page);
+            _navigationService.ReplaceCurrent(page);
             _navigationService.SetCacheInfo(false, null);
             _lineCacheManager.InvalidateLineCache();
 
