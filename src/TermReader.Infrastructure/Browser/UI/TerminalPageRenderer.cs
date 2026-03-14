@@ -90,7 +90,13 @@ public class TerminalPageRenderer : IPageRenderer
         {
             var focusLineOffset = Math.Max(0, Math.Min(viewportHeight / 3, wrappedLines.Count - context.ScrollOffset - 1));
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, focusLineOffset);
-            _articleRenderer.RenderReaderStatusBar(context, wrappedLines.Count, options.MaxContentWidth, viewportHeight, options.TerminalWidth);
+            _statusBarRenderer.RenderStatusBar(
+                context,
+                ViewMode.Readable,
+                options.TerminalWidth,
+                readerTotalLines: wrappedLines.Count,
+                readerContentWidth: options.MaxContentWidth,
+                readerViewportHeight: viewportHeight);
         }
         else
         {
