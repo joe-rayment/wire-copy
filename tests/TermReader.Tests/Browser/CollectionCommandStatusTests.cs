@@ -287,54 +287,62 @@ public class CollectionCommandStatusTests
     #region HandleOpenCollections
 
     [Fact]
-    public async Task HandleOpenCollections_CallsGetReadingListAsync_NotGetDefaultCollectionAsync()
+    public async Task HandleOpenCollections_ShowsCollectionListView()
     {
-        // Arrange: GetReadingListAsync returns a collection named "Reading List"
-        var readingList = Collection.Create("Reading List");
-        readingList.AddItem("https://example.com/saved", "Saved Article");
-        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
-            .Returns(readingList);
-
         // Act
         await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
 
-        // Assert: GetReadingListAsync was called, NOT GetDefaultCollectionAsync
-        await _collectionService.Received(1).GetReadingListAsync(Arg.Any<CancellationToken>());
-        await _collectionService.DidNotReceive().GetDefaultCollectionAsync(Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task HandleOpenCollections_NavigatesToReadingListCollection()
-    {
-        // Arrange
-        var readingList = Collection.Create("Reading List");
-        readingList.AddItem("https://example.com/saved", "Saved Article");
-        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
-            .Returns(readingList);
-
-        // Act
-        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
-
-        // Assert: navigation entered CollectionItems view with the Reading List
-        _navService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionItems);
-        _navService.ActiveCollection.Should().NotBeNull();
-        _navService.ActiveCollection!.Name.Should().Be("Reading List");
-        _navService.ActiveCollection.Items.Should().HaveCount(1);
-        _navService.ActiveCollection.Items[0].Url.Should().Be("https://example.com/saved");
+        // Assert: navigation entered CollectionList view (not CollectionItems)
+        _navService.CurrentContext.ViewMode.Should().Be(ViewMode.CollectionList);
+        _navService.ActiveCollection.Should().BeNull();
     }
 
     [Fact]
     public async Task HandleOpenCollections_Failure_ShowsErrorMessage()
     {
-        // Arrange
-        _collectionService.GetReadingListAsync(Arg.Any<CancellationToken>())
-            .Returns<Collection>(_ => throw new InvalidOperationException("DB error"));
+        // Arrange: create a context where RefreshCollectionsAsync throws
+        string? statusMessage = null;
+        var logger = Substitute.For<ILogger<NavigationService>>();
+        var navService = new NavigationService(logger);
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(Substitute.For<IServiceScope>());
+
+        var errorCtx = new CommandContext
+        {
+            NavigationService = navService,
+            Renderer = Substitute.For<IPageRenderer>(),
+            InputHandler = Substitute.For<IInputHandler>(),
+            ScopeFactory = scopeFactory,
+            Logger = NullLogger.Instance,
+            PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = new LineCacheManager(navService, themeProvider),
+            ThemeProvider = themeProvider,
+            PreloadService = Substitute.For<IPreloadService>(),
+            RenderCurrentPageAsync = (_, _) =>
+            {
+                statusMessage = navService.CurrentContext.StatusMessage;
+                return Task.CompletedTask;
+            },
+            RefreshCollectionsAsync = _ => throw new InvalidOperationException("DB error"),
+            RefreshBookmarksAsync = _ => Task.CompletedTask,
+            NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            GetCurrentRenderOptions = () => _options,
+            CreateCollectionService = _ => _collectionService,
+            GetReaderViewportHeight = _ => 20,
+            GetHierarchicalViewportHeight = _ => 20,
+            AdjustScrollForSelection = (_, _) => { },
+            ScrollToSearchMatch = (_, _) => { },
+        };
 
         // Act
-        await CollectionCommandHandler.HandleOpenCollections(_ctx, _options, CancellationToken.None);
+        await CollectionCommandHandler.HandleOpenCollections(errorCtx, _options, CancellationToken.None);
 
         // Assert
-        _lastStatusMessage.Should().Contain("Failed to load collections");
+        statusMessage.Should().Contain("Failed to load collections");
     }
 
     #endregion
