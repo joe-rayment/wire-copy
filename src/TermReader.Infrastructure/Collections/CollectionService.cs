@@ -208,12 +208,9 @@ public class CollectionService : ICollectionService
         if (readingList != null)
         {
             // Both exist — merge items from legacy into Reading List, then delete legacy
-            foreach (var item in legacy.Items)
+            foreach (var item in legacy.Items.Where(item => !readingList.ContainsUrl(item.Url)))
             {
-                if (!readingList.ContainsUrl(item.Url))
-                {
-                    readingList.AddItem(item.Url, item.Title);
-                }
+                readingList.AddItem(item.Url, item.Title);
             }
 
             await _repository.UpdateAsync(readingList, cancellationToken);

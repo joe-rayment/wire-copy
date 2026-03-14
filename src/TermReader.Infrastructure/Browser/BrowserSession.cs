@@ -26,7 +26,6 @@ public sealed class BrowserSession : IBrowserSession
     private IWebDriver? _driver;
     private bool _driverIsHeadless;
     private int? _driverServicePid;
-    private Process? _chromeCdpProcess;
     private bool _disposed;
 
     public BrowserSession(
@@ -141,6 +140,28 @@ public sealed class BrowserSession : IBrowserSession
             _disposed = true;
             DisposeDriverUnsafe();
         }
+    }
+
+    private static string? FindPlaywrightChrome()
+    {
+        var pwHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var playwrightDir = Path.Combine(pwHome, ".cache", "ms-playwright");
+        if (!Directory.Exists(playwrightDir))
+        {
+            return null;
+        }
+
+        var chromeDirs = Directory.GetDirectories(playwrightDir, "chromium-*");
+        foreach (var dir in chromeDirs.OrderByDescending(d => d))
+        {
+            var chromeBin = Path.Combine(dir, "chrome-linux", "chrome");
+            if (File.Exists(chromeBin))
+            {
+                return chromeBin;
+            }
+        }
+
+        return null;
     }
 
     private void DisposeDriverUnsafe()
@@ -274,9 +295,8 @@ public sealed class BrowserSession : IBrowserSession
         var options = new ChromeOptions();
 
         // Set Chrome binary location if Selenium Manager downloaded it
-        var seleniumChrome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".cache", "selenium", "chrome", "linux64");
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var seleniumChrome = Path.Combine(home, ".cache", "selenium", "chrome", "linux64");
         if (Directory.Exists(seleniumChrome))
         {
             var latestDir = Directory.GetDirectories(seleniumChrome)
@@ -343,6 +363,7 @@ public sealed class BrowserSession : IBrowserSession
             // ChromeDriver crashed on start (architecture mismatch).
             driver = LaunchChromeViaCdp(options, headless);
         }
+
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
         driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
 
@@ -419,7 +440,6 @@ public sealed class BrowserSession : IBrowserSession
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start Chrome at {chromeBin}");
-        _chromeCdpProcess = process;
 
         // Wait for Chrome to start listening on the CDP port
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
@@ -453,29 +473,6 @@ public sealed class BrowserSession : IBrowserSession
         // Connect via Chrome's HTTP endpoint (no chromedriver binary needed)
         options.DebuggerAddress = $"127.0.0.1:{cdpPort}";
         return new RemoteWebDriver(new Uri($"http://127.0.0.1:{cdpPort}"), options);
-    }
-
-    private static string? FindPlaywrightChrome()
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var playwrightDir = Path.Combine(home, ".cache", "ms-playwright");
-        if (!Directory.Exists(playwrightDir))
-        {
-            return null;
-        }
-
-        // Find the most recent chromium installation
-        var chromeDirs = Directory.GetDirectories(playwrightDir, "chromium-*");
-        foreach (var dir in chromeDirs.OrderByDescending(d => d))
-        {
-            var chromeBin = Path.Combine(dir, "chrome-linux", "chrome");
-            if (File.Exists(chromeBin))
-            {
-                return chromeBin;
-            }
-        }
-
-        return null;
     }
 
     private IWebDriver CreateFirefoxDriver(bool headless)
