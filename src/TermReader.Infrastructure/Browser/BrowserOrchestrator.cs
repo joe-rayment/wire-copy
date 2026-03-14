@@ -199,23 +199,14 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // For known-paywalled domains with available cookies, skip HTTP and use Selenium directly
+        // For known-paywalled domains, always use Selenium. HTTP fetch without cookies
+        // always returns truncated preview content, and paywall gate elements are JS-injected
+        // so they can't be detected from raw HTTP HTML.
         var forceBrowser = false;
         if (IsPaywalledDomain(url))
         {
-            var cookies = await _cookieManager.LoadCookiesAsync();
-            var host = new Uri(url).Host;
-            var cookieDomain = cookies.FirstOrDefault(c =>
-            {
-                var d = c.Domain.TrimStart('.');
-                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
-            });
-            if (cookieDomain != null)
-            {
-                _logger.LogInformation("Paywalled domain with cookies detected, using Selenium: {Url}", url);
-                forceBrowser = true;
-            }
+            _logger.LogInformation("Paywalled domain detected, forcing Selenium: {Url}", url);
+            forceBrowser = true;
         }
 
         // Load the page HTML

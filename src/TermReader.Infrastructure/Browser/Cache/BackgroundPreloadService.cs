@@ -736,6 +736,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private async Task PreloadUrlAsync(string url, CancellationToken cancellationToken)
     {
+        // Never HTTP-preload paywalled domains — they always return truncated content
+        // without cookies/JS, and paywall gates are JS-injected so can't be detected.
+        if (IsPaywalledDomain(url))
+        {
+            _logger.LogDebug("Skipping preload for paywalled domain: {Url}", url);
+            return;
+        }
+
         var normalizedUrl = UrlNormalizer.Normalize(url);
 
         // In-flight deduplication
