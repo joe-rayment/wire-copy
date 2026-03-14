@@ -1057,11 +1057,11 @@ public class BackgroundPreloadServiceTests
     }
 
     [Fact]
-    public void BuildQueue_DefaultBudget_Is20()
+    public void BuildQueue_DefaultBudget_Is50()
     {
         var config = new CacheConfiguration();
 
-        config.MaxPreloadLinks.Should().Be(20);
+        config.MaxPreloadLinks.Should().Be(50);
     }
 
     #endregion
