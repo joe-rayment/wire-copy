@@ -102,6 +102,20 @@ public class NavigationService : INavigationService
             page.Url);
     }
 
+    /// <summary>
+    /// Replaces the current page in-place without altering history, view mode,
+    /// or scroll position. Used for refresh operations where the user should
+    /// stay in the same view they were in before the refresh.
+    /// </summary>
+    public void ReplaceCurrent(Page page)
+    {
+        _currentPage = page;
+
+        _logger.LogInformation("Replaced current page: {Title} ({Url})",
+            page.Metadata.Title,
+            page.Url);
+    }
+
     public Page? GoBack()
     {
         if (!CanGoBack)
