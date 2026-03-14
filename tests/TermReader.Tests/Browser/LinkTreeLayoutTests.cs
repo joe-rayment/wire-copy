@@ -775,7 +775,7 @@ public class LinkTreeLayoutTests
     public void ComputeLayout_StatusBarIs3Lines_MatchesCompactStyle()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.StatusBarLines.Should().Be(3, "status bar is blank + separator + status text");
+        layout.StatusBarLines.Should().Be(3, "status bar is separator + line 1 + line 2");
     }
 
     [Fact]

@@ -9,8 +9,10 @@ using TermReader.Infrastructure.Browser.Themes;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders the general-purpose status bar for hierarchical and readable views.
-/// Uses colored mode labels and key hints with consistent styling.
+/// Renders the unified two-line status bar for all views.
+/// Line 1: mode label + adaptive key hints
+/// Line 2: contextual vitals (URL/domain left, cache/status right)
+/// Total budget: 3 lines (separator + line 1 + line 2).
 /// </summary>
 internal class StatusBarRenderer
 {
@@ -24,38 +26,31 @@ internal class StatusBarRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderStatusBar(NavigationContext context, ViewMode mode, int terminalWidth = 0, PreloadProgress? cacheProgress = null, double cacheUsagePercent = 0)
+    public void RenderStatusBar(
+        NavigationContext context,
+        ViewMode mode,
+        int terminalWidth = 0,
+        PreloadProgress? cacheProgress = null,
+        double cacheUsagePercent = 0,
+        int readerTotalLines = 0,
+        int readerContentWidth = 0,
+        int readerViewportHeight = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-
-        _helpers.WriteLine();
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
         var separatorWidth = Math.Max(1, width - 1);
+
+        // Separator line
         _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
-        var modeLabel = GetModeLabel(mode);
-        var hints = GetKeyHints(mode, p);
-        var search = !string.IsNullOrEmpty(context.SearchQuery) ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}" : string.Empty;
-        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190back]{Reset} " : string.Empty;
-        var cacheBadge = FormatCacheBadge(context, mode, p, cacheProgress);
-        var cacheWarning = FormatCacheWarning(cacheUsagePercent, p);
+        // Line 1: mode label + adaptive key hints
+        RenderLine1(context, mode, p, width);
 
-        var statusMsg = !string.IsNullOrEmpty(context.StatusMessage)
-            ? $" {p.SecondaryText.AnsiFg}|{Reset} {p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}"
-            : string.Empty;
-
-        var statusLine = $"{back}{p.StatusBarTextFg.AnsiFg}{modeLabel}{Reset} {hints}{search}{cacheBadge}{cacheWarning}{statusMsg}";
-
-        // Truncate the visible content if it would wrap on narrow terminals
-        if (RenderHelpers.GetDisplayWidth(statusLine) > width - 1)
-        {
-            statusLine = RenderHelpers.TruncateText(statusLine, width - 1);
-        }
-
-        _helpers.WriteLine(statusLine);
+        // Line 2: contextual vitals
+        RenderLine2(context, mode, p, width, cacheProgress, cacheUsagePercent, readerTotalLines, readerContentWidth, readerViewportHeight);
     }
 
-    private static string GetModeLabel(ViewMode mode)
+    internal static string GetModeLabel(ViewMode mode)
     {
         return mode switch
         {
@@ -68,85 +63,243 @@ internal class StatusBarRenderer
         };
     }
 
-    private static string GetKeyHints(ViewMode mode, ThemePalette p)
+    internal static string GetAdaptiveHints(ViewMode mode, ThemePalette p, int availableWidth)
     {
-        return mode switch
-        {
-            ViewMode.Hierarchical => FormatHints(
-                p,
-                ("Enter", "open"),
-                ("s", "save"),
-                ("A", "save-all"),
-                ("R", "refresh"),
-                ("v", "reader"),
-                ("?", "help")),
-            ViewMode.Readable => FormatHints(
-                p,
-                ("h/l", "width"),
-                ("R", "refresh"),
-                ("v", "links"),
-                ("b", "back"),
-                ("?", "help")),
-            ViewMode.CollectionList => FormatHints(
-                p,
-                ("Enter", "open"),
-                ("d", "delete"),
-                ("b", "back"),
-                ("?", "help")),
-            ViewMode.CollectionItems => FormatHints(
-                p,
-                ("Enter", "open"),
-                ("d", "remove"),
-                ("X", "clear"),
-                ("J/K", "reorder"),
-                ("p", "podcast"),
-                (":", "cmd"),
-                ("b", "back"),
-                ("?", "help")),
-            ViewMode.Launcher => FormatHints(
-                p,
-                ("Enter", "open"),
-                ("?", "help")),
-            _ => $"{p.SecondaryText.AnsiFg}q:quit{Reset}"
-        };
-    }
+        var tiers = GetHintTiers(mode);
 
-    private static string FormatCacheBadge(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
-    {
-        // In hierarchical or collection items view, show preload progress instead of per-page cache badge
-        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null && progress.TotalCacheableLinks > 0)
+        // Try each tier from largest to smallest
+        foreach (var tier in tiers)
         {
-            if (progress.IsComplete)
+            var formatted = FormatHints(p, tier);
+            var displayWidth = RenderHelpers.GetDisplayWidth(formatted);
+            if (displayWidth <= availableWidth)
             {
-                return $" {p.SecondaryText.AnsiFg}[all cached]{Reset}";
+                return formatted;
             }
-
-            return $" {p.PromptFg.AnsiFg}[caching {progress.CachedCount}/{progress.TotalCacheableLinks}]{Reset}";
         }
 
-        // For other views, show per-page cache badge
-        if (context.IsFromCache)
+        // Nothing fits
+        return string.Empty;
+    }
+
+    internal static string FormatProgressBar(int cached, int total, ThemePalette p)
+    {
+        const int barLength = 10;
+        var filled = total > 0 ? (int)Math.Round((double)cached / total * barLength) : 0;
+        var empty = barLength - filled;
+        var bar = new string('\u25B0', filled) + new string('\u25B1', empty);
+        return $"{p.PromptFg.AnsiFg}{bar}{Reset} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
+    }
+
+    private void RenderLine1(NavigationContext context, ViewMode mode, ThemePalette p, int width)
+    {
+        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
+        var modeLabel = $"{p.StatusBarTextFg.AnsiFg}{GetModeLabel(mode)}{Reset}";
+
+        // Calculate space used by back + mode label
+        var backWidth = context.CanGoBack ? 5 : 0; // "[←] "
+        var modeLabelWidth = GetModeLabel(mode).Length;
+        var availableForHints = width - 1 - backWidth - modeLabelWidth - 1; // -1 for space after label
+
+        var hints = GetAdaptiveHints(mode, p, availableForHints);
+
+        var line1 = $"{back}{modeLabel} {hints}";
+        if (RenderHelpers.GetDisplayWidth(line1) > width - 1)
         {
-            return $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}";
+            line1 = RenderHelpers.TruncateText(line1, width - 1);
+        }
+
+        _helpers.WriteLine(line1);
+    }
+
+    private void RenderLine2(
+        NavigationContext context,
+        ViewMode mode,
+        ThemePalette p,
+        int width,
+        PreloadProgress? cacheProgress,
+        double cacheUsagePercent,
+        int readerTotalLines,
+        int readerContentWidth,
+        int readerViewportHeight)
+    {
+        // Left side: contextual info
+        var left = FormatLine2Left(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
+
+        // Right side: cache/search/status
+        var right = FormatLine2Right(context, mode, p, cacheProgress, cacheUsagePercent);
+
+        var leftWidth = RenderHelpers.GetDisplayWidth(left);
+        var rightWidth = RenderHelpers.GetDisplayWidth(right);
+        var maxWidth = width - 1;
+
+        string line2;
+        if (leftWidth + rightWidth + 1 <= maxWidth && rightWidth > 0)
+        {
+            var padding = maxWidth - leftWidth - rightWidth;
+            line2 = $"{left}{new string(' ', Math.Max(1, padding))}{right}";
+        }
+        else if (rightWidth > 0 && leftWidth == 0)
+        {
+            line2 = right;
+        }
+        else
+        {
+            line2 = left;
+            if (RenderHelpers.GetDisplayWidth(line2) > maxWidth)
+            {
+                line2 = RenderHelpers.TruncateText(line2, maxWidth);
+            }
+        }
+
+        _helpers.WriteLine(line2);
+    }
+
+    private static string FormatLine2Left(
+        NavigationContext context,
+        ViewMode mode,
+        ThemePalette p,
+        int readerTotalLines,
+        int readerContentWidth,
+        int readerViewportHeight)
+    {
+        // Reader mode: show line position, width, and progress
+        if (mode == ViewMode.Readable && readerTotalLines > 0)
+        {
+            var progress = readerTotalLines > 0
+                ? (int)((float)Math.Min(context.ScrollOffset + readerViewportHeight, readerTotalLines) / readerTotalLines * 100)
+                : 100;
+
+            var lineInfo = $"L{context.ScrollOffset + 1}/{readerTotalLines}";
+            var widthInfo = $"W{readerContentWidth}";
+            return $" {p.SecondaryText.AnsiFg}{lineInfo} {widthInfo} {progress}%{Reset}";
+        }
+
+        // Show URL/domain for page views
+        var url = context.CurrentPage?.Url;
+        if (!string.IsNullOrEmpty(url))
+        {
+            var domain = GetDomain(url);
+            return $" {p.SecondaryText.AnsiFg}{domain}{Reset}";
         }
 
         return string.Empty;
     }
 
-    private static string FormatCacheWarning(double usagePercent, ThemePalette p)
+    private static string FormatLine2Right(
+        NavigationContext context,
+        ViewMode mode,
+        ThemePalette p,
+        PreloadProgress? cacheProgress,
+        double cacheUsagePercent)
     {
-        if (usagePercent < 90)
+        var parts = new List<string>();
+
+        // Search info
+        if (!string.IsNullOrEmpty(context.SearchQuery))
         {
-            return string.Empty;
+            parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
         }
 
-        // Use the warning color (PromptFg) for high cache usage
-        return $" {p.PromptFg.AnsiFg}[cache {usagePercent:F0}%]{Reset}";
+        // Cache progress mini-bar or cache badge
+        var cachePart = FormatCacheIndicator(context, mode, p, cacheProgress);
+        if (!string.IsNullOrEmpty(cachePart))
+        {
+            parts.Add(cachePart);
+        }
+
+        // Cache usage warning
+        if (cacheUsagePercent >= 90)
+        {
+            parts.Add($"{p.PromptFg.AnsiFg}cache {cacheUsagePercent:F0}%{Reset}");
+        }
+
+        // Status message
+        if (!string.IsNullOrEmpty(context.StatusMessage))
+        {
+            parts.Add($"{p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}");
+        }
+
+        return parts.Count > 0 ? string.Join($" {p.SecondaryText.AnsiFg}\u2502{Reset} ", parts) + " " : string.Empty;
     }
 
-    private static string FormatHints(ThemePalette p, params (string Key, string Action)[] hints)
+    private static string FormatCacheIndicator(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
+    {
+        // Preload progress for hierarchical/collection views
+        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null && progress.TotalCacheableLinks > 0)
+        {
+            if (progress.IsComplete)
+            {
+                return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
+            }
+
+            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p);
+        }
+
+        // Per-page cache badge for other views
+        if (context.IsFromCache)
+        {
+            return $"{p.SecondaryText.AnsiFg}cached {RenderHelpers.FormatCacheAge(context.CachedAt)}{Reset}";
+        }
+
+        return string.Empty;
+    }
+
+    private static (string Key, string Action)[][] GetHintTiers(ViewMode mode)
+    {
+        return mode switch
+        {
+            ViewMode.Hierarchical =>
+            [
+                [("Enter", "open"), ("s", "save"), ("A", "save-all"), ("R", "refresh"), ("v", "reader"), ("?", "help")],
+                [("Enter", "open"), ("s", "save"), ("R", "refresh"), ("v", "reader"), ("?", "help")],
+                [("?", "help")],
+            ],
+            ViewMode.Readable =>
+            [
+                [("h/l", "width"), ("R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
+                [("v", "links"), ("b", "back"), ("?", "help")],
+                [("?", "help")],
+            ],
+            ViewMode.CollectionList =>
+            [
+                [("Enter", "open"), ("d", "delete"), ("b", "back"), ("?", "help")],
+                [("Enter", "open"), ("b", "back"), ("?", "help")],
+                [("?", "help")],
+            ],
+            ViewMode.CollectionItems =>
+            [
+                [("Enter", "open"), ("d", "remove"), ("X", "clear"), ("J/K", "reorder"), ("p", "podcast"), (":", "cmd"), ("b", "back"), ("?", "help")],
+                [("Enter", "open"), ("d", "remove"), ("p", "podcast"), ("b", "back"), ("?", "help")],
+                [("Enter", "open"), ("b", "back"), ("?", "help")],
+                [("?", "help")],
+            ],
+            ViewMode.Launcher =>
+            [
+                [("Enter", "open"), ("a", "add"), ("d", "delete"), ("?", "help")],
+                [("Enter", "open"), ("?", "help")],
+                [("?", "help")],
+            ],
+            _ =>
+            [
+                [("q", "quit")],
+            ],
+        };
+    }
+
+    private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
             $"{p.PrimaryText.AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
+    }
+
+    private static string GetDomain(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return uri.Host;
+        }
+
+        return url.Length > 40 ? url[..40] : url;
     }
 }

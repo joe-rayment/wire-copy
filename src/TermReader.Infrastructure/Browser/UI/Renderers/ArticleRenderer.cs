@@ -90,41 +90,4 @@ internal class ArticleRenderer
         }
     }
 
-    public void RenderReaderStatusBar(NavigationContext context, int totalLines, int contentWidth, int viewportHeight, int terminalWidth = 0)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        _helpers.WriteLine();
-        var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
-        var separatorWidth = Math.Max(1, width - 1);
-        _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
-
-        var progress = totalLines > 0
-            ? (int)((float)Math.Min(context.ScrollOffset + viewportHeight, totalLines) / totalLines * 100)
-            : 100;
-
-        var lineInfo = $"L{context.ScrollOffset + 1}/{totalLines}";
-        var widthInfo = $"W{contentWidth}";
-        var progressInfo = $"{progress}%";
-
-        var searchInfo = !string.IsNullOrEmpty(context.SearchQuery)
-            ? $" /{context.SearchQuery}"
-            : string.Empty;
-
-        var cacheBadge = context.IsFromCache
-            ? $" {p.SecondaryText.AnsiFg}[cached {RenderHelpers.FormatCacheAge(context.CachedAt)}]{Reset}"
-            : string.Empty;
-
-        var hints = "h/l:width R:refresh v:links b:back ?:help";
-
-        var url = context.CurrentPage?.Url;
-        var urlInfo = string.Empty;
-        if (!string.IsNullOrEmpty(url))
-        {
-            var maxUrlWidth = Math.Max(10, width - 60);
-            var displayUrl = RenderHelpers.TruncateUrl(url, maxUrlWidth);
-            urlInfo = $" {p.SecondaryText.AnsiFg}{displayUrl}{Reset}";
-        }
-
-        _helpers.WriteLine($"{p.StatusBarTextFg.AnsiFg}[Reader] {lineInfo} {widthInfo} {progressInfo}{cacheBadge}{searchInfo}{urlInfo} | {hints}{Reset}");
-    }
 }
