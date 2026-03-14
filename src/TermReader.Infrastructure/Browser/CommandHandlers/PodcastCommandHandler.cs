@@ -545,9 +545,13 @@ internal static class PodcastCommandHandler
         var feedStatusNote = preflightFeedStatusNote;
         var keyPath = gcsClient?.GetServiceAccountKeyPath();
         var isKeyConfigured = !string.IsNullOrWhiteSpace(keyPath);
+        string? inlineError = null;
 
         while (!ct.IsCancellationRequested)
         {
+            try
+            {
+
             var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
             helpers.Clear();
@@ -601,6 +605,13 @@ internal static class PodcastCommandHandler
             {
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed for podcast apps{Reset}");
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3\u201363 chars, lowercase, a\u2013z/0\u20139/hyphens/dots){Reset}");
+            }
+
+            if (inlineError != null)
+            {
+                helpers.WriteLine();
+                helpers.WriteLine($"      {p.ErrorFg.AnsiFg}Error: {inlineError}{Reset}");
+                inlineError = null;
             }
 
             // --- Output ---
@@ -927,6 +938,17 @@ internal static class PodcastCommandHandler
             }
 
             // Unhandled key — silently ignore and re-render
+
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Error on podcast confirmation screen (non-fatal)");
+                inlineError = ex.Message;
+            }
         }
 
         return false;

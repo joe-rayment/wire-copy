@@ -68,6 +68,12 @@ public class TerminalInputHandler : IInputHandler
                 return new NavigationCommand { Type = CommandType.TerminalResized };
             }
 
+            if (_pendingKeyTask == null)
+            {
+                // Shouldn't happen, but guard against race with DrainPendingTasks
+                continue;
+            }
+
             var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
             _pendingKeyTask = null;
 
