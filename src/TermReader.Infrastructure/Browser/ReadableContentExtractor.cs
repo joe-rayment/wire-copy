@@ -48,10 +48,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'paywall')]",
         "//*[contains(@class, 'subscribe-wall')]",
         "//*[contains(@class, 'regwall')]",
+        "//*[contains(@class, 'meter-')]",
         "//*[contains(@id, 'gateway')]",
         "//*[contains(@id, 'paywall')]",
         "//*[contains(@id, 'regwall')]",
-        "//*[contains(@data-testid, 'paywall')]"
+        "//*[contains(@data-testid, 'paywall')]",
+        "//*[contains(@data-testid, 'inline-message')]",
+        "//*[contains(@data-testid, 'gateway')]",
     };
 
     private static readonly string[] ContentAreaSelectors =
@@ -311,36 +314,42 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     /// <summary>
     /// Detects whether a page is paywalled by checking for paywall indicator elements
-    /// and text patterns, combined with content truncation heuristics.
-    /// Only flags as paywalled when BOTH indicators are present AND content appears truncated
-    /// (few paragraphs with little total text).
+    /// and text patterns. Paywall HTML elements (gate overlays, subscriber walls) are
+    /// a strong signal and always trigger detection. Text patterns (e.g., "subscribe to
+    /// continue") are a weaker signal and only trigger when content also looks truncated.
     /// </summary>
     internal static bool DetectPaywall(HtmlDocument doc, IReadOnlyList<string> paragraphs)
     {
-        // Check for paywall indicator elements via XPath
+        // Check for paywall indicator elements via XPath — strong signal
         var hasPaywallElement = PaywallElementSelectors.Any(
             selector => doc.DocumentNode.SelectSingleNode(selector) != null);
 
-        // Check for paywall text patterns in the full document text
-        var hasPaywallText = false;
-        if (!hasPaywallElement)
+        // Paywall HTML elements are explicit gates injected by the site.
+        // NYT and others show preview content (5+ paragraphs) before the gate,
+        // so we trust these regardless of content length.
+        if (hasPaywallElement)
         {
-            var fullText = doc.DocumentNode.InnerText;
-            if (!string.IsNullOrEmpty(fullText))
-            {
-                var lowerText = fullText.ToLowerInvariant();
-                hasPaywallText = PaywallTextPatterns.Any(
-                    pattern => lowerText.Contains(pattern, StringComparison.Ordinal));
-            }
+            return true;
         }
 
-        // Only flag as paywalled if an indicator is found AND content looks truncated
-        if (!hasPaywallElement && !hasPaywallText)
+        // Check for paywall text patterns in the full document text — weaker signal
+        var fullText = doc.DocumentNode.InnerText;
+        if (string.IsNullOrEmpty(fullText))
         {
             return false;
         }
 
-        // Content with enough paragraphs is not truncated
+        var lowerText = fullText.ToLowerInvariant();
+        var hasPaywallText = PaywallTextPatterns.Any(
+            pattern => lowerText.Contains(pattern, StringComparison.Ordinal));
+
+        if (!hasPaywallText)
+        {
+            return false;
+        }
+
+        // Text patterns could be false positives (e.g., a footer CTA on a full article).
+        // Only flag as paywalled if content also looks truncated.
         if (paragraphs.Count >= PaywallTruncationThreshold)
         {
             return false;
