@@ -339,15 +339,8 @@ internal static class CollectionCommandHandler
     {
         try
         {
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var service = ctx.CreateCollectionService(scope);
-
-            // Go directly to Reading List items view (skip CollectionList)
-            var readingList = await service.GetReadingListAsync(ct);
             ctx.NavigationService.EnterCollections();
-            ctx.NavigationService.EnterCollection(readingList);
             await ctx.RefreshCollectionsAsync(ct);
-            ctx.PreloadService.EnableEagerMode();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
         catch (OperationCanceledException)
@@ -356,7 +349,7 @@ internal static class CollectionCommandHandler
         }
         catch (Exception ex)
         {
-            ctx.Logger.LogError(ex, "Failed to open Reading List");
+            ctx.Logger.LogError(ex, "Failed to open collections");
             ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
             await ctx.RenderCurrentPageAsync(options, ct);
         }

@@ -361,6 +361,7 @@ internal static class NavigationCommandHandler
             {
                 var selectedCollection = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
                 ctx.NavigationService.EnterCollection(selectedCollection);
+                ctx.PreloadService.EnableEagerMode();
                 await ctx.RenderCurrentPageAsync(options, ct);
             }
         }
