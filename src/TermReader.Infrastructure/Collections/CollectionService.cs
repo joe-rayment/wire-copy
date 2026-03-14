@@ -45,6 +45,7 @@ public class CollectionService : ICollectionService
 
     public async Task<IReadOnlyList<Collection>> GetAllCollectionsAsync(CancellationToken cancellationToken = default)
     {
+        await MergeLegacyReadLaterAsync(cancellationToken);
         return await _repository.GetAllAsync(cancellationToken);
     }
 
@@ -193,6 +194,41 @@ public class CollectionService : ICollectionService
         }
 
         return removed;
+    }
+
+    private async Task MergeLegacyReadLaterAsync(CancellationToken cancellationToken)
+    {
+        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken);
+        if (legacy == null)
+        {
+            return;
+        }
+
+        var readingList = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        if (readingList != null)
+        {
+            // Both exist — merge items from legacy into Reading List, then delete legacy
+            foreach (var item in legacy.Items)
+            {
+                if (!readingList.ContainsUrl(item.Url))
+                {
+                    readingList.AddItem(item.Url, item.Title);
+                }
+            }
+
+            await _repository.UpdateAsync(readingList, cancellationToken);
+            await _repository.DeleteAsync(legacy, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Merged legacy 'Read Later' ({Count} items) into Reading List", legacy.Items.Count);
+        }
+        else
+        {
+            // Only legacy exists — rename it
+            legacy.Rename("Reading List");
+            await _repository.UpdateAsync(legacy, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Renamed legacy 'Read Later' to 'Reading List'");
+        }
     }
 
     private async Task<Collection> GetOrCreateReadingListAsync(CancellationToken cancellationToken)
