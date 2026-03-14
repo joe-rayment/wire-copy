@@ -49,7 +49,21 @@ public class CachingPageLoader : IPageLoader
             var cached = _cache.TryGet(request.Url);
             if (cached != null)
             {
-                if (HasSufficientContent(cached.Html))
+                if (!HasSufficientContent(cached.Html))
+                {
+                    _logger.LogInformation(
+                        "Cached content below quality threshold, falling through to loader: {Url}",
+                        request.Url);
+                    _cache.Remove(request.Url);
+                }
+                else if (ReadableContentExtractor.HasPaywallElements(cached.Html!))
+                {
+                    _logger.LogInformation(
+                        "Cached content has paywall elements, evicting and falling through: {Url}",
+                        request.Url);
+                    _cache.Remove(request.Url);
+                }
+                else
                 {
                     _logger.LogInformation(
                         "Serving from cache: requestUrl={RequestUrl}, cachedFinalUrl={FinalUrl}, contentLength={Length}",
@@ -58,11 +72,6 @@ public class CachingPageLoader : IPageLoader
                         cached.Html?.Length ?? 0);
                     return cached with { FetchMethod = FetchMethod.Cached };
                 }
-
-                _logger.LogInformation(
-                    "Cached content below quality threshold, falling through to loader: {Url}",
-                    request.Url);
-                _cache.Remove(request.Url);
             }
         }
 

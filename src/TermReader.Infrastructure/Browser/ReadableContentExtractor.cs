@@ -313,6 +313,18 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     }
 
     /// <summary>
+    /// Quick check for paywall HTML elements in raw HTML. Does not extract paragraphs.
+    /// Use for pre-cache filtering where speed matters more than full detection.
+    /// </summary>
+    internal static bool HasPaywallElements(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+        return PaywallElementSelectors.Any(
+            selector => doc.DocumentNode.SelectSingleNode(selector) != null);
+    }
+
+    /// <summary>
     /// Detects whether a page is paywalled by checking for paywall indicator elements
     /// and text patterns. Paywall HTML elements (gate overlays, subscriber walls) are
     /// a strong signal and always trigger detection. Text patterns (e.g., "subscribe to
