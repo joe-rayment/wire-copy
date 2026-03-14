@@ -849,6 +849,13 @@ public class LinkExtractor : ILinkExtractor
             return LinkType.External;
         }
 
+        // Non-article URL patterns: newsletters, account pages, etc.
+        // These are promotional/utility links regardless of their DOM container.
+        if (IsNonArticleUrl(url))
+        {
+            return LinkType.Navigation;
+        }
+
         // Check parent selector for classification
         if (!string.IsNullOrEmpty(parentSelector))
         {
@@ -1043,6 +1050,25 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return false;
+    }
+
+    private static bool IsNonArticleUrl(string url)
+    {
+        try
+        {
+            var path = new Uri(url).AbsolutePath.ToLowerInvariant();
+            return path.Contains("/newsletters/") ||
+                   path.Contains("/newsletter/") ||
+                   path.Contains("/subscription") ||
+                   path.Contains("/account/") ||
+                   path.Contains("/auth/") ||
+                   path.Contains("/login") ||
+                   path.Contains("/signup");
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsArticleUrlPattern(string url)
