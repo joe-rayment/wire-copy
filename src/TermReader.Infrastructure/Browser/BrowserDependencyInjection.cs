@@ -189,6 +189,8 @@ public static class BrowserDependencyInjection
                 // Podcast services may not be registered
             }
 
+            var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
+
             return new Cache.BackgroundPreloadService(
                 cache,
                 idleDetector,
@@ -196,7 +198,8 @@ public static class BrowserDependencyInjection
                 cacheConfig.Value,
                 preloadLogger,
                 contentExtractor,
-                articleCache);
+                articleCache,
+                browserConfig.Value);
         });
 
         // Register the main orchestrator

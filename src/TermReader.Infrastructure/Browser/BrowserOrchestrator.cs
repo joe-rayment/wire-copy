@@ -145,13 +145,26 @@ public class BrowserOrchestrator : IBrowserService
                     var cachedArticle = await articleCache.TryGetAsync(url, cancellationToken);
                     if (cachedArticle != null)
                     {
-                        _logger.LogInformation(
-                            "Article content cache hit for collection item: {Url} ({Words} words)",
-                            url,
-                            cachedArticle.WordCount);
+                        // Quality gate: reject cached articles from paywalled domains
+                        // that may contain truncated preview content
+                        if (IsPaywalledDomain(url) && cachedArticle.WordCount < 200)
+                        {
+                            _logger.LogInformation(
+                                "Evicting low-quality cached article for paywalled domain: {Url} ({Words} words)",
+                                url,
+                                cachedArticle.WordCount);
+                            await articleCache.RemoveAsync(url, cancellationToken);
+                        }
+                        else
+                        {
+                            _logger.LogInformation(
+                                "Article content cache hit for collection item: {Url} ({Words} words)",
+                                url,
+                                cachedArticle.WordCount);
 
-                        _lastLoadFetchMethod = FetchMethod.Cached;
-                        return BuildPageFromCachedArticle(cachedArticle, url);
+                            _lastLoadFetchMethod = FetchMethod.Cached;
+                            return BuildPageFromCachedArticle(cachedArticle, url);
+                        }
                     }
                 }
                 catch (OperationCanceledException)

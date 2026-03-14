@@ -192,6 +192,27 @@ internal sealed class ArticleContentCache : IArticleContentCache
         }
     }
 
+    public async Task RemoveAsync(string url, CancellationToken cancellationToken = default)
+    {
+        var key = UrlNormalizer.Normalize(url);
+
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_index.TryGetValue(key, out var entry))
+            {
+                TryDeleteFile(entry.ArticleFilePath);
+                _index.Remove(key);
+                await SaveIndexAsync(cancellationToken);
+                _logger.LogDebug("Removed cached article: {Url}", url);
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     internal static string ComputeUrlHash(string normalizedUrl)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedUrl));
