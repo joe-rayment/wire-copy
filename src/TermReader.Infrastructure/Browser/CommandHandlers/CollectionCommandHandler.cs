@@ -42,6 +42,28 @@ internal static class CollectionCommandHandler
                 }
             }
         }
+        else if (viewMode == ViewMode.Readable)
+        {
+            var page = ctx.NavigationService.CurrentPage;
+            var url = page?.Url;
+            var title = page?.Metadata?.Title ?? "Untitled";
+            if (!string.IsNullOrEmpty(url))
+            {
+                try
+                {
+                    using var scope = ctx.ScopeFactory.CreateScope();
+                    var service = ctx.CreateCollectionService(scope);
+                    await service.SaveToReadingListAsync(url, title, ct);
+                    ctx.Logger.LogInformation("Saved to Reading List from reader: {Title}", title);
+                    ctx.NavigationService.SetStatusMessage($"Saved: {title}");
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Failed to save from reader view");
+                    ctx.NavigationService.SetStatusMessage("Failed to save");
+                }
+            }
+        }
         else if (viewMode == ViewMode.CollectionList &&
                  ctx.Collections != null && ctx.NavigationService.CollectionSelectedIndex < ctx.Collections.Count)
         {

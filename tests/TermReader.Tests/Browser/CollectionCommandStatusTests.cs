@@ -101,6 +101,30 @@ public class CollectionCommandStatusTests
         _lastStatusMessage.Should().Be("Failed to save");
     }
 
+    [Fact]
+    public async Task HandleSaveToCollection_ReaderView_SavesCurrentPage()
+    {
+        // Arrange: set up a page in Readable view mode
+        var page = Page.Create(
+            "https://example.com/article",
+            "<html></html>",
+            new PageMetadata { Title = "Reader Article" });
+        _navService.NavigateTo(page);
+        _navService.SetViewMode(ViewMode.Readable);
+
+        _collectionService.SaveToReadingListAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CollectionItem.Create(Guid.NewGuid(), "https://example.com/article", "Reader Article"));
+
+        // Act
+        await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
+
+        // Assert
+        _lastStatusMessage.Should().Be("Saved: Reader Article");
+        await _collectionService.Received(1).SaveToReadingListAsync(
+            "https://example.com/article", "Reader Article", Arg.Any<CancellationToken>());
+    }
+
     #endregion
 
     #region HandleSaveToSpecific
