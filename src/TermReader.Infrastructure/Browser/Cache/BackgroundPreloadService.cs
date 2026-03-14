@@ -795,6 +795,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         url,
                         result.Url);
                 }
+                else if (ReadableContentExtractor.HasPaywallElements(result.Html))
+                {
+                    // Paywall gate detected — don't cache truncated preview content.
+                    // Mark domain as needing browser (Selenium with cookies).
+                    var domain = new Uri(url).Host;
+                    _needsJsDomains.TryAdd(domain, true);
+                    _logger.LogDebug("Skipping cache for paywalled content: {Url}", url);
+                }
                 else
                 {
                     _cache.Put(url, result);
