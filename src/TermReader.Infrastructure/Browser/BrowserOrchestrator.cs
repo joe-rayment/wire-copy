@@ -199,14 +199,25 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // For known-paywalled domains, always use Selenium. HTTP fetch without cookies
-        // always returns truncated preview content, and paywall gate elements are JS-injected
-        // so they can't be detected from raw HTTP HTML.
+        // For known-paywalled domains with available cookies, skip HTTP and use Selenium directly.
+        // Section/listing pages on paywalled domains work fine via HTTP, so we don't force
+        // Selenium unconditionally — only when cookies exist (indicating a logged-in session).
         var forceBrowser = false;
         if (IsPaywalledDomain(url))
         {
-            _logger.LogInformation("Paywalled domain detected, forcing Selenium: {Url}", url);
-            forceBrowser = true;
+            var cookies = await _cookieManager.LoadCookiesAsync();
+            var host = new Uri(url).Host;
+            var hasDomainCookies = cookies.Any(c =>
+            {
+                var d = c.Domain.TrimStart('.');
+                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
+            });
+            if (hasDomainCookies)
+            {
+                _logger.LogInformation("Paywalled domain with cookies, using Selenium: {Url}", url);
+                forceBrowser = true;
+            }
         }
 
         // Load the page HTML
@@ -258,6 +269,35 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
                 page = await BuildPageFromLoadResultAsync(retryResult, url, cancellationToken);
+            }
+        }
+
+        // Paywalled domain content-quality fallback: if HTTP-fetched content from a paywalled
+        // domain has readable content but looks truncated (few words for an article URL),
+        // retry with Selenium. NYT paywall gates are JS-injected and invisible in HTTP HTML,
+        // so DetectPaywall can't catch them — but truncated word count is a reliable signal.
+        if (page.HasReadableContent() &&
+            _lastLoadFetchMethod != FetchMethod.Selenium &&
+            IsPaywalledDomain(url) &&
+            page.ReadableContent!.WordCount < 500 &&
+            !url.Contains("/section/", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "Paywalled domain with truncated content ({Words} words), retrying with Selenium: {Url}",
+                page.ReadableContent.WordCount,
+                url);
+
+            _pageCache.Remove(url);
+            _renderer.RenderLoading(url);
+
+            var truncRetryResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                cancellationToken);
+
+            if (truncRetryResult.Success)
+            {
+                _lastLoadFetchMethod = truncRetryResult.FetchMethod;
+                page = await BuildPageFromLoadResultAsync(truncRetryResult, url, cancellationToken);
             }
         }
 
