@@ -273,6 +273,23 @@ public sealed class BrowserSession : IBrowserSession
         _logger.LogDebug("Creating Chrome driver with headless={Headless}", headless);
         var options = new ChromeOptions();
 
+        // Set Chrome binary location if Selenium Manager downloaded it
+        var seleniumChrome = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cache", "selenium", "chrome", "linux64");
+        if (Directory.Exists(seleniumChrome))
+        {
+            var latestDir = Directory.GetDirectories(seleniumChrome)
+                .OrderByDescending(d => d)
+                .FirstOrDefault();
+            var chromeBin = latestDir != null ? Path.Combine(latestDir, "chrome") : null;
+            if (chromeBin != null && File.Exists(chromeBin))
+            {
+                options.BinaryLocation = chromeBin;
+                _logger.LogDebug("Using Selenium-managed Chrome: {Path}", chromeBin);
+            }
+        }
+
         // Anti-detection
         options.AddArgument("--disable-blink-features=AutomationControlled");
         options.AddExcludedArgument("enable-automation");
