@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
+using OpenQA.Selenium.Remote;
 using TermReader.Application.Interfaces;
 using TermReader.Infrastructure.Configuration;
 
@@ -25,6 +26,7 @@ public sealed class BrowserSession : IBrowserSession
     private IWebDriver? _driver;
     private bool _driverIsHeadless;
     private int? _driverServicePid;
+    private Process? _chromeCdpProcess;
     private bool _disposed;
 
     public BrowserSession(
@@ -303,12 +305,27 @@ public sealed class BrowserSession : IBrowserSession
             options.AddArgument("--disable-gpu");
         }
 
-        var service = ChromeDriverService.CreateDefaultService();
-        service.SuppressInitialDiagnosticInformation = true;
-        service.HideCommandPromptWindow = true;
+        IWebDriver driver;
+        try
+        {
+            var service = ChromeDriverService.CreateDefaultService();
+            service.SuppressInitialDiagnosticInformation = true;
+            service.HideCommandPromptWindow = true;
 
-        var driver = new ChromeDriver(service, options);
-        _driverServicePid = service.ProcessId;
+            driver = new ChromeDriver(service, options);
+            _driverServicePid = service.ProcessId;
+        }
+        catch (DriverServiceNotFoundException)
+        {
+            // ChromeDriver binary not found or incompatible (e.g., ARM64 host with x86-64 chromedriver).
+            // Fall back to launching Chrome directly and connecting via CDP.
+            driver = LaunchChromeViaCdp(options, headless);
+        }
+        catch (WebDriverException ex) when (ex.Message.Contains("exited unexpectedly"))
+        {
+            // ChromeDriver crashed on start (architecture mismatch).
+            driver = LaunchChromeViaCdp(options, headless);
+        }
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
         driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(_browserConfig.PageLoadTimeoutSeconds);
 
@@ -333,6 +350,115 @@ public sealed class BrowserSession : IBrowserSession
         }
 
         return driver;
+    }
+
+    private IWebDriver LaunchChromeViaCdp(ChromeOptions options, bool headless)
+    {
+        _logger.LogInformation("ChromeDriver unavailable, launching Chrome directly via CDP");
+
+        // Find Chrome binary: Playwright's Chromium, or system Chrome
+        var chromeBin = Environment.GetEnvironmentVariable("CHROME_BIN")
+            ?? FindPlaywrightChrome()
+            ?? "google-chrome";
+
+        // Use a fixed port for CDP
+        const int cdpPort = 9515;
+
+        // Build Chrome command-line arguments
+        var args = new List<string>
+        {
+            $"--remote-debugging-port={cdpPort}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-blink-features=AutomationControlled",
+            $"--user-agent={_browserConfig.UserAgent}",
+            "--log-level=3",
+            "--silent",
+        };
+
+        if (headless)
+        {
+            args.Add("--headless=new");
+        }
+        else
+        {
+            args.Add("--window-size=800,600");
+            args.Add("--window-position=9999,9999");
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            args.Add("--no-sandbox");
+            args.Add("--disable-dev-shm-usage");
+            args.Add("--disable-gpu");
+        }
+
+        var psi = new ProcessStartInfo(chromeBin, string.Join(' ', args))
+        {
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+
+        var process = Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start Chrome at {chromeBin}");
+        _chromeCdpProcess = process;
+
+        // Wait for Chrome to start listening on the CDP port
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        var connected = false;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                var response = httpClient.GetStringAsync($"http://127.0.0.1:{cdpPort}/json/version").Result;
+                if (response.Contains("Browser"))
+                {
+                    connected = true;
+                    break;
+                }
+            }
+            catch
+            {
+                Thread.Sleep(500);
+            }
+        }
+
+        if (!connected)
+        {
+            process.Kill();
+            throw new InvalidOperationException("Chrome started but CDP endpoint not reachable");
+        }
+
+        _logger.LogInformation("Chrome CDP available on port {Port}, connecting Selenium", cdpPort);
+
+        // Connect via Chrome's HTTP endpoint (no chromedriver binary needed)
+        options.DebuggerAddress = $"127.0.0.1:{cdpPort}";
+        return new RemoteWebDriver(new Uri($"http://127.0.0.1:{cdpPort}"), options);
+    }
+
+    private static string? FindPlaywrightChrome()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var playwrightDir = Path.Combine(home, ".cache", "ms-playwright");
+        if (!Directory.Exists(playwrightDir))
+        {
+            return null;
+        }
+
+        // Find the most recent chromium installation
+        var chromeDirs = Directory.GetDirectories(playwrightDir, "chromium-*");
+        foreach (var dir in chromeDirs.OrderByDescending(d => d))
+        {
+            var chromeBin = Path.Combine(dir, "chrome-linux", "chrome");
+            if (File.Exists(chromeBin))
+            {
+                return chromeBin;
+            }
+        }
+
+        return null;
     }
 
     private IWebDriver CreateFirefoxDriver(bool headless)
