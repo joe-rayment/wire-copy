@@ -551,7 +551,6 @@ internal static class PodcastCommandHandler
         {
             try
             {
-
             var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
             helpers.Clear();
@@ -938,7 +937,6 @@ internal static class PodcastCommandHandler
             }
 
             // Unhandled key — silently ignore and re-render
-
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

@@ -89,5 +89,4 @@ internal class ArticleRenderer
             _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}[{progress}%] {paragraphs.Count - startParagraph - maxDisplay} paragraphs remaining (scroll with j/k){searchInfo}{Reset}");
         }
     }
-
 }

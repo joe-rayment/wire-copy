@@ -91,70 +91,6 @@ internal class StatusBarRenderer
         return $"{p.PromptFg.AnsiFg}{bar}{Reset} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
     }
 
-    private void RenderLine1(NavigationContext context, ViewMode mode, ThemePalette p, int width)
-    {
-        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
-        var modeLabel = $"{p.StatusBarTextFg.AnsiFg}{GetModeLabel(mode)}{Reset}";
-
-        // Calculate space used by back + mode label
-        var backWidth = context.CanGoBack ? 5 : 0; // "[←] "
-        var modeLabelWidth = GetModeLabel(mode).Length;
-        var availableForHints = width - 1 - backWidth - modeLabelWidth - 1; // -1 for space after label
-
-        var hints = GetAdaptiveHints(mode, p, availableForHints);
-
-        var line1 = $"{back}{modeLabel} {hints}";
-        if (RenderHelpers.GetDisplayWidth(line1) > width - 1)
-        {
-            line1 = RenderHelpers.TruncateText(line1, width - 1);
-        }
-
-        _helpers.WriteLine(line1);
-    }
-
-    private void RenderLine2(
-        NavigationContext context,
-        ViewMode mode,
-        ThemePalette p,
-        int width,
-        PreloadProgress? cacheProgress,
-        double cacheUsagePercent,
-        int readerTotalLines,
-        int readerContentWidth,
-        int readerViewportHeight)
-    {
-        // Left side: contextual info
-        var left = FormatLine2Left(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
-
-        // Right side: cache/search/status
-        var right = FormatLine2Right(context, mode, p, cacheProgress, cacheUsagePercent);
-
-        var leftWidth = RenderHelpers.GetDisplayWidth(left);
-        var rightWidth = RenderHelpers.GetDisplayWidth(right);
-        var maxWidth = width - 1;
-
-        string line2;
-        if (leftWidth + rightWidth + 1 <= maxWidth && rightWidth > 0)
-        {
-            var padding = maxWidth - leftWidth - rightWidth;
-            line2 = $"{left}{new string(' ', Math.Max(1, padding))}{right}";
-        }
-        else if (rightWidth > 0 && leftWidth == 0)
-        {
-            line2 = right;
-        }
-        else
-        {
-            line2 = left;
-            if (RenderHelpers.GetDisplayWidth(line2) > maxWidth)
-            {
-                line2 = RenderHelpers.TruncateText(line2, maxWidth);
-            }
-        }
-
-        _helpers.WriteLine(line2);
-    }
-
     private static string FormatLine2Left(
         NavigationContext context,
         ViewMode mode,
@@ -301,5 +237,69 @@ internal class StatusBarRenderer
         }
 
         return url.Length > 40 ? url[..40] : url;
+    }
+
+    private void RenderLine1(NavigationContext context, ViewMode mode, ThemePalette p, int width)
+    {
+        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
+        var modeLabel = $"{p.StatusBarTextFg.AnsiFg}{GetModeLabel(mode)}{Reset}";
+
+        // Calculate space used by back + mode label
+        var backWidth = context.CanGoBack ? 5 : 0; // "[←] "
+        var modeLabelWidth = GetModeLabel(mode).Length;
+        var availableForHints = width - 1 - backWidth - modeLabelWidth - 1; // -1 for space after label
+
+        var hints = GetAdaptiveHints(mode, p, availableForHints);
+
+        var line1 = $"{back}{modeLabel} {hints}";
+        if (RenderHelpers.GetDisplayWidth(line1) > width - 1)
+        {
+            line1 = RenderHelpers.TruncateText(line1, width - 1);
+        }
+
+        _helpers.WriteLine(line1);
+    }
+
+    private void RenderLine2(
+        NavigationContext context,
+        ViewMode mode,
+        ThemePalette p,
+        int width,
+        PreloadProgress? cacheProgress,
+        double cacheUsagePercent,
+        int readerTotalLines,
+        int readerContentWidth,
+        int readerViewportHeight)
+    {
+        // Left side: contextual info
+        var left = FormatLine2Left(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
+
+        // Right side: cache/search/status
+        var right = FormatLine2Right(context, mode, p, cacheProgress, cacheUsagePercent);
+
+        var leftWidth = RenderHelpers.GetDisplayWidth(left);
+        var rightWidth = RenderHelpers.GetDisplayWidth(right);
+        var maxWidth = width - 1;
+
+        string line2;
+        if (leftWidth + rightWidth + 1 <= maxWidth && rightWidth > 0)
+        {
+            var padding = maxWidth - leftWidth - rightWidth;
+            line2 = $"{left}{new string(' ', Math.Max(1, padding))}{right}";
+        }
+        else if (rightWidth > 0 && leftWidth == 0)
+        {
+            line2 = right;
+        }
+        else
+        {
+            line2 = left;
+            if (RenderHelpers.GetDisplayWidth(line2) > maxWidth)
+            {
+                line2 = RenderHelpers.TruncateText(line2, maxWidth);
+            }
+        }
+
+        _helpers.WriteLine(line2);
     }
 }
