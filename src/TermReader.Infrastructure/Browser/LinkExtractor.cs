@@ -48,7 +48,10 @@ public class LinkExtractor : ILinkExtractor
     private static readonly HashSet<string> AdSponsorPatterns = new(StringComparer.OrdinalIgnoreCase)
     {
         "sponsored", "advertisement", "ad:", "created for", "created by",
-        "promoted", "partner content", "paid content", "special advertising"
+        "promoted", "partner content", "paid content", "special advertising",
+        "get it in your inbox", "sign up for", "minutes a day",
+        "make sense of the day", "catch up on big news",
+        "delivered to your inbox", "subscribe to the newsletter",
     };
 
     private static readonly HashSet<string> AdSponsorClasses = new(StringComparer.OrdinalIgnoreCase)
@@ -1059,6 +1062,9 @@ public class LinkExtractor : ILinkExtractor
             var path = new Uri(url).AbsolutePath.ToLowerInvariant();
             return path.Contains("/newsletters/") ||
                    path.Contains("/newsletter/") ||
+                   path.Contains("/newsletters") ||
+                   path.Contains("/podcasts/") ||
+                   path.Contains("/spotlight/podcasts") ||
                    path.Contains("/subscription") ||
                    path.Contains("/account/") ||
                    path.Contains("/auth/") ||
