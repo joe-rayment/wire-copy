@@ -404,10 +404,7 @@ internal class LinkTreeRenderer
                 ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
                 : RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
 
-            var isCached = cachedUrls != null &&
-                           !string.IsNullOrEmpty(node.Link.Url) &&
-                           cachedUrls.Contains(node.Link.Url);
-            var prefix = isCached ? $"{palette.SecondaryText.AnsiFg}\u25cf{Reset}" : " ";
+            var prefix = " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
             return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
         }
