@@ -412,72 +412,15 @@ public class LinkTreeLayoutTests
     #region Cache dot indicator
 
     [Fact]
-    public void BuildCardLine_Normal_CachedUrl_ShowsDotPrefix()
+    public void BuildCardLine_Normal_CachedUrl_NosDotPrefix()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
         var cachedUrls = new HashSet<string> { "https://example.com/article" };
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 0, 80, TestPalette, cachedUrls);
 
-        line.Should().Contain("\u25cf");
-    }
-
-    [Fact]
-    public void BuildCardLine_Normal_NotCachedUrl_ShowsSpacePrefix()
-    {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
-        var cachedUrls = new HashSet<string> { "https://other.com" };
-
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 0, 80, TestPalette, cachedUrls);
-
-        line.Should().NotContain("\u25cf");
+        line.Should().NotContain("\u25cf", "cache dot indicator was removed");
         line.Should().StartWith(" ");
-    }
-
-    [Fact]
-    public void BuildCardLine_Normal_NullCachedUrls_ShowsSpacePrefix()
-    {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
-
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 0, 80, TestPalette, null);
-
-        line.Should().NotContain("\u25cf");
-        line.Should().StartWith(" ");
-    }
-
-    [Fact]
-    public void BuildCardLine_Selected_CachedUrl_DoesNotShowDot()
-    {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
-        var cachedUrls = new HashSet<string> { "https://example.com/article" };
-
-        var line = LinkTreeRenderer.BuildCardLine(node, true, 2, 0, 80, TestPalette, cachedUrls);
-
-        line.Should().NotContain("\u25cf");
-    }
-
-    [Fact]
-    public void BuildCardLine_Normal_CachedUrl_NonTitleLine_NoDot()
-    {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
-        var cachedUrls = new HashSet<string> { "https://example.com/article" };
-
-        // Line 1 in cardHeight=2 is metadata, not title
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 2, 80, TestPalette, cachedUrls);
-
-        line.Should().NotContain("\u25cf");
-    }
-
-    [Fact]
-    public void BuildCardLine_Normal_CachedUrl_Standard5Line_DotOnTitleLine()
-    {
-        var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
-        var cachedUrls = new HashSet<string> { "https://example.com/article" };
-
-        // cardHeight=5: title line is at index 1
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 80, TestPalette, cachedUrls);
-
-        line.Should().Contain("\u25cf");
     }
 
     #endregion
