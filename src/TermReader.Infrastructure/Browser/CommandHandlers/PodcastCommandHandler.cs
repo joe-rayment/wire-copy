@@ -37,6 +37,74 @@ internal static class PodcastCommandHandler
         Cached,
     }
 
+    /// <summary>
+    /// Opens the podcast settings/confirmation screen directly, skipping cache analysis.
+    /// </summary>
+    public static async Task HandlePodcastSettings(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.SetStatusMessage("Open a collection first");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var collection = ctx.NavigationService.ActiveCollection;
+        if (collection == null || collection.Items.Count == 0)
+        {
+            ctx.NavigationService.SetStatusMessage("No articles in collection");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+        var gcsConfig = scope.ServiceProvider
+            .GetRequiredService<IOptions<GcsConfiguration>>().Value;
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+        // Hydrate persisted settings
+        if (!ttsService.IsConfigured)
+        {
+            var savedKey = settingsStore.Get("OpenAiApiKey");
+            if (!string.IsNullOrWhiteSpace(savedKey))
+            {
+                ttsService.SetApiKeyOverride(savedKey);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+        {
+            var savedBucket = settingsStore.Get("GcsBucketName");
+            if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
+            {
+                gcsConfig.BucketName = savedBucket;
+            }
+        }
+
+        var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+        var gcsClient = cloudStorage as GcsStorageClient;
+
+        await ShowConfirmationScreenAsync(
+            ctx,
+            options,
+            collection,
+            ttsService,
+            gcsConfig,
+            settingsStore,
+            gcsClient,
+            null,
+            null,
+            null,
+            null,
+            ct);
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
     public static async Task HandleGeneratePodcast(
         CommandContext ctx,
         RenderOptions options,

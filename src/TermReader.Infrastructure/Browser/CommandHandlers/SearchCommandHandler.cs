@@ -261,6 +261,10 @@ internal static class SearchCommandHandler
                 await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
                 return true;
 
+            case "settings":
+                await PodcastCommandHandler.HandlePodcastSettings(ctx, options, ct);
+                return true;
+
             case "set":
                 await HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return true;
