@@ -86,7 +86,11 @@ internal class CollectionRenderer
 
                 if (isSelected)
                 {
-                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($" {displayName}{countDisplay}{star} ")}");
+                    var plainCount = countDisplay.Length > 0 ? $" {countText}" : string.Empty;
+                    var plainStar = isDefault ? $" {Indicators.Star}" : string.Empty;
+                    var selectedText = $" {displayName}{plainCount}{plainStar} ";
+                    var selectedPad = Math.Max(0, width - 3 - selectedText.Length);
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $"{selectedText}{new string(' ', selectedPad)}")}");
                 }
                 else
                 {
@@ -166,12 +170,12 @@ internal class CollectionRenderer
 
                 if (isSelected)
                 {
-                    // Use plain marker symbol (no embedded ANSI) to avoid breaking reverse video
                     var markerChar = item.IsRead ? $"{Indicators.EmptyCircle}" : $"{Indicators.FilledCircle}";
                     var selectedPad = Math.Max(0, width - 6 - displayTitle.Length);
-                    var domainPad = Math.Max(0, width - 9 - displayDomain.Length - cacheSuffix.Length);
-                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($" {markerChar} {displayTitle}{new string(' ', selectedPad)} ")}");
-                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($"     {displayDomain}{cacheSuffix}{new string(' ', domainPad)} ")}");
+                    var plainCache = isCached ? " \u00b7 cached" : string.Empty;
+                    var domainPad = Math.Max(0, width - 9 - displayDomain.Length - plainCache.Length);
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $" {markerChar} {displayTitle}{new string(' ', selectedPad)} ")}");
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $"     {displayDomain}{plainCache}{new string(' ', domainPad)} ")}");
                 }
                 else
                 {
