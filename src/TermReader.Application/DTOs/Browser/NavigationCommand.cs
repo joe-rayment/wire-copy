@@ -108,6 +108,7 @@ public enum CommandType
 
     // Browser
     OpenInBrowser,
+    GoToUrl,
 
     // Debug/Utility
     DumpHtml,

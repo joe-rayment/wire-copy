@@ -118,11 +118,12 @@ internal class LauncherRenderer
         _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', Math.Max(1, width))}{Reset}");
 
         var hints = FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("o", "go to url", p) + "  " +
                     FormatKbdHint("?", "help", p);
 
         var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var hintsTextLen = "[Enter] open  [?] help".Length;
+        var hintsTextLen = "[Enter] open  [o] go to url  [?] help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }

@@ -215,8 +215,8 @@ internal class StatusBarRenderer
             ],
             ViewMode.Launcher =>
             [
-                [("Enter", "open"), ("a", "add"), ("d", "delete"), ("?", "help")],
-                [("Enter", "open"), ("?", "help")],
+                [("Enter", "open"), ("o", "go to url"), ("a", "add"), ("d", "delete"), ("?", "help")],
+                [("Enter", "open"), ("o", "go to url"), ("?", "help")],
                 [("?", "help")],
             ],
             _ =>
