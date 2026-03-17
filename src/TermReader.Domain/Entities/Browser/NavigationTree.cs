@@ -94,6 +94,15 @@ public class NavigationTree
     }
 
     /// <summary>
+    /// Builds a navigation tree from an already-constructed root node.
+    /// Used when the tree structure has been built externally (e.g., from AI hierarchy config).
+    /// </summary>
+    public static NavigationTree BuildFromRoot(LinkNode root)
+    {
+        return new NavigationTree(root);
+    }
+
+    /// <summary>
     /// Adds content links to root, optionally sub-grouped by SectionTitle.
     /// Sub-sections are created when there are 2+ distinct non-null SectionTitle values
     /// and 2+ links per section on average. Links without a SectionTitle are placed

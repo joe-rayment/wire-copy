@@ -153,6 +153,8 @@ public static class BrowserDependencyInjection
         });
         services.AddSingleton<ILinkExtractor, LinkExtractor>();
         services.AddSingleton<INavigationTreeBuilder, NavigationTreeBuilder>();
+        services.AddSingleton<IHierarchyConfigStore, HierarchyConfigStore>();
+        services.AddSingleton<IHierarchyAnalyzer, AnthropicHierarchyAnalyzer>();
         services.AddSingleton<IReadableContentExtractor, ReadableContentExtractor>();
 
         // Register navigation service (manages history and state)
