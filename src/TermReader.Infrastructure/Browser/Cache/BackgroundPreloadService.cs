@@ -43,6 +43,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private volatile bool _paused;
     private volatile bool _eagerMode;
     private volatile bool _disposed;
+    private volatile string? _currentlyFetchingUrl;
 
     // Debounce state: stores the latest selection change parameters
     private int _pendingSelectedIndex;
@@ -194,6 +195,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _eagerMode = false;
                 }
 
+                // Clear the "currently fetching" indicator when batch ends
+                _currentlyFetchingUrl = null;
+
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
                 await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
             }
@@ -244,6 +248,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             CachedCount = cachedCount,
             NeedsBrowserCount = needsJs.Count,
             IsActivelyFetching = hasQueuedWork && !_paused,
+            CurrentlyFetchingUrl = _currentlyFetchingUrl,
         };
     }
 
@@ -776,6 +781,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         try
         {
+            _currentlyFetchingUrl = url;
             _logger.LogDebug("Pre-loading: {Url}", url);
             var result = await HttpFetchAsync(url, cancellationToken);
 

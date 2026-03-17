@@ -34,4 +34,10 @@ public record PreloadProgress
     /// Whether the preloader is actively fetching pages right now.
     /// </summary>
     public bool IsActivelyFetching { get; init; }
+
+    /// <summary>
+    /// The URL currently being fetched, if any. Shown in the status bar
+    /// so the user knows exactly what article is being cached right now.
+    /// </summary>
+    public string? CurrentlyFetchingUrl { get; init; }
 }
