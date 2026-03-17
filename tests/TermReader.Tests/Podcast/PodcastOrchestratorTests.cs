@@ -1611,6 +1611,110 @@ public class PodcastOrchestratorTests : IDisposable
     #endregion
 }
 
+[Trait("Category", "Unit")]
+public class BuildSpokenTextTests
+{
+    [Fact]
+    public void BuildSpokenText_IncludesTitle()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "Test Headline",
+            CleanedText = "Article body text.",
+            Url = "https://example.com/article",
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().StartWith("Test Headline.\n");
+        result.Should().EndWith("Article body text.");
+    }
+
+    [Fact]
+    public void BuildSpokenText_IncludesAuthor()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "Headline",
+            CleanedText = "Body.",
+            Url = "https://example.com",
+            Author = "Jane Doe",
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().Contain("By Jane Doe.");
+    }
+
+    [Fact]
+    public void BuildSpokenText_IncludesPublishedDate()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "Headline",
+            CleanedText = "Body.",
+            Url = "https://example.com",
+            PublishedDate = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc),
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().Contain("Published March 14, 2026.");
+    }
+
+    [Fact]
+    public void BuildSpokenText_OmitsAuthorWhenNull()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "Headline",
+            CleanedText = "Body.",
+            Url = "https://example.com",
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().NotContain("By ");
+    }
+
+    [Fact]
+    public void BuildSpokenText_OmitsDateWhenNull()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "Headline",
+            CleanedText = "Body.",
+            Url = "https://example.com",
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().NotContain("Published");
+    }
+
+    [Fact]
+    public void BuildSpokenText_FullIntro()
+    {
+        var article = new ExtractedArticle
+        {
+            Title = "U.S. Vows to Block Iran",
+            CleanedText = "The article continues here.",
+            Url = "https://example.com",
+            Author = "Thomas Fuller",
+            PublishedDate = new DateTime(2026, 3, 14, 0, 0, 0, DateTimeKind.Utc),
+        };
+
+        var result = PodcastOrchestrator.BuildSpokenText(article);
+
+        result.Should().Be(
+            "U.S. Vows to Block Iran.\n" +
+            "By Thomas Fuller.\n" +
+            "Published March 14, 2026.\n" +
+            "\n" +
+            "The article continues here.");
+    }
+}
+
 /// <summary>
 /// A synchronous IProgress implementation that invokes callbacks immediately
 /// on the calling thread, avoiding race conditions with Progress&lt;T&gt;'s
