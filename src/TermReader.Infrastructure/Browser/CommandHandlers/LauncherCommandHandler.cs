@@ -17,6 +17,24 @@ internal static class LauncherCommandHandler
     {
         var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
 
+        // When URL bar is selected, intercept printable keys to start typing immediately
+        if (ctx.NavigationService.LauncherSelectedIndex == -1)
+        {
+            // Navigation keys: let them through to the switch below
+            // Everything else: activate URL input (with the typed char pre-seeded)
+            var isNavKey = command.Type is CommandType.MoveDown or CommandType.MoveUp
+                or CommandType.CollapseNode or CommandType.ExpandNode
+                or CommandType.Quit or CommandType.GoBack
+                or CommandType.ActivateLink or CommandType.ShowHelp
+                or CommandType.TerminalResized or CommandType.OpenCommandLine;
+
+            if (!isNavKey && command.RawKeyChar.HasValue && command.RawKeyChar.Value >= 32)
+            {
+                await HandleGoToUrl(ctx, options, ct, command.RawKeyChar.Value);
+                return true;
+            }
+        }
+
         switch (command.Type)
         {
             case CommandType.Quit:
@@ -236,8 +254,12 @@ internal static class LauncherCommandHandler
         return true;
     }
 
-    private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
     {
+        // Select the URL bar visually
+        ctx.NavigationService.LauncherSelectedIndex = -1;
+        await ctx.RenderCurrentPageAsync(options, ct);
+
         // Calculate URL bar position for inline input
         var width = Math.Max(1, options.TerminalWidth - 2);
         var barWidth = Math.Min(width - 4, 50);
@@ -245,8 +267,11 @@ internal static class LauncherCommandHandler
         const int urlBarRow = 5; // Row where the URL bar content line is rendered
         var inputCol = pad + 2;  // Inside the box border
 
+        // Pre-seed with the initial character if provided (user started typing on URL bar)
+        var seed = initialChar.HasValue ? initialChar.Value.ToString() : null;
+
         // Prompt directly inside the URL bar
-        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol);
+        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol, initialInput: seed);
 
         if (string.IsNullOrWhiteSpace(input))
         {
