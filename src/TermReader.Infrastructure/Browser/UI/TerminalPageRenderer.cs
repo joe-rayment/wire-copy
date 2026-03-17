@@ -19,6 +19,8 @@ namespace TermReader.Infrastructure.Browser.UI;
 /// </summary>
 public class TerminalPageRenderer : IPageRenderer
 {
+    private const string Reset = "\x1b[0m";
+
     private readonly IThemeProvider _themeProvider;
     private readonly RenderHelpers _helpers;
     private readonly LinkTreeRenderer _linkTreeRenderer;
@@ -55,11 +57,12 @@ public class TerminalPageRenderer : IPageRenderer
         }
         else
         {
+            var ep = BuiltInThemes.Get(_themeProvider.CurrentTheme);
             _helpers.WriteLine();
-            _helpers.WriteLine("  No links found on this page.");
+            _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}This page is keeping its links to itself.{Reset}");
             if (page.ReadableContent != null)
             {
-                _helpers.WriteLine("  Press 'r' to switch to reader view.");
+                _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}Try reader view \u2014 press{Reset} {ep.PrimaryText.AnsiFg}v{Reset}");
             }
 
             _helpers.WriteLine();
@@ -111,10 +114,11 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderLoading(string url)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine("  Loading...");
-        _helpers.WriteLine($"  {RenderHelpers.TruncateUrl(url, 70)}");
+        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Loading...{Reset}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
         _helpers.WriteLine();
         _helpers.ClearRemainingLines();
     }
@@ -124,24 +128,26 @@ public class TerminalPageRenderer : IPageRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.ErrorFg.AnsiFg}Error loading page:\x1b[0m");
-        _helpers.WriteLine($"  {message}");
+        _helpers.WriteLine($"  {p.ErrorFg.AnsiFg}Something went wrong loading this page.{Reset}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{message}{Reset}");
         _helpers.WriteLine();
-        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
         _helpers.WriteLine();
-        _helpers.WriteLine("  Press 'b' to go back or 'q' to quit.");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press{Reset} {p.PrimaryText.AnsiFg}b{Reset} {p.SecondaryText.AnsiFg}to go back or{Reset} {p.PrimaryText.AnsiFg}R{Reset} {p.SecondaryText.AnsiFg}to retry{Reset}");
         _helpers.WriteLine();
         _helpers.ClearRemainingLines();
     }
 
     public void RenderChallenge(string url)
     {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine("  Bot challenge detected. Please solve it in the browser window.");
-        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
+        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Please solve it in the browser window.{Reset}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
         _helpers.WriteLine();
-        _helpers.WriteLine("  Waiting for challenge to be resolved...");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Waiting for you to finish...{Reset}");
         _helpers.ClearRemainingLines();
     }
 
