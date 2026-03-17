@@ -484,6 +484,30 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return task;
     }
 
+    /// <summary>
+    /// Builds the full text to send to TTS, prepending headline, author, and date
+    /// as a spoken introduction before the article body.
+    /// </summary>
+    internal static string BuildSpokenText(ExtractedArticle article)
+    {
+        var parts = new List<string> { article.Title + "." };
+
+        if (!string.IsNullOrWhiteSpace(article.Author))
+        {
+            parts.Add($"By {article.Author}.");
+        }
+
+        if (article.PublishedDate.HasValue)
+        {
+            parts.Add($"Published {article.PublishedDate.Value:MMMM d, yyyy}.");
+        }
+
+        parts.Add(string.Empty); // blank line separator
+        parts.Add(article.CleanedText);
+
+        return string.Join("\n", parts);
+    }
+
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
 
     private static int CountWords(string text)
@@ -509,30 +533,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
 
         return wordCount;
-    }
-
-    /// <summary>
-    /// Builds the full text to send to TTS, prepending headline, author, and date
-    /// as a spoken introduction before the article body.
-    /// </summary>
-    internal static string BuildSpokenText(ExtractedArticle article)
-    {
-        var parts = new List<string> { article.Title + "." };
-
-        if (!string.IsNullOrWhiteSpace(article.Author))
-        {
-            parts.Add($"By {article.Author}.");
-        }
-
-        if (article.PublishedDate.HasValue)
-        {
-            parts.Add($"Published {article.PublishedDate.Value:MMMM d, yyyy}.");
-        }
-
-        parts.Add(string.Empty); // blank line separator
-        parts.Add(article.CleanedText);
-
-        return string.Join("\n", parts);
     }
 
     private async Task<CacheAnalysis> AnalyzeCacheStatusCoreAsync(
