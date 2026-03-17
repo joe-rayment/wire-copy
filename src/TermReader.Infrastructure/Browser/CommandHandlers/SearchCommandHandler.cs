@@ -277,6 +277,10 @@ internal static class SearchCommandHandler
                 await ViewCommandHandler.HandleDumpHtml(ctx, options, ct);
                 return true;
 
+            case "reanalyze":
+                await HandleReanalyze(ctx, options, ct);
+                return true;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
@@ -643,6 +647,48 @@ internal static class SearchCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleReanalyze(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        if (page == null)
+        {
+            ctx.NavigationService.SetStatusMessage("No page loaded");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+
+            if (analyzer == null || !analyzer.IsConfigured)
+            {
+                ctx.NavigationService.SetStatusMessage("Anthropic API key not configured. Use :set anthropic-key first.");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            // Delete existing config for this URL
+            if (configStore != null)
+            {
+                await configStore.DeleteConfigAsync(page.Url);
+            }
+
+            // Force refresh will re-trigger AI analysis since config is now deleted
+            ctx.NavigationService.SetStatusMessage("Re-analyzing page hierarchy...");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.ForceRefreshAsync(page.Url, options, ct);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to re-analyze page hierarchy");
+            ctx.NavigationService.SetStatusMessage("Re-analysis failed");
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
     }
 
     private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
