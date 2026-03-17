@@ -111,8 +111,7 @@ internal class StatusBarRenderer
         // Not active — all filled segments are cached (green), rest pending (dim)
         var staticBar = $"{p.PromptFg.AnsiFg}{new string('\u25B0', filled)}{Reset}" +
                         $"{p.SecondaryText.AnsiFg}{new string('\u25B1', remaining)}{Reset}";
-        var label = remaining == 0 ? "cached" : "cached";
-        return $"{staticBar} {p.SecondaryText.AnsiFg}{cached}/{total} {label}{Reset}";
+        return $"{staticBar} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
     }
 
     /// <summary>
