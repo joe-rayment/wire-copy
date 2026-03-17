@@ -5,6 +5,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -33,10 +34,7 @@ internal class CollectionRenderer
 
         // Rounded box header
         _helpers.WriteLine();
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
-        var title = RenderHelpers.TruncateText("Collections", width - 4);
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}{title.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
+        Borders.RenderRoundedBox(_helpers, p, "Collections", width);
         _helpers.WriteLine();
 
         var useSeparators = height >= 30;
@@ -58,7 +56,7 @@ internal class CollectionRenderer
                 var isSelected = i == selectedIndex;
                 var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
 
-                var star = isDefault ? $" {p.PromptFg.AnsiFg}\u2605{Reset}" : string.Empty;
+                var star = isDefault ? $" {p.PromptFg.AnsiFg}{Indicators.Star}{Reset}" : string.Empty;
                 var itemCount = collection.Items.Count;
                 var countText = $"({itemCount})";
 
@@ -88,7 +86,7 @@ internal class CollectionRenderer
 
                 if (isSelected)
                 {
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {displayName}{countDisplay}{star} \x1b[27m{Reset}");
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($" {displayName}{countDisplay}{star} ")}");
                 }
                 else
                 {
@@ -97,7 +95,7 @@ internal class CollectionRenderer
 
                 if (useSeparators && i < endIndex - 1)
                 {
-                    _helpers.WriteLine($"   {p.SecondaryText.AnsiFg}\u2576\u2500\u2500\u2574{Reset}");
+                    _helpers.WriteLine(Borders.ItemSeparator(p));
                 }
             }
 
@@ -116,11 +114,8 @@ internal class CollectionRenderer
 
         // Rounded box header with collection name and item count
         _helpers.WriteLine();
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{Reset}");
         var itemCount = collection.Items.Count;
-        var headerText = RenderHelpers.TruncateText($"{collection.Name} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})", width - 4);
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}{headerText.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{Reset}");
+        Borders.RenderRoundedBox(_helpers, p, $"{collection.Name} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})", width);
         _helpers.WriteLine();
 
         // Podcast button (only shown when collection has items)
@@ -148,8 +143,8 @@ internal class CollectionRenderer
                 var isSelected = i == selectedIndex;
 
                 var marker = item.IsRead
-                    ? $"{p.ReadItemFg.AnsiFg}\u25cb{Reset}"
-                    : $"{p.LinkContent.AnsiFg}\u25cf{Reset}";
+                    ? $"{p.ReadItemFg.AnsiFg}{Indicators.EmptyCircle}{Reset}"
+                    : $"{p.LinkContent.AnsiFg}{Indicators.FilledCircle}{Reset}";
 
                 var domain = string.Empty;
                 try
@@ -172,11 +167,11 @@ internal class CollectionRenderer
                 if (isSelected)
                 {
                     // Use plain marker symbol (no embedded ANSI) to avoid breaking reverse video
-                    var markerChar = item.IsRead ? "\u25cb" : "\u25cf";
+                    var markerChar = item.IsRead ? $"{Indicators.EmptyCircle}" : $"{Indicators.FilledCircle}";
                     var selectedPad = Math.Max(0, width - 6 - displayTitle.Length);
                     var domainPad = Math.Max(0, width - 9 - displayDomain.Length - cacheSuffix.Length);
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {markerChar} {displayTitle}{new string(' ', selectedPad)} \x1b[27m{Reset}");
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain}{cacheSuffix}{new string(' ', domainPad)} \x1b[27m{Reset}");
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($" {markerChar} {displayTitle}{new string(' ', selectedPad)} ")}");
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.ReverseVideo($"     {displayDomain}{cacheSuffix}{new string(' ', domainPad)} ")}");
                 }
                 else
                 {
@@ -188,7 +183,7 @@ internal class CollectionRenderer
 
                 if (useSeparators && i < endIndex - 1)
                 {
-                    _helpers.WriteLine($"     {p.SecondaryText.AnsiFg}\u2576\u2500\u2500\u2574{Reset}");
+                    _helpers.WriteLine(Borders.ItemSeparator(p, 5));
                 }
             }
 
