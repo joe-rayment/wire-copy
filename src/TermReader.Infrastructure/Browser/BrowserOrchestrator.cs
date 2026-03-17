@@ -1019,11 +1019,15 @@ public class BrowserOrchestrator : IBrowserService
         try
         {
             _logger.LogInformation("Running AI hierarchy analysis for {Url}", pageUrl);
+            _renderer.RenderLoading(pageUrl, "Analyzing layout...");
+
             var config = await analyzer.AnalyzePageHierarchyAsync(screenshot, links, pageUrl, cancellationToken);
 
             // Save for future use
             await configStore.SaveConfigAsync(config);
             _logger.LogInformation("Saved AI hierarchy config for {Url} ({SectionCount} sections)", pageUrl, config.Sections.Count);
+
+            _navigationService.SetStatusMessage($"AI layout \u00b7 {config.Sections.Count} sections");
 
             return config;
         }

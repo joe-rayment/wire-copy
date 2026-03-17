@@ -35,7 +35,8 @@ public interface IPageRenderer
     /// Renders loading indicator.
     /// </summary>
     /// <param name="url">URL being loaded.</param>
-    void RenderLoading(string url);
+    /// <param name="status">Optional status text (e.g., "Analyzing layout...").</param>
+    void RenderLoading(string url, string? status = null);
 
     /// <summary>
     /// Renders error message.
