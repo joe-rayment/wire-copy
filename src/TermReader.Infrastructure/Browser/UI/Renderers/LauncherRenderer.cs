@@ -4,6 +4,7 @@ using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Bookmarks;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -115,7 +116,7 @@ internal class LauncherRenderer
     public void RenderFooter(int width)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', Math.Max(1, width))}{Reset}");
+        _helpers.WriteLine(Borders.HorizontalRule(p, width));
 
         var hints = FormatKbdHint("Enter", "open", p) + "  " +
                     FormatKbdHint("o", "go to url", p) + "  " +
@@ -272,12 +273,11 @@ internal class LauncherRenderer
         var sb = new System.Text.StringBuilder();
         var selFg = p.SelectedItemFg.AnsiFg;
         var selBg = p.SelectedItemBg.AnsiBg;
-        var accentFg = p.HeaderBorderFg.AnsiFg;
 
         // Accent bar column (1 char) — not highlighted
         if (showAccent)
         {
-            sb.Append($"{accentFg}\u258c{Reset}");
+            sb.Append(Selection.AccentBar(p));
         }
         else
         {
@@ -376,7 +376,7 @@ internal class LauncherRenderer
         var versionPart = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
 
         _helpers.WriteLine($" {title}{new string(' ', pad)}{countPart}  {versionPart} ");
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}");
+        _helpers.WriteLine(Borders.HorizontalRule(p, width));
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
