@@ -240,6 +240,100 @@ public class BackgroundPreloadServiceTests
         queue.Should().BeEmpty();
     }
 
+    [Fact]
+    public void BuildQueue_FiltersOutPaywalledDomains()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/article1",
+            "https://www.nytimes.com/2026/01/article2",
+            "https://www.nytimes.com/2026/01/article3");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().BeEmpty("paywalled domains cannot be HTTP-cached");
+    }
+
+    [Fact]
+    public void BuildQueue_PaywalledDomains_ProgressShowsZeroEligible()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/article1",
+            "https://www.nytimes.com/2026/01/article2");
+
+        service.BuildQueue(0, nodes, "https://www.nytimes.com");
+        var progress = service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(0, "paywalled URLs should not count as cacheable");
+        progress.IsActivelyFetching.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_FiltersOutPaywalledDomains()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var urls = new List<string>
+        {
+            "https://www.nytimes.com/2026/01/article1",
+            "https://example.com/article2",
+            "https://www.nytimes.com/2026/01/article3",
+        };
+
+        var queue = service.BuildCollectionQueue(0, urls);
+
+        queue.Should().HaveCount(1);
+        queue[0].Url.Should().Be("https://example.com/article2");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_PaywalledDomains_ProgressExcludesPaywalled()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var urls = new List<string>
+        {
+            "https://www.nytimes.com/2026/01/article1",
+            "https://example.com/article2",
+        };
+
+        service.BuildCollectionQueue(0, urls);
+        var progress = service.GetProgress();
+
+        progress.TotalCacheableLinks.Should().Be(1, "only non-paywalled URL should be counted");
+    }
+
     #endregion
 
     #region IsBotDetectionResponse
