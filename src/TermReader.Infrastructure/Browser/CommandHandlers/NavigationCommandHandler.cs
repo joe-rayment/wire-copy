@@ -278,32 +278,32 @@ internal static class NavigationCommandHandler
             ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+        else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
+        {
+            // Navigated from a collection (any view mode) — restore collection state
+            await ctx.RefreshCollectionsAsync(ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        else if (ctx.NavigationService.CanGoBack)
+        {
+            // Has history — go back to previous page (works for both Readable and Hierarchical)
+            ctx.NavigationService.GoBack();
+            ctx.LineCacheManager.InvalidateLineCache();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
         else if (viewMode == ViewMode.Readable)
         {
-            // From reader view, go back to link list of the same page
+            // Readable view with no history — fall back to link view of same page
             ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
             ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
-        else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
-        {
-            await ctx.RefreshCollectionsAsync(ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
-        }
         else
         {
-            var previousPage = ctx.NavigationService.GoBack();
-            if (previousPage != null)
-            {
-                ctx.LineCacheManager.InvalidateLineCache();
-                await ctx.RenderCurrentPageAsync(options, ct);
-            }
-            else
-            {
-                ctx.NavigationService.EnterLauncher();
-                await ctx.RefreshBookmarksAsync(ct);
-                await ctx.RenderCurrentPageAsync(options, ct);
-            }
+            // No history, not in readable — go to launcher
+            ctx.NavigationService.EnterLauncher();
+            await ctx.RefreshBookmarksAsync(ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
         }
     }
 
