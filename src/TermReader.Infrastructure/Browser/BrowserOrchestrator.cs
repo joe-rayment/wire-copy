@@ -1237,6 +1237,13 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         _logger.LogWarning("Bot challenge detected in headed mode, waiting for user to resolve: {Url}", url);
+
+        // Bring browser window to foreground so user can see and solve the challenge
+        if (_browserSession is IBrowserSession challengeSession)
+        {
+            challengeSession.RestoreWindow();
+        }
+
         _renderer.RenderChallenge(url);
 
         var challengeTimeout = TimeSpan.FromMinutes(2);
