@@ -58,6 +58,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     // Progress tracking: all eligible content URLs from the current page
     private List<string> _allEligibleUrls = [];
     private List<string> _needsJsUrls = [];
+    private int _paywalledLinkCount;
 
     public BackgroundPreloadService(
         IPageCache cache,
@@ -247,6 +248,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             TotalCacheableLinks = eligible.Count,
             CachedCount = cachedCount,
             NeedsBrowserCount = needsJs.Count,
+            PaywalledLinkCount = _paywalledLinkCount,
             IsActivelyFetching = hasQueuedWork && !_paused,
             CurrentlyFetchingUrl = _currentlyFetchingUrl,
         };
@@ -357,6 +359,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         var items = new List<PreloadItem>();
         var allEligibleWithIndex = new List<(string Url, int ListIndex)>();
         var needsJs = new List<string>();
+        var paywalledCount = 0;
 
         for (var i = 0; i < visibleNodes.Count; i++)
         {
@@ -383,6 +386,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             // Paywalled domains can't be HTTP-cached (need Selenium with cookies)
             if (IsPaywalledDomain(url))
             {
+                paywalledCount++;
                 continue;
             }
 
@@ -425,7 +429,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         needsJs.RemoveAll(url => !budgetedUrls.Contains(url));
 
         var allEligible = allEligibleWithIndex.Select(e => e.Url).ToList();
-        UpdateProgressTracking(allEligible, needsJs);
+        UpdateProgressTracking(allEligible, needsJs, paywalledCount);
         return items;
     }
 
@@ -645,12 +649,24 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return false;
     }
 
-    private void UpdateProgressTracking(List<string> allEligible, List<string> needsJs)
+    private void UpdateProgressTracking(List<string> allEligible, List<string> needsJs, int paywalledCount = 0)
     {
         lock (_queueLock)
         {
             _allEligibleUrls = allEligible;
             _needsJsUrls = needsJs;
+            _paywalledLinkCount = paywalledCount;
+        }
+
+        // Notify UI so status bar updates (important for paywalled domains
+        // where no fetches happen and ProgressChanged wouldn't fire otherwise)
+        try
+        {
+            ProgressChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ProgressChanged handler error in UpdateProgressTracking");
         }
     }
 

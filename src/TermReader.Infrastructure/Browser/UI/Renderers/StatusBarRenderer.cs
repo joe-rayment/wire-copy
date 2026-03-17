@@ -223,14 +223,23 @@ internal class StatusBarRenderer
     private static string FormatCacheIndicator(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
     {
         // Preload progress for hierarchical/collection views
-        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null && progress.TotalCacheableLinks > 0)
+        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null)
         {
-            if (progress.IsComplete)
+            if (progress.TotalCacheableLinks > 0)
             {
-                return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
+                if (progress.IsComplete)
+                {
+                    return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
+                }
+
+                return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
             }
 
-            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
+            // Paywalled domain — no HTTP pre-fetch possible
+            if (progress.PaywalledLinkCount > 0)
+            {
+                return $"{p.SecondaryText.AnsiFg}{progress.PaywalledLinkCount} links \u00b7 paywalled{Reset}";
+            }
         }
 
         // Per-page cache badge for other views
