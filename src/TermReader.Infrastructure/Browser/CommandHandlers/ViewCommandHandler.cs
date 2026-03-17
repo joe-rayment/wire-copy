@@ -177,4 +177,29 @@ internal static class ViewCommandHandler
 
         await ctx.RenderCurrentPageAsync(options, ct);
     }
+
+    public static async Task HandleOpenInBrowser(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var url = ctx.NavigationService.CurrentPage?.Url;
+        if (string.IsNullOrEmpty(url))
+        {
+            ctx.NavigationService.SetStatusMessage("No page URL to open");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true };
+            System.Diagnostics.Process.Start(psi);
+            ctx.NavigationService.SetStatusMessage("Opened in browser");
+        }
+        catch (Exception ex)
+        {
+            ctx.NavigationService.SetStatusMessage($"Failed to open browser: {ex.Message}");
+            ctx.Logger.LogWarning(ex, "Failed to open URL in browser: {Url}", url);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
 }
