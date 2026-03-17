@@ -278,6 +278,13 @@ internal static class NavigationCommandHandler
             ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+        else if (viewMode == ViewMode.Readable)
+        {
+            // From reader view, go back to link list of the same page
+            ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
+            ctx.LineCacheManager.InvalidateLineCache();
+            await ctx.RenderCurrentPageAsync(options, ct);
+        }
         else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
         {
             await ctx.RefreshCollectionsAsync(ct);
