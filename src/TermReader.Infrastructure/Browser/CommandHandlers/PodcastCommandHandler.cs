@@ -655,7 +655,7 @@ internal static class PodcastCommandHandler
                     helpers.WriteLine($"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS service account    {p.SecondaryText.AnsiFg}not set{Reset}");
                     helpers.WriteLine($"      {p.SecondaryText.AnsiFg}1. Create service account at console.cloud.google.com{Reset}");
                     helpers.WriteLine($"      {p.SecondaryText.AnsiFg}2. Grant Storage Object Admin role on your bucket{Reset}");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}3. Download JSON key \u2192 press [k] to set path{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}3. Download JSON key \u2192 press [k] to set path or paste JSON{Reset}");
                 }
             }
 
@@ -837,25 +837,38 @@ internal static class PodcastCommandHandler
             if (command.RawKeyChar == 'k' && gcsClient != null)
             {
                 var keyInput = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS service account key file path: ", ct);
+                    "GCS key (file path or paste JSON): ", ct);
                 if (!string.IsNullOrWhiteSpace(keyInput))
                 {
                     var trimmed = keyInput.Trim();
+                    ServiceAccountKeyValidationResult validation;
 
-                    // Expand ~ to home directory
-                    if (trimmed.StartsWith('~'))
+                    if (trimmed.StartsWith('{'))
                     {
-                        trimmed = Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                            trimmed[1..].TrimStart('/'));
+                        // Pasted JSON content — validate and save to app data
+                        validation = gcsClient.SetServiceAccountKeyContent(trimmed);
+                    }
+                    else
+                    {
+                        // File path — expand ~ and validate
+                        if (trimmed.StartsWith('~'))
+                        {
+                            trimmed = Path.Combine(
+                                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                trimmed[1..].TrimStart('/'));
+                        }
+
+                        trimmed = Path.GetFullPath(trimmed);
+                        validation = GcsStorageClient.ValidateKeyFile(trimmed);
+                        if (validation.IsValid)
+                        {
+                            gcsClient.SetServiceAccountKeyPath(trimmed);
+                        }
                     }
 
-                    trimmed = Path.GetFullPath(trimmed);
-                    var validation = GcsStorageClient.ValidateKeyFile(trimmed);
                     if (validation.IsValid)
                     {
-                        gcsClient.SetServiceAccountKeyPath(trimmed);
-                        keyPath = trimmed;
+                        keyPath = gcsClient.GetServiceAccountKeyPath();
                         isKeyConfigured = true;
 
                         Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");

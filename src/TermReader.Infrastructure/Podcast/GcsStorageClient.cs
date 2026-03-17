@@ -100,6 +100,49 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         return ServiceAccountKeyValidationResult.Valid();
     }
 
+    /// <summary>
+    /// Validates JSON content as a service account key without requiring a file on disk.
+    /// </summary>
+    public static ServiceAccountKeyValidationResult ValidateKeyContent(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return ServiceAccountKeyValidationResult.Invalid("Input is not valid JSON");
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+
+            foreach (var field in RequiredKeyFileFields)
+            {
+                if (!root.TryGetProperty(field, out var prop)
+                    || prop.ValueKind == JsonValueKind.Null
+                    || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
+                {
+                    return ServiceAccountKeyValidationResult.Invalid(
+                        $"Invalid service account key: missing '{field}'");
+                }
+            }
+
+            if (root.TryGetProperty("type", out var typeProp)
+                && typeProp.GetString() != "service_account")
+            {
+                return ServiceAccountKeyValidationResult.Invalid(
+                    $"Invalid key: 'type' must be 'service_account', got '{typeProp.GetString()}'");
+            }
+        }
+
+        return ServiceAccountKeyValidationResult.Valid();
+    }
+
     public async Task<string> UploadAsync(
         string localFilePath,
         string objectName,
@@ -377,6 +420,33 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 
         _logger.LogInformation("Service account key path updated");
         return ServiceAccountKeyValidationResult.Valid();
+    }
+
+    /// <summary>
+    /// Accepts pasted JSON key content, saves it to the app data directory,
+    /// and configures the service account key path.
+    /// </summary>
+    public ServiceAccountKeyValidationResult SetServiceAccountKeyContent(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+
+        var validation = ValidateKeyContent(json);
+        if (!validation.IsValid)
+        {
+            return validation;
+        }
+
+        // Save to {LocalAppData}/TermReader/gcs-key.json
+        var appData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TermReader");
+        Directory.CreateDirectory(appData);
+
+        var keyFilePath = Path.Combine(appData, "gcs-key.json");
+        File.WriteAllText(keyFilePath, json);
+
+        // Now set the path as usual
+        return SetServiceAccountKeyPath(keyFilePath);
     }
 
     /// <summary>

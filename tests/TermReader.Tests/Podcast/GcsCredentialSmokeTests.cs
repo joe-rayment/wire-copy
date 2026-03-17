@@ -118,6 +118,91 @@ public class GcsCredentialSmokeTests : IDisposable
 
     #endregion
 
+    #region Key Content Validation
+
+    [Fact]
+    public void ValidateKeyContent_ReturnsError_WhenNotJson()
+    {
+        var result = GcsStorageClient.ValidateKeyContent("This is not JSON");
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not valid JSON");
+    }
+
+    [Fact]
+    public void ValidateKeyContent_ReturnsError_WhenMissingFields()
+    {
+        var result = GcsStorageClient.ValidateKeyContent("""{"some_field": "value"}""");
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("missing");
+    }
+
+    [Fact]
+    public void ValidateKeyContent_Succeeds_WhenValidServiceAccountKey()
+    {
+        var result = GcsStorageClient.ValidateKeyContent(ValidServiceAccountKeyJson);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ValidateKeyContent_ReturnsError_WhenWrongType()
+    {
+        var json = """
+            {
+              "type": "authorized_user",
+              "project_id": "test",
+              "client_email": "test@test.iam.gserviceaccount.com",
+              "private_key": "key"
+            }
+            """;
+
+        var result = GcsStorageClient.ValidateKeyContent(json);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("service_account");
+    }
+
+    [Fact]
+    public void SetServiceAccountKeyContent_SavesFileAndSetsPath()
+    {
+        var client = CreateClient(serviceAccountKeyPath: null);
+
+        var result = client.SetServiceAccountKeyContent(ValidServiceAccountKeyJson);
+
+        result.IsValid.Should().BeTrue();
+
+        // Should have saved the key path to settings store
+        _settingsStore.Received().Set(
+            "GcsServiceAccountKeyPath",
+            Arg.Is<string>(p => p.EndsWith("gcs-key.json")),
+            encrypt: true);
+
+        // Clean up the saved file
+        var expectedPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TermReader", "gcs-key.json");
+        if (File.Exists(expectedPath))
+        {
+            File.Delete(expectedPath);
+        }
+    }
+
+    [Fact]
+    public void SetServiceAccountKeyContent_RejectsInvalidJson()
+    {
+        var client = CreateClient(serviceAccountKeyPath: null);
+
+        var result = client.SetServiceAccountKeyContent("not json");
+
+        result.IsValid.Should().BeFalse();
+        _settingsStore.DidNotReceive().Set(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
+    }
+
+    #endregion
+
     #region Settings Store Integration
 
     [Fact]
