@@ -1198,8 +1198,12 @@ public class BrowserOrchestrator : IBrowserService
 
             _pageCache.Put(url, loadResult);
             _navigationService.ReplaceCurrent(page);
-            _navigationService.SetCacheInfo(false, null);
+            _navigationService.SetCacheInfo(true, DateTime.UtcNow);
             _lineCacheManager.InvalidateLineCache();
+
+            // Save cookies from the headed browser session (enables future Selenium
+            // loads of paywalled articles to use the user's login)
+            await SaveBrowserCookiesAsync(cancellationToken);
 
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
@@ -1291,6 +1295,34 @@ public class BrowserOrchestrator : IBrowserService
             cancellationToken);
 
         return retryResult.Success ? retryResult : null;
+    }
+
+    /// <summary>
+    /// Saves cookies from the active headed browser session for future use.
+    /// Enables subsequent Selenium loads to use the user's login on paywalled sites.
+    /// </summary>
+    private async Task SaveBrowserCookiesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_browserSession is not IBrowserSession session || !session.HasActiveDriver)
+            {
+                return;
+            }
+
+            var driver = session.GetOrCreateDriver(false);
+            var seleniumCookies = driver.Manage().Cookies.AllCookies;
+            var storedCookies = seleniumCookies.Select(c =>
+                new Application.Interfaces.StoredCookie(
+                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty, c.Expiry)).ToList();
+
+            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
+            _logger.LogInformation("Saved {Count} browser cookies after interactive refresh", storedCookies.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to save browser cookies (non-fatal)");
+        }
     }
 
     /// <summary>
