@@ -237,6 +237,11 @@ internal class StatusBarRenderer
             // Paywalled domain — no HTTP pre-fetch possible, prompt user to log in
             if (progress.PaywalledLinkCount > 0)
             {
+                if (context.IsFromCache)
+                {
+                    return $"{p.SecondaryText.AnsiFg}cached {RenderHelpers.FormatCacheAge(context.CachedAt)} \u00b7 paywall{Reset}";
+                }
+
                 return $"{p.SecondaryText.AnsiFg}no cache \u00b7 paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
             }
         }
