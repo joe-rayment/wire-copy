@@ -54,6 +54,12 @@ public class BrowserOrchestrator : IBrowserService
     private IArticleContentCache? _articleContentCache;
     private bool _articleContentCacheResolved;
 
+    // Lazily resolved hierarchy services (may not need to construct until first use)
+    private IHierarchyConfigStore? _hierarchyConfigStore;
+    private bool _hierarchyConfigStoreResolved;
+    private IHierarchyAnalyzer? _hierarchyAnalyzer;
+    private bool _hierarchyAnalyzerResolved;
+
     // Live preload progress indicator: set by background thread, read by main loop
     private volatile bool _progressDirty;
     private DateTime _lastProgressRender = DateTime.MinValue;
@@ -779,6 +785,54 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
+    /// Lazily resolves the hierarchy config store from the DI container.
+    /// Returns null if the service is not registered.
+    /// </summary>
+    private IHierarchyConfigStore? GetHierarchyConfigStore()
+    {
+        if (!_hierarchyConfigStoreResolved)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                _hierarchyConfigStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            }
+            catch
+            {
+                // Service may not be registered
+            }
+
+            _hierarchyConfigStoreResolved = true;
+        }
+
+        return _hierarchyConfigStore;
+    }
+
+    /// <summary>
+    /// Lazily resolves the hierarchy analyzer from the DI container.
+    /// Returns null if the service is not registered.
+    /// </summary>
+    private IHierarchyAnalyzer? GetHierarchyAnalyzer()
+    {
+        if (!_hierarchyAnalyzerResolved)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                _hierarchyAnalyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+            }
+            catch
+            {
+                // Service may not be registered
+            }
+
+            _hierarchyAnalyzerResolved = true;
+        }
+
+        return _hierarchyAnalyzer;
+    }
+
+    /// <summary>
     /// Returns the union of page-cached URLs and article-cached URLs from preloading.
     /// Used by renderers to show cache indicators for collection items.
     /// </summary>
@@ -867,7 +921,19 @@ public class BrowserOrchestrator : IBrowserService
         var page = Page.Create(finalUrl, loadResult.Html, metadata);
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
-        var tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+
+        // Try AI-powered hierarchy: check saved config first, then analyze if configured
+        NavigationTree tree;
+        var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl, cancellationToken);
+        if (hierarchyConfig != null)
+        {
+            tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken);
+        }
+        else
+        {
+            tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+        }
+
         page.SetLinkTree(tree);
 
         var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
@@ -894,6 +960,78 @@ public class BrowserOrchestrator : IBrowserService
             loadResult.Html?.Length ?? 0);
 
         return page;
+    }
+
+    /// <summary>
+    /// Attempts to get a saved hierarchy config or run AI analysis for the page.
+    /// Returns null if no config exists and analysis is not available or not needed.
+    /// </summary>
+    private async Task<SiteHierarchyConfig?> TryGetOrAnalyzeHierarchyAsync(
+        List<LinkInfo> links,
+        string pageUrl,
+        CancellationToken cancellationToken)
+    {
+        var configStore = GetHierarchyConfigStore();
+        if (configStore == null)
+        {
+            return null;
+        }
+
+        // Check for saved config first
+        try
+        {
+            var existingConfig = await configStore.GetConfigAsync(pageUrl);
+            if (existingConfig != null)
+            {
+                _logger.LogDebug("Using saved hierarchy config for {Url}", pageUrl);
+                return existingConfig;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to check hierarchy config for {Url}", pageUrl);
+        }
+
+        // No saved config — try AI analysis if configured
+        var analyzer = GetHierarchyAnalyzer();
+        if (analyzer == null || !analyzer.IsConfigured)
+        {
+            return null;
+        }
+
+        // Only analyze if we have content links worth analyzing
+        var contentLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+        if (contentLinkCount < 3)
+        {
+            _logger.LogDebug("Skipping AI analysis for {Url}: only {Count} content links", pageUrl, contentLinkCount);
+            return null;
+        }
+
+        // Capture screenshot for AI analysis
+        var browserSession = _browserSession as IBrowserSession;
+        var screenshot = browserSession?.CaptureScreenshot();
+        if (screenshot == null || screenshot.Length == 0)
+        {
+            _logger.LogDebug("No screenshot available for AI analysis of {Url}", pageUrl);
+            return null;
+        }
+
+        try
+        {
+            _logger.LogInformation("Running AI hierarchy analysis for {Url}", pageUrl);
+            var config = await analyzer.AnalyzePageHierarchyAsync(screenshot, links, pageUrl, cancellationToken);
+
+            // Save for future use
+            await configStore.SaveConfigAsync(config);
+            _logger.LogInformation("Saved AI hierarchy config for {Url} ({SectionCount} sections)", pageUrl, config.Sections.Count);
+
+            return config;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI hierarchy analysis failed for {Url}, falling back to heuristic", pageUrl);
+            return null;
+        }
     }
 
     /// <summary>
