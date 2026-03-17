@@ -31,6 +31,12 @@ public record PreloadProgress
     public bool IsComplete => CachedCount + NeedsBrowserCount >= TotalCacheableLinks;
 
     /// <summary>
+    /// Number of same-origin content links on paywalled domains
+    /// that cannot be HTTP pre-loaded (need Selenium with cookies).
+    /// </summary>
+    public int PaywalledLinkCount { get; init; }
+
+    /// <summary>
     /// Whether the preloader is actively fetching pages right now.
     /// </summary>
     public bool IsActivelyFetching { get; init; }
