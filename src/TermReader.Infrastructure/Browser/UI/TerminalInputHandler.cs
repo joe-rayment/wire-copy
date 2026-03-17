@@ -255,6 +255,7 @@ public class TerminalInputHandler : IInputHandler
                 input.Append(initialInput);
                 Console.Write(initialInput);
             }
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken);
