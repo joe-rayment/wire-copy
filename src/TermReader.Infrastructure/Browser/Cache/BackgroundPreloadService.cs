@@ -169,8 +169,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     await _idleDetector.WaitForIdleAsync(cancellationToken);
                 }
 
-                // Process the entire queue while user stays idle
-                while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && _idleDetector.IsIdle)
+                // Process the entire queue while user stays idle (or eager mode is active)
+                var processedAny = false;
+                while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && (_eagerMode || _idleDetector.IsIdle))
                 {
                     var item = DequeueNext();
                     if (item == null)
@@ -178,6 +179,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         break;
                     }
 
+                    processedAny = true;
                     await PreloadUrlAsync(item.Url, cancellationToken);
 
                     // Rate limit between pre-loads (adaptive delay), but NO idle re-check
@@ -185,8 +187,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
                 }
 
-                // Batch complete (queue drained) — reset eager mode
-                _eagerMode = false;
+                // Only reset eager mode if we actually processed items.
+                // If queue was empty (e.g., debounce hasn't fired yet), keep eager for the next loop.
+                if (processedAny)
+                {
+                    _eagerMode = false;
+                }
 
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
                 await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
