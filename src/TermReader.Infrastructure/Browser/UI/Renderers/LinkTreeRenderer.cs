@@ -7,6 +7,7 @@ using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
@@ -34,18 +35,8 @@ internal class LinkTreeRenderer
 
         var title = metadata.Title ?? "Untitled";
         var domain = LauncherRenderer.ExtractDomain(url);
-        var pad = Math.Max(1, width - title.Length - domain.Length - 2);
 
-        if (title.Length + domain.Length + 2 > width)
-        {
-            title = RenderHelpers.TruncateText(title, Math.Max(10, width - domain.Length - 3));
-            pad = Math.Max(1, width - title.Length - domain.Length - 2);
-        }
-
-        _helpers.WriteLine(
-            $" {p.HeaderTitleFg.AnsiFg}{Bold}{title}{Reset}" +
-            $"{new string(' ', pad)}{p.HeaderUrlFg.AnsiFg}{Dim}{domain}{Reset} ");
-        _helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}");
+        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, title, domain, width);
     }
 
     public void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
@@ -182,7 +173,7 @@ internal class LinkTreeRenderer
     /// </summary>
     internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        const int headerLines = 2;
+        const int headerLines = 3;
         const int statusBarLines = 3;
         const int columnThreshold = 50;
         const int standardCellHeight = 5;
@@ -514,11 +505,12 @@ internal class LinkTreeRenderer
         var childCount = node.Children.Count;
         var showCount = !isExpanded || childCount >= 5;
         var countSuffix = showCount ? $" ({childCount})" : string.Empty;
-        var headerLabel = $"\u2500 {collapseIndicator} {node.Link.DisplayText}{countSuffix} ";
+        var titleText = $"{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
+        var headerLabel = $"\u256d\u2500 {titleText} ";
 
-        // Fill remaining width with thin rule
-        var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
-        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
+        // Fill remaining width with thin rule and close corner
+        var ruleLen = Math.Max(0, width - headerLabel.Length - 2);
+        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}\u256e";
         var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
 
         if (cardHeight >= 2)

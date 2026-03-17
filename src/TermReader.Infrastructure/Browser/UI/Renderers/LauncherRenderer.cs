@@ -135,7 +135,7 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        const int headerLines = 2;
+        const int headerLines = 3;
         const int footerLines = 2;
         const int columnThreshold = 40;
         const int standardCellHeight = 5;
@@ -367,16 +367,8 @@ internal class LauncherRenderer
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
     {
-        var titleText = "TermReader";
-        var rightText = $"{bookmarkCount} bookmarks  v1.0";
-        var pad = Math.Max(1, width - titleText.Length - rightText.Length - 2);
-
-        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}{titleText}{Reset}";
-        var countPart = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
-        var versionPart = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
-
-        _helpers.WriteLine($" {title}{new string(' ', pad)}{countPart}  {versionPart} ");
-        _helpers.WriteLine(Borders.HorizontalRule(p, width));
+        var subtitle = $"{bookmarkCount} bookmarks";
+        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, "TermReader", subtitle, width);
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
