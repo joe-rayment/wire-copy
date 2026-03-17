@@ -213,7 +213,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             // Step 3: Estimate cost (accounting for cached articles) and check budget
             var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
-                articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+                articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
                 cancellationToken);
 
             var totalCost = cacheAnalysis.EstimatedCost;
@@ -249,8 +249,11 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
                 });
 
+                // Build spoken text with headline/author/date intro
+                var spokenText = BuildSpokenText(article);
+
                 // Check cache first
-                var cached = await _audioCache.TryGetAsync(article.CleanedText, article.Url, cancellationToken);
+                var cached = await _audioCache.TryGetAsync(spokenText, article.Url, cancellationToken);
                 string audioPath;
 
                 if (cached != null)
@@ -275,7 +278,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 {
                     // Cache miss — generate via TTS API
                     var ttsResult = await _ttsService.GenerateAudioAsync(
-                        article.CleanedText,
+                        spokenText,
                         article.Title,
                         cancellationToken: cancellationToken);
 
@@ -296,7 +299,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
                     // Store in cache
                     var cacheEntry = await _audioCache.PutAsync(
-                        article.CleanedText,
+                        spokenText,
                         article.Url,
                         article.Title,
                         ttsResult.AudioData,
@@ -508,6 +511,30 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return wordCount;
     }
 
+    /// <summary>
+    /// Builds the full text to send to TTS, prepending headline, author, and date
+    /// as a spoken introduction before the article body.
+    /// </summary>
+    internal static string BuildSpokenText(ExtractedArticle article)
+    {
+        var parts = new List<string> { article.Title + "." };
+
+        if (!string.IsNullOrWhiteSpace(article.Author))
+        {
+            parts.Add($"By {article.Author}.");
+        }
+
+        if (article.PublishedDate.HasValue)
+        {
+            parts.Add($"Published {article.PublishedDate.Value:MMMM d, yyyy}.");
+        }
+
+        parts.Add(string.Empty); // blank line separator
+        parts.Add(article.CleanedText);
+
+        return string.Join("\n", parts);
+    }
+
     private async Task<CacheAnalysis> AnalyzeCacheStatusCoreAsync(
         Collection collection,
         IProgress<ContentExtractionProgress>? progress,
@@ -538,7 +565,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             }
 
             return await _audioCache.AnalyzeCollectionAsync(
-                articles.Select(a => (a.Url, a.Title, a.CleanedText)).ToList(),
+                articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
                 cancellationToken);
         }
         catch (OperationCanceledException)
