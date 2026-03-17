@@ -49,4 +49,26 @@ public record ThemePalette
     public required ThemeColor ReadItemFg { get; init; }
 
     public required ThemeColor FocusIndicatorFg { get; init; }
+
+    /// <summary>
+    /// Accent color for interactive elements (links in hints, key shortcuts).
+    /// Defaults to PromptFg if not explicitly set.
+    /// </summary>
+    public ThemeColor? AccentFg { get; init; }
+
+    /// <summary>
+    /// Very dim text for truly background elements (version info, decorative chars).
+    /// Defaults to SecondaryText if not explicitly set.
+    /// </summary>
+    public ThemeColor? DimFg { get; init; }
+
+    /// <summary>
+    /// Gets the accent color, falling back to PromptFg.
+    /// </summary>
+    public ThemeColor GetAccentFg() => AccentFg ?? PromptFg;
+
+    /// <summary>
+    /// Gets the dim color, falling back to SecondaryText.
+    /// </summary>
+    public ThemeColor GetDimFg() => DimFg ?? SecondaryText;
 }
