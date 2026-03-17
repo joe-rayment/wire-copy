@@ -46,5 +46,5 @@ public interface IInputHandler
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="isSecret">When true, echoes '*' instead of the actual character.</param>
     /// <returns>User-entered text, or null if cancelled (Escape).</returns>
-    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null);
+    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null);
 }

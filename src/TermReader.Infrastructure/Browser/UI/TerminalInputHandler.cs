@@ -222,7 +222,7 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null)
+    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null)
     {
         EnsureKeyReaderStarted();
 
@@ -250,6 +250,11 @@ public class TerminalInputHandler : IInputHandler
 
             // Read input from the key channel
             var input = new System.Text.StringBuilder();
+            if (!string.IsNullOrEmpty(initialInput))
+            {
+                input.Append(initialInput);
+                Console.Write(initialInput);
+            }
             while (!cancellationToken.IsCancellationRequested)
             {
                 var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken);
