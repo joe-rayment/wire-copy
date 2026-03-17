@@ -8,6 +8,7 @@ using TermReader.Application.DTOs.Browser;
 using TermReader.Application.DTOs.Podcast;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Audio;
+using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
@@ -615,6 +616,36 @@ internal static class PodcastCommandHandler
         var isKeyConfigured = !string.IsNullOrWhiteSpace(keyPath);
         string? inlineError = null;
 
+        // Resolve Anthropic services for AI Hierarchy status (optional — may not be registered)
+        bool isAnthropicConfigured = false;
+        int savedConfigCount = 0;
+        string anthropicModel = "claude-haiku-4-5-20251001";
+        try
+        {
+            using var aiScope = ctx.ScopeFactory.CreateScope();
+            var hierarchyAnalyzer = aiScope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+            var hierarchyConfigStore = aiScope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            var anthropicConfigOpts = aiScope.ServiceProvider.GetService<IOptions<AnthropicConfiguration>>();
+            if (hierarchyAnalyzer != null)
+            {
+                isAnthropicConfigured = hierarchyAnalyzer.IsConfigured;
+            }
+
+            if (hierarchyConfigStore != null)
+            {
+                savedConfigCount = await hierarchyConfigStore.GetConfigCountAsync();
+            }
+
+            if (anthropicConfigOpts != null)
+            {
+                anthropicModel = anthropicConfigOpts.Value.Model;
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Failed to resolve Anthropic services for settings display");
+        }
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -673,6 +704,17 @@ internal static class PodcastCommandHandler
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed for podcast apps{Reset}");
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3\u201363 chars, lowercase, a\u2013z/0\u20139/hyphens/dots){Reset}");
             }
+
+            // --- AI Hierarchy ---
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}AI Hierarchy{Reset}");
+
+            var aiKeyIndicator = isAnthropicConfigured
+                ? $"    {p.PromptFg.AnsiFg}\u25cf{Reset} API Key                {p.PromptFg.AnsiFg}configured{Reset}"
+                : $"    {p.SecondaryText.AnsiFg}\u25cb{Reset} API Key                {p.SecondaryText.AnsiFg}not set{Reset}";
+            helpers.WriteLine(aiKeyIndicator);
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Model:{Reset}                  {p.PrimaryText.AnsiFg}{anthropicModel}{Reset}");
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Saved Configs:{Reset}          {p.PrimaryText.AnsiFg}{savedConfigCount}{Reset}");
 
             if (inlineError != null)
             {
