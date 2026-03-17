@@ -82,16 +82,74 @@ internal class StatusBarRenderer
         return string.Empty;
     }
 
-    internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false)
+    internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
         const int barLength = 10;
-        const string ActiveColor = "\x1b[38;5;220m"; // Yellow/amber for active caching
+        const string ActiveColor = "\x1b[38;5;220m"; // Yellow/amber for active/in-progress
         var filled = total > 0 ? (int)Math.Round((double)cached / total * barLength) : 0;
-        var empty = barLength - filled;
-        var bar = new string('\u25B0', filled) + new string('\u25B1', empty);
-        var barColor = isActive ? ActiveColor : p.PromptFg.AnsiFg;
-        var label = isActive ? "caching" : "cached";
-        return $"{barColor}{bar}{Reset} {p.SecondaryText.AnsiFg}{cached}/{total} {label}{Reset}";
+        var remaining = barLength - filled;
+
+        // Three visual states: ▰ cached (green) │ ▰ in-progress (amber) │ ▱ pending (dim)
+        if (isActive && remaining > 0)
+        {
+            // Show 1 segment as "in-progress" (amber), rest as pending
+            var inProgress = 1;
+            var pending = remaining - inProgress;
+            var bar = $"{p.PromptFg.AnsiFg}{new string('\u25B0', filled)}{Reset}" +
+                      $"{ActiveColor}\u25B0{Reset}" +
+                      $"{p.SecondaryText.AnsiFg}{new string('\u25B1', Math.Max(0, pending))}{Reset}";
+
+            if (!string.IsNullOrEmpty(currentUrl))
+            {
+                var slug = FormatUrlSlug(currentUrl);
+                return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {ActiveColor}{slug}{Reset}";
+            }
+
+            return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total} caching{Reset}";
+        }
+
+        // Not active — all filled segments are cached (green), rest pending (dim)
+        var staticBar = $"{p.PromptFg.AnsiFg}{new string('\u25B0', filled)}{Reset}" +
+                        $"{p.SecondaryText.AnsiFg}{new string('\u25B1', remaining)}{Reset}";
+        var label = remaining == 0 ? "cached" : "cached";
+        return $"{staticBar} {p.SecondaryText.AnsiFg}{cached}/{total} {label}{Reset}";
+    }
+
+    /// <summary>
+    /// Extracts a short readable slug from a URL path for the caching indicator.
+    /// e.g. "https://arstechnica.com/science/2026/03/a-century-after-rockets/" → "a-century-after-rockets"
+    /// </summary>
+    private static string FormatUrlSlug(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var path = uri.AbsolutePath.Trim('/');
+            var segments = path.Split('/');
+
+            // Take the last meaningful segment (skip dates and short segments)
+            for (var i = segments.Length - 1; i >= 0; i--)
+            {
+                var seg = segments[i];
+                if (seg.Length > 8 && !int.TryParse(seg, out _))
+                {
+                    // Truncate long slugs and replace hyphens with spaces
+                    var readable = seg.Replace('-', ' ').Replace('_', ' ');
+                    if (readable.Length > 30)
+                    {
+                        readable = readable[..27] + "...";
+                    }
+
+                    return readable;
+                }
+            }
+
+            return path.Length > 30 ? path[..27] + "..." : path;
+        }
+        catch
+        {
+            return url.Length > 30 ? url[..27] + "..." : url;
+        }
     }
 
     private static string FormatLine2Left(
@@ -172,7 +230,7 @@ internal class StatusBarRenderer
                 return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
             }
 
-            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching);
+            return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
         }
 
         // Per-page cache badge for other views
