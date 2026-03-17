@@ -234,10 +234,10 @@ internal class StatusBarRenderer
                 return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
             }
 
-            // Paywalled domain — no HTTP pre-fetch possible
+            // Paywalled domain — no HTTP pre-fetch possible, prompt user to log in
             if (progress.PaywalledLinkCount > 0)
             {
-                return $"{p.SecondaryText.AnsiFg}{progress.PaywalledLinkCount} links \u00b7 paywalled{Reset}";
+                return $"{p.SecondaryText.AnsiFg}no cache \u00b7 paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
             }
         }
 
