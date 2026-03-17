@@ -421,8 +421,12 @@ internal static class SearchCommandHandler
                 await HandleSetKey(ctx, options, ct);
                 break;
 
+            case "anthropic-key":
+                await HandleSetAnthropicKey(ctx, options, ct);
+                break;
+
             default:
-                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key");
+                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key | :set anthropic-key");
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
         }
@@ -532,6 +536,10 @@ internal static class SearchCommandHandler
                 await HandleClearKey(ctx, options, ct);
                 break;
 
+            case "anthropic-key":
+                await HandleClearAnthropicKey(ctx, options, ct);
+                break;
+
             default:
                 // No recognized subcommand — delegate to existing collection clear behavior
                 await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
@@ -578,6 +586,60 @@ internal static class SearchCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Failed to remove bucket name");
             ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleSetAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var apiKey = await ctx.InputHandler.PromptForInputAsync(
+            "Anthropic API key: ", ct, isSecret: true);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var trimmedKey = apiKey.Trim();
+
+        if (!trimmedKey.StartsWith("sk-ant-", StringComparison.Ordinal) && !trimmedKey.StartsWith("sk-", StringComparison.Ordinal))
+        {
+            ctx.NavigationService.SetStatusMessage("Invalid key format \u2014 expected sk-ant-... or sk-...");
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Set("AnthropicApiKey", trimmedKey, encrypt: true);
+            ctx.NavigationService.SetStatusMessage("Anthropic API key saved");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist Anthropic API key");
+            ctx.NavigationService.SetStatusMessage("Failed to save Anthropic API key");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static async Task HandleClearAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Remove("AnthropicApiKey");
+            ctx.NavigationService.SetStatusMessage("Anthropic API key cleared");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to remove Anthropic API key");
+            ctx.NavigationService.SetStatusMessage("Failed to clear Anthropic API key");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
