@@ -381,7 +381,7 @@ internal class LauncherRenderer
             _helpers.WriteLine();
         }
 
-        var heading = "No bookmarks yet";
+        var heading = "Your bookmarks await";
         var headingPad = Math.Max(0, (width - heading.Length) / 2);
         _helpers.WriteLine($"{new string(' ', headingPad)}{p.PrimaryText.AnsiFg}{Bold}{heading}{Reset}");
         _helpers.WriteLine();
