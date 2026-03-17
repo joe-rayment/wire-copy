@@ -369,6 +369,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
+            // Paywalled domains can't be HTTP-cached (need Selenium with cookies)
+            if (IsPaywalledDomain(url))
+            {
+                continue;
+            }
+
             allEligibleWithIndex.Add((url, i));
             TryAddEligibleUrl(url, i, needsJs, items);
         }
@@ -424,6 +430,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             var url = urls[i];
             if (string.IsNullOrEmpty(url))
+            {
+                continue;
+            }
+
+            // Paywalled domains can't be HTTP-cached (need Selenium with cookies)
+            if (IsPaywalledDomain(url))
             {
                 continue;
             }
