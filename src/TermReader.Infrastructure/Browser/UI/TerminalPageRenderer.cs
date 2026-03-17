@@ -43,7 +43,9 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
 
-        _linkTreeRenderer.RenderHeader(page.Metadata, page.Url, options);
+        var linkCount = page.LinkTree?.TotalLinks ?? 0;
+        var sectionCount = page.LinkTree?.Root.Children.Count(c => c.IsGroupHeader) ?? 0;
+        _linkTreeRenderer.RenderHeader(page.Metadata, page.Url, options, linkCount, sectionCount);
 
         var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
 

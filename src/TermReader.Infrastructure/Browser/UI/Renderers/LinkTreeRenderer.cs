@@ -28,15 +28,15 @@ internal class LinkTreeRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderHeader(PageMetadata metadata, string url, RenderOptions options)
+    public void RenderHeader(PageMetadata metadata, string url, RenderOptions options, int linkCount = 0, int sectionCount = 0)
     {
         var width = Math.Max(1, options.TerminalWidth - 2);
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
         var title = metadata.Title ?? "Untitled";
-        var domain = LauncherRenderer.ExtractDomain(url);
+        var subtitle = BuildHeaderSubtitle(metadata, url, linkCount, sectionCount);
 
-        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, title, domain, width);
+        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, title, subtitle, width);
     }
 
     public void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
@@ -303,6 +303,35 @@ internal class LinkTreeRenderer
         }
 
         return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+    }
+
+    private static string BuildHeaderSubtitle(PageMetadata metadata, string url, int linkCount, int sectionCount)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(metadata.Author))
+        {
+            parts.Add(metadata.Author);
+        }
+
+        if (metadata.PublishedDate.HasValue)
+        {
+            parts.Add(FormatDate(metadata.PublishedDate) ?? metadata.PublishedDate.Value.ToString("MMM d, yyyy"));
+        }
+
+        parts.Add(LauncherRenderer.ExtractDomain(url));
+
+        if (linkCount > 0)
+        {
+            parts.Add($"{linkCount} links");
+        }
+
+        if (sectionCount > 1)
+        {
+            parts.Add($"{sectionCount} sections");
+        }
+
+        return string.Join(" \u00b7 ", parts);
     }
 
     private static string BuildSelectedCardLine(
