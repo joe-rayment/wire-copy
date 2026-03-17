@@ -31,6 +31,7 @@ public class NavigationService : INavigationService
     private DateTime? _statusMessageSetAt;
     private bool _isFromCache;
     private DateTime? _cachedAt;
+    private bool _isAiHierarchy;
 
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
@@ -66,7 +67,8 @@ public class NavigationService : INavigationService
         SearchMatchIndex = _searchMatchIndex,
         StatusMessage = GetActiveStatusMessage(),
         IsFromCache = _isFromCache,
-        CachedAt = _cachedAt
+        CachedAt = _cachedAt,
+        IsAiHierarchy = _isAiHierarchy,
     };
 
     public Page? CurrentPage => _currentPage;
@@ -235,6 +237,11 @@ public class NavigationService : INavigationService
     {
         _isFromCache = isFromCache;
         _cachedAt = cachedAt;
+    }
+
+    public void SetAiHierarchy(bool isAiHierarchy)
+    {
+        _isAiHierarchy = isAiHierarchy;
     }
 
     /// <summary>

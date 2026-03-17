@@ -197,6 +197,12 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
         }
 
+        // AI hierarchy badge
+        if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
+        {
+            parts.Add($"{p.SecondaryText.AnsiFg}AI layout{Reset}");
+        }
+
         // Cache progress mini-bar or cache badge
         var cachePart = FormatCacheIndicator(context, mode, p, cacheProgress);
         if (!string.IsNullOrEmpty(cachePart))
