@@ -118,12 +118,22 @@ public sealed class BrowserSession : IBrowserSession
 
             try
             {
-                _driver.Manage().Window.Size = new System.Drawing.Size(1400, 900);
                 _driver.Manage().Window.Position = new System.Drawing.Point(0, 0);
+                _driver.Manage().Window.Maximize();
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to restore browser window (non-fatal)");
+                // Maximize may not be supported on all platforms — fall back to fixed size
+                try
+                {
+                    _driver.Manage().Window.Size = new System.Drawing.Size(1400, 900);
+                }
+                catch (Exception innerEx)
+                {
+                    _logger.LogDebug(innerEx, "Failed to resize browser window (non-fatal)");
+                }
+
+                _logger.LogDebug(ex, "Failed to maximize browser window, used fallback size");
             }
         }
     }
