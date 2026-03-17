@@ -36,4 +36,10 @@ public interface IBrowserSession : IBrowserSessionControl
     /// No-op if headless or no active driver.
     /// </summary>
     void RestoreWindow();
+
+    /// <summary>
+    /// Captures a viewport screenshot of the current page as PNG bytes.
+    /// Returns null if no active driver or capture fails.
+    /// </summary>
+    byte[]? CaptureScreenshot();
 }
