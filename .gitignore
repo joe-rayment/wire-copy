@@ -173,3 +173,18 @@ claude-dev
 .claude/
 .claude/logs/
 attachments/
+
+# Credentials and service account keys
+*-service-account*.json
+*-credentials*.json
+sample-*-cookies.json
+
+# Debug captures
+screenshots/*.html
+screenshots/*.txt
+
+# Python
+__pycache__/
+
+# Personal notes
+obsidian/
