@@ -138,7 +138,7 @@ internal class LauncherRenderer
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
         const int headerLines = 3;
-        const int urlBarLines = 4;
+        const int urlBarLines = 5;
         const int footerLines = 2;
         const int columnThreshold = 40;
         const int standardCellHeight = 5;
@@ -376,7 +376,8 @@ internal class LauncherRenderer
 
     private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
     {
-        var barWidth = Math.Min(width - 4, 50);
+        // Use ~75% of width, capped at 70, min 30
+        var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
         var pad = Math.Max(0, (width - barWidth) / 2);
         var innerWidth = barWidth - 4;
 
@@ -400,6 +401,7 @@ internal class LauncherRenderer
             $"{borderColor} \u2502{Reset}");
         _helpers.WriteLine(
             $"{new string(' ', pad)}{borderColor}\u2570{new string('\u2500', barWidth - 2)}\u256f{Reset}");
+        _helpers.WriteLine();
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
