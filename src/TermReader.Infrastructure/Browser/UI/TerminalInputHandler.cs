@@ -222,7 +222,7 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false)
+    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null)
     {
         EnsureKeyReaderStarted();
 
@@ -232,17 +232,21 @@ public class TerminalInputHandler : IInputHandler
 
         try
         {
-            // Position at the bottom of the terminal
-            var row = Console.WindowHeight - 1;
-            Console.SetCursorPosition(0, row);
+            // Position at specified row or default to bottom of terminal
+            var targetRow = row ?? Console.WindowHeight - 1;
+            var targetCol = col ?? 0;
+            Console.SetCursorPosition(targetCol, targetRow);
 
             // Clear the line and show prompt
-            Console.Write(new string(' ', Console.WindowWidth - 1));
-            Console.SetCursorPosition(0, row);
+            var clearWidth = Math.Max(1, Console.WindowWidth - 1 - targetCol);
+            Console.Write(new string(' ', clearWidth));
+            Console.SetCursorPosition(targetCol, targetRow);
             var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
             Console.Write(palette.PromptFg.AnsiFg);
             Console.Write(prompt);
             Console.Write("\x1b[0m");
+
+            var promptStart = targetCol + prompt.Length;
 
             // Read input from the key channel
             var input = new System.Text.StringBuilder();
@@ -268,10 +272,10 @@ public class TerminalInputHandler : IInputHandler
                         input.Remove(input.Length - 1, 1);
 
                         // Redraw the input line
-                        Console.SetCursorPosition(prompt.Length, row);
+                        Console.SetCursorPosition(promptStart, targetRow);
                         var display = isSecret ? new string('*', input.Length) : input.ToString();
                         Console.Write(display + " ");
-                        Console.SetCursorPosition(prompt.Length + input.Length, row);
+                        Console.SetCursorPosition(promptStart + input.Length, targetRow);
                     }
 
                     continue;

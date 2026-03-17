@@ -238,7 +238,16 @@ internal static class LauncherCommandHandler
 
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var input = await ctx.InputHandler.PromptForInputAsync("Go to: ", ct);
+        // Calculate URL bar position for inline input
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var barWidth = Math.Min(width - 4, 50);
+        var pad = Math.Max(0, (width - barWidth) / 2);
+        const int urlBarRow = 5; // Row where the URL bar content line is rendered
+        var inputCol = pad + 2;  // Inside the box border
+
+        // Prompt directly inside the URL bar
+        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol);
+
         if (string.IsNullOrWhiteSpace(input))
         {
             await ctx.RenderCurrentPageAsync(options, ct);
