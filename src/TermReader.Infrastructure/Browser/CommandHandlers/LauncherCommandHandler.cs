@@ -260,9 +260,9 @@ internal static class LauncherCommandHandler
         ctx.NavigationService.LauncherSelectedIndex = -1;
         await ctx.RenderCurrentPageAsync(options, ct);
 
-        // Calculate URL bar position for inline input
+        // Calculate URL bar position for inline input (must match RenderUrlBar)
         var width = Math.Max(1, options.TerminalWidth - 2);
-        var barWidth = Math.Min(width - 4, 50);
+        var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
         var pad = Math.Max(0, (width - barWidth) / 2);
         const int urlBarRow = 5; // Row where the URL bar content line is rendered
         var inputCol = pad + 2;  // Inside the box border
