@@ -265,6 +265,10 @@ internal static class SearchCommandHandler
                 await PodcastCommandHandler.HandlePodcastSettings(ctx, options, ct);
                 return true;
 
+            case "config":
+                await HandleConfigScreen(ctx, options, ct);
+                return true;
+
             case "set":
                 await HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
                 return true;
@@ -405,6 +409,91 @@ internal static class SearchCommandHandler
         var stats = ctx.PageCache.GetStats();
         var articleCount = ctx.PreloadService.GetArticleCachedUrls().Count;
         return stats with { ArticleCacheCount = articleCount };
+    }
+
+    private static async Task HandleConfigScreen(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        const string reset = "\x1b[0m";
+        var p = Infrastructure.Browser.Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+        while (!ct.IsCancellationRequested)
+        {
+            var helpers = new Infrastructure.Browser.UI.Renderers.RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            helpers.WriteLine();
+            helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', width - 2)}\u256e{reset}");
+            var title = Infrastructure.Browser.UI.Renderers.RenderHelpers.TruncateText("Settings", width - 4);
+            helpers.WriteLine(
+                $"{p.HeaderBorderFg.AnsiFg}\u2502 {p.HeaderTitleFg.AnsiFg}" +
+                $"{title.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} \u2502{reset}");
+            helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', width - 2)}\u256f{reset}");
+            helpers.WriteLine();
+
+            // OpenAI TTS
+            var hasOpenAi = !string.IsNullOrWhiteSpace(settingsStore.Get("OpenAiApiKey"));
+            var openAiIndicator = hasOpenAi
+                ? $"  {p.PromptFg.AnsiFg}\u25cf{reset} OpenAI TTS          {p.PromptFg.AnsiFg}configured{reset}"
+                : $"  {p.SecondaryText.AnsiFg}\u25cb{reset} OpenAI TTS          {p.SecondaryText.AnsiFg}not set{reset}";
+            helpers.WriteLine(openAiIndicator);
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Text-to-speech for podcast generation{reset}");
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}:set apikey to configure{reset}");
+            helpers.WriteLine();
+
+            // Anthropic
+            var hasAnthropic = !string.IsNullOrWhiteSpace(settingsStore.Get("AnthropicApiKey"));
+            var anthropicIndicator = hasAnthropic
+                ? $"  {p.PromptFg.AnsiFg}\u25cf{reset} Anthropic AI        {p.PromptFg.AnsiFg}configured{reset}"
+                : $"  {p.SecondaryText.AnsiFg}\u25cb{reset} Anthropic AI        {p.SecondaryText.AnsiFg}not set{reset}";
+            helpers.WriteLine(anthropicIndicator);
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}AI-powered link hierarchy for better page layout{reset}");
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}:set anthropic-key to configure{reset}");
+            helpers.WriteLine();
+
+            // GCS
+            var hasBucket = !string.IsNullOrWhiteSpace(settingsStore.Get("GcsBucketName"));
+            var gcsIndicator = hasBucket
+                ? $"  {p.PromptFg.AnsiFg}\u25cf{reset} GCS Storage         {p.PromptFg.AnsiFg}{settingsStore.Get("GcsBucketName")}{reset}"
+                : $"  {p.SecondaryText.AnsiFg}\u25cb{reset} GCS Storage         {p.SecondaryText.AnsiFg}not set{reset}";
+            helpers.WriteLine(gcsIndicator);
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Cloud storage for podcast RSS feed publishing{reset}");
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}:set bucket to configure{reset}");
+            helpers.WriteLine();
+
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Esc{reset}{p.SecondaryText.AnsiFg}:back   {reset}" +
+                              $"{p.PrimaryText.AnsiFg}:{reset}{p.SecondaryText.AnsiFg}run command{reset}");
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                break;
+            }
+
+            if (command.Type == CommandType.OpenCommandLine)
+            {
+                var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
+                if (!string.IsNullOrWhiteSpace(input))
+                {
+                    await HandleCommandLineInput(ctx, input.Trim(), options, ct);
+                }
+
+                continue;
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     private static async Task HandleSetCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
