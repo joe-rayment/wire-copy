@@ -36,7 +36,7 @@ internal class LauncherRenderer
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
 
         RenderHeader(bookmarks.Count, layout.Width, p);
-        RenderUrlBar(layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
 
         var totalItems = bookmarks.Count + 1;
 
@@ -374,28 +374,32 @@ internal class LauncherRenderer
         Borders.RenderRoundedBoxWithSubtitle(_helpers, p, "TermReader", subtitle, width);
     }
 
-    private void RenderUrlBar(int width, ThemePalette p)
+    private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
     {
         var barWidth = Math.Min(width - 4, 50);
         var pad = Math.Max(0, (width - barWidth) / 2);
         var innerWidth = barWidth - 4;
 
-        _helpers.WriteLine();
-        _helpers.WriteLine(
-            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', barWidth - 2)}\u256e{Reset}");
-
-        var placeholder = "Go to URL...";
+        var borderColor = isSelected ? p.SelectedItemFg.AnsiFg : p.HeaderBorderFg.AnsiFg;
+        var placeholder = isSelected ? "Type a URL and press Enter" : "Go to URL...";
         if (placeholder.Length > innerWidth)
         {
             placeholder = placeholder[..innerWidth];
         }
 
+        var textColor = isSelected
+            ? $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}"
+            : $"{p.SecondaryText.AnsiFg}{Dim}";
+
+        _helpers.WriteLine();
         _helpers.WriteLine(
-            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u2502 {Reset}" +
-            $"{p.SecondaryText.AnsiFg}{Dim}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
-            $"{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+            $"{new string(' ', pad)}{borderColor}\u256d{new string('\u2500', barWidth - 2)}\u256e{Reset}");
         _helpers.WriteLine(
-            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', barWidth - 2)}\u256f{Reset}");
+            $"{new string(' ', pad)}{borderColor}\u2502 {Reset}" +
+            $"{textColor}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
+            $"{borderColor} \u2502{Reset}");
+        _helpers.WriteLine(
+            $"{new string(' ', pad)}{borderColor}\u2570{new string('\u2500', barWidth - 2)}\u256f{Reset}");
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)

@@ -26,7 +26,7 @@ public class LauncherNavigationState
     public int SelectedIndex
     {
         get => _launcherSelectedIndex;
-        set => _launcherSelectedIndex = Math.Max(0, value);
+        set => _launcherSelectedIndex = Math.Max(-1, value);
     }
 
     /// <summary>

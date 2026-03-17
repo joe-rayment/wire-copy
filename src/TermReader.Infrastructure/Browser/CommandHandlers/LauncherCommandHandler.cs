@@ -25,8 +25,17 @@ internal static class LauncherCommandHandler
 
             case CommandType.MoveDown:
             {
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1);
-                ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                if (ctx.NavigationService.LauncherSelectedIndex == -1)
+                {
+                    // From URL bar → first bookmark
+                    ctx.NavigationService.LauncherSelectedIndex = 0;
+                }
+                else
+                {
+                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1);
+                    ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                }
+
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
@@ -34,8 +43,18 @@ internal static class LauncherCommandHandler
 
             case CommandType.MoveUp:
             {
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 0);
-                ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
+                if (currentIdx <= 0 && currentIdx != -1)
+                {
+                    // From top row → URL bar
+                    ctx.NavigationService.LauncherSelectedIndex = -1;
+                }
+                else if (currentIdx != -1)
+                {
+                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0);
+                    ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                }
+
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
@@ -60,7 +79,12 @@ internal static class LauncherCommandHandler
             case CommandType.ActivateLink:
             {
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
-                if (idx == (ctx.Bookmarks?.Count ?? 0))
+                if (idx == -1)
+                {
+                    // URL bar selected — activate URL input
+                    await HandleGoToUrl(ctx, options, ct);
+                }
+                else if (idx == (ctx.Bookmarks?.Count ?? 0))
                 {
                     await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
                 }
@@ -120,6 +144,9 @@ internal static class LauncherCommandHandler
 
             case CommandType.GoToUrl:
             case CommandType.OpenInBrowser:
+                // Select the URL bar, then activate it
+                ctx.NavigationService.LauncherSelectedIndex = -1;
+                await ctx.RenderCurrentPageAsync(options, ct);
                 await HandleGoToUrl(ctx, options, ct);
                 break;
 

@@ -68,11 +68,12 @@ public class NavigationServiceLauncherTests
     #region LauncherSelectedIndex
 
     [Fact]
-    public void LauncherSelectedIndex_ClampedToNonNegative()
+    public void LauncherSelectedIndex_ClampedToMinusOne()
     {
+        // -1 is valid (URL bar), but lower values clamp to -1
         _sut.LauncherSelectedIndex = -5;
 
-        _sut.LauncherSelectedIndex.Should().Be(0);
+        _sut.LauncherSelectedIndex.Should().Be(-1);
     }
 
     [Fact]
