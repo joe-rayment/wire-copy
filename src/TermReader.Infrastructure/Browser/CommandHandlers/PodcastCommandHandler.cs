@@ -683,10 +683,8 @@ internal static class PodcastCommandHandler
                 }
                 else
                 {
-                    helpers.WriteLine($"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS service account    {p.SecondaryText.AnsiFg}not set{Reset}");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}1. Create service account at console.cloud.google.com{Reset}");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}2. Grant Storage Object Admin role on your bucket{Reset}");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}3. Download JSON key \u2192 press [k] to set path or paste JSON{Reset}");
+                    helpers.WriteLine($"    {p.SecondaryText.AnsiFg}\u25cb{Reset} GCS service account    {p.SecondaryText.AnsiFg}not set{Reset}  {p.PrimaryText.AnsiFg}[k] setup wizard{Reset}");
+                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional \u2014 enables RSS feed publishing to Google Cloud Storage{Reset}");
                 }
             }
 
@@ -878,67 +876,67 @@ internal static class PodcastCommandHandler
             // [k] set/change GCS service account key
             if (command.RawKeyChar == 'k' && gcsClient != null)
             {
-                var keyInput = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS key (file path or paste JSON): ", ct);
-                if (!string.IsNullOrWhiteSpace(keyInput))
+                if (!isKeyConfigured)
                 {
-                    var trimmed = keyInput.Trim();
-                    ServiceAccountKeyValidationResult validation;
+                    // --- Multi-step wizard for first-time setup ---
+                    var wizardResult = await RunGcsKeyWizardAsync(
+                        ctx, options, p, gcsClient, gcsConfig, settingsStore, ct);
 
-                    if (trimmed.StartsWith('{'))
-                    {
-                        // Pasted JSON content — validate and save to app data
-                        validation = gcsClient.SetServiceAccountKeyContent(trimmed);
-                    }
-                    else
-                    {
-                        // File path — expand ~ and validate
-                        if (trimmed.StartsWith('~'))
-                        {
-                            trimmed = Path.Combine(
-                                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                                trimmed[1..].TrimStart('/'));
-                        }
-
-                        trimmed = Path.GetFullPath(trimmed);
-                        validation = GcsStorageClient.ValidateKeyFile(trimmed);
-                        if (validation.IsValid)
-                        {
-                            gcsClient.SetServiceAccountKeyPath(trimmed);
-                        }
-                    }
-
-                    if (validation.IsValid)
+                    if (wizardResult.KeySaved)
                     {
                         keyPath = gcsClient.GetServiceAccountKeyPath();
                         isKeyConfigured = true;
+                    }
 
-                        Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");
-                        await Task.Delay(800, ct);
+                    if (wizardResult.BucketSaved)
+                    {
+                        isGcsConfigured = true;
+                        feedUrl = wizardResult.FeedUrl;
+                        feedStatusNote = wizardResult.FeedStatusNote;
+                        bucketError = wizardResult.BucketError;
+                    }
+                }
+                else
+                {
+                    // --- Direct prompt for changing existing key ---
+                    var keyInput = await ctx.InputHandler.PromptForInputAsync(
+                        "GCS key (file path or paste JSON): ", ct);
+                    if (!string.IsNullOrWhiteSpace(keyInput))
+                    {
+                        var (keySaved, keyError) = await ValidateAndSaveKeyAsync(
+                            keyInput.Trim(), gcsClient);
 
-                        // Re-validate bucket if one is configured
-                        if (isGcsConfigured)
+                        if (keySaved)
                         {
-                            bucketError = null;
-                            var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                                ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
-                            if (success)
+                            keyPath = gcsClient.GetServiceAccountKeyPath();
+                            isKeyConfigured = true;
+
+                            Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");
+                            await Task.Delay(800, ct);
+
+                            if (isGcsConfigured)
                             {
-                                feedUrl = url;
-                                feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
-                            }
-                            else if (error != null)
-                            {
-                                bucketError = error;
+                                bucketError = null;
+                                var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
+                                    ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+                                if (success)
+                                {
+                                    feedUrl = url;
+                                    feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+                                }
+                                else if (error != null)
+                                {
+                                    bucketError = error;
+                                }
                             }
                         }
-                    }
-                    else
-                    {
-                        Console.Write(
-                            $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage}{Reset}" +
-                            new string(' ', 20));
-                        await Task.Delay(2000, ct);
+                        else
+                        {
+                            Console.Write(
+                                $"\r  {p.ErrorFg.AnsiFg}{keyError}{Reset}" +
+                                new string(' ', 20));
+                            await Task.Delay(2000, ct);
+                        }
                     }
                 }
 
@@ -1732,6 +1730,280 @@ internal static class PodcastCommandHandler
         }
     }
 
+    /// <summary>
+    /// Validates and saves a key input (JSON content or file path).
+    /// </summary>
+    private static Task<(bool Saved, string? Error)> ValidateAndSaveKeyAsync(
+        string input,
+        GcsStorageClient gcsClient)
+    {
+        ServiceAccountKeyValidationResult validation;
+
+        if (input.StartsWith('{'))
+        {
+            validation = gcsClient.SetServiceAccountKeyContent(input);
+        }
+        else
+        {
+            var path = input;
+            if (path.StartsWith('~'))
+            {
+                path = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    path[1..].TrimStart('/'));
+            }
+
+            path = Path.GetFullPath(path);
+            validation = GcsStorageClient.ValidateKeyFile(path);
+            if (validation.IsValid)
+            {
+                gcsClient.SetServiceAccountKeyPath(path);
+            }
+        }
+
+        return Task.FromResult(validation.IsValid
+            ? (true, (string?)null)
+            : (false, validation.ErrorMessage ?? "Invalid key"));
+    }
+
+    /// <summary>
+    /// Multi-step wizard for first-time GCS service account key setup.
+    /// Step 1: Ask if user has a key (y/n/help)
+    /// Step 2: Accept key input (paste JSON or file path)
+    /// Step 3: Auto-chain to bucket setup if bucket not yet configured
+    /// </summary>
+    private static async Task<GcsWizardResult> RunGcsKeyWizardAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        ThemePalette p,
+        GcsStorageClient gcsClient,
+        GcsConfiguration gcsConfig,
+        IUserSettingsStore settingsStore,
+        CancellationToken ct)
+    {
+        var result = new GcsWizardResult();
+
+        // --- Step 1: Do you have a key? ---
+        while (!ct.IsCancellationRequested)
+        {
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            RenderBox(helpers, p, "GCS Setup \u2014 Step 1 of 3", width);
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Do you have a GCP service account JSON key?{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}A service account key lets TermReader upload your podcast{Reset}");
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}to Google Cloud Storage as an RSS feed.{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}y{Reset}{p.SecondaryText.AnsiFg} \u2014 Yes, I have a JSON key ready{Reset}");
+            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}n{Reset}{p.SecondaryText.AnsiFg} \u2014 No, show me how to create one{Reset}");
+            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg} \u2014 Cancel{Reset}");
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                return result;
+            }
+
+            if (command.RawKeyChar is 'y' or 'Y')
+            {
+                break; // Proceed to step 2
+            }
+
+            if (command.RawKeyChar is 'n' or 'N')
+            {
+                // Show instructions screen, then loop back to step 1
+                await ShowGcsInstructionsAsync(ctx, options, p, ct);
+                continue;
+            }
+        }
+
+        // --- Step 2: Enter key ---
+        while (!ct.IsCancellationRequested)
+        {
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            RenderBox(helpers, p, "GCS Setup \u2014 Step 2 of 3", width);
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Paste your JSON key content, or enter the file path:{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Option A: Copy the entire JSON file contents and paste below{Reset}");
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Option B: Enter the path to the .json file on disk{Reset}");
+            helpers.ClearRemainingLines();
+
+            var keyInput = await ctx.InputHandler.PromptForInputAsync(
+                "Key (JSON or path): ", ct);
+
+            if (string.IsNullOrWhiteSpace(keyInput))
+            {
+                return result; // Cancelled
+            }
+
+            var (saved, error) = await ValidateAndSaveKeyAsync(keyInput.Trim(), gcsClient);
+
+            if (saved)
+            {
+                Console.Write($"\r  {p.PromptFg.AnsiFg}\u2714 Service account key saved{Reset}" + new string(' ', 20));
+                await Task.Delay(800, ct);
+
+                result = new GcsWizardResult { KeySaved = true };
+                break; // Proceed to step 3
+            }
+
+            Console.Write($"\r  {p.ErrorFg.AnsiFg}{error}{Reset}" + new string(' ', 20));
+            await Task.Delay(2000, ct);
+        }
+
+        if (!result.KeySaved)
+        {
+            return result;
+        }
+
+        // --- Step 3: Bucket setup (auto-chain if not configured) ---
+        if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+        {
+            // Bucket already configured — re-validate with new key
+            var (success, url, feedExisted, bucketErr) = await ValidateAndBootstrapBucketAsync(
+                ctx, options, gcsConfig.BucketName, gcsConfig, ct);
+            return new GcsWizardResult
+            {
+                KeySaved = true,
+                BucketSaved = success,
+                FeedUrl = url,
+                FeedStatusNote = feedExisted ? "Existing feed found" : "New feed created",
+                BucketError = bucketErr,
+            };
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            RenderBox(helpers, p, "GCS Setup \u2014 Step 3 of 3", width);
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2714{Reset} Service account key saved");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter your GCS bucket name:{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}This is where your podcast RSS feed will be hosted.{Reset}");
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Format: 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press Esc to skip (you can set this later with :set bucket){Reset}");
+            helpers.ClearRemainingLines();
+
+            var bucketInput = await ctx.InputHandler.PromptForInputAsync(
+                "Bucket name: ", ct);
+
+            if (string.IsNullOrWhiteSpace(bucketInput))
+            {
+                return new GcsWizardResult { KeySaved = true };
+            }
+
+            var trimmedBucket = bucketInput.Trim();
+
+            if (!GcsConfiguration.IsValidBucketName(trimmedBucket))
+            {
+                Console.Write(
+                    $"\r  {p.ErrorFg.AnsiFg}Invalid: must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots{Reset}" +
+                    new string(' ', 10));
+                await Task.Delay(2000, ct);
+                continue; // Retry step 3
+            }
+
+            Console.Write($"\r  {p.SecondaryText.AnsiFg}Validating bucket...{Reset}" + new string(' ', 20));
+
+            var (bucketSuccess, bucketUrl, bucketFeedExisted, bucketError) =
+                await ValidateAndBootstrapBucketAsync(ctx, options, trimmedBucket, gcsConfig, ct);
+
+            if (bucketSuccess)
+            {
+                gcsConfig.BucketName = trimmedBucket;
+                settingsStore.Set("GcsBucketName", trimmedBucket);
+
+                Console.Write($"\r  {p.PromptFg.AnsiFg}\u2714 Bucket configured{Reset}" + new string(' ', 30));
+                await Task.Delay(800, ct);
+
+                return new GcsWizardResult
+                {
+                    KeySaved = true,
+                    BucketSaved = true,
+                    FeedUrl = bucketUrl,
+                    FeedStatusNote = bucketFeedExisted ? "Existing feed found" : "New feed created",
+                };
+            }
+
+            if (bucketError != null)
+            {
+                Console.Write($"\r  {p.ErrorFg.AnsiFg}{bucketError}{Reset}" + new string(' ', 10));
+                await Task.Delay(2000, ct);
+            }
+
+            // Loop to retry step 3
+        }
+
+        return new GcsWizardResult { KeySaved = true };
+    }
+
+    /// <summary>
+    /// Shows GCS setup instructions when user doesn't have a key yet.
+    /// </summary>
+    private static async Task ShowGcsInstructionsAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        ThemePalette p,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            RenderBox(helpers, p, "Creating a GCS Service Account Key", width);
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}1.{Reset} Go to {p.SecondaryText.AnsiFg}console.cloud.google.com{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Create a project if you don't have one{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}2.{Reset} Navigate to {p.SecondaryText.AnsiFg}IAM & Admin \u2192 Service Accounts{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Click \"Create Service Account\"{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Name it something like \"termreader-podcast\"{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}3.{Reset} Grant the role: {p.PromptFg.AnsiFg}Storage Object Admin{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}This allows creating and managing objects in your bucket{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}4.{Reset} Go to the service account \u2192 {p.SecondaryText.AnsiFg}Keys tab{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Click \"Add Key\" \u2192 \"Create new key\" \u2192 JSON{Reset}");
+            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Download the .json file{Reset}");
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}5.{Reset} Come back here and press {p.PrimaryText.AnsiFg}any key{Reset} to continue");
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            return; // Any key press returns to wizard step 1
+        }
+    }
+
     private static void RenderBox(RenderHelpers helpers, ThemePalette p, string title, int width)
     {
         helpers.WriteLine();
@@ -1857,5 +2129,21 @@ internal static class PodcastCommandHandler
         public ArticleState State { get; set; }
 
         public string? Method { get; set; }
+    }
+
+    /// <summary>
+    /// Result of the GCS key setup wizard.
+    /// </summary>
+    private sealed class GcsWizardResult
+    {
+        public bool KeySaved { get; init; }
+
+        public bool BucketSaved { get; init; }
+
+        public string? FeedUrl { get; init; }
+
+        public string? FeedStatusNote { get; init; }
+
+        public string? BucketError { get; init; }
     }
 }
