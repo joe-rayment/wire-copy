@@ -106,6 +106,9 @@ public enum CommandType
     ForceRefresh,
     InteractiveRefresh,
 
+    // Browser
+    OpenInBrowser,
+
     // Debug/Utility
     DumpHtml,
 

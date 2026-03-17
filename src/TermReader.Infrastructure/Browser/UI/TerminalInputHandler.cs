@@ -317,6 +317,7 @@ public class TerminalInputHandler : IInputHandler
             '0' => new NavigationCommand { Type = CommandType.ResetWidth },
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
             'D' => new NavigationCommand { Type = CommandType.DumpHtml },
+            'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },
             _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
         };
     }
