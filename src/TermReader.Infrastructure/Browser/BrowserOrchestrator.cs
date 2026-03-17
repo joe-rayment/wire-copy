@@ -998,6 +998,13 @@ public class BrowserOrchestrator : IBrowserService
         var analyzer = GetHierarchyAnalyzer();
         if (analyzer == null || !analyzer.IsConfigured)
         {
+            // Hint about AI layout on pages with enough content links
+            var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+            if (hintLinkCount >= 5)
+            {
+                _navigationService.SetStatusMessage("AI layout available \u00b7 :set anthropic-key");
+            }
+
             return null;
         }
 
