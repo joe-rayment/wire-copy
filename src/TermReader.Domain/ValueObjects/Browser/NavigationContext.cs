@@ -85,4 +85,9 @@ public record NavigationContext
     /// When the cached version was originally loaded (null if fresh).
     /// </summary>
     public DateTime? CachedAt { get; init; }
+
+    /// <summary>
+    /// Whether the current page's link tree was organized by AI hierarchy analysis.
+    /// </summary>
+    public bool IsAiHierarchy { get; init; }
 }

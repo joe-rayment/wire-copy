@@ -928,10 +928,12 @@ public class BrowserOrchestrator : IBrowserService
         if (hierarchyConfig != null)
         {
             tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken);
+            _navigationService.SetAiHierarchy(true);
         }
         else
         {
             tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+            _navigationService.SetAiHierarchy(false);
         }
 
         page.SetLinkTree(tree);
