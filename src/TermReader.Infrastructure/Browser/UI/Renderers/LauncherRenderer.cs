@@ -36,6 +36,7 @@ internal class LauncherRenderer
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
 
         RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, p);
 
         var totalItems = bookmarks.Count + 1;
 
@@ -120,11 +121,12 @@ internal class LauncherRenderer
 
         var hints = FormatKbdHint("Enter", "open", p) + "  " +
                     FormatKbdHint("o", "go to url", p) + "  " +
+                    FormatKbdHint(":", "config", p) + "  " +
                     FormatKbdHint("?", "help", p);
 
         var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var hintsTextLen = "[Enter] open  [o] go to url  [?] help".Length;
+        var hintsTextLen = "[Enter] open  [o] go to url  [:] config  [?] help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }
@@ -136,6 +138,7 @@ internal class LauncherRenderer
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
         const int headerLines = 3;
+        const int urlBarLines = 4;
         const int footerLines = 2;
         const int columnThreshold = 40;
         const int standardCellHeight = 5;
@@ -143,7 +146,7 @@ internal class LauncherRenderer
 
         var width = Math.Max(1, terminalWidth - 2);
         var columns = width >= columnThreshold ? 2 : 1;
-        var availableHeight = Math.Max(4, terminalHeight - headerLines - footerLines);
+        var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
         var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
@@ -154,7 +157,7 @@ internal class LauncherRenderer
             CellHeight: cellHeight,
             VisibleRows: visibleRows,
             CellWidth: cellWidth,
-            HeaderLines: headerLines,
+            HeaderLines: headerLines + urlBarLines,
             FooterLines: footerLines);
     }
 
@@ -369,6 +372,30 @@ internal class LauncherRenderer
     {
         var subtitle = $"{bookmarkCount} bookmarks";
         Borders.RenderRoundedBoxWithSubtitle(_helpers, p, "TermReader", subtitle, width);
+    }
+
+    private void RenderUrlBar(int width, ThemePalette p)
+    {
+        var barWidth = Math.Min(width - 4, 50);
+        var pad = Math.Max(0, (width - barWidth) / 2);
+        var innerWidth = barWidth - 4;
+
+        _helpers.WriteLine();
+        _helpers.WriteLine(
+            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', barWidth - 2)}\u256e{Reset}");
+
+        var placeholder = "Go to URL...";
+        if (placeholder.Length > innerWidth)
+        {
+            placeholder = placeholder[..innerWidth];
+        }
+
+        _helpers.WriteLine(
+            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u2502 {Reset}" +
+            $"{p.SecondaryText.AnsiFg}{Dim}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
+            $"{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+        _helpers.WriteLine(
+            $"{new string(' ', pad)}{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', barWidth - 2)}\u256f{Reset}");
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
