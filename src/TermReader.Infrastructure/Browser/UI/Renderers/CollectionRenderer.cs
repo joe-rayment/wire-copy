@@ -171,8 +171,12 @@ internal class CollectionRenderer
 
                 if (isSelected)
                 {
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {marker} {displayTitle} \x1b[27m{Reset}");
-                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain}{cacheSuffix} \x1b[27m{Reset}");
+                    // Use plain marker symbol (no embedded ANSI) to avoid breaking reverse video
+                    var markerChar = item.IsRead ? "\u25cb" : "\u25cf";
+                    var selectedPad = Math.Max(0, width - 6 - displayTitle.Length);
+                    var domainPad = Math.Max(0, width - 9 - displayDomain.Length - cacheSuffix.Length);
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m {markerChar} {displayTitle}{new string(' ', selectedPad)} \x1b[27m{Reset}");
+                    _helpers.WriteLine($"  {p.SelectedItemFg.AnsiFg}\u258c{Reset}\x1b[7m     {displayDomain}{cacheSuffix}{new string(' ', domainPad)} \x1b[27m{Reset}");
                 }
                 else
                 {
