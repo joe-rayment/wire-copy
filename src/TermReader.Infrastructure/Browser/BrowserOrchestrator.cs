@@ -1805,6 +1805,10 @@ public class BrowserOrchestrator : IBrowserService
             using var scope = _scopeFactory.CreateScope();
             var collectionService = CreateCollectionService(scope);
 
+            // Purge expired reading list items (16-hour TTL) before loading
+            await collectionService.PurgeExpiredReadingListItemsAsync(
+                TimeSpan.FromHours(16), cancellationToken);
+
             var allCollections = await collectionService.GetAllCollectionsAsync(cancellationToken);
             _commandContext.Collections = allCollections.ToList();
 
