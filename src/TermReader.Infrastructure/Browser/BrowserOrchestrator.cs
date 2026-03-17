@@ -1156,13 +1156,7 @@ public class BrowserOrchestrator : IBrowserService
 
         try
         {
-            _renderer.RenderInteractiveRefresh(url);
-
-            // Restore the browser window for interactive use (may have been minimized)
-            if (_browserSession is IBrowserSession browserSession)
-            {
-                browserSession.RestoreWindow();
-            }
+            _renderer.RenderLoading(url);
 
             // Force headed mode for interactive refresh
             var loadResult = await _pageLoader.LoadAsync(
@@ -1173,6 +1167,12 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _renderer.RenderError($"Failed to load page: {loadResult.ErrorMessage}", url);
                 return;
+            }
+
+            // Restore the browser window AFTER the headed driver is created and page loaded
+            if (_browserSession is IBrowserSession browserSession)
+            {
+                browserSession.RestoreWindow();
             }
 
             // If bot challenge detected, use the challenge polling helper (force headed)
