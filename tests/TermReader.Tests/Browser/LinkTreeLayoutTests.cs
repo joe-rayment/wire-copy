@@ -99,16 +99,16 @@ public class LinkTreeLayoutTests
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 2 - 3) = 25, cellHeight = 5 → 25/5 = 5
+        // availableHeight = max(4, 30 - 3 - 3) = 24, cellHeight = 5 → 24/5 = 4
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.VisibleRows.Should().Be(5);
+        layout.VisibleRows.Should().Be(4);
     }
 
     [Fact]
     public void ComputeLayout_HeaderAndStatusBarLines()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(2);
+        layout.HeaderLines.Should().Be(3);
         layout.StatusBarLines.Should().Be(3);
     }
 
@@ -707,11 +707,11 @@ public class LinkTreeLayoutTests
     #region Header rendering - compact style layout
 
     [Fact]
-    public void ComputeLayout_HeaderIs2Lines_MatchesCompactStyle()
+    public void ComputeLayout_HeaderIs3Lines_MatchesRoundedBoxStyle()
     {
-        // Compact header style: line 1 = title + domain, line 2 = thin rule
+        // Rounded box header: line 1 = ╭─ title ─╮, line 2 = │ subtitle │, line 3 = ╰───╯
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(2, "compact header is title line + thin rule");
+        layout.HeaderLines.Should().Be(3, "rounded box header is 3 lines");
     }
 
     [Fact]
@@ -724,9 +724,9 @@ public class LinkTreeLayoutTests
     [Fact]
     public void ComputeLayout_AvailableHeight_AccountsForCompactHeader()
     {
-        // availableHeight = terminalHeight - headerLines(2) - statusBarLines(3)
+        // availableHeight = terminalHeight - headerLines(3) - statusBarLines(3)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        var expectedAvailable = 30 - 2 - 3; // 25
+        var expectedAvailable = 30 - 3 - 3; // 24
         var expectedVisibleRows = expectedAvailable / layout.CellHeight;
         layout.VisibleRows.Should().Be(expectedVisibleRows);
     }
