@@ -112,12 +112,13 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ClearRemainingLines();
     }
 
-    public void RenderLoading(string url)
+    public void RenderLoading(string url, string? status = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var label = status ?? "Loading...";
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Loading...{Reset}");
+        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
         _helpers.WriteLine();
         _helpers.ClearRemainingLines();
