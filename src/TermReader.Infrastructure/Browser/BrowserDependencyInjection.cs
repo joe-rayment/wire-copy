@@ -36,8 +36,13 @@ public static class BrowserDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(BrowserConfiguration.SectionName).Bind(opts));
 
+        services.AddOptions<AnthropicConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(AnthropicConfiguration.SectionName).Bind(opts));
+
         // Register configuration validators
         services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<AnthropicConfiguration>, AnthropicConfigurationValidator>();
 
         // Register Data Protection for cookie encryption
         var dataProtectionPath = Path.Combine(

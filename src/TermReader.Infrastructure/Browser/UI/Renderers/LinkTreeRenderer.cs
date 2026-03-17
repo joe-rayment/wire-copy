@@ -220,7 +220,7 @@ internal class LinkTreeRenderer
     {
         return isSelected
             ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette)
-            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, cachedUrls);
+            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette);
     }
 
     internal static string? FormatDate(DateTime? date)
@@ -381,8 +381,7 @@ internal class LinkTreeRenderer
         int cardHeight,
         int lineIndex,
         int width,
-        ThemePalette palette,
-        IReadOnlySet<string>? cachedUrls = null)
+        ThemePalette palette)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
         var titleLine2Idx = cardHeight >= 5 ? 2 : -1;

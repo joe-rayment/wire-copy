@@ -128,6 +128,34 @@ public sealed class BrowserSession : IBrowserSession
         }
     }
 
+    public byte[]? CaptureScreenshot()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _driver == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (_driver is ITakesScreenshot screenshotDriver)
+                {
+                    var screenshot = screenshotDriver.GetScreenshot();
+                    return screenshot.AsByteArray;
+                }
+
+                _logger.LogDebug("WebDriver does not support screenshots");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to capture screenshot (non-fatal)");
+                return null;
+            }
+        }
+    }
+
     public void Dispose()
     {
         lock (_lock)

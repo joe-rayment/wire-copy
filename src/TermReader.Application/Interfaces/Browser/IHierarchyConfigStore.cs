@@ -1,0 +1,39 @@
+// Educational and personal use only.
+
+using TermReader.Domain.ValueObjects.Browser;
+
+namespace TermReader.Application.Interfaces.Browser;
+
+/// <summary>
+/// Persistent storage for AI-generated page hierarchy configurations.
+/// Configs are stored per-domain and matched by URL pattern.
+/// </summary>
+public interface IHierarchyConfigStore
+{
+    /// <summary>
+    /// Gets the hierarchy config matching the given URL, if one exists.
+    /// Matches against saved URL patterns for the URL's domain.
+    /// </summary>
+    /// <param name="url">The page URL to find a config for.</param>
+    /// <returns>Matching config, or null if no config exists.</returns>
+    Task<SiteHierarchyConfig?> GetConfigAsync(string url);
+
+    /// <summary>
+    /// Saves a hierarchy config. Overwrites any existing config
+    /// for the same domain and URL pattern.
+    /// </summary>
+    /// <param name="config">The config to save.</param>
+    Task SaveConfigAsync(SiteHierarchyConfig config);
+
+    /// <summary>
+    /// Deletes the hierarchy config matching the given URL.
+    /// </summary>
+    /// <param name="url">The page URL whose config should be deleted.</param>
+    /// <returns>True if a config was deleted, false if none existed.</returns>
+    Task<bool> DeleteConfigAsync(string url);
+
+    /// <summary>
+    /// Gets the total number of saved hierarchy configs across all domains.
+    /// </summary>
+    Task<int> GetConfigCountAsync();
+}
