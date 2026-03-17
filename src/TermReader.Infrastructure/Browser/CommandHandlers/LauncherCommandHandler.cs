@@ -118,6 +118,11 @@ internal static class LauncherCommandHandler
                 await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
                 break;
 
+            case CommandType.GoToUrl:
+            case CommandType.OpenInBrowser:
+                await HandleGoToUrl(ctx, options, ct);
+                break;
+
             case CommandType.OpenCommandLine:
             {
                 var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
@@ -202,6 +207,25 @@ internal static class LauncherCommandHandler
         }
 
         return true;
+    }
+
+    private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var input = await ctx.InputHandler.PromptForInputAsync("Go to: ", ct);
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
+        var url = input.Trim();
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            url = "https://" + url;
+        }
+
+        await ctx.NavigateToAsync(url, options, ct);
     }
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)
