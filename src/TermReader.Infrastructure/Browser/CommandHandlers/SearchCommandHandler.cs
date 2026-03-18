@@ -1005,29 +1005,52 @@ internal static class SearchCommandHandler
     {
         try
         {
-            var domain = await ctx.InputHandler.PromptForInputAsync("Domain (e.g., nytimes.com): ", ct);
-            if (string.IsNullOrWhiteSpace(domain))
+            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+            // Step 1: Account info
+            var step1 = new List<WizardStep>
+            {
+                new()
+                {
+                    Title = "Add Credential",
+                    Description = "Enter site login credentials",
+                    Fields =
+                    [
+                        new FormFieldConfig
+                        {
+                            Label = "Domain",
+                            Placeholder = "nytimes.com",
+                            Validate = v => string.IsNullOrWhiteSpace(v) ? "Domain cannot be empty" : null,
+                        },
+                        new FormFieldConfig
+                        {
+                            Label = "Username / Email",
+                            Placeholder = "user@example.com",
+                            Validate = v => string.IsNullOrWhiteSpace(v) ? "Username cannot be empty" : null,
+                        },
+                        new FormFieldConfig
+                        {
+                            Label = "Password",
+                            IsSecret = true,
+                            Validate = v => string.IsNullOrWhiteSpace(v) ? "Password cannot be empty" : null,
+                        },
+                    ],
+                },
+            };
+
+            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct);
+            if (accountInfo == null)
             {
                 await ctx.RenderCurrentPageAsync(options, ct);
                 return;
             }
 
-            var username = await ctx.InputHandler.PromptForInputAsync("Username/email: ", ct);
-            if (string.IsNullOrWhiteSpace(username))
-            {
-                await ctx.RenderCurrentPageAsync(options, ct);
-                return;
-            }
+            var domain = accountInfo["Domain"].Trim();
+            var username = accountInfo["Username / Email"].Trim();
+            var password = accountInfo["Password"].Trim();
 
-            var password = await ctx.InputHandler.PromptForInputAsync("Password: ", ct, isSecret: true);
-            if (string.IsNullOrWhiteSpace(password))
-            {
-                await ctx.RenderCurrentPageAsync(options, ct);
-                return;
-            }
-
-            // Check for known site defaults (e.g., NYT multi-step login)
-            var normalizedDomain = domain.Trim().ToLowerInvariant();
+            // Check for known site defaults
+            var normalizedDomain = domain.ToLowerInvariant();
             var hasDefaults = KnownSiteDefaults.TryGetValue(normalizedDomain, out var defaults);
 
             string? loginUrl = null;
@@ -1042,14 +1065,56 @@ internal static class SearchCommandHandler
                 loginSteps = defaults.Steps;
                 ctx.NavigationService.SetStatusMessage(
                     $"Using known {normalizedDomain} login flow ({loginSteps.Count}-step)");
-                await ctx.RenderCurrentPageAsync(options, ct);
             }
             else
             {
-                loginUrl = await ctx.InputHandler.PromptForInputAsync("Login URL (Enter to skip): ", ct);
-                usernameSelector = await ctx.InputHandler.PromptForInputAsync("Username selector (Enter to skip): ", ct);
-                passwordSelector = await ctx.InputHandler.PromptForInputAsync("Password selector (Enter to skip): ", ct);
-                submitSelector = await ctx.InputHandler.PromptForInputAsync("Submit selector (Enter to skip): ", ct);
+                // Step 2: Login configuration (unknown sites only)
+                var step2 = new List<WizardStep>
+                {
+                    new()
+                    {
+                        Title = "Login Configuration",
+                        Description = "Optional — CSS selectors for the login form",
+                        Fields =
+                        [
+                            new FormFieldConfig
+                            {
+                                Label = "Login URL",
+                                Placeholder = "https://example.com/login",
+                                HelpText = "Enter to skip",
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Username Selector",
+                                Placeholder = "input[name=email]",
+                                HelpText = "CSS selector for the username/email field",
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Password Selector",
+                                Placeholder = "input[type=password]",
+                                HelpText = "CSS selector for the password field",
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Submit Selector",
+                                Placeholder = "button[type=submit]",
+                                HelpText = "CSS selector for the submit button",
+                            },
+                        ],
+                    },
+                };
+
+                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct);
+
+                // Cancelled step 2 is OK — save with basic info only
+                if (loginConfig != null)
+                {
+                    loginUrl = EmptyToNull(loginConfig.GetValueOrDefault("Login URL"));
+                    usernameSelector = EmptyToNull(loginConfig.GetValueOrDefault("Username Selector"));
+                    passwordSelector = EmptyToNull(loginConfig.GetValueOrDefault("Password Selector"));
+                    submitSelector = EmptyToNull(loginConfig.GetValueOrDefault("Submit Selector"));
+                }
             }
 
             using var scope = ctx.ScopeFactory.CreateScope();
@@ -1057,18 +1122,18 @@ internal static class SearchCommandHandler
             var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-            var encryptedUsername = encryption.Encrypt(username.Trim());
-            var encryptedPassword = encryption.Encrypt(password.Trim());
+            var encryptedUsername = encryption.Encrypt(username);
+            var encryptedPassword = encryption.Encrypt(password);
 
             var credential = SiteCredential.Create(
-                domain.Trim(),
+                domain,
                 CredentialType.FormLogin,
                 encryptedUsername,
                 encryptedPassword,
-                usernameSelector?.Trim(),
-                passwordSelector?.Trim(),
-                submitSelector?.Trim(),
-                loginUrl?.Trim(),
+                usernameSelector,
+                passwordSelector,
+                submitSelector,
+                loginUrl,
                 loginSteps);
 
             await repo.AddAsync(credential, ct);
@@ -1087,6 +1152,11 @@ internal static class SearchCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static string? EmptyToNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static async Task HandleCredentialRemove(
@@ -1218,30 +1288,104 @@ internal static class SearchCommandHandler
                 return;
             }
 
-            // Decrypt current values to show as context
+            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var currentUsername = encryption.Decrypt(credential.EncryptedUsername);
 
-            var newUsername = await ctx.InputHandler.PromptForInputAsync(
-                $"Username [{currentUsername}]: ", ct);
-            var newPassword = await ctx.InputHandler.PromptForInputAsync(
-                "New password (Enter to keep): ", ct, isSecret: true);
-            var newLoginUrl = await ctx.InputHandler.PromptForInputAsync(
-                $"Login URL [{credential.LoginUrl ?? "none"}]: ", ct);
-            var newUsernameSelector = await ctx.InputHandler.PromptForInputAsync(
-                $"Username selector [{credential.UsernameSelector ?? "none"}]: ", ct);
-            var newPasswordSelector = await ctx.InputHandler.PromptForInputAsync(
-                $"Password selector [{credential.PasswordSelector ?? "none"}]: ", ct);
-            var newSubmitSelector = await ctx.InputHandler.PromptForInputAsync(
-                $"Submit selector [{credential.SubmitSelector ?? "none"}]: ", ct);
+            // Step 1: Account info (pre-filled)
+            var step1 = new List<WizardStep>
+            {
+                new()
+                {
+                    Title = $"Edit Credential — {domain}",
+                    Description = "Leave empty to keep current value",
+                    Fields =
+                    [
+                        new FormFieldConfig
+                        {
+                            Label = "Username / Email",
+                            InitialValue = currentUsername,
+                        },
+                        new FormFieldConfig
+                        {
+                            Label = "Password",
+                            IsSecret = true,
+                            HelpText = "Enter to keep current password",
+                        },
+                    ],
+                },
+            };
 
-            var usernameToEncrypt = string.IsNullOrWhiteSpace(newUsername)
-                ? currentUsername : newUsername.Trim();
+            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct);
+            if (accountInfo == null)
+            {
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            var newUsername = accountInfo["Username / Email"];
+            var newPassword = accountInfo["Password"];
+
+            // Step 2: Login configuration (pre-filled, skip for known sites)
+            var normalizedDomain = domain.ToLowerInvariant();
+            var isKnownSite = KnownSiteDefaults.ContainsKey(normalizedDomain);
+
+            string? newLoginUrl = null;
+            string? newUsernameSelector = null;
+            string? newPasswordSelector = null;
+            string? newSubmitSelector = null;
+
+            if (!isKnownSite)
+            {
+                var step2 = new List<WizardStep>
+                {
+                    new()
+                    {
+                        Title = $"Edit Login Config — {domain}",
+                        Description = "Leave empty to keep current value",
+                        Fields =
+                        [
+                            new FormFieldConfig
+                            {
+                                Label = "Login URL",
+                                InitialValue = credential.LoginUrl,
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Username Selector",
+                                InitialValue = credential.UsernameSelector,
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Password Selector",
+                                InitialValue = credential.PasswordSelector,
+                            },
+                            new FormFieldConfig
+                            {
+                                Label = "Submit Selector",
+                                InitialValue = credential.SubmitSelector,
+                            },
+                        ],
+                    },
+                };
+
+                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct);
+
+                // Cancelled step 2 — keep existing login config
+                if (loginConfig != null)
+                {
+                    newLoginUrl = loginConfig.GetValueOrDefault("Login URL");
+                    newUsernameSelector = loginConfig.GetValueOrDefault("Username Selector");
+                    newPasswordSelector = loginConfig.GetValueOrDefault("Password Selector");
+                    newSubmitSelector = loginConfig.GetValueOrDefault("Submit Selector");
+                }
+            }
+
+            var usernameToEncrypt = string.IsNullOrWhiteSpace(newUsername) ? currentUsername : newUsername.Trim();
             var encryptedUsername = encryption.Encrypt(usernameToEncrypt);
 
             byte[] encryptedPassword;
             if (string.IsNullOrWhiteSpace(newPassword))
             {
-                // Keep existing password
                 encryptedPassword = credential.EncryptedPassword;
             }
             else
@@ -1252,10 +1396,10 @@ internal static class SearchCommandHandler
             credential.Update(
                 encryptedUsername,
                 encryptedPassword,
-                string.IsNullOrWhiteSpace(newUsernameSelector) ? credential.UsernameSelector : newUsernameSelector.Trim(),
-                string.IsNullOrWhiteSpace(newPasswordSelector) ? credential.PasswordSelector : newPasswordSelector.Trim(),
-                string.IsNullOrWhiteSpace(newSubmitSelector) ? credential.SubmitSelector : newSubmitSelector.Trim(),
-                string.IsNullOrWhiteSpace(newLoginUrl) ? credential.LoginUrl : newLoginUrl.Trim());
+                string.IsNullOrWhiteSpace(newUsernameSelector) ? credential.UsernameSelector : newUsernameSelector!.Trim(),
+                string.IsNullOrWhiteSpace(newPasswordSelector) ? credential.PasswordSelector : newPasswordSelector!.Trim(),
+                string.IsNullOrWhiteSpace(newSubmitSelector) ? credential.SubmitSelector : newSubmitSelector!.Trim(),
+                string.IsNullOrWhiteSpace(newLoginUrl) ? credential.LoginUrl : newLoginUrl!.Trim());
 
             await repo.UpdateAsync(credential, ct);
             await unitOfWork.SaveChangesAsync(ct);
