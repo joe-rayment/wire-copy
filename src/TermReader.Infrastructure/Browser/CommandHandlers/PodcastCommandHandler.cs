@@ -12,6 +12,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
@@ -1782,31 +1783,40 @@ internal static class PodcastCommandHandler
         CancellationToken ct)
     {
         var result = new GcsWizardResult();
+        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
 
-        // --- Step 1: Do you have a key? ---
+        // --- Step 1: Do you have a key? (choice screen) ---
         while (!ct.IsCancellationRequested)
         {
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
+            Console.Clear();
+            var row = RenderWizardStepHeader(
+                p,
+                "GCS Setup",
+                1,
+                3,
+                "A service account key lets TermReader upload your podcast to Google Cloud Storage.",
+                fieldWidth);
+            row++;
 
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            RenderBox(helpers, p, "GCS Setup \u2014 Step 1 of 3", width);
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Do you have a GCP service account JSON key?{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}A service account key lets TermReader upload your podcast{Reset}");
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}to Google Cloud Storage as an RSS feed.{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}y{Reset}{p.SecondaryText.AnsiFg} \u2014 Yes, I have a JSON key ready{Reset}");
-            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}n{Reset}{p.SecondaryText.AnsiFg} \u2014 No, show me how to create one{Reset}");
-            helpers.WriteLine($"    {p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg} \u2014 Cancel{Reset}");
-            helpers.ClearRemainingLines();
+            Console.SetCursorPosition(4, row);
+            Console.Write($"{p.PrimaryText.AnsiFg}Do you have a GCP service account JSON key?{Reset}");
+            row += 2;
+
+            Console.SetCursorPosition(6, row);
+            Console.Write($"{p.GetAccentFg().AnsiFg}y{p.SecondaryText.AnsiFg} \u2014 Yes, I have a JSON key ready{Reset}");
+            row++;
+            Console.SetCursorPosition(6, row);
+            Console.Write($"{p.GetAccentFg().AnsiFg}n{p.SecondaryText.AnsiFg} \u2014 No, show me how to create one{Reset}");
+            row++;
+            Console.SetCursorPosition(6, row);
+            Console.Write($"{p.GetAccentFg().AnsiFg}Esc{p.SecondaryText.AnsiFg} \u2014 Cancel{Reset}");
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);
 
             if (command.Type == CommandType.TerminalResized)
             {
                 options = ctx.GetCurrentRenderOptions();
+                fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
                 continue;
             }
 
@@ -1822,31 +1832,28 @@ internal static class PodcastCommandHandler
 
             if (command.RawKeyChar is 'n' or 'N')
             {
-                // Show instructions screen, then loop back to step 1
-                await ShowGcsInstructionsAsync(ctx, options, p, ct);
+                await ShowGcsInstructionsAsync(ctx, p, ct);
                 continue;
             }
         }
 
-        // --- Step 2: Enter key ---
+        // --- Step 2: Enter key (FormField with async validation) ---
         while (!ct.IsCancellationRequested)
         {
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
+            Console.Clear();
+            var row = RenderWizardStepHeader(
+                p, "GCS Setup", 2, 3, "Paste JSON key content or enter the file path.", fieldWidth);
+            row++;
 
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            RenderBox(helpers, p, "GCS Setup \u2014 Step 2 of 3", width);
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Paste your JSON key content, or enter the file path:{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Option A: Copy the entire JSON file contents and paste below{Reset}");
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Option B: Enter the path to the .json file on disk{Reset}");
-            helpers.ClearRemainingLines();
+            var keyField = new FormFieldConfig
+            {
+                Label = "Service Account Key",
+                Placeholder = "Paste JSON or enter file path",
+                Validate = v => string.IsNullOrWhiteSpace(v) ? "Key cannot be empty" : null,
+            };
 
-            var keyInput = await ctx.InputHandler.PromptForInputAsync(
-                "Key (JSON or path): ", ct);
-
-            if (string.IsNullOrWhiteSpace(keyInput))
+            var keyInput = await FormField.PromptAsync(ctx.InputHandler, keyField, p, row, fieldWidth, ct);
+            if (keyInput == null)
             {
                 return result; // Cancelled
             }
@@ -1855,14 +1862,13 @@ internal static class PodcastCommandHandler
 
             if (saved)
             {
-                Console.Write($"\r  {p.PromptFg.AnsiFg}\u2714 Service account key saved{Reset}" + new string(' ', 20));
-                await Task.Delay(800, ct);
-
                 result = new GcsWizardResult { KeySaved = true };
-                break; // Proceed to step 3
+                break;
             }
 
-            Console.Write($"\r  {p.ErrorFg.AnsiFg}{error}{Reset}" + new string(' ', 20));
+            // Show error below the field, wait briefly, then retry
+            Console.SetCursorPosition(2, row + FormField.Height);
+            Console.Write($"{p.ErrorFg.AnsiFg}\u2717 {error}{Reset}");
             await Task.Delay(2000, ct);
         }
 
@@ -1874,7 +1880,6 @@ internal static class PodcastCommandHandler
         // --- Step 3: Bucket setup (auto-chain if not configured) ---
         if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
         {
-            // Bucket already configured — re-validate with new key
             var (success, url, feedExisted, bucketErr) = await ValidateAndBootstrapBucketAsync(
                 ctx, options, gcsConfig.BucketName, gcsConfig, ct);
             return new GcsWizardResult
@@ -1889,42 +1894,46 @@ internal static class PodcastCommandHandler
 
         while (!ct.IsCancellationRequested)
         {
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
+            Console.Clear();
+            var row = RenderWizardStepHeader(
+                p, "GCS Setup", 3, 3, "Where should your podcast RSS feed be hosted?", fieldWidth);
 
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            RenderBox(helpers, p, "GCS Setup \u2014 Step 3 of 3", width);
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2714{Reset} Service account key saved");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter your GCS bucket name:{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}This is where your podcast RSS feed will be hosted.{Reset}");
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Format: 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press Esc to skip (you can set this later with :set bucket){Reset}");
-            helpers.ClearRemainingLines();
+            // Show success from previous step
+            row++;
+            Console.SetCursorPosition(4, row);
+            Console.Write($"{p.PromptFg.AnsiFg}\u2714{Reset} Service account key saved");
+            row += 2;
 
-            var bucketInput = await ctx.InputHandler.PromptForInputAsync(
-                "Bucket name: ", ct);
-
-            if (string.IsNullOrWhiteSpace(bucketInput))
+            var bucketField = new FormFieldConfig
             {
-                return new GcsWizardResult { KeySaved = true };
+                Label = "Bucket Name",
+                Placeholder = "my-podcast-feed",
+                HelpText = "Esc to skip (set later with :set bucket)",
+                Validate = v =>
+                {
+                    if (string.IsNullOrWhiteSpace(v))
+                    {
+                        return "Bucket name cannot be empty";
+                    }
+
+                    return !GcsConfiguration.IsValidBucketName(v.Trim())
+                        ? "Must be 3\u201363 chars: lowercase a\u2013z, 0\u20139, hyphens, dots"
+                        : null;
+                },
+            };
+
+            var bucketInput = await FormField.PromptAsync(ctx.InputHandler, bucketField, p, row, fieldWidth, ct);
+            if (bucketInput == null)
+            {
+                return new GcsWizardResult { KeySaved = true }; // Skipped
             }
 
             var trimmedBucket = bucketInput.Trim();
 
-            if (!GcsConfiguration.IsValidBucketName(trimmedBucket))
-            {
-                Console.Write(
-                    $"\r  {p.ErrorFg.AnsiFg}Invalid: must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots{Reset}" +
-                    new string(' ', 10));
-                await Task.Delay(2000, ct);
-                continue; // Retry step 3
-            }
-
-            Console.Write($"\r  {p.SecondaryText.AnsiFg}Validating bucket...{Reset}" + new string(' ', 20));
+            // Show spinner during async validation
+            var spinnerRow = row + FormField.Height;
+            Console.SetCursorPosition(2, spinnerRow);
+            Console.Write($"{p.GetAccentFg().AnsiFg}\u2847 Validating bucket...{Reset}");
 
             var (bucketSuccess, bucketUrl, bucketFeedExisted, bucketError) =
                 await ValidateAndBootstrapBucketAsync(ctx, options, trimmedBucket, gcsConfig, ct);
@@ -1933,9 +1942,6 @@ internal static class PodcastCommandHandler
             {
                 gcsConfig.BucketName = trimmedBucket;
                 settingsStore.Set("GcsBucketName", trimmedBucket);
-
-                Console.Write($"\r  {p.PromptFg.AnsiFg}\u2714 Bucket configured{Reset}" + new string(' ', 30));
-                await Task.Delay(800, ct);
 
                 return new GcsWizardResult
                 {
@@ -1946,16 +1952,49 @@ internal static class PodcastCommandHandler
                 };
             }
 
-            if (bucketError != null)
-            {
-                Console.Write($"\r  {p.ErrorFg.AnsiFg}{bucketError}{Reset}" + new string(' ', 10));
-                await Task.Delay(2000, ct);
-            }
-
-            // Loop to retry step 3
+            // Show error and retry
+            Console.SetCursorPosition(2, spinnerRow);
+            Console.Write($"{p.ErrorFg.AnsiFg}\u2717 {bucketError}{Reset}" + new string(' ', 20));
+            await Task.Delay(2000, ct);
         }
 
         return new GcsWizardResult { KeySaved = true };
+    }
+
+    /// <summary>
+    /// Renders a wizard step header with title, step indicator, and optional description.
+    /// Returns the next available row after the header.
+    /// </summary>
+    private static int RenderWizardStepHeader(
+        ThemePalette p, string title, int step, int totalSteps, string? description, int fieldWidth)
+    {
+        var stepIndicator = totalSteps > 0 ? $" \u2500 Step {step} of {totalSteps} " : " ";
+        var titlePart = $"\u2500 {title} ";
+        var headerContent = titlePart + stepIndicator;
+        var remainingRule = Math.Max(0, fieldWidth - headerContent.Length - 2);
+
+        Console.SetCursorPosition(2, 1);
+        Console.Write(
+            $"{p.HeaderBorderFg.AnsiFg}\u256d{headerContent}" +
+            $"{new string('\u2500', remainingRule)}\u256e{Reset}");
+
+        var row = 2;
+        if (description != null)
+        {
+            var desc = description.Length > fieldWidth - 4
+                ? description[..(fieldWidth - 4)]
+                : description;
+            Console.SetCursorPosition(2, row);
+            Console.Write(
+                $"{p.HeaderBorderFg.AnsiFg}\u2502 {p.SecondaryText.AnsiFg}" +
+                $"{desc.PadRight(fieldWidth - 4)}" +
+                $"{p.HeaderBorderFg.AnsiFg} \u2502{Reset}");
+            row++;
+        }
+
+        Console.SetCursorPosition(2, row);
+        Console.Write($"{p.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', fieldWidth - 2)}\u256f{Reset}");
+        return row + 1;
     }
 
     /// <summary>
@@ -1963,44 +2002,48 @@ internal static class PodcastCommandHandler
     /// </summary>
     private static async Task ShowGcsInstructionsAsync(
         CommandContext ctx,
-        RenderOptions options,
         ThemePalette p,
         CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
+            Console.Clear();
+            var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+            var row = RenderWizardStepHeader(p, "Creating a GCS Service Account Key", 0, 0, null, fieldWidth);
+            row++;
 
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            RenderBox(helpers, p, "Creating a GCS Service Account Key", width);
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}1.{Reset} Go to {p.SecondaryText.AnsiFg}console.cloud.google.com{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Create a project if you don't have one{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}2.{Reset} Navigate to {p.SecondaryText.AnsiFg}IAM & Admin \u2192 Service Accounts{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Click \"Create Service Account\"{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Name it something like \"termreader-podcast\"{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}3.{Reset} Grant the role: {p.PromptFg.AnsiFg}Storage Object Admin{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}This allows creating and managing objects in your bucket{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}4.{Reset} Go to the service account \u2192 {p.SecondaryText.AnsiFg}Keys tab{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Click \"Add Key\" \u2192 \"Create new key\" \u2192 JSON{Reset}");
-            helpers.WriteLine($"     {p.SecondaryText.AnsiFg}Download the .json file{Reset}");
-            helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}5.{Reset} Come back here and press {p.PrimaryText.AnsiFg}any key{Reset} to continue");
-            helpers.ClearRemainingLines();
+            var steps = new[]
+            {
+                ("Go to console.cloud.google.com", "Create a project if you don't have one"),
+                ("Navigate to IAM & Admin \u2192 Service Accounts",
+                    "Click \"Create Service Account\", name it \"termreader-podcast\""),
+                ("Grant the role: Storage Object Admin",
+                    "This allows creating and managing objects in your bucket"),
+                ("Go to the service account \u2192 Keys tab",
+                    "Click \"Add Key\" \u2192 \"Create new key\" \u2192 JSON"),
+            };
+
+            for (var i = 0; i < steps.Length; i++)
+            {
+                Console.SetCursorPosition(4, row);
+                Console.Write($"{p.PrimaryText.AnsiFg}{i + 1}.{Reset} {p.PrimaryText.AnsiFg}{steps[i].Item1}{Reset}");
+                row++;
+                Console.SetCursorPosition(7, row);
+                Console.Write($"{p.SecondaryText.AnsiFg}{steps[i].Item2}{Reset}");
+                row += 2;
+            }
+
+            Console.SetCursorPosition(4, row);
+            Console.Write($"{p.SecondaryText.AnsiFg}Press any key to go back{Reset}");
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);
 
             if (command.Type == CommandType.TerminalResized)
             {
-                options = ctx.GetCurrentRenderOptions();
                 continue;
             }
 
-            return; // Any key press returns to wizard step 1
+            return;
         }
     }
 
