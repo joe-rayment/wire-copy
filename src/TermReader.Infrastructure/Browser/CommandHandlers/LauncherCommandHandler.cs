@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
+using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
@@ -291,19 +293,41 @@ internal static class LauncherCommandHandler
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var name = await ctx.InputHandler.PromptForInputAsync("Bookmark name: ", ct);
-        if (string.IsNullOrWhiteSpace(name))
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        var steps = new List<WizardStep>
+        {
+            new()
+            {
+                Title = "Add Bookmark",
+                Fields =
+                [
+                    new FormFieldConfig
+                    {
+                        Label = "Name",
+                        Placeholder = "My Favorite Site",
+                        Validate = v => string.IsNullOrWhiteSpace(v) ? "Name cannot be empty" : null,
+                    },
+                    new FormFieldConfig
+                    {
+                        Label = "URL",
+                        Placeholder = "https://example.com",
+                        HelpText = "https:// is added automatically if omitted",
+                        Validate = v => string.IsNullOrWhiteSpace(v) ? "URL cannot be empty" : null,
+                    },
+                ],
+            },
+        };
+
+        var result = await WizardRunner.RunAsync(ctx.InputHandler, steps, palette, ct);
+        if (result == null)
         {
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
 
-        var url = await ctx.InputHandler.PromptForInputAsync("URL: ", ct);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
+        var name = result["Name"];
+        var url = result["URL"];
 
         if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
             !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
