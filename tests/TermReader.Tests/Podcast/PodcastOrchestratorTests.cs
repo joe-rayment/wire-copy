@@ -527,8 +527,8 @@ public class PodcastOrchestratorTests : IDisposable
         await _sut.GeneratePodcastAsync(collection);
 
         await _publisher.Received(1).PublishFeedAsync(
-            Arg.Any<PodcastMetadata>(),
-            Arg.Any<IReadOnlyList<EpisodeSource>>(),
+            Arg.Is<PodcastMetadata>(m => m.Title == "Test Podcast"),
+            Arg.Is<IReadOnlyList<EpisodeSource>>(e => e.Count == 1),
             Arg.Any<CancellationToken>());
     }
 
@@ -592,10 +592,10 @@ public class PodcastOrchestratorTests : IDisposable
         await _sut.GeneratePodcastAsync(collection);
 
         await _audioCache.Received(1).PutAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<byte[]>(),
+            Arg.Is<string>(key => !string.IsNullOrWhiteSpace(key)),
+            Arg.Is<string>(hash => !string.IsNullOrWhiteSpace(hash)),
+            Arg.Is<string>(configHash => !string.IsNullOrWhiteSpace(configHash)),
+            Arg.Is<byte[]>(data => data.Length > 0),
             Arg.Any<CancellationToken>());
     }
 
