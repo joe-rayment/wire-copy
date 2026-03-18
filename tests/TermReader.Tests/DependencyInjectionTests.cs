@@ -9,6 +9,9 @@ using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Audio;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
+using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
+using TermReader.Domain.ValueObjects.Podcast;
 using TermReader.Infrastructure.Bookmarks;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Collections;
@@ -18,9 +21,9 @@ using Xunit;
 
 namespace TermReader.Tests;
 
-public class DependencyInjectionTests
+public class DependencyInjectionTests : IDisposable
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly ServiceProvider _serviceProvider;
 
     public DependencyInjectionTests()
     {
@@ -41,61 +44,50 @@ public class DependencyInjectionTests
         _serviceProvider = services.BuildServiceProvider();
     }
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIBrowserService()
+    public void Dispose()
     {
-        var service = _serviceProvider.GetService<IBrowserService>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IBrowserService>();
+        _serviceProvider.Dispose();
     }
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIPageLoader()
+    // --- DI wiring: one parameterized test replaces 15 individual NotBeNull tests ---
+
+    [Theory]
+    [InlineData(typeof(IBrowserService))]
+    [InlineData(typeof(IPageLoader))]
+    [InlineData(typeof(IPageRenderer))]
+    [InlineData(typeof(IFileStorage))]
+    [InlineData(typeof(INavigationService))]
+    [InlineData(typeof(IBrowserSession))]
+    [InlineData(typeof(IBrowserSessionControl))]
+    [InlineData(typeof(ILinkExtractor))]
+    [InlineData(typeof(INavigationTreeBuilder))]
+    [InlineData(typeof(IReadableContentExtractor))]
+    [InlineData(typeof(IInputHandler))]
+    [InlineData(typeof(ITtsService))]
+    [InlineData(typeof(IAudioAssembler))]
+    [InlineData(typeof(IPodcastFeedGenerator))]
+    [InlineData(typeof(ICloudStorageClient))]
+    [InlineData(typeof(IPodcastPublisher))]
+    [InlineData(typeof(IPodcastOrchestrator))]
+    public void ServiceProvider_ShouldResolve(Type serviceType)
     {
-        var service = _serviceProvider.GetService<IPageLoader>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IPageLoader>();
+        var service = _serviceProvider.GetService(serviceType);
+        service.Should().NotBeNull($"DI should resolve {serviceType.Name}");
     }
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIPageRenderer()
+    // --- DI wiring: scoped services need a scope ---
+
+    [Theory]
+    [InlineData(typeof(ICollectionService))]
+    [InlineData(typeof(ICollectionRepository))]
+    public void ServiceProvider_ShouldResolveScopedService(Type serviceType)
     {
-        var service = _serviceProvider.GetService<IPageRenderer>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IPageRenderer>();
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetService(serviceType);
+        service.Should().NotBeNull($"DI should resolve scoped {serviceType.Name}");
     }
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIFileStorage()
-    {
-        var service = _serviceProvider.GetService<IFileStorage>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IFileStorage>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveINavigationService()
-    {
-        var service = _serviceProvider.GetService<INavigationService>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<INavigationService>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveBrowserSession()
-    {
-        var service = _serviceProvider.GetService<IBrowserSession>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IBrowserSession>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveBrowserSessionControl()
-    {
-        var service = _serviceProvider.GetService<IBrowserSessionControl>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IBrowserSessionControl>();
-    }
+    // --- DI wiring: structural assertions that catch real misconfiguration ---
 
     [Fact]
     public void BrowserSession_AndBrowserSessionControl_ShouldBeSameInstance()
@@ -106,41 +98,7 @@ public class DependencyInjectionTests
     }
 
     [Fact]
-    public void ServiceProvider_ShouldResolveAllBrowserServices()
-    {
-        var browserService = _serviceProvider.GetRequiredService<IBrowserService>();
-        var pageLoader = _serviceProvider.GetRequiredService<IPageLoader>();
-        var pageRenderer = _serviceProvider.GetRequiredService<IPageRenderer>();
-        var navigationService = _serviceProvider.GetRequiredService<INavigationService>();
-        var fileStorage = _serviceProvider.GetRequiredService<IFileStorage>();
-
-        browserService.Should().NotBeNull();
-        pageLoader.Should().NotBeNull();
-        pageRenderer.Should().NotBeNull();
-        navigationService.Should().NotBeNull();
-        fileStorage.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveScopedICollectionService()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var service = scope.ServiceProvider.GetService<ICollectionService>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<ICollectionService>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveScopedICollectionRepository()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var service = scope.ServiceProvider.GetService<ICollectionRepository>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<ICollectionRepository>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveICollectionExporters()
+    public void CollectionExporters_ShouldIncludeUrlsAndOpml()
     {
         var exporters = _serviceProvider.GetServices<ICollectionExporter>().ToList();
         exporters.Should().HaveCountGreaterOrEqualTo(2);
@@ -148,80 +106,134 @@ public class DependencyInjectionTests
         exporters.Select(e => e.Format).Should().Contain("opml");
     }
 
+    // --- Smoke tests: verify resolved services can actually perform basic operations ---
+
     [Fact]
-    public void ServiceProvider_ShouldResolveILinkExtractor()
+    public async Task LinkExtractor_SmokeTest_CanParseMinimalHtml()
     {
-        var service = _serviceProvider.GetService<ILinkExtractor>();
-        service.Should().NotBeNull();
+        var extractor = _serviceProvider.GetRequiredService<ILinkExtractor>();
+        const string html = """
+            <html><body>
+                <a href="/article/test">Test Article</a>
+                <a href="https://external.com">External</a>
+            </body></html>
+            """;
+
+        var links = await extractor.ExtractLinksAsync(html, "https://example.com");
+
+        links.Should().NotBeEmpty("extractor should find links in valid HTML");
+        links.Should().Contain(l => l.DisplayText.Contains("Test Article"));
     }
 
     [Fact]
-    public void ServiceProvider_ShouldResolveINavigationTreeBuilder()
+    public async Task ReadableContentExtractor_SmokeTest_CanExtractArticle()
     {
-        var service = _serviceProvider.GetService<INavigationTreeBuilder>();
-        service.Should().NotBeNull();
+        var extractor = _serviceProvider.GetRequiredService<IReadableContentExtractor>();
+        const string html = """
+            <html><head><title>Test Article</title></head>
+            <body>
+                <article>
+                    <h1>Test Article Title</h1>
+                    <p>This is a test paragraph with enough content to be considered readable.
+                    The quick brown fox jumps over the lazy dog. Lorem ipsum dolor sit amet,
+                    consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore
+                    et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation
+                    ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+                    <p>Another paragraph with meaningful content that helps establish this as
+                    a real article rather than a navigation page or sidebar fragment.</p>
+                </article>
+            </body></html>
+            """;
+
+        var content = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // May return null if quality gate rejects it — that's fine, we're testing it doesn't crash
+        // and that it processes the HTML through the full pipeline
+        if (content != null)
+        {
+            content.Title.Should().NotBeNullOrWhiteSpace();
+            content.WordCount.Should().BeGreaterThan(0);
+        }
     }
 
     [Fact]
-    public void ServiceProvider_ShouldResolveIReadableContentExtractor()
+    public async Task NavigationTreeBuilder_SmokeTest_CanBuildTreeFromLinks()
     {
-        var service = _serviceProvider.GetService<IReadableContentExtractor>();
-        service.Should().NotBeNull();
+        var builder = _serviceProvider.GetRequiredService<INavigationTreeBuilder>();
+        var links = new List<LinkInfo>
+        {
+            new()
+            {
+                Url = "https://example.com/page1",
+                DisplayText = "Page One",
+                Type = LinkType.Content,
+                ImportanceScore = 80,
+            },
+            new()
+            {
+                Url = "https://example.com/page2",
+                DisplayText = "Page Two",
+                Type = LinkType.Content,
+                ImportanceScore = 60,
+            },
+        };
+
+        var tree = await builder.BuildTreeAsync(links);
+
+        tree.Should().NotBeNull();
+        tree.TotalLinks.Should().BeGreaterOrEqualTo(2);
+        tree.Root.Should().NotBeNull();
     }
 
     [Fact]
-    public void ServiceProvider_ShouldResolveIInputHandler()
+    public void NavigationService_SmokeTest_CanNavigateAndTrackHistory()
     {
-        var service = _serviceProvider.GetService<IInputHandler>();
-        service.Should().NotBeNull();
+        var navService = _serviceProvider.GetRequiredService<INavigationService>();
+        var metadata = new PageMetadata { Title = "Test Page" };
+        var page = TermReader.Domain.Entities.Browser.Page.Create(
+            "https://example.com", "<html></html>", metadata);
+
+        navService.NavigateTo(page);
+
+        navService.CurrentPage.Should().NotBeNull();
+        navService.CurrentPage!.Url.Should().Be("https://example.com");
+        navService.CurrentContext.Should().NotBeNull();
     }
 
     [Fact]
-    public void ServiceProvider_ShouldResolveITtsService()
+    public async Task PodcastFeedGenerator_SmokeTest_CanGenerateValidXml()
     {
-        var service = _serviceProvider.GetService<ITtsService>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<ITtsService>();
-    }
+        var generator = _serviceProvider.GetRequiredService<IPodcastFeedGenerator>();
+        var podcast = new PodcastMetadata
+        {
+            Title = "Test Podcast",
+            Description = "A test podcast",
+            Author = "Test Author",
+            Language = "en",
+            ImageUrl = "https://example.com/image.jpg",
+        };
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIAudioAssembler()
-    {
-        var service = _serviceProvider.GetService<IAudioAssembler>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IAudioAssembler>();
-    }
+        var episodes = new List<EpisodeMetadata>
+        {
+            new()
+            {
+                Id = "ep1",
+                Title = "Episode 1",
+                Description = "First episode",
+                PublishedAtUtc = DateTime.UtcNow,
+                AudioUrl = "https://example.com/ep1.m4b",
+                AudioSizeBytes = 1024000,
+                Duration = TimeSpan.FromMinutes(10),
+                AudioMimeType = "audio/mp4",
+            },
+        };
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveIPodcastFeedGenerator()
-    {
-        var service = _serviceProvider.GetService<IPodcastFeedGenerator>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IPodcastFeedGenerator>();
-    }
+        var xml = await generator.GenerateFeedXmlAsync(podcast, episodes);
 
-    [Fact]
-    public void ServiceProvider_ShouldResolveICloudStorageClient()
-    {
-        var service = _serviceProvider.GetService<ICloudStorageClient>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<ICloudStorageClient>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveIPodcastPublisher()
-    {
-        var service = _serviceProvider.GetService<IPodcastPublisher>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IPodcastPublisher>();
-    }
-
-    [Fact]
-    public void ServiceProvider_ShouldResolveIPodcastOrchestrator()
-    {
-        var service = _serviceProvider.GetService<IPodcastOrchestrator>();
-        service.Should().NotBeNull();
-        service.Should().BeAssignableTo<IPodcastOrchestrator>();
+        xml.Should().NotBeNullOrWhiteSpace();
+        xml.Should().Contain("<rss");
+        xml.Should().Contain("Test Podcast");
+        xml.Should().Contain("Episode 1");
     }
 
     private static IConfiguration GetConfiguration()
