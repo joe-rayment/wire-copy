@@ -268,7 +268,7 @@ public class BrowserOrchestrator : IBrowserService
             _renderer.RenderLoading(url);
 
             var retryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true },
                 cancellationToken);
 
             if (retryResult.Success)
@@ -297,7 +297,7 @@ public class BrowserOrchestrator : IBrowserService
             _renderer.RenderLoading(url);
 
             var truncRetryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true, ForceBrowser = true },
                 cancellationToken);
 
             if (truncRetryResult.Success)
@@ -321,7 +321,7 @@ public class BrowserOrchestrator : IBrowserService
                 _renderer.RenderLoading(url);
 
                 var paywallRetryResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                    new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true },
                     cancellationToken);
 
                 if (paywallRetryResult.Success)
@@ -379,7 +379,7 @@ public class BrowserOrchestrator : IBrowserService
                             _renderer.RenderLoading(url);
 
                             var autoLoginRetryResult = await _pageLoader.LoadAsync(
-                                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                                new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true },
                                 cancellationToken);
 
                             if (autoLoginRetryResult.Success)
