@@ -79,6 +79,8 @@ public class UnitOfWorkTests : TestDatabaseFixture, IAsyncDisposable
 
         // Assert
         DbContext.Database.CurrentTransaction.Should().NotBeNull();
+        DbContext.Database.CurrentTransaction!.TransactionId.Should().NotBeEmpty(
+            "transaction should have been assigned a valid ID");
     }
 
     [Fact]
@@ -185,8 +187,12 @@ public class UnitOfWorkTests : TestDatabaseFixture, IAsyncDisposable
         // Act
         disposable?.Dispose();
 
-        // Assert - Should not throw
+        // Assert - Dispose should not throw, and UnitOfWork should implement IDisposable
         disposable.Should().NotBeNull();
+
+        // After disposal, starting a new transaction should fail or the context should be unusable
+        DbContext.Database.CurrentTransaction.Should().BeNull(
+            "disposal should clean up any active transaction");
     }
 
     [Fact]

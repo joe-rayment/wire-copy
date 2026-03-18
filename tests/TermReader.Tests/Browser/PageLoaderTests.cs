@@ -54,7 +54,9 @@ public class PageLoaderTests
         // Assert
         result.Success.Should().BeTrue();
         result.Html.Should().Be(html);
-        result.Url.Should().StartWith("https://example.com");
+        result.Url.Should().Match(u =>
+            u == "https://example.com" || u == "https://example.com/",
+            "URL should be the requested domain (HttpClient may normalize trailing slash)");
         result.Metadata.Should().NotBeNull();
         result.Metadata!.Title.Should().Be("Test Page");
     }
