@@ -1112,6 +1112,26 @@ public class BrowserOrchestrator : IBrowserService
             NotifyPreloadSelectionChanged();
 
             await RenderCurrentPageAsync(options, cancellationToken);
+
+            // Eagerly warm up the browser for paywalled domains so Selenium is ready
+            // when the user triggers Shift+I (interactive login). Without this, the
+            // first Selenium use incurs a cold-start delay (Chrome launch + driver init).
+            if (IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Selenium)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        _logger.LogInformation(
+                            "Paywalled domain detected, warming up browser session: {Url}", url);
+                        await _browserSession.WarmUpAsync();
+                    }
+                    catch (Exception warmupEx)
+                    {
+                        _logger.LogWarning(warmupEx, "Browser warmup failed for paywalled domain");
+                    }
+                });
+            }
         }
         catch (Exception ex)
         {
