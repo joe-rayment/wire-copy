@@ -180,10 +180,24 @@ internal static class ViewCommandHandler
 
     public static async Task HandleOpenInBrowser(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var url = ctx.NavigationService.CurrentPage?.Url;
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        string? url;
+
+        if (viewMode == ViewMode.Hierarchical)
+        {
+            // In link tree view, open the selected link's URL (what the user is looking at)
+            var selectedNode = ctx.NavigationService.CurrentPage?.LinkTree?.GetSelectedNode();
+            url = selectedNode?.Link.Url ?? ctx.NavigationService.CurrentPage?.Url;
+        }
+        else
+        {
+            // In reader view, collection items, etc. — open the current page URL
+            url = ctx.NavigationService.CurrentPage?.Url;
+        }
+
         if (string.IsNullOrEmpty(url))
         {
-            ctx.NavigationService.SetStatusMessage("No page URL to open");
+            ctx.NavigationService.SetStatusMessage("No URL to open");
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
