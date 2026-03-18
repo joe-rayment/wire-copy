@@ -1,0 +1,232 @@
+================================================================================
+LAYOUT SWITCHER — AI Layout Preview System
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+The layout switcher allows users to cycle between layout variants for the
+current screen. It shows a small overlay/toast indicating the active layout
+and how to switch.
+
+COLOR KEY:
+  [green]   = bright green #00ff00 (ANSI 46) — active layout name
+  [cyan]    = bright cyan #00ffff (ANSI 51) — key combo, arrows
+  [dim]     = dark green #005f00 (ANSI 22-28) — borders, inactive options
+  [med]     = medium green #00af00 (ANSI 34) — descriptions
+
+
+================================================================================
+TRIGGER AND DISPLAY
+================================================================================
+
+Trigger: Ctrl+L or :layout command
+Behavior: Cycles through available layouts for the current view
+Display: Large centered layout name flashes for 500ms, then settles to
+         a status bar badge. Dismissed on next keypress after 500ms.
+
+--- Layout Name Flash (500ms, synchronous animation) ---
+
+On Ctrl+L, the entire screen gets a brief overlay with the layout name
+centered large:
+
+(entire screen dims briefly)
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/]   [green]Layout: Dense List[/]  [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+(500ms, then screen redraws with new layout + status bar badge)
+
+The flash is rendered synchronously: Console.Write at center of screen,
+Thread.Sleep(500), then full redraw with the new layout applied.
+After the flash, the status bar shows the layout badge persistently.
+
+--- Status Bar Badge (persistent while non-default) ---
+
+When a non-default layout is active, the status bar line 2 shows:
+
+ [med]arstechnica.com[/]              [med][Layout: Dense List][/] [med]│[/] [med]all cached[/]
+
+
+================================================================================
+LAYOUT CYCLING — Launcher Screen
+================================================================================
+
+Press Ctrl+L repeatedly to cycle:
+
+--- State 1 (default) ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Grid 2-col[/] [cyan](A)[/] [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- State 2 ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]List[/] [cyan](B)[/]       [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- State 3 ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Grid 3-col[/] [cyan](C)[/] [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- Wraps back to State 1 ---
+
+
+================================================================================
+LAYOUT CYCLING — Link Tree
+================================================================================
+
+--- State 1 (default) ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Card Grid[/] [cyan](A)[/]  [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- State 2 ---
+
+                         [dim]╭───────────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Detailed List[/] [cyan](B)[/]  [dim]│[/]
+                         [dim]╰───────────────────────────╯[/]
+
+
+================================================================================
+LAYOUT CYCLING — Reader View
+================================================================================
+
+--- State 1 (default) ---
+
+                         [dim]╭─────────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Centered[/] [cyan](A)[/]     [dim]│[/]
+                         [dim]╰─────────────────────────╯[/]
+
+--- State 2 ---
+
+                         [dim]╭─────────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Full Width[/] [cyan](B)[/]   [dim]│[/]
+                         [dim]╰─────────────────────────╯[/]
+
+
+================================================================================
+LAYOUT CYCLING — Collections
+================================================================================
+
+--- State 1 (default) ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]List[/] [cyan](A)[/]       [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- State 2 ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Card Grid[/] [cyan](B)[/]  [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+
+================================================================================
+LAYOUT CYCLING — Reading List
+================================================================================
+
+--- State 1 (default) ---
+
+                         [dim]╭───────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Top CTA[/] [cyan](A)[/]    [dim]│[/]
+                         [dim]╰───────────────────────╯[/]
+
+--- State 2 ---
+
+                         [dim]╭─────────────────────────╮[/]
+                         [dim]│[/] [med]Layout:[/] [green]Split View[/] [cyan](B)[/]   [dim]│[/]
+                         [dim]╰─────────────────────────╯[/]
+
+
+================================================================================
+STATUS BAR LAYOUT INDICATOR
+================================================================================
+
+When a non-default layout is active, the status bar shows the layout name
+on line 2 as a subtle indicator (so the user remembers they changed it):
+
+ [dim]──────────────────────────────────────────────────────────────────────────────[/]
+ [green]LinkView[/] [cyan]Enter[/][med]:open[/] [cyan]s[/][med]:save[/] [cyan]R[/][med]:refresh[/] [cyan]v[/][med]:reader[/] [cyan]?[/][med]:help[/]
+ [med]arstechnica.com[/]              [med]Layout B[/] [med]│[/] [green]▰▰▰▰▰▰▰▰▰▰[/] [med]24/24 cached[/]
+
+NOTES:
+- "Layout B" appears on status bar line 2 between domain and cache indicator
+- Only shows for non-default layouts (Layout A is the default, no indicator)
+- Separated by │ pipe from other indicators
+- In [med] — subtle, not distracting
+
+
+================================================================================
+ALTERNATIVE DESIGN: Inline Selector (Not Recommended)
+================================================================================
+
+Instead of a cycling toast, an inline selector could show all options:
+
+ [dim]╭─────────────────────────────────────────╮[/]
+ [dim]│[/] [med]Layout:[/] [green]▸ Grid 2-col[/]  [dim]List[/]  [dim]Grid 3-col[/] [dim]│[/]
+ [dim]│[/]          [cyan]←[/]                         [cyan]→[/]  [dim]│[/]
+ [dim]╰─────────────────────────────────────────╯[/]
+
+- Arrow keys to select, Enter to confirm, Esc to cancel
+- Active option in [green] with ▸ prefix
+- Inactive options in [dim]
+- Problem: requires multi-key interaction for a simple toggle
+- VERDICT: Cycling with Ctrl+L is simpler and more discoverable
+
+
+================================================================================
+COMMAND MODE ALTERNATIVE
+================================================================================
+
+Layout can also be set via command mode:
+
+  :[/] [green]layout grid2[/]
+  :[/] [green]layout list[/]
+  :[/] [green]layout grid3[/]
+
+Or with shortcuts:
+  :[/] [green]la[/]    (cycles to next layout, same as Ctrl+L)
+  :[/] [green]la a[/]  (jump to layout A)
+  :[/] [green]la b[/]  (jump to layout B)
+
+
+================================================================================
+AI LAYOUT BADGE
+================================================================================
+
+When AI-generated hierarchy is active (versus the default link extraction),
+the status bar shows an "AI layout" badge:
+
+ [med]arstechnica.com[/]                  [med]AI layout[/] [med]│[/] [med]all cached[/]
+
+This is separate from the layout variant (A/B/C) and indicates that the
+link tree structure was generated by the AI categorization engine rather
+than the default HTML-based link extractor.
+
+
+================================================================================
+PERSISTENCE
+================================================================================
+
+- Layout preference is stored per-view in UserSettingsStore
+- Key: "Layout:Launcher", "Layout:LinkTree", "Layout:Reader", etc.
+- Values: "A", "B", "C"
+- Default: "A" for all views if no preference is set
+- Preference persists across sessions
+
+
+================================================================================
+INTERACTION SUMMARY
+================================================================================
+
+Trigger:     Ctrl+L or :layout
+Display:     Large centered flash (500ms synchronous), then status bar badge
+Cycle:       A → B → A (wraps; Phase 1 has 2 variants per screen)
+Status bar:  Shows "[Layout: Name]" when non-default
+Persistence: UserSettingsStore, per-view
+First use:   One-time hint "Tip: Ctrl+L to try different layouts" on status bar
+Alternatives: :layout <name> command for direct selection
