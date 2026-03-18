@@ -12,6 +12,8 @@ using TermReader.Domain.Entities.Credentials;
 using TermReader.Domain.Enums;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Credentials;
+using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Storage;
@@ -527,10 +529,21 @@ internal static class SearchCommandHandler
 
     private static async Task HandleSetApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var apiKey = await ctx.InputHandler.PromptForInputAsync(
-            "OpenAI API key: ", ct, isSecret: true);
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "OpenAI API Key",
+            Placeholder = "sk-...",
+            HelpText = "Get a key at platform.openai.com/api-keys",
+            IsSecret = true,
+            Validate = v => string.IsNullOrWhiteSpace(v) ? "Key cannot be empty" : null,
+        };
 
-        if (string.IsNullOrWhiteSpace(apiKey))
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+
+        if (apiKey == null)
         {
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
@@ -686,23 +699,42 @@ internal static class SearchCommandHandler
 
     private static async Task HandleSetAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var apiKey = await ctx.InputHandler.PromptForInputAsync(
-            "Anthropic API key: ", ct, isSecret: true);
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "Anthropic API Key",
+            Placeholder = "sk-ant-...",
+            HelpText = "Get a key at console.anthropic.com",
+            IsSecret = true,
+            Validate = v =>
+            {
+                if (string.IsNullOrWhiteSpace(v))
+                {
+                    return "Key cannot be empty";
+                }
 
-        if (string.IsNullOrWhiteSpace(apiKey))
+                var trimmed = v.Trim();
+                if (!trimmed.StartsWith("sk-ant-", StringComparison.Ordinal) &&
+                    !trimmed.StartsWith("sk-", StringComparison.Ordinal))
+                {
+                    return "Must start with sk-ant- or sk-";
+                }
+
+                return null;
+            },
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+
+        if (apiKey == null)
         {
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
         }
 
         var trimmedKey = apiKey.Trim();
-
-        if (!trimmedKey.StartsWith("sk-ant-", StringComparison.Ordinal) && !trimmedKey.StartsWith("sk-", StringComparison.Ordinal))
-        {
-            ctx.NavigationService.SetStatusMessage("Invalid key format \u2014 expected sk-ant-... or sk-...");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
 
         try
         {
@@ -782,10 +814,40 @@ internal static class SearchCommandHandler
 
     private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var keyPath = await ctx.InputHandler.PromptForInputAsync(
-            "GCS service account key file path: ", ct);
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "GCS Service Account Key",
+            Placeholder = "File path (e.g. ~/keys/service-account.json)",
+            HelpText = "Download from console.cloud.google.com \u2192 IAM \u2192 Service Accounts",
+            Validate = v =>
+            {
+                if (string.IsNullOrWhiteSpace(v))
+                {
+                    return "Path cannot be empty";
+                }
 
-        if (string.IsNullOrWhiteSpace(keyPath))
+                var path = v.Trim();
+
+                // Expand ~ to home directory
+                if (path.StartsWith('~'))
+                {
+                    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    path = Path.Combine(home, path[1..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                }
+
+                path = Path.GetFullPath(path);
+
+                var result = GcsStorageClient.ValidateKeyFile(path);
+                return result.IsValid ? null : (result.ErrorMessage ?? "Invalid key file");
+            },
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+        var keyPath = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+
+        if (keyPath == null)
         {
             await ctx.RenderCurrentPageAsync(options, ct);
             return;
@@ -801,14 +863,6 @@ internal static class SearchCommandHandler
         }
 
         trimmed = Path.GetFullPath(trimmed);
-
-        var validation = GcsStorageClient.ValidateKeyFile(trimmed);
-        if (!validation.IsValid)
-        {
-            ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid key file");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            return;
-        }
 
         try
         {
