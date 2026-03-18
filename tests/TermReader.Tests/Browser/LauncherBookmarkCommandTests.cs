@@ -20,6 +20,7 @@ namespace TermReader.Tests.Browser;
 /// <summary>
 /// Tests for bookmark reorder (Shift+J/K) and rename (:rename) commands in the launcher.
 /// </summary>
+[Trait("Category", "Unit")]
 public class LauncherBookmarkCommandTests
 {
     private readonly NavigationService _navigationService;

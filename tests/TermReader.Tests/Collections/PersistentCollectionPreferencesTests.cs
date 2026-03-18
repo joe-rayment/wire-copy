@@ -8,6 +8,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class PersistentCollectionPreferencesTests
 {
     private readonly IUserSettingsStore _settingsStore;

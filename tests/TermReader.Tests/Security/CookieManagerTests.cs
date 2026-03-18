@@ -17,6 +17,7 @@ using Xunit;
 
 namespace TermReader.Tests.Security;
 
+[Trait("Category", "Unit")]
 public class CookieManagerTests : IDisposable
 {
     private readonly CookieManager _cookieManager;

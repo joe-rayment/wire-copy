@@ -8,6 +8,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class NavigationTreeSubGroupTests
 {
     #region Multiple sections — sub-grouping applied

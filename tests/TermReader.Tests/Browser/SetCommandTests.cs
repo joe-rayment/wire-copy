@@ -20,6 +20,7 @@ namespace TermReader.Tests.Browser;
 /// <summary>
 /// Tests for :set apikey and :set bucket commands.
 /// </summary>
+[Trait("Category", "Unit")]
 public class SetCommandTests
 {
     private readonly NavigationService _navigationService;

@@ -13,6 +13,7 @@ using Xunit;
 
 namespace TermReader.Tests.Security;
 
+[Trait("Category", "Unit")]
 public class CookieEncryptionServiceTests
 {
     private readonly DpapiCookieEncryptionService _encryptionService;

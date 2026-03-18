@@ -20,6 +20,7 @@ namespace TermReader.Tests.Browser;
 /// Verifies MoveDown/MoveUp/PageDown/PageUp/GoToBottom advance scroll correctly
 /// when CachedLines is populated by EnsureLineCache.
 /// </summary>
+[Trait("Category", "Unit")]
 public class NavigationCommandHandlerScrollTests
 {
     private readonly NavigationService _navigationService;

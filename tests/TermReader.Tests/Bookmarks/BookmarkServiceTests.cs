@@ -10,6 +10,7 @@ using Xunit;
 
 namespace TermReader.Tests.Bookmarks;
 
+[Trait("Category", "Unit")]
 public class BookmarkServiceTests : TestDatabaseFixture
 {
     private readonly BookmarkRepository _repository;

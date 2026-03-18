@@ -14,6 +14,7 @@ using Xunit;
 
 namespace TermReader.Tests.Security;
 
+[Trait("Category", "Unit")]
 public class CookieImporterTests
 {
     private readonly ICookieEncryptionService _encryptionService;

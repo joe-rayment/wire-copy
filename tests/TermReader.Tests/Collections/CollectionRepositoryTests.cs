@@ -9,6 +9,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class CollectionRepositoryTests : TestDatabaseFixture
 {
     private readonly CollectionRepository _sut;

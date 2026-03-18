@@ -16,6 +16,7 @@ namespace TermReader.Tests.Browser;
 /// <summary>
 /// Tests for ViewCommandHandler covering view switching and width adjustment.
 /// </summary>
+[Trait("Category", "Unit")]
 public class ViewCommandHandlerTests
 {
     private readonly NavigationService _navigationService;

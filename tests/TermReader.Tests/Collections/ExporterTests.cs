@@ -9,6 +9,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class UrlListExporterTests : IDisposable
 {
     private readonly string _tempDir;
@@ -161,6 +162,7 @@ public class UrlListExporterTests : IDisposable
     }
 }
 
+[Trait("Category", "Unit")]
 public class OpmlExporterTests : IDisposable
 {
     private readonly string _tempDir;

@@ -21,6 +21,7 @@ using Xunit;
 
 namespace TermReader.Tests;
 
+[Trait("Category", "Unit")]
 public class DependencyInjectionTests : IDisposable
 {
     private readonly ServiceProvider _serviceProvider;

@@ -16,6 +16,7 @@ namespace TermReader.Tests.Browser;
 /// <summary>
 /// Tests for SearchCommandHandler covering search, search navigation, and command-line input.
 /// </summary>
+[Trait("Category", "Unit")]
 public class SearchCommandHandlerTests
 {
     private readonly NavigationService _navigationService;

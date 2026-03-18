@@ -26,6 +26,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\TermReader.Domain\TermReader.Domain.csproj" />
     <ProjectReference Include="..\..\src\TermReader.Application\TermReader.Application.csproj" />
     <ProjectReference Include="..\..\src\TermReader.Infrastructure\TermReader.Infrastructure.csproj" />

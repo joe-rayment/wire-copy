@@ -13,6 +13,7 @@ namespace TermReader.Tests.Browser;
 /// Direct tests for CollectionNavigationState, covering the return-point
 /// save/restore logic and edge cases not exercised through NavigationService.
 /// </summary>
+[Trait("Category", "Unit")]
 public class CollectionNavigationStateTests
 {
     private readonly CollectionNavigationState _sut;

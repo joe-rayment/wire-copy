@@ -10,6 +10,7 @@ using Xunit;
 
 namespace TermReader.Tests.Podcast;
 
+[Trait("Category", "Unit")]
 public class FileSystemTtsAudioCacheTests : IDisposable
 {
     private readonly string _tempDir;

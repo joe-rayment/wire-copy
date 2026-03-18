@@ -20,6 +20,7 @@ namespace TermReader.Tests.Browser;
 /// Tests for scroll-selection coordination across CollectionList, CollectionItems, and Launcher views.
 /// Verifies that scroll offsets adjust to keep the selected item visible after every navigation command.
 /// </summary>
+[Trait("Category", "Unit")]
 public class ScrollSelectionCoordinationTests
 {
     private readonly NavigationService _navigationService;

@@ -9,6 +9,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class BuiltInThemesTests
 {
     private static readonly PropertyInfo[] PaletteProperties = typeof(ThemePalette)
