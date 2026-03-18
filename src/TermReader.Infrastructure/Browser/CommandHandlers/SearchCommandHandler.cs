@@ -387,8 +387,14 @@ internal static class SearchCommandHandler
             }
             else
             {
-                var confirm = await ctx.InputHandler.PromptForInputAsync("Clear all cached pages? (y/n): ", ct);
-                if (string.Equals(confirm, "y", StringComparison.OrdinalIgnoreCase))
+                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+                var confirmed = await ConfirmationDialog.ConfirmAsync(
+                    ctx.InputHandler,
+                    "Clear Cache",
+                    "Clear all cached pages?",
+                    palette,
+                    ct);
+                if (confirmed)
                 {
                     var cleared = ctx.PageCache.Clear();
                     ctx.NavigationService.SetStatusMessage(
