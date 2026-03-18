@@ -10,6 +10,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class ReadingListTests
 {
     #region Collection.AddOrMoveToTop

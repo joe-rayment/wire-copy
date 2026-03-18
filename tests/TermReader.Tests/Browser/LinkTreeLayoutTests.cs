@@ -12,6 +12,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class LinkTreeLayoutTests
 {
     private static readonly ThemePalette TestPalette = BuiltInThemes.Get(ThemeName.Phosphor);

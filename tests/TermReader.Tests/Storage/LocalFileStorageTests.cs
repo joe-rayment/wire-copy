@@ -11,6 +11,7 @@ using Xunit;
 
 namespace TermReader.Tests.Storage;
 
+[Trait("Category", "Unit")]
 public class LocalFileStorageTests : IDisposable
 {
     private readonly LocalFileStorage _storage;

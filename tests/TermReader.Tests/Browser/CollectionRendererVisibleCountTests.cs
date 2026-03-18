@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class CollectionRendererVisibleCountTests
 {
     #region GetCollectionListVisibleCount

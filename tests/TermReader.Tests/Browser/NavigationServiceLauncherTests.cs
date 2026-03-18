@@ -9,6 +9,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class NavigationServiceLauncherTests
 {
     private readonly NavigationService _sut;

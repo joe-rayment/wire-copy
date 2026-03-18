@@ -11,6 +11,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class CollectionServiceTests : TestDatabaseFixture
 {
     private readonly CollectionRepository _repository;

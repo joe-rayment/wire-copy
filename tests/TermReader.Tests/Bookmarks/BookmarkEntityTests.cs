@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TermReader.Tests.Bookmarks;
 
+[Trait("Category", "Unit")]
 public class BookmarkEntityTests
 {
     #region Create

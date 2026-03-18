@@ -11,6 +11,7 @@ namespace TermReader.Tests.Collections;
 /// Covers scenarios not handled by CollectionEntityTests:
 /// duplicate detection, sort order after operations, non-existent IDs, etc.
 /// </summary>
+[Trait("Category", "Unit")]
 public class CollectionEdgeCaseTests
 {
     #region AddItem sort order / position

@@ -8,6 +8,7 @@ using Xunit;
 
 namespace TermReader.Tests;
 
+[Trait("Category", "Unit")]
 public class CommandOptionsTests
 {
     [Fact]

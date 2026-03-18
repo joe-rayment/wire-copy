@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TermReader.Tests.Collections;
 
+[Trait("Category", "Unit")]
 public class CollectionEntityTests
 {
     #region Collection.Create
@@ -390,6 +391,7 @@ public class CollectionEntityTests
     #endregion
 }
 
+[Trait("Category", "Unit")]
 public class CollectionItemEntityTests
 {
     #region CollectionItem.Create

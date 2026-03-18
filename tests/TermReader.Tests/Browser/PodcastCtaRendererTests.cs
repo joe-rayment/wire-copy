@@ -10,6 +10,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class PodcastCtaRendererTests
 {
     private readonly PodcastCtaRenderer _renderer;

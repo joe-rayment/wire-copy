@@ -29,6 +29,7 @@ namespace TermReader.Tests.Browser;
 /// - Verify scroll indicators show correct remaining count
 /// - Verify status bar shows correct key bindings per view mode
 /// </summary>
+[Trait("Category", "Unit")]
 public class TerminalPageRendererTests
 {
     private readonly ILogger<TerminalPageRenderer> _logger;

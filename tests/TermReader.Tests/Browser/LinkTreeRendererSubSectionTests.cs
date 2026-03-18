@@ -12,6 +12,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class LinkTreeRendererSubSectionTests
 {
     private readonly LinkTreeRenderer _renderer;

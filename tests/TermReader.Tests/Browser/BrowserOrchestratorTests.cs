@@ -18,6 +18,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class BrowserOrchestratorTests
 {
     private readonly IPageLoader _pageLoader;
@@ -367,6 +368,7 @@ public class BrowserOrchestratorRedirectTests
 /// Since HandleCommandAsync is private, these tests verify behavior by setting up
 /// the orchestrator with specific input sequences and checking side effects.
 /// </summary>
+[Trait("Category", "Unit")]
 public class BrowserOrchestratorNavigationTests
 {
     private readonly IPageLoader _pageLoader;

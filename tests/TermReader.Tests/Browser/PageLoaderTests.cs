@@ -13,6 +13,7 @@ using Xunit;
 
 namespace TermReader.Tests.Browser;
 
+[Trait("Category", "Unit")]
 public class PageLoaderTests
 {
     private readonly ILogger<PageLoader> _logger;

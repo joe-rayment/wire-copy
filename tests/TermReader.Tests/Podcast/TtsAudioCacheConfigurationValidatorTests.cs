@@ -7,6 +7,7 @@ using Xunit;
 
 namespace TermReader.Tests.Podcast;
 
+[Trait("Category", "Unit")]
 public class TtsAudioCacheConfigurationValidatorTests
 {
     private readonly TtsAudioCacheConfigurationValidator _validator = new();

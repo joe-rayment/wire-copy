@@ -17,6 +17,7 @@ namespace TermReader.Tests.Browser;
 /// EnterCollections/ExitCollections, SaveCollectionReturnPoint,
 /// and collection index tracking.
 /// </summary>
+[Trait("Category", "Unit")]
 public class NavigationServiceCollectionTests
 {
     private readonly NavigationService _sut;

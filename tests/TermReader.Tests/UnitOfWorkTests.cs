@@ -16,6 +16,7 @@ namespace TermReader.Tests;
 /// <summary>
 /// Tests for IUnitOfWork interface and UnitOfWork implementation
 /// </summary>
+[Trait("Category", "Unit")]
 public class UnitOfWorkTests : TestDatabaseFixture, IAsyncDisposable
 {
     private readonly IUnitOfWork _unitOfWork;

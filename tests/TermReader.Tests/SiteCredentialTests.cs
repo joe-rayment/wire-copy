@@ -7,6 +7,7 @@ using Xunit;
 
 namespace TermReader.Tests;
 
+[Trait("Category", "Unit")]
 public class SiteCredentialTests
 {
     private static readonly byte[] ValidUsername = new byte[] { 1, 2, 3, 4 };

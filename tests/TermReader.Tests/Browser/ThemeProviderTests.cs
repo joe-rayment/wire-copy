@@ -8,6 +8,7 @@ using Xunit;
 namespace TermReader.Tests.Browser;
 
 [Collection("ThemeProvider")]
+[Trait("Category", "Unit")]
 public class ThemeProviderTests : IDisposable
 {
     private static readonly string PersistencePath = Path.Combine(
@@ -171,6 +172,7 @@ public class ThemeProviderTests : IDisposable
 }
 
 [CollectionDefinition("ThemeProvider", DisableParallelization = true)]
+[Trait("Category", "Unit")]
 public class ThemeProviderCollection : ICollectionFixture<ThemeProviderCollection>
 {
 }
