@@ -117,13 +117,8 @@ This project uses [Beads](https://github.com/steveyegge/beads) for issue trackin
 
 ### Setting up Beads on a new machine
 
-```bash
-# Install beads
-curl -sSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
-
-# Initialize (already done in this repo, but needed if .beads/ is missing)
-bd init
-```
+1. Install the `bd` binary from [github.com/steveyegge/beads](https://github.com/steveyegge/beads) (download the release for your platform and place it on your `PATH`)
+2. The `.beads/` directory is already in the repo — no `bd init` needed after cloning
 
 ### Common commands
 
