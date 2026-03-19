@@ -1,0 +1,173 @@
+================================================================================
+COLLECTIONS — Collection List
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+COLOR KEY:
+  [green]   = bright green #00ff00 (ANSI 46) — collection names
+  [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent, star
+  [dim]     = dark green #005f00 (ANSI 22-28) — borders, separators
+  [med]     = medium green #00af00 (ANSI 34) — counts, secondary
+  [white]   = white #ffffff (ANSI 15) — selected item text
+  [sel-bg]  = dark green bg (ANSI 22) — selection background
+
+
+================================================================================
+VARIANT A: Simple List (Default)
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Collections                                                              [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]Tech News[/] [med](12)[/] [cyan]★[/]
+   [dim]╶──╴[/]
+[white][sel-bg]▌ Science & Space (8)                                                        [/]
+   [dim]╶──╴[/]
+   [green]Longform[/] [med](3)[/]
+   [dim]╶──╴[/]
+   [green]Work Research[/] [med](24)[/]
+   [dim]╶──╴[/]
+   [green]Weekend Reads[/] [med](6)[/]
+   [dim]╶──╴[/]
+   [green]Podcast Queue[/] [med](15)[/]
+   [dim]╶──╴[/]
+   [green]Bookclub[/] [med](0)[/]
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:delete[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+NOTES:
+- Header uses rounded box from Borders component
+- ★ in [cyan] marks the default collection (saves go here by default)
+- Item counts in [med] parentheses
+- Selected item: full-width [sel-bg] with ▌ accent bar in [white]
+- Separators ╶──╴ between items (only when terminal height >= 30)
+- For shorter terminals, separators are omitted and items are 1 line each
+- Status bar: mode label + hints on L1
+
+
+================================================================================
+VARIANT A — Compact Mode (terminal height < 30)
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Collections                                                              [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]Tech News[/] [med](12)[/] [cyan]★[/]
+[white][sel-bg]▌ Science & Space (8)                                                        [/]
+   [green]Longform[/] [med](3)[/]
+   [green]Work Research[/] [med](24)[/]
+   [green]Weekend Reads[/] [med](6)[/]
+   [green]Podcast Queue[/] [med](15)[/]
+   [green]Bookclub[/] [med](0)[/]
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:delete[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+NOTES:
+- No separators, 1 line per item
+- Fits more collections on screen
+- Same selection highlight style
+
+
+================================================================================
+VARIANT A — Scroll Indicators
+================================================================================
+
+When collections exceed visible area:
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Collections                                                              [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]Work Research[/] [med](24)[/]
+   [dim]╶──╴[/]
+   [green]Weekend Reads[/] [med](6)[/]
+   [dim]╶──╴[/]
+[white][sel-bg]▌ Podcast Queue (15)                                                         [/]
+   [dim]╶──╴[/]
+   [green]Bookclub[/] [med](0)[/]
+
+   [med]... 3 more collections[/]
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections [cyan]Enter[/][med]:open[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+
+================================================================================
+VARIANT A — Empty State
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Collections                                                              [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [med]No collections yet. Use :new <name> to create one.[/]
+
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections [cyan]?[/][med]:help[/]
+
+
+================================================================================
+VARIANT B: Grid Cards (2-Column)
+================================================================================
+
+Each collection shown as a card with name, count, and first few item titles.
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Collections                                                              [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [dim]╭──────────────────────────────────╮[/] [dim]╭──────────────────────────────────╮[/]
+ [dim]│[/] [green]Tech News[/] [med](12)[/] [cyan]★[/]               [dim]│[/] [dim]│[/][white][sel-bg] Science & Space (8)            [/][dim]│[/]
+ [dim]│[/] [med]SpaceX Starship reaches...[/]    [dim]│[/] [dim]│[/][white][sel-bg] NASA selects two new mis...    [/][dim]│[/]
+ [dim]│[/] [med]NASA selects two new...[/]       [dim]│[/] [dim]│[/][white][sel-bg] CRISPR breakthrough enab...    [/][dim]│[/]
+ [dim]│[/] [med]The Verge reports on...[/]       [dim]│[/] [dim]│[/][white][sel-bg] Climate models validated...    [/][dim]│[/]
+ [dim]╰──────────────────────────────────╯[/] [dim]╰──────────────────────────────────╯[/]
+
+ [dim]╭──────────────────────────────────╮[/] [dim]╭──────────────────────────────────╮[/]
+ [dim]│[/] [green]Longform[/] [med](3)[/]                    [dim]│[/] [dim]│[/] [green]Work Research[/] [med](24)[/]             [dim]│[/]
+ [dim]│[/] [med]The rise of quantum...[/]        [dim]│[/] [dim]│[/] [med]Machine learning survey...[/]   [dim]│[/]
+ [dim]│[/] [med]Inside the fusion...[/]          [dim]│[/] [dim]│[/] [med]Distributed systems at...[/]   [dim]│[/]
+ [dim]│[/] [med]A history of the web...[/]       [dim]│[/] [dim]│[/] [med]API design patterns...[/]      [dim]│[/]
+ [dim]╰──────────────────────────────────╯[/] [dim]╰──────────────────────────────────╯[/]
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:delete[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+NOTES:
+- Each card: rounded border, collection name + count on first line, preview items below
+- Selected card: inner lines get [sel-bg] background (border stays [dim])
+- ★ marker visible inside card header
+- Preview lines show first 3 item titles in [med], truncated with ...
+- Cards are 6 lines tall (top border, header, 3 previews, bottom border)
+- 2 cards per row, each ~37 chars wide in 80-col terminal
+- Fits 2 rows (4 collections) in 24-line terminal
+- Good for visual overview of collection contents
+
+
+================================================================================
+INTERACTION NOTES
+================================================================================
+
+Navigation:
+- j/k or ↓/↑: move selection
+- h/l: move between columns (Variant B only)
+- Enter: open selected collection (shows reading list)
+- d: delete collection (confirmation prompt)
+- :new <name>: create new collection
+- :default: set selected as default collection
+- b: go back to launcher
+- ?: show help
+
+Default collection:
+- ★ marks the collection that receives items when you press 's' in link tree
+- Changed via :default command or :set-default <name>
+- Only one collection can be default at a time

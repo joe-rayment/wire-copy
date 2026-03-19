@@ -12,68 +12,103 @@ Browse any website from your terminal with keyboard-only navigation, reader view
 git clone https://github.com/joe-rayment/newspaper_reader.git
 cd newspaper_reader
 dotnet build
-dotnet run --project src/TermReader.API -- browse https://news.ycombinator.com
+dotnet run --project src/TermReader.API
 ```
 
 ## Features
 
-- **Terminal web browser** with hierarchical link display and reader view
+- **Launcher** -- Bookmark grid with numbered quick-jump shortcuts and a URL bar
+- **Link Tree** -- Browse a page's links in a categorized, collapsible tree (content, navigation, external, footer)
+- **Reader View** -- Distraction-free article reading with adjustable width, search, and a focus indicator
+- **Collections** -- Save articles to reading lists with read/unread tracking and per-item caching
+- **Podcast Generation** -- Convert a reading list into an audio podcast via ElevenLabs TTS
 - **Helix-style keybindings** (j/k, h/l, gg/G) for fast keyboard navigation
-- **Reader view** strips ads, navigation, and clutter for clean article text
 - **In-page search** with `/` to find text, `n`/`N` to jump between matches
-- **URL command mode** with `:` to navigate to any URL without restarting
 - **Page caching** for instant back/forward navigation
 - **Smart link classification** groups links into content, navigation, and footer sections
 - **Selenium fallback** for JavaScript-heavy sites, with WebDriver session reuse
-- **Audio pipeline** generates M4B audiobook files with chapter markers via Eleven Labs TTS
+
+## Themes
+
+TermReader ships with four color themes, all built on ANSI 256 colors:
+
+| Theme | Description |
+|-------|-------------|
+| **Phosphor** (default) | Green-on-black CRT aesthetic |
+| **Amber** | Warm amber/gold monochrome |
+| **Dracula** | Cool gray with cyan and pink accents |
+| **Light** | Dark text on light background |
 
 ## Keybindings
 
-### Navigation
+### Launcher
 
 | Key | Action |
 |-----|--------|
-| `j` / `Down` | Move to next link |
-| `k` / `Up` | Move to previous link |
-| `h` / `Left` | Collapse section or go back |
-| `l` / `Right` | Expand section |
+| `Enter` | Open selected bookmark |
+| `o` | Go to URL |
+| `a` | Add bookmark |
+| `d` | Delete bookmark |
+| `1`-`9` | Jump to bookmark by number |
+| `?` | Help |
+
+### Link Tree
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or arrows | Navigate links |
+| `h` / `l` | Collapse / expand sections |
 | `Enter` | Follow selected link |
-| `b` / `Backspace` | Go back to previous page |
-| `Space` | Toggle expand/collapse current section |
-| `gg` | Jump to top |
-| `G` | Jump to bottom |
-| `Ctrl+d` | Page down |
-| `Ctrl+u` | Page up |
+| `s` | Save to collection |
+| `v` | Switch to reader view |
+| `R` | Refresh page |
+| `b` | Go back |
+| `/` | Search |
+| `?` | Help |
 
-### Views and Search
-
-| Key | Action |
-|-----|--------|
-| `v` / `Tab` | Toggle between link view and reader view |
-| `r` | Switch to reader view |
-| `t` | Switch to link tree view |
-| `:` | Open URL command line (type a URL and press Enter) |
-| `/` | Search within current view |
-| `n` | Next search match |
-| `N` | Previous search match |
-
-### General
+### Reader View
 
 | Key | Action |
 |-----|--------|
-| `q` / `Escape` | Quit browser |
-| `F5` | Refresh current page |
-| `?` | Show help |
-| `Ctrl+C` | Force quit |
+| `j` / `k` or arrows | Scroll |
+| `h` / `l` | Decrease / increase content width |
+| `Ctrl+d` / `Ctrl+u` | Page down / up |
+| `s` | Save to collection |
+| `o` | Open in system browser |
+| `/` | Search |
+| `v` | Switch to link tree |
+| `b` | Go back |
+| `?` | Help |
 
-## Tested Sites
+### Collections
 
-| Site | Notes |
-|------|-------|
-| news.ycombinator.com | Link tree works well, reader view on articles |
-| example.com | Simple pages render correctly |
-| macleans.ca | Selenium fallback for JS content |
-| nytimes.com | Requires authentication cookie |
+| Key | Action |
+|-----|--------|
+| `Enter` | Open item |
+| `d` | Remove item |
+| `J` / `K` | Reorder items |
+| `p` | Generate podcast |
+| `b` | Go back |
+
+### All Screens
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+L` | Cycle layout variant |
+| `gg` / `G` | Jump to top / bottom |
+| `q` | Quit |
+| `?` | Help |
+
+## Layout Variants
+
+Each screen supports alternative layouts, toggled with `Ctrl+L`:
+
+- **Launcher**: Grid (2-column) or List (single-column)
+- **Link Tree**: Cards (2-column) or Dense List (1 line per item)
+- **Reader**: Comfortable (80-char width) or Full Width
+- **Collection Items**: Standard (2-line) or Compact (1-line)
+
+Layout preferences persist between sessions.
 
 ## Audio Mode
 
@@ -85,19 +120,6 @@ Generate audiobook files from scraped articles using Eleven Labs text-to-speech.
 cd src/TermReader.API
 dotnet user-secrets init
 dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
-```
-
-### Usage
-
-```bash
-# Scrape and generate audio for 5 articles
-dotnet run --project src/TermReader.API -- --count 5
-
-# Scrape only (no audio generation)
-dotnet run --project src/TermReader.API -- --count 5 --scrape-only
-
-# Show help
-dotnet run --project src/TermReader.API -- --help
 ```
 
 ### Cost Management
@@ -167,6 +189,39 @@ docker run --rm \
   -v $(pwd)/output:/app/output \
   termreader:latest
 ```
+
+## Design System
+
+A comprehensive design specification covering color palettes, spacing rules, component catalog, and animation specs is maintained in [`design-system.md`](design-system.md). Visual mockups for all screens are in the [`mockups/`](mockups/) directory.
+
+## Issue Tracking (Beads)
+
+This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored locally in the `.beads/` directory alongside the code -- no external service required.
+
+### Setting up Beads on a new machine
+
+1. Install the `bd` binary from [github.com/steveyegge/beads](https://github.com/steveyegge/beads) (download the release for your platform and place it on your `PATH`)
+2. The `.beads/` directory is already in the repo -- no `bd init` needed after cloning
+
+### Common commands
+
+```bash
+bd ready                  # Show issues ready to work (no blockers)
+bd list --status=open     # All open issues
+bd show <id>              # Issue details with dependencies
+bd create --title="Fix bug" --description="Details" --type=bug --priority=2
+bd update <id> --status=in_progress   # Claim work
+bd close <id>             # Mark complete
+bd dep add <issue> <depends-on>       # Add dependency
+bd stats                  # Project health overview
+```
+
+### Notes
+
+- The `.beads/` directory is committed to the repo so issues travel with the code
+- Priority scale: P0 (critical) through P4 (backlog), default P2
+- Issue IDs are short hashes like `docs-1p7` -- use them with any `bd` command
+- Run `bd doctor` if something seems off
 
 ## Technology Stack
 

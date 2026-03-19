@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Launcher</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Launcher</div>
+<div class="page-subtitle">Home Screen — Phosphor theme (green-on-black) — 80x24 terminal</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A: 2-Column Grid (Default Layout)                     -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A: 2-Column Grid (Default Layout)</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">6 bookmarks                                                              </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+                  <span class="d">╭──────────────────────────────────────────────╮</span>
+                  <span class="d">│ </span><span class="m">Go to URL...                               </span><span class="d">│</span>
+                  <span class="d">╰──────────────────────────────────────────────╯</span>
+
+ <span class="c">[1]</span>   <span class="g">ARS TECHNICA</span>               <span class="d">│</span> <span class="c">[2]</span>   <span class="g">HACKER NEWS</span>
+       <span class="m">arstechnica.com</span>             <span class="d">│</span>       <span class="m">news.ycombinator.com</span>
+                                    <span class="d">│</span>
+ <span class="d">────────────────────────────────────┼──────────────────────────────────────</span>
+ <span class="c">[3]</span>   <span class="g">THE VERGE</span>                   <span class="d">│</span><span class="sel">▌[4]   NEW YORK TIMES ★               </span>
+       <span class="m">theverge.com</span>                <span class="d">│</span><span class="sel">▌     nytimes.com                     </span>
+                                    <span class="d">│</span><span class="sel">▌                                    </span>
+ <span class="d">────────────────────────────────────┼──────────────────────────────────────</span>
+ <span class="c">[5]</span>   <span class="g">WIRED</span>                       <span class="d">│</span> <span class="c">[6]</span>   <span class="g">LOBSTERS</span>
+       <span class="m">wired.com</span>                   <span class="d">│</span>       <span class="m">lobste.rs</span>
+
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">a</span><span class="m">:add</span>  <span class="c">d</span><span class="m">:delete</span>  <span class="c">?</span><span class="m">:help</span>           <span class="d">v1.0</span></div>
+  <div class="screen-notes">
+    - Card [4] is selected: white text on dark-green background with ▌ accent bar<br>
+    - ★ marker on card [4] indicates default collection<br>
+    - Badge numbers [1]-[6] in cyan for quick jump<br>
+    - Column divider │ in dim green<br>
+    - Row separators ── in dim green<br>
+    - URL bar centered, ~75% terminal width, rounded corners<br>
+    - Footer: keys in cyan, descriptions in med, version in dim
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A — URL Bar Focused                                   -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A — URL Bar Focused (cursor on URL bar)</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">6 bookmarks                                                              </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+                  <span class="sel">╭──────────────────────────────────────────────╮</span>
+                  <span class="sel">│ Type a URL and press Enter                   │</span>
+                  <span class="sel">╰──────────────────────────────────────────────╯</span>
+
+ <span class="c">[1]</span>   <span class="g">ARS TECHNICA</span>               <span class="d">│</span> <span class="c">[2]</span>   <span class="g">HACKER NEWS</span>
+       <span class="m">arstechnica.com</span>             <span class="d">│</span>       <span class="m">news.ycombinator.com</span>
+                                    <span class="d">│</span>
+ <span class="d">────────────────────────────────────┼──────────────────────────────────────</span>
+ <span class="c">[3]</span>   <span class="g">THE VERGE</span>                   <span class="d">│</span> <span class="c">[4]</span>   <span class="g">NEW YORK TIMES ★</span>
+       <span class="m">theverge.com</span>                <span class="d">│</span>       <span class="m">nytimes.com</span>
+                                    <span class="d">│</span>
+ <span class="d">────────────────────────────────────┼──────────────────────────────────────</span>
+ <span class="c">[5]</span>   <span class="g">WIRED</span>                       <span class="d">│</span> <span class="c">[6]</span>   <span class="g">LOBSTERS</span>
+       <span class="m">wired.com</span>                   <span class="d">│</span>       <span class="m">lobste.rs</span>
+
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">a</span><span class="m">:add</span>  <span class="c">d</span><span class="m">:delete</span>  <span class="c">?</span><span class="m">:help</span>           <span class="d">v1.0</span></div>
+  <div class="screen-notes">
+    - The URL bar border and placeholder text turn white on sel-bg when focused (selectedIndex == -1)<br>
+    - No card is selected in this state — all cards remain in default green styling
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A — Scroll Indicators                                 -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A — Scroll Indicators</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">10 bookmarks                                                             </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+                  <span class="d">╭──────────────────────────────────────────────╮</span>
+                  <span class="d">│ </span><span class="m">Go to URL...                               </span><span class="d">│</span>
+                  <span class="d">╰──────────────────────────────────────────────╯</span>
+
+                            <span class="m">▲ 2 more above</span>
+
+ <span class="c">[5]</span>   <span class="g">WIRED</span>                       <span class="d">│</span> <span class="c">[6]</span>   <span class="g">LOBSTERS</span>
+       <span class="m">wired.com</span>                   <span class="d">│</span>       <span class="m">lobste.rs</span>
+                                    <span class="d">│</span>
+ <span class="d">────────────────────────────────────┼──────────────────────────────────────</span>
+ <span class="c">[7]</span>   <span class="g">REUTERS</span>                     <span class="d">│</span>       <span class="g">READING LIST</span>
+       <span class="m">reuters.com</span>                 <span class="d">│</span>       <span class="m">reading list</span>
+
+                            <span class="m">▼ 4 more below</span>
+
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">a</span><span class="m">:add</span>  <span class="c">d</span><span class="m">:delete</span>  <span class="c">?</span><span class="m">:help</span>           <span class="d">v1.0</span></div>
+  <div class="screen-notes">
+    - When there are more bookmarks than fit on screen, scroll indicators appear above and below the grid<br>
+    - "▲ 2 more above" and "▼ 4 more below" in med green indicate scrollable content
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A — Empty State                                       -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A — Empty State</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">0 bookmarks                                                              </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+                  <span class="d">╭──────────────────────────────────────────────╮</span>
+                  <span class="d">│ </span><span class="m">Go to URL...                               </span><span class="d">│</span>
+                  <span class="d">╰──────────────────────────────────────────────╯</span>
+
+
+
+                          <span class="g">Your bookmarks await</span>
+
+                   Press <span class="c">[a]</span> <span class="m">to add your first site</span>
+
+                   <span class="c">[c]</span>  <span class="g">READING LIST</span>
+                        <span class="m">reading list</span>
+
+
+</div>
+  <div class="screen-notes">
+    - Empty state shown when user has 0 bookmarks<br>
+    - Encouraging message "Your bookmarks await" in green<br>
+    - Hint to press [a] to add first site<br>
+    - Reading List shortcut [c] always visible as a fallback entry point
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT B: Single-Column List (Compact)                       -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT B: Single-Column List (Compact)</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">6 bookmarks                                                              </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+                  <span class="d">╭──────────────────────────────────────────────╮</span>
+                  <span class="d">│ </span><span class="m">Go to URL...                               </span><span class="d">│</span>
+                  <span class="d">╰──────────────────────────────────────────────╯</span>
+
+ <span class="c">[1]</span>  <span class="g">ARS TECHNICA</span>
+      <span class="m">arstechnica.com</span>
+      <span class="d">╶──╴</span>
+ <span class="c">[2]</span>  <span class="g">HACKER NEWS</span>
+      <span class="m">news.ycombinator.com</span>
+      <span class="d">╶──╴</span>
+ <span class="c">[3]</span>  <span class="g">THE VERGE</span>
+      <span class="m">theverge.com</span>
+      <span class="d">╶──╴</span>
+<span class="sel">▌[4]  NEW YORK TIMES ★                                                       </span>
+<span class="sel">▌    nytimes.com                                                             </span>
+      <span class="d">╶──╴</span>
+ <span class="c">[5]</span>  <span class="g">WIRED</span>
+      <span class="m">wired.com</span>
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">?</span><span class="m">:help</span>                                  <span class="d">v1.0</span></div>
+  <div class="screen-notes">
+    - Single column fills full width — better for narrow terminals or many bookmarks<br>
+    - Compact separators ╶──╴ between items<br>
+    - Same selection style: ▌ accent bar + white-on-dark-green<br>
+    - Fits ~6 items in 24 lines vs 4 in grid mode<br>
+    - Good for 60-column or narrower terminals
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT C: 3-Column Compact Grid (Power User)                 -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT C: 3-Column Compact Grid (Power User)</div>
+  <div class="terminal">
+<span class="d">╭─</span><span class="g"> TermReader </span><span class="d">──────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="m">9 bookmarks                                                              </span><span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+       <span class="d">╭──────────────────────────────────────────╮</span>
+       <span class="d">│ </span><span class="m">Go to URL...                           </span><span class="d">│</span>
+       <span class="d">╰──────────────────────────────────────────╯</span>
+
+ <span class="c">[1]</span> <span class="g">ARS TECHNICA</span>       <span class="d">│</span> <span class="c">[2]</span> <span class="g">HACKER NEWS</span>       <span class="d">│</span> <span class="c">[3]</span> <span class="g">THE VERGE</span>
+    <span class="m">arstechnica.com</span>  <span class="d">│</span>    <span class="m">news.ycombinator…</span> <span class="d">│</span>    <span class="m">theverge.com</span>
+ <span class="d">────────────────────┼─────────────────────┼─────────────────────</span>
+<span class="sel">▌[4] NYT ★            </span><span class="d">│</span> <span class="c">[5]</span> <span class="g">WIRED</span>             <span class="d">│</span> <span class="c">[6]</span> <span class="g">LOBSTERS</span>
+<span class="sel">▌   nytimes.com     </span><span class="d">│</span>    <span class="m">wired.com</span>         <span class="d">│</span>    <span class="m">lobste.rs</span>
+ <span class="d">────────────────────┼─────────────────────┼─────────────────────</span>
+ <span class="c">[7]</span> <span class="g">REUTERS</span>          <span class="d">│</span> <span class="c">[8]</span> <span class="g">TECHMEME</span>          <span class="d">│</span> <span class="c">[9]</span> <span class="g">MARGINAL REV</span>
+    <span class="m">reuters.com</span>      <span class="d">│</span>    <span class="m">techmeme.com</span>      <span class="d">│</span>    <span class="m">marginalrev…</span>
+
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">?</span><span class="m">:help</span>                                  <span class="d">v1.0</span></div>
+  <div class="screen-notes">
+    - 3 columns, each ~25 chars wide (78/3 minus dividers)<br>
+    - Compact 3-line cells: name, domain, separator<br>
+    - Titles truncated more aggressively<br>
+    - Fits 9 bookmarks on one screen with no scrolling<br>
+    - Best for wide terminals (100+)<br>
+    - Badge numbers [1]-[9] for single-key jump; items beyond 9 have no badge
+  </div>
+</div>
+
+</body>
+</html>

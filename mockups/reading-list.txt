@@ -1,0 +1,214 @@
+================================================================================
+READING LIST — Collection Items
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+COLOR KEY:
+  [green]   = bright green #00ff00 (ANSI 46) — unread item titles
+  [bright]  = slightly brighter green (ANSI 48) — content links
+  [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent, cache badge
+  [dim]     = dark green #005f00 (ANSI 22-28) — borders, decorative
+  [med]     = medium green #00af00 (ANSI 34) — domains, read items, secondary
+  [white]   = white #ffffff (ANSI 15) — selected item text
+  [sel-bg]  = dark green bg (ANSI 22) — selection background
+  [pink]    = hot pink #ff0087 (ANSI 198) — podcast accent (rare)
+
+
+================================================================================
+VARIANT A: List with CTA Slab at Top (Default)
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Tech News (12 items)                                                     [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+          [sel-bg][white]                                                        [/]
+          [sel-bg][white] ▶▶  Generate Podcast                              [p] [/]
+          [sel-bg][white]                                                        [/]
+
+   [green]●[/] [green]SpaceX Starship Reaches Orbit on Its First Full Flight[/]
+       [med]arstechnica.com[/] [cyan]· cached[/]
+   [dim]╶──╴[/]
+   [green]●[/] [green]NASA Selects Two New Missions for 2028 Launch Window[/]
+       [med]nasa.gov[/] [cyan]· cached[/]
+   [dim]╶──╴[/]
+[white][sel-bg]▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         [/]
+[white][sel-bg]▌     nature.com · cached                                                    [/]
+   [dim]╶──╴[/]
+   [med]○[/] [med]The Rise of Quantum Computing in Drug Discovery[/]
+       [med]wired.com[/]
+   [dim]╶──╴[/]
+   [med]○[/] [med]Climate Models Validated by 50 Years of Ocean Data[/]
+       [med]reuters.com[/] [cyan]· cached[/]
+
+                            [med]... 7 more items below[/]
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:remove[/] [cyan]X[/][med]:clear[/] [cyan]J/K[/][med]:reorder[/] [cyan]p[/][med]:podcast[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+ [med]arstechnica.com[/]                             [med]▰▰▰▰▰▰▰▰▱▱ 9/12 cached[/]
+
+NOTES:
+- Header: collection name + item count in rounded box
+- Podcast CTA slab: centered, 3 lines tall (top pad, content, bottom pad)
+  - Background: [sel-bg], text: [white], key hint: [p]
+  - ▶▶ play icon prefix
+  - When focused (podcast button selected): inverted colors
+- Items: 2 lines each (title + domain), with separator
+- ● = unread in [green], ○ = read in [med] (dimmer)
+- Cache indicator: " · cached" in [cyan] after domain
+- Selected item: ▌ accent bar + full-width [sel-bg] highlight
+- "... 7 more items below" scroll indicator in [med]
+
+
+================================================================================
+VARIANT A — Podcast Button States
+================================================================================
+
+IDLE (default, not focused):
+
+          [sel-bg][white]                                                        [/]
+          [sel-bg][white] ▶▶  Generate Podcast                              [p] [/]
+          [sel-bg][white]                                                        [/]
+
+SELECTED (focused on the button via navigation):
+
+          [white-bg][sel-bg]                                                        [/]
+          [white-bg][sel-bg] ▶▶  Generate Podcast                          [Enter] [/]
+          [white-bg][sel-bg]                                                        [/]
+
+  (Colors invert: white background, dark text. Hint changes to [Enter].)
+
+DISABLED (not enough content / too few items):
+
+          [sel-bg][med]                                                        [/]
+          [sel-bg][med] ▶▶  Generate Podcast                              [p] [/]
+          [sel-bg][med]                                                        [/]
+
+  (Text dimmed to [med] — visually muted, non-interactive feel.)
+
+UNCONFIGURED (no API key set):
+
+          [sel-bg][med]                                                        [/]
+          [sel-bg][med] ▶▶  Generate Podcast                  Setup required [/]
+          [sel-bg][med]                                                        [/]
+
+  (Dimmed + "Setup required" replaces key hint.)
+
+
+================================================================================
+VARIANT A — Inline Podcast CTA (small terminal, height < 20)
+================================================================================
+
+When terminal is short, the CTA collapses to a single inline line:
+
+                    [white] ▶▶  Generate Podcast [/][green][p][/]
+
+
+================================================================================
+VARIANT A — Podcast Button with Musical Note
+================================================================================
+
+Alternative design using ♪ icon for podcast-related items:
+
+          [sel-bg][white]                                                        [/]
+          [sel-bg][white] ♪  Generate Podcast                               [p] [/]
+          [sel-bg][white]                                                        [/]
+
+  (♪ replaces ▶▶ for a more distinctive podcast feel.)
+
+
+================================================================================
+VARIANT A — Selected Item with Inline Hints
+================================================================================
+
+When an item is selected, the hint bar shows relevant keys:
+
+[white][sel-bg]▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         [/]
+[white][sel-bg]▌     nature.com · cached                                                    [/]
+
+Status bar adapts:
+ Reading List [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:remove[/] [cyan]X[/][med]:clear[/] [cyan]J/K[/][med]:reorder[/] [cyan]p[/][med]:podcast[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+Only the status bar shows hints — no per-item inline overlays.
+This keeps the item list clean and scannable.
+
+
+================================================================================
+VARIANT A — Empty Collection
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Weekend Reads (0 items)                                                  [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [med]Nothing saved yet — press[/] [green]s[/] [med]on any article to start your list[/]
+
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+
+
+================================================================================
+VARIANT B: Split View (CTA Left Sidebar, Items Right)
+================================================================================
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Tech News (12 items)                                                     [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [sel-bg]                  [/][dim]│[/]  [green]●[/] [green]SpaceX Starship Reaches Orbit on Its[/]
+ [sel-bg]                  [/][dim]│[/]      [med]arstechnica.com[/] [cyan]· cached[/]
+ [sel-bg][white] ♪ GENERATE       [/][dim]│[/]  [dim]╶──╴[/]
+ [sel-bg][white]   PODCAST         [/][dim]│[/]  [green]●[/] [green]NASA Selects Two New Missions for 2028[/]
+ [sel-bg][white]                  [/][dim]│[/]      [med]nasa.gov[/] [cyan]· cached[/]
+ [sel-bg][white]   [p]              [/][dim]│[/]  [dim]╶──╴[/]
+ [sel-bg]                  [/][dim]│[/][white][sel-bg]▌ ● CRISPR Breakthrough Enables Single-Gene[/]
+                    [dim]│[/][white][sel-bg]▌     nature.com · cached                    [/]
+                    [dim]│[/]  [dim]╶──╴[/]
+                    [dim]│[/]  [med]○[/] [med]The Rise of Quantum Computing in Drug[/]
+                    [dim]│[/]      [med]wired.com[/]
+                    [dim]│[/]  [dim]╶──╴[/]
+                    [dim]│[/]  [med]○[/] [med]Climate Models Validated by 50 Years[/]
+                    [dim]│[/]      [med]reuters.com[/] [cyan]· cached[/]
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List [cyan]Enter[/][med]:open[/] [cyan]d[/][med]:remove[/] [cyan]p[/][med]:podcast[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+ [med]arstechnica.com[/]                             [med]▰▰▰▰▰▰▰▰▱▱ 9/12 cached[/]
+
+NOTES:
+- Left sidebar: ~18 chars wide, contains podcast CTA as vertical slab
+- Right area: item list with full remaining width
+- Sidebar CTA: vertically centered, stacked text "♪ GENERATE / PODCAST / [p]"
+- Column divider │ in [dim]
+- Items on right use same 2-line format (title + domain)
+- Selected item ▌ accent bar on the right side
+- Sidebar doesn't scroll — only the item list scrolls
+- Best for wide terminals (100+); falls back to Variant A on narrow terminals
+
+
+================================================================================
+INTERACTION NOTES
+================================================================================
+
+Navigation:
+- j/k or ↓/↑: move between items
+- Enter: open selected article in reader view
+- d: remove item from collection (no confirmation)
+- X: clear all items (Shift+X, confirmation prompt)
+- J/K (Shift+j/k): reorder item up/down
+- p: generate podcast from collection
+- :: enter command mode
+- b: go back to collection list
+- ?: show help
+
+Read/unread:
+- Items start as ● unread
+- Opening and reading marks as ○ read
+- Read items: title in [med] (dimmer), circle ○ in [med]
+- Unread items: title in [green] (bright), circle ● in [green]
+
+Cache indicators:
+- " · cached" in [cyan] after domain when article content is pre-loaded
+- Status bar shows overall cache progress with ▰/▱ bar
+- Cache warming happens in background when you enter the collection
