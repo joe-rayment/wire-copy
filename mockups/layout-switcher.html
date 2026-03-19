@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Layout Switcher</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Layout Switcher</div>
+<div class="page-subtitle">AI Layout Preview System — Ctrl+L cycling toasts and status bar indicators</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- LAYOUT NAME FLASH -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Name Flash (500ms overlay on Ctrl+L)</div>
+  <div class="terminal">
+<span class="d">╭───────────────────────╮</span>
+<span class="d">│</span>   <span class="g">Layout: Dense List</span>  <span class="d">│</span>
+<span class="d">╰───────────────────────╯</span>
+</div>
+  <div class="screen-notes">Centered overlay flashes for 500ms on Ctrl+L, then full screen redraws with the new layout applied and a status bar badge.</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- STATUS BAR BADGE -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Status Bar Badge (persistent while non-default)</div>
+  <div class="terminal">
+ <span class="m">arstechnica.com</span>              <span class="m">[Layout: Dense List]</span> <span class="m">│</span> <span class="m">all cached</span>
+</div>
+  <div class="screen-notes">When a non-default layout is active, the status bar line 2 shows the layout name between the domain and cache indicator.</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- LAUNCHER SCREEN CYCLING -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Launcher Screen: State 1 (default)</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Grid 2-col</span> <span class="c">(A)</span> <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Launcher Screen: State 2</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">List</span> <span class="c">(B)</span>       <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Launcher Screen: State 3</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Grid 3-col</span> <span class="c">(C)</span> <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+  <div class="screen-notes">Wraps back to State 1 after State 3.</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- LINK TREE CYCLING -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Link Tree: State 1 (default)</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Card Grid</span> <span class="c">(A)</span>  <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Link Tree: State 2</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Detailed List</span> <span class="c">(B)</span>  <span class="d">│</span>
+                         <span class="d">╰───────────────────────────╯</span>
+</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- READER VIEW CYCLING -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Reader View: State 1 (default)</div>
+  <div class="terminal">
+                         <span class="d">╭─────────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Centered</span> <span class="c">(A)</span>     <span class="d">│</span>
+                         <span class="d">╰─────────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Reader View: State 2</div>
+  <div class="terminal">
+                         <span class="d">╭─────────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Full Width</span> <span class="c">(B)</span>   <span class="d">│</span>
+                         <span class="d">╰─────────────────────────╯</span>
+</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- COLLECTIONS CYCLING -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Collections: State 1 (default)</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">List</span> <span class="c">(A)</span>       <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Collections: State 2</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Card Grid</span> <span class="c">(B)</span>  <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- READING LIST CYCLING -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Reading List: State 1 (default)</div>
+  <div class="terminal">
+                         <span class="d">╭───────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Top CTA</span> <span class="c">(A)</span>    <span class="d">│</span>
+                         <span class="d">╰───────────────────────╯</span>
+</div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Layout Cycling — Reading List: State 2</div>
+  <div class="terminal">
+                         <span class="d">╭─────────────────────────╮</span>
+                         <span class="d">│</span> <span class="m">Layout:</span> <span class="g">Split View</span> <span class="c">(B)</span>   <span class="d">│</span>
+                         <span class="d">╰─────────────────────────╯</span>
+</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- STATUS BAR LAYOUT INDICATOR -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">Status Bar Layout Indicator</div>
+  <div class="terminal">
+ <span class="d">──────────────────────────────────────────────────────────────────────────────</span>
+ <span class="g">LinkView</span> <span class="c">Enter</span><span class="m">:open</span> <span class="c">s</span><span class="m">:save</span> <span class="c">R</span><span class="m">:refresh</span> <span class="c">v</span><span class="m">:reader</span> <span class="c">?</span><span class="m">:help</span>
+ <span class="m">arstechnica.com</span>              <span class="m">Layout B</span> <span class="m">│</span> <span class="g">▰▰▰▰▰▰▰▰▰▰</span> <span class="m">24/24 cached</span>
+</div>
+  <div class="screen-notes">"Layout B" appears on status bar line 2 between domain and cache indicator. Only shows for non-default layouts (Layout A is the default, no indicator). Separated by a pipe from other indicators.</div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- AI LAYOUT BADGE -->
+<!-- ============================================================ -->
+
+<div class="screen">
+  <div class="screen-label">AI Layout Badge</div>
+  <div class="terminal">
+ <span class="m">arstechnica.com</span>                  <span class="m">AI layout</span> <span class="m">│</span> <span class="m">all cached</span>
+</div>
+  <div class="screen-notes">When AI-generated hierarchy is active (versus default link extraction), the status bar shows an "AI layout" badge. This is separate from the layout variant (A/B/C) and indicates that the link tree structure was generated by the AI categorization engine.</div>
+</div>
+
+</body>
+</html>
