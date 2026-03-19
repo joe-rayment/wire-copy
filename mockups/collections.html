@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Collections</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Collections</div>
+<div class="page-subtitle">Collection List &mdash; 80x24 terminal, Phosphor theme (green-on-black)</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A: Simple List (Default)                                 -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A: Simple List (Default)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Collections</span>                                                              <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="g">Tech News</span> <span class="m">(12)</span> <span class="c">★</span>
+   <span class="d">╶──╴</span>
+<span class="sel">▌ Science &amp; Space (8)                                                        </span>
+   <span class="d">╶──╴</span>
+   <span class="g">Longform</span> <span class="m">(3)</span>
+   <span class="d">╶──╴</span>
+   <span class="g">Work Research</span> <span class="m">(24)</span>
+   <span class="d">╶──╴</span>
+   <span class="g">Weekend Reads</span> <span class="m">(6)</span>
+   <span class="d">╶──╴</span>
+   <span class="g">Podcast Queue</span> <span class="m">(15)</span>
+   <span class="d">╶──╴</span>
+   <span class="g">Bookclub</span> <span class="m">(0)</span>
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:delete</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    - Header uses rounded box from Borders component<br>
+    - ★ in cyan marks the default collection (saves go here by default)<br>
+    - Item counts in medium green parentheses<br>
+    - Selected item: full-width selection background with ▌ accent bar in white<br>
+    - Separators ╶──╴ between items (only when terminal height &gt;= 30)<br>
+    - For shorter terminals, separators are omitted and items are 1 line each<br>
+    - Status bar: mode label + hints on L1
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A: Compact Mode (terminal height < 30)                   -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A: Compact Mode (terminal height &lt; 30)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Collections</span>                                                              <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="g">Tech News</span> <span class="m">(12)</span> <span class="c">★</span>
+<span class="sel">▌ Science &amp; Space (8)                                                        </span>
+   <span class="g">Longform</span> <span class="m">(3)</span>
+   <span class="g">Work Research</span> <span class="m">(24)</span>
+   <span class="g">Weekend Reads</span> <span class="m">(6)</span>
+   <span class="g">Podcast Queue</span> <span class="m">(15)</span>
+   <span class="g">Bookclub</span> <span class="m">(0)</span>
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:delete</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    - No separators, 1 line per item<br>
+    - Fits more collections on screen<br>
+    - Same selection highlight style
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A: Scroll Indicators                                     -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A: Scroll Indicators</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Collections</span>                                                              <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="g">Work Research</span> <span class="m">(24)</span>
+   <span class="d">╶──╴</span>
+   <span class="g">Weekend Reads</span> <span class="m">(6)</span>
+   <span class="d">╶──╴</span>
+<span class="sel">▌ Podcast Queue (15)                                                         </span>
+   <span class="d">╶──╴</span>
+   <span class="g">Bookclub</span> <span class="m">(0)</span>
+
+   <span class="m">... 3 more collections</span>
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections <span class="c">Enter</span><span class="m">:open</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    - When collections exceed visible area, a "... N more collections" indicator is shown<br>
+    - Scroll position follows the selected item
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A: Empty State                                           -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A: Empty State</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Collections</span>                                                              <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="m">No collections yet. Use :new &lt;name&gt; to create one.</span>
+
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    - Empty state message shown when no collections exist<br>
+    - Only help shortcut shown in status bar (no open/delete actions)
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT B: Grid Cards (2-Column)                                 -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant B: Grid Cards (2-Column)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Collections</span>                                                              <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+ <span class="d">╭──────────────────────────────────╮</span> <span class="d">╭──────────────────────────────────╮</span>
+ <span class="d">│</span> <span class="g">Tech News</span> <span class="m">(12)</span> <span class="c">★</span>               <span class="d">│</span> <span class="d">│</span><span class="sel"> Science &amp; Space (8)            </span><span class="d">│</span>
+ <span class="d">│</span> <span class="m">SpaceX Starship reaches...</span>    <span class="d">│</span> <span class="d">│</span><span class="sel"> NASA selects two new mis...    </span><span class="d">│</span>
+ <span class="d">│</span> <span class="m">NASA selects two new...</span>       <span class="d">│</span> <span class="d">│</span><span class="sel"> CRISPR breakthrough enab...    </span><span class="d">│</span>
+ <span class="d">│</span> <span class="m">The Verge reports on...</span>       <span class="d">│</span> <span class="d">│</span><span class="sel"> Climate models validated...    </span><span class="d">│</span>
+ <span class="d">╰──────────────────────────────────╯</span> <span class="d">╰──────────────────────────────────╯</span>
+
+ <span class="d">╭──────────────────────────────────╮</span> <span class="d">╭──────────────────────────────────╮</span>
+ <span class="d">│</span> <span class="g">Longform</span> <span class="m">(3)</span>                    <span class="d">│</span> <span class="d">│</span> <span class="g">Work Research</span> <span class="m">(24)</span>             <span class="d">│</span>
+ <span class="d">│</span> <span class="m">The rise of quantum...</span>        <span class="d">│</span> <span class="d">│</span> <span class="m">Machine learning survey...</span>   <span class="d">│</span>
+ <span class="d">│</span> <span class="m">Inside the fusion...</span>          <span class="d">│</span> <span class="d">│</span> <span class="m">Distributed systems at...</span>   <span class="d">│</span>
+ <span class="d">│</span> <span class="m">A history of the web...</span>       <span class="d">│</span> <span class="d">│</span> <span class="m">API design patterns...</span>      <span class="d">│</span>
+ <span class="d">╰──────────────────────────────────╯</span> <span class="d">╰──────────────────────────────────╯</span>
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Collections <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:delete</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    - Each card: rounded border, collection name + count on first line, preview items below<br>
+    - Selected card: inner lines get selection background (border stays dim)<br>
+    - ★ marker visible inside card header<br>
+    - Preview lines show first 3 item titles in medium green, truncated with ...<br>
+    - Cards are 6 lines tall (top border, header, 3 previews, bottom border)<br>
+    - 2 cards per row, each ~37 chars wide in 80-col terminal<br>
+    - Fits 2 rows (4 collections) in 24-line terminal<br>
+    - Good for visual overview of collection contents
+  </div>
+</div>
+
+</body>
+</html>

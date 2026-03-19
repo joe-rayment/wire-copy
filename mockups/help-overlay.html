@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Help Overlay</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Help Overlay</div>
+<div class="page-subtitle">Keybinding reference overlays &mdash; context-sensitive per view (80x24, Phosphor theme)</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- HELP OVERLAY — Launcher Screen -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Help Overlay &mdash; Launcher Screen</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Navigation</span>                                            <span class="d">│</span>
+<span class="d">│</span>    <span class="c">j</span> <span class="m">/ </span><span class="c">k</span>           <span class="m">Move selection down / up</span>          <span class="d">│</span>
+<span class="d">│</span>    <span class="c">h</span> <span class="m">/ </span><span class="c">l</span>           <span class="m">Move between columns</span>              <span class="d">│</span>
+<span class="d">│</span>    <span class="c">1</span><span class="m">-</span><span class="c">9</span>             <span class="m">Jump to bookmark by number</span>        <span class="d">│</span>
+<span class="d">│</span>    <span class="c">g</span> <span class="m">/ </span><span class="c">G</span>           <span class="m">Go to first / last item</span>           <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Actions</span>                                               <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Enter</span>           <span class="m">Open selected bookmark</span>            <span class="d">│</span>
+<span class="d">│</span>    <span class="c">o</span>               <span class="m">Go to URL</span>                         <span class="d">│</span>
+<span class="d">│</span>    <span class="c">a</span>               <span class="m">Add new bookmark</span>                  <span class="d">│</span>
+<span class="d">│</span>    <span class="c">d</span>               <span class="m">Delete selected bookmark</span>          <span class="d">│</span>
+<span class="d">│</span>    <span class="c">c</span>               <span class="m">Open reading list / collections</span>   <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">View</span>                                                  <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Ctrl+L</span>          <span class="m">Cycle layout variant</span>              <span class="d">│</span>
+<span class="d">│</span>    <span class="c">:</span>               <span class="m">Enter command mode</span>                <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>                        <span class="m">Press </span><span class="c">?</span> <span class="m">or </span><span class="c">Esc</span> <span class="m">to close</span>          <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────╯</span></div>
+  <div class="screen-notes">
+    Appears when user presses <strong>?</strong> on the Launcher screen. Shows all launcher-specific keybindings grouped by category.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- HELP OVERLAY — Link Tree Screen -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Help Overlay &mdash; Link Tree Screen</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Navigation</span>                                            <span class="d">│</span>
+<span class="d">│</span>    <span class="c">j</span> <span class="m">/ </span><span class="c">k</span>           <span class="m">Move between links</span>                <span class="d">│</span>
+<span class="d">│</span>    <span class="c">h</span> <span class="m">/ </span><span class="c">l</span>           <span class="m">Collapse / expand sections</span>        <span class="d">│</span>
+<span class="d">│</span>    <span class="c">g</span> <span class="m">/ </span><span class="c">G</span>           <span class="m">Go to first / last link</span>           <span class="d">│</span>
+<span class="d">│</span>    <span class="c">/</span>               <span class="m">Search in links</span>                  <span class="d">│</span>
+<span class="d">│</span>    <span class="c">n</span> <span class="m">/ </span><span class="c">N</span>           <span class="m">Next / previous search match</span>      <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Actions</span>                                               <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Enter</span>           <span class="m">Open selected link</span>                <span class="d">│</span>
+<span class="d">│</span>    <span class="c">s</span>               <span class="m">Save link to reading list</span>         <span class="d">│</span>
+<span class="d">│</span>    <span class="c">A</span>               <span class="m">Save all links</span>                    <span class="d">│</span>
+<span class="d">│</span>    <span class="c">v</span>               <span class="m">Switch to reader view</span>             <span class="d">│</span>
+<span class="d">│</span>    <span class="c">R</span>               <span class="m">Force refresh page</span>               <span class="d">│</span>
+<span class="d">│</span>    <span class="c">b</span>               <span class="m">Go back</span>                           <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">View</span>                                                  <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Ctrl+L</span>          <span class="m">Cycle layout variant</span>              <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>                        <span class="m">Press </span><span class="c">?</span> <span class="m">or </span><span class="c">Esc</span> <span class="m">to close</span>          <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────╯</span></div>
+  <div class="screen-notes">
+    Appears when user presses <strong>?</strong> on the Link Tree screen. Includes link navigation, search, and section collapse/expand bindings.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- HELP OVERLAY — Reader View Screen -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Help Overlay &mdash; Reader View Screen</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────╮</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Navigation</span>                                            <span class="d">│</span>
+<span class="d">│</span>    <span class="c">j</span> <span class="m">/ </span><span class="c">k</span>           <span class="m">Scroll one line down / up</span>         <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Ctrl+D</span> <span class="m">/ </span><span class="c">Ctrl+U</span> <span class="m">Scroll half page down / up</span>       <span class="d">│</span>
+<span class="d">│</span>    <span class="c">g</span> <span class="m">/ </span><span class="c">G</span>           <span class="m">Go to top / bottom</span>                <span class="d">│</span>
+<span class="d">│</span>    <span class="c">/</span>               <span class="m">Search in article</span>                <span class="d">│</span>
+<span class="d">│</span>    <span class="c">n</span> <span class="m">/ </span><span class="c">N</span>           <span class="m">Next / previous search match</span>      <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">Actions</span>                                               <span class="d">│</span>
+<span class="d">│</span>    <span class="c">s</span>               <span class="m">Save article to reading list</span>     <span class="d">│</span>
+<span class="d">│</span>    <span class="c">o</span>               <span class="m">Open in external browser</span>          <span class="d">│</span>
+<span class="d">│</span>    <span class="c">v</span>               <span class="m">Switch to link tree view</span>          <span class="d">│</span>
+<span class="d">│</span>    <span class="c">R</span>               <span class="m">Force refresh from network</span>       <span class="d">│</span>
+<span class="d">│</span>    <span class="c">b</span>               <span class="m">Go back</span>                           <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>  <span class="g">View</span>                                                  <span class="d">│</span>
+<span class="d">│</span>    <span class="c">h</span> <span class="m">/ </span><span class="c">l</span>           <span class="m">Narrow / widen column</span>             <span class="d">│</span>
+<span class="d">│</span>    <span class="c">Ctrl+L</span>          <span class="m">Cycle layout variant</span>              <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">│</span>                        <span class="m">Press </span><span class="c">?</span> <span class="m">or </span><span class="c">Esc</span> <span class="m">to close</span>          <span class="d">│</span>
+<span class="d">│</span>                                                          <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────────────────╯</span></div>
+  <div class="screen-notes">
+    Appears when user presses <strong>?</strong> on the Reader View screen. Includes scroll, search, and column width bindings.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- DESIGN NOTES -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Design Notes</div>
+  <div class="screen-notes">
+    <p>- Overlay is centered both horizontally and vertically on screen</p>
+    <p>- Box width: ~60 chars (fits in 70-column terminals with margins)</p>
+    <p>- All box corners are rounded: &#9581; &#9582; &#9584; &#9583; (never sharp &#9484; &#9488; &#9492; &#9496;)</p>
+    <p>- Category headers in green (PrimaryText) for visual grouping</p>
+    <p>- Key characters in cyan (AccentFg) &mdash; consistent with all key hint styling</p>
+    <p>- Action descriptions in medium green (SecondaryText) &mdash; dimmer, non-interactive</p>
+    <p>- Footer "Press ? or Esc to close" uses same cyan key / medium text pattern</p>
+    <p>- The overlay does NOT dim the background &mdash; it simply overwrites the center region and is cleared on dismiss (next ? or Esc press triggers full redraw)</p>
+    <p>- The help content is context-sensitive: it shows bindings for the CURRENT view</p>
+    <p>- Selection bar is not shown in the help overlay (it is not a navigable list)</p>
+  </div>
+</div>
+
+</body>
+</html>
