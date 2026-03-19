@@ -25,36 +25,11 @@ TermReader ships with four color themes, all built on ANSI 256 colors:
 
 The interface uses Unicode box-drawing characters (`╭╮╰╯─│`), block elements for selection bars and progress indicators, and synchronous terminal animations (title decrypt reveals, sparkle celebrations, color wave sweeps). No external TUI framework is required -- rendering is done directly via ANSI escape sequences and `Console.Write`.
 
-## Project Structure
-
-```
-src/
-  TermReader.API/                  # CLI entry point
-  TermReader.Application/          # Interfaces and use cases
-  TermReader.Infrastructure/       # Implementation
-    Browser/
-      Themes/                      # ThemePalette, BuiltInThemes
-      UI/
-        Renderers/                 # Screen renderers (Launcher, LinkTree, Article, etc.)
-        Components/                # Reusable UI components (Toast, Indicators)
-        Animations/                # Sparkle, Decrypt, ColorWave, ProgressBar
-```
-
 ## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download) or later
 - A terminal with ANSI 256-color support (most modern terminals)
 - Unicode font support (for box-drawing and block characters)
-
-## Build and Run
-
-```bash
-# Build
-dotnet build
-
-# Run
-dotnet run --project src/TermReader.API
-```
 
 ## Data Storage
 
@@ -172,6 +147,3 @@ bd stats                  # Project health overview
 - Issue IDs are short hashes like `docs-1p7` -- use them with any `bd` command
 - Run `bd doctor` if something seems off
 
-## License
-
-See [LICENSE](LICENSE) for details.
