@@ -113,7 +113,8 @@ body {
 /* Backgrounds */
 .sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
 .hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
-.wbg { background: var(--white); color: var(--dim-dark); } /* [white-bg] inverted */
+.wbg { background: var(--white); }   /* [white-bg] */
+.sel-dim { background: var(--sel-bg); color: var(--med); } /* disabled/unconfigured state */
 
 /* Text attributes */
 .bold { font-weight: bold; }
@@ -207,9 +208,9 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Variant A — Podcast Button: Disabled (Not Enough Content)</div>
   <div class="terminal">
-<span class="sel" style="color: var(--med);">                                                                    </span>
-<span class="sel" style="color: var(--med);"> ▶▶  Generate Podcast                              [p] </span>
-<span class="sel" style="color: var(--med);">                                                                    </span></div>
+<span class="sel-dim">                                                                    </span>
+<span class="sel-dim"> ▶▶  Generate Podcast                              [p] </span>
+<span class="sel-dim">                                                                    </span></div>
   <div class="screen-notes">
     Text dimmed to med -- visually muted, non-interactive feel.
   </div>
@@ -218,9 +219,9 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Variant A — Podcast Button: Unconfigured (No API Key Set)</div>
   <div class="terminal">
-<span class="sel" style="color: var(--med);">                                                                    </span>
-<span class="sel" style="color: var(--med);"> ▶▶  Generate Podcast                  Setup required </span>
-<span class="sel" style="color: var(--med);">                                                                    </span></div>
+<span class="sel-dim">                                                                    </span>
+<span class="sel-dim"> ▶▶  Generate Podcast                  Setup required </span>
+<span class="sel-dim">                                                                    </span></div>
   <div class="screen-notes">
     Dimmed + "Setup required" replaces key hint.
   </div>

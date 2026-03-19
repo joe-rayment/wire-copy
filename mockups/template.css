@@ -101,19 +101,11 @@ body {
 .am  { color: var(--amber); }        /* [amber] */
 .r   { color: var(--red); }          /* [red] */
 .nv  { color: var(--nav); }          /* [nav] */
-.bd  { color: var(--border); }       /* border color */
-
 /* Backgrounds */
 .sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.sel-dim { background: var(--sel-bg); color: var(--med); } /* disabled/unconfigured state */
 .hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
 .wbg { background: var(--white); }   /* [white-bg] */
-
-/* Text attributes */
-.bold { font-weight: bold; }
-.dim-attr { opacity: 0.7; }
-
-/* Selection with accent bar */
-.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
 
 /* Separator */
 hr.section-sep {
