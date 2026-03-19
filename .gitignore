@@ -1,0 +1,9 @@
+.claude-dev/
+claude-dev
+.mcp.json
+.claude/logs/
+attachments/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
