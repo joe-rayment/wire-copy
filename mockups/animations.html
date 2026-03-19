@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Animations (Frame Sequences)</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+
+/* Animation-specific: frame sequences */
+.frame-label {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: bold;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+.frame-label:first-child {
+  margin-top: 0;
+}
+.phase-label {
+  color: var(--pink);
+  font-size: 13px;
+  font-weight: bold;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+.terminal.frame {
+  margin-bottom: 6px;
+  display: inline-block;
+  min-width: 0;
+}
+.frame-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+.frame-row .frame-cell {
+  flex: 0 1 auto;
+}
+.frame-cell .frame-label {
+  margin-top: 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Animations (Frame Sequences)</div>
+<div class="page-subtitle">Synchronous frame-based terminal animations &middot; 80x24 terminal &middot; Phosphor theme &middot; ~10-15 fps target</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================== -->
+<!-- ANIMATION 1: Podcast Complete Celebration                           -->
+<!-- ================================================================== -->
+<div class="screen">
+  <div class="screen-label">Animation 1: Podcast Complete Celebration</div>
+
+  <div class="phase-label">Phase 1: Sparkle Burst (500ms, ~5 frames)</div>
+
+  <div class="frame-label">Frame 1 &mdash; 0ms</div>
+  <div class="terminal frame">
+<span class="pk">                                   &#x2726;</span></div>
+
+  <div class="frame-label">Frame 2 &mdash; 100ms</div>
+  <div class="terminal frame">
+<span class="pk">                                &#x2727;  &#x2726;  &#x2727;</span>
+<span class="pk">                                   &#x2727;</span></div>
+
+  <div class="frame-label">Frame 3 &mdash; 200ms</div>
+  <div class="terminal frame">
+<span class="pk">                            &middot;  &#x2727;      &#x2727;  &middot;</span>
+<span class="pk">                                &#x2727;  &#x2726;  &#x2727;</span>
+<span class="pk">                            &middot;  &#x2727;      &#x2727;  &middot;</span></div>
+
+  <div class="frame-label">Frame 4 &mdash; 300ms</div>
+  <div class="terminal frame">
+<span class="d">                         &middot;</span><span class="pk">     &middot;      &middot;</span><span class="d">     &middot;</span>
+<span class="d">                            &#x2727;</span><span class="pk">  &#x2727;      &#x2727;</span><span class="d">  &#x2727;</span>
+<span class="d">                                &#x2727;</span><span class="pk">  &#x2726;</span><span class="d">  &#x2727;</span>
+<span class="d">                            &#x2727;</span><span class="pk">  &#x2727;      &#x2727;</span><span class="d">  &#x2727;</span>
+<span class="d">                         &middot;     &middot;      &middot;     &middot;</span></div>
+
+  <div class="frame-label">Frame 5 &mdash; 400ms</div>
+  <div class="terminal frame">
+<span class="d">                         &middot;     &middot;      &middot;     &middot;</span>
+<span class="d">                            &#x2727;  &#x2727;      &#x2727;  &#x2727;</span>
+<span class="d">                                &#x2727;  &#x2726;  &#x2727;</span>
+<span class="d">                            &#x2727;  &#x2727;      &#x2727;  &#x2727;</span>
+<span class="d">                         &middot;     &middot;      &middot;     &middot;</span></div>
+
+  <div class="phase-label">Phase 2: Typewriter Reveal (1000ms, ~12 frames)</div>
+
+  <div class="frame-row">
+    <div class="frame-cell">
+      <div class="frame-label">Frame 6 &mdash; 500ms</div>
+      <div class="terminal frame">
+<span class="pk">&#x2726;</span> <span class="g">P</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 7 &mdash; 580ms</div>
+      <div class="terminal frame">
+<span class="pk">&#x2726;</span> <span class="g">Po</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 8 &mdash; 660ms</div>
+      <div class="terminal frame">
+<span class="pk">&#x2726;</span> <span class="g">Pod</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 9 &mdash; 740ms</div>
+      <div class="terminal frame">
+<span class="pk">&#x2726;</span> <span class="g">Podc</span></div>
+    </div>
+  </div>
+
+  <div class="frame-label">Frame 16 &mdash; 1300ms</div>
+  <div class="terminal frame">
+<span class="pk">                               &#x2726;</span> <span class="g">Podcast ready!</span></div>
+
+  <div class="frame-label">Frame 17 &mdash; 1500ms (final, holds)</div>
+  <div class="terminal frame">
+<span class="pk">                               &#x2726;</span> <span class="g">Podcast ready!</span>
+<span class="m">                               12 chapters &middot; 2h 15m</span></div>
+
+  <div class="screen-notes">
+    Toast appears in the top-right corner after celebration overlay fades, restoring the underlying screen.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================== -->
+<!-- ANIMATION 2: Page Load "Decrypt" Effect                            -->
+<!-- ================================================================== -->
+<div class="screen">
+  <div class="screen-label">Animation 2: Page Load "Decrypt" Effect</div>
+
+  <div class="frame-label">Frame 1 &mdash; 0ms (fully scrambled)</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500; &#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593; &#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="d">&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span> <span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+ <span class="d">&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span>    <span class="d">&#x2502;</span> <span class="d">&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span>
+ <span class="d">&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;</span>               <span class="d">&#x2502;</span> <span class="d">&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;</span>
+ <span class="d">&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span>         <span class="d">&#x2502;</span> <span class="d">&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span></div>
+
+  <div class="frame-label">Frame 2 &mdash; 100ms (title resolving, body still scrambled)</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;</span><span class="b"> Ars T&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7; </span><span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="m">Eric B&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592; &middot; Today &middot; arstechn&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;</span> <span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+ <span class="b">A century after r&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;</span> <span class="d">&#x2502;</span> <span class="b">Sp&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB; orbit</span>
+ <span class="d">&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;</span>               <span class="d">&#x2502;</span> <span class="d">&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;</span>
+ <span class="d">&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span>         <span class="d">&#x2502;</span> <span class="d">&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;&#x25CB;&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;&#x25C6;&#x25C7;</span></div>
+
+  <div class="frame-label">Frame 3 &mdash; 200ms (title resolved, body partially resolved)</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;</span><span class="b"> Ars Technica: Science </span><span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="m">Eric Berger &middot; Today &middot; arstechnica.com &middot; 24 links &middot; 3 sections          </span><span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+ <span class="b">A century after rockets,</span>        <span class="d">&#x2502;</span> <span class="b">SpaceX Starship reaches orbit</span>
+ <span class="b">we still can&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;</span>       <span class="d">&#x2502;</span> <span class="b">on its first full&#x2591;&#x2592;&#x2593;&#x2588;&#x2573;&#x2571;</span>
+ <span class="m">Eric Berger &middot; Tod&#x2571;&#x2572;&#x2503;&#x2501;&#x254B;</span>         <span class="d">&#x2502;</span> <span class="m">Stephen Clark &middot; &#x2571;&#x2572;&#x2503;&#x2501;&#x254B;</span></div>
+
+  <div class="frame-label">Frame 4 &mdash; 300ms (fully resolved)</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;</span><span class="b"> Ars Technica: Science </span><span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="m">Eric Berger &middot; Today &middot; arstechnica.com &middot; 24 links &middot; 3 sections          </span><span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+ <span class="b">A century after rockets,</span>        <span class="d">&#x2502;</span> <span class="b">SpaceX Starship reaches orbit</span>
+ <span class="b">we still can't predict the</span>      <span class="d">&#x2502;</span> <span class="b">on its first full flight</span>
+ <span class="m">Eric Berger &middot; Today</span>             <span class="d">&#x2502;</span> <span class="m">Stephen Clark &middot; Today</span></div>
+
+  <div class="screen-notes">
+    Resolution proceeds top-to-bottom, left-to-right. Header resolves first (1 frame), then body content.<br>
+    Random characters are in dim green; resolved text appears in proper colors.<br>
+    Total duration: ~300ms (4 frames at ~75ms each). Structures (borders, dividers) are placed immediately; only text decrypts.<br>
+    Effect is purely cosmetic: all data is available from frame 1.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================== -->
+<!-- ANIMATION 3: Cache Complete Pulse on Status Bar                     -->
+<!-- ================================================================== -->
+<div class="screen">
+  <div class="screen-label">Animation 3: Cache Complete Pulse on Status Bar</div>
+
+  <div class="frame-label">Frame 1 &mdash; 0ms (cache progress finishing)</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>           <span class="g">&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;</span><span class="am">&#x25B0;</span> <span class="m">23/24 caching</span> <span class="am">last article</span></div>
+
+  <div class="frame-label">Frame 2 &mdash; 100ms (final segment fills)</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>           <span class="g">&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;</span> <span class="m">24/24 cached</span></div>
+
+  <div class="frame-label">Frame 3 &mdash; 200ms (pulse: bright green)</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>                                     <span class="b">all cached</span></div>
+
+  <div class="frame-label">Frame 4 &mdash; 400ms (pulse peak with checkmark)</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>                                    <span class="g">&#x2713; all cached</span></div>
+
+  <div class="frame-label">Frame 5 &mdash; 700ms (settle to normal)</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>                                     <span class="m">all cached</span></div>
+
+  <div class="screen-notes">
+    Progress bar collapses to "all cached" text. Brief bright flash (200ms) then settle.<br>
+    Checkmark appears briefly during pulse peak. After settle, status bar returns to normal rendering.<br>
+    Toast may also appear simultaneously.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================== -->
+<!-- ANIMATION 4: Podcast Generation Progress                           -->
+<!-- ================================================================== -->
+<div class="screen">
+  <div class="screen-label">Animation 4: Podcast Generation Progress</div>
+
+  <div class="frame-label">Stage 1 &mdash; Extracting Content</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="g">Tech News &#x2014; Generating Podcast</span>                                           <span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+   <span class="g">&#x266A; Extracting article content...</span>
+
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span><span class="m">&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+   <span class="m">9/12 articles extracted</span>
+
+   <span class="m">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713;</span>
+   <span class="m">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713;</span>
+   <span class="m">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713;</span>
+   <span class="m">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713;</span>
+   <span class="m">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713;</span>
+   <span class="m">Chapter 6: Inside the Fusion...</span>                <span class="g">&#x2713;</span>
+   <span class="m">Chapter 7: API Design Patterns...</span>              <span class="g">&#x2713;</span>
+   <span class="m">Chapter 8: Machine Learning Survey...</span>          <span class="g">&#x2713;</span>
+   <span class="am">Chapter 9: Distributed Systems...</span>              <span class="am">&#x25B6;</span>
+   <span class="d">Chapter 10: A History of the Web...</span>
+   <span class="d">Chapter 11: The Future of...</span>
+   <span class="d">Chapter 12: Weekend Long Read</span></div>
+
+  <div class="frame-label">Stage 2 &mdash; Generating Audio</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="g">Tech News &#x2014; Generating Podcast</span>                                           <span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+   <span class="g">&#x266A; Generating audio with ElevenLabs...</span>
+
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span><span class="m">&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+   <span class="m">5/12 chapters generated &middot; $0.42 / $1.00 budget</span>
+
+   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713; 8:42</span>
+   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713; 6:15</span>
+   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713; 7:33</span>
+   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713; 12:08</span>
+   <span class="g">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713; 5:51</span>
+   <span class="am">Chapter 6: Inside the Fusion...</span>                <span class="am">&#x25B6; generating...</span>
+   <span class="d">Chapter 7: API Design Patterns...</span>
+   <span class="d">Chapter 8: Machine Learning Survey...</span>
+   <span class="d">Chapter 9: Distributed Systems...</span>
+   <span class="d">Chapter 10: A History of the Web...</span></div>
+
+  <div class="frame-label">Stage 3 &mdash; Assembling M4B</div>
+  <div class="terminal frame">
+ <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+ <span class="d">&#x2502;</span> <span class="g">Tech News &#x2014; Generating Podcast</span>                                           <span class="d">&#x2502;</span>
+ <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+   <span class="g">&#x266A; Assembling M4B with chapters...</span>
+
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+   <span class="m">Concatenating audio &middot; Adding chapter markers &middot; Writing metadata</span>
+
+   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713; 8:42</span>
+   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713; 6:15</span>
+   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713; 7:33</span>
+   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713; 12:08</span>
+   <span class="g">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713; 5:51</span>
+   <span class="g">Chapter 6: Inside the Fusion...</span>                <span class="g">&#x2713; 9:22</span>
+   <span class="g">Chapter 7: API Design Patterns...</span>              <span class="g">&#x2713; 4:17</span>
+   <span class="g">Chapter 8: Machine Learning Survey...</span>          <span class="g">&#x2713; 11:04</span>
+   <span class="g">Chapter 9: Distributed Systems...</span>              <span class="g">&#x2713; 8:56</span>
+   <span class="g">Chapter 10: A History of the Web...</span>            <span class="g">&#x2713; 14:30</span>
+   <span class="g">Chapter 11: The Future of...</span>                   <span class="g">&#x2713; 6:45</span>
+   <span class="g">Chapter 12: Weekend Long Read</span>                  <span class="g">&#x2713; 10:12</span></div>
+
+  <div class="frame-label">Stage 4 &mdash; Complete</div>
+  <div class="terminal frame">
+<span class="m">   Triggers Podcast Complete Celebration (see Animation 1 above)</span></div>
+
+  <div class="screen-notes">
+    Progress bar uses full-block for filled, light shade for empty.<br>
+    Completed chapters: green with checkmark and duration. Active chapter: amber with play icon and "generating..." label. Pending chapters: dim.<br>
+    Budget display shows current spend / budget limit in medium green.<br>
+    Music note icon in stage headers for podcast branding. Esc cancels generation (with confirmation prompt).<br>
+    Chapters listed below progress bar are scrollable if they exceed viewport height.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================== -->
+<!-- ANIMATION 5: Loading Spinner (Braille)                             -->
+<!-- ================================================================== -->
+<div class="screen">
+  <div class="screen-label">Animation 5: Loading Spinner (Braille)</div>
+
+  <div class="frame-row">
+    <div class="frame-cell">
+      <div class="frame-label">Frame 1 &mdash; 0ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x280B;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 2 &mdash; 80ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2819;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 3 &mdash; 160ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2839;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 4 &mdash; 240ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2838;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 5 &mdash; 320ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x283C;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+  </div>
+
+  <div class="frame-row">
+    <div class="frame-cell">
+      <div class="frame-label">Frame 6 &mdash; 400ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2834;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 7 &mdash; 480ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2826;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 8 &mdash; 560ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2827;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 9 &mdash; 640ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x2807;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+    <div class="frame-cell">
+      <div class="frame-label">Frame 10 &mdash; 720ms</div>
+      <div class="terminal frame">
+ <span class="g">&#x280F;</span> <span class="g">Loading...</span>
+ <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
+    </div>
+  </div>
+
+  <div class="screen-notes">
+    Single braille character rotates in place at 80ms per frame (~12.5 fps). "Loading..." text is static.<br>
+    URL shown below for context. Full cycle: 10 braille characters (800ms loop).<br>
+    Minimal CPU usage: only 1 character changes per frame.
+  </div>
+</div>
+
+</body>
+</html>
