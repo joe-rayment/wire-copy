@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Reading List / Collection Items</title>
+<style>
+/* TermReader Mockup Template - ANSI 256 Color Mapping */
+/* Phosphor theme (green-on-black) */
+
+:root {
+  /* Core palette from design-system.md */
+  --green: #00ff00;     /* ANSI 46 - PrimaryText */
+  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
+  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
+  --med: #00af00;       /* ANSI 34 - SecondaryText */
+  --dim: #008700;       /* ANSI 28 - DimFg */
+  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
+  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
+  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
+  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
+  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
+  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
+  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
+  --sel-bg: #005f00;    /* ANSI 22 - selection background */
+  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
+  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
+  --bg: #0a0a0a;        /* terminal background */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 20px;
+}
+
+/* Page layout */
+.page-title {
+  color: var(--cyan);
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.page-subtitle {
+  color: var(--med);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+/* Each mockup screen */
+.screen {
+  margin-bottom: 40px;
+}
+.screen-label {
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #333;
+}
+.screen-notes {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid #333;
+}
+
+/* Terminal frame */
+.terminal {
+  background: #000000;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-size: 13px;
+  line-height: 1.4;
+  position: relative;
+}
+.terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* Color classes */
+.g   { color: var(--green); }        /* [green] */
+.b   { color: var(--bright); }       /* [bright] */
+.c   { color: var(--cyan); }         /* [cyan] */
+.m   { color: var(--med); }          /* [med] */
+.d   { color: var(--dim); }          /* [dim] */
+.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
+.w   { color: var(--white); }        /* [white] */
+.pk  { color: var(--pink); }         /* [pink] */
+.am  { color: var(--amber); }        /* [amber] */
+.r   { color: var(--red); }          /* [red] */
+.nv  { color: var(--nav); }          /* [nav] */
+.bd  { color: var(--border); }       /* border color */
+
+/* Backgrounds */
+.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
+.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
+.wbg { background: var(--white); }   /* [white-bg] */
+.sel-dim { background: var(--sel-bg); color: var(--med); } /* disabled/unconfigured state */
+
+/* Text attributes */
+.bold { font-weight: bold; }
+.dim-attr { opacity: 0.7; }
+
+/* Selection with accent bar */
+.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
+
+/* Separator */
+hr.section-sep {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 30px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Reading List / Collection Items</div>
+<div class="page-subtitle">Phosphor theme (green-on-black) &mdash; 80x24 terminal</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================ -->
+<!-- VARIANT A: List with CTA Slab at Top (Default)                   -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A: List with CTA Slab at Top (Default)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="g">Tech News (12 items)</span><span class="d">                                                     │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="sel">          </span><span class="sel">                                                        </span>
+<span class="sel">          </span><span class="sel"> ▶▶  Generate Podcast                              [p] </span>
+<span class="sel">          </span><span class="sel">                                                        </span>
+
+   <span class="g">●</span> <span class="g">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+       <span class="m">arstechnica.com</span> <span class="c">· cached</span>
+   <span class="d">╶──╴</span>
+   <span class="g">●</span> <span class="g">NASA Selects Two New Missions for 2028 Launch Window</span>
+       <span class="m">nasa.gov</span> <span class="c">· cached</span>
+   <span class="d">╶──╴</span>
+<span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         </span>
+<span class="sel">▌     nature.com · cached                                                    </span>
+   <span class="d">╶──╴</span>
+   <span class="m">○</span> <span class="m">The Rise of Quantum Computing in Drug Discovery</span>
+       <span class="m">wired.com</span>
+   <span class="d">╶──╴</span>
+   <span class="m">○</span> <span class="m">Climate Models Validated by 50 Years of Ocean Data</span>
+       <span class="m">reuters.com</span> <span class="c">· cached</span>
+
+                            <span class="m">... 7 more items below</span>
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:remove</span> <span class="c">X</span><span class="m">:clear</span> <span class="c">J/K</span><span class="m">:reorder</span> <span class="c">p</span><span class="m">:podcast</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span>
+ <span class="m">arstechnica.com</span>                             <span class="m">▰▰▰▰▰▰▰▰▱▱ 9/12 cached</span></div>
+  <div class="screen-notes">
+    - Header: collection name + item count in rounded box<br>
+    - Podcast CTA slab: centered, 3 lines tall (top pad, content, bottom pad) with [sel-bg] background, [white] text, key hint [p]<br>
+    - ▶▶ play icon prefix<br>
+    - Items: 2 lines each (title + domain), with separator<br>
+    - ● = unread in green, ○ = read in med (dimmer)<br>
+    - Cache indicator: " · cached" in cyan after domain<br>
+    - Selected item: ▌ accent bar + full-width selection highlight<br>
+    - "... 7 more items below" scroll indicator in med
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Podcast Button States                                -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A — Podcast Button: Idle (Default, Not Focused)</div>
+  <div class="terminal">
+<span class="sel">          </span><span class="sel">                                                        </span>
+<span class="sel">          </span><span class="sel"> ▶▶  Generate Podcast                              [p] </span>
+<span class="sel">          </span><span class="sel">                                                        </span></div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Variant A — Podcast Button: Selected (Focused via Navigation)</div>
+  <div class="terminal">
+<span class="wbg">                                                                    </span>
+<span class="wbg"> ▶▶  Generate Podcast                          [Enter] </span>
+<span class="wbg">                                                                    </span></div>
+  <div class="screen-notes">
+    Colors invert: white background, dark text. Hint changes to [Enter].
+  </div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Variant A — Podcast Button: Disabled (Not Enough Content)</div>
+  <div class="terminal">
+<span class="sel-dim">                                                                    </span>
+<span class="sel-dim"> ▶▶  Generate Podcast                              [p] </span>
+<span class="sel-dim">                                                                    </span></div>
+  <div class="screen-notes">
+    Text dimmed to med -- visually muted, non-interactive feel.
+  </div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Variant A — Podcast Button: Unconfigured (No API Key Set)</div>
+  <div class="terminal">
+<span class="sel-dim">                                                                    </span>
+<span class="sel-dim"> ▶▶  Generate Podcast                  Setup required </span>
+<span class="sel-dim">                                                                    </span></div>
+  <div class="screen-notes">
+    Dimmed + "Setup required" replaces key hint.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Inline Podcast CTA (small terminal)                  -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A — Inline Podcast CTA (Small Terminal, Height &lt; 20)</div>
+  <div class="terminal">
+                    <span class="w"> ▶▶  Generate Podcast </span><span class="g">[p]</span></div>
+  <div class="screen-notes">
+    When terminal is short, the CTA collapses to a single inline line.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Podcast Button with Musical Note                     -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A — Podcast Button with Musical Note</div>
+  <div class="terminal">
+<span class="sel">          </span><span class="sel">                                                        </span>
+<span class="sel">          </span><span class="sel"> ♪  Generate Podcast                               [p] </span>
+<span class="sel">          </span><span class="sel">                                                        </span></div>
+  <div class="screen-notes">
+    ♪ replaces ▶▶ for a more distinctive podcast feel.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Selected Item with Inline Hints                      -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A — Selected Item with Inline Hints</div>
+  <div class="terminal">
+<span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         </span>
+<span class="sel">▌     nature.com · cached                                                    </span>
+
+ Reading List <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:remove</span> <span class="c">X</span><span class="m">:clear</span> <span class="c">J/K</span><span class="m">:reorder</span> <span class="c">p</span><span class="m">:podcast</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    Only the status bar shows hints -- no per-item inline overlays.<br>
+    This keeps the item list clean and scannable.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Empty Collection                                     -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant A — Empty Collection</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="g">Weekend Reads (0 items)</span><span class="d">                                                  │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="m">Nothing saved yet — press</span> <span class="g">s</span> <span class="m">on any article to start your list</span>
+
+
+
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT B: Split View (CTA Left Sidebar, Items Right)            -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant B: Split View (CTA Left Sidebar, Items Right)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="g">Tech News (12 items)</span><span class="d">                                                     │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="sel">                  </span><span class="d">│</span>  <span class="g">●</span> <span class="g">SpaceX Starship Reaches Orbit on Its</span>
+<span class="sel">                  </span><span class="d">│</span>      <span class="m">arstechnica.com</span> <span class="c">· cached</span>
+<span class="sel"> ♪ GENERATE       </span><span class="d">│</span>  <span class="d">╶──╴</span>
+<span class="sel">   PODCAST         </span><span class="d">│</span>  <span class="g">●</span> <span class="g">NASA Selects Two New Missions for 2028</span>
+<span class="sel">                  </span><span class="d">│</span>      <span class="m">nasa.gov</span> <span class="c">· cached</span>
+<span class="sel">   [p]              </span><span class="d">│</span>  <span class="d">╶──╴</span>
+<span class="sel">                  </span><span class="d">│</span><span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene</span>
+                    <span class="d">│</span><span class="sel">▌     nature.com · cached                    </span>
+                    <span class="d">│</span>  <span class="d">╶──╴</span>
+                    <span class="d">│</span>  <span class="m">○</span> <span class="m">The Rise of Quantum Computing in Drug</span>
+                    <span class="d">│</span>      <span class="m">wired.com</span>
+                    <span class="d">│</span>  <span class="d">╶──╴</span>
+                    <span class="d">│</span>  <span class="m">○</span> <span class="m">Climate Models Validated by 50 Years</span>
+                    <span class="d">│</span>      <span class="m">reuters.com</span> <span class="c">· cached</span>
+
+ ──────────────────────────────────────────────────────────────────────────────
+ Reading List <span class="c">Enter</span><span class="m">:open</span> <span class="c">d</span><span class="m">:remove</span> <span class="c">p</span><span class="m">:podcast</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span>
+ <span class="m">arstechnica.com</span>                             <span class="m">▰▰▰▰▰▰▰▰▱▱ 9/12 cached</span></div>
+  <div class="screen-notes">
+    - Left sidebar: ~18 chars wide, contains podcast CTA as vertical slab<br>
+    - Right area: item list with full remaining width<br>
+    - Sidebar CTA: vertically centered, stacked text "♪ GENERATE / PODCAST / [p]"<br>
+    - Column divider │ in dim<br>
+    - Items on right use same 2-line format (title + domain)<br>
+    - Selected item ▌ accent bar on the right side<br>
+    - Sidebar doesn't scroll -- only the item list scrolls<br>
+    - Best for wide terminals (100+); falls back to Variant A on narrow terminals
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,302 @@
+================================================================================
+ANIMATIONS — Storyboards
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+## Architectural Constraint
+All animations run SYNCHRONOUSLY during the render cycle. The app has no
+background render thread. Animations block user input for their duration
+(max 2 seconds). Implementation uses Thread.Sleep() between Console.Write()
+calls with cursor repositioning. Only targeted screen regions are updated
+per frame — no full-screen redraws during animation.
+
+Terminal animations are frame-based — each "frame" is a targeted cursor update.
+Frame rate target: ~10-15 fps (66-100ms per frame) for smooth feel without
+excessive CPU usage.
+
+COLOR KEY:
+  [green]   = bright green #00ff00 (ANSI 46) — primary text
+  [bright]  = slightly brighter green (ANSI 48) — emphasis
+  [cyan]    = bright cyan #00ffff (ANSI 51) — accent
+  [dim]     = dark green #005f00 (ANSI 22-28) — decorative
+  [med]     = medium green #00af00 (ANSI 34) — secondary
+  [pink]    = hot pink #ff0087 (ANSI 198) — celebration
+  [amber]   = yellow/amber #ffd700 (ANSI 220) — progress
+
+
+================================================================================
+ANIMATION 1: Podcast Complete Celebration
+================================================================================
+
+Two phases: sparkle burst → typewriter reveal
+
+--- Phase 1: Sparkle Burst (500ms, ~5 frames) ---
+
+The sparkle characters ✦ ✧ * . appear and fade in a radial pattern centered
+on the screen. Each frame adds sparkles and fades older ones.
+
+FRAME 1 (0ms):
+                                   [pink]✦[/]
+
+FRAME 2 (100ms):
+                                [pink]✧[/]  [pink]✦[/]  [pink]✧[/]
+                                   [pink]✧[/]
+
+FRAME 3 (200ms):
+                            [pink]·[/]  [pink]✧[/]      [pink]✧[/]  [pink]·[/]
+                                [pink]✧[/]  [pink]✦[/]  [pink]✧[/]
+                            [pink]·[/]  [pink]✧[/]      [pink]✧[/]  [pink]·[/]
+
+FRAME 4 (300ms):
+                         [dim]·[/]     [pink]·[/]      [pink]·[/]     [dim]·[/]
+                            [dim]✧[/]  [pink]✧[/]      [pink]✧[/]  [dim]✧[/]
+                                [dim]✧[/]  [pink]✦[/]  [dim]✧[/]
+                            [dim]✧[/]  [pink]✧[/]      [pink]✧[/]  [dim]✧[/]
+                         [dim]·[/]     [dim]·[/]      [dim]·[/]     [dim]·[/]
+
+FRAME 5 (400ms): sparkles fade to [dim] then disappear
+
+--- Phase 2: Typewriter Reveal (1000ms, ~12 frames) ---
+
+Text appears character by character, centered on screen.
+
+FRAME 6 (500ms):
+                               [pink]✦[/] [green]P[/]
+
+FRAME 7 (580ms):
+                               [pink]✦[/] [green]Po[/]
+
+FRAME 8 (660ms):
+                               [pink]✦[/] [green]Pod[/]
+
+FRAME 9 (740ms):
+                               [pink]✦[/] [green]Podc[/]
+
+... (continuing character by character)
+
+FRAME 16 (1300ms):
+                               [pink]✦[/] [green]Podcast ready![/]
+
+FRAME 17 (1500ms) — final, holds:
+                               [pink]✦[/] [green]Podcast ready![/]
+                               [med]12 chapters · 2h 15m[/]
+
+Then the toast appears in the top-right corner (see toast.txt) and the
+celebration overlay fades, restoring the underlying screen.
+
+
+================================================================================
+ANIMATION 2: Page Load "Decrypt" Effect
+================================================================================
+
+When a page loads, text appears to "decrypt" from random characters to the
+actual content. This gives a CRT/hacker aesthetic.
+
+Character set for random fill: ░ ▒ ▓ █ ╳ ╱ ╲ ┃ ━ ╋ ◆ ◇ ○
+
+--- Frame 1 (0ms) — Fully scrambled ---
+
+ [dim]╭─[/][dim] ░▒▓█╳╱╲┃━╋◆◇○░▒▓ [/][dim]──────────────────────────────────────────────╮[/]
+ [dim]│[/] [dim]╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/] [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [dim]░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]    [dim]│[/] [dim]░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]
+ [dim]╱╲┃━╋◆◇○░▒▓█╳[/]               [dim]│[/] [dim]╱╲┃━╋◆◇○░▒▓█╳[/]
+ [dim]┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]         [dim]│[/] [dim]┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]
+
+--- Frame 2 (100ms) — Title resolving, body still scrambled ---
+
+ [dim]╭─[/][bright] Ars T░▒▓█╳╱╲┃━╋◆◇ [/][dim]──────────────────────────────────────────────╮[/]
+ [dim]│[/] [med]Eric B╱╲┃━╋◆◇○░▒ · Today · arstechn╱╲┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇○░▒▓█╳[/] [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [bright]A century after r░▒▓█╳╱╲┃━╋[/] [dim]│[/] [bright]Sp░▒▓█╳╱╲┃━╋◆◇○ orbit[/]
+ [dim]╱╲┃━╋◆◇○░▒▓█╳[/]               [dim]│[/] [dim]╱╲┃━╋◆◇○░▒▓█╳[/]
+ [dim]┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]         [dim]│[/] [dim]┃━╋◆◇○░▒▓█╳╱╲┃━╋◆◇[/]
+
+--- Frame 3 (200ms) — Title resolved, body partially resolved ---
+
+ [dim]╭─[bright] Ars Technica: Science [dim]────────────────────────────────────────────────╮[/]
+ [dim]│[/] [med]Eric Berger · Today · arstechnica.com · 24 links · 3 sections          [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [bright]A century after rockets,[/]        [dim]│[/] [bright]SpaceX Starship reaches orbit[/]
+ [bright]we still can░▒▓█╳╱╲┃━╋[/]       [dim]│[/] [bright]on its first full░▒▓█╳╱[/]
+ [med]Eric Berger · Tod╱╲┃━╋[/]         [dim]│[/] [med]Stephen Clark · ╱╲┃━╋[/]
+
+--- Frame 4 (300ms) — Fully resolved ---
+
+ [dim]╭─[bright] Ars Technica: Science [dim]────────────────────────────────────────────────╮[/]
+ [dim]│[/] [med]Eric Berger · Today · arstechnica.com · 24 links · 3 sections          [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [bright]A century after rockets,[/]        [dim]│[/] [bright]SpaceX Starship reaches orbit[/]
+ [bright]we still can't predict the[/]      [dim]│[/] [bright]on its first full flight[/]
+ [med]Eric Berger · Today[/]             [dim]│[/] [med]Stephen Clark · Today[/]
+
+NOTES:
+- Resolution proceeds top-to-bottom, left-to-right
+- Header resolves first (1 frame), then body content
+- Random characters are in [dim] — resolved text is in proper colors
+- Total duration: ~300ms (4 frames at ~75ms each)
+- Structures (borders, dividers) are placed immediately — only text decrypts
+- Effect is purely cosmetic — all data is available from frame 1
+
+
+================================================================================
+ANIMATION 3: Cache Complete Pulse on Status Bar
+================================================================================
+
+When background caching finishes, the "all cached" label briefly pulses brighter.
+
+--- Frame 1 (0ms) — Normal cache progress finishing ---
+
+ [med]arstechnica.com[/]           [green]▰▰▰▰▰▰▰▰▰[/][amber]▰[/] [med]23/24 caching[/] [amber]last article[/]
+
+--- Frame 2 (100ms) — Final segment fills ---
+
+ [med]arstechnica.com[/]           [green]▰▰▰▰▰▰▰▰▰▰[/] [med]24/24 cached[/]
+
+--- Frame 3 (200ms) — Pulse: "all cached" in bright green ---
+
+ [med]arstechnica.com[/]                                     [bright]all cached[/]
+
+--- Frame 4 (400ms) — Pulse: extra bright with glow effect ---
+
+ [med]arstechnica.com[/]                                    [green]✓ all cached[/]
+
+--- Frame 5 (700ms) — Settle to normal ---
+
+ [med]arstechnica.com[/]                                     [med]all cached[/]
+
+NOTES:
+- Progress bar collapses to "all cached" text
+- Brief bright flash (200ms) then settle
+- Checkmark ✓ appears briefly during pulse peak
+- After settle, status bar returns to normal rendering
+- Toast may also appear simultaneously (see toast.txt)
+
+
+================================================================================
+ANIMATION 4: Podcast Generation Progress
+================================================================================
+
+Multi-stage progress shown in the main content area (replaces collection items
+during generation). Shows chapter-by-chapter progress.
+
+--- Stage 1: Extracting content ---
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Tech News — Generating Podcast                                           [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]♪ Extracting article content...[/]
+
+   [green]█████████████████████████████████████████████████████████████[/][med]░░░░░░░░░░░░░[/]
+   [med]9/12 articles extracted[/]
+
+   [med]Chapter 1: SpaceX Starship Reaches...[/]         [green]✓[/]
+   [med]Chapter 2: NASA Selects Two New...[/]             [green]✓[/]
+   [med]Chapter 3: CRISPR Breakthrough...[/]              [green]✓[/]
+   [med]Chapter 4: The Rise of Quantum...[/]              [green]✓[/]
+   [med]Chapter 5: Climate Models...[/]                   [green]✓[/]
+   [med]Chapter 6: Inside the Fusion...[/]                [green]✓[/]
+   [med]Chapter 7: API Design Patterns...[/]              [green]✓[/]
+   [med]Chapter 8: Machine Learning Survey...[/]          [green]✓[/]
+   [amber]Chapter 9: Distributed Systems...[/]              [amber]▶[/]
+   [dim]Chapter 10: A History of the Web...[/]
+   [dim]Chapter 11: The Future of...[/]
+   [dim]Chapter 12: Weekend Long Read[/]
+
+--- Stage 2: Generating audio ---
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Tech News — Generating Podcast                                           [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]♪ Generating audio with ElevenLabs...[/]
+
+   [green]██████████████████████████████████████████[/][med]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░[/]
+   [med]5/12 chapters generated · $0.42 / $1.00 budget[/]
+
+   [green]Chapter 1: SpaceX Starship Reaches...[/]         [green]✓ 8:42[/]
+   [green]Chapter 2: NASA Selects Two New...[/]             [green]✓ 6:15[/]
+   [green]Chapter 3: CRISPR Breakthrough...[/]              [green]✓ 7:33[/]
+   [green]Chapter 4: The Rise of Quantum...[/]              [green]✓ 12:08[/]
+   [green]Chapter 5: Climate Models...[/]                   [green]✓ 5:51[/]
+   [amber]Chapter 6: Inside the Fusion...[/]                [amber]▶ generating...[/]
+   [dim]Chapter 7: API Design Patterns...[/]
+   [dim]Chapter 8: Machine Learning Survey...[/]
+   [dim]Chapter 9: Distributed Systems...[/]
+   [dim]Chapter 10: A History of the Web...[/]
+
+--- Stage 3: Assembling M4B ---
+
+ [dim]╭──────────────────────────────────────────────────────────────────────────────╮[/]
+ [dim]│ [green]Tech News — Generating Podcast                                           [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+   [green]♪ Assembling M4B with chapters...[/]
+
+   [green]████████████████████████████████████████████████████████████████████████████[/]
+   [med]Concatenating audio · Adding chapter markers · Writing metadata[/]
+
+   [green]Chapter 1: SpaceX Starship Reaches...[/]         [green]✓ 8:42[/]
+   [green]Chapter 2: NASA Selects Two New...[/]             [green]✓ 6:15[/]
+   [green]Chapter 3: CRISPR Breakthrough...[/]              [green]✓ 7:33[/]
+   [green]Chapter 4: The Rise of Quantum...[/]              [green]✓ 12:08[/]
+   [green]Chapter 5: Climate Models...[/]                   [green]✓ 5:51[/]
+   [green]Chapter 6: Inside the Fusion...[/]                [green]✓ 9:22[/]
+   [green]Chapter 7: API Design Patterns...[/]              [green]✓ 4:17[/]
+   [green]Chapter 8: Machine Learning Survey...[/]          [green]✓ 11:04[/]
+   [green]Chapter 9: Distributed Systems...[/]              [green]✓ 8:56[/]
+   [green]Chapter 10: A History of the Web...[/]            [green]✓ 14:30[/]
+   [green]Chapter 11: The Future of...[/]                   [green]✓ 6:45[/]
+   [green]Chapter 12: Weekend Long Read[/]                  [green]✓ 10:12[/]
+
+--- Stage 4: Complete (triggers celebration animation) ---
+
+See Animation 1 (Podcast Complete Celebration) above.
+
+NOTES:
+- Progress bar uses full-block █ for filled, ░ for empty
+- Chapters listed below progress bar, scrollable if > viewport
+- Completed chapters: [green] with ✓ and duration
+- Active chapter: [amber] with ▶ and "generating..."
+- Pending chapters: [dim]
+- Budget display: current spend / budget limit in [med]
+- ♪ icon in stage headers for podcast branding
+- Esc: cancel generation (confirmation prompt)
+
+
+================================================================================
+ANIMATION 5: Loading Spinner (Braille)
+================================================================================
+
+The loading spinner uses braille pattern characters that rotate.
+
+Character sequence (repeating):
+  ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+
+Frame timing: 80ms per character (~12.5 fps)
+
+--- Frame 1 ---
+  [green]⠋[/] [green]Loading...[/]
+  [med]arstechnica.com/science/2026/03/a-century-after-rockets[/]
+
+--- Frame 2 ---
+  [green]⠙[/] [green]Loading...[/]
+  [med]arstechnica.com/science/2026/03/a-century-after-rockets[/]
+
+--- Frame 3 ---
+  [green]⠹[/] [green]Loading...[/]
+  [med]arstechnica.com/science/2026/03/a-century-after-rockets[/]
+
+... (continues cycling through all 10 braille characters)
+
+NOTES:
+- Single braille character rotates in place
+- "Loading..." text is static
+- URL shown below for context
+- The current code uses ⠇ (static) — animation would cycle through all 10
+- Minimal CPU: only 1 character changes per frame
