@@ -645,15 +645,15 @@ public class BrowserOrchestratorNavigationTests
         // Act
         await _sut.RunAsync("https://example.com");
 
-        // Assert - in Readable mode, CollapseNode should be remapped to DecreaseWidth
-        // Status message should contain width info
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width:");
+        // Assert - in Readable mode, CollapseNode is no longer remapped (width uses [/] keys now)
+        // CollapseNode should be a no-op in reader mode, no width status message
+        _navigationService.CurrentContext.StatusMessage.Should().BeNull();
     }
 
     [Fact]
-    public async Task RunAsync_ExpandNodeInReadableMode_RemapsToIncreaseWidth()
+    public async Task RunAsync_DecreaseWidthInReadableMode_AdjustsWidth()
     {
-        // Arrange - switch to Readable then send ExpandNode
+        // Arrange - switch to Readable then send DecreaseWidth directly (via [ key)
         SetupPageLoad("https://example.com");
 
         var callCount = 0;
@@ -664,7 +664,7 @@ public class BrowserOrchestratorNavigationTests
                 return callCount switch
                 {
                     1 => new NavigationCommand { Type = CommandType.SwitchToReadable },
-                    2 => new NavigationCommand { Type = CommandType.ExpandNode },
+                    2 => new NavigationCommand { Type = CommandType.DecreaseWidth },
                     _ => new NavigationCommand { Type = CommandType.Quit }
                 };
             });
@@ -672,7 +672,7 @@ public class BrowserOrchestratorNavigationTests
         // Act
         await _sut.RunAsync("https://example.com");
 
-        // Assert - in Readable mode, ExpandNode should be remapped to IncreaseWidth
+        // Assert - DecreaseWidth directly adjusts width in reader mode
         _navigationService.CurrentContext.StatusMessage.Should().Contain("Width:");
     }
 

@@ -115,4 +115,7 @@ public enum CommandType
 
     // Terminal
     TerminalResized,
+
+    // Undo
+    Undo,
 }

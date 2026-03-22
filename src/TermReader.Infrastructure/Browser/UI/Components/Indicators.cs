@@ -32,13 +32,55 @@ internal static class Indicators
 
     private const string Reset = "\x1b[0m";
 
+    // Eighth-block characters for smooth progress bars (from full to 1/8).
+    private static readonly char[] EighthBlocks = [
+        '\u2588', // █ Full block (8/8)
+        '\u2589', // ▉ 7/8
+        '\u258A', // ▊ 6/8
+        '\u258B', // ▋ 5/8
+        '\u258C', // ▌ 4/8
+        '\u258D', // ▍ 3/8
+        '\u258E', // ▎ 2/8
+        '\u258F', // ▏ 1/8
+    ];
+
     /// <summary>
-    /// Renders a filled progress bar segment.
+    /// Renders a smooth progress bar using eighth-block Unicode characters.
     /// </summary>
     public static string ProgressBar(ThemePalette p, int filled, int total)
     {
-        var empty = Math.Max(0, total - filled);
-        return $"{p.PromptFg.AnsiFg}{new string('\u25b0', filled)}" +
-               $"{p.SecondaryText.AnsiFg}{new string('\u25b1', empty)}{Reset}";
+        return RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, (double)filled / Math.Max(1, total), total);
+    }
+
+    /// <summary>
+    /// Renders a smooth eighth-block progress bar for a given fraction and bar length.
+    /// </summary>
+    internal static string RenderEighthBlockBar(string filledColor, string emptyColor, double fraction, int barLength)
+    {
+        fraction = Math.Clamp(fraction, 0.0, 1.0);
+        var totalEighths = fraction * barLength * 8;
+        var fullBlocks = (int)(totalEighths / 8);
+        var remainder = (int)(totalEighths % 8);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(filledColor);
+        sb.Append(new string(EighthBlocks[0], fullBlocks));
+
+        if (remainder > 0 && fullBlocks < barLength)
+        {
+            sb.Append(EighthBlocks[8 - remainder]);
+            sb.Append(Reset);
+            sb.Append(emptyColor);
+            sb.Append(new string(' ', Math.Max(0, barLength - fullBlocks - 1)));
+        }
+        else
+        {
+            sb.Append(Reset);
+            sb.Append(emptyColor);
+            sb.Append(new string(' ', Math.Max(0, barLength - fullBlocks)));
+        }
+
+        sb.Append(Reset);
+        return sb.ToString();
     }
 }

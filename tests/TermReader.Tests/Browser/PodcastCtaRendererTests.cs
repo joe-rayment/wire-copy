@@ -26,13 +26,13 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — tier selection
 
     [Theory]
-    [InlineData(80, 30, 5)]  // Full slab
-    [InlineData(80, 24, 5)]  // Full slab (boundary)
-    [InlineData(52, 30, 5)]  // Full slab (width boundary: 52-2=50 >= 50)
-    [InlineData(80, 23, 3)]  // Compact slab (height < 24)
-    [InlineData(49, 30, 3)]  // Compact slab (width < 50)
-    [InlineData(80, 19, 1)]  // Inline (height < 20)
-    [InlineData(36, 30, 1)]  // Inline (width < 35)
+    [InlineData(80, 40, 5)]  // Full slab (height > 35, width >= 52)
+    [InlineData(80, 36, 5)]  // Full slab (just above threshold)
+    [InlineData(52, 40, 5)]  // Full slab (width boundary: 52-2=50 >= 50)
+    [InlineData(49, 40, 3)]  // Compact slab (height > 35, width < 50 but >= 37)
+    [InlineData(80, 30, 1)]  // Inline (height <= 35)
+    [InlineData(80, 24, 1)]  // Inline (height <= 35)
+    [InlineData(80, 19, 1)]  // Inline (height <= 35)
     [InlineData(20, 15, 1)]  // Inline (both small)
     public void GetCtaLineCount_ReturnsCorrectTier(int terminalWidth, int terminalHeight, int expectedLines)
     {
@@ -151,15 +151,15 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — boundary tests
 
     [Fact]
-    public void GetCtaLineCount_ExactlyAt24Height50Width_Returns5()
+    public void GetCtaLineCount_ExactlyAt36Height50Width_Returns5()
     {
-        PodcastCtaRenderer.GetCtaLineCount(52, 24).Should().Be(5);
+        PodcastCtaRenderer.GetCtaLineCount(52, 36).Should().Be(5);
     }
 
     [Fact]
-    public void GetCtaLineCount_JustBelow24Height_Returns3()
+    public void GetCtaLineCount_At35Height_ReturnsInline()
     {
-        PodcastCtaRenderer.GetCtaLineCount(80, 23).Should().Be(3);
+        PodcastCtaRenderer.GetCtaLineCount(80, 35).Should().Be(1);
     }
 
     [Fact]

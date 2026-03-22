@@ -472,8 +472,8 @@ internal static class SearchCommandHandler
             helpers.WriteLine($"    {p.SecondaryText.AnsiFg}:set bucket to configure{reset}");
             helpers.WriteLine();
 
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Esc{reset}{p.SecondaryText.AnsiFg}:back   {reset}" +
-                              $"{p.PrimaryText.AnsiFg}:{reset}{p.SecondaryText.AnsiFg}run command{reset}");
+            helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{reset}{p.SecondaryText.AnsiFg}:back   {reset}" +
+                              $"{p.GetAccentFg().AnsiFg}:{reset}{p.SecondaryText.AnsiFg}run command{reset}");
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);

@@ -28,7 +28,8 @@ internal static class LauncherCommandHandler
                 or CommandType.CollapseNode or CommandType.ExpandNode
                 or CommandType.Quit or CommandType.GoBack
                 or CommandType.ActivateLink or CommandType.ShowHelp
-                or CommandType.TerminalResized or CommandType.OpenCommandLine;
+                or CommandType.TerminalResized or CommandType.OpenCommandLine
+                or CommandType.Undo;
 
             if (!isNavKey && command.RawKeyChar.HasValue && command.RawKeyChar.Value >= 32)
             {
@@ -123,27 +124,38 @@ internal static class LauncherCommandHandler
 
             case CommandType.DeleteItem:
             {
+                // Commit any previous pending undo before starting a new delete
+                await UndoCommandHandler.ClearOnAction(ctx, ct);
+
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
-                if (ctx.Bookmarks != null && idx < ctx.Bookmarks.Count)
+                if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
                 {
                     var bookmark = ctx.Bookmarks[idx];
-                    try
-                    {
-                        using var scope = ctx.ScopeFactory.CreateScope();
-                        var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                        await bookmarkService.DeleteBookmarkAsync(bookmark.Id, ct);
-                        await ctx.RefreshBookmarksAsync(ct);
 
-                        var newTotal = (ctx.Bookmarks?.Count ?? 0) + 1;
-                        if (ctx.NavigationService.LauncherSelectedIndex >= newTotal)
-                        {
-                            ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
-                        }
-                    }
-                    catch (Exception ex)
+                    // Store undo state before removing from in-memory list
+                    ctx.PendingUndo = new UndoState
                     {
-                        ctx.Logger.LogWarning(ex, "Failed to delete bookmark");
+                        Kind = UndoActionKind.BookmarkRemoved,
+                        CreatedAtUtc = DateTime.UtcNow,
+                        ItemTitle = bookmark.Name,
+                        BookmarkId = bookmark.Id,
+                        BookmarkUrl = bookmark.Url,
+                        BookmarkName = bookmark.Name,
+                        OriginalIndex = idx,
+                    };
+
+                    // Remove from in-memory list only (not persisted yet)
+                    var mutableList = ctx.Bookmarks.ToList();
+                    mutableList.RemoveAt(idx);
+                    ctx.Bookmarks = mutableList;
+
+                    var newTotal = mutableList.Count + 1; // +1 for Collections tile
+                    if (ctx.NavigationService.LauncherSelectedIndex >= newTotal)
+                    {
+                        ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
                     }
+
+                    ctx.NavigationService.SetStatusMessage($"Removed \u00b7 z:undo", UndoState.UndoWindow);
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct);
@@ -250,6 +262,10 @@ internal static class LauncherCommandHandler
                 ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, totalItems - 1);
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct);
+                break;
+
+            case CommandType.Undo:
+                await UndoCommandHandler.HandleUndo(ctx, options, ct);
                 break;
         }
 
