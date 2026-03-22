@@ -145,8 +145,8 @@ internal class LineCacheManager
     {
         const string bold = "\x1b[1m";
         const string dim = "\x1b[2m";
-        const string brightWhiteFg = "\x1b[38;5;15m";
         const string reset = "\x1b[0m";
+        var titleColor = palette.HeaderTitleFg.AnsiFg;
 
         var lines = new List<string>();
         lines.Add(string.Empty);
@@ -154,7 +154,7 @@ internal class LineCacheManager
         var titleLines = UI.Renderers.RenderHelpers.WrapText(content.Title.ToUpperInvariant(), maxWidth - 4);
         foreach (var line in titleLines)
         {
-            lines.Add($"  {bold}{brightWhiteFg}{line}{reset}");
+            lines.Add($"  {bold}{titleColor}{line}{reset}");
         }
 
         var metadata = content.GetMetadataString();

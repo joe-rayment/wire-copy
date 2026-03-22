@@ -4,145 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TermReader Mockups: Reader View</title>
-<style>
-/* TermReader Mockup Template - ANSI 256 Color Mapping */
-/* Phosphor theme (green-on-black) */
-
-:root {
-  /* Core palette from design-system.md */
-  --green: #00ff00;     /* ANSI 46 - PrimaryText */
-  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
-  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
-  --med: #00af00;       /* ANSI 34 - SecondaryText */
-  --dim: #008700;       /* ANSI 28 - DimFg */
-  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
-  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
-  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
-  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
-  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
-  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
-  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
-  --sel-bg: #005f00;    /* ANSI 22 - selection background */
-  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
-  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
-  --bg: #0a0a0a;        /* terminal background */
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--green);
-  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 20px;
-}
-
-/* Page layout */
-.page-title {
-  color: var(--cyan);
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 4px;
-  letter-spacing: 1px;
-}
-.page-subtitle {
-  color: var(--med);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-/* Each mockup screen */
-.screen {
-  margin-bottom: 40px;
-}
-.screen-label {
-  color: var(--amber);
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #333;
-}
-.screen-notes {
-  color: var(--med);
-  font-size: 12px;
-  margin-top: 8px;
-  padding: 8px;
-  border-left: 2px solid #333;
-}
-
-/* Terminal frame */
-.terminal {
-  background: #000000;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  white-space: pre;
-  font-size: 13px;
-  line-height: 1.4;
-  position: relative;
-}
-.terminal::before {
-  content: '● ● ●';
-  display: block;
-  color: #555;
-  font-size: 10px;
-  letter-spacing: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #222;
-}
-
-/* Color classes */
-.g   { color: var(--green); }        /* [green] */
-.b   { color: var(--bright); }       /* [bright] */
-.c   { color: var(--cyan); }         /* [cyan] */
-.m   { color: var(--med); }          /* [med] */
-.d   { color: var(--dim); }          /* [dim] */
-.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
-.w   { color: var(--white); }        /* [white] */
-.pk  { color: var(--pink); }         /* [pink] */
-.am  { color: var(--amber); }        /* [amber] */
-.r   { color: var(--red); }          /* [red] */
-.nv  { color: var(--nav); }          /* [nav] */
-.bd  { color: var(--border); }       /* border color */
-
-/* Backgrounds */
-.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
-.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
-.wbg { background: var(--white); }   /* [white-bg] */
-
-/* Text attributes */
-.bold { font-weight: bold; }
-.dim-attr { opacity: 0.7; }
-
-/* Selection with accent bar */
-.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
-
-/* Separator */
-hr.section-sep {
-  border: none;
-  border-top: 1px solid #333;
-  margin: 30px 0;
-}
-</style>
+<link rel="stylesheet" href="template.css">
+<!-- Related files: template.css, launcher.html, linktree.html -->
 </head>
 <body>
 
 <div class="page-title">TermReader Mockups: Reader View</div>
-<div class="page-subtitle">Phosphor theme (green-on-black) &middot; 80x24 terminal</div>
+<div class="page-subtitle">Phosphor 2.0 design system &middot; 80x24 terminal</div>
 
 <!-- ============================================================ -->
 <!-- VARIANT A: Centered Narrow Column -->
 <!-- ============================================================ -->
 <div class="screen">
-  <div class="screen-label">VARIANT A: Centered Narrow Column (~72 chars)</div>
+  <div class="screen-label">VARIANT A: Centered Narrow Column (~66 chars)</div>
   <div class="terminal">
-    <span class="b">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
-    <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com</span>
+    <span class="b bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+    <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com &middot; 4 min read</span>
 
     <span class="g">SpaceX's massive Starship rocket completed its first full</span>
     <span class="g">orbital flight on Monday, a landmark achievement that opens</span>
@@ -154,7 +31,7 @@ hr.section-sep {
     <span class="g">on the thrust of 33 Raptor engines that generate roughly</span>
     <span class="g">16.7 million pounds of force at full power.</span>
 
-<span class="d">&#9612;</span>  <span class="g">After a nominal first-stage burn, the Super Heavy booster</span>
+<span class="mu">&#9612;</span>  <span class="g">After a nominal first-stage burn, the Super Heavy booster</span>
     <span class="g">separated and executed a controlled descent, landing on the</span>
     <span class="g">launch tower's mechanical arms &#8212; a maneuver SpaceX calls</span>
     <span class="g">"chopstick" </span><span class="hi">catch</span><span class="g">. The upper stage continued to orbit,</span>
@@ -164,18 +41,20 @@ hr.section-sep {
     <span class="g">"This is the day we've been working toward for over a</span>
     <span class="g">decade," said Elon Musk, SpaceX's CEO, in a post on X</span>
 
- &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;
- ReaderView <span class="c">s</span><span class="m">:save</span> <span class="c">o</span><span class="m">:browser</span> <span class="c">h/l</span><span class="m">:width</span> <span class="c">v</span><span class="m">:links</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span>
- <span class="m">L12/87 W72 38%</span>                                          <span class="m">cached 5m ago</span></div>
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="m">L12/87 W66 38% &middot; 4 min read</span>                          <span class="m">cached 5m ago</span></div>
   <div class="screen-notes">
-    Text is left-aligned within a centered 72-char column.<br>
-    &#9612; focus indicator in dim marks current reading position (1 char left of text).<br>
-    Search highlight: "catch" shown as inverted (green bg, black fg).<br>
-    Title in bright green, byline in medium green.<br>
+    Text is left-aligned within a centered 66-char column.<br>
+    &#9612; focus indicator in .mu (muted teal) marks current reading position (1 char left of text).<br>
+    Search highlight: "catch" shown with blue-teal bg (.hi class — new Phosphor 2.0 highlight).<br>
+    Title in bright + bold, byline in med with read time appended.<br>
     Paragraphs separated by blank lines for readability.<br>
-    Status bar L2 shows: line position (L12/87), column width (W72), progress (38%).<br>
-    Right side of status bar: cache status.<br>
-    h/l keys widen or narrow the column (e.g., 60, 72, 80, full width).
+    Status bar L1: mode in green, keys in cyan, descriptions in med.<br>
+    Status bar L2: line position (L12/87), column width (W66), progress (38%), read time; cache status right-aligned.<br>
+    [/] keys widen or narrow the column ([ narrows, ] widens).<br>
+    WHY: W66 is the ideal monospace reading width — matches ~60-66 char research sweet spot for line length.<br>
+    WHY: [/] avoids conflict with h/l navigation used on other screens (launcher, linktree).<br>
+    WHY: Focus indicator uses .mu (not .d) so it remains visible against the black background.
   </div>
 </div>
 
@@ -196,18 +75,23 @@ hr.section-sep {
     <span class="g">chosen vehicle for the Artemis III lunar lander.</span>
 
     <span class="g">"We've crossed the threshold from experimental to</span>
-<span class="d">&#9612;</span>  <span class="g">operational," said Gwynne Shotwell, SpaceX President.</span>
+<span class="mu">&#9612;</span>  <span class="g">operational," said Gwynne Shotwell, SpaceX President.</span>
     <span class="g">"Every flight from here gets us closer to Mars."</span>
 
 
+                             <span class="m">&#8212; end &#8212;</span>
+                  <span class="m">4 min read &middot; 1,847 words</span>
+                  <span class="c">s</span><span class="m">:save</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">n</span><span class="m">:next in list</span>
 
-                              <span class="m">&#8212; end &#8212;</span>
 
-
-
- &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;
- ReaderView <span class="c">s</span><span class="m">:save</span> <span class="c">o</span><span class="m">:browser</span> <span class="c">h/l</span><span class="m">:width</span> <span class="c">v</span><span class="m">:links</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span>
- <span class="m">L87/87 W72 100%</span></div>
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="m">L87/87 W66 100%</span></div>
+  <div class="screen-notes">
+    Enhanced end marker with read stats and next-action hints.<br>
+    "— end —" and stats line in .m, action hints use .c for keys and .m for descriptions.<br>
+    WHY: End-of-article actions reduce "now what?" friction — the reader doesn't have to remember keybindings.<br>
+    WHY: Word count + read time give closure and a sense of accomplishment.
+  </div>
 </div>
 
 <!-- ============================================================ -->
@@ -216,8 +100,8 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">VARIANT B: Full-Width (Uses All Terminal Width)</div>
   <div class="terminal">
-  <span class="b">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
-  <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com</span>
+  <span class="b bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+  <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com &middot; 4 min read</span>
 
   <span class="g">SpaceX's massive Starship rocket completed its first full orbital flight on Monday, a landmark</span>
   <span class="g">achievement that opens the door to the company's most ambitious plans for space exploration.</span>
@@ -226,7 +110,7 @@ hr.section-sep {
   <span class="g">Central time, riding on the thrust of 33 Raptor engines that generate roughly 16.7 million</span>
   <span class="g">pounds of force at full power.</span>
 
-<span class="d">&#9612;</span><span class="g">After a nominal first-stage burn, the Super Heavy booster separated and executed a controlled</span>
+<span class="mu">&#9612;</span><span class="g">After a nominal first-stage burn, the Super Heavy booster separated and executed a controlled</span>
   <span class="g">descent, landing on the launch tower's mechanical arms &#8212; a maneuver SpaceX calls "chopstick"</span>
   <span class="g"></span><span class="hi">catch</span><span class="g">. The upper stage continued to orbit, reaching an altitude of approximately 250</span>
   <span class="g">kilometers before completing a controlled deorbital burn over the Indian Ocean.</span>
@@ -237,16 +121,16 @@ hr.section-sep {
   <span class="g">The Starship vehicle itself &#8212; also known as Ship 36 &#8212; performed a precise deorbital burn</span>
   <span class="g">and reentered the atmosphere, deploying its body flap control surfaces to guide its descent.</span>
 
- &#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;
- ReaderView <span class="c">s</span><span class="m">:save</span> <span class="c">o</span><span class="m">:browser</span> <span class="c">h/l</span><span class="m">:width</span> <span class="c">v</span><span class="m">:links</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="m">:help</span>
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
  <span class="m">L12/62 W76 42%</span></div>
   <div class="screen-notes">
     Content width = terminal width - 4 (2 margin each side).<br>
     More text per screen, fewer total lines.<br>
-    Focus indicator &#9612; still appears at current line.<br>
-    Same search highlighting behavior.<br>
+    Focus indicator &#9612; in .mu still appears at current line.<br>
+    Same search highlighting behavior (blue-teal .hi class).<br>
     Fewer line wraps &#8212; better for long-form articles.<br>
-    Status bar shows wider W76 column width.
+    Status bar shows wider W76 column width.<br>
+    WHY: Full-width mode trades reading comfort for density — useful when scanning, not deep-reading.
   </div>
 </div>
 

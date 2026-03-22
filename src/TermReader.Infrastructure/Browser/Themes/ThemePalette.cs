@@ -63,6 +63,30 @@ public record ThemePalette
     public ThemeColor? DimFg { get; init; }
 
     /// <summary>
+    /// Quiet text for scroll hints, version numbers, de-emphasized labels.
+    /// Defaults to SecondaryText if not explicitly set.
+    /// </summary>
+    public ThemeColor? MutedFg { get; init; }
+
+    /// <summary>
+    /// Success/completion color for checkmarks and confirmation moments.
+    /// Defaults to PrimaryText if not explicitly set.
+    /// </summary>
+    public ThemeColor? SuccessFg { get; init; }
+
+    /// <summary>
+    /// Celebration color for rare earned moments (podcast complete, achievements).
+    /// Defaults to HeaderTitleFg if not explicitly set.
+    /// </summary>
+    public ThemeColor? CelebrationFg { get; init; }
+
+    /// <summary>
+    /// Warning color for active progress, bot challenges, attention-needed states.
+    /// Defaults to ErrorFg if not explicitly set.
+    /// </summary>
+    public ThemeColor? WarningFg { get; init; }
+
+    /// <summary>
     /// Gets the accent color, falling back to PromptFg.
     /// </summary>
     public ThemeColor GetAccentFg() => AccentFg ?? PromptFg;
@@ -71,4 +95,24 @@ public record ThemePalette
     /// Gets the dim color, falling back to SecondaryText.
     /// </summary>
     public ThemeColor GetDimFg() => DimFg ?? SecondaryText;
+
+    /// <summary>
+    /// Gets the muted color, falling back to SecondaryText.
+    /// </summary>
+    public ThemeColor GetMutedFg() => MutedFg ?? SecondaryText;
+
+    /// <summary>
+    /// Gets the success color, falling back to PrimaryText.
+    /// </summary>
+    public ThemeColor GetSuccessFg() => SuccessFg ?? PrimaryText;
+
+    /// <summary>
+    /// Gets the celebration color, falling back to HeaderTitleFg.
+    /// </summary>
+    public ThemeColor GetCelebrationFg() => CelebrationFg ?? HeaderTitleFg;
+
+    /// <summary>
+    /// Gets the warning color, falling back to ErrorFg.
+    /// </summary>
+    public ThemeColor GetWarningFg() => WarningFg ?? ErrorFg;
 }

@@ -44,6 +44,9 @@ internal class CommandContext
     // Content width override
     public int? ContentWidthOverride { get; set; }
 
+    // Undo state for deferred destructive actions
+    public UndoState? PendingUndo { get; set; }
+
     // Delegates for operations that remain in BrowserOrchestrator
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 

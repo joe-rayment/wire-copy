@@ -4,13 +4,14 @@ Assumes: 80x24 terminal, Phosphor theme (green-on-black)
 ================================================================================
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — article body text
-  [bright]  = slightly brighter green (ANSI 48) — article title/headings
+  [green]   = phosphor green #00d700 (ANSI 40) — article body text
+  [title]   = playful pink #ff87d7 (ANSI 212) — article title/headings
   [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
-  [dim]     = dark green #005f00 (ANSI 22-28) — focus indicator, decorative
+  [dim]     = dark green #005f00 (ANSI 22) — structural, decorative
+  [muted]   = muted green #5f875f (ANSI 65) — focus indicator
   [med]     = medium green #00af00 (ANSI 34) — secondary text, metadata
-  [hi-bg]   = green bg (ANSI 46) — search highlight background
-  [hi-fg]   = black (ANSI 0) — search highlight text
+  [hi-bg]   = blue-teal bg #005f87 (ANSI 24) — search highlight background
+  [hi-fg]   = white #ffffff (ANSI 15) — search highlight text
 
 
 ================================================================================

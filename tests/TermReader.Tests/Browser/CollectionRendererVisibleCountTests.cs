@@ -14,26 +14,25 @@ public class CollectionRendererVisibleCountTests
     [Fact]
     public void GetCollectionListVisibleCount_SmallTerminal_NoSeparators()
     {
-        // height=20 < 30, so no separators, linesPerItem=1
-        // remainingHeight = Max(3, 20-5-3) = 12
+        // height=20, no separators, linesPerItem=1
+        // remainingHeight = Max(3, 20-3-2) = 15
         var result = CollectionRenderer.GetCollectionListVisibleCount(20);
-        result.Should().Be(12);
+        result.Should().Be(15);
     }
 
     [Fact]
-    public void GetCollectionListVisibleCount_LargeTerminal_WithSeparators()
+    public void GetCollectionListVisibleCount_LargeTerminal_NoSeparators()
     {
-        // height=40 >= 30, so separators, linesPerItem=2
-        // remainingHeight = Max(3, 40-5-3) = 32
-        // (32+1)/2 = 16
+        // height=40, no separators (removed by default), linesPerItem=1
+        // remainingHeight = Max(3, 40-3-2) = 35
         var result = CollectionRenderer.GetCollectionListVisibleCount(40);
-        result.Should().Be(16);
+        result.Should().Be(35);
     }
 
     [Fact]
     public void GetCollectionListVisibleCount_MinimumHeight_ClampsTo3()
     {
-        // height=5, remainingHeight = Max(3, 5-5-3) = Max(3, -3) = 3
+        // height=5, remainingHeight = Max(3, 5-3-2) = Max(3, 0) = 3
         var result = CollectionRenderer.GetCollectionListVisibleCount(5);
         result.Should().Be(3);
     }
@@ -43,23 +42,23 @@ public class CollectionRendererVisibleCountTests
     #region GetCollectionItemsVisibleCount
 
     [Fact]
-    public void GetCollectionItemsVisibleCount_SmallTerminal_NoSeparators()
+    public void GetCollectionItemsVisibleCount_SmallTerminal_InlineCta()
     {
-        // height=20, width=80: GetCtaLineCount(80,20)=3 (compact slab), linesPerItem=2
-        // remainingHeight = Max(3, 20-5-3-3) = 9
-        // Max(1, (9+1)/2) = 5
+        // height=20, width=80: CTA is inline (1 line, height <= 35), linesPerItem=2
+        // remainingHeight = Max(3, 20-3-2-1) = 14
+        // Max(1, (14+1)/2) = 7
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(20);
-        result.Should().Be(5);
+        result.Should().Be(7);
     }
 
     [Fact]
-    public void GetCollectionItemsVisibleCount_LargeTerminal_WithSeparators()
+    public void GetCollectionItemsVisibleCount_LargeTerminal_SlabCta()
     {
-        // height=40, width=80: GetCtaLineCount(80,40)=5 (full slab), linesPerItem=3
-        // remainingHeight = Max(3, 40-5-3-5) = 27
-        // Max(1, (27+1)/3) = 9
+        // height=40, width=80: CTA is full slab (5 lines, height > 35), linesPerItem=2
+        // remainingHeight = Max(3, 40-3-2-5) = 30
+        // Max(1, (30+1)/2) = 15
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(40);
-        result.Should().Be(9);
+        result.Should().Be(15);
     }
 
     [Fact]

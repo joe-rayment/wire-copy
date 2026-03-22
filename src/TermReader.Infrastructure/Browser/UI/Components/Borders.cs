@@ -73,7 +73,7 @@ internal static class Borders
     /// </summary>
     public static string DimmedRule(ThemePalette p, int width)
     {
-        return $"{p.SecondaryText.AnsiFg}\x1b[2m{new string('\u2500', Math.Max(1, width))}{Reset}";
+        return $"{p.GetDimFg().AnsiFg}\x1b[2m{new string('\u2500', Math.Max(1, width))}{Reset}";
     }
 
     /// <summary>
@@ -81,7 +81,7 @@ internal static class Borders
     /// </summary>
     public static string ItemSeparator(ThemePalette p, int indent = 3)
     {
-        return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}\u2576\u2500\u2500\u2574{Reset}";
+        return $"{new string(' ', indent)}{p.GetDimFg().AnsiFg}\u2576\u2500\u2500\u2574{Reset}";
     }
 
     /// <summary>
@@ -89,6 +89,6 @@ internal static class Borders
     /// </summary>
     public static string ColumnDivider(ThemePalette p)
     {
-        return $"{p.SecondaryText.AnsiFg}\u2502{Reset}";
+        return $"{p.GetDimFg().AnsiFg}\u2502{Reset}";
     }
 }
