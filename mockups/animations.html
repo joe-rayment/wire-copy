@@ -4,131 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TermReader Mockups: Animations (Frame Sequences)</title>
+<!-- Cross-ref: template.css (Phosphor 2.0 design system) -->
+<!-- Cross-ref: layout-switcher.html (layout flash overlay) -->
+<!-- Cross-ref: responsive.html (status bar format) -->
+<link rel="stylesheet" href="template.css">
 <style>
-/* TermReader Mockup Template - ANSI 256 Color Mapping */
-/* Phosphor theme (green-on-black) */
-
-:root {
-  /* Core palette from design-system.md */
-  --green: #00ff00;     /* ANSI 46 - PrimaryText */
-  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
-  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
-  --med: #00af00;       /* ANSI 34 - SecondaryText */
-  --dim: #008700;       /* ANSI 28 - DimFg */
-  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
-  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
-  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
-  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
-  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
-  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
-  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
-  --sel-bg: #005f00;    /* ANSI 22 - selection background */
-  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
-  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
-  --bg: #0a0a0a;        /* terminal background */
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--green);
-  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 20px;
-}
-
-/* Page layout */
-.page-title {
-  color: var(--cyan);
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 4px;
-  letter-spacing: 1px;
-}
-.page-subtitle {
-  color: var(--med);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-/* Each mockup screen */
-.screen {
-  margin-bottom: 40px;
-}
-.screen-label {
-  color: var(--amber);
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #333;
-}
-.screen-notes {
-  color: var(--med);
-  font-size: 12px;
-  margin-top: 8px;
-  padding: 8px;
-  border-left: 2px solid #333;
-}
-
-/* Terminal frame */
-.terminal {
-  background: #000000;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  white-space: pre;
-  font-size: 13px;
-  line-height: 1.4;
-  position: relative;
-}
-.terminal::before {
-  content: '● ● ●';
-  display: block;
-  color: #555;
-  font-size: 10px;
-  letter-spacing: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #222;
-}
-
-/* Color classes */
-.g   { color: var(--green); }        /* [green] */
-.b   { color: var(--bright); }       /* [bright] */
-.c   { color: var(--cyan); }         /* [cyan] */
-.m   { color: var(--med); }          /* [med] */
-.d   { color: var(--dim); }          /* [dim] */
-.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
-.w   { color: var(--white); }        /* [white] */
-.pk  { color: var(--pink); }         /* [pink] */
-.am  { color: var(--amber); }        /* [amber] */
-.r   { color: var(--red); }          /* [red] */
-.nv  { color: var(--nav); }          /* [nav] */
-.bd  { color: var(--border); }       /* border color */
-
-/* Backgrounds */
-.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
-.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
-.wbg { background: var(--white); }   /* [white-bg] */
-
-/* Text attributes */
-.bold { font-weight: bold; }
-.dim-attr { opacity: 0.7; }
-
-/* Selection with accent bar */
-.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
-
-/* Separator */
-hr.section-sep {
-  border: none;
-  border-top: 1px solid #333;
-  margin: 30px 0;
-}
-
 /* Animation-specific: frame sequences */
 .frame-label {
   color: var(--cyan);
@@ -164,12 +44,21 @@ hr.section-sep {
 .frame-cell .frame-label {
   margin-top: 0;
 }
+.config-note {
+  color: var(--amber);
+  font-size: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
 </style>
 </head>
 <body>
 
 <div class="page-title">TermReader Mockups: Animations (Frame Sequences)</div>
-<div class="page-subtitle">Synchronous frame-based terminal animations &middot; 80x24 terminal &middot; Phosphor theme &middot; ~10-15 fps target</div>
+<div class="page-subtitle">Phosphor 2.0 &middot; Synchronous frame-based terminal animations &middot; 80x24 terminal &middot; ~10-15 fps target</div>
 
 <hr class="section-sep">
 
@@ -247,17 +136,23 @@ hr.section-sep {
 <span class="m">                               12 chapters &middot; 2h 15m</span></div>
 
   <div class="screen-notes">
-    Toast appears in the top-right corner after celebration overlay fades, restoring the underlying screen.
+    Toast appears in the top-right corner after celebration overlay fades, restoring the underlying screen.<br>
+    Typewriter effect is kept for the podcast celebration — it earned its animation time.<br>
+    Celebration animation is proportional to effort: podcast generation takes minutes, so a 1.5s celebration is earned.<br>
+    Uses softer <span class="pk">pink (#ff87af)</span> for &#x2726; sparkle characters.
   </div>
 </div>
 
 <hr class="section-sep">
 
 <!-- ================================================================== -->
-<!-- ANIMATION 2: Page Load "Decrypt" Effect                            -->
+<!-- ANIMATION 2: Page Load "Decrypt" Effect (OPT-IN)                   -->
 <!-- ================================================================== -->
 <div class="screen">
-  <div class="screen-label">Animation 2: Page Load "Decrypt" Effect</div>
+  <div class="screen-label">Animation 2: Page Load "Decrypt" Effect (Configurable, Off by Default)</div>
+
+  <div class="config-note">NOTE: This effect is configurable via settings (animations.decrypt = true).
+Off by default — respects user time. Available for users who enjoy the aesthetic.</div>
 
   <div class="frame-label">Frame 1 &mdash; 0ms (fully scrambled)</div>
   <div class="terminal frame">
@@ -301,9 +196,10 @@ hr.section-sep {
 
   <div class="screen-notes">
     Resolution proceeds top-to-bottom, left-to-right. Header resolves first (1 frame), then body content.<br>
-    Random characters are in dim green; resolved text appears in proper colors.<br>
+    Random characters are in dim; resolved text appears in proper colors.<br>
     Total duration: ~300ms (4 frames at ~75ms each). Structures (borders, dividers) are placed immediately; only text decrypts.<br>
-    Effect is purely cosmetic: all data is available from frame 1.
+    Effect is purely cosmetic: all data is available from frame 1.<br><br>
+    <strong>WHY opt-in:</strong> Decrypt effect is opt-in because 300ms of cosmetic blocking on every page load trades delight for friction after the first few uses.
   </div>
 </div>
 
@@ -315,13 +211,13 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Animation 3: Cache Complete Pulse on Status Bar</div>
 
-  <div class="frame-label">Frame 1 &mdash; 0ms (cache progress finishing)</div>
+  <div class="frame-label">Frame 1 &mdash; 0ms (cache progress finishing, eighth-block bar)</div>
   <div class="terminal frame">
- <span class="m">arstechnica.com</span>           <span class="g">&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;</span><span class="am">&#x25B0;</span> <span class="m">23/24 caching</span> <span class="am">last article</span></div>
+ <span class="m">arstechnica.com</span>           <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2589;</span><span class="d">&#x258F;</span> <span class="m">23/24 caching</span> <span class="am">last article</span></div>
 
   <div class="frame-label">Frame 2 &mdash; 100ms (final segment fills)</div>
   <div class="terminal frame">
- <span class="m">arstechnica.com</span>           <span class="g">&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;</span> <span class="m">24/24 cached</span></div>
+ <span class="m">arstechnica.com</span>           <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span> <span class="m">24/24 cached</span></div>
 
   <div class="frame-label">Frame 3 &mdash; 200ms (pulse: bright green)</div>
   <div class="terminal frame">
@@ -329,16 +225,22 @@ hr.section-sep {
 
   <div class="frame-label">Frame 4 &mdash; 400ms (pulse peak with checkmark)</div>
   <div class="terminal frame">
- <span class="m">arstechnica.com</span>                                    <span class="g">&#x2713; all cached</span></div>
+ <span class="m">arstechnica.com</span>                                    <span class="ok">&#x2713;</span> <span class="g">all cached</span></div>
 
   <div class="frame-label">Frame 5 &mdash; 700ms (settle to normal)</div>
   <div class="terminal frame">
  <span class="m">arstechnica.com</span>                                     <span class="m">all cached</span></div>
 
+  <div class="frame-label">Fallback &mdash; terminals without Unicode block support</div>
+  <div class="terminal frame">
+ <span class="m">arstechnica.com</span>           <span class="g">&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;&#x25B0;</span><span class="am">&#x25B0;</span><span class="d">&#x25B1;&#x25B1;</span> <span class="m">23/24 caching</span></div>
+
   <div class="screen-notes">
-    Progress bar collapses to "all cached" text. Brief bright flash (200ms) then settle.<br>
-    Checkmark appears briefly during pulse peak. After settle, status bar returns to normal rendering.<br>
-    Toast may also appear simultaneously.
+    Progress bar uses eighth-block characters (&#x2588;&#x2589;&#x258A;&#x258B;&#x258C;&#x258D;&#x258E;&#x258F;) as PRIMARY for 8x visual resolution.<br>
+    Fallback &#x25B0;&#x25B1; style for terminals without Unicode block support.<br>
+    Brief bright flash (200ms) then settle. Checkmark uses <span class="ok">.ok (#5fffaf)</span> for success pop.<br>
+    After settle, status bar returns to normal rendering. Toast may also appear simultaneously.<br><br>
+    <strong>WHY:</strong> Eighth-block progress bars provide 8x visual resolution over &#x25B0;&#x25B1;, making progress feel smoother.
   </div>
 </div>
 
@@ -358,17 +260,17 @@ hr.section-sep {
 
    <span class="g">&#x266A; Extracting article content...</span>
 
-   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span><span class="m">&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2589;</span><span class="d">&#x258E;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;</span>
    <span class="m">9/12 articles extracted</span>
 
-   <span class="m">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713;</span>
-   <span class="m">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713;</span>
-   <span class="m">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713;</span>
-   <span class="m">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713;</span>
-   <span class="m">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713;</span>
-   <span class="m">Chapter 6: Inside the Fusion...</span>                <span class="g">&#x2713;</span>
-   <span class="m">Chapter 7: API Design Patterns...</span>              <span class="g">&#x2713;</span>
-   <span class="m">Chapter 8: Machine Learning Survey...</span>          <span class="g">&#x2713;</span>
+   <span class="m">Chapter 1: SpaceX Starship Reaches...</span>         <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 2: NASA Selects Two New...</span>             <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 3: CRISPR Breakthrough...</span>              <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 4: The Rise of Quantum...</span>              <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 5: Climate Models...</span>                   <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 6: Inside the Fusion...</span>                <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 7: API Design Patterns...</span>              <span class="ok">&#x2713;</span>
+   <span class="m">Chapter 8: Machine Learning Survey...</span>          <span class="ok">&#x2713;</span>
    <span class="am">Chapter 9: Distributed Systems...</span>              <span class="am">&#x25B6;</span>
    <span class="d">Chapter 10: A History of the Web...</span>
    <span class="d">Chapter 11: The Future of...</span>
@@ -382,14 +284,14 @@ hr.section-sep {
 
    <span class="g">&#x266A; Generating audio with ElevenLabs...</span>
 
-   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span><span class="m">&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;&#x2591;</span>
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x258B;</span><span class="d">&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;&#x258F;</span>
    <span class="m">5/12 chapters generated &middot; $0.42 / $1.00 budget</span>
 
-   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713; 8:42</span>
-   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713; 6:15</span>
-   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713; 7:33</span>
-   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713; 12:08</span>
-   <span class="g">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713; 5:51</span>
+   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="ok">&#x2713;</span> <span class="g">8:42</span>
+   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="ok">&#x2713;</span> <span class="g">6:15</span>
+   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="ok">&#x2713;</span> <span class="g">7:33</span>
+   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="ok">&#x2713;</span> <span class="g">12:08</span>
+   <span class="g">Chapter 5: Climate Models...</span>                   <span class="ok">&#x2713;</span> <span class="g">5:51</span>
    <span class="am">Chapter 6: Inside the Fusion...</span>                <span class="am">&#x25B6; generating...</span>
    <span class="d">Chapter 7: API Design Patterns...</span>
    <span class="d">Chapter 8: Machine Learning Survey...</span>
@@ -404,32 +306,33 @@ hr.section-sep {
 
    <span class="g">&#x266A; Assembling M4B with chapters...</span>
 
-   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
+   <span class="g">&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;</span>
    <span class="m">Concatenating audio &middot; Adding chapter markers &middot; Writing metadata</span>
 
-   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="g">&#x2713; 8:42</span>
-   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="g">&#x2713; 6:15</span>
-   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="g">&#x2713; 7:33</span>
-   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="g">&#x2713; 12:08</span>
-   <span class="g">Chapter 5: Climate Models...</span>                   <span class="g">&#x2713; 5:51</span>
-   <span class="g">Chapter 6: Inside the Fusion...</span>                <span class="g">&#x2713; 9:22</span>
-   <span class="g">Chapter 7: API Design Patterns...</span>              <span class="g">&#x2713; 4:17</span>
-   <span class="g">Chapter 8: Machine Learning Survey...</span>          <span class="g">&#x2713; 11:04</span>
-   <span class="g">Chapter 9: Distributed Systems...</span>              <span class="g">&#x2713; 8:56</span>
-   <span class="g">Chapter 10: A History of the Web...</span>            <span class="g">&#x2713; 14:30</span>
-   <span class="g">Chapter 11: The Future of...</span>                   <span class="g">&#x2713; 6:45</span>
-   <span class="g">Chapter 12: Weekend Long Read</span>                  <span class="g">&#x2713; 10:12</span></div>
+   <span class="g">Chapter 1: SpaceX Starship Reaches...</span>         <span class="ok">&#x2713;</span> <span class="g">8:42</span>
+   <span class="g">Chapter 2: NASA Selects Two New...</span>             <span class="ok">&#x2713;</span> <span class="g">6:15</span>
+   <span class="g">Chapter 3: CRISPR Breakthrough...</span>              <span class="ok">&#x2713;</span> <span class="g">7:33</span>
+   <span class="g">Chapter 4: The Rise of Quantum...</span>              <span class="ok">&#x2713;</span> <span class="g">12:08</span>
+   <span class="g">Chapter 5: Climate Models...</span>                   <span class="ok">&#x2713;</span> <span class="g">5:51</span>
+   <span class="g">Chapter 6: Inside the Fusion...</span>                <span class="ok">&#x2713;</span> <span class="g">9:22</span>
+   <span class="g">Chapter 7: API Design Patterns...</span>              <span class="ok">&#x2713;</span> <span class="g">4:17</span>
+   <span class="g">Chapter 8: Machine Learning Survey...</span>          <span class="ok">&#x2713;</span> <span class="g">11:04</span>
+   <span class="g">Chapter 9: Distributed Systems...</span>              <span class="ok">&#x2713;</span> <span class="g">8:56</span>
+   <span class="g">Chapter 10: A History of the Web...</span>            <span class="ok">&#x2713;</span> <span class="g">14:30</span>
+   <span class="g">Chapter 11: The Future of...</span>                   <span class="ok">&#x2713;</span> <span class="g">6:45</span>
+   <span class="g">Chapter 12: Weekend Long Read</span>                  <span class="ok">&#x2713;</span> <span class="g">10:12</span></div>
 
   <div class="frame-label">Stage 4 &mdash; Complete</div>
   <div class="terminal frame">
 <span class="m">   Triggers Podcast Complete Celebration (see Animation 1 above)</span></div>
 
   <div class="screen-notes">
-    Progress bar uses full-block for filled, light shade for empty.<br>
-    Completed chapters: green with checkmark and duration. Active chapter: amber with play icon and "generating..." label. Pending chapters: dim.<br>
+    Progress bar uses eighth-block characters (&#x2588;&#x2589;&#x258A;&#x258B;&#x258C;&#x258D;&#x258E;&#x258F;) for smooth sub-character progress.<br>
+    Completed chapters: green with <span class="ok">.ok</span> checkmark and duration. Active chapter: amber with play icon and "generating..." label. Pending chapters: dim.<br>
     Budget display shows current spend / budget limit in medium green.<br>
     Music note icon in stage headers for podcast branding. Esc cancels generation (with confirmation prompt).<br>
-    Chapters listed below progress bar are scrollable if they exceed viewport height.
+    Chapters listed below progress bar are scrollable if they exceed viewport height.<br><br>
+    <strong>WHY:</strong> Eighth-block progress bars provide 8x visual resolution over &#x25B0;&#x25B1;, making progress feel smoother.
   </div>
 </div>
 
@@ -510,7 +413,7 @@ hr.section-sep {
   <div class="screen-notes">
     Single braille character rotates in place at 80ms per frame (~12.5 fps). "Loading..." text is static.<br>
     URL shown below for context. Full cycle: 10 braille characters (800ms loop).<br>
-    Minimal CPU usage: only 1 character changes per frame.
+    Minimal CPU usage: only 1 character changes per frame. Standard and expected — no configuration needed.
   </div>
 </div>
 

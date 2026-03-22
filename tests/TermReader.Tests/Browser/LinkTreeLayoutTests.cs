@@ -84,15 +84,15 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsCompactWhenShort()
     {
-        // availableHeight = max(4, 18 - 2 - 3) = 13 < 15 → compact (3)
+        // availableHeight = max(4, 18 - 1 - 2) = 15 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 18);
-        layout.CellHeight.Should().Be(3);
+        layout.CellHeight.Should().Be(5);
     }
 
     [Fact]
     public void CellHeight_IsStandardWhenTall()
     {
-        // availableHeight = max(4, 30 - 2 - 3) = 25 >= 15 → standard (5)
+        // availableHeight = max(4, 30 - 1 - 2) = 27 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.CellHeight.Should().Be(5);
     }
@@ -100,17 +100,17 @@ public class LinkTreeLayoutTests
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 3 - 3) = 24, cellHeight = 5 → 24/5 = 4
+        // availableHeight = max(4, 30 - 1 - 2) = 27, cellHeight = 5 → 27/5 = 5
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.VisibleRows.Should().Be(4);
+        layout.VisibleRows.Should().Be(5);
     }
 
     [Fact]
     public void ComputeLayout_HeaderAndStatusBarLines()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(3);
-        layout.StatusBarLines.Should().Be(3);
+        layout.HeaderLines.Should().Be(1);
+        layout.StatusBarLines.Should().Be(2);
     }
 
     #endregion
@@ -708,26 +708,26 @@ public class LinkTreeLayoutTests
     #region Header rendering - compact style layout
 
     [Fact]
-    public void ComputeLayout_HeaderIs3Lines_MatchesRoundedBoxStyle()
+    public void ComputeLayout_HeaderIs1Line_MatchesCompactStyle()
     {
-        // Rounded box header: line 1 = ╭─ title ─╮, line 2 = │ subtitle │, line 3 = ╰───╯
+        // Compact header: single line with title and metadata
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(3, "rounded box header is 3 lines");
+        layout.HeaderLines.Should().Be(1, "compact header is 1 line");
     }
 
     [Fact]
-    public void ComputeLayout_StatusBarIs3Lines_MatchesCompactStyle()
+    public void ComputeLayout_StatusBarIs2Lines_MatchesCompactStyle()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.StatusBarLines.Should().Be(3, "status bar is separator + line 1 + line 2");
+        layout.StatusBarLines.Should().Be(2, "status bar is line 1 + line 2");
     }
 
     [Fact]
     public void ComputeLayout_AvailableHeight_AccountsForCompactHeader()
     {
-        // availableHeight = terminalHeight - headerLines(3) - statusBarLines(3)
+        // availableHeight = terminalHeight - headerLines(1) - statusBarLines(2)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        var expectedAvailable = 30 - 3 - 3; // 24
+        var expectedAvailable = 30 - 1 - 2; // 27
         var expectedVisibleRows = expectedAvailable / layout.CellHeight;
         layout.VisibleRows.Should().Be(expectedVisibleRows);
     }

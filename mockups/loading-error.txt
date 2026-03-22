@@ -4,13 +4,13 @@ Assumes: 80x24 terminal, Phosphor theme (green-on-black)
 ================================================================================
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — primary text, action keys
-  [bright]  = slightly brighter green (ANSI 48) — emphasis
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text, action keys
+  [title]   = playful pink #ff87d7 (ANSI 212) — emphasis, titles
   [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
-  [dim]     = dark green #005f00 (ANSI 22-28) — borders, decorative
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — secondary text
   [red]     = red #ff5f5f (ANSI 203) — error text
-  [amber]   = yellow/amber #ffd700 (ANSI 220) — warning/in-progress
+  [amber]   = amber #ffaf00 (ANSI 214) — warning/in-progress
 
 
 ================================================================================

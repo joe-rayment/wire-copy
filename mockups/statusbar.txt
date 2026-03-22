@@ -3,17 +3,16 @@ STATUS BAR — All States
 Assumes: 80x24 terminal, Phosphor theme (green-on-black)
 ================================================================================
 
-The status bar occupies the bottom 3 lines of the terminal:
+The status bar occupies the bottom 2 lines of the terminal:
   Line 0: horizontal separator ─── (full width)
-  Line 1: mode label + adaptive key hints
-  Line 2: contextual vitals (left: info, right: status indicators)
+  Line 1: mode label + adaptive key hints + contextual vitals (combined)
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — mode label
+  [green]   = phosphor green #00d700 (ANSI 40) — mode label
   [cyan]    = bright cyan #00ffff (ANSI 51) — keys in hints, accent
-  [dim]     = dark green #005f00 (ANSI 22-28) — separator line
+  [dim]     = dark green #005f00 (ANSI 22) — separator line
   [med]     = medium green #00af00 (ANSI 34) — hint descriptions, domains
-  [amber]   = yellow/amber #ffd700 (ANSI 220) — active caching segment
+  [amber]   = amber #ffaf00 (ANSI 214) — active caching segment
   [red]     = red #ff5f5f (ANSI 203) — errors
 
 

@@ -17,28 +17,33 @@ public static class BuiltInThemes
         {
             [ThemeName.Phosphor] = new ThemePalette
             {
-                PrimaryText = new ThemeColor(ConsoleColor.Green, 46),        // #00ff00 classic CRT
-                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 dimmer for contrast
-                LinkContent = new ThemeColor(ConsoleColor.Green, 48),         // slightly brighter for headlines
-                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 40),
-                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 40),
-                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 40),
-                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 35),  // subtle border green
-                HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 48),       // brighter headline green
+                // Phosphor 2.0: warm phosphor green body + playful pink titles
+                PrimaryText = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 pure phosphor green
+                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 metadata, domains
+                LinkContent = new ThemeColor(ConsoleColor.Magenta, 212),      // #ff87d7 playful pink titles
+                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 34),  // secondary for nav links
+                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green structural
+                HeaderTitleFg = new ThemeColor(ConsoleColor.Magenta, 212),    // #ff87d7 playful pink titles
                 HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
-                SelectedItemFg = new ThemeColor(ConsoleColor.White, 15),
-                SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // dark green selection
-                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 35),
-                StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 46),
-                PromptFg = new ThemeColor(ConsoleColor.Green, 46),
+                SelectedItemFg = new ThemeColor(ConsoleColor.White, 254),     // #e4e4e4 warm off-white
+                SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green selection
+                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 22),
+                StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 40),     // #00d700 phosphor green
+                PromptFg = new ThemeColor(ConsoleColor.Green, 40),
                 PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
-                ErrorFg = new ThemeColor(ConsoleColor.Red, 203),
-                SearchHighlightFg = new ThemeColor(ConsoleColor.Black, 0),
-                SearchHighlightBg = new ThemeColor(ConsoleColor.Green, 46),
-                ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
-                FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGreen, 22),
-                AccentFg = new ThemeColor(ConsoleColor.Cyan, 43),            // cyan accent for interactive hints
-                DimFg = new ThemeColor(ConsoleColor.DarkGreen, 28),          // very dim green for decorative elements
+                ErrorFg = new ThemeColor(ConsoleColor.Red, 203),              // #ff5f5f
+                SearchHighlightFg = new ThemeColor(ConsoleColor.White, 15),   // white on blue-teal
+                SearchHighlightBg = new ThemeColor(ConsoleColor.DarkCyan, 24), // #005f87 blue-teal highlight
+                ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 65),      // #5f875f muted aged phosphor
+                FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGreen, 65), // #5f875f visible muted
+                AccentFg = new ThemeColor(ConsoleColor.Cyan, 51),             // #00ffff bright cyan interactive
+                DimFg = new ThemeColor(ConsoleColor.DarkGreen, 22),           // #005f00 structural chrome
+                MutedFg = new ThemeColor(ConsoleColor.DarkGreen, 65),         // #5f875f quiet text
+                SuccessFg = new ThemeColor(ConsoleColor.Green, 119),          // #87ff5f warm bright success
+                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink
+                WarningFg = new ThemeColor(ConsoleColor.Yellow, 214),         // #ffaf00 amber warnings
             },
             [ThemeName.Amber] = new ThemePalette
             {
@@ -64,6 +69,10 @@ public static class BuiltInThemes
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkYellow, 94),
                 AccentFg = new ThemeColor(ConsoleColor.Yellow, 208),           // warm orange accent
                 DimFg = new ThemeColor(ConsoleColor.DarkYellow, 94),           // very dim amber
+                MutedFg = new ThemeColor(ConsoleColor.DarkYellow, 94),         // dark amber for quiet text
+                SuccessFg = new ThemeColor(ConsoleColor.Yellow, 220),          // bright amber for success
+                CelebrationFg = new ThemeColor(ConsoleColor.Yellow, 208),      // warm orange celebration
+                WarningFg = new ThemeColor(ConsoleColor.Red, 196),             // red for warnings
             },
             [ThemeName.Dracula] = new ThemePalette
             {
@@ -89,6 +98,10 @@ public static class BuiltInThemes
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGray, 238),
                 AccentFg = new ThemeColor(ConsoleColor.Cyan, 80),              // cyan accent (matches link color)
                 DimFg = new ThemeColor(ConsoleColor.DarkGray, 236),            // very dim gray
+                MutedFg = new ThemeColor(ConsoleColor.DarkGray, 242),          // muted gray
+                SuccessFg = new ThemeColor(ConsoleColor.Green, 114),           // Dracula green
+                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 212),     // Dracula pink
+                WarningFg = new ThemeColor(ConsoleColor.Yellow, 220),          // Dracula yellow
             },
             [ThemeName.Light] = new ThemePalette
             {
@@ -114,6 +127,10 @@ public static class BuiltInThemes
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.Gray, 249),
                 AccentFg = new ThemeColor(ConsoleColor.DarkBlue, 32),          // lighter blue accent
                 DimFg = new ThemeColor(ConsoleColor.Gray, 248),                // light gray for decoration
+                MutedFg = new ThemeColor(ConsoleColor.Gray, 246),              // medium gray
+                SuccessFg = new ThemeColor(ConsoleColor.DarkGreen, 28),        // dark green success
+                CelebrationFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // dark magenta celebration
+                WarningFg = new ThemeColor(ConsoleColor.DarkYellow, 172),      // dark amber warning
             },
         };
 

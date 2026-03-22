@@ -8,9 +8,9 @@ current screen. It shows a small overlay/toast indicating the active layout
 and how to switch.
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — active layout name
+  [green]   = phosphor green #00d700 (ANSI 40) — active layout name
   [cyan]    = bright cyan #00ffff (ANSI 51) — key combo, arrows
-  [dim]     = dark green #005f00 (ANSI 22-28) — borders, inactive options
+  [dim]     = dark green #005f00 (ANSI 22) — borders, inactive options
   [med]     = medium green #00af00 (ANSI 34) — descriptions
 
 

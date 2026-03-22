@@ -188,6 +188,12 @@ public class BrowserOrchestrator : IBrowserService
         {
             _renderer.RenderLoading(url);
 
+            // TODO: Wire up Esc cancellation during page loading. The RenderLoading hint
+            // already shows "Esc:cancel", but actual cancellation requires racing the page
+            // load task against a keyboard input task (e.g., Task.WhenAny) and using
+            // CancellationTokenSource to abort the load, then navigating back. This touches
+            // multiple load paths (preload, HTTP, Selenium retries) and needs careful refactoring.
+
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
                 url, TimeSpan.FromSeconds(3), cancellationToken);
@@ -653,7 +659,7 @@ public class BrowserOrchestrator : IBrowserService
     /// <summary>
     /// Calculates the available viewport height for the reader view.
     /// The headline is now embedded in the scrollable line cache,
-    /// so only the status bar area (3 lines) is reserved.
+    /// so only the status bar area (2 lines) is reserved.
     /// </summary>
     private static int GetReaderViewportHeight(RenderOptions options)
     {
@@ -1434,6 +1440,20 @@ public class BrowserOrchestrator : IBrowserService
     {
         _idleDetector.RecordActivity();
 
+        // Auto-commit expired undo states
+        await UndoCommandHandler.CommitIfExpired(_commandContext, cancellationToken);
+
+        // For any command other than Undo, passive commands, or DeleteItem
+        // (which handles its own undo commit), commit pending undo immediately
+        if (command.Type is not CommandType.Undo
+            and not CommandType.NoOp
+            and not CommandType.TerminalResized
+            and not CommandType.DeleteItem
+            && _commandContext.PendingUndo != null)
+        {
+            await UndoCommandHandler.ClearOnAction(_commandContext, cancellationToken);
+        }
+
         try
         {
             // Handle launcher-specific commands first
@@ -1442,8 +1462,7 @@ public class BrowserOrchestrator : IBrowserService
                 return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
             }
 
-            // Remap h/l (CollapseNode/ExpandNode) to width controls in Reader View
-            var commandType = RemapForViewMode(command.Type);
+            var commandType = command.Type;
 
             switch (commandType)
             {
@@ -1588,6 +1607,10 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.AddBookmark:
                     // Only handle in launcher mode (handled above), ignore in other views
                     break;
+
+                case CommandType.Undo:
+                    await UndoCommandHandler.HandleUndo(_commandContext, options, cancellationToken);
+                    break;
             }
 
             // Notify pre-loader of selection changes in hierarchical view
@@ -1605,21 +1628,6 @@ public class BrowserOrchestrator : IBrowserService
             _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
             return true;
         }
-    }
-
-    private CommandType RemapForViewMode(CommandType commandType)
-    {
-        if (_navigationService.CurrentContext.ViewMode != ViewMode.Readable)
-        {
-            return commandType;
-        }
-
-        return commandType switch
-        {
-            CommandType.CollapseNode => CommandType.DecreaseWidth,
-            CommandType.ExpandNode => CommandType.IncreaseWidth,
-            _ => commandType,
-        };
     }
 
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)

@@ -124,7 +124,7 @@ internal class LauncherRenderer
                     FormatKbdHint(":", "config", p) + "  " +
                     FormatKbdHint("?", "help", p);
 
-        var version = $"{p.SecondaryText.AnsiFg}{Dim}v1.0{Reset}";
+        var version = $"{p.GetMutedFg().AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
         var hintsTextLen = "[Enter] open  [o] go to url  [:] config  [?] help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
@@ -137,7 +137,7 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        const int headerLines = 3;
+        const int headerLines = 1;
         const int urlBarLines = 5;
         const int footerLines = 2;
         const int columnThreshold = 40;
@@ -345,7 +345,7 @@ internal class LauncherRenderer
             if (badge.Length > 0)
             {
                 var badgePad = indent - badge.Length - 1;
-                return $" {p.SecondaryText.AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
+                return $" {p.GetAccentFg().AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
                        $"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}{new string(' ', pad)}";
             }
 
@@ -364,14 +364,18 @@ internal class LauncherRenderer
 
     private static string FormatKbdHint(string key, string action, ThemePalette p)
     {
-        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
                $" {p.SecondaryText.AnsiFg}{Dim}{action}{Reset}";
     }
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
     {
-        var subtitle = $"{bookmarkCount} bookmarks";
-        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, "TermReader", subtitle, width);
+        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}TermReader{Reset}";
+        var meta = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
+        var titleTextLen = "TermReader".Length;
+        var metaTextLen = $"{bookmarkCount} bookmarks".Length;
+        var padding = Math.Max(1, width - 1 - titleTextLen - metaTextLen);
+        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
     }
 
     private void RenderUrlBar(int width, bool isSelected, ThemePalette p)

@@ -15,13 +15,13 @@ Frame rate target: ~10-15 fps (66-100ms per frame) for smooth feel without
 excessive CPU usage.
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — primary text
-  [bright]  = slightly brighter green (ANSI 48) — emphasis
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
+  [title]   = playful pink #ff87d7 (ANSI 212) — emphasis, titles
   [cyan]    = bright cyan #00ffff (ANSI 51) — accent
-  [dim]     = dark green #005f00 (ANSI 22-28) — decorative
+  [dim]     = dark green #005f00 (ANSI 22) — decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — secondary
-  [pink]    = hot pink #ff0087 (ANSI 198) — celebration
-  [amber]   = yellow/amber #ffd700 (ANSI 220) — progress
+  [pink]    = vivid pink #ff5fd7 (ANSI 206) — celebration
+  [amber]   = amber #ffaf00 (ANSI 214) — progress, warning
 
 
 ================================================================================

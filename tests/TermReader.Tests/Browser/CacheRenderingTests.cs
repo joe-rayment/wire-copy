@@ -336,7 +336,7 @@ public class CacheRenderingTests
     #region Two-Line Status Bar Format
 
     [Fact]
-    public void StatusBar_OutputsSeparatorAndTwoContentLines()
+    public void StatusBar_OutputsTwoContentLines()
     {
         var context = new NavigationContext
         {
@@ -350,8 +350,6 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        // Separator line uses ─ character
-        output.Should().Contain("\u2500");
         // Line 1: mode label
         output.Should().Contain("LinkView");
         // Line 2: domain
@@ -431,8 +429,7 @@ public class CacheRenderingTests
         var bar = StatusBarRenderer.FormatProgressBar(3, 10, p);
 
         bar.Should().Contain("3/10 cached");
-        bar.Should().Contain("\u25B0"); // filled block
-        bar.Should().Contain("\u25B1"); // empty block
+        bar.Should().Contain("\u2588"); // full block (eighth-block progress bar)
     }
 
     #endregion

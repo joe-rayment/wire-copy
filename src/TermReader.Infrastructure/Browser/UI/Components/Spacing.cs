@@ -23,8 +23,8 @@ internal static class Spacing
     public const int GroupChildIndent = 4;
 
     /// <summary>Number of header lines reserved at top of scrollable views.</summary>
-    public const int DefaultHeaderLines = 2;
+    public const int DefaultHeaderLines = 1;
 
     /// <summary>Number of status bar lines reserved at bottom.</summary>
-    public const int StatusBarLines = 3;
+    public const int StatusBarLines = 2;
 }

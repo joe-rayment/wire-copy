@@ -9,11 +9,11 @@ Only one toast visible at a time — new toasts replace the current one.
 Maximum width: 40 chars. Rounded corners. 3 lines tall (border + text + border).
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — primary text
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
   [cyan]    = bright cyan #00ffff (ANSI 51) — cache/info toast border
-  [dim]     = dark green #005f00 (ANSI 22-28) — decorative
+  [dim]     = dark green #005f00 (ANSI 22) — decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — secondary text
-  [pink]    = hot pink #ff0087 (ANSI 198) — celebration toast border/accent
+  [pink]    = vivid pink #ff5fd7 (ANSI 206) — celebration toast border/accent
   [red]     = red #ff5f5f (ANSI 203) — error toast border
 
 

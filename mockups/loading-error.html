@@ -4,136 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TermReader Mockups: Loading, Error &amp; Challenge Screens</title>
-<style>
-/* TermReader Mockup Template - ANSI 256 Color Mapping */
-/* Phosphor theme (green-on-black) */
-
-:root {
-  /* Core palette from design-system.md */
-  --green: #00ff00;     /* ANSI 46 - PrimaryText */
-  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
-  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
-  --med: #00af00;       /* ANSI 34 - SecondaryText */
-  --dim: #008700;       /* ANSI 28 - DimFg */
-  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
-  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
-  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
-  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
-  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
-  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
-  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
-  --sel-bg: #005f00;    /* ANSI 22 - selection background */
-  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
-  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
-  --bg: #0a0a0a;        /* terminal background */
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--green);
-  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 20px;
-}
-
-/* Page layout */
-.page-title {
-  color: var(--cyan);
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 4px;
-  letter-spacing: 1px;
-}
-.page-subtitle {
-  color: var(--med);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-/* Each mockup screen */
-.screen {
-  margin-bottom: 40px;
-}
-.screen-label {
-  color: var(--amber);
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #333;
-}
-.screen-notes {
-  color: var(--med);
-  font-size: 12px;
-  margin-top: 8px;
-  padding: 8px;
-  border-left: 2px solid #333;
-}
-
-/* Terminal frame */
-.terminal {
-  background: #000000;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  white-space: pre;
-  font-size: 13px;
-  line-height: 1.4;
-  position: relative;
-}
-.terminal::before {
-  content: '● ● ●';
-  display: block;
-  color: #555;
-  font-size: 10px;
-  letter-spacing: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #222;
-}
-
-/* Color classes */
-.g   { color: var(--green); }        /* [green] */
-.b   { color: var(--bright); }       /* [bright] */
-.c   { color: var(--cyan); }         /* [cyan] */
-.m   { color: var(--med); }          /* [med] */
-.d   { color: var(--dim); }          /* [dim] */
-.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
-.w   { color: var(--white); }        /* [white] */
-.pk  { color: var(--pink); }         /* [pink] */
-.am  { color: var(--amber); }        /* [amber] */
-.r   { color: var(--red); }          /* [red] */
-.nv  { color: var(--nav); }          /* [nav] */
-.bd  { color: var(--border); }       /* border color */
-
-/* Backgrounds */
-.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
-.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
-.wbg { background: var(--white); }   /* [white-bg] */
-
-/* Text attributes */
-.bold { font-weight: bold; }
-.dim-attr { opacity: 0.7; }
-
-/* Selection with accent bar */
-.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
-
-/* Separator */
-hr.section-sep {
-  border: none;
-  border-top: 1px solid #333;
-  margin: 30px 0;
-}
-</style>
+<!-- Cross-references: template.css (shared design system), toast.html (retry success toast) -->
+<link rel="stylesheet" href="template.css">
 </head>
 <body>
 
 <div class="page-title">TermReader Mockups: Loading, Error &amp; Challenge Screens</div>
-<div class="page-subtitle">Phosphor theme (green-on-black) &middot; 80x24 terminal</div>
+<div class="page-subtitle">Phosphor 2.0 &middot; 80x24 terminal</div>
 
 <hr class="section-sep">
 
@@ -143,7 +20,7 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 1a: Loading &mdash; Current Design (Minimal)</div>
   <div class="terminal">
-  <span class="g">&#x2807;</span> <span class="g">Loading...</span>
+  <span class="g">⠇</span> <span class="g">Loading...</span>
   <span class="m">arstechnica.com/science/2026/03/a-century-after-rockets</span></div>
 </div>
 
@@ -153,21 +30,23 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 1b: Loading &mdash; Refreshed Design (Boxed, Centered)</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="g">&#x2839;</span> <span class="g">Loading page...</span>            <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">arstechnica.com/science/2026/03/</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">a-century-after-rockets</span>            <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="g">⠹</span> <span class="g">Loading page...</span>            <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">arstechnica.com/science/2026/03/</span>  <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">a-century-after-rockets</span>            <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>                          <span class="c">Esc</span><span class="m">:cancel</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Centered horizontally and vertically on screen.<br>
-    Rounded box border in dim green.<br>
-    Braille spinner animates through: &#x280B; &#x2819; &#x2839; &#x2838; &#x283C; &#x2834; &#x2826; &#x2827; &#x2807; &#x280F; (80ms/frame).<br>
-    URL split across lines if long, in medium green.<br>
-    Breathing room: empty lines above/below text inside box.<br>
-    No key hints &mdash; just wait.
+    Rounded box border in .d (dim, structural).<br>
+    Braille spinner animates through: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ (80ms/frame).<br>
+    URL split across lines if long, in .m.<br>
+    Esc:cancel hint at bottom right — users can abort slow page loads.<br>
+    Breathing room: empty lines above/below text inside box.
   </div>
 </div>
 
@@ -177,13 +56,15 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 1c: Loading &mdash; With Status Message (Selenium Navigation)</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="g">&#x283C;</span> <span class="g">Waiting for page...</span>        <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">nytimes.com/2026/03/18/technol...</span> <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="g">⠼</span> <span class="g">Waiting for page...</span>        <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">nytimes.com/2026/03/18/technol...</span> <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>                          <span class="c">Esc</span><span class="m">:cancel</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
 </div>
 
 <!-- ============================================================ -->
@@ -192,14 +73,16 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 1d: Loading &mdash; Multiple Fallback Attempts</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="g">&#x2827;</span> <span class="g">Retrying with browser...</span>   <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>          <span class="m">Attempt 2 of 3</span>              <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">nytimes.com/2026/03/18/technol...</span> <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="g">⠧</span> <span class="g">Retrying with browser...</span>   <span class="d">│</span>
+                    <span class="d">│</span>          <span class="m">Attempt 2 of 3</span>              <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">nytimes.com/2026/03/18/technol...</span> <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>                          <span class="c">Esc</span><span class="m">:cancel</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
 </div>
 
 <hr class="section-sep">
@@ -224,26 +107,26 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 2b: Error &mdash; Refreshed Design (Boxed, Structured)</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="r">Page failed to load</span>           <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Connection timed out after 30s</span>    <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">arstechnica.com/science/2026/</span>    <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">03/a-century-after-rockets</span>       <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="c">R</span><span class="m">:retry</span>    <span class="c">b</span><span class="m">:go back</span>    <span class="c">o</span><span class="m">:browser</span> <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="r">Page failed to load</span>           <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Connection timed out after 30s</span>    <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">arstechnica.com/science/2026/</span>    <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">03/a-century-after-rockets</span>       <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="c">R</span><span class="m">:retry</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">Esc</span><span class="m">:cancel</span> <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Centered box with rounded corners.<br>
-    Error headline in red &mdash; brightest element is the problem.<br>
-    Error detail in medium green &mdash; explanation without alarm.<br>
-    URL in medium green, split if long.<br>
-    Action hints at bottom: keys in cyan, descriptions in medium green.<br>
-    Added 'o' for "open in external browser" as escape hatch.<br>
-    More breathing room than current design.
+    Error headline in .r (red) &mdash; brightest element is the problem.<br>
+    Error detail in .m &mdash; explanation without alarm.<br>
+    URL in .m, split if long.<br>
+    Action hints at bottom: keys in .c, descriptions in .m.<br>
+    Added Esc:cancel alongside existing hints.<br>
+    Added 'o' for "open in external browser" as escape hatch.
   </div>
 </div>
 
@@ -253,16 +136,16 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 2c: Error &mdash; Network Error</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="r">Network unreachable</span>           <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">DNS resolution failed for</span>        <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">arstechnica.com</span>                   <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="c">R</span><span class="m">:retry</span>    <span class="c">b</span><span class="m">:go back</span>              <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="r">Network unreachable</span>           <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">DNS resolution failed for</span>        <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">arstechnica.com</span>                   <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="c">R</span><span class="m">:retry</span>    <span class="c">b</span><span class="m">:back</span>    <span class="c">Esc</span><span class="m">:cancel</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
 </div>
 
 <!-- ============================================================ -->
@@ -271,16 +154,16 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 2d: Error &mdash; HTTP Error (404)</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="r">Page not found (404)</span>          <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">The server returned an error.</span>    <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">arstechnica.com/missing-page</span>    <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="c">R</span><span class="m">:retry</span>    <span class="c">b</span><span class="m">:go back</span>    <span class="c">o</span><span class="m">:browser</span> <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="r">Page not found (404)</span>          <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">The server returned an error.</span>    <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">arstechnica.com/missing-page</span>    <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="c">R</span><span class="m">:retry</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">Esc</span><span class="m">:cancel</span> <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
 </div>
 
 <!-- ============================================================ -->
@@ -289,20 +172,37 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 2e: Error &mdash; Content Extraction Error</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>        <span class="r">No readable content</span>           <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Could not extract article text.</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">The page may require JavaScript</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">or login.</span>                         <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="c">I</span><span class="m">:login</span>  <span class="c">R</span><span class="m">:retry</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span> <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>        <span class="r">No readable content</span>           <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Could not extract article text.</span>  <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">The page may require JavaScript</span>  <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">or login.</span>                         <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="c">I</span><span class="m">:login</span>  <span class="c">R</span><span class="m">:retry</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span> <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Content extraction failure offers I:login as first action (most likely fix).<br>
     v:links still available &mdash; links may have loaded even if content didn't.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- SCREEN 2f: Retry Success                                     -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Screen 2f: Retry Success</div>
+  <div class="terminal">
+                    <span class="ok">✓</span> <span class="g">Loaded on retry</span>
+</div>
+  <div class="screen-notes">
+    Brief toast-like confirmation shown after a successful retry.<br>
+    Checkmark in .ok (success green #5fffaf), text in .g.<br>
+    Closes the error → retry feedback loop. Dismissed on next redraw.
   </div>
 </div>
 
@@ -314,7 +214,7 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 3a: Bot Challenge &mdash; Current Design</div>
   <div class="terminal">
-  <span class="g">&#x2807;</span> <span class="g">Bot challenge detected</span>
+  <span class="g">⠇</span> <span class="g">Bot challenge detected</span>
   <span class="m">Please solve it in the browser window.</span>
   <span class="m">https://nytimes.com/...</span>
 
@@ -327,27 +227,27 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 3b: Bot Challenge &mdash; Refreshed Design</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>     <span class="am">&#x2839;</span> <span class="g">Bot challenge detected</span>       <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">A CAPTCHA or verification page</span>   <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">appeared in the browser window.</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Please solve it to continue.</span>     <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">nytimes.com/2026/03/18/techno&#x2026;</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="d">&#x258F;&#x258E;&#x258D;&#x258C;&#x258B;&#x258A;&#x2589;&#x2588;&#x2589;&#x258A;&#x258B;&#x258C;&#x258D;&#x258E;&#x258F;</span>                <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Waiting for page to resolve...</span>   <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>     <span class="am">⠹</span> <span class="g">Bot challenge detected</span>       <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">A CAPTCHA or verification page</span>   <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">appeared in the browser window.</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Please solve it to continue.</span>     <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">nytimes.com/2026/03/18/techno…</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="d">▏▎▍▌▋▊▉█▉▊▋▌▍▎▏</span>                <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Waiting for page to resolve...</span>   <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
-    Spinner in amber (not green) to indicate "needs your attention".<br>
-    "Bot challenge detected" in green &mdash; not an error, just needs action.<br>
-    Clear instructions in medium green.<br>
+    Spinner in .am (amber) to indicate "needs your attention".<br>
+    "Bot challenge detected" in .g &mdash; not an error, just needs action.<br>
+    Clear instructions in .m.<br>
     URL shown for reference.<br>
-    Animated "breathing" bar: &#x258F;&#x258E;&#x258D;&#x258C;&#x258B;&#x258A;&#x2589;&#x2588;&#x2589;&#x258A;&#x258B;&#x258C;&#x258D;&#x258E;&#x258F; in dim, pulsing back and forth to indicate "waiting" without urgency.<br>
+    Animated "breathing" bar in .d, pulsing back and forth to indicate "waiting" without urgency.<br>
     No action keys needed &mdash; the screen auto-resolves when the challenge is passed.
   </div>
 </div>
@@ -360,23 +260,23 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 4: Interactive Refresh</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>     <span class="g">&#x2839;</span> <span class="g">Interactive refresh</span>          <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">A browser window is open.</span>        <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Complete any login, captcha, or</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">interaction needed.</span>               <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">nytimes.com/2026/03/18/techno&#x2026;</span>  <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="c">Enter</span><span class="m">:accept page</span>  <span class="c">Esc</span><span class="m">:cancel</span>   <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>     <span class="g">⠹</span> <span class="g">Interactive refresh</span>          <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">A browser window is open.</span>        <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Complete any login, captcha, or</span>  <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">interaction needed.</span>               <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">nytimes.com/2026/03/18/techno…</span>  <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="c">Enter</span><span class="m">:accept page</span>  <span class="c">Esc</span><span class="m">:cancel</span>   <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
     User-initiated (not automatic like bot challenge).<br>
     Action hints at bottom: Enter to accept, Esc to cancel.<br>
-    Spinner in green (normal, user is in control).
+    Spinner in .g (normal, user is in control).
   </div>
 </div>
 
@@ -388,22 +288,39 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Screen 5: Manual Login</div>
   <div class="terminal">
-                    <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>     <span class="am">&#x2839;</span> <span class="g">Login required</span>               <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Please log in to</span> <span class="g">nytimes.com</span>    <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">in the browser window.</span>           <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="d">&#x258F;&#x258E;&#x258D;&#x258C;&#x258B;&#x258A;&#x2589;&#x2588;&#x2589;&#x258A;&#x258B;&#x258C;&#x258D;&#x258E;&#x258F;</span>                <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>  <span class="m">Waiting for login...</span>              <span class="d">&#x2502;</span>
-                    <span class="d">&#x2502;</span>                                      <span class="d">&#x2502;</span>
-                    <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span></div>
+                    <span class="d">╭──────────────────────────────────────╮</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>     <span class="am">⠹</span> <span class="g">Login required</span>               <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Please log in to</span> <span class="g">nytimes.com</span>    <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">in the browser window.</span>           <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">│</span>  <span class="d">▏▎▍▌▋▊▉█▉▊▋▌▍▎▏</span>                <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">Waiting for login...</span>              <span class="d">│</span>
+                    <span class="d">│</span>                                      <span class="d">│</span>
+                    <span class="d">╰──────────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Similar to bot challenge but with "Login required" headline.<br>
-    Domain highlighted in green within the instruction text.<br>
-    Same breathing bar animation.<br>
+    Domain highlighted in .g within the instruction text.<br>
+    Same breathing bar animation in .d.<br>
     Auto-resolves when login cookies are detected.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- DESIGN NOTES                                                  -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Design Notes</div>
+  <div class="screen-notes">
+    WHY: Esc:cancel prevents users from being trapped during slow Selenium fetches.<br>
+    Retry success toast (Screen 2f) closes the error → recovery feedback loop.<br><br>
+    All loading/error boxes use .d borders (structural chrome).<br>
+    Error headlines use .r (red). Bot challenge and login spinners use .am (amber).<br>
+    Normal loading spinners use .g (green). Details and URLs use .m.<br>
+    Retry success checkmark uses .ok (success green #5fffaf).
   </div>
 </div>
 

@@ -188,3 +188,6 @@ __pycache__/
 
 # Personal notes
 obsidian/
+
+# Dolt database files (added by bd init)
+.dolt/

@@ -24,9 +24,9 @@ public record RenderOptions
 
     /// <summary>
     /// Number of lines to reserve for status bar.
-    /// Matches actual status bar rendering: separator + line 1 + line 2.
+    /// Matches actual status bar rendering: line 1 + line 2.
     /// </summary>
-    public int StatusBarLines { get; init; } = 3;
+    public int StatusBarLines { get; init; } = 2;
 
     /// <summary>
     /// Number of lines to reserve for header.

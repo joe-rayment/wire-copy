@@ -32,15 +32,19 @@ internal class CollectionRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
-        // Rounded box header
+        // Single-line header
         _helpers.WriteLine();
-        Borders.RenderRoundedBox(_helpers, p, "Collections", width);
+        var collCount = collections.Count;
+        var collTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{"Collections"}\x1b[0m";
+        var collMeta = $"{p.SecondaryText.AnsiFg}{collCount} collection{(collCount == 1 ? string.Empty : "s")}\x1b[0m";
+        var collTitleLen = "Collections".Length;
+        var collMetaLen = $"{collCount} collection{(collCount == 1 ? string.Empty : "s")}".Length;
+        var collPad = Math.Max(1, width - 1 - collTitleLen - collMetaLen);
+        _helpers.WriteLine($" {collTitle}{new string(' ', collPad)}{collMeta}");
         _helpers.WriteLine();
 
-        var useSeparators = height >= 30;
-        var linesPerItem = useSeparators ? 2 : 1;
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
-        var maxVisible = useSeparators ? (remainingHeight + 1) / linesPerItem : remainingHeight;
+        var maxVisible = remainingHeight;
 
         if (collections.Count == 0)
         {
@@ -56,7 +60,7 @@ internal class CollectionRenderer
                 var isSelected = i == selectedIndex;
                 var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
 
-                var star = isDefault ? $" {p.PromptFg.AnsiFg}{Indicators.Star}{Reset}" : string.Empty;
+                var star = isDefault ? $" {p.SecondaryText.AnsiFg}{Indicators.Star}{Reset}" : string.Empty;
                 var itemCount = collection.Items.Count;
                 var countText = $"({itemCount})";
 
@@ -96,11 +100,6 @@ internal class CollectionRenderer
                 {
                     _helpers.WriteLine($"   {p.PrimaryText.AnsiFg}{displayName}{countDisplay}{star}{Reset}");
                 }
-
-                if (useSeparators && i < endIndex - 1)
-                {
-                    _helpers.WriteLine(Borders.ItemSeparator(p));
-                }
             }
 
             if (collections.Count > endIndex)
@@ -116,10 +115,15 @@ internal class CollectionRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
-        // Rounded box header with collection name and item count
+        // Single-line header with collection name and item count
         _helpers.WriteLine();
         var itemCount = collection.Items.Count;
-        Borders.RenderRoundedBox(_helpers, p, $"{collection.Name} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})", width);
+        var itemTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2))}\x1b[0m";
+        var itemMeta = $"{p.SecondaryText.AnsiFg}{itemCount} item{(itemCount == 1 ? string.Empty : "s")}\x1b[0m";
+        var itemTitleLen = RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2)).Length;
+        var itemMetaLen = $"{itemCount} item{(itemCount == 1 ? string.Empty : "s")}".Length;
+        var itemPad = Math.Max(1, width - 1 - itemTitleLen - itemMetaLen);
+        _helpers.WriteLine($" {itemTitle}{new string(' ', itemPad)}{itemMeta}");
         _helpers.WriteLine();
 
         // Podcast button (only shown when collection has items)
@@ -128,8 +132,7 @@ internal class CollectionRenderer
             _podcastCtaRenderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
         }
 
-        var useSeparators = height >= 30;
-        var linesPerItem = useSeparators ? 3 : 2;
+        const int linesPerItem = 2;
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
         var maxItems = Math.Max(1, (remainingHeight + 1) / linesPerItem);
 
@@ -184,11 +187,6 @@ internal class CollectionRenderer
                     var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
                     _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
                 }
-
-                if (useSeparators && i < endIndex - 1)
-                {
-                    _helpers.WriteLine(Borders.ItemSeparator(p, 5));
-                }
             }
 
             if (collection.Items.Count > endIndex)
@@ -200,21 +198,18 @@ internal class CollectionRenderer
 
     internal static int GetCollectionListVisibleCount(int terminalHeight)
     {
-        const int headerLines = 5;
-        const int statusBarLines = 3;
-        var useSeparators = terminalHeight >= 30;
-        var linesPerItem = useSeparators ? 2 : 1;
+        const int headerLines = 3;
+        const int statusBarLines = 2;
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
-        return useSeparators ? (remainingHeight + 1) / linesPerItem : remainingHeight;
+        return remainingHeight;
     }
 
     internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80)
     {
-        const int headerLines = 5;
-        const int statusBarLines = 3;
+        const int headerLines = 3;
+        const int statusBarLines = 2;
+        const int linesPerItem = 2;
         var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
-        var useSeparators = terminalHeight >= 30;
-        var linesPerItem = useSeparators ? 3 : 2;
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
         return Math.Max(1, (remainingHeight + 1) / linesPerItem);
     }

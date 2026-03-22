@@ -322,12 +322,13 @@ public class TerminalInputHandler : IInputHandler
             'p' => new NavigationCommand { Type = CommandType.GeneratePodcast },
             'a' => new NavigationCommand { Type = CommandType.AddBookmark },
             'c' => new NavigationCommand { Type = CommandType.OpenCollections },
-            '+' or '=' => new NavigationCommand { Type = CommandType.IncreaseWidth },
-            '-' or '_' => new NavigationCommand { Type = CommandType.DecreaseWidth },
+            '+' or '=' or ']' => new NavigationCommand { Type = CommandType.IncreaseWidth },
+            '-' or '_' or '[' => new NavigationCommand { Type = CommandType.DecreaseWidth },
             '0' => new NavigationCommand { Type = CommandType.ResetWidth },
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
             'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },
+            'z' => new NavigationCommand { Type = CommandType.Undo },
             _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
         };
     }

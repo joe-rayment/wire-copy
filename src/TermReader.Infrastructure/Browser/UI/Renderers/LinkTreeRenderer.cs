@@ -33,10 +33,16 @@ internal class LinkTreeRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        var title = metadata.Title ?? "Untitled";
-        var subtitle = BuildHeaderSubtitle(metadata, url, linkCount, sectionCount);
+        var titleText = metadata.Title ?? "Untitled";
+        var metaText = BuildHeaderSubtitle(metadata, url, linkCount, sectionCount);
 
-        Borders.RenderRoundedBoxWithSubtitle(_helpers, p, title, subtitle, width);
+        var displayTitle = RenderHelpers.TruncateText(titleText, Math.Max(1, width / 2));
+        var displayMeta = RenderHelpers.TruncateText(metaText, Math.Max(1, width - displayTitle.Length - 2));
+
+        var title = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{displayTitle}\x1b[0m";
+        var meta = $"{p.SecondaryText.AnsiFg}{displayMeta}\x1b[0m";
+        var padding = Math.Max(1, width - 1 - displayTitle.Length - displayMeta.Length);
+        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
     }
 
     public void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
@@ -173,8 +179,8 @@ internal class LinkTreeRenderer
     /// </summary>
     internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        const int headerLines = 3;
-        const int statusBarLines = 3;
+        const int headerLines = 1;
+        const int statusBarLines = 2;
         const int columnThreshold = 50;
         const int standardCellHeight = 5;
         const int compactCellHeight = 3;

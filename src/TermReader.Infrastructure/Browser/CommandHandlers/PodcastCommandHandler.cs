@@ -384,7 +384,7 @@ internal static class PodcastCommandHandler
                     var line = status.State switch
                     {
                         ArticleState.Completed =>
-                            $"  {palette.PromptFg.AnsiFg}\u2713{Reset} {displayTitle}",
+                            $"  {palette.GetSuccessFg().AnsiFg}\u2713{Reset} {displayTitle}",
                         ArticleState.Processing =>
                             $"  {palette.HeaderTitleFg.AnsiFg}\u21bb{Reset} {displayTitle}" +
                             $"{methodSuffix}" +
@@ -406,7 +406,7 @@ internal static class PodcastCommandHandler
 
                 helpers.WriteLine();
                 helpers.WriteLine(
-                    $"  {palette.PrimaryText.AnsiFg}Esc{Reset}{palette.SecondaryText.AnsiFg}:skip{Reset}");
+                    $"  {palette.GetAccentFg().AnsiFg}Esc{Reset}{palette.SecondaryText.AnsiFg}:skip{Reset}");
                 helpers.ClearRemainingLines();
 
                 pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
@@ -539,7 +539,7 @@ internal static class PodcastCommandHandler
             {
                 var (indicator, color) = article.State switch
                 {
-                    ArticleCacheState.Cached => ("\u2713", p.PromptFg),
+                    ArticleCacheState.Cached => ("\u2713", p.GetSuccessFg()),
                     ArticleCacheState.Caching => ("\u27f3", p.SecondaryText),
                     ArticleCacheState.NeedsBrowser => ("\u25b8", p.ErrorFg),
                     _ => ("\u00b7", p.SecondaryText)
@@ -552,7 +552,7 @@ internal static class PodcastCommandHandler
             // Key hints
             helpers.WriteLine();
             helpers.WriteLine(
-                $"  {p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:skip waiting{Reset}");
+                $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:skip waiting{Reset}");
 
             helpers.ClearRemainingLines();
 
@@ -793,29 +793,29 @@ internal static class PodcastCommandHandler
             var hints = new StringBuilder();
             if (!isTtsConfigured)
             {
-                hints.Append($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:set API key   {Reset}");
+                hints.Append($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:set API key   {Reset}");
             }
             else
             {
-                hints.Append($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}");
-                hints.Append($"{p.PrimaryText.AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}:change API key   {Reset}");
+                hints.Append($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}");
+                hints.Append($"{p.GetAccentFg().AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}:change API key   {Reset}");
             }
 
             if (!isGcsConfigured)
             {
-                hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}set bucket   {Reset}");
+                hints.Append($"{p.GetAccentFg().AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}set bucket   {Reset}");
             }
             else
             {
-                hints.Append($"{p.PrimaryText.AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}change bucket   {Reset}");
+                hints.Append($"{p.GetAccentFg().AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}change bucket   {Reset}");
             }
 
             if (gcsClient != null)
             {
-                hints.Append($"{p.PrimaryText.AnsiFg}k{Reset}{p.SecondaryText.AnsiFg}:{(isKeyConfigured ? "change" : "set")} key   {Reset}");
+                hints.Append($"{p.GetAccentFg().AnsiFg}k{Reset}{p.SecondaryText.AnsiFg}:{(isKeyConfigured ? "change" : "set")} key   {Reset}");
             }
 
-            hints.Append($"{p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+            hints.Append($"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
             helpers.WriteLine(hints.ToString());
 
             helpers.ClearRemainingLines();
@@ -1337,10 +1337,10 @@ internal static class PodcastCommandHandler
             }
 
             // Key hints
-            var hints = $"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}";
+            var hints = $"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}";
             if (maxScroll > 0)
             {
-                hints += $"   {p.PrimaryText.AnsiFg}j/k{Reset}{p.SecondaryText.AnsiFg}:scroll{Reset}";
+                hints += $"   {p.GetAccentFg().AnsiFg}j/k{Reset}{p.SecondaryText.AnsiFg}:scroll{Reset}";
             }
 
             helpers.WriteLine(hints);
@@ -1524,7 +1524,7 @@ internal static class PodcastCommandHandler
             }
 
             helpers.WriteLine();
-            helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
+            helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct);
@@ -1901,7 +1901,7 @@ internal static class PodcastCommandHandler
             // Show success from previous step
             row++;
             Console.SetCursorPosition(4, row);
-            Console.Write($"{p.PromptFg.AnsiFg}\u2714{Reset} Service account key saved");
+            Console.Write($"{p.GetSuccessFg().AnsiFg}\u2714{Reset} Service account key saved");
             row += 2;
 
             var bucketField = new FormFieldConfig
@@ -2109,9 +2109,9 @@ internal static class PodcastCommandHandler
             var line = status.State switch
             {
                 ArticleState.Cached =>
-                    $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}",
+                    $"  {p.GetSuccessFg().AnsiFg}\u2713{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}",
                 ArticleState.Completed =>
-                    $"  {p.PromptFg.AnsiFg}\u2713{Reset} {displayTitle}",
+                    $"  {p.GetSuccessFg().AnsiFg}\u2713{Reset} {displayTitle}",
                 ArticleState.Processing when isCaching =>
                     $"  {p.HeaderTitleFg.AnsiFg}\u21bb{Reset} {displayTitle}" +
                     $"{methodSuffix}" +
@@ -2135,7 +2135,7 @@ internal static class PodcastCommandHandler
         }
 
         helpers.WriteLine();
-        helpers.WriteLine($"  {p.PrimaryText.AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+        helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
     }
 
     private static void CopyToClipboardOsc52(string text)

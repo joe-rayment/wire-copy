@@ -344,7 +344,7 @@ internal class RenderHelpers
 
             Console.SetCursorPosition(0, _linesWritten);
 
-            Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{Colors.Reset}");
+            Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
 
             Console.Write("\x1b[K");
             _linesWritten++;
@@ -451,7 +451,7 @@ internal class RenderHelpers
 
                 Console.Write($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
                 Console.Write(text.Substring(matchPos, searchQuery.Length));
-                Console.Write(Colors.Reset);
+                Console.Write(AnsiCodes.Reset);
 
                 index = matchPos + searchQuery.Length;
             }
@@ -459,36 +459,12 @@ internal class RenderHelpers
     }
 
     /// <summary>
-    /// Color palette constants with 256-color and 16-color fallbacks.
+    /// Theme-independent ANSI control codes (reset, bold, etc.).
+    /// These are standard terminal sequences, not colors — use ThemePalette for all color output.
     /// </summary>
-    internal static class Colors
+    internal static class AnsiCodes
     {
         public const string Reset = "\x1b[0m";
         public const string Bold = "\x1b[1m";
-
-        // Foreground 256-color
-        public const string Fg256White = "\x1b[38;5;252m";
-        public const string Fg256Gray = "\x1b[38;5;245m";
-        public const string Fg256DarkGray = "\x1b[38;5;240m";
-        public const string Fg256Cyan = "\x1b[38;5;80m";
-        public const string Fg256Green = "\x1b[38;5;114m";
-        public const string Fg256Yellow = "\x1b[38;5;220m";
-        public const string Fg256Red = "\x1b[38;5;203m";
-
-        // Background 256-color
-        public const string Bg256Highlight = "\x1b[48;5;235m";
-        public const string Bg256Selection = "\x1b[48;5;237m";
-
-        // 16-color fallbacks
-        public const string Fg16White = "\x1b[37m";
-        public const string Fg16Gray = "\x1b[90m";
-        public const string Fg16Cyan = "\x1b[36m";
-        public const string Fg16Green = "\x1b[32m";
-        public const string Fg16Yellow = "\x1b[33m";
-        public const string Fg16Red = "\x1b[31m";
-
-        public static string Fg(bool use256, string color256, string color16) => use256 ? color256 : color16;
-
-        public static string Bg(bool use256, string color256, string color16) => use256 ? color256 : color16;
     }
 }
