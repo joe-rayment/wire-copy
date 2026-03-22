@@ -29,11 +29,9 @@ RUN dotnet publish "TermReader.API.csproj" -c Release -o /app/publish /p:UseAppH
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
 WORKDIR /app
 
-# Install dependencies for browser automation (Chrome/Chromium)
-RUN apt-get update && apt-get install -y \
+# Install common dependencies for browser automation
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    chromium \
-    chromium-driver \
     xvfb \
     wget \
     gnupg \
@@ -58,9 +56,35 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Chrome path for Selenium
+# Install Chromium with architecture-aware strategy.
+# On x86_64: use standard chromium packages (real .deb, not snap stubs).
+# On ARM64: chromium/chromium-driver packages are snap transitional stubs
+#   that don't work in Docker (no snapd). Instead, install Chromium from
+#   the Debian repository which provides real ARM64 .deb packages.
+RUN ARCH="$(dpkg --print-architecture)" && \
+    if [ "$ARCH" = "amd64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            chromium \
+            chromium-driver \
+        && rm -rf /var/lib/apt/lists/*; \
+    elif [ "$ARCH" = "arm64" ]; then \
+        echo "deb http://deb.debian.org/debian trixie main" > /etc/apt/sources.list.d/debian-trixie.list && \
+        apt-get update && apt-get install -y --no-install-recommends \
+            -t trixie \
+            chromium \
+            chromium-driver \
+        && rm -f /etc/apt/sources.list.d/debian-trixie.list \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "WARNING: Unsupported architecture $ARCH — Chromium not installed, HTTP-only mode" >&2; \
+    fi
+
+# Set Chrome path for Selenium (works on both architectures)
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+
+# Prevent Selenium Manager from downloading x86_64 binaries on ARM64
+ENV SE_MANAGER_OFFLINE=true
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \

@@ -44,12 +44,27 @@ public class BrowserSessionArm64Tests
         // Assert
         act.Should().NotThrow();
 
-        // On ARM64 Linux the Selenium-managed chromedriver is x86_64 and cannot run
+        // On ARM64 Linux without CHROME_BIN/CHROMEDRIVER_PATH set to real binaries,
+        // Selenium-managed chromedriver is x86_64 and cannot run.
+        // If both env vars point to existing files, Selenium is considered available.
         if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64
             && OperatingSystem.IsLinux())
         {
-            session.IsSeleniumAvailable.Should().BeFalse(
-                "Selenium Manager downloads x86_64 chromedriver which cannot execute on ARM64 Linux");
+            var chromeBin = Environment.GetEnvironmentVariable("CHROME_BIN");
+            var driverPath = Environment.GetEnvironmentVariable("CHROMEDRIVER_PATH");
+            var hasSystemBinaries = !string.IsNullOrEmpty(chromeBin) && File.Exists(chromeBin)
+                && !string.IsNullOrEmpty(driverPath) && File.Exists(driverPath);
+
+            if (hasSystemBinaries)
+            {
+                session.IsSeleniumAvailable.Should().BeTrue(
+                    "CHROME_BIN and CHROMEDRIVER_PATH point to real ARM64 binaries");
+            }
+            else
+            {
+                session.IsSeleniumAvailable.Should().BeFalse(
+                    "Selenium Manager downloads x86_64 chromedriver which cannot execute on ARM64 Linux");
+            }
         }
     }
 
@@ -104,6 +119,34 @@ public class BrowserSessionArm64Tests
         // Assert — loaded via HTTP, never called GetOrCreateDriver
         result.Success.Should().BeTrue();
         browserSession.DidNotReceive().GetOrCreateDriver(Arg.Any<bool>());
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void SeleniumCacheCleanup_WhenNotArm64_DoesNotDeleteCache()
+    {
+        // On non-ARM64, ProbeSeleniumAvailability returns true immediately
+        // and never calls CleanupX86SeleniumCache. Verify the cache dir
+        // is left alone on x86_64.
+        if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            && OperatingSystem.IsLinux())
+        {
+            return; // This test only validates non-ARM64 behavior
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var seleniumCacheDir = Path.Combine(home, ".cache", "selenium");
+
+        // If cache exists before, it should still exist after session creation
+        var existedBefore = Directory.Exists(seleniumCacheDir);
+
+        using var session = CreateSession();
+
+        if (existedBefore)
+        {
+            Directory.Exists(seleniumCacheDir).Should().BeTrue(
+                "Selenium cache should not be deleted on non-ARM64");
+        }
     }
 
     private class FakeHttpHandler : HttpMessageHandler
