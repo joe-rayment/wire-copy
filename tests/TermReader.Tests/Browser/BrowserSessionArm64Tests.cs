@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using System.Net;
 using System.Runtime.InteropServices;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -75,5 +76,49 @@ public class BrowserSessionArm64Tests
             .And.Message.Should()
             .Contain("Selenium").And
             .Contain("unavailable");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task PageLoader_WhenSeleniumUnavailable_SkipsBrowserFetch()
+    {
+        // Arrange
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsSeleniumAvailable.Returns(false);
+
+        var config = Options.Create(new BrowserConfiguration());
+        var logger = Substitute.For<ILogger<PageLoader>>();
+
+        // PageLoader constructor: (IOptions<BrowserConfiguration>, ILogger<PageLoader>, IBrowserSession, HttpClient?)
+        var httpClient = new HttpClient(new FakeHttpHandler(
+            "<html><head><title>Test Page</title></head><body>" +
+            "<h1>Welcome</h1><p>Hello world, this is a simple page with enough content to not be flagged as empty.</p>" +
+            "</body></html>"));
+        var pageLoader = new PageLoader(config, logger, browserSession, httpClient);
+
+        // Act
+        var result = await pageLoader.LoadAsync(
+            new PageLoadRequest { Url = "https://example.com" },
+            CancellationToken.None);
+
+        // Assert — loaded via HTTP, never called GetOrCreateDriver
+        result.Success.Should().BeTrue();
+        browserSession.DidNotReceive().GetOrCreateDriver(Arg.Any<bool>());
+    }
+
+    private class FakeHttpHandler : HttpMessageHandler
+    {
+        private readonly string _html;
+        public FakeHttpHandler(string html) => _html = html;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_html, System.Text.Encoding.UTF8, "text/html"),
+                RequestMessage = request,
+            });
+        }
     }
 }
