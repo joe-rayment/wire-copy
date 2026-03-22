@@ -59,6 +59,11 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private async Task<WebDriverLease> AcquireForegroundAsync(bool headless, CancellationToken cancellationToken)
     {
+        if (!_browserSession.IsSeleniumAvailable)
+        {
+            throw new InvalidOperationException("Selenium is unavailable on this platform");
+        }
+
         _logger.LogDebug("Foreground requesting WebDriver access");
 
         if (_backgroundActive)
@@ -90,6 +95,11 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private async Task<WebDriverLease> AcquireBackgroundAsync(bool headless, CancellationToken cancellationToken)
     {
+        if (!_browserSession.IsSeleniumAvailable)
+        {
+            throw new InvalidOperationException("Selenium is unavailable on this platform");
+        }
+
         _logger.LogDebug("Background requesting WebDriver access");
 
         // Background waits up to 60s for the lock
