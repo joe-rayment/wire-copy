@@ -87,6 +87,7 @@ public class BrowserSessionDisposedTests
         // Arrange - Mock IBrowserSession to throw ObjectDisposedException
         // (simulating what happens when BrowserSession.GetOrCreateDriver is called after Dispose)
         var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsSeleniumAvailable.Returns(true);
         browserSession.GetOrCreateDriver(Arg.Any<bool>())
             .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
 
@@ -110,6 +111,7 @@ public class BrowserSessionDisposedTests
     {
         // Arrange - HTTP fails (403), then browser session is disposed
         var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsSeleniumAvailable.Returns(true);
         browserSession.GetOrCreateDriver(Arg.Any<bool>())
             .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
 
@@ -136,6 +138,7 @@ public class BrowserSessionDisposedTests
     {
         // Arrange - Browser disposed, but HTTP should still work as fallback
         var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsSeleniumAvailable.Returns(true);
         browserSession.GetOrCreateDriver(Arg.Any<bool>())
             .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
 
