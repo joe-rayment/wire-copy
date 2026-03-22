@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "TermReader": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
