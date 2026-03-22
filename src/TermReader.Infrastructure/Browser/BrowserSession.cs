@@ -276,6 +276,21 @@ public sealed class BrowserSession : IBrowserSession
         // On ARM64 Linux, Selenium Manager downloads x86_64 chromedriver which cannot execute.
         // Chrome itself may still be available (e.g. Playwright ARM64 Chromium) but the
         // Selenium ChromeDriver service will fail.
+        //
+        // However, if CHROME_BIN and CHROMEDRIVER_PATH are set (e.g. in Docker with real
+        // ARM64 packages), chromedriver may actually work — check before giving up.
+        var chromedriverPath = Environment.GetEnvironmentVariable("CHROMEDRIVER_PATH");
+        var chromeBin = Environment.GetEnvironmentVariable("CHROME_BIN");
+
+        if (!string.IsNullOrEmpty(chromedriverPath) && File.Exists(chromedriverPath)
+            && !string.IsNullOrEmpty(chromeBin) && File.Exists(chromeBin))
+        {
+            _logger.LogInformation(
+                "ARM64 Linux with CHROME_BIN={ChromeBin} and CHROMEDRIVER_PATH={DriverPath} — Selenium may work",
+                chromeBin, chromedriverPath);
+            return true;
+        }
+
         if (string.Equals(_browserConfig.BrowserType, "Chrome", StringComparison.OrdinalIgnoreCase)
             || string.Equals(_browserConfig.BrowserType, string.Empty, StringComparison.OrdinalIgnoreCase)
             || _browserConfig.BrowserType is null)
@@ -283,11 +298,67 @@ public sealed class BrowserSession : IBrowserSession
             _logger.LogWarning(
                 "ARM64 Linux detected — Selenium chromedriver is unavailable. " +
                 "Pages will be loaded via HTTP only. Set CHROME_BIN or install Playwright Chromium for browser support");
+
+            // Clean up useless x86_64 Selenium Manager cache
+            CleanupX86SeleniumCache();
+
             return false;
         }
 
         // Firefox or other browser types may still work
         return true;
+    }
+
+    /// <summary>
+    /// On ARM64, Selenium Manager downloads ~200MB of x86_64 Chrome + chromedriver
+    /// to ~/.cache/selenium/ which can never run. Clean it up to save disk space.
+    /// </summary>
+    private void CleanupX86SeleniumCache()
+    {
+        try
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var seleniumCacheDir = Path.Combine(home, ".cache", "selenium");
+
+            if (!Directory.Exists(seleniumCacheDir))
+            {
+                return;
+            }
+
+            var cacheSize = GetDirectorySizeBytes(seleniumCacheDir);
+            if (cacheSize == 0)
+            {
+                return;
+            }
+
+            var sizeMb = cacheSize / (1024.0 * 1024.0);
+            _logger.LogWarning(
+                "Removing {SizeMb:F1}MB of x86_64 Selenium Manager cache at {Path} " +
+                "(unusable on ARM64)",
+                sizeMb, seleniumCacheDir);
+
+            Directory.Delete(seleniumCacheDir, recursive: true);
+
+            _logger.LogInformation("Cleaned up Selenium Manager cache ({SizeMb:F1}MB freed)", sizeMb);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to clean up Selenium Manager cache (non-fatal)");
+        }
+    }
+
+    private static long GetDirectorySizeBytes(string path)
+    {
+        try
+        {
+            return new DirectoryInfo(path)
+                .EnumerateFiles("*", SearchOption.AllDirectories)
+                .Sum(f => f.Length);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     private void DisposeDriverUnsafe()
@@ -463,7 +534,21 @@ public sealed class BrowserSession : IBrowserSession
         IWebDriver driver;
         try
         {
-            var service = ChromeDriverService.CreateDefaultService();
+            // Use explicit chromedriver path if set (e.g. Docker ARM64 with system packages)
+            var chromedriverPath = Environment.GetEnvironmentVariable("CHROMEDRIVER_PATH");
+            ChromeDriverService service;
+            if (!string.IsNullOrEmpty(chromedriverPath) && File.Exists(chromedriverPath))
+            {
+                var driverDir = Path.GetDirectoryName(chromedriverPath)!;
+                var driverFile = Path.GetFileName(chromedriverPath);
+                service = ChromeDriverService.CreateDefaultService(driverDir, driverFile);
+                _logger.LogDebug("Using CHROMEDRIVER_PATH: {Path}", chromedriverPath);
+            }
+            else
+            {
+                service = ChromeDriverService.CreateDefaultService();
+            }
+
             service.SuppressInitialDiagnosticInformation = true;
             service.HideCommandPromptWindow = true;
 
