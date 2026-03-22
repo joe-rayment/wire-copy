@@ -1,12 +1,12 @@
 // Educational and personal use only.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
-using OpenQA.Selenium.Remote;
 using TermReader.Application.Interfaces;
 using TermReader.Infrastructure.Configuration;
 
@@ -22,6 +22,7 @@ public sealed class BrowserSession : IBrowserSession
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
+    private readonly bool _seleniumAvailable;
     private readonly object _lock = new();
     private IWebDriver? _driver;
     private bool _driverIsHeadless;
@@ -36,6 +37,7 @@ public sealed class BrowserSession : IBrowserSession
         _browserConfig = browserConfig.Value;
         _logger = logger;
         _cookieManager = cookieManager;
+        _seleniumAvailable = ProbeSeleniumAvailability();
     }
 
     public bool HasActiveDriver
@@ -49,11 +51,21 @@ public sealed class BrowserSession : IBrowserSession
         }
     }
 
+    /// <inheritdoc />
+    public bool IsSeleniumAvailable => _seleniumAvailable;
+
     public IWebDriver GetOrCreateDriver(bool headless)
     {
         lock (_lock)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (!_seleniumAvailable)
+            {
+                throw new InvalidOperationException(
+                    "Selenium is unavailable on this platform (ARM64 Linux — no compatible chromedriver). " +
+                    "Pages are loaded via HTTP. JS-heavy sites may not render correctly.");
+            }
 
             if (_driver != null)
             {
@@ -202,6 +214,82 @@ public sealed class BrowserSession : IBrowserSession
         return null;
     }
 
+    private static bool IsArm64Linux()
+    {
+        return RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            && OperatingSystem.IsLinux();
+    }
+
+    /// <summary>
+    /// Locates a Chrome binary with platform-aware priority:
+    /// 1. CHROME_BIN environment variable (explicit override)
+    /// 2. Playwright-managed Chromium (works on ARM64)
+    /// 3. Selenium-managed Chrome (only on non-ARM64, since Selenium Manager downloads x86_64)
+    /// </summary>
+    private string? FindChromeBinary()
+    {
+        // 1. Explicit override via environment variable
+        var envChrome = Environment.GetEnvironmentVariable("CHROME_BIN");
+        if (!string.IsNullOrEmpty(envChrome) && File.Exists(envChrome))
+        {
+            _logger.LogDebug("Using CHROME_BIN override: {Path}", envChrome);
+            return envChrome;
+        }
+
+        // 2. Playwright-managed Chromium (ARM64-compatible)
+        var playwrightChrome = FindPlaywrightChrome();
+        if (playwrightChrome != null)
+        {
+            _logger.LogDebug("Using Playwright Chromium: {Path}", playwrightChrome);
+            return playwrightChrome;
+        }
+
+        // 3. Selenium-managed Chrome (x86_64 only — skip on ARM64)
+        if (!IsArm64Linux())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var seleniumChrome = Path.Combine(home, ".cache", "selenium", "chrome", "linux64");
+            if (Directory.Exists(seleniumChrome))
+            {
+                var latestDir = Directory.GetDirectories(seleniumChrome)
+                    .OrderByDescending(d => d)
+                    .FirstOrDefault();
+                var chromeBin = latestDir != null ? Path.Combine(latestDir, "chrome") : null;
+                if (chromeBin != null && File.Exists(chromeBin))
+                {
+                    _logger.LogDebug("Using Selenium-managed Chrome: {Path}", chromeBin);
+                    return chromeBin;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private bool ProbeSeleniumAvailability()
+    {
+        if (!IsArm64Linux())
+        {
+            return true;
+        }
+
+        // On ARM64 Linux, Selenium Manager downloads x86_64 chromedriver which cannot execute.
+        // Chrome itself may still be available (e.g. Playwright ARM64 Chromium) but the
+        // Selenium ChromeDriver service will fail.
+        if (string.Equals(_browserConfig.BrowserType, "Chrome", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_browserConfig.BrowserType, string.Empty, StringComparison.OrdinalIgnoreCase)
+            || _browserConfig.BrowserType is null)
+        {
+            _logger.LogWarning(
+                "ARM64 Linux detected — Selenium chromedriver is unavailable. " +
+                "Pages will be loaded via HTTP only. Set CHROME_BIN or install Playwright Chromium for browser support");
+            return false;
+        }
+
+        // Firefox or other browser types may still work
+        return true;
+    }
+
     private void DisposeDriverUnsafe()
     {
         if (_driver == null)
@@ -332,20 +420,12 @@ public sealed class BrowserSession : IBrowserSession
         _logger.LogDebug("Creating Chrome driver with headless={Headless}", headless);
         var options = new ChromeOptions();
 
-        // Set Chrome binary location if Selenium Manager downloaded it
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var seleniumChrome = Path.Combine(home, ".cache", "selenium", "chrome", "linux64");
-        if (Directory.Exists(seleniumChrome))
+        // Locate the Chrome binary with platform-aware priority
+        var chromeBinary = FindChromeBinary();
+        if (chromeBinary != null)
         {
-            var latestDir = Directory.GetDirectories(seleniumChrome)
-                .OrderByDescending(d => d)
-                .FirstOrDefault();
-            var chromeBin = latestDir != null ? Path.Combine(latestDir, "chrome") : null;
-            if (chromeBin != null && File.Exists(chromeBin))
-            {
-                options.BinaryLocation = chromeBin;
-                _logger.LogDebug("Using Selenium-managed Chrome: {Path}", chromeBin);
-            }
+            options.BinaryLocation = chromeBinary;
+            _logger.LogDebug("Using Chrome binary: {Path}", chromeBinary);
         }
 
         // Anti-detection
@@ -390,16 +470,18 @@ public sealed class BrowserSession : IBrowserSession
             driver = new ChromeDriver(service, options);
             _driverServicePid = service.ProcessId;
         }
-        catch (DriverServiceNotFoundException)
+        catch (DriverServiceNotFoundException ex)
         {
-            // ChromeDriver binary not found or incompatible (e.g., ARM64 host with x86-64 chromedriver).
-            // Fall back to launching Chrome directly and connecting via CDP.
-            driver = LaunchChromeViaCdp(options, headless);
+            _logger.LogError(ex, "ChromeDriver not found. Install chromedriver matching your Chrome version.");
+            throw new InvalidOperationException(
+                "ChromeDriver binary not found. Install chromedriver or set it on PATH.", ex);
         }
         catch (WebDriverException ex) when (ex.Message.Contains("exited unexpectedly"))
         {
-            // ChromeDriver crashed on start (architecture mismatch).
-            driver = LaunchChromeViaCdp(options, headless);
+            _logger.LogError(ex,
+                "ChromeDriver exited unexpectedly — possible architecture mismatch or missing dependencies.");
+            throw new InvalidOperationException(
+                "ChromeDriver crashed on startup. Check architecture compatibility and Chrome version.", ex);
         }
 
         driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(_browserConfig.ImplicitWaitSeconds);
@@ -426,91 +508,6 @@ public sealed class BrowserSession : IBrowserSession
         }
 
         return driver;
-    }
-
-    private IWebDriver LaunchChromeViaCdp(ChromeOptions options, bool headless)
-    {
-        _logger.LogInformation("ChromeDriver unavailable, launching Chrome directly via CDP");
-
-        // Find Chrome binary: Playwright's Chromium, or system Chrome
-        var chromeBin = Environment.GetEnvironmentVariable("CHROME_BIN")
-            ?? FindPlaywrightChrome()
-            ?? "google-chrome";
-
-        // Use a fixed port for CDP
-        const int cdpPort = 9515;
-
-        // Build Chrome command-line arguments
-        var args = new List<string>
-        {
-            $"--remote-debugging-port={cdpPort}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-blink-features=AutomationControlled",
-            $"--user-agent={_browserConfig.UserAgent}",
-            "--log-level=3",
-            "--silent",
-        };
-
-        if (headless)
-        {
-            args.Add("--headless=new");
-        }
-        else
-        {
-            args.Add("--window-size=800,600");
-            args.Add("--window-position=9999,9999");
-        }
-
-        if (OperatingSystem.IsLinux())
-        {
-            args.Add("--no-sandbox");
-            args.Add("--disable-dev-shm-usage");
-            args.Add("--disable-gpu");
-        }
-
-        var psi = new ProcessStartInfo(chromeBin, string.Join(' ', args))
-        {
-            UseShellExecute = false,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-        };
-
-        var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start Chrome at {chromeBin}");
-
-        // Wait for Chrome to start listening on the CDP port
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        var connected = false;
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                var response = httpClient.GetStringAsync($"http://127.0.0.1:{cdpPort}/json/version").Result;
-                if (response.Contains("Browser"))
-                {
-                    connected = true;
-                    break;
-                }
-            }
-            catch
-            {
-                Thread.Sleep(500);
-            }
-        }
-
-        if (!connected)
-        {
-            process.Kill();
-            throw new InvalidOperationException("Chrome started but CDP endpoint not reachable");
-        }
-
-        _logger.LogInformation("Chrome CDP available on port {Port}, connecting Selenium", cdpPort);
-
-        // Connect via Chrome's HTTP endpoint (no chromedriver binary needed)
-        options.DebuggerAddress = $"127.0.0.1:{cdpPort}";
-        return new RemoteWebDriver(new Uri($"http://127.0.0.1:{cdpPort}"), options);
     }
 
     private IWebDriver CreateFirefoxDriver(bool headless)

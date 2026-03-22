@@ -17,6 +17,13 @@ public interface IBrowserSession : IBrowserSessionControl
     bool HasActiveDriver { get; }
 
     /// <summary>
+    /// Gets a value indicating whether Selenium WebDriver can be used on this platform.
+    /// Returns false on ARM64 Linux where Selenium Manager downloads an incompatible
+    /// x86_64 chromedriver binary.
+    /// </summary>
+    bool IsSeleniumAvailable { get; }
+
+    /// <summary>
     /// Gets or creates a WebDriver instance. Returns the existing driver
     /// if one is active, or creates a new one if none exists or the previous
     /// driver has crashed.

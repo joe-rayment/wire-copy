@@ -507,6 +507,12 @@ public class PageLoader : IPageLoader
 
     private async Task<PageLoadResult> BrowserFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
     {
+        if (!_browserSession.IsSeleniumAvailable)
+        {
+            _logger.LogDebug("Selenium unavailable on this platform, skipping browser fetch for {Url}", request.Url);
+            return PageLoadResult.Failure("Selenium unavailable (ARM64 — no chromedriver)");
+        }
+
         try
         {
             var driver = _browserSession.GetOrCreateDriver(request.Headless);
@@ -551,6 +557,11 @@ public class PageLoader : IPageLoader
         {
             _logger.LogWarning(ex, "Browser session disposed during page load: {Url}", request.Url);
             return PageLoadResult.Failure("Browser session is no longer available");
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Selenium unavailable for page load: {Url}", request.Url);
+            return PageLoadResult.Failure("Selenium unavailable");
         }
     }
 

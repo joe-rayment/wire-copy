@@ -38,6 +38,7 @@ public class ReadingListContentProviderTests
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
+        _browserSession.IsSeleniumAvailable.Returns(true);
         _webDriverQueue = Substitute.For<IWebDriverQueue>();
         _articleCache = Substitute.For<IArticleContentCache>();
 

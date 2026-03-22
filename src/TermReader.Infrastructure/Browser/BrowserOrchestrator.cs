@@ -1298,7 +1298,7 @@ public class BrowserOrchestrator : IBrowserService
             await Task.Delay(1500, cancellationToken);
             try
             {
-                if (_browserSession is IBrowserSession session)
+                if (_browserSession is IBrowserSession session && session.IsSeleniumAvailable)
                 {
                     var driver = session.GetOrCreateDriver(headless);
                     var currentSource = driver.PageSource;
@@ -1344,7 +1344,7 @@ public class BrowserOrchestrator : IBrowserService
     {
         try
         {
-            if (_browserSession is not IBrowserSession session || !session.HasActiveDriver)
+            if (_browserSession is not IBrowserSession session || !session.HasActiveDriver || !session.IsSeleniumAvailable)
             {
                 return;
             }
@@ -1385,7 +1385,7 @@ public class BrowserOrchestrator : IBrowserService
             await Task.Delay(2000, cancellationToken);
             try
             {
-                if (_browserSession is IBrowserSession session && session.HasActiveDriver)
+                if (_browserSession is IBrowserSession session && session.HasActiveDriver && session.IsSeleniumAvailable)
                 {
                     var driver = session.GetOrCreateDriver(false);
                     var currentUrl = driver.Url;
