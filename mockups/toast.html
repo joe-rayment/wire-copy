@@ -4,136 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TermReader Mockups: Toast Notifications</title>
-<style>
-/* TermReader Mockup Template - ANSI 256 Color Mapping */
-/* Phosphor theme (green-on-black) */
-
-:root {
-  /* Core palette from design-system.md */
-  --green: #00ff00;     /* ANSI 46 - PrimaryText */
-  --bright: #00ff87;    /* ANSI 48 - HeaderTitleFg, LinkContent */
-  --cyan: #00ffff;      /* ANSI 51 - AccentFg */
-  --med: #00af00;       /* ANSI 34 - SecondaryText */
-  --dim: #008700;       /* ANSI 28 - DimFg */
-  --dim-dark: #005f00;  /* ANSI 22 - SelectedItemBg, FocusIndicatorFg */
-  --white: #ffffff;     /* ANSI 15 - SelectedItemFg */
-  --pink: #ff0087;      /* ANSI 198 - CelebrationFg */
-  --amber: #ffaf00;     /* ANSI 214 - WarningFg */
-  --red: #ff5f5f;       /* ANSI 203 - ErrorFg */
-  --nav: #00d700;       /* ANSI 40 - LinkNavigation */
-  --border: #00af5f;    /* ANSI 35 - HeaderBorderFg */
-  --sel-bg: #005f00;    /* ANSI 22 - selection background */
-  --hi-bg: #00ff00;     /* ANSI 46 - search highlight bg */
-  --hi-fg: #000000;     /* ANSI 0 - search highlight fg */
-  --bg: #0a0a0a;        /* terminal background */
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--green);
-  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 20px;
-}
-
-/* Page layout */
-.page-title {
-  color: var(--cyan);
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 4px;
-  letter-spacing: 1px;
-}
-.page-subtitle {
-  color: var(--med);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-/* Each mockup screen */
-.screen {
-  margin-bottom: 40px;
-}
-.screen-label {
-  color: var(--amber);
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #333;
-}
-.screen-notes {
-  color: var(--med);
-  font-size: 12px;
-  margin-top: 8px;
-  padding: 8px;
-  border-left: 2px solid #333;
-}
-
-/* Terminal frame */
-.terminal {
-  background: #000000;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  white-space: pre;
-  font-size: 13px;
-  line-height: 1.4;
-  position: relative;
-}
-.terminal::before {
-  content: '● ● ●';
-  display: block;
-  color: #555;
-  font-size: 10px;
-  letter-spacing: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #222;
-}
-
-/* Color classes */
-.g   { color: var(--green); }        /* [green] */
-.b   { color: var(--bright); }       /* [bright] */
-.c   { color: var(--cyan); }         /* [cyan] */
-.m   { color: var(--med); }          /* [med] */
-.d   { color: var(--dim); }          /* [dim] */
-.dd  { color: var(--dim-dark); }     /* [dim] darker variant */
-.w   { color: var(--white); }        /* [white] */
-.pk  { color: var(--pink); }         /* [pink] */
-.am  { color: var(--amber); }        /* [amber] */
-.r   { color: var(--red); }          /* [red] */
-.nv  { color: var(--nav); }          /* [nav] */
-.bd  { color: var(--border); }       /* border color */
-
-/* Backgrounds */
-.sel { background: var(--sel-bg); color: var(--white); }  /* [sel-bg][white] */
-.hi  { background: var(--hi-bg); color: var(--hi-fg); }   /* search highlight */
-.wbg { background: var(--white); }   /* [white-bg] */
-
-/* Text attributes */
-.bold { font-weight: bold; }
-.dim-attr { opacity: 0.7; }
-
-/* Selection with accent bar */
-.sel-row { background: var(--sel-bg); color: var(--white); display: inline; }
-
-/* Separator */
-hr.section-sep {
-  border: none;
-  border-top: 1px solid #333;
-  margin: 30px 0;
-}
-</style>
+<!-- Cross-references: template.css (shared design system), statusbar.html (status bar context) -->
+<link rel="stylesheet" href="template.css">
 </head>
 <body>
 
 <div class="page-title">TermReader Mockups: Toast Notifications</div>
-<div class="page-subtitle">Toast overlay notifications &middot; Phosphor theme (green-on-black) &middot; 80-column terminal</div>
+<div class="page-subtitle">Toast overlay notifications &middot; Phosphor 2.0 &middot; 80-column terminal</div>
 
 <hr class="section-sep">
 
@@ -143,11 +20,12 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Toast Type 1: Cache Warmed (Info)</div>
   <div class="terminal">
-<span class="c">╭────────────────────────────────╮</span>
-<span class="c">│</span> <span class="g">Cache warmed</span> <span class="m">24/24 articles</span>  <span class="c">│</span>
-<span class="c">╰────────────────────────────────╯</span></div>
+<span class="d">╭────────────────────────────────╮</span>
+<span class="d">│</span> <span class="g">Cache warmed</span> <span class="m">24/24 articles</span>  <span class="d">│</span>
+<span class="d">╰────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Appears when background pre-loading completes for a page/collection.<br>
+    Border in .d (dim, structural chrome).<br>
     Dismissed on next keypress or screen redraw.
   </div>
 </div>
@@ -158,17 +36,17 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Toast Type 1: Cache Warmed (In Context)</div>
   <div class="terminal">
-<span class="d">╭─</span><span class="b"> Ars Technica </span><span class="d">─────────────</span><span class="c">╭────────────────────────────────╮</span>
-<span class="d">│</span> <span class="m">24 links · 3 sections</span>        <span class="c">│</span> <span class="g">Cache warmed</span> <span class="m">24/24 articles</span>  <span class="c">│</span>
-<span class="d">╰──────────────────────────────</span><span class="c">╰────────────────────────────────╯</span>
+<span class="d">╭─</span><span class="b"> Ars Technica </span><span class="d">─────────────</span><span class="d">╭────────────────────────────────╮</span>
+<span class="d">│</span> <span class="m">24 links · 3 sections</span>        <span class="d">│</span> <span class="g">Cache warmed</span> <span class="m">24/24 articles</span>  <span class="d">│</span>
+<span class="d">╰──────────────────────────────</span><span class="d">╰────────────────────────────────╯</span>
                                     <span class="d">│</span>
  <span class="b">A century after rockets,</span>        <span class="d">│</span> <span class="b">SpaceX Starship reaches orbit</span>
  <span class="b">we still can't predict the</span>      <span class="d">│</span> <span class="b">on its first full flight</span>
  ...</div>
   <div class="screen-notes">
     Toast overlays top-right corner, doesn't shift layout.<br>
-    Cyan border matches the cache/info color scheme.<br>
-    Text: action in green, detail in medium green.
+    Border in .d (structural chrome).<br>
+    Text: action in .g, detail in .m.
   </div>
 </div>
 
@@ -186,8 +64,8 @@ hr.section-sep {
   <div class="screen-notes">
     Appears when podcast M4B generation finishes.<br>
     Sticky mode: persists until user presses Esc (celebration moment).<br>
-    Pink border and sparkle character for celebration.<br>
-    This is one of the rare uses of pink -- reserved for achievement moments.
+    Pink border (.pk, #ff87af softer pink) and sparkle character for celebration.<br>
+    This is one of the rare uses of pink — reserved for achievement moments.
   </div>
 </div>
 
@@ -220,6 +98,7 @@ hr.section-sep {
 <span class="r">╰────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Appears for non-fatal errors that don't need a full error screen.<br>
+    Border and headline in .r (red). Detail in .m.<br>
     Sticky mode: persists until user presses Esc (error requires acknowledgment).
   </div>
 </div>
@@ -251,28 +130,50 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Toast Type 4: Article Saved (Confirmation)</div>
   <div class="terminal">
-<span class="c">╭────────────────────────────────╮</span>
-<span class="c">│</span> <span class="g">Saved to Tech News</span>             <span class="c">│</span>
-<span class="c">╰────────────────────────────────╯</span></div>
+<span class="d">╭────────────────────────────────╮</span>
+<span class="d">│</span> <span class="ok">✓</span> <span class="g">Saved to Tech News (13)</span>     <span class="d">│</span>
+<span class="d">╰────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Brief confirmation when saving an article to a collection.<br>
-    Dismissed on next keypress or screen redraw.
+    Checkmark in .ok (success green #5fffaf). Item count (13) shown in parentheses.<br>
+    Border in .d (structural). Dismissed on next keypress or screen redraw.
   </div>
 </div>
 
 <hr class="section-sep">
 
 <!-- ============================================================ -->
-<!-- TOAST TYPE 5: Bookmark Added (Confirmation) -->
+<!-- TOAST TYPE 5: Undo (Removal Confirmation) -->
 <!-- ============================================================ -->
 <div class="screen">
-  <div class="screen-label">Toast Type 5: Bookmark Added (Confirmation)</div>
+  <div class="screen-label">Toast Type 5: Undo (Removal Confirmation)</div>
   <div class="terminal">
-<span class="c">╭────────────────────────────────╮</span>
-<span class="c">│</span> <span class="g">Bookmark added</span> <span class="m">arstechnica</span>   <span class="c">│</span>
-<span class="c">╰────────────────────────────────╯</span></div>
+<span class="m">╭────────────────────────────────╮</span>
+<span class="m">│</span> <span class="g">Removed from Tech News</span>  <span class="c">z</span><span class="m">:undo</span><span class="m">│</span>
+<span class="m">╰────────────────────────────────╯</span></div>
+  <div class="screen-notes">
+    Appears after removing an item from a collection.<br>
+    Border in .m (informational, not error). "z:undo" key in .c, description in .m.<br>
+    Auto-dismisses after 5 seconds. Pressing z undoes the removal.<br><br>
+    WHY: Undo toast ensures single-keypress deletes are recoverable.<br>
+    5-second window balances recoverability with UX flow.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- TOAST TYPE 6: Bookmark Added (Confirmation) -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Toast Type 6: Bookmark Added (Confirmation)</div>
+  <div class="terminal">
+<span class="d">╭────────────────────────────────╮</span>
+<span class="d">│</span> <span class="ok">✓</span> <span class="g">Bookmark added</span> <span class="m">arstechnica</span> <span class="d">│</span>
+<span class="d">╰────────────────────────────────╯</span></div>
   <div class="screen-notes">
     Confirmation when adding a bookmark.<br>
+    Checkmark in .ok (success green). Border in .d (structural).<br>
     Dismissed on next keypress or screen redraw.
   </div>
 </div>
@@ -296,12 +197,13 @@ hr.section-sep {
 <div class="screen">
   <div class="screen-label">Dismissal Behavior</div>
   <div class="screen-notes">
-    <strong>Appear:</strong> Instant (no slide-in animation -- terminal rendering is frame-based).<br>
+    <strong>Appear:</strong> Instant (no slide-in animation — terminal rendering is frame-based).<br>
     <strong>Display:</strong> Shown on the current render pass.<br>
     <strong>Dismiss:</strong> Cleared on the next render pass (triggered by next keypress or redraw).<br><br>
     <strong>Standard toasts</strong> (confirmation, info): Dismissed automatically on next keypress or screen redraw.<br>
-    <strong>Sticky toasts</strong> (error, celebration): Persist across redraws until user presses Esc. Show a small [Esc] hint inside the toast border.<br><br>
-    Any keypress (including Esc for sticky) also processes normally -- the toast dismiss is a side effect, not a blocking modal.
+    <strong>Sticky toasts</strong> (error, celebration): Persist across redraws until user presses Esc. Show a small [Esc] hint inside the toast border.<br>
+    <strong>Undo toasts</strong> (removal): Auto-dismiss after 5 seconds. Pressing z undoes the action before timeout.<br><br>
+    Any keypress (including Esc for sticky) also processes normally — the toast dismiss is a side effect, not a blocking modal.
   </div>
 </div>
 

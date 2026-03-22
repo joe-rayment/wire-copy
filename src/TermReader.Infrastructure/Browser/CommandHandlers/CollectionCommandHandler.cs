@@ -174,6 +174,9 @@ internal static class CollectionCommandHandler
 
     public static async Task HandleDeleteItem(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        // Commit any previous pending undo before starting a new delete
+        await UndoCommandHandler.ClearOnAction(ctx, ct);
+
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
         if (viewMode == ViewMode.CollectionItems)
@@ -183,39 +186,28 @@ internal static class CollectionCommandHandler
             if (col != null && deleteIdx >= 0 && deleteIdx < col.Items.Count)
             {
                 var item = col.Items[deleteIdx];
-                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-                var confirmed = await ConfirmationDialog.ConfirmAsync(
-                    ctx.InputHandler,
-                    "Remove Item",
-                    $"Remove \"{RenderHelpers.TruncateText(item.Title, 40)}\" from this collection?",
-                    palette,
-                    ct,
-                    isDestructive: true);
-                if (!confirmed)
-                {
-                    await ctx.RenderCurrentPageAsync(options, ct);
-                    return;
-                }
 
-                try
+                // Store undo state before modifying in-memory collection
+                ctx.PendingUndo = new UndoState
                 {
-                    using var scope = ctx.ScopeFactory.CreateScope();
-                    var service = ctx.CreateCollectionService(scope);
-                    await service.RemoveItemAsync(col.Id, item.Id, ct);
-                    await ctx.RefreshCollectionsAsync(ct);
-                    ctx.NavigationService.SetStatusMessage($"Removed: {item.Title}");
+                    Kind = UndoActionKind.CollectionItemRemoved,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    ItemTitle = item.Title,
+                    CollectionId = col.Id,
+                    ItemId = item.Id,
+                    ItemUrl = item.Url,
+                    OriginalIndex = deleteIdx,
+                };
 
-                    var refreshedCol = ctx.NavigationService.ActiveCollection;
-                    var refreshedCount = refreshedCol?.Items.Count ?? 0;
-                    if (ctx.NavigationService.CollectionItemSelectedIndex >= refreshedCount)
-                    {
-                        ctx.NavigationService.CollectionItemSelectedIndex = Math.Max(0, refreshedCount - 1);
-                    }
-                }
-                catch (Exception ex)
+                // Remove from in-memory collection only (not persisted yet)
+                col.RemoveItem(item.Id);
+                ctx.NavigationService.SetStatusMessage($"Removed \u00b7 z:undo", UndoState.UndoWindow);
+
+                // Adjust selection index
+                var newCount = col.Items.Count;
+                if (ctx.NavigationService.CollectionItemSelectedIndex >= newCount)
                 {
-                    ctx.Logger.LogWarning(ex, "Failed to remove item");
-                    ctx.NavigationService.SetStatusMessage("Failed to remove");
+                    ctx.NavigationService.CollectionItemSelectedIndex = Math.Max(0, newCount - 1);
                 }
             }
         }

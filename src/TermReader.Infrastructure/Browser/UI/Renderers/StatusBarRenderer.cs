@@ -12,7 +12,6 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 /// Renders the unified two-line status bar for all views.
 /// Line 1: mode label + adaptive key hints
 /// Line 2: contextual vitals (URL/domain left, cache/status right)
-/// Total budget: 3 lines (separator + line 1 + line 2).
 /// </summary>
 internal class StatusBarRenderer
 {
@@ -38,10 +37,6 @@ internal class StatusBarRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
-        var separatorWidth = Math.Max(1, width - 1);
-
-        // Separator line
-        _helpers.WriteLine($"{p.StatusBarSeparatorFg.AnsiFg}{new string('\u2500', separatorWidth)}{Reset}");
 
         // Line 1: mode label + adaptive key hints
         RenderLine1(context, mode, p, width);
@@ -85,19 +80,13 @@ internal class StatusBarRenderer
     internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
         const int barLength = 10;
-        const string ActiveColor = "\x1b[38;5;220m"; // Yellow/amber for active/in-progress
-        var filled = total > 0 ? (int)Math.Round((double)cached / total * barLength) : 0;
-        var remaining = barLength - filled;
+        var ActiveColor = p.GetWarningFg().AnsiFg; // Amber for active/in-progress from theme
+        var fraction = total > 0 ? (double)cached / total : 0.0;
 
-        // Three visual states: ▰ cached (green) │ ▰ in-progress (amber) │ ▱ pending (dim)
-        if (isActive && remaining > 0)
+        if (isActive)
         {
-            // Show 1 segment as "in-progress" (amber), rest as pending
-            var inProgress = 1;
-            var pending = remaining - inProgress;
-            var bar = $"{p.PromptFg.AnsiFg}{new string('\u25B0', filled)}{Reset}" +
-                      $"{ActiveColor}\u25B0{Reset}" +
-                      $"{p.SecondaryText.AnsiFg}{new string('\u25B1', Math.Max(0, pending))}{Reset}";
+            // Show the bar with an amber "pulse" block at the leading edge
+            var bar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
 
             if (!string.IsNullOrEmpty(currentUrl))
             {
@@ -108,9 +97,8 @@ internal class StatusBarRenderer
             return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total} caching{Reset}";
         }
 
-        // Not active — all filled segments are cached (green), rest pending (dim)
-        var staticBar = $"{p.PromptFg.AnsiFg}{new string('\u25B0', filled)}{Reset}" +
-                        $"{p.SecondaryText.AnsiFg}{new string('\u25B1', remaining)}{Reset}";
+        // Not active — smooth eighth-block bar
+        var staticBar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
         return $"{staticBar} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
     }
 
@@ -275,7 +263,7 @@ internal class StatusBarRenderer
             ],
             ViewMode.Readable =>
             [
-                [("s", "save"), ("o", "browser"), ("h/l", "width"), ("R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
+                [("s", "save"), ("o", "browser"), ("[/]", "width"), ("R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
                 [("s", "save"), ("o", "browser"), ("v", "links"), ("b", "back"), ("?", "help")],
                 [("?", "help")],
             ],
@@ -308,7 +296,7 @@ internal class StatusBarRenderer
     private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
-            $"{p.PrimaryText.AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
+            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
     }
 
     private static string GetDomain(string url)

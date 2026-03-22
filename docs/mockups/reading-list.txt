@@ -4,14 +4,14 @@ Assumes: 80x24 terminal, Phosphor theme (green-on-black)
 ================================================================================
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — unread item titles
-  [bright]  = slightly brighter green (ANSI 48) — content links
+  [green]   = phosphor green #00d700 (ANSI 40) — unread item titles
+  [title]   = playful pink #ff87d7 (ANSI 212) — content links
   [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent, cache badge
-  [dim]     = dark green #005f00 (ANSI 22-28) — borders, decorative
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — domains, read items, secondary
-  [white]   = white #ffffff (ANSI 15) — selected item text
+  [white]   = warm off-white #e4e4e4 (ANSI 254) — selected item text
   [sel-bg]  = dark green bg (ANSI 22) — selection background
-  [pink]    = hot pink #ff0087 (ANSI 198) — podcast accent (rare)
+  [pink]    = vivid pink #ff5fd7 (ANSI 206) — podcast accent (rare)
 
 
 ================================================================================

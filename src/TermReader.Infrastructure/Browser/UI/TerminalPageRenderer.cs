@@ -121,6 +121,8 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
         _helpers.WriteLine();
+        _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+        _helpers.WriteLine();
         _helpers.ClearRemainingLines();
     }
 
@@ -144,7 +146,7 @@ public class TerminalPageRenderer : IPageRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}");
+        _helpers.WriteLine($"  {p.GetWarningFg().AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Please solve it in the browser window.{Reset}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
         _helpers.WriteLine();

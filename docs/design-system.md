@@ -4,7 +4,7 @@ Comprehensive specification for terminal UI implementation. All values are exact
 implementable. This document is the single source of truth; when it conflicts with
 existing code, the design system wins.
 
-Last updated: 2026-03-18
+Last updated: 2026-03-22
 
 ---
 
@@ -31,33 +31,34 @@ renderer code; all colors come through `ThemePalette`.
 
 | Role | ANSI 256 | Hex | Usage |
 |------|----------|-----|-------|
-| **PrimaryText** | 46 | `#00ff00` | Body text, item names, active key labels |
+| **PrimaryText** | 40 | `#00d700` | Body text, item names, active key labels |
 | **SecondaryText** | 34 | `#00af00` | Subtitles, domains, metadata, inactive hints |
-| **TertiaryText** (DimFg) | 28 | `#008700` | Decorative elements, version strings, disabled text |
-| **HeaderTitleFg** | 48 | `#00ff87` | Page titles, header text inside rounded boxes |
+| **TertiaryText** (DimFg) | 22 | `#005f00` | Decorative elements, version strings, disabled text |
+| **MutedFg** | 65 | `#5f875f` | Quiet text, muted labels, subdued UI elements |
+| **HeaderTitleFg** | 212 | `#ff87d7` | Page titles, header text |
 | **HeaderBorderFg** | 35 | `#00af5f` | Box-drawing borders, accent bars, card separators |
-| **LinkContent** | 48 | `#00ff87` | Content/article link text (slightly brighter than body) |
+| **LinkContent** | 212 | `#ff87d7` | Content/article link text (playful pink accent) |
 | **LinkNavigation** | 40 | `#00d700` | Navigation links |
 | **LinkExternal** | 40 | `#00d700` | External links |
 | **LinkFooter** | 40 | `#00d700` | Footer links |
-| **SelectedItemFg** | 15 | `#ffffff` | Text on selection highlight |
+| **SelectedItemFg** | 254 | `#e4e4e4` | Text on selection highlight |
 | **SelectedItemBg** | 22 | `#005f00` | Selection highlight background |
-| **FocusIndicatorFg** | 22 | `#005f00` | Reader view left-margin indicator (▎) |
+| **FocusIndicatorFg** | 65 | `#5f875f` | Reader view left-margin indicator (▎) |
 | **AccentFg** | 51 | `#00ffff` | Interactive hints, cache badges, key shortcuts, cyan accent |
-| **CelebrationFg** | 198 | `#ff0087` | Podcast complete sparkle, one-time celebrations only |
-| **SuccessFg** | 48 | `#00ff87` | Completion messages, checkmarks |
+| **CelebrationFg** | 206 | `#ff5fd7` | Podcast complete sparkle, one-time celebrations only |
+| **SuccessFg** | 119 | `#87ff5f` | Completion messages, checkmarks |
 | **WarningFg** | 214 | `#ffaf00` | Budget warnings, active caching indicator |
 | **ErrorFg** | 203 | `#ff5f5f` | Error messages, failed operations |
 | **StatusBarSeparatorFg** | 35 | `#00af5f` | Horizontal rule above status bar |
-| **StatusBarTextFg** | 46 | `#00ff00` | Mode label in status bar |
-| **PromptFg** | 46 | `#00ff00` | Prompt text, active search query prefix |
+| **StatusBarTextFg** | 40 | `#00d700` | Mode label in status bar |
+| **PromptFg** | 40 | `#00d700` | Prompt text, active search query prefix |
 | **PromptLabelFg** | 34 | `#00af00` | Prompt label text |
-| **SearchHighlightFg** | 0 | `#000000` | Text inside search match highlight |
-| **SearchHighlightBg** | 46 | `#00ff00` | Background of search match highlight |
+| **SearchHighlightFg** | 15 | `#ffffff` | Text inside search match highlight |
+| **SearchHighlightBg** | 24 | `#005f87` | Background of search match highlight |
 | **ReadItemFg** | 34 | `#00af00` | Read/completed items (dimmer than unread) |
 | **ToastBorderFg** | 51 | `#00ffff` | Toast notification border (accent cyan) |
-| **ToastCelebrationBorderFg** | 198 | `#ff0087` | Celebration toast border (hot pink) |
-| **ProgressFilledFg** | 46 | `#00ff00` | Filled portion of progress bars |
+| **ToastCelebrationBorderFg** | 206 | `#ff5fd7` | Celebration toast border (vivid pink) |
+| **ProgressFilledFg** | 40 | `#00d700` | Filled portion of progress bars |
 | **ProgressEmptyFg** | 34 | `#00af00` | Empty/remaining portion of progress bars |
 | **ProgressActiveFg** | 214 | `#ffaf00` | Currently-processing segment of progress bar |
 
@@ -67,27 +68,36 @@ The app never sets a global background color. It relies on the user's terminal
 background (expected: black or near-black for Phosphor). The only explicit backgrounds
 are:
 - `SelectedItemBg` (ANSI 22): Selection highlight
-- `SearchHighlightBg` (ANSI 46): Search match
+- `SearchHighlightBg` (ANSI 24): Search match
 - Terminal default (black): Everything else
 
-### 1.1.1 AccentFg Migration Note
+### 1.1.1 Phosphor 2.0 Migration Note
 
-> **Migration**: `AccentFg` changes from ANSI 43 (`#00afaf`, dark desaturated
-> cyan) to ANSI 51 (`#00ffff`, bright cyan) in `BuiltInThemes.cs`. This is a
-> single-line change per theme -- update the `ThemeColor` constructor argument
-> for `AccentFg` in each theme definition. No data migration is needed. All
-> existing usages of `AccentFg` (cache indicators, status badges) will
-> automatically pick up the brighter value. Verify that hardcoded ANSI escape
-> sequences in renderer code (e.g., `"\x1b[38;5;220m"` in `StatusBarRenderer`)
-> are replaced with palette property references before making this change, to
-> avoid visual inconsistency between palette-driven and hardcoded colors.
+> **Migration (Phosphor 2.0)**: Multiple palette values change in
+> `BuiltInThemes.cs` for the Phosphor theme. Key changes:
+> - `PrimaryText` moves from ANSI 46 (`#00ff00`) to ANSI 40 (`#00d700`)
+> - `HeaderTitleFg` / `LinkContent` move from ANSI 48 (`#00ff87`) to ANSI 212 (`#ff87d7`, playful pink)
+> - `SelectedItemFg` moves from ANSI 15 (`#ffffff`) to ANSI 254 (`#e4e4e4`, warm off-white)
+> - `DimFg` moves from ANSI 28 (`#008700`) to ANSI 22 (`#005f00`)
+> - `FocusIndicatorFg` moves from ANSI 22 to ANSI 65 (`#5f875f`, muted)
+> - `SearchHighlightBg` moves from ANSI 46 to ANSI 24 (`#005f87`, blue-teal)
+> - `SearchHighlightFg` moves from ANSI 0 (black) to ANSI 15 (white)
+> - `CelebrationFg` moves from ANSI 198 (`#ff0087`) to ANSI 206 (`#ff5fd7`)
+> - `SuccessFg` moves from ANSI 48 (`#00ff87`) to ANSI 119 (`#87ff5f`)
+> - New role `MutedFg` added at ANSI 65 (`#5f875f`)
+> - `AccentFg` remains at ANSI 51 (`#00ffff`)
+>
+> Verify that hardcoded ANSI escape sequences in renderer code are replaced
+> with palette property references before making this change, to avoid visual
+> inconsistency between palette-driven and hardcoded colors.
 
 ### 1.2 New ThemePalette Properties Required
 
 The following properties must be added to `ThemePalette`:
 
 ```
-ThemeColor? CelebrationFg       // Hot pink for celebrations
+ThemeColor? MutedFg              // Quiet text, subdued labels
+ThemeColor? CelebrationFg       // Vivid pink for celebrations
 ThemeColor? SuccessFg            // Completion/success messages
 ThemeColor? WarningFg            // Warnings, active progress
 ThemeColor? ToastBorderFg        // Toast notification border
@@ -102,6 +112,7 @@ sensible default if null:
 
 | Property | Fallback |
 |----------|----------|
+| MutedFg | SecondaryText |
 | CelebrationFg | AccentFg |
 | SuccessFg | HeaderTitleFg |
 | WarningFg | ErrorFg |
@@ -119,11 +130,12 @@ are not fallbacks -- they are the canonical values to set in `BuiltInThemes.cs`.
 
 | Property | Phosphor | Amber | Dracula | Light |
 |---|---|---|---|---|
-| **CelebrationFg** | 198 (hot pink) | 208 (orange) | 212 (pink) | 161 (dark pink) |
+| **MutedFg** | 65 (muted green) | 136 (dark gold) | 60 (muted olive) | 245 (mid gray) |
+| **CelebrationFg** | 206 (vivid pink) | 208 (orange) | 212 (pink) | 161 (dark pink) |
 | **ToastBorderFg** | 51 (cyan) | 214 (gold) | 98 (purple) | 32 (blue) |
-| **SuccessFg** | 48 (bright green) | 220 (amber) | 114 (green) | 28 (dark green) |
+| **SuccessFg** | 119 (success green) | 220 (amber) | 114 (green) | 28 (dark green) |
 | **WarningFg** | 214 (gold) | 203 (red) | 220 (yellow) | 208 (orange) |
-| **ProgressFilledFg** | 46 (green) | 220 (amber) | 80 (cyan) | 25 (blue) |
+| **ProgressFilledFg** | 40 (phosphor green) | 220 (amber) | 80 (cyan) | 25 (blue) |
 | **ProgressEmptyFg** | 22 (dark green) | 94 (dark amber) | 237 (dark gray) | 249 (light gray) |
 | **ProgressActiveFg** | 51 (cyan) | 208 (orange) | 212 (pink) | 32 (light blue) |
 
@@ -181,15 +193,16 @@ ToastBorderFg:          ANSI 32  (#0087d7)   blue
 
 Every screen must maintain this brightness ordering (brightest to dimmest):
 
-1. **Selected item text** (ANSI 15, white) -- always the brightest on screen
-2. **Active/focused element** (PrimaryText, ANSI 46) -- brightest non-selected
-3. **Headlines/titles** (HeaderTitleFg, ANSI 48) -- slightly brighter green
-4. **Accent elements** (AccentFg, ANSI 51) -- bright but different hue
-5. **Body text** (PrimaryText, ANSI 46) -- standard reading brightness
+1. **Selected item text** (SelectedItemFg, ANSI 254, warm off-white) -- always the brightest on screen
+2. **Headlines/titles** (HeaderTitleFg, ANSI 212) -- playful pink, high visibility
+3. **Accent elements** (AccentFg, ANSI 51) -- bright cyan, different hue
+4. **Success indicators** (SuccessFg, ANSI 119) -- bright green for completions
+5. **Body text** (PrimaryText, ANSI 40) -- standard reading brightness
 6. **Secondary info** (SecondaryText, ANSI 34) -- noticeably dimmer
 7. **Borders/separators** (HeaderBorderFg, ANSI 35) -- structural, not attention-grabbing
-8. **Decoration/disabled** (DimFg, ANSI 28) -- barely visible, background texture
-9. **Selection background** (SelectedItemBg, ANSI 22) -- dark, acts as backdrop
+8. **Muted text** (MutedFg, ANSI 65) -- quiet, subdued labels
+9. **Decoration/disabled** (DimFg, ANSI 22) -- barely visible, background texture
+10. **Selection background** (SelectedItemBg, ANSI 22) -- dark, acts as backdrop
 
 ---
 
@@ -199,24 +212,22 @@ Every screen must maintain this brightness ordering (brightest to dimmest):
 
 | Context | Rule |
 |---------|------|
-| Between header box and content | 0 blank lines (header bottom border acts as separator) |
+| Between header line and content | 0 blank lines (header acts as separator) |
 | Above a top-level group header (link tree) | 1 blank line (built into the group header rendering) |
-| Between list items (short terminal, <30 lines) | 0 blank lines |
-| Between list items (tall terminal, >=30 lines) | 1 separator line: `   ╶──╴` |
+| Between list items | 0 blank lines (separators removed by default) |
 | Between article paragraphs (reader view) | 1 blank line |
 | Above status bar | 0 blank lines (horizontal rule acts as separator) |
 | Between sections in launcher | URL bar has 1 blank line above and below |
-| Inside rounded boxes | 0 blank lines; text on middle line with 1-char horizontal padding |
-| Before podcast CTA button | 1 blank line |
-| After podcast CTA button | 1 blank line |
+| Inside rounded boxes (URL bar, loading, etc.) | 0 blank lines; text on middle line with 1-char horizontal padding |
+| Before podcast CTA (inline) | 0 blank lines |
+| After podcast CTA (inline) | 0 blank lines |
 | Toast notification gap from edge | 1 line from top of screen, 2 chars from right edge |
 
 ### 2.2 Padding Rules
 
 | Element | Horizontal Padding | Vertical Padding |
 |---------|-------------------|------------------|
-| Rounded box (header) | 1 char each side (`│ text │`) | 0 (single text line) |
-| Rounded box with subtitle | 1 char each side | 0 (title line + subtitle line) |
+| Header line | 0 (inline text, no box) | 0 (single text line) |
 | Launcher card cell | 6 chars left indent, 1 char right | 1 line top, 1 line bottom (5-line mode) |
 | Launcher card cell (compact) | 6 chars left indent, 1 char right | 0 (3-line mode) |
 | Link tree card | 1 char left (accent bar or space), 0 right | 1 line top, 1 line bottom (5-line mode) |
@@ -233,7 +244,7 @@ Every screen must maintain this brightness ordering (brightest to dimmest):
 | Context | Width Rule |
 |---------|-----------|
 | Overall usable width | `terminal_width - 2` |
-| Reader view `MaxContentWidth` | User-adjustable via `h`/`l`, default 80, min 40, max terminal_width |
+| Reader view `MaxContentWidth` | User-adjustable via `[`/`]`, default 80, min 40, max terminal_width |
 | Reader view text indentation | 2 chars from left edge of content area |
 | Link tree card title | `cell_width - 2` (1 for accent bar, 1 for space) |
 | Launcher card title | `cell_width - 6 - 1` (6 indent, 1 right pad) |
@@ -297,9 +308,9 @@ Line 2: [accent_bar_or_space] [────── separator rule ─────
 | State | Accent Bar | Background | Text Color | Border Color |
 |-------|-----------|------------|------------|--------------|
 | Normal | none (space) | terminal default | PrimaryText (title), SecondaryText+Dim (domain) | SecondaryText+Dim (separator) |
-| Selected | `▌` in HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg+Bold (ANSI 15) | HeaderBorderFg (ANSI 35) |
+| Selected | `▌` in HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg+Bold (ANSI 254) | HeaderBorderFg (ANSI 35) |
 | Normal (launcher) | none (space) | terminal default | PrimaryText+Bold (name), SecondaryText+Dim (domain) | none |
-| Selected (launcher) | `▌` in HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg+Bold (ANSI 15), SecondaryText (domain) | none |
+| Selected (launcher) | `▌` in HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg+Bold (ANSI 254), SecondaryText (domain) | none |
 
 #### Badge Rendering (Launcher Only)
 
@@ -375,10 +386,10 @@ background highlight.
 
 | Context | Accent Bar Color | Highlight Background | Highlight Foreground |
 |---------|-----------------|---------------------|---------------------|
-| Link Tree (selected) | HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 15) |
-| Collection List (selected) | SelectedItemFg (ANSI 15) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 15) |
-| Collection Items (selected) | SelectedItemFg (ANSI 15) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 15) |
-| Launcher (selected) | HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 15) |
+| Link Tree (selected) | HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 254) |
+| Collection List (selected) | SelectedItemFg (ANSI 254) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 254) |
+| Collection Items (selected) | SelectedItemFg (ANSI 254) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 254) |
+| Launcher (selected) | HeaderBorderFg (ANSI 35) | SelectedItemBg (ANSI 22) | SelectedItemFg (ANSI 254) |
 
 #### Focus vs Unfocused
 
@@ -412,25 +423,28 @@ Characters (left to right, increasing fill):
 
 - Left cap: `▕` (U+2595, right 1/8 block)
 - Right cap: `▏` (U+258F, left 1/8 block)
-- Filled: `█` in ProgressFilledFg (ANSI 46)
+- Filled: `█` in ProgressFilledFg (ANSI 40)
 - Partial: appropriate eighth-block char in ProgressFilledFg
 - Empty: space character (no fill)
 - Active segment: the partial block character in ProgressActiveFg (ANSI 214)
 - Bar width: 20 characters (160 sub-positions at 1/8 resolution)
 - Percentage and chunk info follow the bar, in SecondaryText
 
-#### Existing Segment-Style Progress Bar (Cache Preloading)
+#### Cache Preloading Progress Bar (Eighth-Block)
 
-Characters:
+Uses the same eighth-block characters as the podcast progress bar for visual
+consistency across all progress indicators.
+
 ```
-▰ (U+25B0) filled segment
-▱ (U+25B1) empty segment
+▕████▍   ▏ 4/8
 ```
 
-- Bar width: 10 segments
-- Filled: PromptFg (ANSI 46)
-- Active (in-progress): ANSI 220 (amber/yellow)
-- Empty: SecondaryText (ANSI 34)
+- Bar width: 8 characters (64 sub-positions at 1/8 resolution)
+- Left cap: `▕` (U+2595)
+- Right cap: `▏` (U+258F)
+- Filled: `█` in ProgressFilledFg (ANSI 40)
+- Active (in-progress): partial eighth-block in ProgressActiveFg (ANSI 214)
+- Empty: space character
 - Followed by `cached_count/total` in SecondaryText
 
 ### 3.5 Toast Notifications
@@ -455,7 +469,8 @@ Characters:
 | Toast Type | Border Color | Icon | Text Color |
 |-----------|-------------|------|------------|
 | Info (cache complete, status) | ToastBorderFg (ANSI 51) | `✦` | PrimaryText |
-| Celebration (podcast ready) | ToastCelebrationBorderFg (ANSI 198) | `♫` | PrimaryText, then AccentFg |
+| Undo (destructive action) | ToastBorderFg (ANSI 51) | `↩` | PrimaryText |
+| Celebration (podcast ready) | ToastCelebrationBorderFg (ANSI 206) | `♫` | PrimaryText, then AccentFg |
 | Warning | WarningFg (ANSI 214) | `⚡` | PrimaryText |
 | Error | ErrorFg (ANSI 203) | `✗` | ErrorFg |
 
@@ -478,16 +493,21 @@ Characters:
 - **Sticky mode** (for critical notifications): toast persists until user presses `Esc`.
   Use for: error toasts requiring acknowledgment, podcast completion.
   Indicated by a small `[Esc]` hint inside the toast border.
+- **Undo toast** (for destructive actions): appears when items are deleted or
+  removed. Shows `↩ Undo [z]` with a brief window to press `z` to undo.
+  Uses ToastBorderFg border. Dismissed on next keypress or undo action.
 
 ### 3.6 Status Bar
 
-#### Structure (3 Lines Total)
+#### Structure (2 Lines Total)
 
 ```
 Line 0: ──────────────────────────────────── (separator, full width)
-Line 1: [←] ModeName  key:action key:action key:action
-Line 2:  domain.com                     ▰▰▰▰▱▱▱▱ 4/8 cached
+Line 1: [←] ModeName  key:action key:action   domain.com  ▕████▍   ▏ 4/8
 ```
+
+The status bar is condensed to 2 lines: a separator rule and a single content
+line combining mode label, key hints, and contextual vitals.
 
 #### Separator
 
@@ -495,21 +515,18 @@ Line 2:  domain.com                     ▰▰▰▰▱▱▱▱ 4/8 cached
 - Color: StatusBarSeparatorFg (ANSI 35)
 - Width: `terminal_width - 1`
 
-#### Line 1: Mode Label + Key Hints
+#### Line 1: Mode Label + Key Hints + Contextual Vitals
 
 - Back arrow (if can go back): `[←]` in SecondaryText, followed by space
-- Mode label: `ModeName` in StatusBarTextFg (ANSI 46)
-- Key hints: right-aligned, adaptive (tries largest tier first, shrinks until fits)
+- Mode label: `ModeName` in StatusBarTextFg (ANSI 40)
+- Key hints: after mode label, adaptive (tries largest tier first, shrinks until fits)
 - Hint format: `key:action` where `key` is AccentFg (ANSI 51), `:action` is SecondaryText (ANSI 34)
 - Hints separated by single space
-
-#### Line 2: Contextual Vitals
-
-- Left side: domain name (SecondaryText) OR reader position (`L42/380 W72 85%` in SecondaryText)
-- Right side: segments separated by `│` (SecondaryText)
+- Right-aligned contextual vitals: segments separated by `│` (SecondaryText)
+  - Domain name (SecondaryText) OR reader position (`L42/380 W72 85%` in SecondaryText)
   - Search query: `/query` in PromptFg + `(n/N)` in SecondaryText
   - AI layout badge: `AI layout` in SecondaryText
-  - Cache progress bar or status badge
+  - Cache progress bar (eighth-block characters) or status badge
   - Cache usage warning (if >= 90%): `cache 95%` in PromptFg
   - Status message: transient text in PromptFg
 
@@ -529,7 +546,7 @@ Line 2:  domain.com                     ▰▰▰▰▱▱▱▱ 4/8 cached
 
 | State | Character | Unicode | Color |
 |-------|-----------|---------|-------|
-| Unread | `●` | U+25CF | LinkContent (ANSI 48) |
+| Unread | `●` | U+25CF | LinkContent (ANSI 212) |
 | Read | `○` | U+25CB | ReadItemFg (ANSI 34) |
 
 #### Collapse/Expand
@@ -543,7 +560,7 @@ Line 2:  domain.com                     ▰▰▰▰▱▱▱▱ 4/8 cached
 
 | Indicator | Character | Unicode | Color | Usage |
 |-----------|-----------|---------|-------|-------|
-| Default collection | `★` | U+2605 | PromptFg (ANSI 46) | Marks default save collection |
+| Default collection | `★` | U+2605 | PromptFg (ANSI 40) | Marks default save collection |
 | Selection arrow | `→` | U+2192 | inherited | Legacy single-node link tree selection |
 | Checkmark | `✔` | U+2714 | SuccessFg | Completion confirmation |
 | Scroll up | `▲` | U+25B2 | SecondaryText+Dim | More items above |
@@ -556,6 +573,7 @@ Line 2:  domain.com                     ▰▰▰▰▱▱▱▱ 4/8 cached
 
 > **Universal Rule**: Key hints **ALWAYS** use `AccentFg` (ANSI 51 in Phosphor)
 > for the key character and `SecondaryText` (ANSI 34) for the description text.
+> This applies to the 2-line status bar format.
 > This applies to **all screens** -- status bar hints, launcher footer hints,
 > error screen action hints, toast hints, and any future hint surfaces.
 >
@@ -592,7 +610,7 @@ key:action
 
 ### 3.9 CTA Button (Podcast)
 
-Three rendering tiers based on terminal size:
+Inline by default. Larger slabs available for wider terminals:
 
 #### Full Slab (5 lines) -- terminal height >= 24 AND width >= 52
 
@@ -703,7 +721,7 @@ Between left and right columns in 2-column grid layouts:
 
 **Total Duration**: 1600ms
 
-**Scope**: Status bar area (lines H-3 through H-1 where H = terminal height) plus
+**Scope**: Status bar area (lines H-2 through H-1 where H = terminal height) plus
 a 3-line toast in the top-right corner.
 
 #### Phase 1: Flash (0-200ms)
@@ -717,7 +735,7 @@ a 3-line toast in the top-right corner.
 - Frame rate: 80ms per frame (10 frames)
 - Effect: 6 random positions in the toast text area cycle through sparkle characters
 - Character sequence per position: `·` -> `+` -> `*` -> `✦` -> `✧` -> `✦` -> `*` -> `+` -> `·` -> original
-- Color sequence per position: SecondaryText(34) -> PrimaryText(46) -> AccentFg(51) -> CelebrationFg(198) -> White(15) -> CelebrationFg(198) -> AccentFg(51) -> PrimaryText(46) -> SecondaryText(34)
+- Color sequence per position: SecondaryText(34) -> PrimaryText(40) -> AccentFg(51) -> CelebrationFg(206) -> SelectedItemFg(254) -> CelebrationFg(206) -> AccentFg(51) -> PrimaryText(40) -> SecondaryText(34)
 - Positions are random within the toast content line, selected once at animation start
 
 #### Phase 3: Typewriter Reveal (1000-1400ms)
@@ -725,7 +743,7 @@ a 3-line toast in the top-right corner.
 - Frame rate: per-character, total 400ms spread across message length
 - Effect: Toast message text types out character by character
 - Message format: `♫ Podcast ready: "{title}" ({duration}m)`
-- Each character appears in CelebrationFg (198), then settles to PrimaryText (46) after 2 frames
+- Each character appears in CelebrationFg (206), then settles to PrimaryText (40) after 2 frames
 - Cursor character: `█` (U+2588) in AccentFg (51), shown at end of revealed text
 
 #### Phase 4: Settle (1400-1600ms)
@@ -747,7 +765,7 @@ a 3-line toast in the top-right corner.
 
 **Effect**:
 - Frame 1: The progress count text (`5/12 cached`) changes to AccentFg (ANSI 51)
-- Frame 2: The progress count text changes to PrimaryText (ANSI 46)
+- Frame 2: The progress count text changes to PrimaryText (ANSI 40)
 - Frame 3: The progress count text returns to SecondaryText (ANSI 34)
 
 **Characters**: No character changes. Color change only.
@@ -760,17 +778,17 @@ a 3-line toast in the top-right corner.
 
 **Frame Rate**: 50ms per frame (8 frames)
 
-**Scope**: Title text inside the header rounded box (line 1 of the 3-line header).
-Only the title text characters; border characters are unaffected.
+**Scope**: Title text in the single-line header.
+Only the title text characters are affected.
 
 **Characters used**: `░` (U+2591), `▒` (U+2592), `▓` (U+2593), random ASCII
 uppercase letters.
 
 **Effect**: Each character position in the title goes through this sequence:
-- Frames 1-2: Random character from `░▒▓` in DimFg (ANSI 28)
+- Frames 1-2: Random character from `░▒▓` in DimFg (ANSI 22)
 - Frames 3-4: Random uppercase letter in SecondaryText (ANSI 34)
-- Frames 5-6: Random uppercase letter in PrimaryText (ANSI 46)
-- Frames 7-8: Correct character in HeaderTitleFg (ANSI 48)
+- Frames 5-6: Random uppercase letter in PrimaryText (ANSI 40)
+- Frames 7-8: Correct character in HeaderTitleFg (ANSI 212)
 
 Characters resolve left-to-right with a 1-character-per-frame wave offset.
 Position `i` starts resolving at frame `max(0, frame - i/3)`, creating a
@@ -788,14 +806,14 @@ reinforce the "speed" benefit of caching.
 
 **Frame Rate**: 60ms per frame (10 frames)
 
-**Scope**: Status bar separator line (line H-3, the `─────` line).
+**Scope**: Status bar separator line (line H-2, the `─────` line).
 
 **Effect**: A 5-character-wide "wave" of bright color sweeps left-to-right
 across the separator line.
 
 **Color sequence within wave (center to edge)**:
 - Center character: AccentFg (ANSI 51)
-- +/-1 from center: PrimaryText (ANSI 46)
+- +/-1 from center: PrimaryText (ANSI 40)
 - +/-2 from center: HeaderBorderFg (ANSI 35)
 - Outside wave: StatusBarSeparatorFg (ANSI 35, normal)
 
@@ -826,11 +844,11 @@ Generating podcast...
 **Bar construction**:
 - Total bar width: 30 characters (240 eighth-positions)
 - Fill level: `floor(progress * 240)` eighth-positions
-- Full blocks: `fill_level / 8` full `█` characters in ProgressFilledFg (ANSI 46)
+- Full blocks: `fill_level / 8` full `█` characters in ProgressFilledFg (ANSI 40)
 - Partial block: `fill_level % 8` selects from `▏▎▍▌▋▊▉█` in ProgressActiveFg (ANSI 214)
 - Empty positions: space characters
 - Left cap `▕` and right cap `▏` in SecondaryText (ANSI 34)
-- Percentage in PrimaryText (ANSI 46)
+- Percentage in PrimaryText (ANSI 40)
 - Chunk info in SecondaryText (ANSI 34)
 - Current chapter title in SecondaryText+Dim
 
@@ -860,13 +878,13 @@ Generating podcast...
 
 #### Key Hint Visibility
 
-- Footer hints always visible (not in status bar -- launcher has its own footer)
+- Footer hints always visible (launcher has its own footer, separate from 2-line status bar)
 - Format: `[Enter] open  [o] go to url  [:] config  [?] help`
 - Adaptive: drops down to `[Enter] open  [o] go to url  [?] help` then `[?] help`
 
 #### Layout
 
-- Header: 3-line rounded box ("TermReader", "{n} bookmarks")
+- Header: single-line title ("TermReader" in HeaderTitleFg, "{n} bookmarks" in SecondaryText)
 - URL bar: centered rounded box, ~75% width
 - Grid: 2 columns (or 1 if narrow), 5-line cells (or 3-line if short)
 - Footer: horizontal rule + hint line
@@ -907,7 +925,7 @@ When no bookmarks exist:
 #### Visual Hierarchy
 
 1. Selected article title (white+bold on dark green, with accent bar)
-2. Content link titles (LinkContent, ANSI 48)
+2. Content link titles (LinkContent, ANSI 212)
 3. Page title in header (HeaderTitleFg)
 4. Group header names (PrimaryText+Bold when expanded, SecondaryText when collapsed)
 5. Navigation/external/footer links (LinkNavigation, ANSI 40)
@@ -929,16 +947,16 @@ When no bookmarks exist:
 
 #### Layout
 
-- Header: 3-line rounded box with title and subtitle
+- Header: single-line title with subtitle
 - Content: 2-column grid of cards (or 1-column if narrow)
 - Group headers: full-width, not paired in columns
-- Status bar: 3-line footer
+- Status bar: 2-line footer
 
 #### Color Mapping
 
 | Element | Color |
 |---------|-------|
-| Card title (Content type) | LinkContent (ANSI 48) |
+| Card title (Content type) | LinkContent (ANSI 212) |
 | Card title (Navigation) | LinkNavigation (ANSI 40) |
 | Card title (External) | LinkExternal (ANSI 40) |
 | Card title (Footer) | LinkFooter (ANSI 40) |
@@ -971,24 +989,42 @@ When no bookmarks exist:
 #### Key Hint Visibility
 
 - Status bar line 1: adaptive key hints
-- Full: `s:save o:browser h/l:width R:refresh v:links b:back ?:help`
+- Full: `s:save o:browser [/]:width R:refresh v:links b:back ?:help`
 
 #### Layout
 
-- No header box (maximizes reading space)
+- No header (maximizes reading space)
 - Content: full terminal width, text wrapped to MaxContentWidth
 - Content indented 2 characters from left edge
 - Focus indicator `▎` replaces the first space character on the focus line
-- Status bar: 3 lines
+- Status bar: 2 lines
 
 #### Color Mapping
 
 | Element | Color |
 |---------|-------|
 | Body text | PrimaryText (via line cache, pre-formatted) |
-| Focus indicator `▎` | FocusIndicatorFg (ANSI 22) |
-| Search match | SearchHighlightFg (ANSI 0) on SearchHighlightBg (ANSI 46) |
+| Focus indicator `▎` | FocusIndicatorFg (ANSI 65) |
+| Search match | SearchHighlightFg (ANSI 15) on SearchHighlightBg (ANSI 24) |
 | Status bar position info | SecondaryText |
+| End-of-article stats | SecondaryText |
+| End-of-article action hints | AccentFg (keys) + SecondaryText (descriptions) |
+
+#### End-of-Article Enhancement
+
+When the reader scrolls to the end of the article, display a summary footer:
+
+```
+                    ─ ─ ─
+
+         1,247 words  ·  ~5 min read
+
+      s:save  b:back  v:links  ?:help
+```
+
+- Thin rule in DimFg (ANSI 22) to separate from article body
+- Stats line (word count, reading time) in SecondaryText
+- Action hints: keys in AccentFg, descriptions in SecondaryText
 
 ### 5.4 Collection List Screen
 
@@ -1009,10 +1045,10 @@ When no bookmarks exist:
 #### Layout
 
 - 1 blank line
-- Header: 3-line rounded box "Collections"
+- Header: single-line "Collections"
 - 1 blank line
-- List items: single column, 1-2 lines per item
-- Status bar: 3 lines
+- List items: single column, 1-2 lines per item (no separators by default)
+- Status bar: 2 lines
 
 #### Color Mapping
 
@@ -1047,17 +1083,17 @@ When no bookmarks exist:
 #### Layout
 
 - 1 blank line
-- Header: 3-line rounded box "{Collection Name} ({n} items)"
+- Header: single-line "{Collection Name} ({n} items)"
 - 1 blank line
-- Podcast CTA button (if items exist): 1/3/5 lines depending on terminal size
-- List items: 2 lines each (title + domain), optional separators
-- Status bar: 3 lines
+- Podcast CTA: inline by default (single line)
+- List items: 2 lines each (title + domain), no separators by default
+- Status bar: 2 lines
 
 #### Color Mapping
 
 | Element | Color |
 |---------|-------|
-| Unread marker `●` | LinkContent (ANSI 48) |
+| Unread marker `●` | LinkContent (ANSI 212) |
 | Read marker `○` | ReadItemFg (ANSI 34) |
 | Unread title (normal) | PrimaryText |
 | Read title (normal) | ReadItemFg |
@@ -1089,7 +1125,7 @@ Screen 1 for the full mockup.
 - "Loading page..." in PrimaryText
 - URL in SecondaryText (split across lines if long)
 - Box width: ~40 chars
-- No key hints (user just waits)
+- `Esc` cancels loading and returns to the previous screen
 
 ### 5.7 Error Screen
 
@@ -1168,10 +1204,10 @@ visual styles.
 - **Lock in**: The selected variant is persisted immediately via `UserSettingsStore`
   with key `Layout:{ScreenName}` (e.g., `Layout:Launcher`, `Layout:LinkTree`)
 - **Status bar badge**: When a non-default variant is active, show variant name
-  in the status bar line 2 right side: `[Layout: Grid]` or similar in SecondaryText
+  in the status bar right side: `[Layout: Grid]` or similar in SecondaryText
 - **Layout name flash**: On switch, display the layout name **large and centered**
   for 500ms using synchronous animation (see Section 4 constraint), then settle
-  into the status bar badge. The flash uses a centered rounded box:
+  into the status bar badge. The flash uses a centered display:
   ```
   ╭───────────────────────╮
   │   Layout: Dense List  │
@@ -1180,7 +1216,7 @@ visual styles.
   rendered at vertical center of the terminal, then cleared on the next full redraw.
 - **First-use hint**: On first use of any screen (tracked per-screen via
   `UserSettingsStore` key `HintSeen:Layout:{ScreenName}`), show a one-time hint
-  in the status bar: `Tip: Ctrl+L to try different layouts` in SecondaryText.
+  in the status bar line: `Tip: Ctrl+L to try different layouts` in SecondaryText.
   The hint is dismissed after the user presses any key and never shown again
   for that screen.
 
@@ -1277,7 +1313,7 @@ and a blank line separator. Comfortable reading-oriented browsing.
 
 #### Variant A: "Comfortable" (Default)
 
-Current layout. MaxContentWidth default 80, adjustable with h/l.
+Current layout. MaxContentWidth default 80, adjustable with `[`/`]`.
 
 - Content width: 80 chars (default)
 - Left margin: 2 chars
@@ -1344,13 +1380,14 @@ screens if no preference is set.
 
 | ANSI Code | Hex | Role Name | When to Use | When NOT to Use |
 |-----------|-----|-----------|-------------|-----------------|
-| 46 | `#00ff00` | PrimaryText | Body text, item names, key shortcut letters, mode labels, prompts | Headlines (use 48), borders (use 35) |
-| 48 | `#00ff87` | HeaderTitleFg, LinkContent, SuccessFg | Page titles in headers, content-type link text, success messages | Body text (too bright for sustained reading), borders |
-| 40 | `#00d700` | LinkNavigation/External/Footer | Non-content link types in link tree | Primary body text, headers, anything interactive |
+| 40 | `#00d700` | PrimaryText | Body text, item names, key shortcut letters, mode labels, prompts | Headlines (use 212), borders (use 35) |
+| 212 | `#ff87d7` | HeaderTitleFg, LinkContent | Page titles in headers, content-type link text | Body text, borders |
+| 119 | `#87ff5f` | SuccessFg | Completion messages, checkmarks, success indicators | Body text, borders |
+| 40 | `#00d700` | LinkNavigation/External/Footer | Non-content link types in link tree, also primary text | Headers (use 212), anything needing accent color |
 | 35 | `#00af5f` | HeaderBorderFg, StatusBarSeparatorFg | All box-drawing borders, separator rules, accent bars on selected items | Text content, link names |
 | 34 | `#00af00` | SecondaryText, PromptLabelFg, ReadItemFg | Subtitles, domains, metadata, read items, hint action text, item counts | Primary headings, interactive elements |
-| 28 | `#008700` | DimFg | Version strings, decorative characters, disabled text | Anything the user needs to read to use the app |
-| 22 | `#005f00` | SelectedItemBg, FocusIndicatorFg | Selection highlight background, reader focus bar | Text foreground (too dark to read on black) |
+| 65 | `#5f875f` | MutedFg | Quiet text, muted labels, subdued UI elements | Primary body text, headers |
+| 22 | `#005f00` | DimFg, SelectedItemBg | Version strings, decorative characters, disabled text, selection bg | Text foreground (too dark to read on black) |
 
 ### 7.2 Accent Color Rules (Cyan, ANSI 51)
 
@@ -1373,7 +1410,7 @@ screens if no preference is set.
 Typically 1-3 elements per screen. It should draw the eye to actionable
 or status-relevant information.
 
-### 7.3 Celebration Color Rules (Pink, ANSI 198)
+### 7.3 Celebration Color Rules (Pink, ANSI 206)
 
 **USE for**:
 - Podcast generation complete sparkle animation
@@ -1398,9 +1435,9 @@ Three levels of dimming via ANSI attribute + color choice:
 
 | Level | Method | Effect | Usage |
 |-------|--------|--------|-------|
-| Slight dim | Use SecondaryText (ANSI 34) instead of PrimaryText (ANSI 46) | Noticeably less bright | Metadata, subtitles, non-primary info |
+| Slight dim | Use SecondaryText (ANSI 34) instead of PrimaryText (ANSI 40) | Noticeably less bright | Metadata, subtitles, non-primary info |
 | Medium dim | Use SecondaryText (ANSI 34) + Dim attribute (`\x1b[2m`) | Significantly darker | Domains under items, action text in hints, decorative separators |
-| Heavy dim | Use DimFg (ANSI 28) | Nearly invisible on black | Version strings, background decoration, disabled elements |
+| Heavy dim | Use DimFg (ANSI 22) | Nearly invisible on black | Version strings, background decoration, disabled elements |
 
 **Rules**:
 - Never use Dim attribute on PrimaryText (it makes bright green muddy; use SecondaryText instead)
@@ -1414,19 +1451,19 @@ Two levels of emphasis:
 | Level | Method | Usage |
 |-------|--------|-------|
 | Standard emphasis | Bold attribute (`\x1b[1m`) + PrimaryText | Item names, headers |
-| Maximum emphasis | SelectedItemFg (white, ANSI 15) | Selected item text, focused input text |
+| Maximum emphasis | SelectedItemFg (warm off-white, ANSI 254) | Selected item text, focused input text |
 
 **Rules**:
 - Bold is used for: bookmark names, card titles (launcher), group header text (expanded)
 - Bold is NOT used for: body text in reader view, metadata subtitles, domains
-- White (ANSI 15) is reserved exclusively for SelectedItemFg -- never used
+- Off-white (ANSI 254) is reserved exclusively for SelectedItemFg -- never used
   for non-selected text in the Phosphor theme
 
 ### 7.6 Border and Separator Rules
 
 | Context | Characters | Color |
 |---------|-----------|-------|
-| Page/screen header box | `╭─╮│╰─╯` | HeaderBorderFg (ANSI 35) |
+| Page/screen header (single-line) | Plain text, no box | HeaderTitleFg (ANSI 212) |
 | URL bar box | `╭─╮│╰─╯` | HeaderBorderFg (unfocused), SelectedItemFg (focused) |
 | Status bar separator | `─` full width | StatusBarSeparatorFg (ANSI 35) |
 | Card bottom rule (normal) | `─` full cell width | SecondaryText+Dim |
@@ -1440,7 +1477,7 @@ Two levels of emphasis:
 | Footer horizontal rule | `─` | HeaderBorderFg |
 
 **Rules**:
-- All box corners are rounded (`╭╮╰╯`), never sharp (`┌┐└┘`)
+- All box corners are rounded (`╭╮╰╯`), never sharp (`┌┐└┘`) -- applies to URL bar, loading box, etc. (headers are now single-line, no box)
 - Borders are never Bold
 - Border color (HeaderBorderFg) is always between SecondaryText and PrimaryText
   in brightness -- visible but not attention-grabbing
@@ -1518,8 +1555,8 @@ All Unicode characters used in the TermReader UI:
 | `▲` | U+25B2 | Up triangle | Scroll up indicator |
 | `→` | U+2192 | Right arrow | Legacy selection arrow |
 | `★` | U+2605 | Black star | Default collection marker |
-| `▰` | U+25B0 | Black parallelogram | Filled progress segment |
-| `▱` | U+25B1 | White parallelogram | Empty progress segment |
+| `▰` | U+25B0 | Black parallelogram | (Legacy, replaced by eighth-block progress bars) |
+| `▱` | U+25B1 | White parallelogram | (Legacy, replaced by eighth-block progress bars) |
 | `✦` | U+2726 | Four-pointed star | Sparkle animation, toast icon |
 | `✧` | U+2727 | Four-pointed star outline | Sparkle animation |
 | `✔` | U+2714 | Heavy check mark | Completion indicator |
@@ -1535,7 +1572,7 @@ All files that must be modified or created to implement this design system:
 
 **Modify:**
 - `/workspace/src/TermReader.Infrastructure/Browser/Themes/ThemePalette.cs` -- add new color role properties
-- `/workspace/src/TermReader.Infrastructure/Browser/Themes/BuiltInThemes.cs` -- update all 4 themes with new colors; change AccentFg ANSI 43 to 51 in Phosphor
+- `/workspace/src/TermReader.Infrastructure/Browser/Themes/BuiltInThemes.cs` -- update all 4 themes with Phosphor 2.0 palette values; add MutedFg
 - `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/StatusBarRenderer.cs` -- layout variant badge, toast rendering support
 - `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/LauncherRenderer.cs` -- layout variants
 - `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/LinkTreeRenderer.cs` -- layout variants

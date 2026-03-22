@@ -181,48 +181,56 @@ public class CollectionCommandStatusTests
     #region HandleDeleteItem
 
     [Fact]
-    public async Task HandleDeleteItem_RemoveItem_ShowsRemovedMessage()
+    public async Task HandleDeleteItem_RemoveItem_ShowsUndoToast()
     {
         var collection = Collection.Create("Reading List");
         collection.AddItem("https://example.com/article", "Old Article");
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
         _navService.CollectionItemSelectedIndex = 0;
-        _ctx.InputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'y' });
 
-        try
-        {
-            await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
-            _lastStatusMessage.Should().Be("Removed: Old Article");
-        }
-        catch (IOException)
-        {
-            // Expected in CI — Console operations fail without a terminal
-        }
+        await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
+
+        _lastStatusMessage.Should().Be("Removed \u00b7 z:undo");
+        collection.Items.Should().BeEmpty("item is removed from in-memory collection");
+        _ctx.PendingUndo.Should().NotBeNull("undo state is set for deferred deletion");
+        _ctx.PendingUndo!.Kind.Should().Be(UndoActionKind.CollectionItemRemoved);
+        _ctx.PendingUndo!.ItemTitle.Should().Be("Old Article");
     }
 
     [Fact]
-    public async Task HandleDeleteItem_RemoveItem_Cancelled_NoAction()
+    public async Task HandleDeleteItem_RemoveItem_DoesNotPersistImmediately()
     {
         var collection = Collection.Create("Reading List");
         collection.AddItem("https://example.com/article", "Old Article");
         _navService.EnterCollections();
         _navService.EnterCollection(collection);
         _navService.CollectionItemSelectedIndex = 0;
-        _ctx.InputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(new NavigationCommand { Type = CommandType.GoBack, RawKeyChar = 'n' });
 
-        try
-        {
-            await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
-            await _collectionService.DidNotReceive()
-                .RemoveItemAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        }
-        catch (IOException)
-        {
-            // Expected in CI — Console operations fail without a terminal
-        }
+        await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
+
+        // The actual DB deletion is deferred — RemoveItemAsync should NOT have been called
+        await _collectionService.DidNotReceive()
+            .RemoveItemAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleUndo_RestoresItem_AfterDelete()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/article", "Old Article");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _navService.CollectionItemSelectedIndex = 0;
+
+        await CollectionCommandHandler.HandleDeleteItem(_ctx, _options, CancellationToken.None);
+        _ctx.PendingUndo.Should().NotBeNull();
+
+        // Press z to undo — RefreshCollectionsAsync reloads from DB (no-op in test)
+        await UndoCommandHandler.HandleUndo(_ctx, _options, CancellationToken.None);
+
+        _ctx.PendingUndo.Should().BeNull("undo state is cleared after undo");
+        _lastStatusMessage.Should().Be("Restored: Old Article");
     }
 
     [Fact]

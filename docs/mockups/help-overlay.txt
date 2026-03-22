@@ -7,9 +7,9 @@ Appears when the user presses ? on any screen. Shows all keybindings for
 the current view, grouped by category.
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — category headers
+  [green]   = phosphor green #00d700 (ANSI 40) — category headers
   [cyan]    = bright cyan #00ffff (ANSI 51) — key characters
-  [dim]     = dark green #005f00 (ANSI 22-28) — borders, decorative
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — action descriptions
 
 

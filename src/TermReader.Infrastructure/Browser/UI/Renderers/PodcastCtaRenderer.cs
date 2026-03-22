@@ -38,17 +38,17 @@ internal class PodcastCtaRenderer
     /// </summary>
     public static int GetCtaLineCount(int terminalWidth, int terminalHeight)
     {
-        if (terminalHeight < 20 || terminalWidth - 2 < 35)
+        if (terminalHeight > 35 && terminalWidth - 2 >= 50)
         {
-            return 1;
+            return 5;
         }
 
-        if (terminalHeight < 24 || terminalWidth - 2 < 50)
+        if (terminalHeight > 35 && terminalWidth - 2 >= 35)
         {
             return 3;
         }
 
-        return 5;
+        return 1;
     }
 
     /// <summary>
@@ -61,17 +61,17 @@ internal class PodcastCtaRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
-        if (height < 20 || width < 35)
+        if (height > 35 && width >= 50)
         {
-            RenderInline(width, p, state);
+            RenderFullSlab(width, p, state);
         }
-        else if (height < 24 || width < 50)
+        else if (height > 35 && width >= 35)
         {
             RenderCompactSlab(width, p, state);
         }
         else
         {
-            RenderFullSlab(width, p, state);
+            RenderInline(width, p, state);
         }
     }
 

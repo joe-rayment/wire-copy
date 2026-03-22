@@ -29,6 +29,7 @@ public class NavigationService : INavigationService
     private int _searchMatchIndex;
     private string? _statusMessage;
     private DateTime? _statusMessageSetAt;
+    private TimeSpan _statusMessageDuration = StatusMessageDuration;
     private bool _isFromCache;
     private DateTime? _cachedAt;
     private bool _isAiHierarchy;
@@ -219,6 +220,17 @@ public class NavigationService : INavigationService
     {
         _statusMessage = message;
         _statusMessageSetAt = DateTime.UtcNow;
+        _statusMessageDuration = StatusMessageDuration;
+    }
+
+    /// <summary>
+    /// Sets a status message with a custom expiry duration.
+    /// </summary>
+    public void SetStatusMessage(string message, TimeSpan duration)
+    {
+        _statusMessage = message;
+        _statusMessageSetAt = DateTime.UtcNow;
+        _statusMessageDuration = duration;
     }
 
     /// <summary>
@@ -474,7 +486,7 @@ public class NavigationService : INavigationService
             return null;
         }
 
-        if (DateTime.UtcNow - _statusMessageSetAt.Value > StatusMessageDuration)
+        if (DateTime.UtcNow - _statusMessageSetAt.Value > _statusMessageDuration)
         {
             _statusMessage = null;
             _statusMessageSetAt = null;

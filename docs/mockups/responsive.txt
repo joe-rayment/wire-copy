@@ -7,11 +7,11 @@ Shows how the UI adapts to different terminal sizes. The app remains functional
 at any size but optimizes layout for common dimensions.
 
 COLOR KEY:
-  [green]   = bright green #00ff00 (ANSI 46) — primary text
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
   [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
-  [dim]     = dark green #005f00 (ANSI 22-28) — borders, decorative
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
   [med]     = medium green #00af00 (ANSI 34) — secondary text
-  [white]   = white #ffffff (ANSI 15) — selected item text
+  [white]   = warm off-white #e4e4e4 (ANSI 254) — selected item text
   [sel-bg]  = dark green bg (ANSI 22) — selection background
 
 
