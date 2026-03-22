@@ -38,6 +38,7 @@ public class AutoLoginServiceTests
         _encryptionService = Substitute.For<ICookieEncryptionService>();
         _webDriverQueue = Substitute.For<IWebDriverQueue>();
         _browserSession = Substitute.For<IBrowserSession>();
+        _browserSession.IsSeleniumAvailable.Returns(true);
 
         // Set up WebDriver mock chain
         _webDriver = Substitute.For<IWebDriver>();

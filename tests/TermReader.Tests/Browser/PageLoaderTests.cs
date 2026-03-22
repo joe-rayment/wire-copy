@@ -25,6 +25,7 @@ public class PageLoaderTests
         _logger = Substitute.For<ILogger<PageLoader>>();
         _browserConfig = Options.Create(new BrowserConfiguration());
         _browserSession = Substitute.For<IBrowserSession>();
+        _browserSession.IsSeleniumAvailable.Returns(true);
     }
 
     private PageLoader CreateSut(HttpClient? httpClient = null, BrowserConfiguration? config = null)

@@ -19,6 +19,7 @@ public class WebDriverQueueTests : IDisposable
     public WebDriverQueueTests()
     {
         _browserSession = Substitute.For<IBrowserSession>();
+        _browserSession.IsSeleniumAvailable.Returns(true);
         _driver = Substitute.For<IWebDriver>();
         _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(_driver);
         _queue = new WebDriverQueue(_browserSession, NullLogger<WebDriverQueue>.Instance);

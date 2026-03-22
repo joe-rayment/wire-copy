@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenQA.Selenium;
@@ -22,6 +23,7 @@ public sealed class BrowserSession : IBrowserSession
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
+    private readonly bool _seleniumAvailable;
     private readonly object _lock = new();
     private IWebDriver? _driver;
     private bool _driverIsHeadless;
@@ -36,6 +38,7 @@ public sealed class BrowserSession : IBrowserSession
         _browserConfig = browserConfig.Value;
         _logger = logger;
         _cookieManager = cookieManager;
+        _seleniumAvailable = ProbeSeleniumAvailability();
     }
 
     public bool HasActiveDriver
@@ -49,11 +52,21 @@ public sealed class BrowserSession : IBrowserSession
         }
     }
 
+    /// <inheritdoc />
+    public bool IsSeleniumAvailable => _seleniumAvailable;
+
     public IWebDriver GetOrCreateDriver(bool headless)
     {
         lock (_lock)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (!_seleniumAvailable)
+            {
+                throw new InvalidOperationException(
+                    "Selenium is unavailable on this platform (ARM64 Linux — no compatible chromedriver). " +
+                    "Pages are loaded via HTTP. JS-heavy sites may not render correctly.");
+            }
 
             if (_driver != null)
             {
@@ -202,6 +215,82 @@ public sealed class BrowserSession : IBrowserSession
         return null;
     }
 
+    private static bool IsArm64Linux()
+    {
+        return RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            && OperatingSystem.IsLinux();
+    }
+
+    /// <summary>
+    /// Locates a Chrome binary with platform-aware priority:
+    /// 1. CHROME_BIN environment variable (explicit override)
+    /// 2. Playwright-managed Chromium (works on ARM64)
+    /// 3. Selenium-managed Chrome (only on non-ARM64, since Selenium Manager downloads x86_64)
+    /// </summary>
+    private string? FindChromeBinary()
+    {
+        // 1. Explicit override via environment variable
+        var envChrome = Environment.GetEnvironmentVariable("CHROME_BIN");
+        if (!string.IsNullOrEmpty(envChrome) && File.Exists(envChrome))
+        {
+            _logger.LogDebug("Using CHROME_BIN override: {Path}", envChrome);
+            return envChrome;
+        }
+
+        // 2. Playwright-managed Chromium (ARM64-compatible)
+        var playwrightChrome = FindPlaywrightChrome();
+        if (playwrightChrome != null)
+        {
+            _logger.LogDebug("Using Playwright Chromium: {Path}", playwrightChrome);
+            return playwrightChrome;
+        }
+
+        // 3. Selenium-managed Chrome (x86_64 only — skip on ARM64)
+        if (!IsArm64Linux())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var seleniumChrome = Path.Combine(home, ".cache", "selenium", "chrome", "linux64");
+            if (Directory.Exists(seleniumChrome))
+            {
+                var latestDir = Directory.GetDirectories(seleniumChrome)
+                    .OrderByDescending(d => d)
+                    .FirstOrDefault();
+                var chromeBin = latestDir != null ? Path.Combine(latestDir, "chrome") : null;
+                if (chromeBin != null && File.Exists(chromeBin))
+                {
+                    _logger.LogDebug("Using Selenium-managed Chrome: {Path}", chromeBin);
+                    return chromeBin;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private bool ProbeSeleniumAvailability()
+    {
+        if (!IsArm64Linux())
+        {
+            return true;
+        }
+
+        // On ARM64 Linux, Selenium Manager downloads x86_64 chromedriver which cannot execute.
+        // Chrome itself may still be available (e.g. Playwright ARM64 Chromium) but the
+        // Selenium ChromeDriver service will fail.
+        if (string.Equals(_browserConfig.BrowserType, "Chrome", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_browserConfig.BrowserType, string.Empty, StringComparison.OrdinalIgnoreCase)
+            || _browserConfig.BrowserType is null)
+        {
+            _logger.LogWarning(
+                "ARM64 Linux detected — Selenium chromedriver is unavailable. " +
+                "Pages will be loaded via HTTP only. Set CHROME_BIN or install Playwright Chromium for browser support");
+            return false;
+        }
+
+        // Firefox or other browser types may still work
+        return true;
+    }
+
     private void DisposeDriverUnsafe()
     {
         if (_driver == null)
@@ -332,20 +421,12 @@ public sealed class BrowserSession : IBrowserSession
         _logger.LogDebug("Creating Chrome driver with headless={Headless}", headless);
         var options = new ChromeOptions();
 
-        // Set Chrome binary location if Selenium Manager downloaded it
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var seleniumChrome = Path.Combine(home, ".cache", "selenium", "chrome", "linux64");
-        if (Directory.Exists(seleniumChrome))
+        // Locate the Chrome binary with platform-aware priority
+        var chromeBinary = FindChromeBinary();
+        if (chromeBinary != null)
         {
-            var latestDir = Directory.GetDirectories(seleniumChrome)
-                .OrderByDescending(d => d)
-                .FirstOrDefault();
-            var chromeBin = latestDir != null ? Path.Combine(latestDir, "chrome") : null;
-            if (chromeBin != null && File.Exists(chromeBin))
-            {
-                options.BinaryLocation = chromeBin;
-                _logger.LogDebug("Using Selenium-managed Chrome: {Path}", chromeBin);
-            }
+            options.BinaryLocation = chromeBinary;
+            _logger.LogDebug("Using Chrome binary: {Path}", chromeBinary);
         }
 
         // Anti-detection
