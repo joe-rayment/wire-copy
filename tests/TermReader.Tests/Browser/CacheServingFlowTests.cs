@@ -61,7 +61,8 @@ public class CacheServingFlowTests
         scope.ServiceProvider.Returns(serviceProvider);
         scopeFactory.CreateScope().Returns(scope);
 
-        var browserSession = Substitute.For<IBrowserSessionControl>();
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsSeleniumAvailable.Returns(true);
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         var resizeDetector = Substitute.For<IResizeDetector>();

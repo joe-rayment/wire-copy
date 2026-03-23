@@ -220,6 +220,20 @@ public sealed class BrowserSession : IBrowserSession
             && OperatingSystem.IsLinux();
     }
 
+    private static long GetDirectorySizeBytes(string path)
+    {
+        try
+        {
+            return new DirectoryInfo(path)
+                .EnumerateFiles("*", SearchOption.AllDirectories)
+                .Sum(f => f.Length);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     /// <summary>
     /// Locates a Chrome binary with platform-aware priority:
     /// 1. CHROME_BIN environment variable (explicit override)
@@ -274,20 +288,27 @@ public sealed class BrowserSession : IBrowserSession
         }
 
         // On ARM64 Linux, Selenium Manager downloads x86_64 chromedriver which cannot execute.
-        // Chrome itself may still be available (e.g. Playwright ARM64 Chromium) but the
-        // Selenium ChromeDriver service will fail.
-        //
-        // However, if CHROME_BIN and CHROMEDRIVER_PATH are set (e.g. in Docker with real
-        // ARM64 packages), chromedriver may actually work — check before giving up.
+        // Check if we have working Chrome + chromedriver binaries before enabling Selenium.
         var chromedriverPath = Environment.GetEnvironmentVariable("CHROMEDRIVER_PATH");
-        var chromeBin = Environment.GetEnvironmentVariable("CHROME_BIN");
+        var chromeBin = FindChromeBinary();
 
-        if (!string.IsNullOrEmpty(chromedriverPath) && File.Exists(chromedriverPath)
-            && !string.IsNullOrEmpty(chromeBin) && File.Exists(chromeBin))
+        // Try CHROMEDRIVER_PATH env var, then common system paths
+        var driverCandidates = new List<string>();
+        if (!string.IsNullOrEmpty(chromedriverPath))
+        {
+            driverCandidates.Add(chromedriverPath);
+        }
+
+        driverCandidates.Add("/usr/bin/chromedriver");
+
+        var workingDriver = driverCandidates.FirstOrDefault(TryRunBinary);
+
+        if (chromeBin != null && TryRunBinary(chromeBin) && workingDriver != null)
         {
             _logger.LogInformation(
-                "ARM64 Linux with CHROME_BIN={ChromeBin} and CHROMEDRIVER_PATH={DriverPath} — Selenium may work",
-                chromeBin, chromedriverPath);
+                "ARM64 Linux with working Chrome={ChromeBin} and chromedriver={DriverPath}",
+                chromeBin,
+                workingDriver);
             return true;
         }
 
@@ -296,8 +317,9 @@ public sealed class BrowserSession : IBrowserSession
             || _browserConfig.BrowserType is null)
         {
             _logger.LogWarning(
-                "ARM64 Linux detected — Selenium chromedriver is unavailable. " +
-                "Pages will be loaded via HTTP only. Set CHROME_BIN or install Playwright Chromium for browser support");
+                "ARM64 Linux detected — no working Chrome/chromedriver found. " +
+                "Pages will be loaded via HTTP only. " +
+                "Install Chromium from a real package repo (not snap) or use Playwright");
 
             // Clean up useless x86_64 Selenium Manager cache
             CleanupX86SeleniumCache();
@@ -307,6 +329,55 @@ public sealed class BrowserSession : IBrowserSession
 
         // Firefox or other browser types may still work
         return true;
+    }
+
+    /// <summary>
+    /// Runs a binary with --version to verify it's a real executable, not a snap stub
+    /// or x86_64 binary that can't run on ARM64. Returns true if it exits successfully.
+    /// </summary>
+    private bool TryRunBinary(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.Start();
+            var exited = process.WaitForExit(5000);
+            if (!exited)
+            {
+                process.Kill(entireProcessTree: true);
+                _logger.LogDebug("Binary timed out: {Path}", path);
+                return false;
+            }
+
+            if (process.ExitCode == 0)
+            {
+                var version = process.StandardOutput.ReadToEnd().Trim();
+                _logger.LogDebug("Binary verified: {Path} → {Version}", path, version);
+                return true;
+            }
+
+            _logger.LogDebug("Binary failed (exit {Code}): {Path}", process.ExitCode, path);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to execute binary: {Path}", path);
+            return false;
+        }
     }
 
     /// <summary>
@@ -333,9 +404,9 @@ public sealed class BrowserSession : IBrowserSession
 
             var sizeMb = cacheSize / (1024.0 * 1024.0);
             _logger.LogWarning(
-                "Removing {SizeMb:F1}MB of x86_64 Selenium Manager cache at {Path} " +
-                "(unusable on ARM64)",
-                sizeMb, seleniumCacheDir);
+                "Removing {SizeMb:F1}MB of x86_64 Selenium Manager cache at {Path} (unusable on ARM64)",
+                sizeMb,
+                seleniumCacheDir);
 
             Directory.Delete(seleniumCacheDir, recursive: true);
 
@@ -344,20 +415,6 @@ public sealed class BrowserSession : IBrowserSession
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to clean up Selenium Manager cache (non-fatal)");
-        }
-    }
-
-    private static long GetDirectorySizeBytes(string path)
-    {
-        try
-        {
-            return new DirectoryInfo(path)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
-                .Sum(f => f.Length);
-        }
-        catch
-        {
-            return 0;
         }
     }
 
