@@ -962,4 +962,69 @@ public class ReadableContentTests
     }
 
     #endregion
+
+    #region Title Extraction — Navigation Text Rejection
+
+    [Fact]
+    public async Task ExtractAsync_NytLikeHtml_UsesArticleHeadlineNotNavigationH1()
+    {
+        // Arrange — simulates NYT structure: navigation H1 "Today's Paper" before article H1
+        var html = @"
+            <html>
+            <head>
+                <meta property=""og:title"" content=""The Real Article Headline"" />
+                <meta property=""article:published_time"" content=""2026-03-23"" />
+            </head>
+            <body>
+                <header>
+                    <h1>Today's Paper</h1>
+                </header>
+                <article>
+                    <h1 class=""headline"">The Real Article Headline</h1>
+                    <p>This is a sufficiently long paragraph to pass content extraction thresholds and quality gates. It needs to be long enough so the content extractor does not reject it as too short. Adding more text here to ensure the paragraph count and word count requirements are met.</p>
+                    <p>Second paragraph with additional content to satisfy extraction requirements.</p>
+                </article>
+            </body>
+            </html>";
+
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/2026/03/23/article.html");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("The Real Article Headline");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_GenericH1IsNavigationText_FallsBackToOgTitle()
+    {
+        // Arrange — page where only H1 is navigation text and og:title has the real headline
+        var html = @"
+            <html>
+            <head>
+                <meta property=""og:title"" content=""Actual Article Title"" />
+                <meta property=""article:published_time"" content=""2026-03-23"" />
+            </head>
+            <body>
+                <h1>Home</h1>
+                <div class=""article-body"">
+                    <p>This is a sufficiently long paragraph to pass content extraction thresholds. Adding more text to ensure word count requirements are met for the quality gate.</p>
+                    <p>Second paragraph with additional content for extraction.</p>
+                </div>
+            </body>
+            </html>";
+
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Actual Article Title");
+    }
+
+    #endregion
 }

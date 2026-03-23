@@ -17,15 +17,15 @@ public static class BuiltInThemes
         {
             [ThemeName.Phosphor] = new ThemePalette
             {
-                // Phosphor 2.0: warm phosphor green body + playful pink titles
+                // Phosphor 2.0: bright green is primary/dominant, pink is accent only
                 PrimaryText = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 pure phosphor green
                 SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 metadata, domains
-                LinkContent = new ThemeColor(ConsoleColor.Magenta, 212),      // #ff87d7 playful pink titles
+                LinkContent = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 article links match primary
                 LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 34),  // secondary for nav links
                 LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green structural
-                HeaderTitleFg = new ThemeColor(ConsoleColor.Magenta, 212),    // #ff87d7 playful pink titles
+                HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 40),       // #00d700 bright green titles
                 HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 SelectedItemFg = new ThemeColor(ConsoleColor.White, 254),     // #e4e4e4 warm off-white
                 SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green selection
@@ -42,7 +42,7 @@ public static class BuiltInThemes
                 DimFg = new ThemeColor(ConsoleColor.DarkGreen, 22),           // #005f00 structural chrome
                 MutedFg = new ThemeColor(ConsoleColor.DarkGreen, 65),         // #5f875f quiet text
                 SuccessFg = new ThemeColor(ConsoleColor.Green, 119),          // #87ff5f warm bright success
-                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink
+                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink (accent)
                 WarningFg = new ThemeColor(ConsoleColor.Yellow, 214),         // #ffaf00 amber warnings
             },
             [ThemeName.Amber] = new ThemePalette
