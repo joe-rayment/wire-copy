@@ -262,8 +262,11 @@ public class BrowserOrchestrator : IBrowserService
             page = await BuildPageFromLoadResultAsync(challengeResult, url, cancellationToken);
         }
 
-        // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium
-        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium)
+        // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium.
+        // Skip when Selenium is unavailable — the retry would just repeat the same HTTP fetch.
+        var seleniumAvailable = (_browserSession as IBrowserSession)?.IsSeleniumAvailable ?? false;
+
+        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium && seleniumAvailable)
         {
             _logger.LogInformation(
                 "No readable content from {FetchMethod} page, retrying with Selenium: {Url}",
@@ -288,7 +291,8 @@ public class BrowserOrchestrator : IBrowserService
         // domain has readable content but looks truncated (few words for an article URL),
         // retry with Selenium. NYT paywall gates are JS-injected and invisible in HTTP HTML,
         // so DetectPaywall can't catch them — but truncated word count is a reliable signal.
-        if (page.HasReadableContent() &&
+        if (seleniumAvailable &&
+            page.HasReadableContent() &&
             _lastLoadFetchMethod != FetchMethod.Selenium &&
             IsPaywalledDomain(url) &&
             page.ReadableContent!.WordCount < 500 &&
@@ -315,7 +319,7 @@ public class BrowserOrchestrator : IBrowserService
 
         // Paywall fallback: if content is paywalled and was fetched via HTTP, retry with
         // Selenium (which has cookie support) if cookies are available
-        if (page.ReadableContent?.IsPaywalled == true && _lastLoadFetchMethod != FetchMethod.Selenium)
+        if (seleniumAvailable && page.ReadableContent?.IsPaywalled == true && _lastLoadFetchMethod != FetchMethod.Selenium)
         {
             var cookieInfo = await _cookieManager.GetCookieInfoAsync();
             if (cookieInfo is { Exists: true, IsExpired: false })
@@ -1122,7 +1126,8 @@ public class BrowserOrchestrator : IBrowserService
             // Eagerly warm up the browser for paywalled domains so Selenium is ready
             // when the user triggers Shift+I (interactive login). Without this, the
             // first Selenium use incurs a cold-start delay (Chrome launch + driver init).
-            if (IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Selenium)
+            var warmupSeleniumAvailable = (_browserSession as IBrowserSession)?.IsSeleniumAvailable ?? false;
+            if (warmupSeleniumAvailable && IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Selenium)
             {
                 _ = Task.Run(async () =>
                 {

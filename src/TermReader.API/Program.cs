@@ -102,7 +102,8 @@ public class Program
             // Skip warmup in headed mode to avoid a visible Chrome window appearing
             // before the user navigates anywhere.
             var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
-            if (browserConfig.Headless)
+            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
+            if (browserConfig.Headless && browserSession.IsSeleniumAvailable)
             {
                 var session = host.Services.GetRequiredService<IBrowserSessionControl>();
                 _ = Task.Run(async () =>
