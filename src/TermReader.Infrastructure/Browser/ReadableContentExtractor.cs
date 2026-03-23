@@ -548,19 +548,17 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static string? ExtractTitle(HtmlDocument doc)
     {
-        // Try article-specific title selectors
-        var titleSelectors = new[]
+        // 1. Try highly specific article headline selectors first
+        var specificSelectors = new[]
         {
-            "//h1[@class='headline' or contains(@class, 'headline')]",
             "//h1[@itemprop='headline']",
-            "//article//h1",
-            "//h1[contains(@class, 'title')]",
+            "//h1[@class='headline' or contains(@class, 'headline')]",
             "//h1[contains(@class, 'entry-title')]",
             "//h1[contains(@class, 'post-title')]",
-            "//h1"
+            "//article//h1",
         };
 
-        foreach (var selector in titleSelectors)
+        foreach (var selector in specificSelectors)
         {
             var node = doc.DocumentNode.SelectSingleNode(selector);
             var text = CleanText(node?.InnerText);
@@ -570,15 +568,59 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             }
         }
 
-        // Fall back to og:title or <title>
+        // 2. og:title is usually the correct article headline (set by CMS)
         var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!);
         if (!string.IsNullOrWhiteSpace(ogTitle))
         {
             return CleanText(ogTitle);
         }
 
+        // 3. Generic H1 with title-like class names
+        var titleClassSelectors = new[]
+        {
+            "//h1[contains(@class, 'title')]",
+            "//h1",
+        };
+
+        foreach (var selector in titleClassSelectors)
+        {
+            var node = doc.DocumentNode.SelectSingleNode(selector);
+            var text = CleanText(node?.InnerText);
+            if (!string.IsNullOrWhiteSpace(text) && !IsNavigationText(text))
+            {
+                return text;
+            }
+        }
+
+        // 4. Last resort: <title> tag
         var titleTag = doc.DocumentNode.SelectSingleNode("//title")?.InnerText;
         return CleanText(titleTag);
+    }
+
+    /// <summary>
+    /// Detects common navigation/section text that should not be used as an article headline.
+    /// </summary>
+    private static bool IsNavigationText(string text)
+    {
+        var normalized = text.Trim();
+
+        // Too short to be a real headline
+        if (normalized.Length < 5)
+        {
+            return true;
+        }
+
+        var navigationPatterns = new[]
+        {
+            "today's paper", "todays paper",
+            "home", "menu", "search",
+            "breaking news", "latest news",
+            "subscribe", "sign in", "log in",
+            "the morning", "the evening",
+        };
+
+        var lower = normalized.ToLowerInvariant();
+        return navigationPatterns.Any(p => lower == p || lower.StartsWith(p + " |") || lower.EndsWith("| " + p));
     }
 
     private static string? ExtractAuthor(HtmlDocument doc)
