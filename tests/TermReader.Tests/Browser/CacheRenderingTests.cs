@@ -17,6 +17,7 @@ namespace TermReader.Tests.Browser;
 /// Uses Console.Out redirect to capture rendered text.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class CacheRenderingTests
 {
     private readonly IThemeProvider _themeProvider;

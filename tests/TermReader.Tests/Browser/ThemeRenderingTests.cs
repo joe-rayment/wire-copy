@@ -19,6 +19,7 @@ namespace TermReader.Tests.Browser;
 /// neon-green, hardcoded-white, or wrong palette roles leak back in.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class ThemeRenderingTests
 {
     private readonly IThemeProvider _themeProvider;
