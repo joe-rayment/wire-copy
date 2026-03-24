@@ -38,13 +38,13 @@ public class ReadingListContentProviderTests
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
-        _browserSession.IsSeleniumAvailable.Returns(true);
+        _browserSession.IsBrowserAvailable.Returns(true);
         _webDriverQueue = Substitute.For<IWebDriverQueue>();
         _articleCache = Substitute.For<IArticleContentCache>();
 
         // Default: AcquireAsync returns a no-op lease
         _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new WebDriverLease(Substitute.For<OpenQA.Selenium.IWebDriver>(), () => { }));
+            .Returns(callInfo => new WebDriverLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
@@ -561,7 +561,7 @@ public class ReadingListContentProviderTests
         await _provider.GetAllArticleContentAsync(collection, progress);
 
         // Verify RestoreWindow was called
-        _browserSession.Received(1).RestoreWindow();
+        await _browserSession.Received(1).RestoreWindowAsync();
 
         // Verify progress reported the bot challenge message
         progressReports.Should().Contain(p =>
@@ -960,7 +960,7 @@ public class ReadingListContentProviderTests
 
         var leaseDisposed = false;
         var lease = new WebDriverLease(
-            Substitute.For<OpenQA.Selenium.IWebDriver>(),
+            Substitute.For<Microsoft.Playwright.IPage>(),
             () => leaseDisposed = true);
         _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);

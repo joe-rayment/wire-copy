@@ -264,7 +264,7 @@ public class BrowserOrchestrator : IBrowserService
 
         // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium.
         // Skip when Selenium is unavailable — the retry would just repeat the same HTTP fetch.
-        var seleniumAvailable = (_browserSession as IBrowserSession)?.IsSeleniumAvailable ?? false;
+        var seleniumAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
 
         if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium && seleniumAvailable)
         {
@@ -1035,7 +1035,7 @@ public class BrowserOrchestrator : IBrowserService
 
         // Capture screenshot for AI analysis
         var browserSession = _browserSession as IBrowserSession;
-        var screenshot = browserSession?.CaptureScreenshot();
+        var screenshot = browserSession != null ? await browserSession.CaptureScreenshotAsync() : null;
         if (screenshot == null || screenshot.Length == 0)
         {
             _logger.LogDebug("No screenshot available for AI analysis of {Url}", pageUrl);
@@ -1133,7 +1133,7 @@ public class BrowserOrchestrator : IBrowserService
             // Eagerly warm up the browser for paywalled domains so Selenium is ready
             // when the user triggers Shift+I (interactive login). Without this, the
             // first Selenium use incurs a cold-start delay (Chrome launch + driver init).
-            var warmupSeleniumAvailable = (_browserSession as IBrowserSession)?.IsSeleniumAvailable ?? false;
+            var warmupSeleniumAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
             if (warmupSeleniumAvailable && IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Selenium)
             {
                 _ = Task.Run(async () =>
@@ -1220,10 +1220,10 @@ public class BrowserOrchestrator : IBrowserService
                 return;
             }
 
-            // Restore the browser window AFTER the headed driver is created and page loaded
+            // Restore the browser window AFTER the headed browser is created and page loaded
             if (_browserSession is IBrowserSession browserSession)
             {
-                browserSession.RestoreWindow();
+                await browserSession.RestoreWindowAsync();
             }
 
             // If bot challenge detected, use the challenge polling helper (force headed)
@@ -1296,7 +1296,7 @@ public class BrowserOrchestrator : IBrowserService
         // Bring browser window to foreground so user can see and solve the challenge
         if (_browserSession is IBrowserSession challengeSession)
         {
-            challengeSession.RestoreWindow();
+            await challengeSession.RestoreWindowAsync();
         }
 
         _renderer.RenderChallenge(url);
@@ -1310,10 +1310,10 @@ public class BrowserOrchestrator : IBrowserService
             await Task.Delay(1500, cancellationToken);
             try
             {
-                if (_browserSession is IBrowserSession session && session.IsSeleniumAvailable)
+                if (_browserSession is IBrowserSession session && session.IsBrowserAvailable)
                 {
-                    var driver = session.GetOrCreateDriver(headless);
-                    var currentSource = driver.PageSource;
+                    var page = await session.GetOrCreatePageAsync(headless);
+                    var currentSource = await page.ContentAsync();
                     if (!PageLoader.IsBotChallengePage(currentSource))
                     {
                         _logger.LogInformation("Bot challenge resolved by user: {Url}", url);
@@ -1323,7 +1323,7 @@ public class BrowserOrchestrator : IBrowserService
                 }
                 else
                 {
-                    _logger.LogDebug("Browser session does not support driver access, skipping challenge poll");
+                    _logger.LogDebug("Browser session does not support page access, skipping challenge poll");
                     break;
                 }
             }
@@ -1356,16 +1356,17 @@ public class BrowserOrchestrator : IBrowserService
     {
         try
         {
-            if (_browserSession is not IBrowserSession session || !session.HasActiveDriver || !session.IsSeleniumAvailable)
+            if (_browserSession is not IBrowserSession session || !session.HasActiveBrowser || !session.IsBrowserAvailable)
             {
                 return;
             }
 
-            var driver = session.GetOrCreateDriver(false);
-            var seleniumCookies = driver.Manage().Cookies.AllCookies;
-            var storedCookies = seleniumCookies.Select(c =>
+            var page = await session.GetOrCreatePageAsync(false);
+            var playwrightCookies = await page.Context.CookiesAsync();
+            var storedCookies = playwrightCookies.Select(c =>
                 new Application.Interfaces.StoredCookie(
-                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty, c.Expiry)).ToList();
+                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty,
+                    c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
             _logger.LogInformation("Saved {Count} browser cookies after interactive refresh", storedCookies.Count);
@@ -1386,7 +1387,7 @@ public class BrowserOrchestrator : IBrowserService
         _renderer.RenderManualLogin(url, domain);
         if (_browserSession is IBrowserSession browserSession)
         {
-            browserSession.RestoreWindow();
+            await browserSession.RestoreWindowAsync();
         }
 
         var timeout = TimeSpan.FromMinutes(3);
@@ -1397,10 +1398,10 @@ public class BrowserOrchestrator : IBrowserService
             await Task.Delay(2000, cancellationToken);
             try
             {
-                if (_browserSession is IBrowserSession session && session.HasActiveDriver && session.IsSeleniumAvailable)
+                if (_browserSession is IBrowserSession session && session.HasActiveBrowser && session.IsBrowserAvailable)
                 {
-                    var driver = session.GetOrCreateDriver(false);
-                    var currentUrl = driver.Url;
+                    var page = await session.GetOrCreatePageAsync(false);
+                    var currentUrl = page.Url;
 
                     // Login complete when URL no longer contains login/signin paths
                     if (!currentUrl.Contains("/login", StringComparison.OrdinalIgnoreCase) &&
@@ -1413,10 +1414,11 @@ public class BrowserOrchestrator : IBrowserService
                         // Capture cookies after successful manual login
                         try
                         {
-                            var seleniumCookies = driver.Manage().Cookies.AllCookies;
-                            var storedCookies = seleniumCookies.Select(c =>
+                            var playwrightCookies = await page.Context.CookiesAsync();
+                            var storedCookies = playwrightCookies.Select(c =>
                                 new Application.Interfaces.StoredCookie(
-                                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty, c.Expiry)).ToList();
+                                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty,
+                                    c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
                             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
                             _logger.LogInformation(
@@ -1434,7 +1436,7 @@ public class BrowserOrchestrator : IBrowserService
                 }
                 else
                 {
-                    _logger.LogDebug("No active driver for manual login polling, stopping");
+                    _logger.LogDebug("No active browser for manual login polling, stopping");
                     break;
                 }
             }

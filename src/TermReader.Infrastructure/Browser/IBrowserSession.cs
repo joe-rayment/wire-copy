@@ -1,52 +1,51 @@
 // Educational and personal use only.
 
-using OpenQA.Selenium;
+using Microsoft.Playwright;
 using TermReader.Application.Interfaces.Browser;
 
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
 /// Infrastructure-level interface extending <see cref="IBrowserSessionControl"/>
-/// with Selenium-specific driver access for browser automation components.
+/// with Playwright-based page access for browser automation components.
 /// </summary>
 public interface IBrowserSession : IBrowserSessionControl
 {
     /// <summary>
-    /// Gets a value indicating whether there is an active WebDriver instance.
+    /// Gets a value indicating whether there is an active browser page.
     /// </summary>
-    bool HasActiveDriver { get; }
+    bool HasActiveBrowser { get; }
 
     /// <summary>
-    /// Gets a value indicating whether Selenium WebDriver can be used on this platform.
-    /// Returns false on ARM64 Linux where Selenium Manager downloads an incompatible
-    /// x86_64 chromedriver binary.
+    /// Gets a value indicating whether the browser automation backend is available.
+    /// Always true with Playwright (no platform-specific binary issues).
     /// </summary>
-    bool IsSeleniumAvailable { get; }
+    bool IsBrowserAvailable { get; }
 
     /// <summary>
-    /// Gets or creates a WebDriver instance. Returns the existing driver
+    /// Gets or creates a Playwright page instance. Returns the existing page
     /// if one is active, or creates a new one if none exists or the previous
-    /// driver has crashed.
+    /// session has crashed.
     /// </summary>
     /// <param name="headless">Whether to run the browser in headless mode.</param>
-    /// <returns>An active WebDriver instance.</returns>
-    IWebDriver GetOrCreateDriver(bool headless);
+    /// <returns>An active Playwright page instance.</returns>
+    Task<IPage> GetOrCreatePageAsync(bool headless);
 
     /// <summary>
-    /// Releases the current driver reference without disposing it,
+    /// Releases the current page reference without disposing it,
     /// allowing it to be reused by subsequent calls.
     /// </summary>
-    void ReleaseDriver();
+    void ReleasePage();
 
     /// <summary>
     /// Restores a minimized browser window to normal size for interactive use.
-    /// No-op if headless or no active driver.
+    /// No-op if headless or no active page.
     /// </summary>
-    void RestoreWindow();
+    Task RestoreWindowAsync();
 
     /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.
-    /// Returns null if no active driver or capture fails.
+    /// Returns null if no active page or capture fails.
     /// </summary>
-    byte[]? CaptureScreenshot();
+    Task<byte[]?> CaptureScreenshotAsync();
 }

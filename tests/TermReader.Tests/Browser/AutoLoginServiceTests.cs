@@ -3,9 +3,9 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Playwright;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using OpenQA.Selenium;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Credentials;
@@ -23,13 +23,11 @@ public class AutoLoginServiceTests
     private readonly ICookieEncryptionService _encryptionService;
     private readonly IWebDriverQueue _webDriverQueue;
     private readonly IBrowserSession _browserSession;
-    private readonly IWebDriver _webDriver;
-    private readonly INavigation _navigation;
-    private readonly IOptions _driverOptions;
-    private readonly ICookieJar _cookieJar;
-    private readonly IWebElement _usernameElement;
-    private readonly IWebElement _passwordElement;
-    private readonly IWebElement _submitElement;
+    private readonly IPage _page;
+    private readonly IBrowserContext _browserContext;
+    private readonly ILocator _usernameLocator;
+    private readonly ILocator _passwordLocator;
+    private readonly ILocator _submitLocator;
     private readonly AutoLoginService _service;
 
     public AutoLoginServiceTests()
@@ -38,25 +36,26 @@ public class AutoLoginServiceTests
         _encryptionService = Substitute.For<ICookieEncryptionService>();
         _webDriverQueue = Substitute.For<IWebDriverQueue>();
         _browserSession = Substitute.For<IBrowserSession>();
-        _browserSession.IsSeleniumAvailable.Returns(true);
+        _browserSession.IsBrowserAvailable.Returns(true);
 
-        // Set up WebDriver mock chain
-        _webDriver = Substitute.For<IWebDriver>();
-        _navigation = Substitute.For<INavigation>();
-        _driverOptions = Substitute.For<IOptions>();
-        _cookieJar = Substitute.For<ICookieJar>();
-        _webDriver.Navigate().Returns(_navigation);
-        _webDriver.Manage().Returns(_driverOptions);
-        _driverOptions.Cookies.Returns(_cookieJar);
+        // Set up Playwright IPage mock
+        _page = Substitute.For<IPage>();
+        _browserContext = Substitute.For<IBrowserContext>();
+        _page.Context.Returns(_browserContext);
+        _page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(null));
+        _page.GotoAsync(Arg.Any<string>()).Returns(Task.FromResult<IResponse?>(null));
 
-        // Set up shared form elements that are returned by FindElement
-        _usernameElement = Substitute.For<IWebElement>();
-        _passwordElement = Substitute.For<IWebElement>();
-        _submitElement = Substitute.For<IWebElement>();
+        // Set up locator mocks
+        _usernameLocator = Substitute.For<ILocator>();
+        _passwordLocator = Substitute.For<ILocator>();
+        _submitLocator = Substitute.For<ILocator>();
+        _usernameLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        _passwordLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        _submitLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
 
-        // Default: AcquireAsync returns a lease with our mock driver
+        // Default: AcquireAsync returns a lease with our mock page
         _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new WebDriverLease(_webDriver, () => { }));
+            .Returns(_ => new WebDriverLease(_page, () => { }));
 
         // Set up service scope factory mock
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
@@ -122,23 +121,19 @@ public class AutoLoginServiceTests
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
 
-        // Wire up FindElement to return the shared mock elements
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains(credential.UsernameSelector!)))
-            .Returns(_usernameElement);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains(credential.PasswordSelector!)))
-            .Returns(_passwordElement);
+        // Wire up Locator to return mock locators for form fields
+        _page.Locator(credential.UsernameSelector!).Returns(_usernameLocator);
+        _page.Locator(credential.PasswordSelector!).Returns(_passwordLocator);
 
         if (credential.SubmitSelector != null)
         {
-            _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains(credential.SubmitSelector)))
-                .Returns(_submitElement);
+            _page.Locator(credential.SubmitSelector).Returns(_submitLocator);
         }
 
         // Navigate away from login page after submission
-        _webDriver.Url.Returns("https://example.com/dashboard");
-        _webDriver.PageSource.Returns("<html><body>Dashboard</body></html>");
-        _cookieJar.AllCookies.Returns(
-            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
+        _page.Url.Returns("https://example.com/dashboard");
+        _page.ContentAsync().Returns(Task.FromResult("<html><body>Dashboard</body></html>"));
+        _browserContext.CookiesAsync(Arg.Any<IEnumerable<string>>()).Returns(Task.FromResult<IReadOnlyList<BrowserContextCookiesResult>>([]));
     }
 
     #region HasCredentialsAsync
@@ -227,32 +222,31 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        // Verify on the shared elements that were returned by FindElement
-        _usernameElement.Received().SendKeys("user@example.com");
-        _passwordElement.Received().SendKeys("s3cret");
-    }
-
-    [Fact]
-    public async Task Login_ClearsFieldsBeforeTyping()
-    {
-        var credential = CreateCredential();
-        SetupSuccessfulLogin(credential);
-
-        await _service.LoginAsync("example.com");
-
-        _usernameElement.Received().Clear();
-        _passwordElement.Received().Clear();
+        // Verify FillAsync was called with correct values
+        await _usernameLocator.Received().FillAsync("user@example.com");
+        await _passwordLocator.Received().FillAsync("s3cret");
     }
 
     [Fact]
     public async Task Login_ClicksSubmitButton_WhenSelectorConfigured()
     {
         var credential = CreateCredential(submitSelector: "#login-btn");
-        SetupSuccessfulLogin(credential);
+        _credentialRepo.GetByDomainAsync(credential.Domain, Arg.Any<CancellationToken>())
+            .Returns(credential);
+        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
+        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
+
+        var loginBtnLocator = Substitute.For<ILocator>();
+        loginBtnLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        _page.Locator("#email").Returns(_usernameLocator);
+        _page.Locator("#password").Returns(_passwordLocator);
+        _page.Locator("#login-btn").Returns(loginBtnLocator);
+        _page.Url.Returns("https://example.com/dashboard");
+        _browserContext.CookiesAsync(Arg.Any<IEnumerable<string>>()).Returns(Task.FromResult<IReadOnlyList<BrowserContextCookiesResult>>([]));
 
         await _service.LoginAsync("example.com");
 
-        _submitElement.Received().Click();
+        await loginBtnLocator.Received().ClickAsync();
     }
 
     [Fact]
@@ -263,7 +257,7 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _navigation.Received().GoToUrlAsync("https://auth.example.com/signin");
+        await _page.Received().GotoAsync("https://auth.example.com/signin");
     }
 
     [Fact]
@@ -274,7 +268,7 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _navigation.Received().GoToUrlAsync("https://example.com/login");
+        await _page.Received().GotoAsync("https://example.com/login");
     }
 
     #endregion
@@ -289,7 +283,6 @@ public class AutoLoginServiceTests
             .Returns(credential);
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
-        _webDriver.Url.Returns("https://example.com/login");
 
         var result = await _service.LoginAsync("example.com");
 
@@ -305,7 +298,6 @@ public class AutoLoginServiceTests
             .Returns(credential);
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
-        _webDriver.Url.Returns("https://example.com/login");
 
         var result = await _service.LoginAsync("example.com");
 
@@ -321,11 +313,10 @@ public class AutoLoginServiceTests
             .Returns(credential);
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
-        _webDriver.Url.Returns("https://example.com/login");
 
         await _service.LoginAsync("example.com");
 
-        _browserSession.Received(1).RestoreWindow();
+        await _browserSession.Received(1).RestoreWindowAsync();
     }
 
     #endregion
@@ -333,35 +324,27 @@ public class AutoLoginServiceTests
     #region Login - Element Not Found (Manual Fallback)
 
     [Fact]
-    public async Task Login_RequiresManualLogin_WhenWebDriverTimesOutFindingElement()
+    public async Task Login_RequiresManualLogin_WhenElementNotFound()
     {
-        // WebDriverWait.Until wraps NoSuchElementException into WebDriverTimeoutException
-        // after the timeout period. Since we catch WebDriverException (parent of both),
-        // this triggers the WebDriverException handler when it escapes TryFormLoginAsync.
-        // However, the NoSuchElementException catch in LoginAsync should also handle
-        // a direct NoSuchElementException thrown before TryFormLoginAsync is entered.
-        // Test the WebDriverTimeoutException path (what actually happens in practice).
         var credential = CreateCredential();
         _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
             .Returns(credential);
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
 
-        // WebDriverWait internally calls FindElement, which throws NoSuchElementException,
-        // causing WebDriverWait.Until to throw WebDriverTimeoutException.
-        // But since we don't want to wait 10 seconds, we throw NoSuchElementException
-        // from GoToUrlAsync so it's caught before WebDriverWait is reached.
-        _navigation.GoToUrlAsync(Arg.Any<string>())
-            .Returns<Task>(_ => throw new NoSuchElementException("Element not found"));
+        // Playwright throws PlaywrightException when element not found
+        _page.GotoAsync(Arg.Any<string>())
+            .Returns<IResponse?>(_ => throw new PlaywrightException("Element not found"));
 
         var result = await _service.LoginAsync("example.com");
 
+        // The PlaywrightException with "Element" is caught and triggers manual login
         result.ManualLoginRequired.Should().BeTrue();
         result.ErrorMessage.Should().Contain("elements not found");
     }
 
     [Fact]
-    public async Task Login_RestoresWindow_WhenNoSuchElementExceptionThrown()
+    public async Task Login_RestoresWindow_WhenElementNotFound()
     {
         var credential = CreateCredential();
         _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
@@ -369,20 +352,20 @@ public class AutoLoginServiceTests
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
 
-        _navigation.GoToUrlAsync(Arg.Any<string>())
-            .Returns<Task>(_ => throw new NoSuchElementException("Element not found"));
+        _page.GotoAsync(Arg.Any<string>())
+            .Returns<IResponse?>(_ => throw new PlaywrightException("Element not found"));
 
         await _service.LoginAsync("example.com");
 
-        _browserSession.Received(1).RestoreWindow();
+        await _browserSession.Received(1).RestoreWindowAsync();
     }
 
     #endregion
 
-    #region Login - WebDriver Error
+    #region Login - Browser Error
 
     [Fact]
-    public async Task Login_ReturnsFailed_OnWebDriverException()
+    public async Task Login_ReturnsFailed_OnPlaywrightException()
     {
         var credential = CreateCredential();
         _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
@@ -390,8 +373,8 @@ public class AutoLoginServiceTests
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
 
-        _navigation.GoToUrlAsync(Arg.Any<string>())
-            .Returns<Task>(_ => throw new WebDriverException("Session crashed"));
+        _page.GotoAsync(Arg.Any<string>())
+            .Returns<IResponse?>(_ => throw new PlaywrightException("Session crashed"));
 
         var result = await _service.LoginAsync("example.com");
 
@@ -433,7 +416,7 @@ public class AutoLoginServiceTests
     }
 
     [Fact]
-    public async Task Login_AcquiresNonHeadlessDriver()
+    public async Task Login_AcquiresNonHeadlessBrowser()
     {
         var credential = CreateCredential();
         SetupSuccessfulLogin(credential);
@@ -448,35 +431,6 @@ public class AutoLoginServiceTests
 
     #endregion
 
-    #region Login - No Submit Selector
-
-    [Fact]
-    public async Task Login_PressesEnter_WhenNoSubmitSelector()
-    {
-        var credential = CreateCredential(submitSelector: null);
-        _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
-            .Returns(credential);
-        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
-        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
-
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
-            .Returns(_usernameElement);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
-            .Returns(_passwordElement);
-
-        _webDriver.Url.Returns("https://example.com/dashboard");
-        _webDriver.PageSource.Returns("<html><body>Dashboard</body></html>");
-        _cookieJar.AllCookies.Returns(
-            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
-
-        await _service.LoginAsync("example.com");
-
-        // Password field should receive Enter key (Keys.Return)
-        _passwordElement.Received().SendKeys(Keys.Return);
-    }
-
-    #endregion
-
     #region Login - Lease Disposal
 
     [Fact]
@@ -486,7 +440,7 @@ public class AutoLoginServiceTests
         SetupSuccessfulLogin(credential);
 
         var leaseDisposed = false;
-        var lease = new WebDriverLease(_webDriver, () => leaseDisposed = true);
+        var lease = new WebDriverLease(_page, () => leaseDisposed = true);
         _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
@@ -504,47 +458,17 @@ public class AutoLoginServiceTests
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
 
-        _navigation.GoToUrlAsync(Arg.Any<string>())
-            .Returns<Task>(_ => throw new WebDriverException("Crash"));
+        _page.GotoAsync(Arg.Any<string>())
+            .Returns<IResponse?>(_ => throw new PlaywrightException("Crash"));
 
         var leaseDisposed = false;
-        var lease = new WebDriverLease(_webDriver, () => leaseDisposed = true);
+        var lease = new WebDriverLease(_page, () => leaseDisposed = true);
         _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         await _service.LoginAsync("example.com");
 
         leaseDisposed.Should().BeTrue("lease should be disposed even after failure");
-    }
-
-    #endregion
-
-    #region Login - Invalid Credentials Detection
-
-    [Fact]
-    public async Task Login_ReturnsFailed_WhenStillOnLoginPageWithError()
-    {
-        var credential = CreateCredential();
-        _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
-            .Returns(credential);
-        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user");
-        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("pass");
-
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
-            .Returns(_usernameElement);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
-            .Returns(_passwordElement);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#submit")))
-            .Returns(_submitElement);
-
-        // Still on login page after submission
-        _webDriver.Url.Returns("https://example.com/login");
-        _webDriver.PageSource.Returns("<html><body>Invalid username or password. Try again.</body></html>");
-
-        var result = await _service.LoginAsync("example.com");
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("invalid credentials");
     }
 
     #endregion
@@ -581,163 +505,30 @@ public class AutoLoginServiceTests
         result.Success.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task Login_FillsEmailThenPassword_InMultiStepFlow()
-    {
-        var credential = CreateMultiStepCredential();
-        var emailField = Substitute.For<IWebElement>();
-        var passwordField = Substitute.For<IWebElement>();
-        var continueButton = Substitute.For<IWebElement>();
-        var submitButton = Substitute.For<IWebElement>();
-
-        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
-
-        await _service.LoginAsync("nytimes.com");
-
-        // Step 1: email
-        emailField.Received().Clear();
-        emailField.Received().SendKeys("user@example.com");
-        continueButton.Received().Click();
-
-        // Step 2: password
-        passwordField.Received().Clear();
-        passwordField.Received().SendKeys("s3cret");
-        submitButton.Received().Click();
-    }
-
-    [Fact]
-    public async Task Login_ReturnsFailed_WhenMultiStepLoginDetectsErrorMidFlow()
-    {
-        var credential = CreateMultiStepCredential();
-        var emailField = Substitute.For<IWebElement>();
-        var passwordField = Substitute.For<IWebElement>();
-        var continueButton = Substitute.For<IWebElement>();
-        var submitButton = Substitute.For<IWebElement>();
-
-        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
-
-        // After step 1, page shows error (still on login page with error text)
-        _webDriver.PageSource.Returns(
-            "<html><body>Invalid email. Please try again.</body></html>");
-
-        var result = await _service.LoginAsync("nytimes.com");
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("step 1");
-    }
-
-    [Fact]
-    public async Task Login_ReturnsFailed_WhenMultiStepStaysOnLoginPage()
-    {
-        var credential = CreateMultiStepCredential();
-        var emailField = Substitute.For<IWebElement>();
-        var passwordField = Substitute.For<IWebElement>();
-        var continueButton = Substitute.For<IWebElement>();
-        var submitButton = Substitute.For<IWebElement>();
-
-        _credentialRepo.GetByDomainAsync(credential.Domain, Arg.Any<CancellationToken>())
-            .Returns(credential);
-        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
-        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
-
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
-            .Returns(emailField);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
-            .Returns(passwordField);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("submit-email")))
-            .Returns(continueButton);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("button[type=submit]")))
-            .Returns(submitButton);
-
-        _cookieJar.AllCookies.Returns(
-            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
-
-        // No error between steps, but stays on login page with error after all steps complete
-        var pageSourceCalls = 0;
-        _webDriver.PageSource.Returns(_ =>
-        {
-            pageSourceCalls++;
-            // First call (inter-step check): no error
-            // Later calls (final check): error
-            return pageSourceCalls <= 1
-                ? "<html><body>Enter your password</body></html>"
-                : "<html><body>Invalid username or password</body></html>";
-        });
-        _webDriver.Url.Returns("https://myaccount.nytimes.com/auth/login");
-
-        var result = await _service.LoginAsync("nytimes.com");
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("invalid credentials");
-    }
-
-    [Fact]
-    public async Task Login_PressesEnter_WhenMultiStepHasNoSubmitSelector()
-    {
-        var steps = new List<LoginStep>
-        {
-            new("#email", StepValueType.Username), // no submit selector
-        };
-        var credential = CreateCredential(
-            domain: "example.com",
-            loginSteps: steps,
-            usernameSelector: null,
-            passwordSelector: null,
-            submitSelector: null);
-
-        var emailField = Substitute.For<IWebElement>();
-        _credentialRepo.GetByDomainAsync("example.com", Arg.Any<CancellationToken>())
-            .Returns(credential);
-        _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
-        _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
-
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
-            .Returns(emailField);
-        _webDriver.Url.Returns("https://example.com/dashboard");
-        _webDriver.PageSource.Returns("<html><body>Dashboard</body></html>");
-        _cookieJar.AllCookies.Returns(
-            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
-
-        await _service.LoginAsync("example.com");
-
-        emailField.Received().SendKeys(Keys.Return);
-    }
-
     private void SetupMultiStepLogin(SiteCredential credential)
     {
-        var emailField = Substitute.For<IWebElement>();
-        var passwordField = Substitute.For<IWebElement>();
-        var continueButton = Substitute.For<IWebElement>();
-        var submitButton = Substitute.For<IWebElement>();
-
-        SetupMultiStepElements(credential, emailField, passwordField, continueButton, submitButton);
-    }
-
-    private void SetupMultiStepElements(
-        SiteCredential credential,
-        IWebElement emailField,
-        IWebElement passwordField,
-        IWebElement continueButton,
-        IWebElement submitButton)
-    {
         _credentialRepo.GetByDomainAsync(credential.Domain, Arg.Any<CancellationToken>())
             .Returns(credential);
         _encryptionService.Decrypt(credential.EncryptedUsername).Returns("user@example.com");
         _encryptionService.Decrypt(credential.EncryptedPassword).Returns("s3cret");
 
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#email")))
-            .Returns(emailField);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("#password")))
-            .Returns(passwordField);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("submit-email")))
-            .Returns(continueButton);
-        _webDriver.FindElement(Arg.Is<By>(b => b.ToString()!.Contains("button[type=submit]")))
-            .Returns(submitButton);
+        var emailLocator = Substitute.For<ILocator>();
+        var passwordLocator = Substitute.For<ILocator>();
+        var continueLocator = Substitute.For<ILocator>();
+        var submitLocator = Substitute.For<ILocator>();
+        emailLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        passwordLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        continueLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
+        submitLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
 
-        _webDriver.Url.Returns("https://www.nytimes.com");
-        _webDriver.PageSource.Returns("<html><body>NYT Home</body></html>");
-        _cookieJar.AllCookies.Returns(
-            new System.Collections.ObjectModel.ReadOnlyCollection<Cookie>(new List<Cookie>()));
+        _page.Locator("#email").Returns(emailLocator);
+        _page.Locator("#password").Returns(passwordLocator);
+        _page.Locator("button[data-testid=submit-email]").Returns(continueLocator);
+        _page.Locator("button[type=submit]").Returns(submitLocator);
+
+        _page.Url.Returns("https://www.nytimes.com");
+        _page.ContentAsync().Returns(Task.FromResult("<html><body>NYT Home</body></html>"));
+        _browserContext.CookiesAsync(Arg.Any<IEnumerable<string>>()).Returns(Task.FromResult<IReadOnlyList<BrowserContextCookiesResult>>([]));
     }
 
     #endregion

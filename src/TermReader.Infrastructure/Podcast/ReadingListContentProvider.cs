@@ -381,7 +381,7 @@ internal sealed class ReadingListContentProvider
             {
                 try
                 {
-                    _browserSession.RestoreWindow();
+                    await _browserSession.RestoreWindowAsync();
                     reportMethod?.Invoke("bot challenge \u2014 check browser");
                     _logger.LogWarning(
                         "Bot challenge detected, restoring browser window for user intervention: {Url}",

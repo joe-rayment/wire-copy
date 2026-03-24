@@ -153,7 +153,7 @@ public class CookieWiringTests
 
         // Assert - session was created successfully with cookie manager
         session.Should().NotBeNull();
-        session.HasActiveDriver.Should().BeFalse("no driver should exist before first call");
+        session.HasActiveBrowser.Should().BeFalse("no browser should exist before first call");
 
         session.Dispose();
     }
