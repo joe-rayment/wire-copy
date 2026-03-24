@@ -10,6 +10,12 @@ namespace TermReader.Application.Interfaces.Browser;
 public interface IInputHandler
 {
     /// <summary>
+    /// Whether stdin is a real terminal (not redirected/piped).
+    /// When false, keyboard input is unavailable and the input loop should be skipped.
+    /// </summary>
+    bool IsInteractive { get; }
+
+    /// <summary>
     /// Waits for user input and returns the corresponding command.
     /// Blocks until input is received.
     /// </summary>

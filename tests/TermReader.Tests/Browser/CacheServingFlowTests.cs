@@ -38,6 +38,7 @@ public class CacheServingFlowTests
         _pageCache = Substitute.For<IPageCache>();
 
         var inputHandler = Substitute.For<IInputHandler>();
+        inputHandler.IsInteractive.Returns(true);
         var browserConfig = Options.Create(new BrowserConfiguration());
         var logger = Substitute.For<ILogger<BrowserOrchestrator>>();
         var navLogger = Substitute.For<ILogger<NavigationService>>();

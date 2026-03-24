@@ -370,7 +370,8 @@ internal class LauncherRenderer
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
     {
-        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}TermReader{Reset}";
+        // Brand green — always ANSI 40 regardless of theme
+        var title = $"\x1b[38;5;40m{Bold}TermReader{Reset}";
         var meta = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
         var titleTextLen = "TermReader".Length;
         var metaTextLen = $"{bookmarkCount} bookmarks".Length;
