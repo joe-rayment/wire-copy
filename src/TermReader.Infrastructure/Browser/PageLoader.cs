@@ -5,8 +5,7 @@ using System.Net;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Support.UI;
+using Microsoft.Playwright;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums.Browser;
@@ -16,7 +15,7 @@ using TermReader.Infrastructure.Configuration;
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
-/// Loads web pages using Selenium WebDriver.
+/// Loads web pages using Playwright browser automation.
 /// Wraps browser automation for the terminal browser mode.
 /// </summary>
 public class PageLoader : IPageLoader
@@ -82,13 +81,13 @@ public class PageLoader : IPageLoader
 
         try
         {
-            // PreferSelenium: try Selenium first, fall back to HTTP
+            // PreferSelenium: try browser first, fall back to HTTP
             if (request.PreferSelenium && !request.ForceBrowser)
             {
-                return await LoadSeleniumFirstAsync(request, totalSw, cancellationToken);
+                return await LoadBrowserFirstAsync(request, totalSw, cancellationToken);
             }
 
-            // Default path: try HTTP first, fall back to Selenium
+            // Default path: try HTTP first, fall back to browser
             // Skip HTTP when ForceBrowser is set (e.g., paywalled domains with cookies)
             if (request.ForceBrowser)
             {
@@ -158,12 +157,11 @@ public class PageLoader : IPageLoader
     /// that cover page content. Also restores scrolling on the body element.
     /// Called after page load and after bot challenge resolution.
     /// </summary>
-    internal static void DismissOverlays(IWebDriver driver, ILogger logger)
+    internal static async Task DismissOverlaysAsync(IPage page, ILogger logger)
     {
         try
         {
-            var js = (IJavaScriptExecutor)driver;
-            var removedCount = js.ExecuteScript(@"
+            var removedCount = await page.EvaluateAsync<int?>(@"() => {
                 var removed = 0;
 
                 // Selectors targeting paywall, login, and subscription overlays
@@ -216,11 +214,11 @@ public class PageLoader : IPageLoader
                 document.body.classList.remove('noscroll', 'no-scroll', 'modal-open', 'overlay-open');
 
                 return removed;
-            ")?.ToString();
+            }");
 
-            if (int.TryParse(removedCount, out var count) && count > 0)
+            if (removedCount.HasValue && removedCount.Value > 0)
             {
-                logger.LogInformation("Dismissed {Count} overlay element(s) from page", count);
+                logger.LogInformation("Dismissed {Count} overlay element(s) from page", removedCount.Value);
             }
         }
         catch (Exception ex)
@@ -378,7 +376,7 @@ public class PageLoader : IPageLoader
         return href;
     }
 
-    private async Task<PageLoadResult> LoadSeleniumFirstAsync(
+    private async Task<PageLoadResult> LoadBrowserFirstAsync(
         PageLoadRequest request,
         Stopwatch totalSw,
         CancellationToken cancellationToken)
@@ -507,48 +505,47 @@ public class PageLoader : IPageLoader
 
     private async Task<PageLoadResult> BrowserFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
     {
-        if (!_browserSession.IsSeleniumAvailable)
+        if (!_browserSession.IsBrowserAvailable)
         {
-            _logger.LogDebug("Selenium unavailable on this platform, skipping browser fetch for {Url}", request.Url);
-            return PageLoadResult.Failure("Selenium unavailable (ARM64 — no chromedriver)");
+            _logger.LogDebug("Browser unavailable on this platform, skipping browser fetch for {Url}", request.Url);
+            return PageLoadResult.Failure("Browser unavailable on this platform");
         }
 
         try
         {
-            var driver = _browserSession.GetOrCreateDriver(request.Headless);
+            var page = await _browserSession.GetOrCreatePageAsync(request.Headless);
 
             _logger.LogDebug("Navigating to {Url}", request.Url);
-#pragma warning disable S6966 // Selenium WebDriver does not provide async navigation
-            driver.Navigate().GoToUrl(request.Url);
-#pragma warning restore S6966
+            await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs });
 
             // Wait for page to load
-            await WaitForPageLoadAsync(driver, request.TimeoutMs, cancellationToken);
+            await WaitForPageLoadAsync(page, request.TimeoutMs, cancellationToken);
 
-            if (IsBotChallengePage(driver.PageSource))
+            var pageContent = await page.ContentAsync();
+            if (IsBotChallengePage(pageContent))
             {
                 _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
-                var resolved = await PollForChallengeResolutionAsync(driver, request.Url, cancellationToken);
+                var resolved = await PollForChallengeResolutionAsync(page, request.Url, cancellationToken);
                 if (resolved == null)
                 {
                     _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
                     return PageLoadResult.Failure("Bot challenge could not be resolved");
                 }
 
-                _logger.LogInformation("Bot challenge resolved after polling: {Url}", driver.Url);
+                _logger.LogInformation("Bot challenge resolved after polling: {Url}", page.Url);
             }
 
             // Dismiss login/subscription overlays that may cover content
-            DismissOverlays(driver, _logger);
-            var finalUrl = driver.Url;
-            var html = driver.PageSource;
+            await DismissOverlaysAsync(page, _logger);
+            var finalUrl = page.Url;
+            var html = await page.ContentAsync();
 
             var metadata = ExtractMetadata(html, finalUrl);
 
             _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
             return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Selenium);
         }
-        catch (WebDriverException ex)
+        catch (PlaywrightException ex)
         {
             _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
             return PageLoadResult.Failure($"Browser error: {ex.Message}");
@@ -560,13 +557,13 @@ public class PageLoader : IPageLoader
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Selenium unavailable for page load: {Url}", request.Url);
-            return PageLoadResult.Failure("Selenium unavailable");
+            _logger.LogWarning(ex, "Browser unavailable for page load: {Url}", request.Url);
+            return PageLoadResult.Failure("Browser unavailable");
         }
     }
 
     private async Task<string?> PollForChallengeResolutionAsync(
-        IWebDriver driver,
+        IPage page,
         string url,
         CancellationToken cancellationToken)
     {
@@ -582,7 +579,7 @@ public class PageLoader : IPageLoader
 
             try
             {
-                var currentHtml = driver.PageSource;
+                var currentHtml = await page.ContentAsync();
                 if (!IsBotChallengePage(currentHtml))
                 {
                     return currentHtml;
@@ -593,7 +590,7 @@ public class PageLoader : IPageLoader
                     sw.ElapsedMilliseconds,
                     url);
             }
-            catch (WebDriverException ex)
+            catch (PlaywrightException ex)
             {
                 _logger.LogWarning(ex, "Error polling page source during challenge resolution: {Url}", url);
                 return null;
@@ -603,32 +600,29 @@ public class PageLoader : IPageLoader
         return null;
     }
 
-    private async Task WaitForPageLoadAsync(IWebDriver driver, int timeoutMs, CancellationToken cancellationToken)
+    private async Task WaitForPageLoadAsync(IPage page, int timeoutMs, CancellationToken cancellationToken)
     {
-        var wait = new WebDriverWait(driver, TimeSpan.FromMilliseconds(timeoutMs));
-        var jsExecutor = (IJavaScriptExecutor)driver;
-
         try
         {
-            // Wait for document.readyState to be complete
-            wait.Until(d =>
+            // Wait for network idle (equivalent to document ready + no pending network requests)
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions
             {
-                var readyState = jsExecutor.ExecuteScript("return document.readyState")?.ToString();
-                return readyState == "complete";
+                Timeout = timeoutMs,
             });
 
             // Secondary wait: give JS time to render content into the DOM
             try
             {
-                var contentWait = new WebDriverWait(driver, TimeSpan.FromSeconds(3));
-                contentWait.Until(d =>
-                {
-                    var bodyLength = jsExecutor.ExecuteScript(
-                        "return document.body ? document.body.innerHTML.length : 0")?.ToString();
-                    return int.TryParse(bodyLength, out var len) && len > 1000;
-                });
+                await page.WaitForFunctionAsync(
+                    "() => document.body && document.body.innerHTML.length > 1000",
+                    null,
+                    new PageWaitForFunctionOptions { Timeout = 3000 });
             }
-            catch (WebDriverTimeoutException)
+            catch (TimeoutException)
+            {
+                _logger.LogDebug("Content did not reach expected size within secondary wait");
+            }
+            catch (PlaywrightException)
             {
                 _logger.LogDebug("Content did not reach expected size within secondary wait");
             }
@@ -639,7 +633,11 @@ public class PageLoader : IPageLoader
                 await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken);
             }
         }
-        catch (WebDriverTimeoutException)
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Timeout waiting for page load, continuing anyway");
+        }
+        catch (PlaywrightException)
         {
             _logger.LogWarning("Timeout waiting for page load, continuing anyway");
         }

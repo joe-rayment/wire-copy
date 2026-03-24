@@ -4,8 +4,8 @@ using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Playwright;
 using NSubstitute;
-using OpenQA.Selenium;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Infrastructure.Browser;
 using TermReader.Infrastructure.Configuration;
@@ -25,7 +25,7 @@ public class PageLoaderTests
         _logger = Substitute.For<ILogger<PageLoader>>();
         _browserConfig = Options.Create(new BrowserConfiguration());
         _browserSession = Substitute.For<IBrowserSession>();
-        _browserSession.IsSeleniumAvailable.Returns(true);
+        _browserSession.IsBrowserAvailable.Returns(true);
     }
 
     private PageLoader CreateSut(HttpClient? httpClient = null, BrowserConfiguration? config = null)
@@ -71,10 +71,8 @@ public class PageLoaderTests
         var request = new PageLoadRequest { Url = "https://example.com" };
 
         // The browser session will be called as a fallback.
-        // Since we haven't set up the mock driver to return valid data,
-        // we expect a failure from the browser path too.
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -93,8 +91,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -112,8 +110,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -126,7 +124,6 @@ public class PageLoaderTests
     public async Task LoadAsync_WithHttpClient_NormalHtmlWithReactMentioned_DoesNotFallBack()
     {
         // Arrange - A normal page that mentions "react" in article text
-        // The simplified heuristic should NOT treat this as JS-required
         var html = @"<html><head><title>Article About React</title></head>
             <body><h1>How React Changed Frontend Development</h1>
             <p>React is a JavaScript library for building user interfaces.</p></body></html>";
@@ -152,8 +149,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -169,13 +166,13 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient: null);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
 
-        // Assert - Should have gone directly to browser (and failed since mock driver throws)
+        // Assert - Should have gone directly to browser (and failed since mock throws)
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Browser error");
     }
@@ -191,10 +188,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        // When the cancelled token causes the HTTP fetch to fail,
-        // the loader falls back to browser. Mock the browser to also fail.
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("Browser unavailable"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("Browser unavailable"));
 
         // Act
         var result = await sut.LoadAsync(request, cts.Token);
@@ -251,8 +246,8 @@ public class PageLoaderTests
         // Arrange
         var sut = CreateSut(httpClient: null);
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act & Assert
         await FluentActions.Invoking(() => sut.GetPageSourceAsync("https://example.com"))
@@ -269,8 +264,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -288,8 +283,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -307,8 +302,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -320,7 +315,7 @@ public class PageLoaderTests
     [Fact]
     public async Task LoadAsync_WithHttpClient_ArticleAuthorUrl_ReturnsNullAuthor()
     {
-        // Arrange — only article:author with a URL, no meta[name=author]
+        // Arrange - only article:author with a URL, no meta[name=author]
         var html = @"<html><head>
             <title>Test Article</title>
             <meta property='article:author' content='https://www.nytimes.com/by/blacki-migliozzi' />
@@ -332,7 +327,7 @@ public class PageLoaderTests
         // Act
         var result = await sut.LoadAsync(request);
 
-        // Assert — PageLoader should NOT expose the URL as an author name
+        // Assert - PageLoader should NOT expose the URL as an author name
         result.Success.Should().BeTrue();
         result.Metadata!.Author.Should().BeNull();
     }
@@ -340,7 +335,7 @@ public class PageLoaderTests
     [Fact]
     public async Task LoadAsync_WithHttpClient_MetaNameAuthorAndArticleAuthorUrl_PrefersName()
     {
-        // Arrange — both meta[name=author] (real name) and article:author (URL)
+        // Arrange - both meta[name=author] (real name) and article:author (URL)
         var html = @"<html><head>
             <title>Test Article</title>
             <meta name='author' content='John Doe' />
@@ -361,7 +356,7 @@ public class PageLoaderTests
     [Fact]
     public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInTitle()
     {
-        // Arrange — title contains HTML entities (e.g. smart quotes, apostrophes)
+        // Arrange - title contains HTML entities (e.g. smart quotes, apostrophes)
         var html = @"<html><head>
             <meta property='og:title' content='Today&#x27;s Paper' />
             </head><body><p>Content</p></body></html>";
@@ -380,7 +375,7 @@ public class PageLoaderTests
     [Fact]
     public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInTitleTag()
     {
-        // Arrange — <title> tag contains HTML entities
+        // Arrange - <title> tag contains HTML entities
         var html = @"<html><head>
             <title>Today&#x27;s Paper &amp; More</title>
             </head><body><p>Content</p></body></html>";
@@ -399,7 +394,7 @@ public class PageLoaderTests
     [Fact]
     public async Task LoadAsync_WithHttpClient_DecodesHtmlEntitiesInDescription()
     {
-        // Arrange — description contains HTML entities
+        // Arrange - description contains HTML entities
         var html = @"<html><head>
             <title>Test</title>
             <meta name='description' content='It&#x27;s a great day &amp; more' />
@@ -427,23 +422,26 @@ public class PageLoaderTests
         var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
         var resolvedHtml = "<html><head><title>Real Page</title></head><body><p>Real content here</p></body></html>";
 
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
 
-        // First call returns challenge, second returns resolved
+        // First call returns challenge, subsequent calls return resolved
         var callCount = 0;
-        driver.PageSource.Returns(_ =>
+        page.ContentAsync().Returns(_ =>
         {
             callCount++;
-            return callCount <= 1 ? challengeHtml : resolvedHtml;
+            return Task.FromResult(callCount <= 2 ? challengeHtml : resolvedHtml);
         });
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -464,16 +462,18 @@ public class PageLoaderTests
 
         var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
 
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
-        driver.PageSource.Returns(challengeHtml);
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
+        page.ContentAsync().Returns(Task.FromResult(challengeHtml));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
-
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -484,7 +484,7 @@ public class PageLoaderTests
     }
 
     [Fact]
-    public async Task BrowserFetch_BotChallengePolling_WebDriverException_ReturnsFailure()
+    public async Task BrowserFetch_BotChallengePolling_PlaywrightException_ReturnsFailure()
     {
         // Arrange - Browser crashes during polling
         var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 5000 };
@@ -493,28 +493,31 @@ public class PageLoaderTests
 
         var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
 
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
 
         // First call returns challenge, second throws (browser crash)
         var callCount = 0;
-        driver.PageSource.Returns(_ =>
+        page.ContentAsync().Returns(_ =>
         {
             callCount++;
-            if (callCount <= 1)
+            if (callCount <= 2)
             {
-                return challengeHtml;
+                return Task.FromResult(challengeHtml);
             }
 
-            throw new OpenQA.Selenium.WebDriverException("Session lost");
+            throw new PlaywrightException("Session lost");
         });
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -533,16 +536,18 @@ public class PageLoaderTests
 
         var normalHtml = "<html><head><title>Normal Page</title></head><body><p>Content</p></body></html>";
 
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
-        driver.PageSource.Returns(normalHtml);
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
+        page.ContentAsync().Returns(Task.FromResult(normalHtml));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
-
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -562,21 +567,23 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
 
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
-        driver.PageSource.Returns(html);
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
+        page.ContentAsync().Returns(Task.FromResult(html));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
-
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
 
-        // Assert - Should have used browser (Selenium) and returned its content
+        // Assert - Should have used browser and returned its content
         result.Success.Should().BeTrue();
         result.Html.Should().Be(html);
         result.Metadata!.Title.Should().Be("Selenium Page");
@@ -592,8 +599,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -612,8 +619,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -629,8 +636,8 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient: null);
         var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
 
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("No browser available"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -655,33 +662,35 @@ public class PageLoaderTests
         // Assert - Should succeed via HTTP without ever touching browser
         result.Success.Should().BeTrue();
         result.Metadata!.Title.Should().Be("HTTP First");
-        _browserSession.DidNotReceive().GetOrCreateDriver(Arg.Any<bool>());
+        await _browserSession.DidNotReceive().GetOrCreatePageAsync(Arg.Any<bool>());
     }
 
     [Fact]
     public async Task LoadAsync_ForceBrowserTrumpsPreferSelenium()
     {
         // Arrange - When both ForceBrowser and PreferSelenium are true,
-        // ForceBrowser takes precedence (Selenium-only, no HTTP fallback path)
+        // ForceBrowser takes precedence (browser-only, no HTTP fallback path)
         var sut = CreateSut(httpClient: CreateMockHttpClient(HttpStatusCode.OK, "<html><head><title>HTTP</title></head><body>HTTP</body></html>"));
         var request = new PageLoadRequest { Url = "https://example.com", ForceBrowser = true, PreferSelenium = true };
 
         var html = "<html><head><title>Browser Page</title></head><body><p>Browser content</p></body></html>";
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var navigation = Substitute.For<INavigation>();
-        driver.Navigate().Returns(navigation);
-        driver.Url.Returns("https://example.com");
-        driver.PageSource.Returns(html);
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns("https://example.com");
+        page.ContentAsync().Returns(Task.FromResult(html));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("complete", "5000");
-
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
 
-        // Assert - ForceBrowser path should be used (Selenium only, no HTTP at all)
+        // Assert - ForceBrowser path should be used (browser only, no HTTP at all)
         result.Success.Should().BeTrue();
         result.FetchMethod.Should().Be(Domain.Enums.Browser.FetchMethod.Selenium);
     }
@@ -697,43 +706,40 @@ public class PageLoaderTests
     }
 
     [Fact]
-    public void DismissOverlays_ExecutesJavaScript_DoesNotThrow()
+    public async Task DismissOverlaysAsync_ExecutesJavaScript_DoesNotThrow()
     {
         // Arrange
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("2");
+        var page = Substitute.For<IPage>();
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(2));
 
-        // Act & Assert — should not throw
-        PageLoader.DismissOverlays(driver, _logger);
-        jsExecutor.Received(1).ExecuteScript(Arg.Any<string>());
+        // Act & Assert - should not throw
+        await PageLoader.DismissOverlaysAsync(page, _logger);
+        await page.Received(1).EvaluateAsync<int?>(Arg.Any<string>());
     }
 
     [Fact]
-    public void DismissOverlays_JavaScriptThrows_DoesNotPropagate()
+    public async Task DismissOverlaysAsync_JavaScriptThrows_DoesNotPropagate()
     {
-        // Arrange — JS execution fails (e.g., page navigating, session lost)
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>())
-            .Returns(_ => throw new OpenQA.Selenium.WebDriverException("Session expired"));
+        // Arrange - JS execution fails (e.g., page navigating, session lost)
+        var page = Substitute.For<IPage>();
+        page.EvaluateAsync<int?>(Arg.Any<string>())
+            .Returns<int?>(_ => throw new PlaywrightException("Session expired"));
 
-        // Act & Assert — should swallow the exception
-        var act = () => PageLoader.DismissOverlays(driver, _logger);
-        act.Should().NotThrow();
+        // Act & Assert - should swallow the exception
+        var act = async () => await PageLoader.DismissOverlaysAsync(page, _logger);
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public void DismissOverlays_ReturnsZero_WhenNoOverlaysPresent()
+    public async Task DismissOverlaysAsync_ReturnsZero_WhenNoOverlaysPresent()
     {
-        // Arrange — page has no overlays, JS returns 0
-        var driver = Substitute.For<IWebDriver, IJavaScriptExecutor>();
-        var jsExecutor = (IJavaScriptExecutor)driver;
-        jsExecutor.ExecuteScript(Arg.Any<string>()).Returns("0");
+        // Arrange - page has no overlays, JS returns 0
+        var page = Substitute.For<IPage>();
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        // Act — should complete without logging "Dismissed N overlay"
-        PageLoader.DismissOverlays(driver, _logger);
-        jsExecutor.Received(1).ExecuteScript(Arg.Any<string>());
+        // Act - should complete without logging "Dismissed N overlay"
+        await PageLoader.DismissOverlaysAsync(page, _logger);
+        await page.Received(1).EvaluateAsync<int?>(Arg.Any<string>());
     }
 
     /// <summary>

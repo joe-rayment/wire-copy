@@ -2,8 +2,8 @@
 
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Playwright;
 using NSubstitute;
-using OpenQA.Selenium;
 using TermReader.Infrastructure.Browser;
 using Xunit;
 
@@ -14,14 +14,14 @@ public class WebDriverQueueTests : IDisposable
 {
     private readonly IBrowserSession _browserSession;
     private readonly WebDriverQueue _queue;
-    private readonly IWebDriver _driver;
+    private readonly IPage _page;
 
     public WebDriverQueueTests()
     {
         _browserSession = Substitute.For<IBrowserSession>();
-        _browserSession.IsSeleniumAvailable.Returns(true);
-        _driver = Substitute.For<IWebDriver>();
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(_driver);
+        _browserSession.IsBrowserAvailable.Returns(true);
+        _page = Substitute.For<IPage>();
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
         _queue = new WebDriverQueue(_browserSession, NullLogger<WebDriverQueue>.Instance);
     }
 
@@ -38,7 +38,7 @@ public class WebDriverQueueTests : IDisposable
         using var lease = await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: true, CancellationToken.None);
 
-        lease.Driver.Should().BeSameAs(_driver);
+        lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class WebDriverQueueTests : IDisposable
         using var lease = await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: false, CancellationToken.None);
 
-        _browserSession.Received(1).GetOrCreateDriver(false);
+        await _browserSession.Received(1).GetOrCreatePageAsync(false);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class WebDriverQueueTests : IDisposable
         using var lease2 = await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: true, CancellationToken.None);
 
-        lease2.Driver.Should().BeSameAs(_driver);
+        lease2.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class WebDriverQueueTests : IDisposable
         using var lease = await _queue.AcquireAsync(
             WebDriverPriority.Background, headless: true, CancellationToken.None);
 
-        lease.Driver.Should().BeSameAs(_driver);
+        lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class WebDriverQueueTests : IDisposable
 
         // Foreground should complete quickly
         using var fgLease = await fgTask.WaitAsync(TimeSpan.FromSeconds(5));
-        fgLease.Driver.Should().BeSameAs(_driver);
+        fgLease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public class WebDriverQueueTests : IDisposable
 
         // Background should complete
         using var bgLease = await bgTask.WaitAsync(TimeSpan.FromSeconds(5));
-        bgLease.Driver.Should().BeSameAs(_driver);
+        bgLease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public class WebDriverQueueTests : IDisposable
         {
             var priority = i % 2 == 0 ? WebDriverPriority.Foreground : WebDriverPriority.Background;
             using var lease = await _queue.AcquireAsync(priority, headless: true, CancellationToken.None);
-            lease.Driver.Should().BeSameAs(_driver);
+            lease.Page.Should().BeSameAs(_page);
         }
     }
 
@@ -204,39 +204,39 @@ public class WebDriverQueueTests : IDisposable
     [Fact]
     public async Task Foreground_ReleasesLock_WhenDriverCreationFails()
     {
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new WebDriverException("Driver creation failed"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: true, CancellationToken.None);
 
-        await act.Should().ThrowAsync<WebDriverException>();
+        await act.Should().ThrowAsync<PlaywrightException>();
 
-        // Lock should be released — can acquire again
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(_driver);
+        // Lock should be released - can acquire again
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: true, CancellationToken.None);
-        lease.Driver.Should().BeSameAs(_driver);
+        lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
     public async Task Background_ReleasesLock_WhenDriverCreationFails()
     {
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new WebDriverException("Driver creation failed"));
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
             WebDriverPriority.Background, headless: true, CancellationToken.None);
 
-        await act.Should().ThrowAsync<WebDriverException>();
+        await act.Should().ThrowAsync<PlaywrightException>();
 
         _queue.IsBackgroundActive.Should().BeFalse("background flag should reset on failure");
 
         // Lock should be released
-        _browserSession.GetOrCreateDriver(Arg.Any<bool>()).Returns(_driver);
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
             WebDriverPriority.Foreground, headless: true, CancellationToken.None);
-        lease.Driver.Should().BeSameAs(_driver);
+        lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]

@@ -52,13 +52,13 @@ public class PodcastOrchestratorTests : IDisposable
         _preloadService = Substitute.For<IPreloadService>();
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
-        _browserSession.IsSeleniumAvailable.Returns(true);
+        _browserSession.IsBrowserAvailable.Returns(true);
         _articleCache = Substitute.For<IArticleContentCache>();
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
         var webDriverQueue = Substitute.For<IWebDriverQueue>();
         webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new WebDriverLease(Substitute.For<OpenQA.Selenium.IWebDriver>(), () => { }));
+            .Returns(callInfo => new WebDriverLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             _pageLoader,

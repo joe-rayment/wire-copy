@@ -14,15 +14,15 @@ namespace TermReader.Tests.Browser;
 
 /// <summary>
 /// Tests that BrowserSession and PageLoader handle the disposed state gracefully:
-/// - GetOrCreateDriver throws ObjectDisposedException after Dispose
-/// - RestoreWindow returns silently after Dispose (no exception)
+/// - GetOrCreatePageAsync throws ObjectDisposedException after Dispose
+/// - RestoreWindowAsync returns silently after Dispose (no exception)
 /// - PageLoader.BrowserFetchAsync returns PageLoadResult.Failure when the session is disposed
 /// </summary>
 public class BrowserSessionDisposedTests
 {
     [Fact]
     [Trait("Category", "Unit")]
-    public void GetOrCreateDriver_AfterDispose_ThrowsObjectDisposedException()
+    public async Task GetOrCreatePageAsync_AfterDispose_ThrowsObjectDisposedException()
     {
         // Arrange
         var logger = Substitute.For<ILogger<BrowserSession>>();
@@ -34,16 +34,16 @@ public class BrowserSessionDisposedTests
         session.Dispose();
 
         // Act
-        var act = () => session.GetOrCreateDriver(headless: true);
+        var act = async () => await session.GetOrCreatePageAsync(headless: true);
 
         // Assert
-        act.Should().Throw<ObjectDisposedException>()
-            .And.ObjectName.Should().Contain("BrowserSession");
+        await act.Should().ThrowAsync<ObjectDisposedException>()
+            .Where(e => e.ObjectName!.Contains("BrowserSession"));
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void RestoreWindow_AfterDispose_DoesNotThrow()
+    public async Task RestoreWindowAsync_AfterDispose_DoesNotThrow()
     {
         // Arrange
         var logger = Substitute.For<ILogger<BrowserSession>>();
@@ -54,9 +54,9 @@ public class BrowserSessionDisposedTests
         var session = new BrowserSession(config, logger, cookieManager);
         session.Dispose();
 
-        // Act & Assert - RestoreWindow should return gracefully, not throw
-        var act = () => session.RestoreWindow();
-        act.Should().NotThrow();
+        // Act & Assert - RestoreWindowAsync should return gracefully, not throw
+        var act = async () => await session.RestoreWindowAsync();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -85,11 +85,10 @@ public class BrowserSessionDisposedTests
     public async Task PageLoader_BrowserFetch_WhenSessionDisposed_ReturnsFailure()
     {
         // Arrange - Mock IBrowserSession to throw ObjectDisposedException
-        // (simulating what happens when BrowserSession.GetOrCreateDriver is called after Dispose)
         var browserSession = Substitute.For<IBrowserSession>();
-        browserSession.IsSeleniumAvailable.Returns(true);
-        browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
+        browserSession.IsBrowserAvailable.Returns(true);
+        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();
         var config = Options.Create(new BrowserConfiguration());
@@ -111,9 +110,9 @@ public class BrowserSessionDisposedTests
     {
         // Arrange - HTTP fails (403), then browser session is disposed
         var browserSession = Substitute.For<IBrowserSession>();
-        browserSession.IsSeleniumAvailable.Returns(true);
-        browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
+        browserSession.IsBrowserAvailable.Returns(true);
+        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();
         var config = Options.Create(new BrowserConfiguration());
@@ -138,9 +137,9 @@ public class BrowserSessionDisposedTests
     {
         // Arrange - Browser disposed, but HTTP should still work as fallback
         var browserSession = Substitute.For<IBrowserSession>();
-        browserSession.IsSeleniumAvailable.Returns(true);
-        browserSession.GetOrCreateDriver(Arg.Any<bool>())
-            .Returns(_ => throw new ObjectDisposedException("BrowserSession"));
+        browserSession.IsBrowserAvailable.Returns(true);
+        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();
         var config = Options.Create(new BrowserConfiguration());
@@ -165,7 +164,7 @@ public class BrowserSessionDisposedTests
     [Trait("Category", "Unit")]
     public void WarmUpAsync_AfterDispose_ThrowsObjectDisposedException()
     {
-        // Arrange - WarmUpAsync calls GetOrCreateDriver internally
+        // Arrange - WarmUpAsync calls GetOrCreatePageAsync internally
         var logger = Substitute.For<ILogger<BrowserSession>>();
         var config = Options.Create(new BrowserConfiguration());
         var cookieManager = Substitute.For<ICookieManager>();
@@ -174,7 +173,7 @@ public class BrowserSessionDisposedTests
         var session = new BrowserSession(config, logger, cookieManager);
         session.Dispose();
 
-        // Act & Assert - WarmUpAsync delegates to GetOrCreateDriver which should throw
+        // Act & Assert - WarmUpAsync delegates to GetOrCreatePageAsync which should throw
         var act = async () => await session.WarmUpAsync();
         act.Should().ThrowAsync<ObjectDisposedException>();
     }

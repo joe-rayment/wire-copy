@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
-/// Serializes access to the shared WebDriver with priority levels.
+/// Serializes access to the shared browser page with priority levels.
 /// Foreground requests preempt background requests via a two-level semaphore:
 /// background tasks must acquire both the main lock and a foreground-check gate,
 /// while foreground tasks only need the main lock and can signal background to yield.
@@ -59,12 +59,12 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private async Task<WebDriverLease> AcquireForegroundAsync(bool headless, CancellationToken cancellationToken)
     {
-        if (!_browserSession.IsSeleniumAvailable)
+        if (!_browserSession.IsBrowserAvailable)
         {
-            throw new InvalidOperationException("Selenium is unavailable on this platform");
+            throw new InvalidOperationException("Browser is unavailable on this platform");
         }
 
-        _logger.LogDebug("Foreground requesting WebDriver access");
+        _logger.LogDebug("Foreground requesting browser page access");
 
         if (_backgroundActive)
         {
@@ -82,9 +82,9 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
         try
         {
-            var driver = _browserSession.GetOrCreateDriver(headless);
-            _logger.LogDebug("Foreground acquired WebDriver");
-            return new WebDriverLease(driver, () => ReleaseForeground());
+            var page = await _browserSession.GetOrCreatePageAsync(headless);
+            _logger.LogDebug("Foreground acquired browser page");
+            return new WebDriverLease(page, () => ReleaseForeground());
         }
         catch
         {
@@ -95,12 +95,12 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private async Task<WebDriverLease> AcquireBackgroundAsync(bool headless, CancellationToken cancellationToken)
     {
-        if (!_browserSession.IsSeleniumAvailable)
+        if (!_browserSession.IsBrowserAvailable)
         {
-            throw new InvalidOperationException("Selenium is unavailable on this platform");
+            throw new InvalidOperationException("Browser is unavailable on this platform");
         }
 
-        _logger.LogDebug("Background requesting WebDriver access");
+        _logger.LogDebug("Background requesting browser page access");
 
         // Background waits up to 60s for the lock
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -112,9 +112,9 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
         try
         {
-            var driver = _browserSession.GetOrCreateDriver(headless);
-            _logger.LogDebug("Background acquired WebDriver");
-            return new WebDriverLease(driver, () => ReleaseBackground());
+            var page = await _browserSession.GetOrCreatePageAsync(headless);
+            _logger.LogDebug("Background acquired browser page");
+            return new WebDriverLease(page, () => ReleaseBackground());
         }
         catch
         {
@@ -126,7 +126,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private void ReleaseForeground()
     {
-        _logger.LogDebug("Foreground releasing WebDriver");
+        _logger.LogDebug("Foreground releasing browser page");
 
         try
         {
@@ -140,7 +140,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
 
     private void ReleaseBackground()
     {
-        _logger.LogDebug("Background releasing WebDriver");
+        _logger.LogDebug("Background releasing browser page");
         _backgroundActive = false;
 
         try

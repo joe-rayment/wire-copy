@@ -2,8 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Support.UI;
+using Microsoft.Playwright;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums;
@@ -12,7 +11,7 @@ using TermReader.Domain.ValueObjects.Credentials;
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
-/// Automates login to paywalled sites using stored credentials and Selenium.
+/// Automates login to paywalled sites using stored credentials and Playwright.
 /// Uses the WebDriverQueue with Background priority to avoid blocking user navigation.
 /// Falls back to manual login when form selectors are missing or elements cannot be found.
 /// </summary>
@@ -80,49 +79,49 @@ public class AutoLoginService : IAutoLoginService
         // 3. Determine login URL
         var loginUrl = credential.LoginUrl ?? $"https://{domain}/login";
 
-        // 4. Acquire WebDriver with Background priority (non-headless for login forms)
+        // 4. Acquire browser page with Background priority (non-headless for login forms)
         using var lease = await _webDriverQueue.AcquireAsync(
             WebDriverPriority.Background, headless: false, cancellationToken);
-        var driver = lease.Driver;
+        var page = lease.Page;
 
         try
         {
             // 5. Navigate to login page
-            await driver.Navigate().GoToUrlAsync(loginUrl);
+            await page.GotoAsync(loginUrl);
             await Task.Delay(2000, cancellationToken); // Wait for page load
 
             // 6. Handle form login
             if (credential.CredentialType == CredentialType.FormLogin)
             {
-                // Multi-step login flow (e.g. NYT: email → Continue → password → Log In)
+                // Multi-step login flow (e.g. NYT: email -> Continue -> password -> Log In)
                 if (credential.IsMultiStep)
                 {
                     var steps = credential.GetLoginSteps()!;
-                    return await TryMultiStepLoginAsync(driver, credential, username, password, steps, cancellationToken);
+                    return await TryMultiStepLoginAsync(page, credential, username, password, steps, cancellationToken);
                 }
 
                 // Legacy single-step login
                 if (string.IsNullOrEmpty(credential.UsernameSelector) ||
                     string.IsNullOrEmpty(credential.PasswordSelector))
                 {
-                    _browserSession.RestoreWindow();
+                    await _browserSession.RestoreWindowAsync();
                     return AutoLoginResult.RequiresManualLogin(
                         "Login form selectors not configured. Browser opened for manual login.");
                 }
 
-                return await TryFormLoginAsync(driver, credential, username, password, cancellationToken);
+                return await TryFormLoginAsync(page, credential, username, password, cancellationToken);
             }
 
             return AutoLoginResult.Failed($"Unsupported credential type: {credential.CredentialType}");
         }
-        catch (NoSuchElementException ex)
+        catch (PlaywrightException ex) when (ex.Message.Contains("Element", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(ex, "Login form element not found for {Domain}, falling back to manual", domain);
-            _browserSession.RestoreWindow();
+            await _browserSession.RestoreWindowAsync();
             return AutoLoginResult.RequiresManualLogin(
                 "Login form elements not found. Browser opened for manual login.");
         }
-        catch (WebDriverException ex)
+        catch (PlaywrightException ex)
         {
             _logger.LogError(ex, "Browser error during login for {Domain}", domain);
             return AutoLoginResult.Failed($"Browser error: {ex.Message}");
@@ -136,11 +135,11 @@ public class AutoLoginService : IAutoLoginService
                currentUrl.Contains("/sign-in", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool HasLoginErrorOnPage(IWebDriver driver)
+    private static async Task<bool> HasLoginErrorOnPageAsync(IPage page)
     {
         try
         {
-            var pageSource = driver.PageSource.ToLowerInvariant();
+            var pageSource = (await page.ContentAsync()).ToLowerInvariant();
             return pageSource.Contains("invalid", StringComparison.Ordinal) ||
                    pageSource.Contains("incorrect", StringComparison.Ordinal) ||
                    pageSource.Contains("wrong password", StringComparison.Ordinal) ||
@@ -154,52 +153,48 @@ public class AutoLoginService : IAutoLoginService
     }
 
     private async Task<AutoLoginResult> TryFormLoginAsync(
-        IWebDriver driver,
+        IPage page,
         Domain.Entities.Credentials.SiteCredential credential,
         string username,
         string password,
         CancellationToken cancellationToken)
     {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-
         // Wait for and fill username field
-        var usernameField = wait.Until(d =>
-            d.FindElement(By.CssSelector(credential.UsernameSelector!)));
-        usernameField.Clear();
-        usernameField.SendKeys(username);
+        var usernameLocator = page.Locator(credential.UsernameSelector!);
+        await usernameLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+        await usernameLocator.FillAsync(username);
 
         await Task.Delay(500, cancellationToken); // Human-like delay
 
         // Fill password field
-        var passwordField = wait.Until(d =>
-            d.FindElement(By.CssSelector(credential.PasswordSelector!)));
-        passwordField.Clear();
-        passwordField.SendKeys(password);
+        var passwordLocator = page.Locator(credential.PasswordSelector!);
+        await passwordLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+        await passwordLocator.FillAsync(password);
 
         await Task.Delay(500, cancellationToken);
 
         // Submit the form
         if (!string.IsNullOrEmpty(credential.SubmitSelector))
         {
-            var submitButton = wait.Until(d =>
-                d.FindElement(By.CssSelector(credential.SubmitSelector)));
-            submitButton.Click();
+            var submitLocator = page.Locator(credential.SubmitSelector);
+            await submitLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+            await submitLocator.ClickAsync();
         }
         else
         {
             // No submit selector configured - press Enter on the password field
-            passwordField.SendKeys(Keys.Return);
+            await passwordLocator.PressAsync("Enter");
         }
 
         // Wait for login to process (page navigation)
         await Task.Delay(3000, cancellationToken);
 
         // Detect success/failure by checking if we're still on a login page
-        var currentUrl = driver.Url;
+        var currentUrl = page.Url;
 
         if (IsStillOnLoginPage(currentUrl))
         {
-            if (HasLoginErrorOnPage(driver))
+            if (await HasLoginErrorOnPageAsync(page))
             {
                 return AutoLoginResult.Failed("Login failed: invalid credentials");
             }
@@ -211,22 +206,20 @@ public class AutoLoginService : IAutoLoginService
         }
 
         // Capture and persist browser cookies for future sessions
-        await CaptureBrowserCookiesAsync(driver, credential.Domain, cancellationToken);
+        await CaptureBrowserCookiesAsync(page, credential.Domain, cancellationToken);
 
         _logger.LogInformation("Login completed for {Domain}, navigated to {Url}", credential.Domain, currentUrl);
         return AutoLoginResult.Succeeded();
     }
 
     private async Task<AutoLoginResult> TryMultiStepLoginAsync(
-        IWebDriver driver,
+        IPage page,
         Domain.Entities.Credentials.SiteCredential credential,
         string username,
         string password,
         List<LoginStep> steps,
         CancellationToken cancellationToken)
     {
-        var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-
         for (var i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
@@ -244,30 +237,29 @@ public class AutoLoginService : IAutoLoginService
             var value = step.ValueType == StepValueType.Username ? username : password;
 
             // Wait for and fill the input field
-            var field = wait.Until(d =>
-                d.FindElement(By.CssSelector(step.FieldSelector)));
-            field.Clear();
-            field.SendKeys(value);
+            var fieldLocator = page.Locator(step.FieldSelector);
+            await fieldLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+            await fieldLocator.FillAsync(value);
 
             await Task.Delay(500, cancellationToken); // Human-like delay
 
             // Submit: click button or press Enter
             if (!string.IsNullOrEmpty(step.SubmitSelector))
             {
-                var submitButton = wait.Until(d =>
-                    d.FindElement(By.CssSelector(step.SubmitSelector)));
-                submitButton.Click();
+                var submitLocator = page.Locator(step.SubmitSelector);
+                await submitLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
+                await submitLocator.ClickAsync();
             }
             else
             {
-                field.SendKeys(Keys.Return);
+                await fieldLocator.PressAsync("Enter");
             }
 
             // Wait for the page to transition between steps
             await Task.Delay(2000, cancellationToken);
 
             // After each step (except the last), check for errors
-            if (stepNum < steps.Count && HasLoginErrorOnPage(driver))
+            if (stepNum < steps.Count && await HasLoginErrorOnPageAsync(page))
             {
                 return AutoLoginResult.Failed($"Login failed at step {stepNum}: error detected on page");
             }
@@ -276,42 +268,42 @@ public class AutoLoginService : IAutoLoginService
         // Final wait for redirect after last step
         await Task.Delay(2000, cancellationToken);
 
-        var currentUrl = driver.Url;
+        var currentUrl = page.Url;
 
-        if (IsStillOnLoginPage(currentUrl) && HasLoginErrorOnPage(driver))
+        if (IsStillOnLoginPage(currentUrl) && await HasLoginErrorOnPageAsync(page))
         {
             return AutoLoginResult.Failed("Login failed: invalid credentials");
         }
 
         // Capture and persist browser cookies
-        await CaptureBrowserCookiesAsync(driver, credential.Domain, cancellationToken);
+        await CaptureBrowserCookiesAsync(page, credential.Domain, cancellationToken);
 
         _logger.LogInformation("Multi-step login completed for {Domain}, navigated to {Url}", credential.Domain, currentUrl);
         return AutoLoginResult.Succeeded();
     }
 
-    private async Task CaptureBrowserCookiesAsync(IWebDriver driver, string domain, CancellationToken cancellationToken)
+    private async Task CaptureBrowserCookiesAsync(IPage page, string domain, CancellationToken cancellationToken)
     {
         try
         {
-            var seleniumCookies = driver.Manage().Cookies.AllCookies;
+            var playwrightCookies = await page.Context.CookiesAsync();
             _logger.LogDebug(
                 "Browser has {Count} cookies after login for {Domain}",
-                seleniumCookies.Count,
+                playwrightCookies.Count,
                 domain);
 
-            if (seleniumCookies.Count == 0)
+            if (playwrightCookies.Count == 0)
             {
                 return;
             }
 
-            var storedCookies = seleniumCookies.Select(c =>
+            var storedCookies = playwrightCookies.Select(c =>
                 new StoredCookie(
                     c.Name,
                     c.Value,
                     c.Domain ?? string.Empty,
                     c.Path ?? string.Empty,
-                    c.Expiry)).ToList();
+                    c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
             _logger.LogInformation(
