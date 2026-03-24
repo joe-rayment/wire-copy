@@ -1,0 +1,172 @@
+================================================================================
+LINK TREE — Hierarchical View
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+COLOR KEY:
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
+  [title]   = playful pink #ff87d7 (ANSI 212) — content link titles
+  [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
+  [med]     = medium green #00af00 (ANSI 34) — secondary text, metadata
+  [nav]     = phosphor green (ANSI 40) — navigation/external/footer links
+  [white]   = warm off-white #e4e4e4 (ANSI 254) — selected item text
+  [sel-bg]  = dark green bg (ANSI 22) — selection background
+  [hi-bg]   = blue-teal bg #005f87 (ANSI 24) — search highlight background
+  [hi-fg]   = white #ffffff (ANSI 15) — search highlight foreground
+
+
+================================================================================
+VARIANT A: 2-Column Card Grid (Default)
+================================================================================
+
+Cell height: 5 lines (line0=pad, line1=title-row1, line2=title-row2,
+line3=author/date, line4=separator)
+
+ [dim]╭─[bright] Ars Technica: Science [dim]────────────────────────────────────────────────╮[/]
+ [dim]│ [med]Eric Berger · Today · arstechnica.com · 24 links · 3 sections          [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+                                    [dim]│[/]
+ [bright]A century after rockets,[/]        [dim]│[/][white][sel-bg]▌ [hi-bg][hi-fg]SpaceX[/][white][sel-bg] Starship reaches orbit    [/]
+ [bright]we still can't predict the[/]      [dim]│[/][white][sel-bg]▌ on its first full flight         [/]
+ [med]Eric Berger · Today[/]             [dim]│[/][white][sel-bg]▌ [med]Stephen Clark · Today            [/]
+ [dim]──────────────────────────────────┼──────────────────────────────────────────[/]
+                                    [dim]│[/]
+ [bright]NASA selects two new[/]            [dim]│[/] [bright]The James Webb telescope[/]
+ [bright]missions for 2028[/]               [dim]│[/] [bright]spots New galaxies forming[/]
+ [med]Jeff Foust · Yesterday[/]          [dim]│[/] [med]Ashley Strickland · Mar 15[/]
+ [dim]──────────────────────────────────┼──────────────────────────────────────────[/]
+
+ [dim]╭─ Science News (8) ──────────────────────────────────────────────────────╮[/]
+
+ [bright]CRISPR breakthrough enables[/]     [dim]│[/] [bright]Climate models validated[/]
+ [bright]single-gene therapy[/]             [dim]│[/] [bright]by 50 years of ocean data[/]
+ [med]Sarah Zhang · Today[/]             [dim]│[/] [med]Robinson Meyer · Yesterday[/]
+ [dim]──────────────────────────────────┼──────────────────────────────────────────[/]
+
+                          [med]▼ 6 more below[/]
+ ──────────────────────────────────────────────────────────────────────────────
+ LinkView [cyan]Enter[/][med]:open[/] [cyan]s[/][med]:save[/] [cyan]A[/][med]:save-all[/] [cyan]R[/][med]:refresh[/] [cyan]v[/][med]:reader[/] [cyan]?[/][med]:help[/]
+ [med]arstechnica.com[/]                             [med]▰▰▰▰▰▰▰▱▱▱ 17/24 cached[/]
+
+NOTES:
+- Header box: page title in [bright], subtitle with author/date/domain/counts in [med]
+- Selected card (top-right): ▌ accent bar, [white] on [sel-bg]
+- Search highlight: "SpaceX" shown with [hi-bg][hi-fg] (inverted green on black)
+- Title wraps to 2 lines in 5-line card mode
+- Author + date on line 3 in [med] dim
+- Sub-section header "Science News (8)" uses ╭─ style
+- Column dividers in [dim]
+- Status bar: 2-line layout (mode + hints on L1, domain + cache on L2)
+- Cache progress bar: ▰ filled (green), ▱ empty (dim)
+
+
+================================================================================
+VARIANT A — Collapsed Section
+================================================================================
+
+When a section header is collapsed (▶ instead of ▼):
+
+ [green]▶ NAVIGATION (12)[/]
+
+ This single line replaces the entire expanded section.
+ Selecting it and pressing Enter (or l/→) expands to show children.
+
+
+================================================================================
+VARIANT A — Group Headers (Top-Level)
+================================================================================
+
+Expanded top-level group (e.g., "NAVIGATION", "EXTERNAL"):
+
+ [green]▼ NAVIGATION (12)[/]
+ [dim]──────────────────────────────────────────────────────────────────────────────[/]
+ [nav]Homepage[/]                        [dim]│[/] [nav]About Us[/]
+ [med]arstechnica.com[/]                 [dim]│[/] [med]arstechnica.com/about[/]
+
+Selected group header:
+
+[white][sel-bg]▌ [/]
+[white][sel-bg]▌ ▶ EXTERNAL (5)                                                            [/]
+
+NOTES:
+- Top-level groups in [green] bold when expanded, [med] when collapsed
+- Navigation/external/footer link titles use [nav] (muted green)
+- Content links use [bright] (brighter green) — "brightest element wins"
+- Selected group header: full-width [sel-bg] with ▌ accent bar
+
+
+================================================================================
+VARIANT B: Single-Column Detailed List
+================================================================================
+
+Each item shows title + URL preview. No grid, full width per item.
+
+ [dim]╭─[bright] Ars Technica: Science [dim]────────────────────────────────────────────────╮[/]
+ [dim]│ [med]Eric Berger · Today · arstechnica.com · 24 links · 3 sections          [dim]│[/]
+ [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
+
+ [bright]A century after rockets, we still can't predict the weather[/]
+ [med]arstechnica.com/science/2026/03/a-century-after-rockets[/]
+ [med]Eric Berger · Today[/]
+ [dim]╶──╴[/]
+[white][sel-bg]▌ [hi-bg][hi-fg]SpaceX[/][white][sel-bg] Starship reaches orbit on its first full flight              [/]
+[white][sel-bg]▌ [med]arstechnica.com/science/2026/03/spacex-starship-orbit                 [/]
+[white][sel-bg]▌ [med]Stephen Clark · Today                                                 [/]
+ [dim]╶──╴[/]
+ [bright]NASA selects two new missions for 2028[/]
+ [med]nasa.gov/press-release/2026/03/new-missions[/]
+ [med]Jeff Foust · Yesterday[/]
+ [dim]╶──╴[/]
+ [bright]The James Webb telescope spots New galaxies forming[/]
+ [med]cnn.com/2026/03/16/science/webb-telescope-galaxies[/]
+ [med]Ashley Strickland · Mar 15[/]
+ [dim]╶──╴[/]
+
+ [dim]╭─ Science News (8) ──────────────────────────────────────────────────────╮[/]
+
+ [bright]CRISPR breakthrough enables single-gene therapy[/]
+ [med]nature.com/articles/2026-crispr-therapy[/]
+ [med]Sarah Zhang · Today[/]
+
+                          [med]▼ 14 more below[/]
+ ──────────────────────────────────────────────────────────────────────────────
+ LinkView [cyan]Enter[/][med]:open[/] [cyan]s[/][med]:save[/] [cyan]R[/][med]:refresh[/] [cyan]v[/][med]:reader[/] [cyan]?[/][med]:help[/]
+ [med]arstechnica.com[/]                             [med]▰▰▰▰▰▰▰▱▱▱ 17/24 cached[/]
+
+NOTES:
+- Each item takes 3-4 lines: title, URL, author/date, separator
+- Full URL shown (truncated to fit width) — helpful for knowing where a link goes
+- Fewer items visible (4-5 in 24 lines) but much more context per item
+- Good for unfamiliar sites where URL matters
+- Separator: ╶──╴ (lightweight)
+- Selected item: 3 lines highlighted with ▌ accent bar
+
+
+================================================================================
+INTERACTION NOTES
+================================================================================
+
+Navigation:
+- j/k or ↓/↑: move between links
+- h/l: collapse/expand sections; in grid, also moves columns
+- Enter: open selected link in reader/browser
+- s: save selected link to reading list
+- A: save all links to reading list
+- /: begin search (type query, press Enter)
+- n/N: next/previous search match
+- v: switch to reader view (if readable content available)
+- R: force refresh page
+- b: go back
+- g/G: go to top/bottom
+
+Search:
+- Search highlights appear as [hi-bg][hi-fg] inverted blocks on matching text
+- Status bar shows /query (n/N) when search is active
+- Matches cycle through all visible and off-screen items
+
+Cache indicators:
+- Status bar shows progress: ▰▰▰▰▰▰▰▱▱▱ 17/24 cached
+- When actively caching: amber-colored ▰ segment + current URL slug
+- When complete: "all cached" text replaces progress bar

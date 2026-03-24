@@ -1,0 +1,168 @@
+================================================================================
+RESPONSIVE BEHAVIOR — Terminal Size Adaptations
+Assumes: Phosphor theme (green-on-black)
+================================================================================
+
+Shows how the UI adapts to different terminal sizes. The app remains functional
+at any size but optimizes layout for common dimensions.
+
+COLOR KEY:
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
+  [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
+  [med]     = medium green #00af00 (ANSI 34) — secondary text
+  [white]   = warm off-white #e4e4e4 (ANSI 254) — selected item text
+  [sel-bg]  = dark green bg (ANSI 22) — selection background
+
+
+================================================================================
+SMALL TERMINAL (60x16) — Launcher
+================================================================================
+
+Single-column mode, compact 3-line cards, minimal status bar.
+
+ [dim]╭─[green] TermReader [dim]──────────────────────────────────────────╮[/]
+ [dim]│ [med]6 bookmarks                                          [dim]│[/]
+ [dim]╰────────────────────────────────────────────────────────╯[/]
+       [dim]╭────────────────────────────────────╮[/]
+       [dim]│ [med]Go to URL...                   [dim]│[/]
+       [dim]╰────────────────────────────────────╯[/]
+ [cyan][1][/] [green]ARS TECHNICA[/]
+    [med]arstechnica.com[/]
+ ──────────────────────────────────────────────────────────
+[white][sel-bg]▌[2] HACKER NEWS                                         [/]
+[white][sel-bg]▌   news.ycombinator.com                                 [/]
+ ──────────────────────────────────────────────────────────
+ [cyan][3][/] [green]THE VERGE[/]
+    [med]theverge.com[/]
+                          [med]▼ 3 more below[/]
+ ──────────────────────────────────────────────────────────
+ [cyan]?[/][med]:help[/]
+
+NOTES:
+- 1 column (terminal width < 80)
+- 3-line compact cards (terminal height < 20): name, domain, separator
+- Minimal hint tier: only ?:help fits
+- No URL bar padding lines (saved for content)
+- Scroll indicator shows remaining items
+- Keys in [cyan], descriptions in [med]
+
+
+================================================================================
+SMALL TERMINAL (60x16) — Reader View
+================================================================================
+
+ [green]SpaceX Starship Reaches Orbit on[/]
+ [green]Its First Full Flight[/]
+ [med]Stephen Clark · Mar 18 · arstechnica.com[/]
+
+ [green]SpaceX's massive Starship rocket[/]
+ [green]completed its first full orbital[/]
+ [green]flight on Monday, a landmark[/]
+ [green]achievement that opens the door to[/]
+ [green]the company's most ambitious plans[/]
+[dim]▎[/][green]for space exploration.[/]
+
+ [green]The two-stage rocket lifted off[/]
+ [green]from SpaceX's Starbase facility[/]
+ ──────────────────────────────────────────────────────────
+ [cyan]s[/][med]:save[/] [cyan]b[/][med]:back[/] [cyan]?[/][med]:help[/]
+ [med]L8/87 W56 9%[/]
+
+NOTES:
+- Content width clamped to terminal_width - 4 = 56
+- Compact hint tier on status bar
+- Status bar line 2: abbreviated reader position
+- Focus indicator ▎ still visible
+
+
+================================================================================
+STANDARD TERMINAL (80x24) — Launcher
+================================================================================
+
+This is the default mockup size used in all other mockup files.
+See launcher.txt for full details. 2-column grid, 5-line cells.
+
+
+================================================================================
+WIDE TERMINAL (200+ cols) — Launcher
+================================================================================
+
+Content is centered with a max-width constraint (~120 chars). Generous margins
+prevent the eye from traveling too far across the screen.
+
+                                        [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────────────────────────────────────╮[/]
+                                        [dim]│ [med]6 bookmarks                                                                                        [dim]│[/]
+                                        [dim]╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
+
+                                                             [dim]╭──────────────────────────────────────────────────────────╮[/]
+                                                             [dim]│ [med]Go to URL...                                           [dim]│[/]
+                                                             [dim]╰──────────────────────────────────────────────────────────╯[/]
+
+                                         [cyan][1][/]   [green]ARS TECHNICA[/]                            [dim]│[/] [cyan][2][/]   [green]HACKER NEWS[/]
+                                               [med]arstechnica.com[/]                      [dim]│[/]       [med]news.ycombinator.com[/]
+                                                                                 [dim]│[/]
+                                         ─────────────────────────────────────────┼─────────────────────────────────────────────────────
+                                         [cyan][3][/]   [green]THE VERGE[/]                               [dim]│[/][white][sel-bg]▌[4]   NEW YORK TIMES ★                              [/]
+                                               [med]theverge.com[/]                         [dim]│[/][white][sel-bg]▌     nytimes.com                                    [/]
+                                                                                 [dim]│[/][white][sel-bg]▌                                                   [/]
+                                         ─────────────────────────────────────────┼─────────────────────────────────────────────────────
+
+                                         ──────────────────────────────────────────────────────────────────────────────────────────────
+                                         [cyan]Enter[/][med]:open[/]  [cyan]o[/][med]:go to url[/]  [cyan]a[/][med]:add[/]  [cyan]d[/][med]:delete[/]  [cyan]?[/][med]:help[/]                                         [dim]v1.0[/]
+
+NOTES:
+- Content area max-width: ~120 chars (configurable)
+- Centered horizontally with equal left/right margins
+- The grid layout stays 2-column — it does NOT expand to 3+ columns
+  on wide terminals in the default Grid variant (3-column is Variant C, Phase 2)
+- URL bar width: clamped to max 70 chars, centered
+- The wide margins give a calm, focused feel similar to a web page
+  with max-width CSS
+- Status bar separator and footer still span the content area, not
+  the full terminal width
+
+
+================================================================================
+WIDE TERMINAL (200+ cols) — Reader View
+================================================================================
+
+Content column stays at MaxContentWidth (default 80), centered.
+
+                                                        [green]SpaceX Starship Reaches Orbit on Its First Full Flight[/]
+                                                        [med]Stephen Clark · March 18, 2026 · arstechnica.com[/]
+
+                                                        [green]SpaceX's massive Starship rocket completed its first full[/]
+                                                        [green]orbital flight on Monday, a landmark achievement that opens[/]
+                                                        [green]the door to the company's most ambitious plans for space[/]
+                                                        [green]exploration.[/]
+
+                                                        [green]The two-stage rocket lifted off from SpaceX's Starbase[/]
+                                                    [dim]▎[/]  [green]facility in South Texas at 7:42 a.m. Central time, riding[/]
+                                                        [green]on the thrust of 33 Raptor engines that generate roughly[/]
+                                                        [green]16.7 million pounds of force at full power.[/]
+
+NOTES:
+- Reader content is always centered in the terminal
+- Left margin = (terminal_width - MaxContentWidth) / 2
+- MaxContentWidth default is 80 (user-adjustable with h/l)
+- This prevents the ultra-long line lengths that make text hard to read
+- Status bar content aligns to the content column, not terminal edges
+
+
+================================================================================
+DESIGN PRINCIPLES
+================================================================================
+
+1. Content max-width: ~120 chars for multi-column layouts, ~80 for single-column
+   reader text. Never let content span the full width on very wide terminals.
+2. Centering: On wide terminals, center the content area with equal margins.
+3. Progressive disclosure: Remove UI elements as space shrinks:
+   - First: reduce hint tiers (full → medium → minimal)
+   - Then: remove separators between items (height < 30)
+   - Then: compact card height (height < 15, 5-line → 3-line)
+   - Then: single-column mode (width < threshold)
+   - Then: inline CTA instead of slab CTA (height < 20)
+4. Minimum supported: 50 columns x 15 rows. Below this, the app remains
+   functional but visual quality degrades (truncated titles, no separators,
+   minimal hints).

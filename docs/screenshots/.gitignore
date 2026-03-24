@@ -1,0 +1,5 @@
+# Screenshot files are generated for testing/comparison - don't commit them
+*.png
+*.jpg
+*.jpeg
+!.gitignore

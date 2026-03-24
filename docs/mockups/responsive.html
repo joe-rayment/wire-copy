@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Responsive Layouts</title>
+<!-- Cross-ref: template.css (Phosphor 2.0 design system) -->
+<!-- Cross-ref: layout-switcher.html (layout cycling, status bar badges) -->
+<!-- Cross-ref: animations.html (progress bars, spinners) -->
+<link rel="stylesheet" href="template.css">
+<style>
+/* Narrow terminal constraint */
+.terminal.narrow {
+  max-width: 500px;
+}
+
+/* Wide terminal constraint */
+.terminal.wide {
+  min-width: 1000px;
+}
+
+/* Design principles section */
+.design-principles {
+  color: var(--med);
+  font-size: 12px;
+  margin-top: 32px;
+  padding: 12px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.design-principles strong {
+  color: var(--cyan);
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Responsive Layouts</div>
+<div class="page-subtitle">Phosphor 2.0 &middot; Terminal size adaptations</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- SMALL TERMINAL (60x16) — Launcher                            -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">SMALL TERMINAL (60x16) &mdash; Launcher</div>
+  <div class="terminal narrow">
+ <span class="b bold">TermReader</span> <span class="d">&middot;</span> <span class="m">6 bookmarks</span>
+
+ <span class="c">[1]</span> <span class="b bold">ARS TECHNICA</span>
+    <span class="m">arstechnica.com</span>
+<span class="sel">&#x258C;[2] HACKER NEWS                                         </span>
+<span class="sel">&#x258C;   news.ycombinator.com                                 </span>
+ <span class="c">[3]</span> <span class="b bold">THE VERGE</span>
+    <span class="m">theverge.com</span>
+                          <span class="m">&#x25BC; 3 more below</span>
+
+ <span class="c">?</span><span class="mu">:help</span>
+ <span class="m">termreader</span></div>
+  <div class="screen-notes">
+- Single-line header: name + bookmark count, no box
+- 1 column (terminal width &lt; 80)
+- 2-line compact cards: name + domain, no separator between cards
+- Minimal hint tier: only ?:help fits
+- 2-line status bar (no separator above)
+- Scroll indicator shows remaining items
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- SMALL TERMINAL (60x16) — Reader View                         -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">SMALL TERMINAL (60x16) &mdash; Reader View</div>
+  <div class="terminal narrow">
+ <span class="b bold">SpaceX Starship Reaches Orbit on</span>
+ <span class="b bold">Its First Full Flight</span>
+ <span class="m">Stephen Clark &middot; Mar 18 &middot; arstechnica.com</span>
+
+ <span class="g">SpaceX's massive Starship rocket</span>
+ <span class="g">completed its first full orbital</span>
+ <span class="g">flight on Monday, a landmark</span>
+ <span class="g">achievement that opens the door to</span>
+ <span class="g">the company's most ambitious plans</span>
+<span class="d">&#x258E;</span><span class="g">for space exploration.</span>
+
+ <span class="g">The two-stage rocket lifted off</span>
+ <span class="g">from SpaceX's Starbase facility</span>
+
+ <span class="c">s</span><span class="m">:save</span> <span class="c">b</span><span class="m">:back</span> <span class="c">?</span><span class="mu">:help</span>
+ <span class="m">L8/87 W56 9%</span></div>
+  <div class="screen-notes">
+- Content width clamped to terminal_width - 4 = 56
+- Article title uses .b .bold for emphasis
+- Compact hint tier on status bar
+- 2-line status bar (no separator): abbreviated reader position
+- Focus indicator &#x258E; still visible
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- STANDARD TERMINAL (80x24) — Launcher                         -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">STANDARD TERMINAL (80x24) &mdash; Launcher</div>
+  <div class="terminal">
+ <span class="b bold">TermReader</span> <span class="d">&middot;</span> <span class="m">6 bookmarks</span>
+
+       <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+       <span class="d">&#x2502;</span> <span class="mu">Go to URL...</span>                                                   <span class="d">&#x2502;</span>
+       <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+ <span class="c">[1]</span>   <span class="b bold">ARS TECHNICA</span>                       <span class="d">&#x2502;</span> <span class="c">[2]</span>   <span class="b bold">HACKER NEWS</span>
+       <span class="m">arstechnica.com</span>                    <span class="d">&#x2502;</span>       <span class="m">news.ycombinator.com</span>
+                                          <span class="d">&#x2502;</span>
+ <span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x253C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;</span>
+ <span class="c">[3]</span>   <span class="b bold">THE VERGE</span>                          <span class="d">&#x2502;</span><span class="sel">&#x258C;[4]   NEW YORK TIMES &#x2605;                  </span>
+       <span class="m">theverge.com</span>                       <span class="d">&#x2502;</span><span class="sel">&#x258C;     nytimes.com                         </span>
+                                          <span class="d">&#x2502;</span><span class="sel">&#x258C;                                         </span>
+ <span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x253C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;</span>
+
+ <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">a</span><span class="m">:add</span>  <span class="c">d</span><span class="m">:delete</span>  <span class="c">?</span><span class="mu">:help</span>
+ <span class="m">termreader</span>                                                          <span class="mu">v1.0</span></div>
+  <div class="screen-notes">
+- Single-line header: TermReader + bookmark count
+- Default layout &mdash; 2-column grid with bold names
+- Full hint tier
+- 2-line status bar (no separator above)
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- WIDE TERMINAL (200+ cols) — Launcher                         -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">WIDE TERMINAL (200+ cols) &mdash; Launcher</div>
+  <div class="terminal wide">
+                                        <span class="b bold">TermReader</span> <span class="d">&middot;</span> <span class="m">6 bookmarks</span>
+
+                                                             <span class="d">&#x256D;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256E;</span>
+                                                             <span class="d">&#x2502;</span> <span class="mu">Go to URL...</span>                                                   <span class="d">&#x2502;</span>
+                                                             <span class="d">&#x2570;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x256F;</span>
+
+                                         <span class="c">[1]</span>   <span class="b bold">ARS TECHNICA</span>                            <span class="d">&#x2502;</span> <span class="c">[2]</span>   <span class="b bold">HACKER NEWS</span>
+                                               <span class="m">arstechnica.com</span>                      <span class="d">&#x2502;</span>       <span class="m">news.ycombinator.com</span>
+                                                                                 <span class="d">&#x2502;</span>
+                                         <span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x253C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;</span>
+                                         <span class="c">[3]</span>   <span class="b bold">THE VERGE</span>                               <span class="d">&#x2502;</span><span class="sel">&#x258C;[4]   NEW YORK TIMES &#x2605;                              </span>
+                                               <span class="m">theverge.com</span>                         <span class="d">&#x2502;</span><span class="sel">&#x258C;     nytimes.com                                    </span>
+                                                                                 <span class="d">&#x2502;</span><span class="sel">&#x258C;                                                   </span>
+                                         <span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x253C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;</span>
+
+                                         <span class="c">Enter</span><span class="m">:open</span>  <span class="c">o</span><span class="m">:go to url</span>  <span class="c">a</span><span class="m">:add</span>  <span class="c">d</span><span class="m">:delete</span>  <span class="c">?</span><span class="mu">:help</span>                                         <span class="mu">v1.0</span></div>
+  <div class="screen-notes">
+- Single-line header: TermReader + bookmark count (same format at all sizes)
+- Content area max-width: ~120 chars (configurable)
+- Centered horizontally with equal left/right margins
+- The grid layout stays 2-column &mdash; it does NOT expand to 3+ columns
+  on wide terminals in the default Grid variant (3-column is Variant C, Phase 2)
+- URL bar width: clamped to max 70 chars, centered
+- The wide margins give a calm, focused feel similar to a web page
+  with max-width CSS
+- 2-line status bar spans the content area, not the full terminal width
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- WIDE TERMINAL (200+ cols) — Reader View                      -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">WIDE TERMINAL (200+ cols) &mdash; Reader View</div>
+  <div class="terminal wide">
+                                                        <span class="b bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+                                                        <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com</span>
+
+                                                        <span class="g">SpaceX's massive Starship rocket completed its first full</span>
+                                                        <span class="g">orbital flight on Monday, a landmark achievement that opens</span>
+                                                        <span class="g">the door to the company's most ambitious plans for space</span>
+                                                        <span class="g">exploration.</span>
+
+                                                        <span class="g">The two-stage rocket lifted off from SpaceX's Starbase</span>
+                                                    <span class="d">&#x258E;</span>  <span class="g">facility in South Texas at 7:42 a.m. Central time, riding</span>
+                                                        <span class="g">on the thrust of 33 Raptor engines that generate roughly</span>
+                                                        <span class="g">16.7 million pounds of force at full power.</span>
+
+                                                        <span class="c">s</span><span class="m">:save</span> <span class="c">b</span><span class="m">:back</span> <span class="c">v</span><span class="m">:view</span> <span class="c">?</span><span class="mu">:help</span>
+                                                        <span class="m">arstechnica.com</span>              <span class="m">L8/87 W66 9%</span></div>
+  <div class="screen-notes">
+- Reader content at 66-char width (centered within terminal)
+- Left margin = (terminal_width - 66) / 2
+- Title uses .b .bold for emphasis
+- 2-line status bar aligns to the content column, not terminal edges
+- This prevents the ultra-long line lengths that make text hard to read
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- BREAKPOINT REFERENCE TABLE                                    -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Breakpoint Reference</div>
+  <div class="terminal">
+ <span class="b bold">Trigger</span>                <span class="b bold">Threshold</span>     <span class="b bold">Effect</span>
+ <span class="d">&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;</span>
+ <span class="g">Single-column mode</span>     <span class="m">width &lt; 80</span>    <span class="g">Grid &#x2192; 1 column</span>
+ <span class="g">Compact separators</span>     <span class="m">height &lt; 30</span>   <span class="g">Separators hidden</span>
+ <span class="g">Compact cards</span>          <span class="m">height &lt; 15</span>   <span class="g">5-line &#x2192; 3-line cells</span>
+ <span class="g">Inline podcast CTA</span>     <span class="m">height &lt; 20</span>   <span class="g">Slab &#x2192; single line</span>
+ <span class="g">Minimal hints</span>          <span class="m">width &lt; 40</span>    <span class="g">Only ?:help shown</span>
+ <span class="g">Max content width</span>      <span class="m">width &gt; 120</span>   <span class="g">Content centered</span></div>
+  <div class="screen-notes">
+    Summary of all responsive breakpoints and their effects on the UI.
+  </div>
+</div>
+
+<hr class="section-sep">
+
+<!-- ============================================================ -->
+<!-- DESIGN PRINCIPLES                                            -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">Design Principles</div>
+  <div class="design-principles"><strong>1.</strong> Content max-width: ~120 chars for multi-column layouts, ~66 for single-column
+   reader text. Never let content span the full width on very wide terminals.
+<strong>2.</strong> Centering: On wide terminals, center the content area with equal margins.
+<strong>3.</strong> Progressive disclosure: Remove UI elements as space shrinks:
+   - First: reduce hint tiers (full &#x2192; medium &#x2192; minimal)
+   - Then: remove separators between items (height &lt; 30)
+   - Then: compact card height (height &lt; 15, 5-line &#x2192; 3-line)
+   - Then: single-column mode (width &lt; 80)
+   - Then: inline CTA instead of slab CTA (height &lt; 20)
+<strong>4.</strong> Minimum supported: 50 columns x 15 rows. Below this, the app remains
+   functional but visual quality degrades (truncated titles, no separators,
+   minimal hints).</div>
+  <div class="screen-notes">
+    <strong>WHY:</strong> Progressive disclosure removes UI as space shrinks: hints &#x2192; separators &#x2192; card height &#x2192; columns. Content always wins over chrome.
+  </div>
+</div>
+
+</body>
+</html>

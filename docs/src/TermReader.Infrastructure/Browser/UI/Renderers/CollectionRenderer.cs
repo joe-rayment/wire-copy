@@ -1,0 +1,216 @@
+// Educational and personal use only.
+
+using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces.Browser;
+using TermReader.Domain.Entities.Collections;
+using TermReader.Domain.Enums.Browser;
+using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
+
+namespace TermReader.Infrastructure.Browser.UI.Renderers;
+
+/// <summary>
+/// Renders collection list and collection items views with selection bars and separators.
+/// </summary>
+internal class CollectionRenderer
+{
+    private const string Reset = "\x1b[0m";
+    private readonly RenderHelpers _helpers;
+    private readonly IThemeProvider _themeProvider;
+    private readonly PodcastCtaRenderer _podcastCtaRenderer;
+
+    public CollectionRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
+    {
+        _helpers = helpers;
+        _themeProvider = themeProvider;
+        _podcastCtaRenderer = new PodcastCtaRenderer(helpers, themeProvider);
+    }
+
+    public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var height = options.TerminalHeight;
+
+        // Single-line header
+        _helpers.WriteLine();
+        var collCount = collections.Count;
+        var collTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{"Collections"}\x1b[0m";
+        var collMeta = $"{p.SecondaryText.AnsiFg}{collCount} collection{(collCount == 1 ? string.Empty : "s")}\x1b[0m";
+        var collTitleLen = "Collections".Length;
+        var collMetaLen = $"{collCount} collection{(collCount == 1 ? string.Empty : "s")}".Length;
+        var collPad = Math.Max(1, width - 1 - collTitleLen - collMetaLen);
+        _helpers.WriteLine($" {collTitle}{new string(' ', collPad)}{collMeta}");
+        _helpers.WriteLine();
+
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var maxVisible = remainingHeight;
+
+        if (collections.Count == 0)
+        {
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}No collections yet. Use :new <name> to create one.{Reset}");
+        }
+        else
+        {
+            var startIndex = Math.Max(0, Math.Min(scrollOffset, collections.Count - maxVisible));
+            var endIndex = Math.Min(collections.Count, startIndex + maxVisible);
+            for (var i = startIndex; i < endIndex; i++)
+            {
+                var collection = collections[i];
+                var isSelected = i == selectedIndex;
+                var isDefault = defaultCollectionId.HasValue && collection.Id == defaultCollectionId.Value;
+
+                var star = isDefault ? $" {p.SecondaryText.AnsiFg}{Indicators.Star}{Reset}" : string.Empty;
+                var itemCount = collection.Items.Count;
+                var countText = $"({itemCount})";
+
+                var availableWidth = width - 6;
+                var starLen = isDefault ? 2 : 0;
+                var countLen = countText.Length + 1;
+
+                string displayName;
+                string countDisplay;
+
+                if (availableWidth < 30)
+                {
+                    displayName = RenderHelpers.TruncateText(collection.Name, availableWidth - starLen);
+                    countDisplay = string.Empty;
+                }
+                else if (collection.Name.Length + countLen + starLen > availableWidth)
+                {
+                    var nameWidth = Math.Max(15, availableWidth - countLen - starLen);
+                    displayName = RenderHelpers.TruncateText(collection.Name, nameWidth);
+                    countDisplay = $" {p.SecondaryText.AnsiFg}{countText}{Reset}";
+                }
+                else
+                {
+                    displayName = collection.Name;
+                    countDisplay = $" {p.SecondaryText.AnsiFg}{countText}{Reset}";
+                }
+
+                if (isSelected)
+                {
+                    var plainCount = countDisplay.Length > 0 ? $" {countText}" : string.Empty;
+                    var plainStar = isDefault ? $" {Indicators.Star}" : string.Empty;
+                    var selectedText = $" {displayName}{plainCount}{plainStar} ";
+                    var selectedPad = Math.Max(0, width - 3 - selectedText.Length);
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $"{selectedText}{new string(' ', selectedPad)}")}");
+                }
+                else
+                {
+                    _helpers.WriteLine($"   {p.PrimaryText.AnsiFg}{displayName}{countDisplay}{star}{Reset}");
+                }
+            }
+
+            if (collections.Count > endIndex)
+            {
+                _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}... {collections.Count - endIndex} more collections{Reset}");
+            }
+        }
+    }
+
+    public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = Math.Max(1, options.TerminalWidth - 2);
+        var height = options.TerminalHeight;
+
+        // Single-line header with collection name and item count
+        _helpers.WriteLine();
+        var itemCount = collection.Items.Count;
+        var itemTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2))}\x1b[0m";
+        var itemMeta = $"{p.SecondaryText.AnsiFg}{itemCount} item{(itemCount == 1 ? string.Empty : "s")}\x1b[0m";
+        var itemTitleLen = RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2)).Length;
+        var itemMetaLen = $"{itemCount} item{(itemCount == 1 ? string.Empty : "s")}".Length;
+        var itemPad = Math.Max(1, width - 1 - itemTitleLen - itemMetaLen);
+        _helpers.WriteLine($" {itemTitle}{new string(' ', itemPad)}{itemMeta}");
+        _helpers.WriteLine();
+
+        // Podcast button (only shown when collection has items)
+        if (collection.Items.Count > 0)
+        {
+            _podcastCtaRenderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
+        }
+
+        const int linesPerItem = 2;
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var maxItems = Math.Max(1, (remainingHeight + 1) / linesPerItem);
+
+        if (collection.Items.Count == 0)
+        {
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet \u2014 press{Reset} {p.PrimaryText.AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
+        }
+        else
+        {
+            var startIndex = Math.Max(0, Math.Min(scrollOffset, collection.Items.Count - maxItems));
+            var endIndex = Math.Min(collection.Items.Count, startIndex + maxItems);
+            for (var i = startIndex; i < endIndex; i++)
+            {
+                var item = collection.Items[i];
+                var isSelected = i == selectedIndex;
+
+                var marker = item.IsRead
+                    ? $"{p.ReadItemFg.AnsiFg}{Indicators.EmptyCircle}{Reset}"
+                    : $"{p.LinkContent.AnsiFg}{Indicators.FilledCircle}{Reset}";
+
+                var domain = string.Empty;
+                try
+                {
+                    var uri = new Uri(item.Url);
+                    domain = uri.Host;
+                }
+                catch
+                {
+                    domain = item.Url;
+                }
+
+                var isCached = options.CachedUrls?.Contains(item.Url) == true;
+                var cacheSuffix = isCached ? " \u00b7 cached" : string.Empty;
+                var domainMaxWidth = Math.Max(1, width - 10 - cacheSuffix.Length);
+
+                var displayTitle = RenderHelpers.TruncateText(item.Title, width - 10);
+                var displayDomain = RenderHelpers.TruncateText(domain, domainMaxWidth);
+
+                if (isSelected)
+                {
+                    var markerChar = item.IsRead ? $"{Indicators.EmptyCircle}" : $"{Indicators.FilledCircle}";
+                    var selectedPad = Math.Max(0, width - 6 - displayTitle.Length);
+                    var plainCache = isCached ? " \u00b7 cached" : string.Empty;
+                    var domainPad = Math.Max(0, width - 9 - displayDomain.Length - plainCache.Length);
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $" {markerChar} {displayTitle}{new string(' ', selectedPad)} ")}");
+                    _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $"     {displayDomain}{plainCache}{new string(' ', domainPad)} ")}");
+                }
+                else
+                {
+                    var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
+                    _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}");
+                    var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
+                    _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
+                }
+            }
+
+            if (collection.Items.Count > endIndex)
+            {
+                _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}... {collection.Items.Count - endIndex} more items below{Reset}");
+            }
+        }
+    }
+
+    internal static int GetCollectionListVisibleCount(int terminalHeight)
+    {
+        const int headerLines = 3;
+        const int statusBarLines = 2;
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
+        return remainingHeight;
+    }
+
+    internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80)
+    {
+        const int headerLines = 3;
+        const int statusBarLines = 2;
+        const int linesPerItem = 2;
+        var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
+        return Math.Max(1, (remainingHeight + 1) / linesPerItem);
+    }
+}
