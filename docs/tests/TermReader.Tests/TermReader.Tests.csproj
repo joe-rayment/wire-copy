@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="FluentAssertions" Version="7.2.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.13" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="9.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Extensions" Version="9.0.13" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TermReader.Domain\TermReader.Domain.csproj" />
+    <ProjectReference Include="..\..\src\TermReader.Application\TermReader.Application.csproj" />
+    <ProjectReference Include="..\..\src\TermReader.Infrastructure\TermReader.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\TermReader.Persistence\TermReader.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\TermReader.API\TermReader.API.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,169 @@
+================================================================================
+TOAST NOTIFICATIONS
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+Toasts appear in the top-right corner of the terminal, overlaying content.
+Dismissal: Toasts are dismissed on the next keypress or screen redraw.
+Only one toast visible at a time — new toasts replace the current one.
+Maximum width: 40 chars. Rounded corners. 3 lines tall (border + text + border).
+
+COLOR KEY:
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text
+  [cyan]    = bright cyan #00ffff (ANSI 51) — cache/info toast border
+  [dim]     = dark green #005f00 (ANSI 22) — decorative, structural
+  [med]     = medium green #00af00 (ANSI 34) — secondary text
+  [pink]    = vivid pink #ff5fd7 (ANSI 206) — celebration toast border/accent
+  [red]     = red #ff5f5f (ANSI 203) — error toast border
+
+
+================================================================================
+TOAST TYPE 1: Cache Warmed (Info)
+================================================================================
+
+Appears when background pre-loading completes for a page/collection.
+
+                                        [cyan]╭────────────────────────────────╮[/]
+                                        [cyan]│[/] [green]Cache warmed[/] [med]24/24 articles[/]  [cyan]│[/]
+                                        [cyan]╰────────────────────────────────╯[/]
+
+Dismissed on next keypress or screen redraw.
+Trigger: BackgroundPreloadService completes all URLs for a page
+
+Positioned in context (top-right corner of terminal):
+
+ [dim]╭─[bright] Ars Technica [dim]─────────────[cyan]╭────────────────────────────────╮[/]
+ [dim]│ [med]24 links · 3 sections        [cyan]│[/] [green]Cache warmed[/] [med]24/24 articles[/]  [cyan]│[/]
+ [dim]╰──────────────────────────────[cyan]╰────────────────────────────────╯[/]
+                                    [dim]│[/]
+ [bright]A century after rockets,[/]        [dim]│[/] [bright]SpaceX Starship reaches orbit[/]
+ [bright]we still can't predict the[/]      [dim]│[/] [bright]on its first full flight[/]
+ ...
+
+NOTES:
+- Toast overlays top-right corner, doesn't shift layout
+- [cyan] border matches the cache/info color scheme
+- Text: action in [green], detail in [med]
+
+
+================================================================================
+TOAST TYPE 2: Podcast Complete (Celebration)
+================================================================================
+
+Appears when podcast M4B generation finishes.
+
+                                        [pink]╭────────────────────────────────╮[/]
+                                        [pink]│[/] [pink]✦[/] [green]Podcast ready![/] [med]12 chapters[/] [pink]│[/]
+                                        [pink]╰────────────────────────────────╯[/]
+
+Sticky mode: persists until user presses Esc (celebration moment).
+Trigger: PodcastOrchestrator completes M4B generation
+
+NOTES:
+- [pink] border and sparkle ✦ character for celebration
+- "Podcast ready!" in [green] bold
+- Chapter count in [med]
+- This is one of the rare uses of [pink] — reserved for achievement moments
+
+Expanded variant with file path (for larger terminals):
+
+                               [pink]╭───────────────────────────────────────╮[/]
+                               [pink]│[/] [pink]✦[/] [green]Podcast ready![/] [med]12 chapters · 2h 15m[/] [pink]│[/]
+                               [pink]│[/]   [med]~/output/tech-news-2026-03-18.m4b[/]  [pink]│[/]
+                               [pink]╰───────────────────────────────────────╯[/]
+
+
+================================================================================
+TOAST TYPE 3: Error (Warning)
+================================================================================
+
+Appears for non-fatal errors that don't need a full error screen.
+
+                                        [red]╭────────────────────────────────╮[/]
+                                        [red]│[/] [red]Cache failed[/] [med]network timeout[/]  [red]│[/]
+                                        [red]╰────────────────────────────────╯[/]
+
+Sticky mode: persists until user presses Esc (error requires acknowledgment).
+Trigger: Background operation failure (cache, save, etc.)
+
+Other error toast examples:
+
+                                        [red]╭────────────────────────────────╮[/]
+                                        [red]│[/] [red]Save failed[/] [med]disk full[/]         [red]│[/]
+                                        [red]╰────────────────────────────────╯[/]
+
+                                        [red]╭────────────────────────────────╮[/]
+                                        [red]│[/] [red]API error[/] [med]rate limit exceeded[/] [red]│[/]
+                                        [red]╰────────────────────────────────╯[/]
+
+
+================================================================================
+TOAST TYPE 4: Article Saved (Confirmation)
+================================================================================
+
+Brief confirmation when saving an article to a collection.
+
+                                        [cyan]╭────────────────────────────────╮[/]
+                                        [cyan]│[/] [green]Saved to Tech News[/]             [cyan]│[/]
+                                        [cyan]╰────────────────────────────────╯[/]
+
+Dismissed on next keypress or screen redraw.
+Trigger: Pressing 's' to save an article
+
+
+================================================================================
+TOAST TYPE 5: Bookmark Added (Confirmation)
+================================================================================
+
+                                        [cyan]╭────────────────────────────────╮[/]
+                                        [cyan]│[/] [green]Bookmark added[/] [med]arstechnica[/]   [cyan]│[/]
+                                        [cyan]╰────────────────────────────────╯[/]
+
+Dismissed on next keypress or screen redraw.
+
+
+================================================================================
+POSITIONING
+================================================================================
+
+Toasts appear at row 0, right-aligned with 1-char margin from right edge.
+
+Only one toast is visible at a time. If a new toast is triggered while one is
+showing, the new toast replaces the old one immediately. No stacking.
+
+
+================================================================================
+DISMISSAL BEHAVIOR
+================================================================================
+
+Appear:  Instant (no slide-in animation — terminal rendering is frame-based)
+Display: Shown on the current render pass
+Dismiss: Cleared on the next render pass (triggered by next keypress or redraw)
+
+Standard toasts (confirmation, info):
+  Dismissed automatically on the next keypress or screen redraw.
+
+Sticky toasts (error, celebration):
+  Persist across redraws until user presses Esc.
+  Show a small [Esc] hint inside the toast border.
+
+Any keypress (including Esc for sticky) also processes normally — the toast
+dismiss is a side effect, not a blocking modal.
+
+
+================================================================================
+IMPLEMENTATION NOTES
+================================================================================
+
+- Toasts are rendered as part of the normal render pass: the renderer checks
+  for an active toast and draws it over the top-right corner of the screen
+- On the next render pass (triggered by the next keypress), the toast is cleared
+  (standard) or re-rendered (sticky) as appropriate
+- Only one toast at a time — the renderer holds a single `ActiveToast` reference
+- Toast text is always single-line (no wrapping) — truncated if needed
+- Border color encodes the toast type (cyan/pink/red)
+- Toasts never appear during text input (URL bar, search, command mode)
+- During podcast generation, progress toasts may replace each other:
+  "Generating chapter 3/12..." → "Generating chapter 4/12..." → etc.
+- No background timer is needed — the synchronous input loop naturally
+  triggers redraws that clear or re-render the toast

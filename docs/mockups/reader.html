@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Reader View</title>
+<link rel="stylesheet" href="template.css">
+<!-- Related files: template.css, launcher.html, linktree.html -->
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Reader View</div>
+<div class="page-subtitle">Phosphor 2.0 design system &middot; 80x24 terminal</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A: Centered Narrow Column -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A: Centered Narrow Column (~66 chars)</div>
+  <div class="terminal">
+    <span class="b bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+    <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com &middot; 4 min read</span>
+
+    <span class="g">SpaceX's massive Starship rocket completed its first full</span>
+    <span class="g">orbital flight on Monday, a landmark achievement that opens</span>
+    <span class="g">the door to the company's most ambitious plans for space</span>
+    <span class="g">exploration.</span>
+
+    <span class="g">The two-stage rocket lifted off from SpaceX's Starbase</span>
+    <span class="g">facility in South Texas at 7:42 a.m. Central time, riding</span>
+    <span class="g">on the thrust of 33 Raptor engines that generate roughly</span>
+    <span class="g">16.7 million pounds of force at full power.</span>
+
+<span class="mu">&#9612;</span>  <span class="g">After a nominal first-stage burn, the Super Heavy booster</span>
+    <span class="g">separated and executed a controlled descent, landing on the</span>
+    <span class="g">launch tower's mechanical arms &#8212; a maneuver SpaceX calls</span>
+    <span class="g">"chopstick" </span><span class="hi">catch</span><span class="g">. The upper stage continued to orbit,</span>
+    <span class="g">reaching an altitude of approximately 250 kilometers before</span>
+    <span class="g">completing a controlled deorbital burn over the Indian Ocean.</span>
+
+    <span class="g">"This is the day we've been working toward for over a</span>
+    <span class="g">decade," said Elon Musk, SpaceX's CEO, in a post on X</span>
+
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="m">L12/87 W66 38% &middot; 4 min read</span>                          <span class="m">cached 5m ago</span></div>
+  <div class="screen-notes">
+    Text is left-aligned within a centered 66-char column.<br>
+    &#9612; focus indicator in .mu (muted teal) marks current reading position (1 char left of text).<br>
+    Search highlight: "catch" shown with blue-teal bg (.hi class — new Phosphor 2.0 highlight).<br>
+    Title in bright + bold, byline in med with read time appended.<br>
+    Paragraphs separated by blank lines for readability.<br>
+    Status bar L1: mode in green, keys in cyan, descriptions in med.<br>
+    Status bar L2: line position (L12/87), column width (W66), progress (38%), read time; cache status right-aligned.<br>
+    [/] keys widen or narrow the column ([ narrows, ] widens).<br>
+    WHY: W66 is the ideal monospace reading width — matches ~60-66 char research sweet spot for line length.<br>
+    WHY: [/] avoids conflict with h/l navigation used on other screens (launcher, linktree).<br>
+    WHY: Focus indicator uses .mu (not .d) so it remains visible against the black background.
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT A — Scrolled to End -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A &#8212; Scrolled to End (Progress 100%)</div>
+  <div class="terminal">
+    <span class="g">The mission lasted approximately 90 minutes from liftoff</span>
+    <span class="g">to splashdown, validating key technologies including the</span>
+    <span class="g">heat shield, in-space engine restart, and precision</span>
+    <span class="g">guidance systems.</span>
+
+    <span class="g">SpaceX plans to attempt another orbital flight within</span>
+    <span class="g">three weeks, this time with a payload bay demonstration.</span>
+    <span class="g">NASA is closely watching these tests as Starship is the</span>
+    <span class="g">chosen vehicle for the Artemis III lunar lander.</span>
+
+    <span class="g">"We've crossed the threshold from experimental to</span>
+<span class="mu">&#9612;</span>  <span class="g">operational," said Gwynne Shotwell, SpaceX President.</span>
+    <span class="g">"Every flight from here gets us closer to Mars."</span>
+
+
+                             <span class="m">&#8212; end &#8212;</span>
+                  <span class="m">4 min read &middot; 1,847 words</span>
+                  <span class="c">s</span><span class="m">:save</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">n</span><span class="m">:next in list</span>
+
+
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="m">L87/87 W66 100%</span></div>
+  <div class="screen-notes">
+    Enhanced end marker with read stats and next-action hints.<br>
+    "— end —" and stats line in .m, action hints use .c for keys and .m for descriptions.<br>
+    WHY: End-of-article actions reduce "now what?" friction — the reader doesn't have to remember keybindings.<br>
+    WHY: Word count + read time give closure and a sense of accomplishment.
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- VARIANT B: Full-Width -->
+<!-- ============================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT B: Full-Width (Uses All Terminal Width)</div>
+  <div class="terminal">
+  <span class="b bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+  <span class="m">Stephen Clark &middot; March 18, 2026 &middot; arstechnica.com &middot; 4 min read</span>
+
+  <span class="g">SpaceX's massive Starship rocket completed its first full orbital flight on Monday, a landmark</span>
+  <span class="g">achievement that opens the door to the company's most ambitious plans for space exploration.</span>
+
+  <span class="g">The two-stage rocket lifted off from SpaceX's Starbase facility in South Texas at 7:42 a.m.</span>
+  <span class="g">Central time, riding on the thrust of 33 Raptor engines that generate roughly 16.7 million</span>
+  <span class="g">pounds of force at full power.</span>
+
+<span class="mu">&#9612;</span><span class="g">After a nominal first-stage burn, the Super Heavy booster separated and executed a controlled</span>
+  <span class="g">descent, landing on the launch tower's mechanical arms &#8212; a maneuver SpaceX calls "chopstick"</span>
+  <span class="g"></span><span class="hi">catch</span><span class="g">. The upper stage continued to orbit, reaching an altitude of approximately 250</span>
+  <span class="g">kilometers before completing a controlled deorbital burn over the Indian Ocean.</span>
+
+  <span class="g">"This is the day we've been working toward for over a decade," said Elon Musk, SpaceX's</span>
+  <span class="g">CEO, in a post on X shortly after the flight concluded. "Starship is operational."</span>
+
+  <span class="g">The Starship vehicle itself &#8212; also known as Ship 36 &#8212; performed a precise deorbital burn</span>
+  <span class="g">and reentered the atmosphere, deploying its body flap control surfaces to guide its descent.</span>
+
+ <span class="g">Reader</span>  <span class="c">s</span><span class="m">:save</span>  <span class="c">o</span><span class="m">:browser</span>  <span class="c">[/]</span><span class="m">:width</span>  <span class="c">v</span><span class="m">:links</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="m">L12/62 W76 42%</span></div>
+  <div class="screen-notes">
+    Content width = terminal width - 4 (2 margin each side).<br>
+    More text per screen, fewer total lines.<br>
+    Focus indicator &#9612; in .mu still appears at current line.<br>
+    Same search highlighting behavior (blue-teal .hi class).<br>
+    Fewer line wraps &#8212; better for long-form articles.<br>
+    Status bar shows wider W76 column width.<br>
+    WHY: Full-width mode trades reading comfort for density — useful when scanning, not deep-reading.
+  </div>
+</div>
+
+</body>
+</html>

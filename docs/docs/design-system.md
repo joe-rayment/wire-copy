@@ -35,9 +35,9 @@ renderer code; all colors come through `ThemePalette`.
 | **SecondaryText** | 34 | `#00af00` | Subtitles, domains, metadata, inactive hints |
 | **TertiaryText** (DimFg) | 22 | `#005f00` | Decorative elements, version strings, disabled text |
 | **MutedFg** | 65 | `#5f875f` | Quiet text, muted labels, subdued UI elements |
-| **HeaderTitleFg** | 40 | `#00d700` | Page titles, header text (bright green, matches primary) |
+| **HeaderTitleFg** | 212 | `#ff87d7` | Page titles, header text |
 | **HeaderBorderFg** | 35 | `#00af5f` | Box-drawing borders, accent bars, card separators |
-| **LinkContent** | 40 | `#00d700` | Content/article link text (bright green, matches primary) |
+| **LinkContent** | 212 | `#ff87d7` | Content/article link text (playful pink accent) |
 | **LinkNavigation** | 40 | `#00d700` | Navigation links |
 | **LinkExternal** | 40 | `#00d700` | External links |
 | **LinkFooter** | 40 | `#00d700` | Footer links |
@@ -76,7 +76,7 @@ are:
 > **Migration (Phosphor 2.0)**: Multiple palette values change in
 > `BuiltInThemes.cs` for the Phosphor theme. Key changes:
 > - `PrimaryText` moves from ANSI 46 (`#00ff00`) to ANSI 40 (`#00d700`)
-> - `HeaderTitleFg` / `LinkContent` move from ANSI 48 (`#00ff87`) to ANSI 40 (`#00d700`, bright green — matches primary)
+> - `HeaderTitleFg` / `LinkContent` move from ANSI 48 (`#00ff87`) to ANSI 212 (`#ff87d7`, playful pink)
 > - `SelectedItemFg` moves from ANSI 15 (`#ffffff`) to ANSI 254 (`#e4e4e4`, warm off-white)
 > - `DimFg` moves from ANSI 28 (`#008700`) to ANSI 22 (`#005f00`)
 > - `FocusIndicatorFg` moves from ANSI 22 to ANSI 65 (`#5f875f`, muted)
@@ -194,7 +194,7 @@ ToastBorderFg:          ANSI 32  (#0087d7)   blue
 Every screen must maintain this brightness ordering (brightest to dimmest):
 
 1. **Selected item text** (SelectedItemFg, ANSI 254, warm off-white) -- always the brightest on screen
-2. **Headlines/titles** (HeaderTitleFg, ANSI 40) -- bright green, matches primary, bold for emphasis
+2. **Headlines/titles** (HeaderTitleFg, ANSI 212) -- playful pink, high visibility
 3. **Accent elements** (AccentFg, ANSI 51) -- bright cyan, different hue
 4. **Success indicators** (SuccessFg, ANSI 119) -- bright green for completions
 5. **Body text** (PrimaryText, ANSI 40) -- standard reading brightness
@@ -546,7 +546,7 @@ line combining mode label, key hints, and contextual vitals.
 
 | State | Character | Unicode | Color |
 |-------|-----------|---------|-------|
-| Unread | `●` | U+25CF | LinkContent (ANSI 40) |
+| Unread | `●` | U+25CF | LinkContent (ANSI 212) |
 | Read | `○` | U+25CB | ReadItemFg (ANSI 34) |
 
 #### Collapse/Expand
@@ -788,7 +788,7 @@ uppercase letters.
 - Frames 1-2: Random character from `░▒▓` in DimFg (ANSI 22)
 - Frames 3-4: Random uppercase letter in SecondaryText (ANSI 34)
 - Frames 5-6: Random uppercase letter in PrimaryText (ANSI 40)
-- Frames 7-8: Correct character in HeaderTitleFg (ANSI 40)
+- Frames 7-8: Correct character in HeaderTitleFg (ANSI 212)
 
 Characters resolve left-to-right with a 1-character-per-frame wave offset.
 Position `i` starts resolving at frame `max(0, frame - i/3)`, creating a
@@ -956,7 +956,7 @@ When no bookmarks exist:
 
 | Element | Color |
 |---------|-------|
-| Card title (Content type) | LinkContent (ANSI 40) |
+| Card title (Content type) | LinkContent (ANSI 212) |
 | Card title (Navigation) | LinkNavigation (ANSI 40) |
 | Card title (External) | LinkExternal (ANSI 40) |
 | Card title (Footer) | LinkFooter (ANSI 40) |
@@ -1093,7 +1093,7 @@ When the reader scrolls to the end of the article, display a summary footer:
 
 | Element | Color |
 |---------|-------|
-| Unread marker `●` | LinkContent (ANSI 40) |
+| Unread marker `●` | LinkContent (ANSI 212) |
 | Read marker `○` | ReadItemFg (ANSI 34) |
 | Unread title (normal) | PrimaryText |
 | Read title (normal) | ReadItemFg |
@@ -1380,9 +1380,10 @@ screens if no preference is set.
 
 | ANSI Code | Hex | Role Name | When to Use | When NOT to Use |
 |-----------|-----|-----------|-------------|-----------------|
-| 40 | `#00d700` | PrimaryText, HeaderTitleFg, LinkContent | Body text, item names, headlines, page titles, content link text, key shortcuts, mode labels, prompts | Borders (use 35), accents (use 51) |
+| 40 | `#00d700` | PrimaryText | Body text, item names, key shortcut letters, mode labels, prompts | Headlines (use 212), borders (use 35) |
+| 212 | `#ff87d7` | HeaderTitleFg, LinkContent | Page titles in headers, content-type link text | Body text, borders |
 | 119 | `#87ff5f` | SuccessFg | Completion messages, checkmarks, success indicators | Body text, borders |
-| 34 | `#00af00` | LinkNavigation/External/Footer | Non-content link types in link tree, secondary metadata | Headlines, primary content |
+| 40 | `#00d700` | LinkNavigation/External/Footer | Non-content link types in link tree, also primary text | Headers (use 212), anything needing accent color |
 | 35 | `#00af5f` | HeaderBorderFg, StatusBarSeparatorFg | All box-drawing borders, separator rules, accent bars on selected items | Text content, link names |
 | 34 | `#00af00` | SecondaryText, PromptLabelFg, ReadItemFg | Subtitles, domains, metadata, read items, hint action text, item counts | Primary headings, interactive elements |
 | 65 | `#5f875f` | MutedFg | Quiet text, muted labels, subdued UI elements | Primary body text, headers |
@@ -1462,7 +1463,7 @@ Two levels of emphasis:
 
 | Context | Characters | Color |
 |---------|-----------|-------|
-| Page/screen header (single-line) | Plain text, no box | HeaderTitleFg (ANSI 40) |
+| Page/screen header (single-line) | Plain text, no box | HeaderTitleFg (ANSI 212) |
 | URL bar box | `╭─╮│╰─╯` | HeaderBorderFg (unfocused), SelectedItemFg (focused) |
 | Status bar separator | `─` full width | StatusBarSeparatorFg (ANSI 35) |
 | Card bottom rule (normal) | `─` full cell width | SecondaryText+Dim |

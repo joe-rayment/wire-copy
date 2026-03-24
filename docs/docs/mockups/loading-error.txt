@@ -1,0 +1,274 @@
+================================================================================
+LOADING, ERROR, AND BOT CHALLENGE SCREENS
+Assumes: 80x24 terminal, Phosphor theme (green-on-black)
+================================================================================
+
+COLOR KEY:
+  [green]   = phosphor green #00d700 (ANSI 40) — primary text, action keys
+  [title]   = playful pink #ff87d7 (ANSI 212) — emphasis, titles
+  [cyan]    = bright cyan #00ffff (ANSI 51) — interactive accent
+  [dim]     = dark green #005f00 (ANSI 22) — borders, decorative, structural
+  [med]     = medium green #00af00 (ANSI 34) — secondary text
+  [red]     = red #ff5f5f (ANSI 203) — error text
+  [amber]   = amber #ffaf00 (ANSI 214) — warning/in-progress
+
+
+================================================================================
+SCREEN 1: Loading — Spinner with Braille Animation
+================================================================================
+
+Current design (minimal):
+
+  [green]⠇[/] [green]Loading...[/]
+  [med]arstechnica.com/science/2026/03/a-century-after-rockets[/]
+
+Refreshed design (boxed, centered, with more context):
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [green]⠹[/] [green]Loading page...[/]            [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]arstechnica.com/science/2026/03/[/]  [dim]│[/]
+                    [dim]│[/]  [med]a-century-after-rockets[/]            [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- Centered horizontally and vertically on screen
+- Rounded box border in [dim]
+- Braille spinner ⠹ animates through: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ (80ms/frame)
+- URL split across lines if long, in [med]
+- Breathing room: empty lines above/below text inside box
+- No key hints — just wait
+
+Loading with status message (e.g., during Selenium navigation):
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [green]⠼[/] [green]Waiting for page...[/]        [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]nytimes.com/2026/03/18/technol...[/] [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+Loading with multiple fallback attempts:
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [green]⠧[/] [green]Retrying with browser...[/]   [dim]│[/]
+                    [dim]│[/]          [med]Attempt 2 of 3[/]              [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]nytimes.com/2026/03/18/technol...[/] [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+
+================================================================================
+SCREEN 2: Error Screen
+================================================================================
+
+Current design:
+
+  [red]Something went wrong loading this page.[/]
+  [med]Connection timed out after 30 seconds[/]
+
+  [med]https://arstechnica.com/science/...[/]
+
+  [med]Press[/] [green]b[/] [med]to go back or[/] [green]R[/] [med]to retry[/]
+
+Refreshed design (boxed, structured, with clearer actions):
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [red]Page failed to load[/]           [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]Connection timed out after 30s[/]    [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]arstechnica.com/science/2026/[/]    [dim]│[/]
+                    [dim]│[/]  [med]03/a-century-after-rockets[/]       [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [cyan]R[/][med]:retry[/]    [cyan]b[/][med]:go back[/]    [cyan]o[/][med]:browser[/] [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- Centered box with rounded corners
+- Error headline in [red] — brightest element is the problem
+- Error detail in [med] — explanation without alarm
+- URL in [med], split if long
+- Action hints at bottom: keys in [cyan], descriptions in [med]
+- Added 'o' for "open in external browser" as escape hatch
+- More breathing room than current design
+
+Error with specific error types:
+
+--- Network Error ---
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [red]Network unreachable[/]           [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]DNS resolution failed for[/]        [dim]│[/]
+                    [dim]│[/]  [med]arstechnica.com[/]                   [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [cyan]R[/][med]:retry[/]    [cyan]b[/][med]:go back[/]              [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+--- HTTP Error ---
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [red]Page not found (404)[/]          [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]The server returned an error.[/]    [dim]│[/]
+                    [dim]│[/]  [med]arstechnica.com/missing-page[/]    [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [cyan]R[/][med]:retry[/]    [cyan]b[/][med]:go back[/]    [cyan]o[/][med]:browser[/] [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+--- Content Extraction Error ---
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]        [red]No readable content[/]           [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]Could not extract article text.[/]  [dim]│[/]
+                    [dim]│[/]  [med]The page may require JavaScript[/]  [dim]│[/]
+                    [dim]│[/]  [med]or login.[/]                         [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [cyan]I[/][med]:login[/]  [cyan]R[/][med]:retry[/]  [cyan]v[/][med]:links[/]  [cyan]b[/][med]:back[/] [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- Content extraction failure offers I:login as first action (most likely fix)
+- v:links still available — links may have loaded even if content didn't
+
+
+================================================================================
+SCREEN 3: Bot Challenge / CAPTCHA Waiting
+================================================================================
+
+Current design:
+
+  [green]⠇[/] [green]Bot challenge detected[/]
+  [med]Please solve it in the browser window.[/]
+  [med]https://nytimes.com/...[/]
+
+  [med]Waiting for you to finish...[/]
+
+Refreshed design:
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]     [amber]⠹[/] [green]Bot challenge detected[/]       [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]A CAPTCHA or verification page[/]   [dim]│[/]
+                    [dim]│[/]  [med]appeared in the browser window.[/]  [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]Please solve it to continue.[/]     [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]nytimes.com/2026/03/18/techno…[/]  [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [dim]▏▎▍▌▋▊▉█▉▊▋▌▍▎▏[/]                [dim]│[/]
+                    [dim]│[/]  [med]Waiting for page to resolve...[/]   [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- Spinner in [amber] (not [green]) to indicate "needs your attention"
+- "Bot challenge detected" in [green] — not an error, just needs action
+- Clear instructions in [med]
+- URL shown for reference
+- Animated "breathing" bar: ▏▎▍▌▋▊▉█▉▊▋▌▍▎▏ in [dim], pulsing back and forth
+  to indicate "waiting" without urgency
+- No action keys needed — the screen auto-resolves when the challenge is passed
+
+The breathing bar animation (frame-by-frame):
+
+  Frame 1: [dim]▏                             [/]
+  Frame 2: [dim]▏▎                            [/]
+  Frame 3: [dim]▏▎▍                           [/]
+  Frame 4: [dim]▏▎▍▌                          [/]
+  Frame 5: [dim]▏▎▍▌▋                         [/]
+  Frame 6: [dim]▏▎▍▌▋▊                        [/]
+  Frame 7: [dim]▏▎▍▌▋▊▉                       [/]
+  Frame 8: [dim]▏▎▍▌▋▊▉█                      [/]
+  Frame 9: [dim]▏▎▍▌▋▊▉█▉                     [/]
+  Frame 10:[dim]▏▎▍▌▋▊▉█▉▊                    [/]
+  Frame 11:[dim]▏▎▍▌▋▊▉█▉▊▋                   [/]
+  Frame 12:[dim]▏▎▍▌▋▊▉█▉▊▋▌                  [/]
+  Frame 13:[dim]▏▎▍▌▋▊▉█▉▊▋▌▍                 [/]
+  Frame 14:[dim]▏▎▍▌▋▊▉█▉▊▋▌▍▎               [/]
+  Frame 15:[dim]▏▎▍▌▋▊▉█▉▊▋▌▍▎▏              [/]
+  (then reverse — bar shrinks back, creating a breathing pulse)
+
+Frame timing: 120ms per step (~8 fps), total cycle ~3.6 seconds
+
+
+================================================================================
+SCREEN 4: Interactive Refresh
+================================================================================
+
+When the user presses I for manual login / interactive refresh:
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]     [green]⠹[/] [green]Interactive refresh[/]          [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]A browser window is open.[/]        [dim]│[/]
+                    [dim]│[/]  [med]Complete any login, captcha, or[/]  [dim]│[/]
+                    [dim]│[/]  [med]interaction needed.[/]               [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]nytimes.com/2026/03/18/techno…[/]  [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [cyan]Enter[/][med]:accept page[/]  [cyan]Esc[/][med]:cancel[/]   [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- User-initiated (not automatic like bot challenge)
+- Action hints at bottom: Enter to accept, Esc to cancel
+- Spinner in [green] (normal, user is in control)
+
+
+================================================================================
+SCREEN 5: Manual Login
+================================================================================
+
+                    [dim]╭──────────────────────────────────────╮[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]     [amber]⠹[/] [green]Login required[/]               [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [med]Please log in to[/] [green]nytimes.com[/]    [dim]│[/]
+                    [dim]│[/]  [med]in the browser window.[/]           [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]│[/]  [dim]▏▎▍▌▋▊▉█▉▊▋▌▍▎▏[/]                [dim]│[/]
+                    [dim]│[/]  [med]Waiting for login...[/]              [dim]│[/]
+                    [dim]│[/]                                      [dim]│[/]
+                    [dim]╰──────────────────────────────────────╯[/]
+
+NOTES:
+- Similar to bot challenge but with "Login required" headline
+- Domain highlighted in [green] within the instruction text
+- Same breathing bar animation
+- Auto-resolves when login cookies are detected
+
+
+================================================================================
+DESIGN PRINCIPLES FOR THESE SCREENS
+================================================================================
+
+1. All centered, all boxed — consistent framing for "modal" states
+2. Rounded corners ╭╮╰╯ on every box
+3. Breathing room: blank lines inside boxes above/below content
+4. Color coding:
+   - [green] spinner = normal/automated operation
+   - [amber] spinner = needs user attention
+   - [red] headline = error state
+5. Action hints always at bottom of box, keys in [cyan]
+6. URLs always shown but never the brightest element
+7. Box width: ~40 chars (fits in 50-column minimum terminal)
+8. Vertical centering: box placed roughly 1/3 from top of terminal

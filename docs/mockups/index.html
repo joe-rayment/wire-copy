@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Design System — Index</title>
+<link rel="stylesheet" href="template.css">
+<style>
+  /* Index-specific styles */
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    margin: 16px 0 24px;
+  }
+  .swatch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .swatch-color {
+    width: 32px;
+    height: 32px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .swatch-label { color: var(--green); }
+  .swatch-hex { color: var(--muted); font-size: 11px; }
+  .swatch-ansi { color: var(--dim); font-size: 10px; }
+
+  .screen-list {
+    list-style: none;
+    margin: 16px 0;
+  }
+  .screen-list li {
+    margin: 8px 0;
+    padding: 8px 12px;
+    border-left: 2px solid var(--dim);
+  }
+  .screen-list a {
+    color: var(--bright);
+    text-decoration: none;
+  }
+  .screen-list a:hover {
+    color: var(--cyan);
+  }
+  .screen-list .desc {
+    color: var(--med);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .component-ref {
+    margin: 8px 0;
+    padding: 4px 12px;
+    color: var(--med);
+    font-size: 12px;
+  }
+  .component-ref .name { color: var(--bright); }
+  .component-ref .files { color: var(--muted); }
+
+  h2 {
+    color: var(--bright);
+    font-size: 22px;
+    margin: 40px 0 12px;
+    font-weight: bold;
+  }
+  h3 {
+    color: var(--green);
+    font-size: 17px;
+    margin: 28px 0 10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">TermReader Design System</div>
+<div class="page-subtitle">Phosphor 2.0 &mdash; Mockup index and component reference</div>
+
+<!-- ================================================================ -->
+<!-- COLOR PALETTE                                                     -->
+<!-- ================================================================ -->
+
+<h2>Color Palette</h2>
+<p class="meta" style="margin-bottom: 8px;">Old-school phosphor green + playful pink. Warm green body, pink titles, cyan for interaction. All ANSI 256.</p>
+
+<h3>Text Hierarchy</h3>
+<div class="color-grid">
+  <div class="swatch">
+    <div class="swatch-color" style="background: #ff87d7;"></div>
+    <div><div class="swatch-label">bright</div><div class="swatch-hex">#ff87d7</div><div class="swatch-ansi">ANSI 212 &middot; titles (pink)</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #00d700;"></div>
+    <div><div class="swatch-label">green</div><div class="swatch-hex">#00d700</div><div class="swatch-ansi">ANSI 40 &middot; body text</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #00af00;"></div>
+    <div><div class="swatch-label">med</div><div class="swatch-hex">#00af00</div><div class="swatch-ansi">ANSI 34 &middot; metadata</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #5f875f;"></div>
+    <div><div class="swatch-label">muted</div><div class="swatch-hex">#5f875f</div><div class="swatch-ansi">ANSI 65 &middot; hints</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #005f00;"></div>
+    <div><div class="swatch-label">dim</div><div class="swatch-hex">#005f00</div><div class="swatch-ansi">ANSI 22 &middot; borders</div></div>
+  </div>
+</div>
+
+<h3>Accent Colors</h3>
+<div class="color-grid">
+  <div class="swatch">
+    <div class="swatch-color" style="background: #00ffff;"></div>
+    <div><div class="swatch-label">cyan</div><div class="swatch-hex">#00ffff</div><div class="swatch-ansi">ANSI 51 &middot; interactive</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #e4e4e4;"></div>
+    <div><div class="swatch-label">white</div><div class="swatch-hex">#e4e4e4</div><div class="swatch-ansi">ANSI 254 &middot; selected text</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #87ff5f;"></div>
+    <div><div class="swatch-label">success</div><div class="swatch-hex">#87ff5f</div><div class="swatch-ansi">ANSI 119 &middot; completion</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #ff5fd7;"></div>
+    <div><div class="swatch-label">pink</div><div class="swatch-hex">#ff5fd7</div><div class="swatch-ansi">ANSI 206 &middot; celebration</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #ffaf00;"></div>
+    <div><div class="swatch-label">amber</div><div class="swatch-hex">#ffaf00</div><div class="swatch-ansi">ANSI 214 &middot; warning</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #ff5f5f;"></div>
+    <div><div class="swatch-label">red</div><div class="swatch-hex">#ff5f5f</div><div class="swatch-ansi">ANSI 203 &middot; error</div></div>
+  </div>
+</div>
+
+<h3>Backgrounds</h3>
+<div class="color-grid">
+  <div class="swatch">
+    <div class="swatch-color" style="background: #005f00; border: 1px solid #00af00;"></div>
+    <div><div class="swatch-label">sel-bg</div><div class="swatch-hex">#005f00</div><div class="swatch-ansi">ANSI 22 &middot; selection</div></div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background: #005f87;"><span style="color: white; font-size: 11px; padding: 8px;">match</span></div>
+    <div><div class="swatch-label">hi-bg</div><div class="swatch-hex">#005f87</div><div class="swatch-ansi">ANSI 24 &middot; search</div></div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- SCREENS                                                           -->
+<!-- ================================================================ -->
+
+<h2>Screens</h2>
+
+<ul class="screen-list">
+  <li>
+    <a href="launcher.html">Launcher</a> &middot; <a href="launcher.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Home screen with bookmarks grid/list. Entry point to all navigation.</div>
+  </li>
+  <li>
+    <a href="linktree.html">Link Tree</a> &middot; <a href="linktree.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Hierarchical view of all links on a loaded page. Card grid or detailed list.</div>
+  </li>
+  <li>
+    <a href="reader.html">Reader</a> &middot; <a href="reader.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Focused article reading view. Centered column with adjustable width.</div>
+  </li>
+  <li>
+    <a href="collections.html">Collections</a> &middot; <a href="collections.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Reading list / collection management and organization.</div>
+  </li>
+  <li>
+    <a href="reading-list.html">Reading List</a> &middot; <a href="reading-list.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Saved articles in a collection. Podcast generation CTA.</div>
+  </li>
+  <li>
+    <a href="statusbar.html">Status Bar</a> &middot; <a href="statusbar.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Adaptive 2-line footer: mode + hints, then context vitals.</div>
+  </li>
+  <li>
+    <a href="toast.html">Toasts</a> &middot; <a href="toast.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Overlay notifications: info, success, error, celebration, undo.</div>
+  </li>
+  <li>
+    <a href="help-overlay.html">Help Overlay</a> &middot; <a href="help-overlay.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Context-sensitive keybinding reference panel.</div>
+  </li>
+  <li>
+    <a href="loading-error.html">Loading &amp; Errors</a> &middot; <a href="loading-error.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Network states: loading, error, bot challenge, login. Esc to cancel.</div>
+  </li>
+  <li>
+    <a href="animations.html">Animations</a> &middot; <a href="animations.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Storyboard frames for transitions and celebrations.</div>
+  </li>
+  <li>
+    <a href="layout-switcher.html">Layout Switcher</a> &middot; <a href="layout-switcher.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Ctrl+L layout cycling overlay and persistence.</div>
+  </li>
+  <li>
+    <a href="responsive.html">Responsive</a> &middot; <a href="responsive.txt" style="color: var(--muted);">spec</a>
+    <div class="desc">Terminal size adaptation: 60x16, 80x24, 200+ cols.</div>
+  </li>
+</ul>
+
+<!-- ================================================================ -->
+<!-- NAVIGATION FLOW                                                   -->
+<!-- ================================================================ -->
+
+<h2>Navigation Flow</h2>
+
+<div class="terminal"><span class="b bold">Launcher</span> <span class="d">────</span> Enter <span class="d">────→</span> <span class="b bold">Link Tree</span> <span class="d">←──</span> v <span class="d">──→</span> <span class="b bold">Reader</span>
+  <span class="d">│</span>                          <span class="d">│</span>                      <span class="d">│</span>
+  <span class="d">│</span>  c                       <span class="d">│</span>  b (back)              <span class="d">│</span>  b (back)
+  <span class="d">│</span>                          <span class="d">│</span>                      <span class="d">│</span>
+  <span class="d">▼</span>                          <span class="d">▼</span>                      <span class="d">▼</span>
+<span class="b bold">Collections</span> <span class="d">──</span> Enter <span class="d">──→</span> <span class="b bold">Reading List</span>      <span class="g">Launcher</span>
+                            <span class="d">│</span>
+                            <span class="d">│</span>  Enter
+                            <span class="d">▼</span>
+                         <span class="b bold">Reader</span>
+
+<span class="m">Back (b) always pops the navigation stack. The v toggle between
+Reader ↔ Link Tree is a view switch, not a stack push.</span></div>
+
+<!-- ================================================================ -->
+<!-- SHARED COMPONENTS                                                 -->
+<!-- ================================================================ -->
+
+<h2>Shared Components</h2>
+<p class="meta">Patterns that appear across multiple screens.</p>
+
+<div class="component-ref">
+  <span class="name">Selection highlight</span> &mdash; ▌ accent bar + dark green background + off-white text<br>
+  <span class="files">Used in: launcher, linktree, collections, reading-list</span>
+</div>
+<div class="component-ref">
+  <span class="name">Status bar</span> &mdash; 2-line footer (mode + hints, then context)<br>
+  <span class="files">Defined in: <a href="statusbar.html" style="color:var(--muted)">statusbar.html</a> &middot; appears in all screens</span>
+</div>
+<div class="component-ref">
+  <span class="name">Cache progress</span> &mdash; eighth-block bar (█▉▊▋▌▍▎▏)<br>
+  <span class="files">Used in: statusbar, linktree, reading-list</span>
+</div>
+<div class="component-ref">
+  <span class="name">Toast notifications</span> &mdash; top-right overlay, colored border by type<br>
+  <span class="files">Defined in: <a href="toast.html" style="color:var(--muted)">toast.html</a></span>
+</div>
+<div class="component-ref">
+  <span class="name">Help overlay</span> &mdash; centered modal with keybinding groups<br>
+  <span class="files">Defined in: <a href="help-overlay.html" style="color:var(--muted)">help-overlay.html</a></span>
+</div>
+<div class="component-ref">
+  <span class="name">Search highlighting</span> &mdash; blue-teal background (#005f87) + white text<br>
+  <span class="files">Used in: linktree, reader</span>
+</div>
+
+<!-- ================================================================ -->
+<!-- DESIGN PRINCIPLES                                                 -->
+<!-- ================================================================ -->
+
+<h2>Design Principles</h2>
+
+<div class="terminal"><span class="b bold">1. Reading comfort first</span>
+<span class="m">   Body text is pure phosphor green (#00d700), vivid but not neon.</span>
+<span class="m">   Line height 1.6. Centered columns default to 66 chars. Titles in</span>
+<span class="m">   playful pink (#ff87d7) create instant hue contrast against body text.</span>
+
+<span class="b bold">2. Green reads, pink leads</span>
+<span class="m">   The warm green body text is for reading. The pink is for navigation:</span>
+<span class="m">   titles, headers, emphasis. The hue contrast between green and pink</span>
+<span class="m">   is unmistakable — no squinting at similar shades of green.</span>
+
+<span class="b bold">3. Chrome serves content</span>
+<span class="m">   Headers are single-line. Separators are omitted where blank lines</span>
+<span class="m">   suffice. Status bar is 2 lines. Every line of chrome must justify</span>
+<span class="m">   the content it displaces.</span>
+
+<span class="b bold">4. Cyan means interactive</span>
+<span class="m">   Cyan (#00ffff) is reserved exclusively for elements the user can</span>
+<span class="m">   press or activate. Status indicators use --med or --muted instead.</span>
+
+<span class="b bold">5. Delight without friction</span>
+<span class="m">   Animations never block the hot path (navigation, scrolling).</span>
+<span class="m">   Celebrations are earned (podcast complete), not routine.</span>
+<span class="m">   Micro-feedback (mode flash, save count) costs zero latency.</span>
+
+<span class="b bold">6. Errors are recoverable</span>
+<span class="m">   Esc cancels loading. Destructive actions get undo toasts.</span>
+<span class="m">   Single-keypress deletes are reversible for 5 seconds.</span></div>
+
+<!-- ================================================================ -->
+<!-- BREAKPOINTS                                                       -->
+<!-- ================================================================ -->
+
+<h2>Breakpoints</h2>
+
+<div class="terminal"><span class="b">Trigger</span>                <span class="b">Threshold</span>     <span class="b">Effect</span>
+<span class="d">───────────────────────────────────────────────────────────────────</span>
+<span class="g">Single-column mode</span>     <span class="m">width &lt; 80</span>    <span class="m">Grid collapses to 1 column</span>
+<span class="g">Compact separators</span>     <span class="m">height &lt; 30</span>   <span class="m">Item separators hidden</span>
+<span class="g">Compact cards</span>          <span class="m">height &lt; 15</span>   <span class="m">5-line cells become 3-line cells</span>
+<span class="g">Inline podcast CTA</span>     <span class="m">height &lt; 20</span>   <span class="m">Podcast slab becomes single line</span>
+<span class="g">Minimal hints</span>          <span class="m">width &lt; 40</span>    <span class="m">Status bar shows only ?:help</span>
+<span class="g">Max content width</span>      <span class="m">width &gt; 120</span>   <span class="m">Content centered, max ~120 chars</span></div>
+
+</body>
+</html>

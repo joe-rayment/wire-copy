@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TermReader Mockups: Reading List / Collection Items</title>
+<link rel="stylesheet" href="template.css">
+<!-- Related: collections.html, statusbar.html, toast.html -->
+</head>
+<body>
+
+<div class="page-title">TermReader Mockups: Reading List / Collection Items</div>
+<div class="page-subtitle">Phosphor 2.0 theme &mdash; 80x24 terminal</div>
+
+<hr class="section-sep">
+
+<!-- ================================================================ -->
+<!-- DEFAULT: List with Inline Podcast CTA                            -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Default: List with Inline Podcast CTA</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="b bold">Tech News</span> <span class="g">(12 items)</span><span class="d">                                                     │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+ <span class="g">♪ Generate Podcast</span>                                                     <span class="c">[p]</span>
+
+   <span class="g bold">●</span> <span class="g bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+       <span class="m">arstechnica.com</span> <span class="m">· cached</span>
+
+   <span class="g bold">●</span> <span class="g bold">NASA Selects Two New Missions for 2028 Launch Window</span>
+       <span class="m">nasa.gov</span> <span class="m">· cached</span>
+
+<span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         </span>
+<span class="sel">▌     nature.com · cached                                                    </span>
+
+   <span class="m">○</span> <span class="m">The Rise of Quantum Computing in Drug Discovery</span>
+       <span class="m">wired.com</span>
+
+   <span class="m">○</span> <span class="m">Climate Models Validated by 50 Years of Ocean Data</span>
+       <span class="m">reuters.com</span> <span class="m">· cached</span>
+
+                            <span class="m">... 7 more items below</span>
+ <span class="g">Reading List</span>  <span class="c">Enter</span><span class="m">:open</span>  <span class="c">d</span><span class="m">:remove</span>  <span class="c">p</span><span class="m">:podcast</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="mu">12 items</span>                                         <span class="m">████████▏▏ 10/12 cached</span></div>
+  <div class="screen-notes">
+    - Header: collection name in bold bright + item count in rounded box<br>
+    - Podcast CTA: single-line inline format — "♪ Generate Podcast" in green, [p] in cyan. Saves ~5 lines vs the 3-line slab.<br>
+    - Items: 2 lines each (title + domain), separated by blank lines<br>
+    - ● = unread (green bold), ○ = read (med/dimmer)<br>
+    - Cache indicator: "· cached" in med (status, not interactive)<br>
+    - ★ star marker uses med (not cyan — it's a status indicator, not interactive)<br>
+    - Selected item: ▌ accent bar + full-width selection highlight<br>
+    - "... 7 more items below" scroll indicator in med<br>
+    - d removes item — undo toast appears for 5 seconds (press z to undo)<br>
+    - Status bar: 2-line format with eighth-block progress (█▏) instead of ▰▱
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT A — Podcast CTA Expanded (3-line slab)                   -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">VARIANT A — Podcast CTA Expanded</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="b bold">Tech News</span> <span class="g">(12 items)</span><span class="d">                                                     │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="sel">                                                                              </span>
+<span class="sel">           ♪  Generate Podcast                                    [p]        </span>
+<span class="sel">                                                                              </span>
+
+   <span class="g bold">●</span> <span class="g bold">SpaceX Starship Reaches Orbit on Its First Full Flight</span>
+       <span class="m">arstechnica.com</span> <span class="m">· cached</span>
+
+   <span class="g bold">●</span> <span class="g bold">NASA Selects Two New Missions for 2028 Launch Window</span>
+       <span class="m">nasa.gov</span> <span class="m">· cached</span>
+
+<span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         </span>
+<span class="sel">▌     nature.com · cached                                                    </span>
+
+   <span class="m">○</span> <span class="m">The Rise of Quantum Computing in Drug Discovery</span>
+       <span class="m">wired.com</span>
+
+                            <span class="m">... 8 more items below</span>
+ <span class="g">Reading List</span>  <span class="c">Enter</span><span class="m">:open</span>  <span class="c">d</span><span class="m">:remove</span>  <span class="c">p</span><span class="m">:podcast</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="mu">12 items</span>                                         <span class="m">████████▏▏ 10/12 cached</span></div>
+  <div class="screen-notes">
+    - 3-line CTA slab: top pad, content, bottom pad with sel-bg background<br>
+    - Uses more vertical space (~5 extra lines) than the inline default<br>
+    - Better visual prominence for podcast generation, worse for small terminals
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- Podcast Button States — Inline Format                            -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Podcast Button: Idle (Default, Not Focused)</div>
+  <div class="terminal">
+ <span class="g">♪ Generate Podcast</span>                                                     <span class="c">[p]</span></div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Podcast Button: Selected (Focused via Navigation)</div>
+  <div class="terminal">
+ <span class="sel">♪ Generate Podcast                                                  [Enter] </span></div>
+  <div class="screen-notes">
+    Selection background applied. Hint changes to [Enter].
+  </div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Podcast Button: Disabled (Not Enough Content)</div>
+  <div class="terminal">
+ <span class="mu">♪ Generate Podcast</span>                                                     <span class="mu">[p]</span></div>
+  <div class="screen-notes">
+    Text dimmed to muted — visually quiet, non-interactive feel.
+  </div>
+</div>
+
+<div class="screen">
+  <div class="screen-label">Podcast Button: Unconfigured (No API Key Set)</div>
+  <div class="terminal">
+ <span class="mu">♪ Generate Podcast</span>                                          <span class="mu">Setup required</span></div>
+  <div class="screen-notes">
+    Muted + "Setup required" replaces key hint.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- Selected Item with Inline Hints                                  -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Selected Item with Inline Hints</div>
+  <div class="terminal">
+<span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene Therapy                         </span>
+<span class="sel">▌     nature.com · cached                                                    </span>
+
+ <span class="g">Reading List</span>  <span class="c">Enter</span><span class="m">:open</span>  <span class="c">d</span><span class="m">:remove</span>  <span class="c">p</span><span class="m">:podcast</span>  <span class="c">?</span><span class="m">:help</span></div>
+  <div class="screen-notes">
+    Only the status bar shows hints — no per-item inline overlays.<br>
+    This keeps the item list clean and scannable.
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- Empty Collection                                                 -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Empty Collection</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="b bold">Weekend Reads</span> <span class="g">(0 items)</span><span class="d">                                                  │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+   <span class="m">Nothing saved yet — press</span> <span class="g">s</span> <span class="m">on any article to start your list</span>
+
+
+
+
+ <span class="g">Reading List</span>  <span class="c">b</span><span class="m">:back</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="mu">0 items</span></div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VARIANT B: Split View (CTA Left Sidebar, Items Right)            -->
+<!-- ================================================================ -->
+<div class="screen">
+  <div class="screen-label">Variant B: Split View (CTA Left Sidebar, Items Right)</div>
+  <div class="terminal">
+<span class="d">╭──────────────────────────────────────────────────────────────────────────────╮</span>
+<span class="d">│ </span><span class="b bold">Tech News</span> <span class="g">(12 items)</span><span class="d">                                                     │</span>
+<span class="d">╰──────────────────────────────────────────────────────────────────────────────╯</span>
+
+<span class="sel">                  </span><span class="d">│</span>  <span class="g bold">●</span> <span class="g bold">SpaceX Starship Reaches Orbit on Its</span>
+<span class="sel">                  </span><span class="d">│</span>      <span class="m">arstechnica.com</span> <span class="m">· cached</span>
+<span class="sel"> ♪ GENERATE       </span><span class="d">│</span>
+<span class="sel">   PODCAST         </span><span class="d">│</span>  <span class="g bold">●</span> <span class="g bold">NASA Selects Two New Missions for 2028</span>
+<span class="sel">                  </span><span class="d">│</span>      <span class="m">nasa.gov</span> <span class="m">· cached</span>
+<span class="sel">   [p]              </span><span class="d">│</span>
+<span class="sel">                  </span><span class="d">│</span><span class="sel">▌ ● CRISPR Breakthrough Enables Single-Gene</span>
+                    <span class="d">│</span><span class="sel">▌     nature.com · cached                    </span>
+                    <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">○</span> <span class="m">The Rise of Quantum Computing in Drug</span>
+                    <span class="d">│</span>      <span class="m">wired.com</span>
+                    <span class="d">│</span>
+                    <span class="d">│</span>  <span class="m">○</span> <span class="m">Climate Models Validated by 50 Years</span>
+                    <span class="d">│</span>      <span class="m">reuters.com</span> <span class="m">· cached</span>
+
+ <span class="g">Reading List</span>  <span class="c">Enter</span><span class="m">:open</span>  <span class="c">d</span><span class="m">:remove</span>  <span class="c">p</span><span class="m">:podcast</span>  <span class="c">?</span><span class="m">:help</span>
+ <span class="mu">12 items</span>                                         <span class="m">████████▏▏ 10/12 cached</span></div>
+  <div class="screen-notes">
+    - Left sidebar: ~18 chars wide, contains podcast CTA as vertical slab<br>
+    - Right area: item list with full remaining width<br>
+    - Sidebar CTA: vertically centered, stacked text "♪ GENERATE / PODCAST / [p]"<br>
+    - Column divider │ in dim<br>
+    - Items on right use same 2-line format (title + domain), separated by blank lines<br>
+    - Selected item ▌ accent bar on the right side<br>
+    - Sidebar doesn't scroll — only the item list scrolls<br>
+    - Best for wide terminals (100+); falls back to Default on narrow terminals
+  </div>
+</div>
+
+</body>
+</html>
