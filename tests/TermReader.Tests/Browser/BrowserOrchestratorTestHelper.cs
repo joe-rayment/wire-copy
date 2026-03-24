@@ -28,6 +28,9 @@ internal static class BrowserOrchestratorTestHelper
         IPageCache? pageCache = null,
         IPreloadService? preloadService = null)
     {
+        // Default to interactive so tests exercise the input loop
+        inputHandler.IsInteractive.Returns(true);
+
         var scopeFactory = CreateScopeFactory();
         var browserSession = Substitute.For<IBrowserSessionControl>();
         var themeProvider = Substitute.For<IThemeProvider>();

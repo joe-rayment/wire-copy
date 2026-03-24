@@ -578,6 +578,13 @@ public class BrowserOrchestrator : IBrowserService
                 await EnterLauncherAsync(options, cancellationToken);
             }
 
+            // Non-interactive mode: page rendered, exit cleanly (no TTY)
+            if (!_inputHandler.IsInteractive)
+            {
+                _logger.LogInformation("Non-interactive mode: page rendered, exiting");
+                return;
+            }
+
             // Main input loop — races user input against a periodic progress check
             // so the status bar can update live during background preloading.
             Task<NavigationCommand>? pendingInput = null;

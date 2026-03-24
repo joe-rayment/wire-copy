@@ -29,12 +29,30 @@ public class TerminalInputHandler : IInputHandler
         _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
         _logger = logger;
+        IsInteractive = !Console.IsInputRedirected;
     }
+
+    /// <inheritdoc />
+    public bool IsInteractive { get; }
 
     public async Task<NavigationCommand> WaitForInputAsync(CancellationToken cancellationToken = default)
     {
         EnsureKeyReaderStarted();
 
+        try
+        {
+            return await WaitForInputCoreAsync(cancellationToken);
+        }
+        catch (ChannelClosedException)
+        {
+            // Key channel closed (stdin unavailable) — treat as clean exit
+            _logger.LogInformation("Input channel closed — exiting input loop");
+            throw new OperationCanceledException("stdin unavailable");
+        }
+    }
+
+    private async Task<NavigationCommand> WaitForInputCoreAsync(CancellationToken cancellationToken)
+    {
         while (!cancellationToken.IsCancellationRequested)
         {
             // Reuse pending tasks from previous iterations to avoid dropping
@@ -396,6 +414,13 @@ public class TerminalInputHandler : IInputHandler
         }
 
         _keyReaderStarted = true;
+
+        if (!IsInteractive)
+        {
+            _logger.LogWarning("stdin is not a terminal — keyboard input unavailable");
+            _keyChannel.Writer.TryComplete();
+            return;
+        }
 
         var thread = new Thread(() =>
         {
