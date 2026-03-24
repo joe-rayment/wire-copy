@@ -27,7 +27,7 @@ src/
 │   ├── Interfaces/             # IScraperService, IAudioGenerator, Browser interfaces
 │   └── DTOs/                   # Data transfer objects (Browser DTOs)
 ├── TermReader.Infrastructure/   # External integrations
-│   ├── Browser/                # Selenium automation, navigation, page loading, UI rendering
+│   ├── Browser/                # Playwright (Patchright) automation, navigation, page loading, UI rendering
 │   ├── Audio/                  # ElevenLabs, FFmpeg, ATL.NET, BudgetService
 │   ├── Storage/                # File management (LocalFileStorage)
 │   ├── Parsing/                # HTML parsing (ArticleParser)
@@ -52,8 +52,10 @@ tests/
 - CommandLineParser (CLI argument parsing)
 
 ### Browser Automation
-- **Selenium.WebDriver** with standard ChromeDriver and manual anti-detection measures
-- Run in headed mode with human-like delays (2-5 seconds between actions)
+- **Patchright** (patched Playwright for .NET) — CDP leak-patched, cross-platform ARM64-native
+- LaunchPersistentContextAsync for cookie persistence across sessions
+- Anti-detection via AddInitScriptAsync (navigator.webdriver patching)
+- Headed mode for manual intervention (captcha solving, login)
 - Respectful rate limiting: max 1 request per 3-5 seconds
 
 ### Audio
@@ -89,13 +91,19 @@ dotnet run --project src/TermReader.API -- browse https://example.com
 # Run audio scraper mode
 dotnet run --project src/TermReader.API -- --count 5
 
-# Run tests
-dotnet test
+# Run tests (preferred — fast, <15s, excludes integration tests)
+./scripts/test.sh
 
-# Run unit tests only
+# Run full test suite (~90s)
+./scripts/test.sh --all
+
+# Run specific test group
+./scripts/test.sh --filter "PageLoaderTests"
+./scripts/test.sh --browser
+./scripts/test.sh --podcast
+
+# Run tests directly (if test.sh unavailable)
 dotnet test --filter Category=Unit
-
-# Run integration tests only
 dotnet test --filter Category=Integration
 
 # Code formatting
@@ -133,12 +141,12 @@ docker-compose up
 ## Key Implementation Considerations
 
 ### Anti-Detection Measures
-- Use Selenium with standard ChromeDriver plus manual anti-detection techniques
+- Patchright patches CDP Runtime.Enable leak (primary detection vector for Cloudflare/DataDome)
+- AddInitScriptAsync patches navigator.webdriver before any page JS (no race condition)
 - Disable automation flags: `--disable-blink-features=AutomationControlled`
-- JavaScript execution to mask webdriver property
+- LaunchPersistentContextAsync with userDataDir for cookie/session persistence
 - Run in headed mode when possible (configurable via Browser:Headless setting)
 - Fixed delays between actions (3-5 seconds, configurable via RateLimitDelayMs)
-- Cookie persistence in AppData directory for session reuse
 - Realistic user agent strings
 
 ### Audio Processing

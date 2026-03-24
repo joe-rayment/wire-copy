@@ -30,6 +30,7 @@ namespace TermReader.Tests.Browser;
 /// - Verify status bar shows correct key bindings per view mode
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class TerminalPageRendererTests
 {
     private readonly ILogger<TerminalPageRenderer> _logger;
