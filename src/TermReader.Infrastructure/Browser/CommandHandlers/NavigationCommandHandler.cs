@@ -266,6 +266,17 @@ internal static class NavigationCommandHandler
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
+        // If there's no current page (e.g., after a failed navigation that rendered an error page),
+        // go straight to the launcher to recover gracefully.
+        if (ctx.NavigationService.CurrentPage == null && viewMode != ViewMode.Launcher
+            && viewMode != ViewMode.CollectionList && viewMode != ViewMode.CollectionItems)
+        {
+            ctx.NavigationService.EnterLauncher();
+            await ctx.RefreshBookmarksAsync(ct);
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
         if (viewMode == ViewMode.CollectionItems)
         {
             // Skip the collection list when only 1 collection exists — go straight back

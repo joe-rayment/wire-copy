@@ -41,8 +41,13 @@ internal static class LauncherCommandHandler
         switch (command.Type)
         {
             case CommandType.Quit:
-            case CommandType.GoBack:
                 return false;
+
+            case CommandType.GoBack:
+                // Re-render launcher (recovers from error pages shown over launcher mode)
+                await ctx.RefreshBookmarksAsync(ct);
+                await ctx.RenderCurrentPageAsync(options, ct);
+                break;
 
             case CommandType.MoveDown:
             {
