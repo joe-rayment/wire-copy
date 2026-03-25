@@ -569,10 +569,11 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // 2. og:title is usually the correct article headline (set by CMS)
-        var ogTitle = doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!);
-        if (!string.IsNullOrWhiteSpace(ogTitle))
+        var ogTitle = CleanText(
+            doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!));
+        if (!string.IsNullOrWhiteSpace(ogTitle) && !IsNavigationText(ogTitle))
         {
-            return CleanText(ogTitle);
+            return ogTitle;
         }
 
         // 3. Generic H1 with title-like class names
