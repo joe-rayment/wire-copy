@@ -84,6 +84,7 @@ public class CacheServingFlowTests
             Substitute.For<IPreloadService>(),
             Substitute.For<IIdleDetector>(),
             Substitute.For<ICookieManager>(),
+            Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger);
     }

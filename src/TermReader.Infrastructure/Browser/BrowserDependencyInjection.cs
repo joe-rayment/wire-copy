@@ -58,11 +58,20 @@ public static class BrowserDependencyInjection
         services.AddSingleton<ICookieManager, CookieManager>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
+        // Shared CookieContainer — populated at startup and refreshable after browser login
+        var sharedCookieContainer = new CookieContainer();
+        services.AddSingleton(sharedCookieContainer);
+        services.AddSingleton<IHttpCookieRefresher>(sp =>
+            new HttpCookieRefresher(
+                sp.GetRequiredService<CookieContainer>(),
+                sp.GetRequiredService<ICookieManager>(),
+                sp.GetRequiredService<ILogger<HttpCookieRefresher>>()));
+
         // Register HTTP client for PageLoader with automatic decompression and stored cookies
         services.AddHttpClient("BrowserPageLoader")
             .ConfigurePrimaryHttpMessageHandler(sp =>
             {
-                var container = new CookieContainer();
+                var container = sp.GetRequiredService<CookieContainer>();
 
                 try
                 {

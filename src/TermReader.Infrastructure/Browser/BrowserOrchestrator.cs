@@ -40,6 +40,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly IPreloadService _preloadService;
     private readonly IIdleDetector _idleDetector;
     private readonly ICookieManager _cookieManager;
+    private readonly IHttpCookieRefresher _httpCookieRefresher;
     private readonly ILogger<BrowserOrchestrator> _logger;
     private readonly LineCacheManager _lineCacheManager;
 
@@ -83,6 +84,7 @@ public class BrowserOrchestrator : IBrowserService
         IPreloadService preloadService,
         IIdleDetector idleDetector,
         ICookieManager cookieManager,
+        IHttpCookieRefresher httpCookieRefresher,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger)
     {
@@ -101,6 +103,7 @@ public class BrowserOrchestrator : IBrowserService
         _preloadService = preloadService;
         _idleDetector = idleDetector;
         _cookieManager = cookieManager;
+        _httpCookieRefresher = httpCookieRefresher;
         _logger = logger;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
@@ -1407,6 +1410,9 @@ public class BrowserOrchestrator : IBrowserService
 
             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
             _logger.LogInformation("Saved {Count} browser cookies after interactive refresh", storedCookies.Count);
+
+            // Refresh HTTP client cookies so the preloader can use them
+            await _httpCookieRefresher.RefreshAsync();
         }
         catch (Exception ex)
         {
@@ -1900,11 +1906,16 @@ public class BrowserOrchestrator : IBrowserService
 
         if (gridRow < currentOffset)
         {
-            _navigationService.SetScrollOffset(gridRow);
+            // Scroll up: keep 1 row of context above when possible
+            _navigationService.SetScrollOffset(Math.Max(0, gridRow - 1));
         }
         else if (gridRow >= currentOffset + contentHeight)
         {
-            _navigationService.SetScrollOffset(gridRow - contentHeight + 1);
+            // Scroll down: keep 1 row of margin below the selected item
+            // so multi-line cards aren't clipped at the viewport edge.
+            var idealOffset = gridRow - contentHeight + 2;
+            var maxOffset = Math.Max(0, gridRows.Count - contentHeight);
+            _navigationService.SetScrollOffset(Math.Min(idealOffset, maxOffset));
         }
     }
 
