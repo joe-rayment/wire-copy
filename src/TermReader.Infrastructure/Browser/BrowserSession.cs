@@ -228,42 +228,54 @@ public sealed class BrowserSession : IBrowserSession
 
     private async Task LaunchBrowserAsync(bool headless)
     {
+        // Clean up any leftover state from a previous failed launch
+        await DisposeContextUnsafeAsync();
+
         Directory.CreateDirectory(_userDataDir);
 
-        _playwright = await Playwright.CreateAsync();
-
-        var args = new List<string> { "--disable-blink-features=AutomationControlled" };
-        if (OperatingSystem.IsLinux())
+        try
         {
-            args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
+            _playwright = await Playwright.CreateAsync();
+
+            var args = new List<string> { "--disable-blink-features=AutomationControlled" };
+            if (OperatingSystem.IsLinux())
+            {
+                args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
+            }
+
+            if (!headless)
+            {
+                args.Add("--window-size=800,600");
+            }
+
+            _context = await _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
+            {
+                Headless = headless,
+                Args = args.ToArray(),
+                UserAgent = _browserConfig.UserAgent,
+                ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
+                IgnoreHTTPSErrors = true,
+            });
+
+            await _context.AddInitScriptAsync(@"
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.navigator.chrome = { runtime: {} };
+            ");
+
+            _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
+
+            // Import stored cookies on first launch
+            if (!_cookiesInjected)
+            {
+                _cookiesInjected = true;
+                await InjectStoredCookiesAsync();
+            }
         }
-
-        if (!headless)
+        catch
         {
-            args.Add("--window-size=800,600");
-        }
-
-        _context = await _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
-        {
-            Headless = headless,
-            Args = args.ToArray(),
-            UserAgent = _browserConfig.UserAgent,
-            ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
-            IgnoreHTTPSErrors = true,
-        });
-
-        await _context.AddInitScriptAsync(@"
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.navigator.chrome = { runtime: {} };
-        ");
-
-        _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
-
-        // Import stored cookies on first launch
-        if (!_cookiesInjected)
-        {
-            _cookiesInjected = true;
-            await InjectStoredCookiesAsync();
+            // Clean up partial state so the next call starts fresh
+            await DisposeContextUnsafeAsync();
+            throw;
         }
     }
 
