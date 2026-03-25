@@ -235,7 +235,7 @@ public class BrowserOrchestrator : IBrowserService
 
         // Load the page HTML
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = forceBrowser },
+            new PageLoadRequest { Url = url, Headless = true, ForceBrowser = forceBrowser },
             cancellationToken);
 
         _logger.LogDebug(
@@ -278,7 +278,7 @@ public class BrowserOrchestrator : IBrowserService
             _renderer.RenderLoading(url);
 
             var retryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true },
                 cancellationToken);
 
             if (retryResult.Success)
@@ -312,7 +312,7 @@ public class BrowserOrchestrator : IBrowserService
                 _renderer.RenderLoading(url);
 
                 var truncRetryResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true, ForceBrowser = true },
                     cancellationToken);
 
                 if (truncRetryResult.Success)
@@ -1190,7 +1190,7 @@ public class BrowserOrchestrator : IBrowserService
             _renderer.RenderLoading(url);
 
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = true, ForceRefresh = true },
                 cancellationToken);
 
             if (!loadResult.Success)

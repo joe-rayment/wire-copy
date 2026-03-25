@@ -123,8 +123,10 @@ public sealed class BrowserSession : IBrowserSession
     /// <inheritdoc />
     public async Task WarmUpAsync()
     {
-        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.Headless);
-        await GetOrCreatePageAsync(_browserConfig.Headless);
+        // Always warm up in headless mode to avoid stealing terminal focus.
+        // Headed mode is only used for interactive refresh (Shift+I).
+        _logger.LogDebug("Warming up browser session (headless)");
+        await GetOrCreatePageAsync(true);
         _logger.LogDebug("Browser session warm-up complete");
     }
 
