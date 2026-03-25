@@ -44,6 +44,12 @@ public interface IBrowserSession : IBrowserSessionControl
     Task RestoreWindowAsync();
 
     /// <summary>
+    /// Minimizes the browser window so it doesn't cover the terminal.
+    /// No-op if headless or no active page.
+    /// </summary>
+    Task MinimizeWindowAsync();
+
+    /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.
     /// Returns null if no active page or capture fails.
     /// </summary>

@@ -1258,9 +1258,20 @@ public class BrowserOrchestrator : IBrowserService
             var input = await _inputHandler.WaitForInputAsync(cancellationToken);
             if (input.Type == CommandType.GoBack)
             {
-                // User pressed Esc — cancel
+                // User pressed Esc — cancel, minimize browser
+                if (_browserSession is IBrowserSession cancelSession)
+                {
+                    await cancelSession.MinimizeWindowAsync();
+                }
+
                 await RenderCurrentPageAsync(options, cancellationToken);
                 return;
+            }
+
+            // Minimize browser now that interaction is complete
+            if (_browserSession is IBrowserSession interactiveSession)
+            {
+                await interactiveSession.MinimizeWindowAsync();
             }
 
             // Accept: build page, cache, and re-render
@@ -1351,6 +1362,12 @@ public class BrowserOrchestrator : IBrowserService
                 _logger.LogDebug(ex, "Error polling challenge status");
                 break;
             }
+        }
+
+        // Minimize browser after challenge resolved (or timed out)
+        if (_browserSession is IBrowserSession resolvedSession)
+        {
+            await resolvedSession.MinimizeWindowAsync();
         }
 
         if (!resolved)
