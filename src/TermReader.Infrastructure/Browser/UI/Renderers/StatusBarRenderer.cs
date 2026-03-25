@@ -222,7 +222,7 @@ internal class StatusBarRenderer
             {
                 if (progress.IsComplete)
                 {
-                    return $"{p.SecondaryText.AnsiFg}all cached{Reset}";
+                    return $"{p.SecondaryText.AnsiFg}links cached{Reset}";
                 }
 
                 return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);

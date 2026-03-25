@@ -119,14 +119,14 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine(Borders.HorizontalRule(p, width));
 
-        var hints = FormatKbdHint("Enter", "open", p) + "  " +
-                    FormatKbdHint("o", "go to url", p) + "  " +
-                    FormatKbdHint(":", "config", p) + "  " +
+        var hints = FormatKbdHint("Enter", "open", p) + " " +
+                    FormatKbdHint("o", "go to url", p) + " " +
+                    FormatKbdHint(":", "config", p) + " " +
                     FormatKbdHint("?", "help", p);
 
         var version = $"{p.GetMutedFg().AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var hintsTextLen = "[Enter] open  [o] go to url  [:] config  [?] help".Length;
+        var hintsTextLen = "Enter:open o:go to url ::config ?:help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }
@@ -364,14 +364,12 @@ internal class LauncherRenderer
 
     private static string FormatKbdHint(string key, string action, ThemePalette p)
     {
-        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
-               $" {p.SecondaryText.AnsiFg}{Dim}{action}{Reset}";
+        return $"{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}:{action}{Reset}";
     }
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
     {
-        // Brand green — always ANSI 40 regardless of theme
-        var title = $"\x1b[38;5;40m{Bold}TermReader{Reset}";
+        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}TermReader{Reset}";
         var meta = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
         var titleTextLen = "TermReader".Length;
         var metaTextLen = $"{bookmarkCount} bookmarks".Length;
