@@ -78,6 +78,13 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
 
+        // Title bar matching LinkView format: "Title                              domain"
+        var titleText = page.ReadableContent?.Title ?? page.Metadata?.Title ?? "Untitled";
+        _linkTreeRenderer.RenderHeader(
+            page.Metadata ?? new Domain.ValueObjects.Browser.PageMetadata { Title = titleText },
+            page.Url,
+            options);
+
         if (page.ReadableContent == null)
         {
             _helpers.WriteLine();
@@ -130,13 +137,24 @@ public class TerminalPageRenderer : IPageRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.Clear();
+
+        // Title bar showing the URL that failed
+        var domain = LauncherRenderer.ExtractDomain(url);
+        var title = $"{p.ErrorFg.AnsiFg}\x1b[1mError\x1b[0m";
+        var meta = $"{p.SecondaryText.AnsiFg}{domain}\x1b[0m";
+        var titleLen = "Error".Length;
+        var metaLen = domain.Length;
+        var width = Math.Max(1, Console.WindowWidth - 2);
+        var padding = Math.Max(1, width - 1 - titleLen - metaLen);
+        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
+
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.ErrorFg.AnsiFg}Something went wrong loading this page.{Reset}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{message}{Reset}");
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press{Reset} {p.PrimaryText.AnsiFg}b{Reset} {p.SecondaryText.AnsiFg}to go back or{Reset} {p.PrimaryText.AnsiFg}R{Reset} {p.SecondaryText.AnsiFg}to retry{Reset}");
+        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press{Reset} {p.PrimaryText.AnsiFg}b{Reset} {p.SecondaryText.AnsiFg}to go back or{Reset} {p.PrimaryText.AnsiFg}Shift+R{Reset} {p.SecondaryText.AnsiFg}to retry{Reset}");
         _helpers.WriteLine();
         _helpers.ClearRemainingLines();
     }
