@@ -394,7 +394,6 @@ internal class LinkTreeRenderer
             var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
             if (!string.IsNullOrEmpty(titleLine2))
             {
-    
                 sb.Append($"{selBg}{selFg}{Bold} {titleLine2}");
                 sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine2.Length))}{Reset}");
             }
@@ -408,7 +407,6 @@ internal class LinkTreeRenderer
             var subtitle = GetMetadataSubtitle(node, contentWidth - 1);
             if (!string.IsNullOrWhiteSpace(subtitle))
             {
-    
                 sb.Append($"{selBg}{palette.SecondaryText.AnsiFg} {subtitle}");
                 sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
             }

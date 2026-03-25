@@ -55,6 +55,7 @@ internal static class BrowserOrchestratorTestHelper
             preloadService ?? Substitute.For<IPreloadService>(),
             Substitute.For<IIdleDetector>(),
             Substitute.For<ICookieManager>(),
+            Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger);
     }
