@@ -234,17 +234,30 @@ public sealed class BrowserSession : IBrowserSession
 
         Directory.CreateDirectory(_userDataDir);
 
-        // Ensure Playwright browsers are installed (idempotent — skips if already present)
+        // Ensure Playwright browsers are installed (idempotent — skips if already present).
+        // Redirect stdout/stderr so install progress doesn't corrupt the TUI alternate screen.
         if (!_browsersInstalled)
         {
             _browsersInstalled = true;
             try
             {
                 _logger.LogInformation("Ensuring Playwright browsers are installed...");
-                var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
-                if (exitCode != 0)
+                var origOut = Console.Out;
+                var origErr = Console.Error;
+                Console.SetOut(TextWriter.Null);
+                Console.SetError(TextWriter.Null);
+                try
                 {
-                    _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
+                    var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                    if (exitCode != 0)
+                    {
+                        _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
+                    }
+                }
+                finally
+                {
+                    Console.SetOut(origOut);
+                    Console.SetError(origErr);
                 }
             }
             catch (Exception ex)
