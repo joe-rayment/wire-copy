@@ -353,13 +353,30 @@ internal class LinkTreeRenderer
         var selFg = palette.SelectedItemFg.AnsiFg;
         var contentWidth = width - 1;
 
-        // Accent bar on all lines
-        sb.Append($"{accentFg}\u258c{Reset}");
-
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
         var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
         var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
+        var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
+
+        // Determine if this line will have visible text content
+        var hasVisibleContent = false;
+        if (lineIndex == titleLineIdx)
+        {
+            hasVisibleContent = true;
+        }
+        else if (lineIndex == titleLine2Idx)
+        {
+            var tw = GetTitleTextWidth(width);
+            hasVisibleContent = !string.IsNullOrEmpty(GetWrappedTitleLine(node.Link.DisplayText, tw, 1));
+        }
+        else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
+        {
+            hasVisibleContent = !string.IsNullOrWhiteSpace(GetMetadataSubtitle(node, contentWidth - 1));
+        }
+
+        // Accent bar only on lines with visible content
+        sb.Append(hasVisibleContent ? $"{accentFg}\u258c{Reset}" : " ");
 
         if (lineIndex == titleLineIdx)
         {
@@ -367,6 +384,7 @@ internal class LinkTreeRenderer
             var titleLine = cardHeight >= 5
                 ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
                 : RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+
             sb.Append($"{selBg}{selFg}{Bold} {titleLine}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
         }
@@ -376,27 +394,38 @@ internal class LinkTreeRenderer
             var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
             if (!string.IsNullOrEmpty(titleLine2))
             {
+    
                 sb.Append($"{selBg}{selFg}{Bold} {titleLine2}");
                 sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine2.Length))}{Reset}");
             }
             else
             {
-                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+                sb.Append($"{new string(' ', contentWidth)}");
             }
         }
         else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
         {
             var subtitle = GetMetadataSubtitle(node, contentWidth - 1);
-            sb.Append($"{selBg}{palette.SecondaryText.AnsiFg} {subtitle}");
-            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
+            if (!string.IsNullOrWhiteSpace(subtitle))
+            {
+    
+                sb.Append($"{selBg}{palette.SecondaryText.AnsiFg} {subtitle}");
+                sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
+            }
+            else
+            {
+                sb.Append($"{new string(' ', contentWidth)}");
+            }
         }
-        else if (lineIndex == cardHeight - 1 && cardHeight > 1)
+        else if (isSeparator)
         {
-            sb.Append($"{selBg}{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', contentWidth)}{Reset}");
+            // Separator line — no highlight, matches unselected appearance
+            sb.Append($"{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', contentWidth)}{Reset}");
         }
         else
         {
-            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+            // Padding lines — no highlight
+            sb.Append($"{new string(' ', contentWidth)}");
         }
 
         return sb.ToString();

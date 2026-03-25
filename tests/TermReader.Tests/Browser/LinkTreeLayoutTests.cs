@@ -599,13 +599,14 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Selected_SeparatorRule_HasHighlightBg()
+    public void BuildCardLine_Selected_SeparatorRule_NoHighlightBg()
     {
+        // Separator line should NOT have highlight background (matches unselected style)
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 2, 40, TestPalette);
 
-        line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        line.Should().NotContain(TestPalette.SelectedItemBg.AnsiBg);
         line.Should().Contain("\u2500");
     }
 
