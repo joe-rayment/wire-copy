@@ -52,13 +52,13 @@ internal class ArticleRenderer
         var linesRendered = endLine - startLine;
         var atEndOfArticle = endLine >= allLines.Count;
 
-        if (atEndOfArticle && linesRendered + 5 <= viewportHeight)
+        if (atEndOfArticle && linesRendered + 4 <= viewportHeight)
         {
             var width = Math.Max(1, options.TerminalWidth - 2);
             var wordCount = EstimateWordCount(allLines);
             var readTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 250.0));
             RenderEndOfArticleFooter(p, width, wordCount, readTimeMinutes);
-            linesRendered += 5;
+            linesRendered += 4;
         }
 
         for (var i = linesRendered; i < viewportHeight; i++)
@@ -186,13 +186,7 @@ internal class ArticleRenderer
         var statsPad = Math.Max(0, (width - statsText.Length) / 2);
         _helpers.WriteLine($"{new string(' ', statsPad)}{mutedFg}{statsText}{Reset}");
 
-        // Line 4: action hints centered
-        var hintsPlain = "s:save  b:back";
-        var hintsPad = Math.Max(0, (width - hintsPlain.Length) / 2);
-        _helpers.WriteLine(
-            $"{new string(' ', hintsPad)}{accentFg}s{Reset}{secondaryFg}:save{Reset}  {accentFg}b{Reset}{secondaryFg}:back{Reset}");
-
-        // Line 5: blank
+        // Line 4: blank
         _helpers.WriteLine();
     }
 }

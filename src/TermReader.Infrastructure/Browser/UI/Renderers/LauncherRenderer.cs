@@ -117,7 +117,6 @@ internal class LauncherRenderer
     public void RenderFooter(int width)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        _helpers.WriteLine(Borders.HorizontalRule(p, width));
 
         var hints = FormatKbdHint("Enter", "open", p) + " " +
                     FormatKbdHint("o", "go to url", p) + " " +
