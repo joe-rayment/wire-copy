@@ -17,7 +17,7 @@ namespace TermReader.Infrastructure.Browser.Cache;
 
 /// <summary>
 /// Background service that pre-loads pages the user is likely to navigate to next.
-/// Uses HTTP-only fetching (never Selenium), rate limiting, same-origin filtering,
+/// Uses HTTP-only fetching (never browser), rate limiting, same-origin filtering,
 /// and per-domain circuit breaking.
 /// </summary>
 internal sealed class BackgroundPreloadService : IPreloadService
@@ -383,7 +383,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains can't be HTTP-cached (need Selenium with cookies)
+            // Paywalled domains can't be HTTP-cached (need browser with cookies)
             if (IsPaywalledDomain(url))
             {
                 paywalledCount++;
@@ -449,7 +449,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains can't be HTTP-cached (need Selenium with cookies)
+            // Paywalled domains can't be HTTP-cached (need browser with cookies)
             if (IsPaywalledDomain(url))
             {
                 continue;
@@ -869,7 +869,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 else if (ReadableContentExtractor.HasPaywallElements(result.Html))
                 {
                     // Paywall gate detected — don't cache truncated preview content.
-                    // Mark domain as needing browser (Selenium with cookies).
+                    // Mark domain as needing browser (browser with cookies).
                     var domain = new Uri(url).Host;
                     _needsJsDomains.TryAdd(domain, true);
                     _logger.LogDebug("Skipping cache for paywalled content: {Url}", url);
@@ -930,7 +930,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         // Never article-cache content from paywalled domains via HTTP.
-        // These need Selenium with cookies for full content; HTTP fetch
+        // These need browser with cookies for full content; HTTP fetch
         // only gets truncated preview that may not trigger paywall detection.
         if (IsPaywalledDomain(url))
         {

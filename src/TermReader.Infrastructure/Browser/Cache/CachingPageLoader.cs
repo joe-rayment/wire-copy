@@ -37,7 +37,7 @@ public class CachingPageLoader : IPageLoader
         if (request.ForceBrowser)
         {
             _logger.LogInformation(
-                "ForceBrowser set, bypassing cache (requires Selenium with cookies): {Url}",
+                "ForceBrowser set, bypassing cache (requires browser with cookies): {Url}",
                 request.Url);
         }
         else if (request.ForceRefresh)

@@ -41,7 +41,7 @@ public record PageLoadResult
     public int StatusCode { get; init; }
 
     /// <summary>
-    /// How this page was fetched (HTTP, Selenium, or from cache).
+    /// How this page was fetched (HTTP, browser, or from cache).
     /// </summary>
     public FetchMethod FetchMethod { get; init; }
 

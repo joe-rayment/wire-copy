@@ -10,19 +10,19 @@ using Xunit;
 namespace TermReader.Tests.Browser;
 
 [Trait("Category", "Unit")]
-public class WebDriverQueueTests : IDisposable
+public class PageAccessQueueTests : IDisposable
 {
     private readonly IBrowserSession _browserSession;
-    private readonly WebDriverQueue _queue;
+    private readonly PageAccessQueue _queue;
     private readonly IPage _page;
 
-    public WebDriverQueueTests()
+    public PageAccessQueueTests()
     {
         _browserSession = Substitute.For<IBrowserSession>();
         _browserSession.IsBrowserAvailable.Returns(true);
         _page = Substitute.For<IPage>();
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
-        _queue = new WebDriverQueue(_browserSession, NullLogger<WebDriverQueue>.Instance);
+        _queue = new PageAccessQueue(_browserSession, NullLogger<PageAccessQueue>.Instance);
     }
 
     public void Dispose()
@@ -33,10 +33,10 @@ public class WebDriverQueueTests : IDisposable
     #region Foreground Acquisition
 
     [Fact]
-    public async Task Foreground_AcquiresDriverImmediately()
+    public async Task Foreground_AcquiresPageImmediately()
     {
         using var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         lease.Page.Should().BeSameAs(_page);
     }
@@ -45,7 +45,7 @@ public class WebDriverQueueTests : IDisposable
     public async Task Foreground_PassesHeadlessFlag()
     {
         using var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: false, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: false, CancellationToken.None);
 
         await _browserSession.Received(1).GetOrCreatePageAsync(false);
     }
@@ -54,12 +54,12 @@ public class WebDriverQueueTests : IDisposable
     public async Task Foreground_ReleasesLock_OnDispose()
     {
         var lease1 = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
         lease1.Dispose();
 
         // Should be able to acquire again without blocking
         using var lease2 = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         lease2.Page.Should().BeSameAs(_page);
     }
@@ -68,7 +68,7 @@ public class WebDriverQueueTests : IDisposable
     public async Task Foreground_DoubleDispose_Safe()
     {
         var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
         lease.Dispose();
         lease.Dispose(); // Should not throw
     }
@@ -78,10 +78,10 @@ public class WebDriverQueueTests : IDisposable
     #region Background Acquisition
 
     [Fact]
-    public async Task Background_AcquiresDriverWhenFree()
+    public async Task Background_AcquiresPageWhenFree()
     {
         using var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         lease.Page.Should().BeSameAs(_page);
     }
@@ -92,7 +92,7 @@ public class WebDriverQueueTests : IDisposable
         _queue.IsBackgroundActive.Should().BeFalse();
 
         var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         _queue.IsBackgroundActive.Should().BeTrue();
 
@@ -110,11 +110,11 @@ public class WebDriverQueueTests : IDisposable
     {
         // Background acquires first
         var bgLease = await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         // Foreground should block until background releases
         var fgTask = _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         // Give foreground task a moment to start waiting
         await Task.Delay(50);
@@ -133,11 +133,11 @@ public class WebDriverQueueTests : IDisposable
     {
         // Foreground acquires first
         var fgLease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         // Background should block
         var bgTask = _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         await Task.Delay(50);
         bgTask.IsCompleted.Should().BeFalse("background should block while foreground holds lock");
@@ -155,7 +155,7 @@ public class WebDriverQueueTests : IDisposable
     {
         for (var i = 0; i < 5; i++)
         {
-            var priority = i % 2 == 0 ? WebDriverPriority.Foreground : WebDriverPriority.Background;
+            var priority = i % 2 == 0 ? PageAccessPriority.Foreground : PageAccessPriority.Background;
             using var lease = await _queue.AcquireAsync(priority, headless: true, CancellationToken.None);
             lease.Page.Should().BeSameAs(_page);
         }
@@ -170,12 +170,12 @@ public class WebDriverQueueTests : IDisposable
     {
         // Hold the lock
         var bgLease = await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, cts.Token);
+            PageAccessPriority.Foreground, headless: true, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         bgLease.Dispose();
@@ -186,12 +186,12 @@ public class WebDriverQueueTests : IDisposable
     {
         // Hold the lock
         var fgLease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, cts.Token);
+            PageAccessPriority.Background, headless: true, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         fgLease.Dispose();
@@ -202,31 +202,31 @@ public class WebDriverQueueTests : IDisposable
     #region Error Handling
 
     [Fact]
-    public async Task Foreground_ReleasesLock_WhenDriverCreationFails()
+    public async Task Foreground_ReleasesLock_WhenPageCreationFails()
     {
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
             .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         await act.Should().ThrowAsync<PlaywrightException>();
 
         // Lock should be released - can acquire again
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
         lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
-    public async Task Background_ReleasesLock_WhenDriverCreationFails()
+    public async Task Background_ReleasesLock_WhenPageCreationFails()
     {
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
             .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
-            WebDriverPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, headless: true, CancellationToken.None);
 
         await act.Should().ThrowAsync<PlaywrightException>();
 
@@ -235,7 +235,7 @@ public class WebDriverQueueTests : IDisposable
         // Lock should be released
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
         lease.Page.Should().BeSameAs(_page);
     }
 
@@ -245,7 +245,7 @@ public class WebDriverQueueTests : IDisposable
         _queue.Dispose();
 
         var act = async () => await _queue.AcquireAsync(
-            WebDriverPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
 
         act.Should().ThrowAsync<ObjectDisposedException>();
     }

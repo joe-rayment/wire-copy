@@ -192,7 +192,7 @@ public class BrowserOrchestrator : IBrowserService
             // already shows "Esc:cancel", but actual cancellation requires racing the page
             // load task against a keyboard input task (e.g., Task.WhenAny) and using
             // CancellationTokenSource to abort the load, then navigating back. This touches
-            // multiple load paths (preload, HTTP, Selenium retries) and needs careful refactoring.
+            // multiple load paths (preload, HTTP, browser retries) and needs careful refactoring.
 
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
@@ -211,9 +211,9 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // For known-paywalled domains with available cookies, skip HTTP and use Selenium directly.
+        // For known-paywalled domains with available cookies, skip HTTP and use the browser directly.
         // Section/listing pages on paywalled domains work fine via HTTP, so we don't force
-        // Selenium unconditionally — only when cookies exist (indicating a logged-in session).
+        // browser unconditionally — only when cookies exist (indicating a logged-in session).
         var forceBrowser = false;
         if (IsPaywalledDomain(url))
         {
@@ -227,7 +227,7 @@ public class BrowserOrchestrator : IBrowserService
             });
             if (hasDomainCookies)
             {
-                _logger.LogInformation("Paywalled domain with cookies, using Selenium: {Url}", url);
+                _logger.LogInformation("Paywalled domain with cookies, using browser: {Url}", url);
                 forceBrowser = true;
             }
         }
@@ -253,7 +253,7 @@ public class BrowserOrchestrator : IBrowserService
 
         var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
-        // Bot challenge handling: if Selenium returned a challenge page in headed mode,
+        // Bot challenge handling: if browser returned a challenge page in headed mode,
         // wait for the user to solve it in the visible browser window
         var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken);
         if (challengeResult != null)
@@ -262,14 +262,14 @@ public class BrowserOrchestrator : IBrowserService
             page = await BuildPageFromLoadResultAsync(challengeResult, url, cancellationToken);
         }
 
-        // Content-quality fallback: if no content from HTTP/cached page, retry with Selenium.
-        // Skip when Selenium is unavailable — the retry would just repeat the same HTTP fetch.
-        var seleniumAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
+        // Content-quality fallback: if no content from HTTP/cached page, retry with browser.
+        // Skip when browser is unavailable — the retry would just repeat the same HTTP fetch.
+        var browserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
 
-        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Selenium && seleniumAvailable)
+        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Browser && browserAvailable)
         {
             _logger.LogInformation(
-                "No readable content from {FetchMethod} page, retrying with Selenium: {Url}",
+                "No readable content from {FetchMethod} page, retrying with browser: {Url}",
                 loadResult.FetchMethod,
                 url);
 
@@ -289,17 +289,17 @@ public class BrowserOrchestrator : IBrowserService
 
         // Paywalled domain content-quality fallback: if HTTP-fetched content from a paywalled
         // domain has readable content but looks truncated (few words for an article URL),
-        // retry with Selenium. NYT paywall gates are JS-injected and invisible in HTTP HTML,
+        // retry with browser. NYT paywall gates are JS-injected and invisible in HTTP HTML,
         // so DetectPaywall can't catch them — but truncated word count is a reliable signal.
-        if (seleniumAvailable &&
+        if (browserAvailable &&
             page.HasReadableContent() &&
-            _lastLoadFetchMethod != FetchMethod.Selenium &&
+            _lastLoadFetchMethod != FetchMethod.Browser &&
             IsPaywalledDomain(url) &&
             page.ReadableContent!.WordCount < 500 &&
             !url.Contains("/section/", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation(
-                "Paywalled domain with truncated content ({Words} words), retrying with Selenium: {Url}",
+                "Paywalled domain with truncated content ({Words} words), retrying with browser: {Url}",
                 page.ReadableContent.WordCount,
                 url);
 
@@ -318,8 +318,8 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         // Paywall fallback: if content is paywalled and was fetched via HTTP, retry with
-        // Selenium (which has cookie support) if cookies are available
-        if (seleniumAvailable && page.ReadableContent?.IsPaywalled == true && _lastLoadFetchMethod != FetchMethod.Selenium)
+        // browser (which has cookie support) if cookies are available
+        if (browserAvailable && page.ReadableContent?.IsPaywalled == true && _lastLoadFetchMethod != FetchMethod.Browser)
         {
             var cookieInfo = await _cookieManager.GetCookieInfoAsync();
             if (cookieInfo is { Exists: true, IsExpired: false })
@@ -414,10 +414,10 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // Headless challenge fallback: if headless Selenium got a bot challenge,
+        // Headless challenge fallback: if headless browser got a bot challenge,
         // retry in headed mode where DataDome is less likely to block
         if (!page.HasReadableContent() &&
-            loadResult.FetchMethod == FetchMethod.Selenium &&
+            loadResult.FetchMethod == FetchMethod.Browser &&
             _browserConfig.Headless &&
             PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
         {
@@ -1130,11 +1130,11 @@ public class BrowserOrchestrator : IBrowserService
 
             await RenderCurrentPageAsync(options, cancellationToken);
 
-            // Eagerly warm up the browser for paywalled domains so Selenium is ready
+            // Eagerly warm up the browser for paywalled domains so it's ready
             // when the user triggers Shift+I (interactive login). Without this, the
-            // first Selenium use incurs a cold-start delay (Chrome launch + driver init).
-            var warmupSeleniumAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
-            if (warmupSeleniumAvailable && IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Selenium)
+            // first browser use incurs a cold-start delay (Chromium launch + context init).
+            var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
+            if (warmupBrowserAvailable && IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Browser)
             {
                 _ = Task.Run(async () =>
                 {
@@ -1252,7 +1252,7 @@ public class BrowserOrchestrator : IBrowserService
             _navigationService.SetCacheInfo(true, DateTime.UtcNow);
             _lineCacheManager.InvalidateLineCache();
 
-            // Save cookies from the headed browser session (enables future Selenium
+            // Save cookies from the headed browser session (enables future browser
             // loads of paywalled articles to use the user's login)
             await SaveBrowserCookiesAsync(cancellationToken);
 
@@ -1284,7 +1284,7 @@ public class BrowserOrchestrator : IBrowserService
     {
         var headless = headlessOverride ?? _browserConfig.Headless;
 
-        if (loadResult.FetchMethod != FetchMethod.Selenium ||
+        if (loadResult.FetchMethod != FetchMethod.Browser ||
             !PageLoader.IsBotChallengePage(loadResult.Html) ||
             headless)
         {
@@ -1350,7 +1350,7 @@ public class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Saves cookies from the active headed browser session for future use.
-    /// Enables subsequent Selenium loads to use the user's login on paywalled sites.
+    /// Enables subsequent browser loads to use the user's login on paywalled sites.
     /// </summary>
     private async Task SaveBrowserCookiesAsync(CancellationToken cancellationToken)
     {

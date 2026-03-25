@@ -60,9 +60,9 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
         _articleCache = Substitute.For<IArticleContentCache>();
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
-        var webDriverQueue = Substitute.For<IWebDriverQueue>();
-        webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new WebDriverLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
+        var pageAccessQueue = Substitute.For<IPageAccessQueue>();
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             _pageLoader,
@@ -71,7 +71,7 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
             _preloadService,
             _pageCache,
             _browserSession,
-            webDriverQueue,
+            pageAccessQueue,
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 

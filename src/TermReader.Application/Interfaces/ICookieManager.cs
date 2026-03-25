@@ -6,7 +6,7 @@
 namespace TermReader.Application.Interfaces;
 
 /// <summary>
-/// Cookie data for injection into HTTP clients and WebDriver.
+/// Cookie data for injection into HTTP clients and browser sessions.
 /// </summary>
 public record StoredCookie(string Name, string Value, string Domain, string Path, DateTime? Expiry);
 

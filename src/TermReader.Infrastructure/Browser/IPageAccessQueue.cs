@@ -5,10 +5,10 @@ using Microsoft.Playwright;
 namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
-/// Priority levels for WebDriver access.
+/// Priority levels for browser page access.
 /// Foreground requests (user navigation) preempt background requests (article scraping).
 /// </summary>
-public enum WebDriverPriority
+public enum PageAccessPriority
 {
     /// <summary>
     /// User-initiated navigation. Gets immediate priority over background tasks.
@@ -26,7 +26,7 @@ public enum WebDriverPriority
 /// Since the browser context is single-threaded, all access must be serialized.
 /// Foreground requests always preempt background requests.
 /// </summary>
-public interface IWebDriverQueue
+public interface IPageAccessQueue
 {
     /// <summary>
     /// Gets a value indicating whether a background task currently holds the page.
@@ -42,18 +42,18 @@ public interface IWebDriverQueue
     /// <param name="headless">Whether the browser should be headless.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A lease that must be disposed to release the page.</returns>
-    Task<WebDriverLease> AcquireAsync(WebDriverPriority priority, bool headless, CancellationToken cancellationToken);
+    Task<PageLease> AcquireAsync(PageAccessPriority priority, bool headless, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// Represents exclusive access to the browser page. Dispose to release.
 /// </summary>
-public sealed class WebDriverLease : IDisposable
+public sealed class PageLease : IDisposable
 {
     private readonly Action _release;
     private bool _disposed;
 
-    internal WebDriverLease(IPage page, Action release)
+    internal PageLease(IPage page, Action release)
     {
         Page = page;
         _release = release;

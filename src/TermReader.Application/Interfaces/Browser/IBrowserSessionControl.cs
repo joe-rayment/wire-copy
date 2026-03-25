@@ -4,7 +4,7 @@ namespace TermReader.Application.Interfaces.Browser;
 
 /// <summary>
 /// Application-layer interface for browser session lifecycle management.
-/// Provides warmup and disposal without exposing Selenium types.
+/// Provides warmup and disposal without exposing browser automation types.
 /// </summary>
 public interface IBrowserSessionControl : IDisposable
 {

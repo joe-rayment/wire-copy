@@ -43,7 +43,7 @@ public record PodcastProgress
     public bool IsFromCache { get; init; }
 
     /// <summary>
-    /// Gets the content extraction method being used (e.g., "cache", "HTTP", "Selenium", "headed").
+    /// Gets the content extraction method being used (e.g., "cache", "HTTP", "browser", "headed").
     /// Only set during <see cref="PodcastPhase.CachingContent"/>.
     /// </summary>
     public string? ExtractionMethod { get; init; }
