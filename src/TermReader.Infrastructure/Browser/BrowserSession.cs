@@ -257,7 +257,11 @@ public sealed class BrowserSession : IBrowserSession
         {
             _playwright = await Playwright.CreateAsync();
 
-            var args = new List<string> { "--disable-blink-features=AutomationControlled" };
+            var args = new List<string>
+            {
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+            };
             if (OperatingSystem.IsLinux())
             {
                 args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
@@ -272,14 +276,44 @@ public sealed class BrowserSession : IBrowserSession
             {
                 Headless = headless,
                 Args = args.ToArray(),
-                UserAgent = _browserConfig.UserAgent,
+                // Only override UserAgent for headless mode (HTTP fallback matching).
+                // In headed mode, let Chromium use its real UA to avoid version mismatch
+                // detection (e.g., claiming Chrome/131 but actually running Chromium/145).
+                UserAgent = headless ? _browserConfig.UserAgent : null,
                 ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
                 IgnoreHTTPSErrors = true,
             });
 
             await _context.AddInitScriptAsync(@"
+                // Patch navigator.webdriver (primary automation indicator)
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                window.navigator.chrome = { runtime: {} };
+
+                // Ensure chrome object looks realistic
+                if (!window.chrome) window.chrome = {};
+                if (!window.chrome.runtime) window.chrome.runtime = {};
+
+                // Patch permissions query to avoid automation detection
+                const originalQuery = window.navigator.permissions?.query;
+                if (originalQuery) {
+                    window.navigator.permissions.query = (parameters) =>
+                        parameters.name === 'notifications'
+                            ? Promise.resolve({ state: Notification.permission })
+                            : originalQuery(parameters);
+                }
+
+                // Ensure plugins array is not empty (empty = headless indicator)
+                if (navigator.plugins.length === 0) {
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                    });
+                }
+
+                // Ensure languages array is populated
+                if (!navigator.languages || navigator.languages.length === 0) {
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en'],
+                    });
+                }
             ");
 
             _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
