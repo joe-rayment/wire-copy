@@ -227,6 +227,18 @@ internal class RenderHelpers
         }
     }
 
+    /// <summary>
+    /// Renders a subtle centered horizontal rule to mark end of content.
+    /// Uses MutedFg from the theme palette for minimal visual weight.
+    /// </summary>
+    public void RenderEndOfContentRule(ThemePalette palette, int terminalWidth)
+    {
+        const int ruleWidth = 32;
+        var pad = Math.Max(0, (terminalWidth - ruleWidth) / 2);
+        var mutedFg = palette.GetMutedFg().AnsiFg;
+        WriteLine($"{new string(' ', pad)}{mutedFg}{new string('\u2500', ruleWidth)}\x1b[0m");
+    }
+
     public void ClearRemainingLines()
     {
         try
