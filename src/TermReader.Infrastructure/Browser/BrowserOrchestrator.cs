@@ -188,11 +188,9 @@ public class BrowserOrchestrator : IBrowserService
         {
             _renderer.RenderLoading(url);
 
-            // TODO: Wire up Esc cancellation during page loading. The RenderLoading hint
-            // already shows "Esc:cancel", but actual cancellation requires racing the page
-            // load task against a keyboard input task (e.g., Task.WhenAny) and using
-            // CancellationTokenSource to abort the load, then navigating back. This touches
-            // multiple load paths (preload, HTTP, browser retries) and needs careful refactoring.
+            // Esc cancellation during page loading is not yet wired up. The RenderLoading
+            // hint shows "Esc:cancel" but actual cancellation would require racing the page
+            // load against keyboard input and aborting via CancellationTokenSource.
 
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
@@ -1401,7 +1399,10 @@ public class BrowserOrchestrator : IBrowserService
             var playwrightCookies = await page.Context.CookiesAsync();
             var storedCookies = playwrightCookies.Select(c =>
                 new Application.Interfaces.StoredCookie(
-                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty,
+                    c.Name,
+                    c.Value,
+                    c.Domain ?? string.Empty,
+                    c.Path ?? string.Empty,
                     c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
@@ -1453,7 +1454,10 @@ public class BrowserOrchestrator : IBrowserService
                             var playwrightCookies = await page.Context.CookiesAsync();
                             var storedCookies = playwrightCookies.Select(c =>
                                 new Application.Interfaces.StoredCookie(
-                                    c.Name, c.Value, c.Domain ?? string.Empty, c.Path ?? string.Empty,
+                                    c.Name,
+                                    c.Value,
+                                    c.Domain ?? string.Empty,
+                                    c.Path ?? string.Empty,
                                     c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
                             await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);

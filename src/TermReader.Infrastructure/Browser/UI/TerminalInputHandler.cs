@@ -51,87 +51,6 @@ public class TerminalInputHandler : IInputHandler
         }
     }
 
-    private async Task<NavigationCommand> WaitForInputCoreAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            // Reuse pending tasks from previous iterations to avoid dropping
-            // channel items consumed by abandoned ReadAsync operations.
-            // Clear faulted/cancelled tasks so a fresh read can be created.
-            if (_pendingKeyTask is { IsFaulted: true } or { IsCanceled: true })
-            {
-                _pendingKeyTask = null;
-            }
-
-            if (_pendingResizeTask is { IsFaulted: true } or { IsCanceled: true })
-            {
-                _pendingResizeTask = null;
-            }
-
-            _pendingKeyTask ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
-            _pendingResizeTask ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
-
-            var completed = await Task.WhenAny(_pendingKeyTask, _pendingResizeTask).ConfigureAwait(false);
-
-            if (completed == _pendingResizeTask)
-            {
-                _pendingResizeTask = null;
-
-                // Drain any additional resize events (coalesce rapid resizes)
-                while (_resizeDetector.Resizes.TryRead(out _))
-                {
-                    // Intentionally empty: discard queued resize signals to coalesce into one
-                }
-
-                return new NavigationCommand { Type = CommandType.TerminalResized };
-            }
-
-            if (_pendingKeyTask == null)
-            {
-                // Shouldn't happen, but guard against race with DrainPendingTasks
-                continue;
-            }
-
-            var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
-            _pendingKeyTask = null;
-
-            // Handle 'gg' for go to top
-            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
-            {
-                _waitingForSecondKey = false;
-                return new NavigationCommand { Type = CommandType.GoToTop };
-            }
-
-            // If we were waiting for 'g' but got something else, reset
-            if (_waitingForSecondKey)
-            {
-                _waitingForSecondKey = false;
-            }
-
-            // Start waiting for second 'g' for 'gg' command
-            if (keyInfo.Key == ConsoleKey.G && (keyInfo.Modifiers & ConsoleModifiers.Shift) == 0)
-            {
-                _waitingForSecondKey = true;
-                continue;
-            }
-
-            var command = MapKeyInfoToCommand(keyInfo);
-            if (keyInfo.KeyChar >= 32)
-            {
-                command = command with { RawKeyChar = keyInfo.KeyChar };
-            }
-
-            if (command.Type != CommandType.NoOp)
-            {
-                _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
-            }
-
-            return command;
-        }
-
-        return new NavigationCommand { Type = CommandType.Quit };
-    }
-
     public NavigationCommand MapKeyToCommand(ConsoleKey key, ConsoleModifiers modifiers)
     {
         return MapKeyToCommandStatic(key, modifiers);
@@ -324,6 +243,80 @@ public class TerminalInputHandler : IInputHandler
         return null;
     }
 
+    private async Task<NavigationCommand> WaitForInputCoreAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (_pendingKeyTask is { IsFaulted: true } or { IsCanceled: true })
+            {
+                _pendingKeyTask = null;
+            }
+
+            if (_pendingResizeTask is { IsFaulted: true } or { IsCanceled: true })
+            {
+                _pendingResizeTask = null;
+            }
+
+            _pendingKeyTask ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
+            _pendingResizeTask ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
+
+            var completed = await Task.WhenAny(_pendingKeyTask, _pendingResizeTask).ConfigureAwait(false);
+
+            if (completed == _pendingResizeTask)
+            {
+                _pendingResizeTask = null;
+
+                while (_resizeDetector.Resizes.TryRead(out _))
+                {
+                    // Drain queued resize signals to coalesce into one event
+                }
+
+                return new NavigationCommand { Type = CommandType.TerminalResized };
+            }
+
+            if (_pendingKeyTask == null)
+            {
+                continue;
+            }
+
+            var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
+            _pendingKeyTask = null;
+
+            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
+            {
+                _waitingForSecondKey = false;
+                return new NavigationCommand { Type = CommandType.GoToTop };
+            }
+
+            if (_waitingForSecondKey)
+            {
+                _waitingForSecondKey = false;
+            }
+
+            if (keyInfo.Key == ConsoleKey.G && (keyInfo.Modifiers & ConsoleModifiers.Shift) == 0)
+            {
+                _waitingForSecondKey = true;
+                continue;
+            }
+
+            var command = MapKeyInfoToCommand(keyInfo);
+            if (keyInfo.KeyChar >= 32)
+            {
+                command = command with { RawKeyChar = keyInfo.KeyChar };
+            }
+
+            if (command.Type != CommandType.NoOp)
+            {
+                _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
+            }
+
+            return command;
+        }
+
+        return new NavigationCommand { Type = CommandType.Quit };
+    }
+
+#pragma warning disable SA1204 // Static members grouped with related non-static key mapping methods
     private static NavigationCommand MapKeyInfoToCommand(ConsoleKeyInfo keyInfo)
     {
         return keyInfo.KeyChar switch

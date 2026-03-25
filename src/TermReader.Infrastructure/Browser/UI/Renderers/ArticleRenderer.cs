@@ -169,7 +169,6 @@ internal class ArticleRenderer
     private void RenderEndOfArticleFooter(ThemePalette p, int width, int wordCount, int readTimeMinutes)
     {
         var mutedFg = p.GetMutedFg().AnsiFg;
-        var accentFg = p.GetAccentFg().AnsiFg;
         var secondaryFg = p.SecondaryText.AnsiFg;
 
         // Line 1: blank
