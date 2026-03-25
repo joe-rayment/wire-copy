@@ -268,66 +268,68 @@ public class BrowserOrchestrator : IBrowserService
 
         if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Browser && browserAvailable)
         {
-            var useHeaded = IsPaywalledDomain(url);
             _logger.LogInformation(
-                "No readable content from {FetchMethod} page, retrying with {Mode} browser: {Url}",
+                "No readable content from {FetchMethod} page, retrying with browser: {Url}",
                 loadResult.FetchMethod,
-                useHeaded ? "headed" : "headless",
                 url);
 
             _pageCache.Remove(url);
             _renderer.RenderLoading(url);
 
             var retryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = !useHeaded, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
                 cancellationToken);
 
             if (retryResult.Success)
             {
                 _lastLoadFetchMethod = retryResult.FetchMethod;
                 page = await BuildPageFromLoadResultAsync(retryResult, url, cancellationToken);
-
-                if (useHeaded && _browserSession is IBrowserSession noContentSession)
-                {
-                    await noContentSession.RestoreWindowAsync();
-                }
             }
         }
 
-        // Paywalled domain content-quality fallback: if HTTP-fetched content from a paywalled
-        // domain has readable content but looks truncated (few words), retry with browser
-        // in headed mode so the user can log in if needed. NYT paywall gates are JS-injected
-        // and invisible in HTTP HTML — truncated word count is the primary detection signal.
-        // Uses headed mode (Headless=false) to break the chicken-and-egg cycle: without cookies
-        // HTTP returns truncated preview → browser must be visible for user to authenticate.
+        // Paywalled domain content-quality fallback: if HTTP returned truncated content
+        // from a paywalled domain, either retry with authenticated browser (cookies exist)
+        // or prompt user to log in (no cookies — silent retry would show same paywall).
         if (browserAvailable &&
             page.HasReadableContent() &&
             _lastLoadFetchMethod != FetchMethod.Browser &&
             IsPaywalledDomain(url) &&
             page.ReadableContent!.WordCount < 500)
         {
-            _logger.LogInformation(
-                "Paywalled domain with truncated content ({Words} words), retrying with headed browser: {Url}",
-                page.ReadableContent.WordCount,
-                url);
+            var cookieInfo = await _cookieManager.GetCookieInfoAsync();
+            var hasCookies = cookieInfo is { Exists: true, IsExpired: false };
 
-            _pageCache.Remove(url);
-            _renderer.RenderLoading(url);
-
-            var truncRetryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
-                cancellationToken);
-
-            if (truncRetryResult.Success)
+            if (hasCookies)
             {
-                _lastLoadFetchMethod = truncRetryResult.FetchMethod;
-                page = await BuildPageFromLoadResultAsync(truncRetryResult, url, cancellationToken);
+                // Have cookies — retry with browser using authenticated session
+                _logger.LogInformation(
+                    "Paywalled domain with truncated content ({Words} words), retrying with authenticated browser: {Url}",
+                    page.ReadableContent.WordCount,
+                    url);
 
-                // Restore the browser window so the user can interact (log in, solve captcha)
-                if (_browserSession is IBrowserSession paywalledSession)
+                _pageCache.Remove(url);
+                _renderer.RenderLoading(url);
+
+                var truncRetryResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    cancellationToken);
+
+                if (truncRetryResult.Success)
                 {
-                    await paywalledSession.RestoreWindowAsync();
+                    _lastLoadFetchMethod = truncRetryResult.FetchMethod;
+                    page = await BuildPageFromLoadResultAsync(truncRetryResult, url, cancellationToken);
                 }
+            }
+            else
+            {
+                // No cookies — don't retry (browser would show same paywall).
+                // Show preview content with a clear prompt to use Shift+I.
+                _logger.LogInformation(
+                    "Paywalled domain with truncated content ({Words} words) and no cookies, prompting Shift+I: {Url}",
+                    page.ReadableContent.WordCount,
+                    url);
+
+                _navigationService.SetStatusMessage("Paywalled — press Shift+I to open browser and log in");
             }
         }
 
@@ -1223,9 +1225,10 @@ public class BrowserOrchestrator : IBrowserService
         {
             _renderer.RenderLoading(url);
 
-            // Force headed mode for interactive refresh
+            // Force headed browser for interactive refresh — skip HTTP, go straight to browser
+            // so the user gets a visible window they can interact with (login, captcha, etc.)
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
                 cancellationToken);
 
             if (!loadResult.Success)

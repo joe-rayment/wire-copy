@@ -143,47 +143,13 @@ public sealed class BrowserSession : IBrowserSession
             return;
         }
 
-        await _lock.WaitAsync();
         try
         {
-            if (_disposed || _page == null || _pageIsHeadless)
-            {
-                return;
-            }
-
-            try
-            {
-                var cdp = await _page.Context.NewCDPSessionAsync(_page);
-                var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
-                var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
-                await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-                {
-                    ["windowId"] = windowId,
-                    ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-                });
-
-                // Move to visible position and resize
-                await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-                {
-                    ["windowId"] = windowId,
-                    ["bounds"] = new Dictionary<string, object>
-                    {
-                        ["left"] = 0,
-                        ["top"] = 0,
-                        ["width"] = 1400,
-                        ["height"] = 900,
-                        ["windowState"] = "normal",
-                    },
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to restore browser window via CDP (non-fatal)");
-            }
+            await _page.BringToFrontAsync();
         }
-        finally
+        catch (Exception ex)
         {
-            _lock.Release();
+            _logger.LogDebug(ex, "Failed to bring browser window to front (non-fatal)");
         }
     }
 
@@ -274,7 +240,7 @@ public sealed class BrowserSession : IBrowserSession
 
         if (!headless)
         {
-            args.AddRange(["--window-size=800,600", "--window-position=9999,9999"]);
+            args.Add("--window-size=800,600");
         }
 
         _context = await _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
@@ -298,27 +264,6 @@ public sealed class BrowserSession : IBrowserSession
         {
             _cookiesInjected = true;
             await InjectStoredCookiesAsync();
-        }
-
-        // Minimize headed browser so it doesn't cover the terminal.
-        // Interactive refresh (Shift+I) will restore when user needs to interact.
-        if (!headless)
-        {
-            try
-            {
-                var cdp = await _page.Context.NewCDPSessionAsync(_page);
-                var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
-                var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
-                await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-                {
-                    ["windowId"] = windowId,
-                    ["bounds"] = new Dictionary<string, object> { ["windowState"] = "minimized" },
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to minimize browser window (non-fatal)");
-            }
         }
     }
 
