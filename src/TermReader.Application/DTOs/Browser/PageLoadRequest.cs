@@ -35,16 +35,16 @@ public record PageLoadRequest
     public bool ForceRefresh { get; init; }
 
     /// <summary>
-    /// Whether to skip the HTTP fetch and go straight to Selenium.
+    /// Whether to skip the HTTP fetch and go straight to the browser.
     /// Used for known-paywalled domains where cookies are needed for authentication.
     /// </summary>
     public bool ForceBrowser { get; init; }
 
     /// <summary>
-    /// Whether to prefer Selenium over HTTP for the initial fetch attempt.
-    /// When true, tries Selenium first and falls back to HTTP on failure.
-    /// When false (default), tries HTTP first and falls back to Selenium.
+    /// Whether to prefer the browser over HTTP for the initial fetch attempt.
+    /// When true, tries the browser first and falls back to HTTP on failure.
+    /// When false (default), tries HTTP first and falls back to the browser.
     /// Unlike <see cref="ForceBrowser"/>, this still allows HTTP as a fallback.
     /// </summary>
-    public bool PreferSelenium { get; init; }
+    public bool PreferBrowser { get; init; }
 }

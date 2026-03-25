@@ -10,17 +10,17 @@ namespace TermReader.Infrastructure.Browser;
 /// background tasks must acquire both the main lock and a foreground-check gate,
 /// while foreground tasks only need the main lock and can signal background to yield.
 /// </summary>
-internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
+internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
 {
     private readonly IBrowserSession _browserSession;
-    private readonly ILogger<WebDriverQueue> _logger;
+    private readonly ILogger<PageAccessQueue> _logger;
     private readonly SemaphoreSlim _mainLock = new(1, 1);
     private readonly SemaphoreSlim _foregroundWaiting = new(0, 1);
     private volatile bool _backgroundActive;
     private volatile bool _foregroundRequested;
     private volatile bool _disposed;
 
-    public WebDriverQueue(IBrowserSession browserSession, ILogger<WebDriverQueue> logger)
+    public PageAccessQueue(IBrowserSession browserSession, ILogger<PageAccessQueue> logger)
     {
         _browserSession = browserSession;
         _logger = logger;
@@ -30,14 +30,14 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
     public bool IsBackgroundActive => _backgroundActive;
 
     /// <inheritdoc />
-    public async Task<WebDriverLease> AcquireAsync(
-        WebDriverPriority priority,
+    public async Task<PageLease> AcquireAsync(
+        PageAccessPriority priority,
         bool headless,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (priority == WebDriverPriority.Foreground)
+        if (priority == PageAccessPriority.Foreground)
         {
             return await AcquireForegroundAsync(headless, cancellationToken);
         }
@@ -57,7 +57,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
         _foregroundWaiting.Dispose();
     }
 
-    private async Task<WebDriverLease> AcquireForegroundAsync(bool headless, CancellationToken cancellationToken)
+    private async Task<PageLease> AcquireForegroundAsync(bool headless, CancellationToken cancellationToken)
     {
         if (!_browserSession.IsBrowserAvailable)
         {
@@ -84,7 +84,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
         {
             var page = await _browserSession.GetOrCreatePageAsync(headless);
             _logger.LogDebug("Foreground acquired browser page");
-            return new WebDriverLease(page, () => ReleaseForeground());
+            return new PageLease(page, () => ReleaseForeground());
         }
         catch
         {
@@ -93,7 +93,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
         }
     }
 
-    private async Task<WebDriverLease> AcquireBackgroundAsync(bool headless, CancellationToken cancellationToken)
+    private async Task<PageLease> AcquireBackgroundAsync(bool headless, CancellationToken cancellationToken)
     {
         if (!_browserSession.IsBrowserAvailable)
         {
@@ -114,7 +114,7 @@ internal sealed class WebDriverQueue : IWebDriverQueue, IDisposable
         {
             var page = await _browserSession.GetOrCreatePageAsync(headless);
             _logger.LogDebug("Background acquired browser page");
-            return new WebDriverLease(page, () => ReleaseBackground());
+            return new PageLease(page, () => ReleaseBackground());
         }
         catch
         {

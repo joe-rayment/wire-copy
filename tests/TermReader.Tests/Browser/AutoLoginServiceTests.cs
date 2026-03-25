@@ -21,7 +21,7 @@ public class AutoLoginServiceTests
 {
     private readonly ISiteCredentialRepository _credentialRepo;
     private readonly ICookieEncryptionService _encryptionService;
-    private readonly IWebDriverQueue _webDriverQueue;
+    private readonly IPageAccessQueue _pageAccessQueue;
     private readonly IBrowserSession _browserSession;
     private readonly IPage _page;
     private readonly IBrowserContext _browserContext;
@@ -34,7 +34,7 @@ public class AutoLoginServiceTests
     {
         _credentialRepo = Substitute.For<ISiteCredentialRepository>();
         _encryptionService = Substitute.For<ICookieEncryptionService>();
-        _webDriverQueue = Substitute.For<IWebDriverQueue>();
+        _pageAccessQueue = Substitute.For<IPageAccessQueue>();
         _browserSession = Substitute.For<IBrowserSession>();
         _browserSession.IsBrowserAvailable.Returns(true);
 
@@ -54,8 +54,8 @@ public class AutoLoginServiceTests
         _submitLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
 
         // Default: AcquireAsync returns a lease with our mock page
-        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new WebDriverLease(_page, () => { }));
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new PageLease(_page, () => { }));
 
         // Set up service scope factory mock
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
@@ -68,7 +68,7 @@ public class AutoLoginServiceTests
         _service = new AutoLoginService(
             scopeFactory,
             _encryptionService,
-            _webDriverQueue,
+            _pageAccessQueue,
             _browserSession,
             Substitute.For<ICookieManager>(),
             NullLogger<AutoLoginService>.Instance);
@@ -395,8 +395,8 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _webDriverQueue.Received(1).AcquireAsync(
-            WebDriverPriority.Background,
+        await _pageAccessQueue.Received(1).AcquireAsync(
+            PageAccessPriority.Background,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
@@ -409,8 +409,8 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _webDriverQueue.DidNotReceive().AcquireAsync(
-            WebDriverPriority.Foreground,
+        await _pageAccessQueue.DidNotReceive().AcquireAsync(
+            PageAccessPriority.Foreground,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
@@ -423,8 +423,8 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _webDriverQueue.Received(1).AcquireAsync(
-            Arg.Any<WebDriverPriority>(),
+        await _pageAccessQueue.Received(1).AcquireAsync(
+            Arg.Any<PageAccessPriority>(),
             false,
             Arg.Any<CancellationToken>());
     }
@@ -440,8 +440,8 @@ public class AutoLoginServiceTests
         SetupSuccessfulLogin(credential);
 
         var leaseDisposed = false;
-        var lease = new WebDriverLease(_page, () => leaseDisposed = true);
-        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        var lease = new PageLease(_page, () => leaseDisposed = true);
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         await _service.LoginAsync("example.com");
@@ -462,8 +462,8 @@ public class AutoLoginServiceTests
             .Returns<IResponse?>(_ => throw new PlaywrightException("Crash"));
 
         var leaseDisposed = false;
-        var lease = new WebDriverLease(_page, () => leaseDisposed = true);
-        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        var lease = new PageLease(_page, () => leaseDisposed = true);
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         await _service.LoginAsync("example.com");
@@ -543,8 +543,8 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("unknown.com");
 
-        await _webDriverQueue.DidNotReceive().AcquireAsync(
-            Arg.Any<WebDriverPriority>(),
+        await _pageAccessQueue.DidNotReceive().AcquireAsync(
+            Arg.Any<PageAccessPriority>(),
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
@@ -560,8 +560,8 @@ public class AutoLoginServiceTests
 
         await _service.LoginAsync("example.com");
 
-        await _webDriverQueue.DidNotReceive().AcquireAsync(
-            Arg.Any<WebDriverPriority>(),
+        await _pageAccessQueue.DidNotReceive().AcquireAsync(
+            Arg.Any<PageAccessPriority>(),
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }

@@ -23,7 +23,7 @@ public record ContentExtractionProgress
     public required string Title { get; init; }
 
     /// <summary>
-    /// Gets the extraction method currently being used (e.g., "cache", "HTTP", "Selenium", "headed").
+    /// Gets the extraction method currently being used (e.g., "cache", "HTTP", "browser", "headed").
     /// </summary>
     public string? ExtractionMethod { get; init; }
 

@@ -133,7 +133,7 @@ public class BrowserSessionDisposedTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public async Task PageLoader_PreferSelenium_WhenSessionDisposed_FallsBackToHttp()
+    public async Task PageLoader_PreferBrowser_WhenSessionDisposed_FallsBackToHttp()
     {
         // Arrange - Browser disposed, but HTTP should still work as fallback
         var browserSession = Substitute.For<IBrowserSession>();
@@ -149,9 +149,9 @@ public class BrowserSessionDisposedTests
         var httpClient = new HttpClient(handler);
         var pageLoader = new PageLoader(config, logger, browserSession, httpClient);
 
-        var request = new PageLoadRequest { Url = "https://example.com", PreferSelenium = true };
+        var request = new PageLoadRequest { Url = "https://example.com", PreferBrowser = true };
 
-        // Act - PreferSelenium tries browser first (disposed), should fall back to HTTP
+        // Act - PreferBrowser tries browser first (disposed), should fall back to HTTP
         var result = await pageLoader.LoadAsync(request);
 
         // Assert - HTTP fallback should succeed

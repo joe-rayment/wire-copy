@@ -27,7 +27,7 @@ public class ReadingListContentProviderTests
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
-    private readonly IWebDriverQueue _webDriverQueue;
+    private readonly IPageAccessQueue _pageAccessQueue;
     private readonly IArticleContentCache _articleCache;
     private readonly ReadingListContentProvider _provider;
 
@@ -39,12 +39,12 @@ public class ReadingListContentProviderTests
         _pageCache = Substitute.For<IPageCache>();
         _browserSession = Substitute.For<IBrowserSession>();
         _browserSession.IsBrowserAvailable.Returns(true);
-        _webDriverQueue = Substitute.For<IWebDriverQueue>();
+        _pageAccessQueue = Substitute.For<IPageAccessQueue>();
         _articleCache = Substitute.For<IArticleContentCache>();
 
         // Default: AcquireAsync returns a no-op lease
-        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new WebDriverLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
@@ -55,7 +55,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
-            _webDriverQueue,
+            _pageAccessQueue,
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
     }
@@ -420,7 +420,7 @@ public class ReadingListContentProviderTests
             .Returns((PageLoadResult?)null);
 
         // Layer 1: HTTP fails → JS required
-        // Layer 2: Selenium returns bot challenge failure (polling timed out)
+        // Layer 2: Browser returns bot challenge failure (polling timed out)
         var callCount = 0;
         _pageLoader.LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
@@ -434,7 +434,7 @@ public class ReadingListContentProviderTests
 
                 if (callCount == 2)
                 {
-                    // Layer 2: Selenium bot challenge failure
+                    // Layer 2: Browser bot challenge failure
                     return PageLoadResult.Failure("Bot challenge could not be resolved");
                 }
 
@@ -455,7 +455,7 @@ public class ReadingListContentProviderTests
 
         results.Should().HaveCount(1);
         results[0].Title.Should().Be("Test Article");
-        // 3 calls: HTTP, Selenium (bot challenge), headed retry
+        // 3 calls: HTTP, Browser (bot challenge), headed retry
         await _pageLoader.Received(3).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
     }
 
@@ -474,7 +474,7 @@ public class ReadingListContentProviderTests
             _preloadService,
             _pageCache,
             _browserSession,
-            _webDriverQueue,
+            _pageAccessQueue,
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
@@ -495,7 +495,7 @@ public class ReadingListContentProviderTests
 
                 if (callCount == 2)
                 {
-                    // Layer 2: Selenium bot challenge failure
+                    // Layer 2: Browser bot challenge failure
                     return PageLoadResult.Failure("Bot challenge could not be resolved");
                 }
 
@@ -701,7 +701,7 @@ public class ReadingListContentProviderTests
     }
 
     [Fact]
-    public async Task LoadAndExtract_DriverCrash_SkipsSeleniumForRemainingArticles()
+    public async Task LoadAndExtract_DriverCrash_SkipsBrowserForRemainingArticles()
     {
         var url1 = "https://example.com/article1";
         var url2 = "https://example.com/article2";
@@ -804,10 +804,10 @@ public class ReadingListContentProviderTests
 
     #endregion
 
-    #region WebDriverQueue Integration
+    #region PageAccessQueue Integration
 
     [Fact]
-    public async Task Layer1_SetsPreferSeleniumTrue_OnPageLoadRequest()
+    public async Task Layer1_SetsPreferBrowserTrue_OnPageLoadRequest()
     {
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
@@ -825,7 +825,7 @@ public class ReadingListContentProviderTests
         await _provider.GetAllArticleContentAsync(collection);
 
         await _pageLoader.Received(1).LoadAsync(
-            Arg.Is<PageLoadRequest>(r => r.PreferSelenium == true),
+            Arg.Is<PageLoadRequest>(r => r.PreferBrowser == true),
             Arg.Any<CancellationToken>());
     }
 
@@ -847,14 +847,14 @@ public class ReadingListContentProviderTests
 
         await _provider.GetAllArticleContentAsync(collection);
 
-        await _webDriverQueue.Received().AcquireAsync(
-            WebDriverPriority.Background,
+        await _pageAccessQueue.Received().AcquireAsync(
+            PageAccessPriority.Background,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Layer2_AcquiresBackgroundLease_ForSeleniumRetry()
+    public async Task Layer2_AcquiresBackgroundLease_ForBrowserRetry()
     {
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
@@ -876,7 +876,7 @@ public class ReadingListContentProviderTests
                     return PageLoadResult.Successful(url, "<html></html>", new PageMetadata { Title = "Test" });
                 }
 
-                // Layer 2: Selenium succeeds
+                // Layer 2: Browser succeeds
                 return CreateSuccessResult(url);
             });
 
@@ -892,8 +892,8 @@ public class ReadingListContentProviderTests
         await _provider.GetAllArticleContentAsync(collection);
 
         // Should have acquired Background lease twice (Layer 1 + Layer 2)
-        await _webDriverQueue.Received(2).AcquireAsync(
-            WebDriverPriority.Background,
+        await _pageAccessQueue.Received(2).AcquireAsync(
+            PageAccessPriority.Background,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
@@ -942,14 +942,14 @@ public class ReadingListContentProviderTests
         await _provider.GetAllArticleContentAsync(collection);
 
         // Layer 1 + Layer 2 + Layer 3 = 3 Background lease acquisitions
-        await _webDriverQueue.Received(3).AcquireAsync(
-            WebDriverPriority.Background,
+        await _pageAccessQueue.Received(3).AcquireAsync(
+            PageAccessPriority.Background,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task WebDriverQueue_LeaseIsDisposed_AfterLoadCompletes()
+    public async Task PageAccessQueue_LeaseIsDisposed_AfterLoadCompletes()
     {
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
@@ -959,10 +959,10 @@ public class ReadingListContentProviderTests
         _pageCache.Contains(url).Returns(true);
 
         var leaseDisposed = false;
-        var lease = new WebDriverLease(
+        var lease = new PageLease(
             Substitute.For<Microsoft.Playwright.IPage>(),
             () => leaseDisposed = true);
-        _webDriverQueue.AcquireAsync(Arg.Any<WebDriverPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         var loadResult = CreateSuccessResult(url);
@@ -977,7 +977,7 @@ public class ReadingListContentProviderTests
     }
 
     [Fact]
-    public async Task WebDriverQueue_NeverUsesForegroundPriority()
+    public async Task PageAccessQueue_NeverUsesForegroundPriority()
     {
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
@@ -994,14 +994,14 @@ public class ReadingListContentProviderTests
 
         await _provider.GetAllArticleContentAsync(collection);
 
-        await _webDriverQueue.DidNotReceive().AcquireAsync(
-            WebDriverPriority.Foreground,
+        await _pageAccessQueue.DidNotReceive().AcquireAsync(
+            PageAccessPriority.Foreground,
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task WebDriverQueue_NotAcquired_WhenArticleServedFromContentCache()
+    public async Task PageAccessQueue_NotAcquired_WhenArticleServedFromContentCache()
     {
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
@@ -1017,8 +1017,8 @@ public class ReadingListContentProviderTests
 
         await _provider.GetAllArticleContentAsync(collection);
 
-        await _webDriverQueue.DidNotReceive().AcquireAsync(
-            Arg.Any<WebDriverPriority>(),
+        await _pageAccessQueue.DidNotReceive().AcquireAsync(
+            Arg.Any<PageAccessPriority>(),
             Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }

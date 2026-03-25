@@ -32,7 +32,7 @@ public record PreloadProgress
 
     /// <summary>
     /// Number of same-origin content links on paywalled domains
-    /// that cannot be HTTP pre-loaded (need Selenium with cookies).
+    /// that cannot be HTTP pre-loaded (need browser with cookies).
     /// </summary>
     public int PaywalledLinkCount { get; init; }
 

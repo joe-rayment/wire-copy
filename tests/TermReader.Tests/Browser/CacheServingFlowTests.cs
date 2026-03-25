@@ -156,14 +156,14 @@ public class CacheServingFlowTests
     }
 
     [Fact]
-    public async Task LoadPageAsync_SeleniumNoContent_DoesNotRetry()
+    public async Task LoadPageAsync_BrowserNoContent_DoesNotRetry()
     {
         var url = "https://example.com/article";
-        SetupPageLoadNoContent(url, FetchMethod.Selenium);
+        SetupPageLoadNoContent(url, FetchMethod.Browser);
 
         await _sut.LoadPageAsync(url);
 
-        // Only one call — no ForceRefresh retry when already Selenium
+        // Only one call — no ForceRefresh retry when already Browser
         await _pageLoader.Received(1).LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
     }
 
@@ -190,8 +190,8 @@ public class CacheServingFlowTests
         // First call returns null, second call returns content
         var readable = ReadableContent.Create(
             "Real Article",
-            "This is the actual article content from Selenium.",
-            new List<string> { "This is the actual article content from Selenium." });
+            "This is the actual article content from Browser.",
+            new List<string> { "This is the actual article content from Browser." });
         var callCount = 0;
         _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -203,7 +203,7 @@ public class CacheServingFlowTests
         var retryResult = PageLoadResult.Successful(
             url, "<html><body><p>Real content</p></body></html>",
             new PageMetadata { Title = "Real Article" },
-            FetchMethod.Selenium);
+            FetchMethod.Browser);
         _pageLoader.LoadAsync(
             Arg.Is<PageLoadRequest>(r => r.ForceRefresh),
             Arg.Any<CancellationToken>())
@@ -228,7 +228,7 @@ public class CacheServingFlowTests
         _pageLoader.LoadAsync(
             Arg.Is<PageLoadRequest>(r => r.ForceRefresh),
             Arg.Any<CancellationToken>())
-            .Returns(PageLoadResult.Failure("Selenium timeout"));
+            .Returns(PageLoadResult.Failure("Browser timeout"));
 
         var page = await _sut.LoadPageAsync(url);
 
@@ -265,7 +265,7 @@ public class CacheServingFlowTests
             url,
             "<html><body><p>Retry content</p></body></html>",
             new PageMetadata { Title = "Retry" },
-            FetchMethod.Selenium);
+            FetchMethod.Browser);
         _pageLoader.LoadAsync(
             Arg.Is<PageLoadRequest>(r => r.ForceRefresh),
             Arg.Any<CancellationToken>())

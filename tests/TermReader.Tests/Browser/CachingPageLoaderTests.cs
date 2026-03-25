@@ -179,13 +179,13 @@ public class CachingPageLoaderTests : IDisposable
         var cached = CreateResult(url, "<html>cached section page</html>");
         _cache.Put(url, cached);
 
-        var fresh = CreateResult(url, "<html>real article via Selenium</html>");
+        var fresh = CreateResult(url, "<html>real article via browser</html>");
         var request = new PageLoadRequest { Url = url, ForceBrowser = true };
         _innerLoader.LoadAsync(request, Arg.Any<CancellationToken>()).Returns(fresh);
 
         var result = await _sut.LoadAsync(request);
 
-        result.Html.Should().Be("<html>real article via Selenium</html>");
+        result.Html.Should().Be("<html>real article via browser</html>");
         await _innerLoader.Received(1).LoadAsync(request, Arg.Any<CancellationToken>());
     }
 

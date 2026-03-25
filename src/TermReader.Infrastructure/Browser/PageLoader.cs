@@ -81,8 +81,8 @@ public class PageLoader : IPageLoader
 
         try
         {
-            // PreferSelenium: try browser first, fall back to HTTP
-            if (request.PreferSelenium && !request.ForceBrowser)
+            // PreferBrowser: try browser first, fall back to HTTP
+            if (request.PreferBrowser && !request.ForceBrowser)
             {
                 return await LoadBrowserFirstAsync(request, totalSw, cancellationToken);
             }
@@ -381,7 +381,7 @@ public class PageLoader : IPageLoader
         Stopwatch totalSw,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("PreferSelenium set, attempting browser fetch first for {Url}", request.Url);
+        _logger.LogInformation("PreferBrowser set, attempting browser fetch first for {Url}", request.Url);
         var browserSw = Stopwatch.StartNew();
         var browserResult = await BrowserFetchAsync(request, cancellationToken);
         browserSw.Stop();
@@ -390,7 +390,7 @@ public class PageLoader : IPageLoader
         {
             totalSw.Stop();
             _logger.LogDebug(
-                "Page loaded in {ElapsedMs}ms via browser (PreferSelenium): {Url}",
+                "Page loaded in {ElapsedMs}ms via browser (PreferBrowser): {Url}",
                 totalSw.ElapsedMilliseconds,
                 request.Url);
             return browserResult;
@@ -411,7 +411,7 @@ public class PageLoader : IPageLoader
             if (httpResult.Success)
             {
                 _logger.LogDebug(
-                    "Page loaded in {ElapsedMs}ms via HTTP fallback (PreferSelenium): {Url}",
+                    "Page loaded in {ElapsedMs}ms via HTTP fallback (PreferBrowser): {Url}",
                     totalSw.ElapsedMilliseconds,
                     request.Url);
                 return httpResult;
@@ -543,7 +543,7 @@ public class PageLoader : IPageLoader
             var metadata = ExtractMetadata(html, finalUrl);
 
             _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
-            return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Selenium);
+            return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Browser);
         }
         catch (PlaywrightException ex)
         {

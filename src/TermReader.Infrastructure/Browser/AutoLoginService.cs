@@ -12,14 +12,14 @@ namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
 /// Automates login to paywalled sites using stored credentials and Playwright.
-/// Uses the WebDriverQueue with Background priority to avoid blocking user navigation.
+/// Uses the PageAccessQueue with Background priority to avoid blocking user navigation.
 /// Falls back to manual login when form selectors are missing or elements cannot be found.
 /// </summary>
 public class AutoLoginService : IAutoLoginService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ICookieEncryptionService _encryptionService;
-    private readonly IWebDriverQueue _webDriverQueue;
+    private readonly IPageAccessQueue _pageAccessQueue;
     private readonly IBrowserSession _browserSession;
     private readonly ICookieManager _cookieManager;
     private readonly ILogger<AutoLoginService> _logger;
@@ -27,14 +27,14 @@ public class AutoLoginService : IAutoLoginService
     public AutoLoginService(
         IServiceScopeFactory scopeFactory,
         ICookieEncryptionService encryptionService,
-        IWebDriverQueue webDriverQueue,
+        IPageAccessQueue pageAccessQueue,
         IBrowserSession browserSession,
         ICookieManager cookieManager,
         ILogger<AutoLoginService> logger)
     {
         _scopeFactory = scopeFactory;
         _encryptionService = encryptionService;
-        _webDriverQueue = webDriverQueue;
+        _pageAccessQueue = pageAccessQueue;
         _browserSession = browserSession;
         _cookieManager = cookieManager;
         _logger = logger;
@@ -80,8 +80,8 @@ public class AutoLoginService : IAutoLoginService
         var loginUrl = credential.LoginUrl ?? $"https://{domain}/login";
 
         // 4. Acquire browser page with Background priority (non-headless for login forms)
-        using var lease = await _webDriverQueue.AcquireAsync(
-            WebDriverPriority.Background, headless: false, cancellationToken);
+        using var lease = await _pageAccessQueue.AcquireAsync(
+            PageAccessPriority.Background, headless: false, cancellationToken);
         var page = lease.Page;
 
         try

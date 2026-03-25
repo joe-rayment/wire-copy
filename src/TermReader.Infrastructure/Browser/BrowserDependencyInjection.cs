@@ -102,13 +102,13 @@ public static class BrowserDependencyInjection
                 };
             });
 
-        // Register browser session (shared WebDriver lifecycle)
+        // Register browser session (shared Playwright lifecycle)
         services.AddSingleton<BrowserSession>();
         services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
         services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
 
-        // Register WebDriver priority queue (serializes foreground/background access)
-        services.AddSingleton<IWebDriverQueue, WebDriverQueue>();
+        // Register page access priority queue (serializes foreground/background access)
+        services.AddSingleton<IPageAccessQueue, PageAccessQueue>();
 
         // Register auto-login service (uses IServiceScopeFactory for scoped ISiteCredentialRepository)
         services.AddSingleton<IAutoLoginService, AutoLoginService>();

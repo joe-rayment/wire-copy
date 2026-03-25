@@ -17,7 +17,7 @@ namespace TermReader.Tests.Browser;
 
 /// <summary>
 /// Tests that stored cookies are correctly wired into both the HTTP CookieContainer
-/// and Selenium WebDriver via BrowserSession.InjectStoredCookies.
+/// and Playwright browser via BrowserSession cookie injection.
 /// </summary>
 public class CookieWiringTests
 {
