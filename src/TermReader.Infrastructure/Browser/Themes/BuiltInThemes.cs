@@ -19,20 +19,20 @@ public static class BuiltInThemes
             {
                 // Phosphor 2.0: bright green is primary/dominant, pink is accent only
                 PrimaryText = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 pure phosphor green
-                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 metadata, domains
+                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 108),  // #87af87 sage green, readable on dark bg
                 LinkContent = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 article links match primary
-                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 34),  // secondary for nav links
-                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 34),
-                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                LinkNavigation = new ThemeColor(ConsoleColor.DarkGreen, 108), // sage green for nav links
+                LinkExternal = new ThemeColor(ConsoleColor.DarkGreen, 108),
+                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 108),
                 HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green structural
                 HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 40),       // #00d700 bright green titles
-                HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                HeaderUrlFg = new ThemeColor(ConsoleColor.DarkGreen, 108),
                 SelectedItemFg = new ThemeColor(ConsoleColor.White, 254),     // #e4e4e4 warm off-white
                 SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green selection
                 StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 22),
                 StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 40),     // #00d700 phosphor green
                 PromptFg = new ThemeColor(ConsoleColor.Green, 40),
-                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
+                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 108),
                 ErrorFg = new ThemeColor(ConsoleColor.Red, 203),              // #ff5f5f
                 SearchHighlightFg = new ThemeColor(ConsoleColor.White, 15),   // white on blue-teal
                 SearchHighlightBg = new ThemeColor(ConsoleColor.DarkCyan, 24), // #005f87 blue-teal highlight

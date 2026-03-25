@@ -96,12 +96,14 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
+        // Reserve space: 2 lines for status bar + 1 blank separator + 1 padding line
+        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 4);
 
         if (wrappedLines != null)
         {
             var focusLineOffset = Math.Max(0, Math.Min(viewportHeight / 3, wrappedLines.Count - context.ScrollOffset - 1));
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, focusLineOffset);
+            _helpers.WriteLine();
             _statusBarRenderer.RenderStatusBar(
                 context,
                 ViewMode.Readable,
@@ -113,6 +115,7 @@ public class TerminalPageRenderer : IPageRenderer
         else
         {
             _articleRenderer.RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
+            _helpers.WriteLine();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
         }
 
