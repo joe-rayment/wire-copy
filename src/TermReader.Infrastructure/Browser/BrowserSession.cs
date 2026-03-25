@@ -155,6 +155,31 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
+    public async Task MinimizeWindowAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return;
+        }
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
+            var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "minimized" },
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to minimize browser window (non-fatal)");
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<byte[]?> CaptureScreenshotAsync()
     {
         await _lock.WaitAsync();
@@ -336,6 +361,13 @@ public sealed class BrowserSession : IBrowserSession
             {
                 _cookiesInjected = true;
                 await InjectStoredCookiesAsync();
+            }
+
+            // Minimize headed browser so it stays in the background.
+            // RestoreWindowAsync (BringToFront) is called when user interaction is needed.
+            if (!headless)
+            {
+                await MinimizeWindowAsync();
             }
         }
         catch
