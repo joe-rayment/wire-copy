@@ -28,6 +28,7 @@ public sealed class BrowserSession : IBrowserSession
     private bool _pageIsHeadless;
     private bool _disposed;
     private bool _cookiesInjected;
+    private bool _browsersInstalled;
 
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
@@ -232,6 +233,25 @@ public sealed class BrowserSession : IBrowserSession
         await DisposeContextUnsafeAsync();
 
         Directory.CreateDirectory(_userDataDir);
+
+        // Ensure Playwright browsers are installed (idempotent — skips if already present)
+        if (!_browsersInstalled)
+        {
+            _browsersInstalled = true;
+            try
+            {
+                _logger.LogInformation("Ensuring Playwright browsers are installed...");
+                var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                if (exitCode != 0)
+                {
+                    _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Playwright browser install failed (will attempt launch anyway)");
+            }
+        }
 
         try
         {
