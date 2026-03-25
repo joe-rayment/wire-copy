@@ -329,7 +329,9 @@ public class BrowserOrchestrator : IBrowserService
                     page.ReadableContent.WordCount,
                     url);
 
-                _navigationService.SetStatusMessage("Paywalled — press Shift+I to open browser and log in");
+                _navigationService.SetStatusMessage(
+                    "Shift+I to log in for full content",
+                    TimeSpan.FromMinutes(5));
             }
         }
 
