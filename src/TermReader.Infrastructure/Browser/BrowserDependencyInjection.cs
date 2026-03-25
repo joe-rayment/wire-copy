@@ -207,6 +207,8 @@ public static class BrowserDependencyInjection
 
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
 
+            var cookieManager = sp.GetRequiredService<ICookieManager>();
+
             return new Cache.BackgroundPreloadService(
                 cache,
                 idleDetector,
@@ -215,7 +217,8 @@ public static class BrowserDependencyInjection
                 preloadLogger,
                 contentExtractor,
                 articleCache,
-                browserConfig.Value);
+                browserConfig.Value,
+                cookieManager);
         });
 
         // Register the main orchestrator

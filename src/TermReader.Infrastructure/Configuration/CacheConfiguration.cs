@@ -60,6 +60,18 @@ public class CacheConfiguration
     public int CrossDomainDelayMs { get; init; } = 1500;
 
     /// <summary>
+    /// Delay between pre-load requests to paywalled domains in milliseconds. Default: 6000ms.
+    /// Longer than normal to avoid bot detection on authenticated sessions.
+    /// </summary>
+    public int PaywalledDomainDelayMs { get; init; } = 6000;
+
+    /// <summary>
+    /// Maximum number of articles to pre-load per session for paywalled domains. Default: 15.
+    /// Limits bulk fetching to avoid appearing as a scraper.
+    /// </summary>
+    public int MaxPaywalledPreloads { get; init; } = 15;
+
+    /// <summary>
     /// Maximum number of links to pre-load per page/collection. Default: 50.
     /// After priority sorting, only the top N items are kept in the queue.
     /// </summary>
