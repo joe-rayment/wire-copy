@@ -80,7 +80,7 @@ internal class StatusBarRenderer
     internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
         const int barLength = 10;
-        var ActiveColor = p.GetWarningFg().AnsiFg; // Amber for active/in-progress from theme
+        var activeColor = p.GetWarningFg().AnsiFg; // Amber for active/in-progress from theme
         var fraction = total > 0 ? (double)cached / total : 0.0;
 
         if (isActive)
@@ -91,7 +91,7 @@ internal class StatusBarRenderer
             if (!string.IsNullOrEmpty(currentUrl))
             {
                 var slug = FormatUrlSlug(currentUrl);
-                return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {ActiveColor}{slug}{Reset}";
+                return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {activeColor}{slug}{Reset}";
             }
 
             return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total} caching{Reset}";

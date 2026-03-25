@@ -314,6 +314,7 @@ public sealed class BrowserSession : IBrowserSession
             {
                 Headless = headless,
                 Args = args.ToArray(),
+
                 // Only override UserAgent for headless mode (HTTP fallback matching).
                 // In headed mode, let Chromium use its real UA to avoid version mismatch
                 // detection (e.g., claiming Chrome/131 but actually running Chromium/145).
