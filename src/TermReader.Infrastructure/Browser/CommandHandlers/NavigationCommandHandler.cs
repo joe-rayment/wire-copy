@@ -437,12 +437,12 @@ internal static class NavigationCommandHandler
 
     public static async Task HandleRefresh(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        // F5 refresh always fetches from network (same as Shift+R).
+        // Previously this called NavigateToAsync which served from cache.
         var page = ctx.NavigationService.CurrentPage;
         if (page != null)
         {
-            var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
-            await ctx.NavigateToAsync(page.Url, options, ct);
-            ctx.NavigationService.SetViewMode(viewMode);
+            await ctx.ForceRefreshAsync(page.Url, options, ct);
         }
     }
 

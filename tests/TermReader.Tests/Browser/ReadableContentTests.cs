@@ -1026,5 +1026,34 @@ public class ReadableContentTests
         result!.Title.Should().Be("Actual Article Title");
     }
 
+    [Fact]
+    public async Task ExtractAsync_OgTitleIsNavigationText_SkipsToNextSource()
+    {
+        // Arrange — og:title is "Today's Paper" (navigation text), should fall through to <title> tag
+        var html = @"
+            <html>
+            <head>
+                <meta property=""og:title"" content=""Today's Paper"" />
+                <title>The New York Times - Breaking News</title>
+            </head>
+            <body>
+                <article>
+                    <p>This is a sufficiently long paragraph to pass content extraction thresholds and quality gates. It needs to be long enough so the content extractor does not reject it as too short.</p>
+                    <p>Second paragraph with additional content to satisfy extraction requirements and word count minimums for the quality validation step.</p>
+                </article>
+            </body>
+            </html>";
+
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        // Act
+        var result = await extractor.ExtractAsync(html, "https://www.nytimes.com/section/todayspaper");
+
+        // Assert — should NOT use "Today's Paper" as the title
+        result.Should().NotBeNull();
+        result!.Title.Should().NotBe("Today's Paper");
+        result.Title.Should().Contain("New York Times");
+    }
+
     #endregion
 }

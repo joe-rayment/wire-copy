@@ -199,9 +199,8 @@ public class TerminalInputHandler : IInputHandler
    :export [fmt]   Export collection (urls, opml)
 
  Cache
-   Shift+R         Force-refresh (bypass cache)
+   Shift+R / F5    Refresh (bypass cache)
    Shift+I         Interactive refresh (headed browser for captcha/login)
-   F5              Smart refresh (use cache if available)
 
  General
    Ctrl+p          Cycle theme
