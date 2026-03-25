@@ -268,7 +268,16 @@ internal static class NavigationCommandHandler
 
         if (viewMode == ViewMode.CollectionItems)
         {
-            ctx.NavigationService.ExitToCollectionList();
+            // Skip the collection list when only 1 collection exists — go straight back
+            if (ctx.Collections is not { Count: > 1 })
+            {
+                ctx.NavigationService.ExitCollections();
+            }
+            else
+            {
+                ctx.NavigationService.ExitToCollectionList();
+            }
+
             ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct);
         }

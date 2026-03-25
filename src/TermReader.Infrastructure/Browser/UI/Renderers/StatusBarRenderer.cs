@@ -257,13 +257,13 @@ internal class StatusBarRenderer
         {
             ViewMode.Hierarchical =>
             [
-                [("Enter", "open"), ("s", "save"), ("A", "save-all"), ("R", "refresh"), ("v", "reader"), ("?", "help")],
-                [("Enter", "open"), ("s", "save"), ("R", "refresh"), ("v", "reader"), ("?", "help")],
+                [("Enter", "open"), ("s", "save"), ("A", "save-all"), ("Shift+R", "refresh"), ("v", "reader"), ("?", "help")],
+                [("Enter", "open"), ("s", "save"), ("Shift+R", "refresh"), ("v", "reader"), ("?", "help")],
                 [("?", "help")],
             ],
             ViewMode.Readable =>
             [
-                [("s", "save"), ("o", "browser"), ("[/]", "width"), ("R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
+                [("s", "save"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
                 [("s", "save"), ("o", "browser"), ("v", "links"), ("b", "back"), ("?", "help")],
                 [("?", "help")],
             ],
