@@ -5,6 +5,7 @@ using System.Net;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
@@ -29,6 +30,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly string[] _paywalledDomains;
     private readonly IReadableContentExtractor? _contentExtractor;
     private readonly IArticleContentCache? _articleContentCache;
+    private readonly ICookieManager? _cookieManager;
     private readonly ILogger<BackgroundPreloadService> _logger;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
@@ -59,6 +61,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private List<string> _allEligibleUrls = [];
     private List<string> _needsJsUrls = [];
     private int _paywalledLinkCount;
+    private int _paywalledPreloadCount;
+    private volatile bool _hasPaywalledCookies;
 
     public BackgroundPreloadService(
         IPageCache cache,
@@ -68,7 +72,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         ILogger<BackgroundPreloadService> logger,
         IReadableContentExtractor? contentExtractor = null,
         IArticleContentCache? articleContentCache = null,
-        BrowserConfiguration? browserConfig = null)
+        BrowserConfiguration? browserConfig = null,
+        ICookieManager? cookieManager = null)
     {
         _cache = cache;
         _idleDetector = idleDetector;
@@ -77,6 +82,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _logger = logger;
         _contentExtractor = contentExtractor;
         _articleContentCache = articleContentCache;
+        _cookieManager = cookieManager;
         _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
@@ -383,10 +389,19 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains can't be HTTP-cached (need browser with cookies)
+            // Paywalled domains: skip if no cookies, include if authenticated
             if (IsPaywalledDomain(url))
             {
-                paywalledCount++;
+                if (_hasPaywalledCookies)
+                {
+                    allEligibleWithIndex.Add((url, i));
+                    TryAddEligibleUrl(url, i, needsJs, items);
+                }
+                else
+                {
+                    paywalledCount++;
+                }
+
                 continue;
             }
 
@@ -449,8 +464,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains can't be HTTP-cached (need browser with cookies)
-            if (IsPaywalledDomain(url))
+            // Paywalled domains: skip if no cookies, include if authenticated
+            if (IsPaywalledDomain(url) && !_hasPaywalledCookies)
             {
                 continue;
             }
@@ -494,6 +509,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
     /// </summary>
     internal int GetAdaptiveDelay(string lastFetchedUrl)
     {
+        // Paywalled domains get extra-long delay with jitter to avoid bot detection
+        if (IsPaywalledDomain(lastFetchedUrl))
+        {
+            var jitter = Random.Shared.Next(-1500, 1500);
+            return Math.Max(2000, _config.PaywalledDomainDelayMs + jitter);
+        }
+
         if (!_config.AdaptiveRateLimitEnabled)
         {
             return _config.PreloadDelayMs;
@@ -573,6 +595,25 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
         return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
+    }
+
+    private void RefreshPaywalledCookieState()
+    {
+        if (_cookieManager == null)
+        {
+            _hasPaywalledCookies = false;
+            return;
+        }
+
+        try
+        {
+            var info = _cookieManager.GetCookieInfoAsync().GetAwaiter().GetResult();
+            _hasPaywalledCookies = info is { Exists: true, IsExpired: false };
+        }
+        catch
+        {
+            _hasPaywalledCookies = false;
+        }
     }
 
     private bool IsPaywalledDomain(string url)
@@ -712,6 +753,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 return;
             }
 
+            RefreshPaywalledCookieState();
             var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
 
             lock (_queueLock)
@@ -775,12 +817,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private async Task PreloadUrlAsync(string url, CancellationToken cancellationToken)
     {
-        // Never HTTP-preload paywalled domains — they always return truncated content
-        // without cookies/JS, and paywall gates are JS-injected so can't be detected.
+        // Paywalled domains: only preload if cookies exist AND under per-session limit
         if (IsPaywalledDomain(url))
         {
-            _logger.LogDebug("Skipping preload for paywalled domain: {Url}", url);
-            return;
+            if (!_hasPaywalledCookies || _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
+            {
+                _logger.LogDebug("Skipping preload for paywalled domain (cookies={HasCookies}, count={Count}/{Max}): {Url}",
+                    _hasPaywalledCookies, _paywalledPreloadCount, _config.MaxPaywalledPreloads, url);
+                return;
+            }
+
+            Interlocked.Increment(ref _paywalledPreloadCount);
         }
 
         var normalizedUrl = UrlNormalizer.Normalize(url);
