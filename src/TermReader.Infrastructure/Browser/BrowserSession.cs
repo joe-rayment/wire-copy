@@ -288,13 +288,19 @@ public sealed class BrowserSession : IBrowserSession
             return;
         }
 
+        bool lockAcquired;
         try
         {
-            _lock.Wait();
+            lockAcquired = _lock.Wait(TimeSpan.FromSeconds(5));
         }
         catch (ObjectDisposedException)
         {
             return;
+        }
+
+        if (!lockAcquired)
+        {
+            _logger.LogWarning("BrowserSession.Dispose timed out waiting for lock — proceeding with best-effort cleanup");
         }
 
         try
@@ -313,13 +319,16 @@ public sealed class BrowserSession : IBrowserSession
         }
         finally
         {
-            try
+            if (lockAcquired)
             {
-                _lock.Release();
-            }
-            catch (ObjectDisposedException)
-            {
-                // Already disposed
+                try
+                {
+                    _lock.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Already disposed
+                }
             }
 
             _lock.Dispose();
