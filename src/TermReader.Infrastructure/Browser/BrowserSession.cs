@@ -123,10 +123,8 @@ public sealed class BrowserSession : IBrowserSession
     /// <inheritdoc />
     public async Task WarmUpAsync()
     {
-        // Always warm up in headless mode to avoid stealing terminal focus.
-        // Headed mode is only used for interactive refresh (Shift+I).
-        _logger.LogDebug("Warming up browser session (headless)");
-        await GetOrCreatePageAsync(true);
+        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.Headless);
+        await GetOrCreatePageAsync(_browserConfig.Headless);
         _logger.LogDebug("Browser session warm-up complete");
     }
 
@@ -196,6 +194,54 @@ public sealed class BrowserSession : IBrowserSession
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to minimize browser window (non-fatal)");
+        }
+
+        // Refocus the terminal app so keyboard input works immediately
+        await RefocusTerminalAsync();
+    }
+
+    private async Task RefocusTerminalAsync()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        try
+        {
+            // Detect terminal app from environment and re-activate it
+            var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
+            var appName = termProgram switch
+            {
+                "iTerm.app" => "iTerm2",
+                "Apple_Terminal" => "Terminal",
+                "WezTerm" => "WezTerm",
+                "Alacritty" => "Alacritty",
+                "kitty" => "kitty",
+                _ => "Terminal", // fallback
+            };
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "osascript",
+                Arguments = $"-e 'tell application \"{appName}\" to activate'",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process != null)
+            {
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            }
+
+            _logger.LogDebug("Refocused terminal app: {AppName}", appName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to refocus terminal (non-fatal)");
         }
     }
 
