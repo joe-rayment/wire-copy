@@ -355,7 +355,7 @@ internal class LauncherRenderer
         {
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
             var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
-            return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}{new string(' ', pad)}";
+            return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{truncDomain}{Reset}{new string(' ', pad)}";
         }
 
         return new string(' ', cellWidth);
@@ -392,7 +392,7 @@ internal class LauncherRenderer
 
         var textColor = isSelected
             ? $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}"
-            : $"{p.SecondaryText.AnsiFg}{Dim}";
+            : $"{p.SecondaryText.AnsiFg}";
 
         _helpers.WriteLine();
         _helpers.WriteLine(
