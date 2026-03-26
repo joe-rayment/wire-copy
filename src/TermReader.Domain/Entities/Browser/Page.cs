@@ -68,13 +68,10 @@ public class Page
         if (string.IsNullOrWhiteSpace(url))
             throw new ArgumentException("URL cannot be empty", nameof(url));
 
-        if (string.IsNullOrWhiteSpace(rawHtml))
-            throw new ArgumentException("HTML content cannot be empty", nameof(rawHtml));
-
         if (metadata == null)
             throw new ArgumentNullException(nameof(metadata));
 
-        return new Page(url, rawHtml, metadata);
+        return new Page(url, rawHtml ?? string.Empty, metadata);
     }
 
     /// <summary>

@@ -71,14 +71,15 @@ public class PageTests
     }
 
     [Fact]
-    public void Create_WithEmptyHtml_ThrowsArgumentException()
+    public void Create_WithEmptyHtml_Succeeds()
     {
-        // Arrange
+        // Empty HTML is allowed (e.g., pages rebuilt from build cache or skeleton pages)
         var metadata = new PageMetadata { Title = "Test" };
 
-        // Act & Assert
-        var act = () => Page.Create("https://example.com", "", metadata);
-        act.Should().Throw<ArgumentException>().WithParameterName("rawHtml");
+        var page = Page.Create("https://example.com", "", metadata);
+
+        page.Should().NotBeNull();
+        page.RawHtml.Should().BeEmpty();
     }
 
     [Fact]
