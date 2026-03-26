@@ -148,6 +148,24 @@ public sealed class BrowserSession : IBrowserSession
 
         try
         {
+            // Un-minimize via CDP first (BringToFrontAsync alone doesn't restore
+            // a CDP-minimized window on macOS)
+            var cdp = await _page.Context.NewCDPSessionAsync(_page);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
+            var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to un-minimize browser window via CDP (non-fatal)");
+        }
+
+        try
+        {
             await _page.BringToFrontAsync();
         }
         catch (Exception ex)
