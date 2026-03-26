@@ -91,8 +91,16 @@ public class TerminalPageRenderer : IPageRenderer
         if (page.ReadableContent == null)
         {
             _helpers.WriteLine();
-            _helpers.WriteLine("  No readable content available for this page.");
-            _helpers.WriteLine("  Press 'v' to switch to link view.");
+            if (page.Classification == Domain.Enums.Browser.PageClassification.LinkList)
+            {
+                _helpers.WriteLine("  This is a link directory. Press 'v' to browse links.");
+            }
+            else
+            {
+                _helpers.WriteLine("  No readable content available for this page.");
+                _helpers.WriteLine("  Press 'v' to switch to link view.");
+            }
+
             _helpers.WriteLine();
             _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
