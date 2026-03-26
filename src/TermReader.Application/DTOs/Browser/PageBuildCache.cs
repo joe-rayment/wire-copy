@@ -1,6 +1,7 @@
 // Educational and personal use only.
 
 using TermReader.Domain.Entities.Browser;
+using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
 namespace TermReader.Application.DTOs.Browser;
@@ -22,6 +23,8 @@ public sealed record PageBuildCache
     public required PageMetadata Metadata { get; init; }
 
     public required string FinalUrl { get; init; }
+
+    public PageClassification Classification { get; init; } = PageClassification.Unknown;
 
     public DateTime CachedAt { get; init; } = DateTime.UtcNow;
 }

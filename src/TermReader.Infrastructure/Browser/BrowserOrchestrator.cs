@@ -735,6 +735,18 @@ public class BrowserOrchestrator : IBrowserService
     /// Returns the number of visible nodes in the hierarchical view.
     /// Divides available lines by card height to convert from line count to node count.
     /// </summary>
+    private static int CountArticleContainers(string html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return 0;
+        }
+
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(html);
+        return doc.DocumentNode.SelectNodes("//article")?.Count ?? 0;
+    }
+
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
         var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
@@ -1020,6 +1032,7 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         page.SetLinkTree(tree);
+        page.SetClassification(cache.Classification);
 
         if (cache.ReadableContent != null)
         {
@@ -1066,6 +1079,20 @@ public class BrowserOrchestrator : IBrowserService
         var page = Page.Create(finalUrl, loadResult.Html, metadata);
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
+
+        // Classify the page (Article vs LinkList) using existing extraction signals
+        var isArticlePage = ReadableContentExtractor.IsArticlePage(loadResult.Html);
+        var articleContainerCount = CountArticleContainers(loadResult.Html);
+        var classification = PageClassifier.Classify(links, isArticlePage, articleContainerCount, finalUrl);
+        page.SetClassification(classification);
+        var contentLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+        _logger.LogInformation(
+            "Page classified as {Classification}: {Url} (contentLinks={ContentLinks}, articleContainers={ArticleContainers}, isArticle={IsArticle})",
+            classification,
+            finalUrl,
+            contentLinkCount,
+            articleContainerCount,
+            isArticlePage);
 
         // Try AI-powered hierarchy: check saved config first, then analyze if configured
         NavigationTree tree;
@@ -1114,6 +1141,7 @@ public class BrowserOrchestrator : IBrowserService
             ReadableContent = readable,
             Metadata = metadata,
             FinalUrl = finalUrl,
+            Classification = classification,
         };
 
         return page;

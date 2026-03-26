@@ -185,6 +185,12 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
         }
 
+        // Page classification badge
+        if (context.CurrentPage?.Classification == Domain.Enums.Browser.PageClassification.LinkList)
+        {
+            parts.Add($"{p.SecondaryText.AnsiFg}index{Reset}");
+        }
+
         // AI hierarchy badge
         if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
         {

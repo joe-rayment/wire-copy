@@ -1,5 +1,6 @@
 // Educational and personal use only.
 
+using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
 namespace TermReader.Domain.Entities.Browser;
@@ -39,6 +40,11 @@ public class Page
     /// Clean readable content (only available for article pages).
     /// </summary>
     public ReadableContent? ReadableContent { get; private set; }
+
+    /// <summary>
+    /// Classification of this page (Article, LinkList, or Unknown).
+    /// </summary>
+    public PageClassification Classification { get; private set; } = PageClassification.Unknown;
 
     /// <summary>
     /// Timestamp when the page was loaded.
@@ -88,6 +94,14 @@ public class Page
     }
 
     /// <summary>
+    /// Sets the page classification.
+    /// </summary>
+    public void SetClassification(PageClassification classification)
+    {
+        Classification = classification;
+    }
+
+    /// <summary>
     /// Checks if this page has readable content available.
     /// </summary>
     public bool HasReadableContent() => ReadableContent != null;
@@ -105,6 +119,6 @@ public class Page
         var linkCount = LinkTree?.TotalLinks ?? 0;
         var hasReadable = ReadableContent != null ? "Yes" : "No";
 
-        return $"Page: {Metadata.Title} | URL: {Url} | Links: {linkCount} | Readable: {hasReadable}";
+        return $"Page: {Metadata.Title} | URL: {Url} | Links: {linkCount} | Readable: {hasReadable} | Type: {Classification}";
     }
 }
