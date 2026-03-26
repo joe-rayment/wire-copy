@@ -27,7 +27,6 @@ public sealed class BrowserSession : IBrowserSession
     private IPage? _page;
     private bool _pageIsHeadless;
     private bool _disposed;
-    private bool _cookiesInjected;
     private bool _browsersInstalled;
 
     public BrowserSession(
@@ -436,12 +435,9 @@ public sealed class BrowserSession : IBrowserSession
 
             _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
 
-            // Import stored cookies on first launch
-            if (!_cookiesInjected)
-            {
-                _cookiesInjected = true;
-                await InjectStoredCookiesAsync();
-            }
+            // Inject stored cookies on every launch so mid-session updates
+            // (e.g., Shift+I login) are picked up on browser restart.
+            await InjectStoredCookiesAsync();
 
             // Minimize headed browser so it stays in the background.
             // RestoreWindowAsync (BringToFront) is called when user interaction is needed.
@@ -531,7 +527,5 @@ public sealed class BrowserSession : IBrowserSession
 
             _playwright = null;
         }
-
-        _cookiesInjected = false;
     }
 }
