@@ -1336,6 +1336,12 @@ public class BrowserOrchestrator : IBrowserService
         {
             _navigationService.NavigateTo(page);
 
+            // Auto-switch to reader view for article pages with readable content
+            if (page.Classification == PageClassification.Article && page.HasReadableContent())
+            {
+                _navigationService.SetViewMode(ViewMode.Readable);
+            }
+
             var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
             var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
             _navigationService.SetCacheInfo(isFromCache, cachedAt);
@@ -1501,6 +1507,12 @@ public class BrowserOrchestrator : IBrowserService
 
             // Use ReplaceCurrent to avoid pushing skeleton onto back history
             _navigationService.ReplaceCurrent(page);
+
+            // Auto-switch to reader view for article pages with readable content
+            if (page.Classification == PageClassification.Article && page.HasReadableContent())
+            {
+                _navigationService.SetViewMode(ViewMode.Readable);
+            }
 
             var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
             var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
