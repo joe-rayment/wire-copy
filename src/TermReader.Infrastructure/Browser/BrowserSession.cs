@@ -83,13 +83,13 @@ public sealed class BrowserSession : IBrowserSession
 
             if (_page != null)
             {
-                // If the caller needs a different headless mode, dispose and recreate
-                if (_pageIsHeadless != headless)
+                // Only recreate when switching headless→headed (needed for Shift+I interactive).
+                // Headed→headless is skipped: a headed browser can serve headless requests fine,
+                // and the relaunch costs 10-30 seconds that makes the app feel frozen.
+                if (_pageIsHeadless && !headless)
                 {
                     _logger.LogInformation(
-                        "Headless mode mismatch (current={Current}, requested={Requested}), recreating browser",
-                        _pageIsHeadless,
-                        headless);
+                        "Switching headless→headed browser for interactive use");
                     await DisposeContextUnsafeAsync();
                 }
                 else

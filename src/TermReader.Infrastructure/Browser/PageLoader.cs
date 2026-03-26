@@ -604,8 +604,10 @@ public class PageLoader : IPageLoader
     {
         try
         {
-            // Wait for network idle (equivalent to document ready + no pending network requests)
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions
+            // Wait for DOM ready (not NetworkIdle — heavy sites like NYT make dozens of
+            // tracking/ad requests that delay NetworkIdle by 30+ seconds while content is
+            // already rendered). The secondary JS check below gives extra time for rendering.
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new PageWaitForLoadStateOptions
             {
                 Timeout = timeoutMs,
             });
@@ -616,7 +618,7 @@ public class PageLoader : IPageLoader
                 await page.WaitForFunctionAsync(
                     "() => document.body && document.body.innerHTML.length > 1000",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 3000 });
+                    new PageWaitForFunctionOptions { Timeout = 5000 });
             }
             catch (TimeoutException)
             {
