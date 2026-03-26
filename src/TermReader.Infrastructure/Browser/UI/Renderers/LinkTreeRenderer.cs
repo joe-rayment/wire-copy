@@ -668,19 +668,18 @@ internal class LinkTreeRenderer
             _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncHeader}{Reset}");
         }
 
-        // Line 2: thin rule (only for expanded groups in standard+ mode)
+        // Line 2: blank line below header (gives breathing room before card grid)
         if (isExpanded)
         {
-            var ruleWidth = Math.Max(1, width - 2);
             if (isSelected)
             {
                 _helpers.WriteLine(
                     $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
-                    $"{p.SelectedItemBg.AnsiBg} {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
+                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
             }
             else
             {
-                _helpers.WriteLine($" {p.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{Reset}");
+                _helpers.WriteLine();
             }
         }
     }
