@@ -22,22 +22,50 @@ internal static class CollectionCommandHandler
 
         if (viewMode == ViewMode.Hierarchical)
         {
-            var saveNode = tree?.GetSelectedNode();
-            if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
+            // Multi-select: save all toggled items
+            if (tree != null && tree.SelectionCount > 0)
             {
                 try
                 {
+                    var selectedNodes = tree.GetSelectedNodes();
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.SaveToReadingListAsync(
-                        saveNode.Link.Url, saveNode.Link.DisplayText, ct);
-                    ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
-                    ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
+                    var links = selectedNodes
+                        .Where(n => !string.IsNullOrEmpty(n.Link.Url))
+                        .Select(n => (n.Link.Url, n.Link.DisplayText))
+                        .ToList();
+
+                    await service.SaveAllToReadingListAsync(links, ct);
+                    tree.ClearSelection();
+                    ctx.Logger.LogInformation("Saved {Count} items to Reading List", links.Count);
+                    ctx.NavigationService.SetStatusMessage($"Saved {links.Count} items to Reading List");
                 }
                 catch (Exception ex)
                 {
-                    ctx.Logger.LogWarning(ex, "Failed to save to default collection");
-                    ctx.NavigationService.SetStatusMessage("Failed to save");
+                    ctx.Logger.LogWarning(ex, "Failed to save selected items");
+                    ctx.NavigationService.SetStatusMessage("Failed to save selected items");
+                }
+            }
+            else
+            {
+                // Single save: cursor item
+                var saveNode = tree?.GetSelectedNode();
+                if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
+                {
+                    try
+                    {
+                        using var scope = ctx.ScopeFactory.CreateScope();
+                        var service = ctx.CreateCollectionService(scope);
+                        await service.SaveToReadingListAsync(
+                            saveNode.Link.Url, saveNode.Link.DisplayText, ct);
+                        ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
+                        ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
+                    }
+                    catch (Exception ex)
+                    {
+                        ctx.Logger.LogWarning(ex, "Failed to save to default collection");
+                        ctx.NavigationService.SetStatusMessage("Failed to save");
+                    }
                 }
             }
         }

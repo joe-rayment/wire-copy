@@ -83,7 +83,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
-        output.Should().Contain("all cached");
+        output.Should().Contain("links cached");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
         // IsComplete is true because CachedCount + NeedsBrowserCount >= Total
-        output.Should().Contain("all cached");
+        output.Should().Contain("links cached");
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
 
-        output.Should().Contain("all cached");
+        output.Should().Contain("links cached");
     }
 
     [Fact]
