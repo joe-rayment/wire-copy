@@ -26,6 +26,16 @@ public class NavigationTree
     /// </summary>
     public int TotalLinks { get; private set; }
 
+    /// <summary>
+    /// IDs of nodes toggled for batch operations (separate from cursor selection).
+    /// </summary>
+    public HashSet<Guid> SelectedNodeIds { get; } = new();
+
+    /// <summary>
+    /// Number of nodes currently toggled for batch operations.
+    /// </summary>
+    public int SelectionCount => SelectedNodeIds.Count;
+
     private NavigationTree(LinkNode root)
     {
         Root = root;
@@ -348,4 +358,131 @@ public class NavigationTree
             node.Collapse();
         }
     }
+
+    /// <summary>
+    /// Toggles multi-select on the current node. If it's a group header,
+    /// toggles all its non-header children. Returns the number of items affected.
+    /// </summary>
+    public int ToggleCurrentNodeSelection()
+    {
+        if (CurrentSelection == null)
+        {
+            return 0;
+        }
+
+        if (CurrentSelection.IsGroupHeader)
+        {
+            return ToggleSectionSelection(CurrentSelection);
+        }
+
+        return ToggleNodeSelection(CurrentSelection);
+    }
+
+    /// <summary>
+    /// Toggles a single node in the selection set.
+    /// </summary>
+    public int ToggleNodeSelection(LinkNode node)
+    {
+        if (node.IsGroupHeader || string.IsNullOrEmpty(node.Link.Url))
+        {
+            return 0;
+        }
+
+        if (!SelectedNodeIds.Remove(node.Id))
+        {
+            SelectedNodeIds.Add(node.Id);
+        }
+
+        return 1;
+    }
+
+    /// <summary>
+    /// Toggles all non-header children of a group header.
+    /// If all children are selected, deselects all. Otherwise, selects all.
+    /// </summary>
+    public int ToggleSectionSelection(LinkNode header)
+    {
+        var children = header.Children
+            .Where(c => !c.IsGroupHeader && !string.IsNullOrEmpty(c.Link.Url))
+            .ToList();
+
+        if (children.Count == 0)
+        {
+            return 0;
+        }
+
+        var allSelected = children.All(c => SelectedNodeIds.Contains(c.Id));
+
+        if (allSelected)
+        {
+            foreach (var child in children)
+            {
+                SelectedNodeIds.Remove(child.Id);
+            }
+        }
+        else
+        {
+            foreach (var child in children)
+            {
+                SelectedNodeIds.Add(child.Id);
+            }
+        }
+
+        return children.Count;
+    }
+
+    /// <summary>
+    /// Returns all nodes currently in the multi-select set.
+    /// </summary>
+    public IReadOnlyList<LinkNode> GetSelectedNodes()
+    {
+        if (SelectedNodeIds.Count == 0)
+        {
+            return [];
+        }
+
+        return GetAllNodes()
+            .Where(n => SelectedNodeIds.Contains(n.Id))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Checks whether a node is in the multi-select set.
+    /// </summary>
+    public bool IsNodeSelected(LinkNode node) => SelectedNodeIds.Contains(node.Id);
+
+    /// <summary>
+    /// Checks whether all non-header children of a group header are selected.
+    /// </summary>
+    public bool IsSectionFullySelected(LinkNode header)
+    {
+        return header.IsGroupHeader &&
+               header.Children.Count > 0 &&
+               header.Children
+                   .Where(c => !c.IsGroupHeader && !string.IsNullOrEmpty(c.Link.Url))
+                   .All(c => SelectedNodeIds.Contains(c.Id));
+    }
+
+    /// <summary>
+    /// Checks whether any (but not all) children of a group header are selected.
+    /// </summary>
+    public bool IsSectionPartiallySelected(LinkNode header)
+    {
+        if (!header.IsGroupHeader || header.Children.Count == 0)
+        {
+            return false;
+        }
+
+        var selectableChildren = header.Children
+            .Where(c => !c.IsGroupHeader && !string.IsNullOrEmpty(c.Link.Url))
+            .ToList();
+
+        var selectedCount = selectableChildren.Count(c => SelectedNodeIds.Contains(c.Id));
+        return selectedCount > 0 && selectedCount < selectableChildren.Count;
+    }
+
+    /// <summary>
+    /// Clears all multi-select state.
+    /// </summary>
+    public void ClearSelection() => SelectedNodeIds.Clear();
 }
