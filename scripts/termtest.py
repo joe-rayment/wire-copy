@@ -262,7 +262,7 @@ def smoke_test(url: str = "https://example.com"):
         try:
             # Wait for page to load (either content or error)
             matched, screen = t.wait_for_any(
-                "Example Domain", "LinkView", "Error", "Loading",
+                "Example Domain", "LINK", "Error", "Loading",
                 timeout=20,
             )
             print(f"Initial load matched: '{matched}'")
