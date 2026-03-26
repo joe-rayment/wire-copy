@@ -36,6 +36,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly CacheConfiguration _config;
     private readonly string[] _paywalledDomains;
     private readonly IReadableContentExtractor? _contentExtractor;
+    private readonly ILinkExtractor? _linkExtractor;
     private readonly IArticleContentCache? _articleContentCache;
     private readonly ICookieManager? _cookieManager;
     private readonly ILogger<BackgroundPreloadService> _logger;
@@ -78,6 +79,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         CacheConfiguration config,
         ILogger<BackgroundPreloadService> logger,
         IReadableContentExtractor? contentExtractor = null,
+        ILinkExtractor? linkExtractor = null,
         IArticleContentCache? articleContentCache = null,
         BrowserConfiguration? browserConfig = null,
         ICookieManager? cookieManager = null)
@@ -88,6 +90,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _config = config;
         _logger = logger;
         _contentExtractor = contentExtractor;
+        _linkExtractor = linkExtractor;
         _articleContentCache = articleContentCache;
         _cookieManager = cookieManager;
         _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
@@ -950,6 +953,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _cache.Put(url, result);
                     _logger.LogDebug("Pre-loaded and cached: {Url}", url);
 
+                    // Warm the PageBuildCache: extract links and readable content
+                    // so navigation to this URL skips extraction entirely.
+                    await TryBuildAndCachePageAsync(url, result, cancellationToken);
+
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
                     await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken);
@@ -984,6 +991,63 @@ internal sealed class BackgroundPreloadService : IPreloadService
         finally
         {
             _inFlight.TryRemove(normalizedUrl, out _);
+        }
+    }
+
+    /// <summary>
+    /// Extracts links and readable content from pre-loaded HTML and stores a
+    /// PageBuildCache alongside the HTML in IPageCache. This means navigating to
+    /// a preloaded URL skips link extraction, tree building, and content extraction
+    /// entirely — the page is rebuilt from cached inputs in ~1ms.
+    /// </summary>
+    private async Task TryBuildAndCachePageAsync(
+        string url,
+        PageLoadResult result,
+        CancellationToken cancellationToken)
+    {
+        if (_linkExtractor == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var links = await _linkExtractor.ExtractLinksAsync(
+                result.Html, result.Url ?? url, cancellationToken);
+
+            if (links.Count == 0)
+            {
+                return;
+            }
+
+            ReadableContent? readable = null;
+            if (_contentExtractor != null)
+            {
+                readable = await _contentExtractor.ExtractAsync(
+                    result.Html, result.Url ?? url, cancellationToken);
+            }
+
+            var buildCache = new PageBuildCache
+            {
+                Links = links,
+                ReadableContent = readable,
+                Metadata = result.Metadata ?? new PageMetadata { Title = "Untitled" },
+                FinalUrl = result.Url ?? url,
+            };
+
+            _cache.PutBuildCache(url, buildCache);
+            _logger.LogDebug(
+                "PageBuildCache warmed from preload: {Url} ({LinkCount} links)",
+                url,
+                links.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "PageBuildCache warm failed for preloaded {Url}", url);
         }
     }
 
