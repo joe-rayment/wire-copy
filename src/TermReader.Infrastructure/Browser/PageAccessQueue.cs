@@ -9,6 +9,15 @@ namespace TermReader.Infrastructure.Browser;
 /// Foreground requests preempt background requests via a two-level semaphore:
 /// background tasks must acquire both the main lock and a foreground-check gate,
 /// while foreground tasks only need the main lock and can signal background to yield.
+/// <para>
+/// <b>Limitation:</b> Preemption only takes effect when the background task releases
+/// the lock — it does not interrupt in-flight HTTP requests or browser navigations.
+/// A background task inside an I/O call (e.g., HttpClient.SendAsync, Page.GotoAsync)
+/// will complete before yielding. In practice this adds at most 10 seconds (the HTTP
+/// timeout) before foreground can proceed. CancellationToken-based interruption would
+/// require propagating a shared token through the lease, which is deferred unless
+/// the delay proves problematic in production.
+/// </para>
 /// </summary>
 internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
 {
