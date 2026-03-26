@@ -327,28 +327,41 @@ public sealed class BrowserSession : IBrowserSession
 
         // Ensure Playwright browsers are installed (idempotent — skips if already present).
         // Redirect stdout/stderr so install progress doesn't corrupt the TUI alternate screen.
+        // Run with a timeout to prevent indefinite hangs on network issues.
         if (!_browsersInstalled)
         {
             _browsersInstalled = true;
             try
             {
                 _logger.LogInformation("Ensuring Playwright browsers are installed...");
-                var origOut = Console.Out;
-                var origErr = Console.Error;
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-                try
+                var installTask = Task.Run(() =>
                 {
-                    var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                    var origOut = Console.Out;
+                    var origErr = Console.Error;
+                    Console.SetOut(TextWriter.Null);
+                    Console.SetError(TextWriter.Null);
+                    try
+                    {
+                        return Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                    }
+                    finally
+                    {
+                        Console.SetOut(origOut);
+                        Console.SetError(origErr);
+                    }
+                });
+
+                if (await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(60))) == installTask)
+                {
+                    var exitCode = await installTask;
                     if (exitCode != 0)
                     {
                         _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
                     }
                 }
-                finally
+                else
                 {
-                    Console.SetOut(origOut);
-                    Console.SetError(origErr);
+                    _logger.LogWarning("Playwright browser install timed out after 60s (will attempt launch anyway)");
                 }
             }
             catch (Exception ex)
