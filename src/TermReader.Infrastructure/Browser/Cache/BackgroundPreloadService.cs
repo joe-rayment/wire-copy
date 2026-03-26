@@ -23,6 +23,13 @@ namespace TermReader.Infrastructure.Browser.Cache;
 /// </summary>
 internal sealed class BackgroundPreloadService : IPreloadService
 {
+    /// <summary>
+    /// Minimum word count for caching paywalled domain responses. Higher than the general
+    /// threshold (50) because truncated paywall previews often contain 50-200 words of
+    /// teaser content that would pass the basic check.
+    /// </summary>
+    private const int MinPaywalledWordCount = 500;
+
     private readonly IPageCache _cache;
     private readonly IIdleDetector _idleDetector;
     private readonly HttpClient _httpClient;
@@ -924,6 +931,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     var domain = new Uri(url).Host;
                     _needsJsDomains.TryAdd(domain, true);
                     _logger.LogDebug("Skipping cache for paywalled content: {Url}", url);
+                }
+                else if (IsPaywalledDomain(url) && !CachingPageLoader.HasSufficientContent(result.Html, MinPaywalledWordCount))
+                {
+                    // Paywalled domain passed basic checks but has too few words.
+                    // Cookies may not have loaded correctly (domain mismatch, encryption
+                    // error), resulting in a truncated preview. Don't cache — the browser
+                    // with cookies will get the full article.
+                    _logger.LogDebug(
+                        "Skipping cache for paywalled domain with insufficient content (<{MinWords} words): {Url}",
+                        MinPaywalledWordCount,
+                        url);
                 }
                 else
                 {
