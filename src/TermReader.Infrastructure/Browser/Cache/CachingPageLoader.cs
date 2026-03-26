@@ -34,13 +34,7 @@ public class CachingPageLoader : IPageLoader
         PageLoadRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request.ForceBrowser)
-        {
-            _logger.LogInformation(
-                "ForceBrowser set, bypassing cache (requires browser with cookies): {Url}",
-                request.Url);
-        }
-        else if (request.ForceRefresh)
+        if (request.ForceRefresh)
         {
             _logger.LogInformation("Force refresh requested, bypassing cache: {Url}", request.Url);
         }
