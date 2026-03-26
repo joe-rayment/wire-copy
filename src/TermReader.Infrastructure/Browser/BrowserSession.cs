@@ -230,7 +230,7 @@ public sealed class BrowserSession : IBrowserSession
 
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "osascript",
+                FileName = "/usr/bin/osascript",
                 Arguments = $"-e 'tell application \"{appName}\" to activate'",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -242,13 +242,24 @@ public sealed class BrowserSession : IBrowserSession
             if (process != null)
             {
                 await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+                if (process.HasExited && process.ExitCode != 0)
+                {
+                    var stderr = await process.StandardError.ReadToEndAsync();
+                    _logger.LogWarning(
+                        "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy → Automation permissions.",
+                        process.ExitCode,
+                        stderr.Trim());
+                    return;
+                }
             }
 
             _logger.LogDebug("Refocused terminal app: {AppName}", appName);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to refocus terminal (non-fatal)");
+            _logger.LogWarning(
+                ex,
+                "Failed to refocus terminal — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
         }
     }
 
