@@ -55,6 +55,7 @@ public class BrowserOrchestrator : IBrowserService
     private string? _backgroundLoadUrl;
     private CancellationTokenSource? _backgroundLoadCts;
     private RenderOptions? _backgroundLoadOptions;
+    private volatile LoadingStatus? _loadingStatus;
 
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
@@ -149,6 +150,14 @@ public class BrowserOrchestrator : IBrowserService
     {
         _logger.LogInformation("Loading page: {Url}", url);
         _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.Headless);
+
+        var loadTimer = System.Diagnostics.Stopwatch.StartNew();
+        void ReportStage(string stage) => _loadingStatus = new LoadingStatus
+        {
+            Stage = stage,
+            ElapsedMs = loadTimer.ElapsedMilliseconds,
+            Url = url,
+        };
 
         // Article content cache bridge: when navigating from a collection (Reading List),
         // check the persistent article cache before doing any network I/O.
@@ -254,6 +263,8 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
+        ReportStage(forceBrowser ? "Loading via browser..." : "Fetching page...");
+
         var loadResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = forceBrowser },
             cancellationToken);
@@ -272,6 +283,7 @@ public class BrowserOrchestrator : IBrowserService
 
         _lastLoadFetchMethod = loadResult.FetchMethod;
 
+        ReportStage("Extracting content...");
         var page = await BuildPageFromLoadResultAsync(loadResult, url, cancellationToken);
 
         // Bot challenge handling: if browser returned a challenge page in headed mode,
@@ -529,6 +541,9 @@ public class BrowserOrchestrator : IBrowserService
         // Only cache after all fallbacks complete to avoid storing intermediate/truncated results.
         StoreBuildCache(url, page);
 
+        // Clear loading status now that page is ready
+        _loadingStatus = null;
+
         return page;
     }
 
@@ -718,8 +733,18 @@ public class BrowserOrchestrator : IBrowserService
                 }
                 else
                 {
-                    // Timer elapsed — check for progress update
-                    await CheckAndRenderProgressAsync(cancellationToken);
+                    // Timer elapsed — update loading screen or check preload progress
+                    if (HasActiveBackgroundLoad() && _loadingStatus != null)
+                    {
+                        _renderer.RenderLoading(
+                            _loadingStatus.Url,
+                            _loadingStatus.Stage,
+                            _loadingStatus.ElapsedMs);
+                    }
+                    else
+                    {
+                        await CheckAndRenderProgressAsync(cancellationToken);
+                    }
                 }
             }
         }
