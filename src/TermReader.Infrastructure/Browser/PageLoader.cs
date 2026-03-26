@@ -618,13 +618,17 @@ public class PageLoader : IPageLoader
                 Timeout = timeoutMs,
             });
 
-            // Secondary wait: give JS time to render content into the DOM
+            // Secondary wait: give JS a short window to render content.
+            // Check for article-like selectors first; fall back to raw content length.
             try
             {
                 await page.WaitForFunctionAsync(
-                    "() => document.body && document.body.innerHTML.length > 1000",
+                    @"() => {
+                        if (document.querySelector('article, [role=""main""], .entry-content, .post-content')) return true;
+                        return document.body && document.body.innerHTML.length > 1000;
+                    }",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 5000 });
+                    new PageWaitForFunctionOptions { Timeout = 2000 });
             }
             catch (TimeoutException)
             {
