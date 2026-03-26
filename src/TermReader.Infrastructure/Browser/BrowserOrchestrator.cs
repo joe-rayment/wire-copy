@@ -1443,7 +1443,7 @@ public class BrowserOrchestrator : IBrowserService
         {
             var host = new Uri(url).Host;
             var metadata = new PageMetadata { Title = host };
-            var skeletonPage = Page.Create(url, string.Empty, metadata);
+            var skeletonPage = Page.Create(url, "<html></html>", metadata);
 
             _navigationService.NavigateTo(skeletonPage);
             _navigationService.SetCacheInfo(false, null);

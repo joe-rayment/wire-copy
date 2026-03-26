@@ -399,7 +399,13 @@ public sealed class BrowserSession : IBrowserSession
 
         try
         {
-            _playwright = await Playwright.CreateAsync();
+            var createTask = Playwright.CreateAsync();
+            if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))) != createTask)
+            {
+                throw new TimeoutException("Playwright.CreateAsync timed out after 15 seconds");
+            }
+
+            _playwright = await createTask;
 
             var args = new List<string>
             {
@@ -416,10 +422,11 @@ public sealed class BrowserSession : IBrowserSession
                 args.Add("--window-size=800,600");
             }
 
-            _context = await _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
+            var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
             {
                 Headless = headless,
                 Args = args.ToArray(),
+                Timeout = 30000, // 30s timeout prevents indefinite hang if browser can't start
 
                 // Only override UserAgent for headless mode (HTTP fallback matching).
                 // In headed mode, let Chromium use its real UA to avoid version mismatch
@@ -428,6 +435,15 @@ public sealed class BrowserSession : IBrowserSession
                 ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
                 IgnoreHTTPSErrors = true,
             });
+
+            // Additional timeout guard — LaunchPersistentContextAsync's own Timeout may not
+            // cover all hang scenarios (e.g., no display for headed mode, broken Xvfb)
+            if (await Task.WhenAny(launchTask, Task.Delay(TimeSpan.FromSeconds(30))) != launchTask)
+            {
+                throw new TimeoutException("Browser launch timed out after 30 seconds");
+            }
+
+            _context = await launchTask;
 
             await _context.AddInitScriptAsync(@"
                 // Patch navigator.webdriver (primary automation indicator)

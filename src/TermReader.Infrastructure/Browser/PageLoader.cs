@@ -519,7 +519,18 @@ public class PageLoader : IPageLoader
 
         try
         {
-            var page = await _browserSession.GetOrCreatePageAsync(request.Headless);
+            IPage page;
+            try
+            {
+                using var pageCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                pageCts.CancelAfter(TimeSpan.FromSeconds(30));
+                page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Browser session creation timed out after 30s for {Url}", request.Url);
+                return PageLoadResult.Failure("Browser launch timed out");
+            }
 
             _logger.LogDebug("Navigating to {Url}", request.Url);
             await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs });
