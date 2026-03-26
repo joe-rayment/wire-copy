@@ -26,5 +26,5 @@ internal static class Spacing
     public const int DefaultHeaderLines = 1;
 
     /// <summary>Number of status bar lines reserved at bottom.</summary>
-    public const int StatusBarLines = 2;
+    public const int StatusBarLines = 1;
 }

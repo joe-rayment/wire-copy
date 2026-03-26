@@ -15,24 +15,24 @@ public class CollectionRendererVisibleCountTests
     public void GetCollectionListVisibleCount_SmallTerminal_NoSeparators()
     {
         // height=20, no separators, linesPerItem=1
-        // remainingHeight = Max(3, 20-3-2) = 15
+        // remainingHeight = Max(3, 20-3-1) = 16
         var result = CollectionRenderer.GetCollectionListVisibleCount(20);
-        result.Should().Be(15);
+        result.Should().Be(16);
     }
 
     [Fact]
     public void GetCollectionListVisibleCount_LargeTerminal_NoSeparators()
     {
         // height=40, no separators (removed by default), linesPerItem=1
-        // remainingHeight = Max(3, 40-3-2) = 35
+        // remainingHeight = Max(3, 40-3-1) = 36
         var result = CollectionRenderer.GetCollectionListVisibleCount(40);
-        result.Should().Be(35);
+        result.Should().Be(36);
     }
 
     [Fact]
     public void GetCollectionListVisibleCount_MinimumHeight_ClampsTo3()
     {
-        // height=5, remainingHeight = Max(3, 5-3-2) = Max(3, 0) = 3
+        // height=5, remainingHeight = Max(3, 5-3-1) = Max(3, 1) = 3
         var result = CollectionRenderer.GetCollectionListVisibleCount(5);
         result.Should().Be(3);
     }
@@ -45,26 +45,26 @@ public class CollectionRendererVisibleCountTests
     public void GetCollectionItemsVisibleCount_SmallTerminal_InlineCta()
     {
         // height=20, width=80: CTA is inline (1 line, height <= 35), linesPerItem=2
-        // remainingHeight = Max(3, 20-3-2-1) = 14
-        // Max(1, (14+1)/2) = 7
+        // remainingHeight = Max(3, 20-3-1-1) = 15
+        // Max(1, (15+1)/2) = 8
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(20);
-        result.Should().Be(7);
+        result.Should().Be(8);
     }
 
     [Fact]
     public void GetCollectionItemsVisibleCount_LargeTerminal_SlabCta()
     {
         // height=40, width=80: CTA is full slab (5 lines, height > 35), linesPerItem=2
-        // remainingHeight = Max(3, 40-3-2-5) = 30
-        // Max(1, (30+1)/2) = 15
+        // remainingHeight = Max(3, 40-3-1-5) = 31
+        // Max(1, (31+1)/2) = 16
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(40);
-        result.Should().Be(15);
+        result.Should().Be(16);
     }
 
     [Fact]
     public void GetCollectionItemsVisibleCount_MinimumHeight_ClampsTo1()
     {
-        // height=5, remainingHeight = Max(3, -3) = 3
+        // height=5, remainingHeight = Max(3, 5-3-1-1) = Max(3, 0) = 3
         // Max(1, (3+1)/2) = 2
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(5);
         result.Should().BeGreaterOrEqualTo(1);

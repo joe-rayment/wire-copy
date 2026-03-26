@@ -84,7 +84,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsCompactWhenShort()
     {
-        // availableHeight = max(4, 18 - 1 - 2) = 15 >= 15 → standard (5)
+        // availableHeight = max(4, 18 - 1 - 1) = 16 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 18);
         layout.CellHeight.Should().Be(5);
     }
@@ -92,7 +92,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsStandardWhenTall()
     {
-        // availableHeight = max(4, 30 - 1 - 2) = 27 >= 15 → standard (5)
+        // availableHeight = max(4, 30 - 1 - 1) = 28 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.CellHeight.Should().Be(5);
     }
@@ -100,7 +100,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 1 - 2) = 27, cellHeight = 5 → 27/5 = 5
+        // availableHeight = max(4, 30 - 1 - 1) = 28, cellHeight = 5 → 28/5 = 5
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.VisibleRows.Should().Be(5);
     }
@@ -110,7 +110,7 @@ public class LinkTreeLayoutTests
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
         layout.HeaderLines.Should().Be(1);
-        layout.StatusBarLines.Should().Be(2);
+        layout.StatusBarLines.Should().Be(1);
     }
 
     #endregion
@@ -719,18 +719,18 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void ComputeLayout_StatusBarIs2Lines_MatchesCompactStyle()
+    public void ComputeLayout_StatusBarIs1Line_MatchesCompactStyle()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.StatusBarLines.Should().Be(2, "status bar is line 1 + line 2");
+        layout.StatusBarLines.Should().Be(1, "status bar is a single line");
     }
 
     [Fact]
     public void ComputeLayout_AvailableHeight_AccountsForCompactHeader()
     {
-        // availableHeight = terminalHeight - headerLines(1) - statusBarLines(2)
+        // availableHeight = terminalHeight - headerLines(1) - statusBarLines(1)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        var expectedAvailable = 30 - 1 - 2; // 27
+        var expectedAvailable = 30 - 1 - 1; // 28
         var expectedVisibleRows = expectedAvailable / layout.CellHeight;
         layout.VisibleRows.Should().Be(expectedVisibleRows);
     }

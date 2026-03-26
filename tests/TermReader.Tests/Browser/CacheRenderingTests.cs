@@ -83,7 +83,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
-        output.Should().Contain("links cached");
+        output.Should().Contain("cached");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
         // IsComplete is true because CachedCount + NeedsBrowserCount >= Total
-        output.Should().Contain("links cached");
+        output.Should().Contain("cached");
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
 
-        output.Should().Contain("links cached");
+        output.Should().Contain("cached");
     }
 
     [Fact]
@@ -198,7 +198,6 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120));
 
-        output.Should().Contain("cached");
         output.Should().Contain("5m ago");
     }
 
@@ -231,7 +230,6 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("cached");
         output.Should().Contain("2m ago");
     }
 
@@ -256,7 +254,7 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("ReaderView");
+        output.Should().Contain("READ");
     }
 
     [Fact]
@@ -334,10 +332,10 @@ public class CacheRenderingTests
 
     #endregion
 
-    #region Two-Line Status Bar Format
+    #region Single-Line Status Bar Format
 
     [Fact]
-    public void StatusBar_OutputsTwoContentLines()
+    public void StatusBar_OutputsSingleContentLine()
     {
         var context = new NavigationContext
         {
@@ -351,9 +349,8 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        // Line 1: mode label
-        output.Should().Contain("LinkView");
-        // Line 2: domain
+        // Single line with mode badge and domain
+        output.Should().Contain("LINK");
         output.Should().Contain("example.com");
     }
 
@@ -365,7 +362,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        output.Should().Contain("LinkView");
+        output.Should().Contain("LINK");
     }
 
     [Fact]
@@ -424,13 +421,12 @@ public class CacheRenderingTests
     #region Progress Bar
 
     [Fact]
-    public void FormatProgressBar_ShowsBlockCharactersAndCount()
+    public void FormatProgressBar_ShowsCountAndCachedLabel()
     {
         var p = BuiltInThemes.Get(ThemeName.Phosphor);
         var bar = StatusBarRenderer.FormatProgressBar(3, 10, p);
 
         bar.Should().Contain("3/10 cached");
-        bar.Should().Contain("\u2588"); // full block (eighth-block progress bar)
     }
 
     #endregion

@@ -199,7 +199,7 @@ internal class CollectionRenderer
     internal static int GetCollectionListVisibleCount(int terminalHeight)
     {
         const int headerLines = 3;
-        const int statusBarLines = 2;
+        const int statusBarLines = 1;
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
         return remainingHeight;
     }
@@ -207,7 +207,7 @@ internal class CollectionRenderer
     internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80)
     {
         const int headerLines = 3;
-        const int statusBarLines = 2;
+        const int statusBarLines = 1;
         const int linesPerItem = 2;
         var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
