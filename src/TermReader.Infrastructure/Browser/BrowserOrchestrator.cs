@@ -47,6 +47,9 @@ public class BrowserOrchestrator : IBrowserService
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
 
+    // Captures the last build result from BuildPageFromLoadResultAsync for StoreBuildCache
+    private PageBuildCache? _lastBuildResult;
+
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -185,6 +188,16 @@ public class BrowserOrchestrator : IBrowserService
                     _logger.LogWarning(ex, "Article content cache lookup failed for {Url}, falling through to normal load", url);
                 }
             }
+        }
+
+        // Fast path: if we have cached build results (extracted links, hierarchy, content),
+        // rebuild the page from those without re-parsing HTML or re-running AI analysis.
+        var buildCache = _pageCache.TryGetBuildCache(url);
+        if (buildCache != null)
+        {
+            _logger.LogInformation("Build cache hit for {Url}, skipping extraction", url);
+            _lastLoadFetchMethod = FetchMethod.Cached;
+            return RebuildPageFromBuildCache(buildCache);
         }
 
         if (!_pageCache.Contains(url))
@@ -473,6 +486,10 @@ public class BrowserOrchestrator : IBrowserService
             page.Metadata.Title,
             page.LinkTree?.TotalLinks ?? 0,
             page.HasReadableContent() ? "has" : "no");
+
+        // Cache build results so repeat visits skip extraction entirely.
+        // Only cache after all fallbacks complete to avoid storing intermediate/truncated results.
+        StoreBuildCache(url, page);
 
         return page;
     }
@@ -946,6 +963,60 @@ public class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
+    /// Rebuilds a Page from cached build results (extracted links, hierarchy, content).
+    /// Creates a fresh NavigationTree with clean selection state.
+    /// </summary>
+    private Page RebuildPageFromBuildCache(PageBuildCache cache)
+    {
+        var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
+
+        NavigationTree tree;
+        if (cache.HierarchyConfig != null)
+        {
+            tree = _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).GetAwaiter().GetResult();
+            _navigationService.SetAiHierarchy(true);
+        }
+        else
+        {
+            tree = _treeBuilder.BuildTreeAsync(cache.Links).GetAwaiter().GetResult();
+            _navigationService.SetAiHierarchy(false);
+        }
+
+        page.SetLinkTree(tree);
+
+        if (cache.ReadableContent != null)
+        {
+            page.SetReadableContent(cache.ReadableContent);
+        }
+
+        return page;
+    }
+
+    /// <summary>
+    /// Stores the last build result in the page cache so repeat visits skip extraction.
+    /// Uses _lastBuildResult captured by BuildPageFromLoadResultAsync.
+    /// </summary>
+    private void StoreBuildCache(string url, Page page)
+    {
+        var buildCache = _lastBuildResult;
+        _lastBuildResult = null;
+
+        if (buildCache == null || page.LinkTree == null)
+        {
+            return;
+        }
+
+        // Update with final state (fallbacks may have changed readable content)
+        if (page.ReadableContent != buildCache.ReadableContent)
+        {
+            buildCache = buildCache with { ReadableContent = page.ReadableContent };
+        }
+
+        _pageCache.PutBuildCache(url, buildCache);
+        _logger.LogDebug("Stored build cache for {Url} ({LinkCount} links)", url, buildCache.Links.Count);
+    }
+
+    /// <summary>
     /// Builds a Page entity from a PageLoadResult, extracting links, tree, and readable content.
     /// </summary>
     private async Task<Page> BuildPageFromLoadResultAsync(PageLoadResult loadResult, string requestedUrl, CancellationToken cancellationToken)
@@ -997,6 +1068,16 @@ public class BrowserOrchestrator : IBrowserService
             page.HasReadableContent(),
             page.ReadableContent?.Paragraphs.Count ?? 0,
             loadResult.Html?.Length ?? 0);
+
+        // Capture build inputs for StoreBuildCache (called at end of LoadPageAsync)
+        _lastBuildResult = new PageBuildCache
+        {
+            Links = links,
+            HierarchyConfig = hierarchyConfig,
+            ReadableContent = readable,
+            Metadata = metadata,
+            FinalUrl = finalUrl,
+        };
 
         return page;
     }
