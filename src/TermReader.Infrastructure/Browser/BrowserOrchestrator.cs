@@ -314,7 +314,9 @@ public class BrowserOrchestrator : IBrowserService
         // Paywalled domain content-quality fallback: if HTTP returned truncated content
         // from a paywalled domain, either retry with authenticated browser (cookies exist)
         // or prompt user to log in (no cookies — silent retry would show same paywall).
+        // Skip for LinkList pages — section pages aren't paywalled.
         if (browserAvailable &&
+            page.Classification != PageClassification.LinkList &&
             page.HasReadableContent() &&
             _lastLoadFetchMethod != FetchMethod.Browser &&
             IsPaywalledDomain(url) &&
@@ -457,8 +459,10 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         // Headless challenge fallback: if headless browser got a bot challenge,
-        // retry in headed mode where DataDome is less likely to block
+        // retry in headed mode where DataDome is less likely to block.
+        // Skip for LinkList pages — they load fine via HTTP.
         if (!page.HasReadableContent() &&
+            page.Classification != PageClassification.LinkList &&
             loadResult.FetchMethod == FetchMethod.Browser &&
             _browserConfig.Headless &&
             PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
