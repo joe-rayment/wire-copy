@@ -113,20 +113,37 @@ internal static class ViewCommandHandler
 
     public static async Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        var mode = ctx.NavigationService.CurrentContext.ViewMode;
+        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // Render the popup overlay (paints over current content)
+        UI.Components.KeybindingPopup.Render(
+            mode,
+            palette,
+            options.TerminalWidth,
+            options.TerminalHeight);
+
+        // Wait for any keypress to dismiss (re-render on resize)
         while (!ct.IsCancellationRequested)
         {
-            Console.Write("\x1b[H\x1b[2J");
-            Console.WriteLine(ctx.InputHandler.GetHelpText());
-
             var command = await ctx.InputHandler.WaitForInputAsync(ct);
             if (command.Type == CommandType.TerminalResized)
             {
+                // Re-render page + popup on resize
+                await ctx.RenderCurrentPageAsync(options, ct);
+                options = ctx.GetCurrentRenderOptions();
+                UI.Components.KeybindingPopup.Render(
+                    mode,
+                    palette,
+                    options.TerminalWidth,
+                    options.TerminalHeight);
                 continue;
             }
 
             break;
         }
 
+        // Restore the original page render
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
