@@ -496,16 +496,20 @@ public sealed class BrowserSession : IBrowserSession
                 return;
             }
 
-            var pwCookies = cookies.Select(c => new Cookie
-            {
-                Name = c.Name,
-                Value = c.Value,
-                Domain = c.Domain,
-                Path = c.Path,
-                Expires = c.Expiry.HasValue
-                    ? new DateTimeOffset(c.Expiry.Value).ToUnixTimeSeconds()
-                    : -1,
-            }).ToList();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var pwCookies = cookies
+                .Select(c => new Cookie
+                {
+                    Name = c.Name,
+                    Value = c.Value,
+                    Domain = c.Domain,
+                    Path = c.Path,
+                    Expires = c.Expiry.HasValue
+                        ? new DateTimeOffset(c.Expiry.Value).ToUnixTimeSeconds()
+                        : -1,
+                })
+                .Where(c => c.Expires < 0 || c.Expires > now)
+                .ToList();
 
             await _context!.AddCookiesAsync(pwCookies);
             _logger.LogDebug("Injected {Count} stored cookies into Playwright context", pwCookies.Count);
