@@ -111,7 +111,6 @@ public sealed class BrowserSession : IBrowserSession
 
             _logger.LogInformation("Creating new Playwright browser session (headless={Headless})", headless);
             await LaunchBrowserAsync(headless);
-            _pageIsHeadless = headless;
             return _page!;
         }
         finally
@@ -463,6 +462,10 @@ public sealed class BrowserSession : IBrowserSession
             {
                 await MinimizeWindowAsync();
             }
+
+            // Set mode flag only on success — if launch throws, the flag stays
+            // stale so the next call correctly retries the mode switch.
+            _pageIsHeadless = headless;
         }
         catch
         {
