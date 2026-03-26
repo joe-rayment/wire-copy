@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <!-- Kill test host if it hangs after tests complete. The test suite
+         finishes in ~75s; this 120s timeout prevents zombie testhost processes
+         that block CI and local dev. Root cause: undisposed Timer/SemaphoreSlim
+         instances in BackgroundPreloadService and InMemoryPageCache keep the
+         CLR alive after all test methods have completed. -->
+    <TestSessionTimeout>120000</TestSessionTimeout>
+  </RunConfiguration>
+</RunSettings>

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <NoWarn>$(NoWarn);NU1608</NoWarn>
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\test.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>
