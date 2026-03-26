@@ -105,7 +105,8 @@ public class TerminalInputHandler : IInputHandler
    :home           Return to launcher
 
  Reading List
-   s               Save to Reading List
+   Space           Select / deselect item or section
+   s               Save to Reading List (or all selected)
    Shift+A         Save all links to Reading List
    Shift+S         Save to specific collection
    d               Delete / remove item
