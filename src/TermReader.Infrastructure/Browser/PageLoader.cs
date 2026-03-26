@@ -178,17 +178,22 @@ public class PageLoader : IPageLoader
                     '[class*=""css-mcm29f""]'
                 ];
 
-                // Remove matching elements (skip if they contain <article> to avoid
-                // removing content wrappers like NYT's vi-gateway-container)
+                // Skip removal if element contains substantial text (likely article content)
+                function hasSubstantialText(el) {
+                    var text = (el.innerText || '').trim();
+                    return text.length > 200;
+                }
+
+                // Remove matching elements (skip if they contain <article> or substantial text
+                // to avoid removing content wrappers like NYT's vi-gateway-container)
                 selectors.forEach(function(sel) {
                     document.querySelectorAll(sel).forEach(function(el) {
-                        if (el.querySelector('article')) return;
+                        if (el.querySelector('article') || hasSubstantialText(el)) return;
                         // Only remove elements that look like overlays (fixed/sticky position
-                        // or covering significant viewport area)
+                        // or high z-index)
                         var style = window.getComputedStyle(el);
                         var isOverlay = style.position === 'fixed' || style.position === 'sticky'
-                            || style.zIndex > 100
-                            || el.offsetHeight > window.innerHeight * 0.3;
+                            || style.zIndex > 100;
                         if (isOverlay) {
                             el.remove();
                             removed++;
@@ -198,6 +203,7 @@ public class PageLoader : IPageLoader
 
                 // Remove generic fixed/sticky overlays covering viewport
                 document.querySelectorAll('[class*=""modal""], [class*=""overlay""], [class*=""popup""], [class*=""curtain""], [class*=""backdrop""]').forEach(function(el) {
+                    if (hasSubstantialText(el)) return;
                     var style = window.getComputedStyle(el);
                     if ((style.position === 'fixed' || style.position === 'sticky') && style.display !== 'none') {
                         el.remove();
