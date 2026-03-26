@@ -210,9 +210,9 @@ public class BrowserOrchestrator : IBrowserService
         {
             _renderer.RenderLoading(url);
 
-            // Esc cancellation during page loading is not yet wired up. The RenderLoading
-            // hint shows "Esc:cancel" but actual cancellation would require racing the page
-            // load against keyboard input and aborting via CancellationTokenSource.
+            // Note: Esc cancellation is handled by NavigateToAsync — cache-miss loads run
+            // on a background thread with a CancellationTokenSource. Esc maps to GoBack,
+            // which cancels the CTS and pops the skeleton page.
 
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
@@ -660,8 +660,12 @@ public class BrowserOrchestrator : IBrowserService
                     pendingInput = null;
 
                     // Gate commands during background loading: only Quit, GoBack, and
-                    // navigation-cancellation commands are allowed
-                    if (HasActiveBackgroundLoad() && !IsAllowedDuringBackgroundLoad(command.Type))
+                    // passive commands are allowed. All others are silently ignored.
+                    if (HasActiveBackgroundLoad() &&
+                        command.Type is not CommandType.Quit
+                            and not CommandType.GoBack
+                            and not CommandType.NoOp
+                            and not CommandType.TerminalResized)
                     {
                         // Ignore the command — user will see the loading screen
                         continue;
@@ -1484,18 +1488,6 @@ public class BrowserOrchestrator : IBrowserService
         {
             _preloadService.Resume();
         }
-    }
-
-    /// <summary>
-    /// Commands allowed during background page loading.
-    /// All others are silently ignored to avoid operating on a skeleton page.
-    /// </summary>
-    private static bool IsAllowedDuringBackgroundLoad(CommandType type)
-    {
-        return type is CommandType.Quit
-            or CommandType.GoBack
-            or CommandType.NoOp
-            or CommandType.TerminalResized;
     }
 
     private bool HasActiveBackgroundLoad()
