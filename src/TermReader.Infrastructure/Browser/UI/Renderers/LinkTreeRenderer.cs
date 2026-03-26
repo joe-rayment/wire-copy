@@ -486,14 +486,14 @@ internal class LinkTreeRenderer
         {
             var subtitle = GetMetadataSubtitle(node, width - 1);
             var metaPad = new string(' ', Math.Max(0, width - 1 - subtitle.Length));
-            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{metaPad}{Reset}";
+            return $" {palette.SecondaryText.AnsiFg}{subtitle}{metaPad}{Reset}";
         }
 
         if (lineIndex == metadataLineIdx)
         {
             var subtitle = GetMetadataSubtitle(node, width - 1);
             var metaPad = new string(' ', Math.Max(0, width - 1 - subtitle.Length));
-            return $" {palette.SecondaryText.AnsiFg}{Dim}{subtitle}{metaPad}{Reset}";
+            return $" {palette.SecondaryText.AnsiFg}{subtitle}{metaPad}{Reset}";
         }
 
         if (lineIndex == cardHeight - 1 && cardHeight > 1)

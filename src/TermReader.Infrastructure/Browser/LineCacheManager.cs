@@ -144,7 +144,6 @@ internal class LineCacheManager
     internal static List<string> BuildHeadlineLines(ReadableContent content, int maxWidth, ThemePalette palette, string? pageUrl = null)
     {
         const string bold = "\x1b[1m";
-        const string dim = "\x1b[2m";
         const string reset = "\x1b[0m";
         var titleColor = palette.HeaderTitleFg.AnsiFg;
 
@@ -160,19 +159,19 @@ internal class LineCacheManager
 
         // Separator under headline for visual weight
         var ruleWidth = Math.Min(maxWidth - 4, 40);
-        lines.Add($"  {palette.SecondaryText.AnsiFg}{new string('\u2500', ruleWidth)}{reset}");
+        lines.Add($"  {palette.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{reset}");
 
         // Byline and domain — secondary text below separator
         var metadata = content.GetMetadataString();
         if (!string.IsNullOrEmpty(metadata))
         {
-            lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{metadata}{reset}");
+            lines.Add($"  {palette.SecondaryText.AnsiFg}{metadata}{reset}");
         }
 
         if (!string.IsNullOrEmpty(pageUrl))
         {
             var domain = UI.Renderers.LauncherRenderer.ExtractDomain(pageUrl);
-            lines.Add($"  {palette.SecondaryText.AnsiFg}{dim}{domain}{reset}");
+            lines.Add($"  {palette.SecondaryText.AnsiFg}{domain}{reset}");
         }
 
         lines.Add(string.Empty);
