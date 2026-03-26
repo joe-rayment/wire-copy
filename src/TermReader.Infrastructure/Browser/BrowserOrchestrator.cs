@@ -212,12 +212,31 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // Always try HTTP first for fast initial load (1-2s). Even for paywalled domains,
-        // HTTP returns the link list / section page quickly. The truncation fallback below
-        // handles upgrading to full authenticated content if needed. ForceBrowser is only
-        // used for explicit refresh (Shift+R, Shift+I), not initial navigation.
+        // For paywalled domains with cookies, use the background browser (with auth cookies)
+        // so articles load fully. The browser is pre-warmed after the first paywalled domain
+        // visit, so subsequent loads are fast. Cache is checked first (CachingPageLoader) —
+        // ForceBrowser only affects cache-miss behavior (browser instead of HTTP).
+        var forceBrowser = false;
+        if (IsPaywalledDomain(url))
+        {
+            var cookies = await _cookieManager.LoadCookiesAsync();
+            var host = new Uri(url).Host;
+            var hasDomainCookies = cookies.Any(c =>
+            {
+                var d = c.Domain.TrimStart('.');
+                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
+            });
+
+            if (hasDomainCookies)
+            {
+                _logger.LogInformation("Paywalled domain with cookies, using browser for cache miss: {Url}", url);
+                forceBrowser = true;
+            }
+        }
+
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = true },
+            new PageLoadRequest { Url = url, Headless = true, ForceBrowser = forceBrowser },
             cancellationToken);
 
         _logger.LogDebug(
