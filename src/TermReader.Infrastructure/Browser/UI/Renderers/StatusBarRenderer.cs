@@ -117,23 +117,16 @@ internal class StatusBarRenderer
 
     internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
-        const int barLength = 8;
+        const int barLength = 6;
         var fraction = total > 0 ? (double)cached / total : 0.0;
 
         if (isActive)
         {
             var bar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
-
-            if (!string.IsNullOrEmpty(currentUrl))
-            {
-                var slug = FormatUrlSlug(currentUrl);
-                return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar} {p.SecondaryText.AnsiFg}{slug}{Reset}";
-            }
-
             return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar}";
         }
 
-        return $"{p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
+        return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset}";
     }
 
     private static string FormatModeBadge(ViewMode mode, ThemePalette p)
@@ -253,7 +246,7 @@ internal class StatusBarRenderer
             {
                 if (progress.IsComplete)
                 {
-                    return $"{p.SecondaryText.AnsiFg}cached{Reset}";
+                    return $"{p.SecondaryText.AnsiFg}\u2713 cached{Reset}";
                 }
 
                 return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
