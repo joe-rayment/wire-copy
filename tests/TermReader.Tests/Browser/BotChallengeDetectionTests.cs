@@ -102,7 +102,7 @@ public class BotChallengeDetectionTests
     public async Task CachingPageLoader_BotChallengePage_NotCached()
     {
         var innerLoader = Substitute.For<IPageLoader>();
-        var cache = new InMemoryPageCache(
+        using var cache = new InMemoryPageCache(
             Options.Create(new CacheConfiguration { EvictionSweepIntervalSeconds = 3600 }),
             NullLogger<InMemoryPageCache>.Instance);
         var sut = new CachingPageLoader(
@@ -120,14 +120,13 @@ public class BotChallengeDetectionTests
         await sut.LoadAsync(request);
 
         cache.Contains(request.Url).Should().BeFalse();
-        cache.Dispose();
     }
 
     [Fact]
     public async Task CachingPageLoader_NormalPage_IsCached()
     {
         var innerLoader = Substitute.For<IPageLoader>();
-        var cache = new InMemoryPageCache(
+        using var cache = new InMemoryPageCache(
             Options.Create(new CacheConfiguration { EvictionSweepIntervalSeconds = 3600 }),
             NullLogger<InMemoryPageCache>.Instance);
         var sut = new CachingPageLoader(
@@ -142,7 +141,6 @@ public class BotChallengeDetectionTests
         await sut.LoadAsync(request);
 
         cache.Contains(request.Url).Should().BeTrue();
-        cache.Dispose();
     }
 
     // --- BrowserSession headless mode tracking tests ---

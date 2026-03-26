@@ -21,7 +21,7 @@ namespace TermReader.Tests.Browser;
 /// on navigation and cache indicators reflect article cache status.
 /// </summary>
 [Trait("Category", "Unit")]
-public class CollectionArticleCacheBridgeTests
+public class CollectionArticleCacheBridgeTests : IDisposable
 {
     private readonly IPageCache _pageCache;
     private readonly IIdleDetector _idleDetector;
@@ -47,6 +47,11 @@ public class CollectionArticleCacheBridgeTests
             _contentExtractor,
             linkExtractor: null,
             _articleContentCache);
+    }
+
+    public void Dispose()
+    {
+        _service.Dispose();
     }
 
     #region GetArticleCachedUrls
@@ -154,7 +159,7 @@ public class CollectionArticleCacheBridgeTests
     [Fact]
     public void WithoutArticleCache_GetArticleCachedUrls_ReturnsEmpty()
     {
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
@@ -168,7 +173,7 @@ public class CollectionArticleCacheBridgeTests
     public void WithoutArticleCache_IsUrlCached_OnlyChecksPageCache()
     {
         var pageCache = Substitute.For<IPageCache>();
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             pageCache,
             Substitute.For<IIdleDetector>(),
             new HttpClient(),

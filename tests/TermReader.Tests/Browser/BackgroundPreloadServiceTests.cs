@@ -22,7 +22,7 @@ using Xunit;
 namespace TermReader.Tests.Browser;
 
 [Trait("Category", "Unit")]
-public class BackgroundPreloadServiceTests
+public class BackgroundPreloadServiceTests : IDisposable
 {
     private readonly IPageCache _cache;
     private readonly IIdleDetector _idleDetector;
@@ -38,6 +38,11 @@ public class BackgroundPreloadServiceTests
         _service = new BackgroundPreloadService(
             _cache, _idleDetector, httpClient, _config,
             NullLogger<BackgroundPreloadService>.Instance);
+    }
+
+    public void Dispose()
+    {
+        _service.Dispose();
     }
 
     #region BuildQueue - Proximity-Based Ordering
@@ -245,7 +250,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_FiltersOutPaywalledDomains()
     {
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
@@ -267,7 +272,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_PaywalledDomains_ProgressShowsZeroEligible()
     {
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
@@ -290,7 +295,7 @@ public class BackgroundPreloadServiceTests
     public void BuildCollectionQueue_FiltersOutPaywalledDomains()
     {
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
@@ -315,7 +320,7 @@ public class BackgroundPreloadServiceTests
     public void BuildCollectionQueue_PaywalledDomains_ProgressExcludesPaywalled()
     {
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
@@ -494,7 +499,7 @@ public class BackgroundPreloadServiceTests
         // Instead, we can trigger the skip by using a short cooldown config.
         var cache = Substitute.For<IPageCache>();
         var config = new CacheConfiguration { CircuitBreakerCooldownSeconds = 300 };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             cache, Substitute.For<IIdleDetector>(), new HttpClient(), config,
             NullLogger<BackgroundPreloadService>.Instance);
 
@@ -516,7 +521,7 @@ public class BackgroundPreloadServiceTests
     {
         var cache = Substitute.For<IPageCache>();
         var config = new CacheConfiguration { CircuitBreakerCooldownSeconds = 1 };
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             cache, Substitute.For<IIdleDetector>(), new HttpClient(), config,
             NullLogger<BackgroundPreloadService>.Instance);
 
@@ -542,7 +547,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_NeedsJsDomain_SkipsUrls()
     {
         var cache = Substitute.For<IPageCache>();
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             cache, Substitute.For<IIdleDetector>(), new HttpClient(), new CacheConfiguration(),
             NullLogger<BackgroundPreloadService>.Instance);
 
@@ -563,7 +568,7 @@ public class BackgroundPreloadServiceTests
     public void BuildQueue_NeedsJsDomain_DoesNotAffectOtherDomains()
     {
         var cache = Substitute.For<IPageCache>();
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             cache, Substitute.For<IIdleDetector>(), new HttpClient(), new CacheConfiguration(),
             NullLogger<BackgroundPreloadService>.Instance);
 
@@ -1656,7 +1661,7 @@ public class BackgroundPreloadServiceTests
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
 
-        var service = new BackgroundPreloadService(
+        using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
