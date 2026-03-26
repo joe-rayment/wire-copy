@@ -290,37 +290,6 @@ internal class StatusBarRenderer
         return string.Empty;
     }
 
-    private static string FormatUrlSlug(string url)
-    {
-        try
-        {
-            var uri = new Uri(url);
-            var path = uri.AbsolutePath.Trim('/');
-            var segments = path.Split('/');
-
-            for (var i = segments.Length - 1; i >= 0; i--)
-            {
-                var seg = segments[i];
-                if (seg.Length > 8 && !int.TryParse(seg, out _))
-                {
-                    var readable = seg.Replace('-', ' ').Replace('_', ' ');
-                    if (readable.Length > 25)
-                    {
-                        readable = readable[..22] + "...";
-                    }
-
-                    return readable;
-                }
-            }
-
-            return path.Length > 25 ? path[..22] + "..." : path;
-        }
-        catch
-        {
-            return url.Length > 25 ? url[..22] + "..." : url;
-        }
-    }
-
     private static (string Key, string Action)[][] GetHintTiers(ViewMode mode)
     {
         return mode switch
