@@ -132,11 +132,19 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderLoading(string url, string? status = null)
     {
+        RenderLoading(url, status, elapsedMs: 0);
+    }
+
+    public void RenderLoading(string url, string? status, long elapsedMs)
+    {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var label = status ?? "Loading...";
         _helpers.Clear();
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}");
+
+        // Stage label with elapsed time
+        var elapsed = elapsedMs > 0 ? $"  {p.SecondaryText.AnsiFg}{FormatElapsed(elapsedMs)}{Reset}" : string.Empty;
+        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}{elapsed}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
@@ -241,5 +249,16 @@ public class TerminalPageRenderer : IPageRenderer
     public void Clear()
     {
         _helpers.Clear();
+    }
+
+    private static string FormatElapsed(long ms)
+    {
+        if (ms < 1000)
+        {
+            return string.Empty;
+        }
+
+        var seconds = ms / 1000.0;
+        return $"{seconds:F1}s";
     }
 }

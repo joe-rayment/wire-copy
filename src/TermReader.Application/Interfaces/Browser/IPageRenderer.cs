@@ -39,6 +39,11 @@ public interface IPageRenderer
     void RenderLoading(string url, string? status = null);
 
     /// <summary>
+    /// Renders the loading screen with stage and elapsed time.
+    /// </summary>
+    void RenderLoading(string url, string? status, long elapsedMs);
+
+    /// <summary>
     /// Renders error message.
     /// </summary>
     /// <param name="message">Error message.</param>
