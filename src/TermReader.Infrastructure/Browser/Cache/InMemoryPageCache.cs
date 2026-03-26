@@ -18,6 +18,7 @@ namespace TermReader.Infrastructure.Browser.Cache;
 public sealed class InMemoryPageCache : IPageCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
+    private readonly ConcurrentDictionary<string, PageBuildCache> _standaloneBuildCache = new();
     private readonly ConcurrentDictionary<string, string> _normalizedUrlCache = new();
     private readonly CacheConfiguration _config;
     private readonly ILogger<InMemoryPageCache> _logger;
@@ -163,6 +164,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
     {
         var stats = GetStats();
         _entries.Clear();
+        _standaloneBuildCache.Clear();
         _normalizedUrlCache.Clear();
         Interlocked.Exchange(ref _totalSizeBytes, 0);
 
@@ -213,36 +215,30 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
     {
         var key = NormalizeUrl(url);
 
-        if (!_entries.TryGetValue(key, out var entry))
+        // Check the HTML cache entry first (build cache stored alongside HTML)
+        if (_entries.TryGetValue(key, out var entry) && !entry.Metadata.IsExpired && entry.BuildCache != null)
         {
-            return null;
+            return entry.BuildCache;
         }
 
-        if (entry.Metadata.IsExpired)
-        {
-            return null;
-        }
-
-        return entry.BuildCache;
+        // Fallback: standalone build cache (survives HTML eviction from fallback retries)
+        _standaloneBuildCache.TryGetValue(key, out var standalone);
+        return standalone;
     }
 
     public void PutBuildCache(string url, PageBuildCache buildCache)
     {
         var key = NormalizeUrl(url);
 
-        if (!_entries.TryGetValue(key, out var existing))
-        {
-            return;
-        }
+        // Always store in standalone dict (survives HTML cache removal by fallback retries)
+        _standaloneBuildCache[key] = buildCache;
 
-        if (existing.Metadata.IsExpired)
+        // Also attach to the HTML entry if it exists
+        if (_entries.TryGetValue(key, out var existing) && !existing.Metadata.IsExpired)
         {
-            return;
+            var updated = existing with { BuildCache = buildCache };
+            _entries.TryUpdate(key, updated, existing);
         }
-
-        // Replace entry with one that includes the build cache
-        var updated = existing with { BuildCache = buildCache };
-        _entries.TryUpdate(key, updated, existing);
     }
 
     public void Dispose()

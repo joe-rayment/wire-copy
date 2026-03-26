@@ -285,9 +285,12 @@ public class BrowserOrchestrator : IBrowserService
 
         // Content-quality fallback: if no content from HTTP/cached page, retry with browser.
         // Skip when browser is unavailable — the retry would just repeat the same HTTP fetch.
+        // Skip when the page has links — section/index pages (e.g., NYT front page) have links
+        // but no "readable" article content, which is expected, not a quality issue.
         var browserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
+        var hasLinks = page.LinkTree != null && page.LinkTree.TotalLinks > 0;
 
-        if (!page.HasReadableContent() && loadResult.FetchMethod != FetchMethod.Browser && browserAvailable)
+        if (!page.HasReadableContent() && !hasLinks && loadResult.FetchMethod != FetchMethod.Browser && browserAvailable)
         {
             _logger.LogInformation(
                 "No readable content from {FetchMethod} page, retrying with browser: {Url}",
