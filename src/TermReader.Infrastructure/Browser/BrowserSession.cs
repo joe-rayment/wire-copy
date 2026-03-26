@@ -199,70 +199,6 @@ public sealed class BrowserSession : IBrowserSession
         await RefocusTerminalAsync();
     }
 
-    private async Task RefocusTerminalAsync()
-    {
-        if (!OperatingSystem.IsMacOS())
-        {
-            return;
-        }
-
-        // Debounce: skip if another refocus happened within the last 500ms
-        var now = DateTime.UtcNow.Ticks;
-        var previous = Interlocked.Exchange(ref _lastRefocusTicks, now);
-        if (TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
-        {
-            return;
-        }
-
-        try
-        {
-            // Detect terminal app from environment and re-activate it
-            var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
-            var appName = termProgram switch
-            {
-                "iTerm.app" => "iTerm2",
-                "Apple_Terminal" => "Terminal",
-                "WezTerm" => "WezTerm",
-                "Alacritty" => "Alacritty",
-                "kitty" => "kitty",
-                _ => "Terminal", // fallback
-            };
-
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "/usr/bin/osascript",
-                Arguments = $"-e 'tell application \"{appName}\" to activate'",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-
-            using var process = System.Diagnostics.Process.Start(psi);
-            if (process != null)
-            {
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
-                if (process.HasExited && process.ExitCode != 0)
-                {
-                    var stderr = await process.StandardError.ReadToEndAsync();
-                    _logger.LogWarning(
-                        "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy → Automation permissions.",
-                        process.ExitCode,
-                        stderr.Trim());
-                    return;
-                }
-            }
-
-            _logger.LogDebug("Refocused terminal app: {AppName}", appName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "Failed to refocus terminal — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
-        }
-    }
-
     /// <inheritdoc />
     public async Task<byte[]?> CaptureScreenshotAsync()
     {
@@ -342,6 +278,70 @@ public sealed class BrowserSession : IBrowserSession
             }
 
             _lock.Dispose();
+        }
+    }
+
+    private async Task RefocusTerminalAsync()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        // Debounce: skip if another refocus happened within the last 500ms
+        var now = DateTime.UtcNow.Ticks;
+        var previous = Interlocked.Exchange(ref _lastRefocusTicks, now);
+        if (TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
+        {
+            return;
+        }
+
+        try
+        {
+            // Detect terminal app from environment and re-activate it
+            var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
+            var appName = termProgram switch
+            {
+                "iTerm.app" => "iTerm2",
+                "Apple_Terminal" => "Terminal",
+                "WezTerm" => "WezTerm",
+                "Alacritty" => "Alacritty",
+                "kitty" => "kitty",
+                _ => "Terminal", // fallback
+            };
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/usr/bin/osascript",
+                Arguments = $"-e 'tell application \"{appName}\" to activate'",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process != null)
+            {
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+                if (process.HasExited && process.ExitCode != 0)
+                {
+                    var stderr = await process.StandardError.ReadToEndAsync();
+                    _logger.LogWarning(
+                        "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy → Automation permissions.",
+                        process.ExitCode,
+                        stderr.Trim());
+                    return;
+                }
+            }
+
+            _logger.LogDebug("Refocused terminal app: {AppName}", appName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to refocus terminal — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
         }
     }
 
