@@ -186,7 +186,7 @@ public class CacheServingFlowTests
     public async Task LoadPageAsync_HttpNoContent_RetrySucceeds_SetsReadableContent()
     {
         var url = "https://example.com/article";
-        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false);
+        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false, hasLinks: false);
 
         // First call returns null, second call returns content
         var readable = ReadableContent.Create(
@@ -220,7 +220,7 @@ public class CacheServingFlowTests
     public async Task LoadPageAsync_HttpNoContent_RetryFails_ReturnsPageWithoutContent()
     {
         var url = "https://example.com/article";
-        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false);
+        SetupPageLoad(url, fetchMethod: FetchMethod.Http, hasReadableContent: false, hasLinks: false);
 
         _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((ReadableContent?)null);
@@ -255,7 +255,7 @@ public class CacheServingFlowTests
 
     private void SetupPageLoadNoContent(string url, FetchMethod fetchMethod)
     {
-        SetupPageLoad(url, fetchMethod: fetchMethod, hasReadableContent: false);
+        SetupPageLoad(url, fetchMethod: fetchMethod, hasReadableContent: false, hasLinks: false);
 
         // Override content extractor to return null (no readable content)
         _contentExtractor.ExtractAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -277,7 +277,8 @@ public class CacheServingFlowTests
         string url,
         string title = "Test Page",
         FetchMethod fetchMethod = FetchMethod.Http,
-        bool hasReadableContent = true)
+        bool hasReadableContent = true,
+        bool hasLinks = true)
     {
         var metadata = new PageMetadata { Title = title };
         var html = $"<html><head><title>{title}</title></head><body>Content</body></html>";
@@ -287,10 +288,12 @@ public class CacheServingFlowTests
             Arg.Any<CancellationToken>())
             .Returns(PageLoadResult.Successful(url, html, metadata, fetchMethod));
 
-        var links = new List<LinkInfo>
-        {
-            new LinkInfo { Url = $"{url}/link1", DisplayText = "Link One", Type = LinkType.Content, ImportanceScore = 80 }
-        };
+        var links = hasLinks
+            ? new List<LinkInfo>
+            {
+                new LinkInfo { Url = $"{url}/link1", DisplayText = "Link One", Type = LinkType.Content, ImportanceScore = 80 },
+            }
+            : new List<LinkInfo>();
 
         _linkExtractor.ExtractLinksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(links);
