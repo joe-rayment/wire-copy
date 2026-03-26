@@ -377,6 +377,7 @@ public class BrowserOrchestratorNavigationTests
     private readonly IReadableContentExtractor _contentExtractor;
     private readonly IPageRenderer _renderer;
     private readonly IInputHandler _inputHandler;
+    private readonly IPageCache _pageCache;
     private readonly NavigationService _navigationService;
     private readonly BrowserOrchestrator _sut;
 
@@ -388,6 +389,7 @@ public class BrowserOrchestratorNavigationTests
         _contentExtractor = Substitute.For<IReadableContentExtractor>();
         _renderer = Substitute.For<IPageRenderer>();
         _inputHandler = Substitute.For<IInputHandler>();
+        _pageCache = Substitute.For<IPageCache>();
 
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         _navigationService = new NavigationService(navLogger);
@@ -399,7 +401,8 @@ public class BrowserOrchestratorNavigationTests
             _contentExtractor,
             _renderer,
             _inputHandler,
-            _navigationService);
+            _navigationService,
+            pageCache: _pageCache);
     }
 
     private void SetupPageLoad(string url, string title = "Test Page")
@@ -409,6 +412,9 @@ public class BrowserOrchestratorNavigationTests
 
         _pageLoader.LoadAsync(Arg.Is<PageLoadRequest>(r => r.Url == url), Arg.Any<CancellationToken>())
             .Returns(PageLoadResult.Successful(url, html, metadata));
+
+        // Mark URL as cached so NavigateToAsync takes the synchronous path
+        _pageCache.Contains(url).Returns(true);
 
         var links = new List<LinkInfo>
         {
