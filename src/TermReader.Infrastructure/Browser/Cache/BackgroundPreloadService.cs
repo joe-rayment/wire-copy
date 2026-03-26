@@ -824,9 +824,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private async Task PreloadUrlAsync(string url, CancellationToken cancellationToken)
     {
-        // Paywalled domains: only preload if cookies exist AND under per-session limit
+        // Paywalled domains: re-check cookie validity before each attempt (cookies may
+        // expire mid-session) and enforce per-session limit
         if (IsPaywalledDomain(url))
         {
+            RefreshPaywalledCookieState();
             if (!_hasPaywalledCookies || _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
             {
                 _logger.LogDebug(
