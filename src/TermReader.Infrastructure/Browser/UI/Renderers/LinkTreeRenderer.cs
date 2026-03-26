@@ -86,7 +86,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                RenderGridRow(gr, layout, p, options.CachedUrls);
+                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds);
             }
 
             linesUsed += linesNeeded;
@@ -213,11 +213,12 @@ internal class LinkTreeRenderer
         int lineIndex,
         int width,
         ThemePalette palette,
-        IReadOnlySet<string>? cachedUrls = null)
+        IReadOnlySet<string>? cachedUrls = null,
+        bool isToggled = false)
     {
         return isSelected
-            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette)
-            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette);
+            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette, isToggled)
+            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, isToggled);
     }
 
     internal static string? FormatDate(DateTime? date)
@@ -345,7 +346,8 @@ internal class LinkTreeRenderer
         int cardHeight,
         int lineIndex,
         int width,
-        ThemePalette palette)
+        ThemePalette palette,
+        bool isToggled = false)
     {
         var sb = new StringBuilder();
         var accentFg = palette.HeaderBorderFg.AnsiFg;
@@ -367,8 +369,15 @@ internal class LinkTreeRenderer
             Math.Max(titleLine2Idx, Math.Max(authorDateLineIdx, metadataLineIdx)));
         var isInContentBlock = lineIndex >= titleLineIdx && lineIndex <= lastContentLineIdx;
 
-        // Accent bar on content block lines; space on padding/separator
-        sb.Append(isInContentBlock ? $"{accentFg}\u258c{Reset}" : " ");
+        // Accent bar on content block lines; ✓ on title line when toggled
+        if (isInContentBlock && isToggled && lineIndex == titleLineIdx)
+        {
+            sb.Append($"{palette.GetAccentFg().AnsiFg}\u2713{Reset}");
+        }
+        else
+        {
+            sb.Append(isInContentBlock ? $"{accentFg}\u258c{Reset}" : " ");
+        }
 
         if (lineIndex == titleLineIdx)
         {
@@ -426,7 +435,8 @@ internal class LinkTreeRenderer
         int cardHeight,
         int lineIndex,
         int width,
-        ThemePalette palette)
+        ThemePalette palette,
+        bool isToggled = false)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
         var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
@@ -448,7 +458,7 @@ internal class LinkTreeRenderer
                 ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
                 : RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
 
-            var prefix = " ";
+            var prefix = isToggled ? $"{palette.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
             return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
         }
@@ -684,12 +694,13 @@ internal class LinkTreeRenderer
         }
     }
 
-    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null)
+    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null, HashSet<Guid>? selectedIds = null)
     {
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
         {
             var sb = new StringBuilder();
-            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls));
+            var leftToggled = selectedIds != null && selectedIds.Contains(row.Left.Id);
+            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls, leftToggled));
 
             if (layout.Columns == 2)
             {
@@ -698,8 +709,9 @@ internal class LinkTreeRenderer
                 sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
                 if (row.Right != null)
                 {
+                    var rightToggled = selectedIds != null && selectedIds.Contains(row.Right.Id);
                     var rightWidth = layout.Width - layout.CellWidth - 1;
-                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls));
+                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls, rightToggled));
                 }
                 else
                 {
