@@ -212,30 +212,12 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
-        // For known-paywalled domains with available cookies, skip HTTP and use the browser directly.
-        // Section/listing pages on paywalled domains work fine via HTTP, so we don't force
-        // browser unconditionally — only when cookies exist (indicating a logged-in session).
-        var forceBrowser = false;
-        if (IsPaywalledDomain(url))
-        {
-            var cookies = await _cookieManager.LoadCookiesAsync();
-            var host = new Uri(url).Host;
-            var hasDomainCookies = cookies.Any(c =>
-            {
-                var d = c.Domain.TrimStart('.');
-                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
-            });
-            if (hasDomainCookies)
-            {
-                _logger.LogInformation("Paywalled domain with cookies, using browser: {Url}", url);
-                forceBrowser = true;
-            }
-        }
-
-        // Load the page HTML
+        // Always try HTTP first for fast initial load (1-2s). Even for paywalled domains,
+        // HTTP returns the link list / section page quickly. The truncation fallback below
+        // handles upgrading to full authenticated content if needed. ForceBrowser is only
+        // used for explicit refresh (Shift+R, Shift+I), not initial navigation.
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = true, ForceBrowser = forceBrowser },
+            new PageLoadRequest { Url = url, Headless = true },
             cancellationToken);
 
         _logger.LogDebug(
