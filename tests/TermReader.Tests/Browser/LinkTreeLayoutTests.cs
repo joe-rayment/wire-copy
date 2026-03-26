@@ -139,13 +139,15 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_NormalMetadata_ContainsDimEscape()
+    public void BuildCardLine_NormalMetadata_UsesSecondaryTextColor()
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 3, 1, 80, TestPalette);
 
-        line.Should().Contain("\x1b[2m"); // Dim
+        // Metadata uses SecondaryText color (no Dim modifier for readability)
+        line.Should().Contain(TestPalette.SecondaryText.AnsiFg);
+        line.Should().NotContain("\x1b[2m"); // No Dim
     }
 
     [Fact]

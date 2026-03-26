@@ -21,8 +21,6 @@ public class TerminalPageRenderer : IPageRenderer
 {
     private const string Reset = "\x1b[0m";
 
-    private ThemePalette CurrentPalette => BuiltInThemes.Get(_themeProvider.CurrentTheme);
-
     private readonly IThemeProvider _themeProvider;
     private readonly RenderHelpers _helpers;
     private readonly LinkTreeRenderer _linkTreeRenderer;
@@ -41,6 +39,8 @@ public class TerminalPageRenderer : IPageRenderer
         _launcherRenderer = new LauncherRenderer(_helpers, themeProvider);
         _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider);
     }
+
+    private ThemePalette CurrentPalette => BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
