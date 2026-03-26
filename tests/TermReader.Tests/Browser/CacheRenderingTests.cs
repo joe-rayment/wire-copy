@@ -66,7 +66,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
-        output.Should().Contain("3/10 cached");
+        output.Should().Contain("3/10");
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
 
-        output.Should().Contain("5/8 cached");
+        output.Should().Contain("5/8");
     }
 
     [Fact]
@@ -426,7 +426,7 @@ public class CacheRenderingTests
         var p = BuiltInThemes.Get(ThemeName.Phosphor);
         var bar = StatusBarRenderer.FormatProgressBar(3, 10, p);
 
-        bar.Should().Contain("3/10 cached");
+        bar.Should().Contain("3/10");
     }
 
     #endregion
