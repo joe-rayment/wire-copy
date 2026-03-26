@@ -28,6 +28,7 @@ public sealed class BrowserSession : IBrowserSession
     private bool _pageIsHeadless;
     private bool _disposed;
     private bool _browsersInstalled;
+    private long _lastRefocusTicks;
 
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
@@ -202,6 +203,14 @@ public sealed class BrowserSession : IBrowserSession
     private async Task RefocusTerminalAsync()
     {
         if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        // Debounce: skip if another refocus happened within the last 500ms
+        var now = DateTime.UtcNow.Ticks;
+        var previous = Interlocked.Exchange(ref _lastRefocusTicks, now);
+        if (TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
         {
             return;
         }
