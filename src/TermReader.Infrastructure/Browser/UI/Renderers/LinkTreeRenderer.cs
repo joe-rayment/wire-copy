@@ -570,11 +570,11 @@ internal class LinkTreeRenderer
         var showCount = !isExpanded || childCount >= 5;
         var countSuffix = showCount ? $" ({childCount})" : string.Empty;
         var titleText = $"{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
-        var headerLabel = $"\u256d\u2500 {titleText} ";
+        var headerLabel = $" \u2500 {titleText} ";
 
-        // Fill remaining width with thin rule and close corner
-        var ruleLen = Math.Max(0, width - headerLabel.Length - 2);
-        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}\u256e";
+        // Fill remaining width with thin rule (no box corners — avoids broken box appearance)
+        var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
+        var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
         var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
 
         if (cardHeight >= 2)
