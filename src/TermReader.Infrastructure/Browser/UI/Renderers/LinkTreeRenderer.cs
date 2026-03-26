@@ -359,24 +359,16 @@ internal class LinkTreeRenderer
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
         var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
 
-        // Determine if this line will have visible text content
-        var hasVisibleContent = false;
-        if (lineIndex == titleLineIdx)
-        {
-            hasVisibleContent = true;
-        }
-        else if (lineIndex == titleLine2Idx)
-        {
-            var tw = GetTitleTextWidth(width);
-            hasVisibleContent = !string.IsNullOrEmpty(GetWrappedTitleLine(node.Link.DisplayText, tw, 1));
-        }
-        else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
-        {
-            hasVisibleContent = !string.IsNullOrWhiteSpace(GetMetadataSubtitle(node, contentWidth - 1));
-        }
+        // Determine the content block range: titleLineIdx through last content slot.
+        // All lines in this range get accent bar + background, creating a consistent
+        // rectangular highlight regardless of whether individual lines have text.
+        var lastContentLineIdx = Math.Max(
+            titleLineIdx,
+            Math.Max(titleLine2Idx, Math.Max(authorDateLineIdx, metadataLineIdx)));
+        var isInContentBlock = lineIndex >= titleLineIdx && lineIndex <= lastContentLineIdx;
 
-        // Accent bar only on lines with visible content
-        sb.Append(hasVisibleContent ? $"{accentFg}\u258c{Reset}" : " ");
+        // Accent bar on content block lines; space on padding/separator
+        sb.Append(isInContentBlock ? $"{accentFg}\u258c{Reset}" : " ");
 
         if (lineIndex == titleLineIdx)
         {
@@ -399,7 +391,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                sb.Append($"{new string(' ', contentWidth)}");
+                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
             }
         }
         else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
@@ -412,7 +404,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                sb.Append($"{new string(' ', contentWidth)}");
+                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
             }
         }
         else if (isSeparator)
@@ -422,7 +414,7 @@ internal class LinkTreeRenderer
         }
         else
         {
-            // Padding lines — no highlight
+            // Top padding — no highlight
             sb.Append($"{new string(' ', contentWidth)}");
         }
 
