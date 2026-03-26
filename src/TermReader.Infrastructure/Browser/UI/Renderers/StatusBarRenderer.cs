@@ -51,12 +51,30 @@ internal class StatusBarRenderer
         var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
-        var helpHint = $" {p.SecondaryText.AnsiFg}?:help{Reset}";
-        const int helpWidth = 7; // " ?:help"
+        // Responsive help hint: full at wide, abbreviated at narrow
+        string helpHint;
+        int helpWidth;
+        if (width >= 60)
+        {
+            helpHint = $" {p.SecondaryText.AnsiFg}?:help{Reset}";
+            helpWidth = 7;
+        }
+        else
+        {
+            helpHint = $" {p.SecondaryText.AnsiFg}?{Reset}";
+            helpWidth = 2;
+        }
 
         // Layout: [back][mode] [left]    [right] [?:help]
         var fixedWidth = backWidth + modeBadgeWidth + 1 + helpWidth; // +1 space after mode
         var contentWidth = maxWidth - fixedWidth;
+
+        // At narrow widths (<60), drop right-side badges entirely
+        if (width < 60 && rightWidth > contentWidth - 5)
+        {
+            right = string.Empty;
+            rightWidth = 0;
+        }
 
         // If right + left don't fit, truncate left first
         if (leftWidth + rightWidth > contentWidth)
