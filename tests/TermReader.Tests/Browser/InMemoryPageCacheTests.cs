@@ -375,7 +375,7 @@ public class InMemoryPageCacheTests : IDisposable
     }
 
     [Fact]
-    public void PutBuildCache_NoOpWhenUrlNotInCache()
+    public void PutBuildCache_StoresEvenWithoutHtmlEntry()
     {
         var url = "https://example.com/missing";
         var buildCache = new PageBuildCache
@@ -387,11 +387,12 @@ public class InMemoryPageCacheTests : IDisposable
 
         _cache.PutBuildCache(url, buildCache);
 
-        _cache.TryGetBuildCache(url).Should().BeNull();
+        _cache.TryGetBuildCache(url).Should().NotBeNull(
+            "build cache should be stored in standalone dict even without HTML entry");
     }
 
     [Fact]
-    public void RemoveEntry_AlsoRemovesBuildCache()
+    public void RemoveHtmlEntry_BuildCacheSurvives()
     {
         var url = "https://example.com/page";
         _cache.Put(url, CreateResult(url, "<html>content</html>"));
@@ -404,7 +405,8 @@ public class InMemoryPageCacheTests : IDisposable
 
         _cache.Remove(url);
 
-        _cache.TryGetBuildCache(url).Should().BeNull();
+        _cache.TryGetBuildCache(url).Should().NotBeNull(
+            "build cache survives HTML removal so repeat visits skip extraction after fallback retries");
     }
 
     [Fact]
