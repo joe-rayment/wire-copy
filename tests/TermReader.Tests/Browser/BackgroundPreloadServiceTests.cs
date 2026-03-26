@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
@@ -1615,6 +1616,66 @@ public class BackgroundPreloadServiceTests
 
         ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue(
             "page with role=main containing 3+ substantial paragraphs should be extractable");
+    }
+
+    #endregion
+
+    #region Paywalled Domain Content Quality Gate
+
+    [Fact]
+    public void HasSufficientContent_PaywalledThreshold_RejectsTruncatedPreview()
+    {
+        // Simulate a truncated paywall preview (~200 words)
+        var words = string.Join(" ", Enumerable.Range(1, 200).Select(i => $"word{i}"));
+        var html = $"<html><body><article><p>{words}</p></article></body></html>";
+
+        // Passes the general 50-word threshold
+        CachingPageLoader.HasSufficientContent(html, 50).Should().BeTrue();
+
+        // Fails the paywalled domain threshold (500 words)
+        CachingPageLoader.HasSufficientContent(html, 500).Should().BeFalse(
+            "truncated paywall preview with ~200 words should not pass the 500-word paywalled threshold");
+    }
+
+    [Fact]
+    public void HasSufficientContent_PaywalledThreshold_AcceptsFullArticle()
+    {
+        // Simulate a full article (600+ words)
+        var words = string.Join(" ", Enumerable.Range(1, 600).Select(i => $"word{i}"));
+        var html = $"<html><body><article><p>{words}</p></article></body></html>";
+
+        CachingPageLoader.HasSufficientContent(html, 500).Should().BeTrue(
+            "full article with 600+ words should pass the 500-word paywalled threshold");
+    }
+
+    [Fact]
+    public void BuildQueue_PaywalledDomainWithCookies_IncludesInQueue()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/article.html");
+
+        // Trigger cookie state refresh via the debounce path indirectly —
+        // call RefreshPaywalledCookieState via reflection
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        refreshMethod!.Invoke(service, null);
+
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().HaveCount(1, "paywalled domain with valid cookies should be queued for preloading");
     }
 
     #endregion
