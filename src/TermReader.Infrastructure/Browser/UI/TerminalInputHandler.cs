@@ -382,7 +382,7 @@ public class TerminalInputHandler : IInputHandler
             ConsoleKey.L => new NavigationCommand { Type = CommandType.ExpandNode },
             ConsoleKey.LeftArrow => new NavigationCommand { Type = CommandType.CollapseNode },
             ConsoleKey.RightArrow => new NavigationCommand { Type = CommandType.ExpandNode },
-            ConsoleKey.Spacebar => new NavigationCommand { Type = CommandType.ToggleNode },
+            ConsoleKey.Spacebar => new NavigationCommand { Type = CommandType.ToggleSelection },
             ConsoleKey.Enter => new NavigationCommand { Type = CommandType.ActivateLink },
             ConsoleKey.B => new NavigationCommand { Type = CommandType.GoBack },
             ConsoleKey.Backspace => new NavigationCommand { Type = CommandType.GoBack },

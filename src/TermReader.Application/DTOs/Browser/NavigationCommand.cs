@@ -79,6 +79,9 @@ public enum CommandType
     SearchNext,
     SearchPrevious,
 
+    // Selection
+    ToggleSelection,
+
     // Collections
     SaveToCollection,
     SaveToSpecific,

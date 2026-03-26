@@ -1545,6 +1545,9 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.ToggleNode:
                     await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
                     break;
+                case CommandType.ToggleSelection:
+                    await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken);
+                    break;
                 case CommandType.ActivateLink:
                     await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
                     break;

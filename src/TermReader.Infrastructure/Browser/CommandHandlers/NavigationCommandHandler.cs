@@ -377,6 +377,26 @@ internal static class NavigationCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
+    public static async Task HandleToggleSelection(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+        if (tree == null)
+        {
+            return;
+        }
+
+        var count = tree.ToggleCurrentNodeSelection();
+        if (count > 0)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                tree.SelectionCount > 0
+                    ? $"{tree.SelectionCount} selected — s:save"
+                    : "Selection cleared");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
     public static async Task HandleActivateLink(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
