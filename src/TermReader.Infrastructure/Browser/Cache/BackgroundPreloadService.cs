@@ -1027,12 +1027,19 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     result.Html, result.Url ?? url, cancellationToken);
             }
 
+            var isArticlePage = ReadableContentExtractor.IsArticlePage(result.Html);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(result.Html);
+            var articleContainerCount = doc.DocumentNode.SelectNodes("//article")?.Count ?? 0;
+            var classification = PageClassifier.Classify(links, isArticlePage, articleContainerCount, result.Url ?? url);
+
             var buildCache = new PageBuildCache
             {
                 Links = links,
                 ReadableContent = readable,
                 Metadata = result.Metadata ?? new PageMetadata { Title = "Untitled" },
                 FinalUrl = result.Url ?? url,
+                Classification = classification,
             };
 
             _cache.PutBuildCache(url, buildCache);
