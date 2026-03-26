@@ -399,10 +399,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains: skip if no cookies, include if authenticated
+            // Paywalled domains: section pages are free (always preload),
+            // article pages need cookies (skip if unauthenticated)
             if (IsPaywalledDomain(url))
             {
-                if (_hasPaywalledCookies)
+                if (PageClassifier.IsSectionUrlPattern(url) || _hasPaywalledCookies)
                 {
                     allEligibleWithIndex.Add((url, i));
                     TryAddEligibleUrl(url, i, needsJs, items);

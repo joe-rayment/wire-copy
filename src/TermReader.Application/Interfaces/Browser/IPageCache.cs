@@ -74,4 +74,16 @@ public interface IPageCache
     /// No-op if the URL is not in the page cache.
     /// </summary>
     void PutBuildCache(string url, PageBuildCache buildCache);
+
+    /// <summary>
+    /// Updates the TTL of an existing cache entry.
+    /// No-op if the URL is not cached.
+    /// </summary>
+    void UpdateTtl(string url, int ttlSeconds);
+
+    /// <summary>
+    /// Applies the shorter link-list TTL to a cached entry.
+    /// Uses the configured LinkListTtlSeconds value. No-op if not cached.
+    /// </summary>
+    void ApplyLinkListTtl(string url);
 }
