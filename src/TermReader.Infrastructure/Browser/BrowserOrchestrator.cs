@@ -50,6 +50,12 @@ public class BrowserOrchestrator : IBrowserService
     // Captures the last build result from BuildPageFromLoadResultAsync for StoreBuildCache
     private PageBuildCache? _lastBuildResult;
 
+    // Background page load state for non-blocking navigation (Phase 2)
+    private Task<Page>? _backgroundPageLoad;
+    private string? _backgroundLoadUrl;
+    private CancellationTokenSource? _backgroundLoadCts;
+    private RenderOptions? _backgroundLoadOptions;
+
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -633,20 +639,44 @@ public class BrowserOrchestrator : IBrowserService
                 // Start waiting for input if not already waiting
                 pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
-                // Race input against a 500ms timer for progress checks
-                var completed = await Task.WhenAny(
-                    pendingInput,
-                    Task.Delay(500, cancellationToken));
+                // Build the race: input, timer, and optionally background load
+                var raceTasks = new List<Task> { pendingInput, Task.Delay(500, cancellationToken) };
+                if (_backgroundPageLoad != null)
+                {
+                    raceTasks.Add(_backgroundPageLoad);
+                }
 
-                if (completed == pendingInput)
+                var completed = await Task.WhenAny(raceTasks);
+
+                if (completed == _backgroundPageLoad)
+                {
+                    // Background load completed — replace skeleton with real page
+                    await CompleteBackgroundLoadAsync(options, cancellationToken);
+                }
+                else if (completed == pendingInput)
                 {
                     // User input received — process it
                     var command = await pendingInput;
                     pendingInput = null;
 
+                    // Gate commands during background loading: only Quit, GoBack, and
+                    // navigation-cancellation commands are allowed
+                    if (HasActiveBackgroundLoad() && !IsAllowedDuringBackgroundLoad(command.Type))
+                    {
+                        // Ignore the command — user will see the loading screen
+                        continue;
+                    }
+
+                    // Cancel background load on GoBack (HandleGoBack will pop the skeleton)
+                    if (HasActiveBackgroundLoad() && command.Type == CommandType.GoBack)
+                    {
+                        CancelBackgroundLoad();
+                    }
+
                     var shouldContinue = await HandleCommandAsync(command, options, cancellationToken);
                     if (!shouldContinue)
                     {
+                        CancelBackgroundLoad();
                         break;
                     }
                 }
@@ -1213,14 +1243,53 @@ public class BrowserOrchestrator : IBrowserService
 
     private async Task NavigateToAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
+        // Cancel any existing background load
+        CancelBackgroundLoad();
+
         _preloadService.Pause();
 
         try
         {
-            var page = await LoadPageAsync(url, cancellationToken);
+            // Fast path: build cache hit (Phase 1) or page cache hit — load synchronously
+            var buildCache = _pageCache.TryGetBuildCache(url);
+            if (buildCache != null)
+            {
+                _logger.LogInformation("Build cache hit for {Url}, skipping extraction", url);
+                _lastLoadFetchMethod = FetchMethod.Cached;
+                var page = RebuildPageFromBuildCache(buildCache);
+                await CompleteNavigation(page, url, options);
+                return;
+            }
+
+            if (_pageCache.Contains(url))
+            {
+                // HTML cached but no build cache — extraction is fast enough to do synchronously
+                var page = await LoadPageAsync(url, cancellationToken);
+                await CompleteNavigation(page, url, options);
+                return;
+            }
+
+            // Slow path: cache miss — show skeleton page, load in background
+            ShowSkeletonPage(url);
+            StartBackgroundLoad(url, options, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error navigating to {Url}", url);
+            _renderer.RenderError(ex.Message, url);
+            _preloadService.Resume();
+        }
+    }
+
+    /// <summary>
+    /// Completes a synchronous navigation: updates navigation state, renders, and resumes preloading.
+    /// </summary>
+    private async Task CompleteNavigation(Page page, string url, RenderOptions options)
+    {
+        try
+        {
             _navigationService.NavigateTo(page);
 
-            // Derive cache info from actual FetchMethod (avoids race with cache expiry)
             var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
             var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
             _navigationService.SetCacheInfo(isFromCache, cachedAt);
@@ -1229,11 +1298,9 @@ public class BrowserOrchestrator : IBrowserService
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
-            await RenderCurrentPageAsync(options, cancellationToken);
+            await RenderCurrentPageAsync(options, CancellationToken.None);
 
-            // Eagerly warm up the browser for paywalled domains so it's ready
-            // when the user triggers Shift+I (interactive login). Without this, the
-            // first browser use incurs a cold-start delay (Chromium launch + context init).
+            // Eagerly warm up the browser for paywalled domains
             var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
             if (warmupBrowserAvailable && IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Browser)
             {
@@ -1252,15 +1319,188 @@ public class BrowserOrchestrator : IBrowserService
                 });
             }
         }
+        finally
+        {
+            _preloadService.Resume();
+        }
+    }
+
+    /// <summary>
+    /// Shows a minimal skeleton page so the user sees something immediately during background load.
+    /// </summary>
+    private void ShowSkeletonPage(string url)
+    {
+        try
+        {
+            var host = new Uri(url).Host;
+            var metadata = new PageMetadata { Title = host };
+            var skeletonPage = Page.Create(url, string.Empty, metadata);
+
+            _navigationService.NavigateTo(skeletonPage);
+            _navigationService.SetCacheInfo(false, null);
+            _lineCacheManager.InvalidateLineCache();
+
+            _renderer.RenderLoading(url);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error navigating to {Url}", url);
-            _renderer.RenderError(ex.Message, url);
+            _logger.LogDebug(ex, "Failed to show skeleton page for {Url}", url);
+        }
+    }
+
+    /// <summary>
+    /// Starts loading a page in the background. The main loop will pick up the result
+    /// via _backgroundPageLoad in its WhenAny race.
+    /// </summary>
+    private void StartBackgroundLoad(string url, RenderOptions options, CancellationToken cancellationToken)
+    {
+        _backgroundLoadUrl = url;
+        _backgroundLoadOptions = options;
+        _backgroundLoadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var token = _backgroundLoadCts.Token;
+
+        _backgroundPageLoad = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    return await LoadPageAsync(url, token);
+                }
+                catch
+                {
+                    _preloadService.Resume();
+                    throw;
+                }
+            },
+            token);
+    }
+
+    /// <summary>
+    /// Cancels any in-progress background page load.
+    /// </summary>
+    private void CancelBackgroundLoad()
+    {
+        if (_backgroundPageLoad == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _backgroundLoadCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed
+        }
+
+        _backgroundPageLoad = null;
+        _backgroundLoadUrl = null;
+        _backgroundLoadOptions = null;
+
+        try
+        {
+            _backgroundLoadCts?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed
+        }
+
+        _backgroundLoadCts = null;
+        _preloadService.Resume();
+    }
+
+    /// <summary>
+    /// Called from the main loop when background page load completes.
+    /// Replaces the skeleton page with the real page.
+    /// </summary>
+    private async Task CompleteBackgroundLoadAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        var loadTask = _backgroundPageLoad;
+        var url = _backgroundLoadUrl;
+        var loadOptions = _backgroundLoadOptions ?? options;
+
+        _backgroundPageLoad = null;
+        _backgroundLoadUrl = null;
+        _backgroundLoadOptions = null;
+
+        try
+        {
+            _backgroundLoadCts?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed
+        }
+
+        _backgroundLoadCts = null;
+
+        if (loadTask == null || url == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var page = await loadTask;
+
+            // Only replace if we're still on the skeleton for this URL
+            if (_navigationService.CurrentPage?.Url != url)
+            {
+                _logger.LogDebug("Background load completed but user navigated away from {Url}", url);
+                _preloadService.Resume();
+                return;
+            }
+
+            // Use ReplaceCurrent to avoid pushing skeleton onto back history
+            _navigationService.ReplaceCurrent(page);
+
+            var isFromCache = _lastLoadFetchMethod == FetchMethod.Cached;
+            var cachedAt = isFromCache ? _pageCache.GetCachedAt(url) : null;
+            _navigationService.SetCacheInfo(isFromCache, cachedAt);
+            _lineCacheManager.InvalidateLineCache();
+
+            _preloadService.NotifyPageLoaded(page);
+            NotifyPreloadSelectionChanged();
+
+            await RenderCurrentPageAsync(loadOptions, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Background page load was cancelled for {Url}", url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background page load failed for {Url}", url);
+
+            // If still on skeleton, show error
+            if (_navigationService.CurrentPage?.Url == url)
+            {
+                _renderer.RenderError(ex.Message, url);
+            }
         }
         finally
         {
             _preloadService.Resume();
         }
+    }
+
+    /// <summary>
+    /// Commands allowed during background page loading.
+    /// All others are silently ignored to avoid operating on a skeleton page.
+    /// </summary>
+    private static bool IsAllowedDuringBackgroundLoad(CommandType type)
+    {
+        return type is CommandType.Quit
+            or CommandType.GoBack
+            or CommandType.NoOp
+            or CommandType.TerminalResized;
+    }
+
+    private bool HasActiveBackgroundLoad()
+    {
+        return _backgroundPageLoad != null && !_backgroundPageLoad.IsCompleted;
     }
 
     private async Task ForceRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)
