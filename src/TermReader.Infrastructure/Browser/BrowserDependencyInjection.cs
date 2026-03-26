@@ -209,6 +209,8 @@ public static class BrowserDependencyInjection
 
             var cookieManager = sp.GetRequiredService<ICookieManager>();
 
+            var linkExtractor = sp.GetRequiredService<ILinkExtractor>();
+
             return new Cache.BackgroundPreloadService(
                 cache,
                 idleDetector,
@@ -216,6 +218,7 @@ public static class BrowserDependencyInjection
                 cacheConfig.Value,
                 preloadLogger,
                 contentExtractor,
+                linkExtractor,
                 articleCache,
                 browserConfig.Value,
                 cookieManager);

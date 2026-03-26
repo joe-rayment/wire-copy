@@ -409,6 +409,14 @@ internal static class NavigationCommandHandler
                 var selectedCollection = ctx.Collections[ctx.NavigationService.CollectionSelectedIndex];
                 ctx.NavigationService.EnterCollection(selectedCollection);
                 ctx.PreloadService.EnableEagerMode();
+
+                // Trigger preloading of collection items immediately (don't wait for cursor move)
+                var urls = selectedCollection.Items.Select(item => item.Url).ToList();
+                if (urls.Count > 0)
+                {
+                    ctx.PreloadService.NotifyCollectionChanged(0, urls);
+                }
+
                 await ctx.RenderCurrentPageAsync(options, ct);
             }
         }

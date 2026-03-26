@@ -45,6 +45,7 @@ public class CollectionArticleCacheBridgeTests
             config,
             NullLogger<BackgroundPreloadService>.Instance,
             _contentExtractor,
+            linkExtractor: null,
             _articleContentCache);
     }
 

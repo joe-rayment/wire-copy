@@ -1482,6 +1482,7 @@ public class BackgroundPreloadServiceTests
             new CacheConfiguration(),
             NullLogger<BackgroundPreloadService>.Instance,
             contentExtractor,
+            linkExtractor: null,
             articleContentCache);
     }
 
