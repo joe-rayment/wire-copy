@@ -822,8 +822,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             if (!_hasPaywalledCookies || _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
             {
-                _logger.LogDebug("Skipping preload for paywalled domain (cookies={HasCookies}, count={Count}/{Max}): {Url}",
-                    _hasPaywalledCookies, _paywalledPreloadCount, _config.MaxPaywalledPreloads, url);
+                _logger.LogDebug(
+                    "Skipping preload for paywalled domain (cookies={HasCookies}, count={Count}/{Max}): {Url}",
+                    _hasPaywalledCookies,
+                    _paywalledPreloadCount,
+                    _config.MaxPaywalledPreloads,
+                    url);
                 return;
             }
 
