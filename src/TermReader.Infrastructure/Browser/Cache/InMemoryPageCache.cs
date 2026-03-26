@@ -209,6 +209,42 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         return null;
     }
 
+    public PageBuildCache? TryGetBuildCache(string url)
+    {
+        var key = NormalizeUrl(url);
+
+        if (!_entries.TryGetValue(key, out var entry))
+        {
+            return null;
+        }
+
+        if (entry.Metadata.IsExpired)
+        {
+            return null;
+        }
+
+        return entry.BuildCache;
+    }
+
+    public void PutBuildCache(string url, PageBuildCache buildCache)
+    {
+        var key = NormalizeUrl(url);
+
+        if (!_entries.TryGetValue(key, out var existing))
+        {
+            return;
+        }
+
+        if (existing.Metadata.IsExpired)
+        {
+            return;
+        }
+
+        // Replace entry with one that includes the build cache
+        var updated = existing with { BuildCache = buildCache };
+        _entries.TryUpdate(key, updated, existing);
+    }
+
     public void Dispose()
     {
         _evictionTimer.Dispose();
@@ -366,5 +402,5 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         ThreadPool.QueueUserWorkItem(_ => _diskStore.Write(normalizedUrl, result, metadataSnapshot));
     }
 
-    private sealed record CacheEntry(PageLoadResult Result, CacheEntryMetadata Metadata);
+    private sealed record CacheEntry(PageLoadResult Result, CacheEntryMetadata Metadata, PageBuildCache? BuildCache = null);
 }

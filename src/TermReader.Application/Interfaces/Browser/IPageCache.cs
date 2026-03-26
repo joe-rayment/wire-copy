@@ -61,4 +61,17 @@ public interface IPageCache
     /// </summary>
     /// <param name="url">URL to look up (will be normalized internally).</param>
     DateTime? GetCachedAt(string url);
+
+    /// <summary>
+    /// Gets the cached build result (extracted links, hierarchy, readable content)
+    /// for a URL. Returns null if not cached or expired.
+    /// Build cache is stored alongside the page load result and evicted together.
+    /// </summary>
+    PageBuildCache? TryGetBuildCache(string url);
+
+    /// <summary>
+    /// Stores a build cache result alongside an existing page load result.
+    /// No-op if the URL is not in the page cache.
+    /// </summary>
+    void PutBuildCache(string url, PageBuildCache buildCache);
 }

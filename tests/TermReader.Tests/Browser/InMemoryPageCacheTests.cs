@@ -342,6 +342,114 @@ public class InMemoryPageCacheTests : IDisposable
         stats.HitRatePercent.Should().Be(0);
     }
 
+    #region Build Cache
+
+    [Fact]
+    public void TryGetBuildCache_ReturnsNullWhenNotStored()
+    {
+        var url = "https://example.com/page";
+        _cache.Put(url, CreateResult(url, "<html>content</html>"));
+
+        _cache.TryGetBuildCache(url).Should().BeNull();
+    }
+
+    [Fact]
+    public void PutBuildCache_StoresAndRetrievesBuildCache()
+    {
+        var url = "https://example.com/page";
+        _cache.Put(url, CreateResult(url, "<html>content</html>"));
+
+        var buildCache = new PageBuildCache
+        {
+            Links = [new LinkInfo { Url = "https://example.com/link1", DisplayText = "Link 1", Type = Domain.Enums.Browser.LinkType.Content, ImportanceScore = 50 }],
+            Metadata = new PageMetadata { Title = "Test" },
+            FinalUrl = url,
+        };
+
+        _cache.PutBuildCache(url, buildCache);
+
+        var result = _cache.TryGetBuildCache(url);
+        result.Should().NotBeNull();
+        result!.Links.Should().HaveCount(1);
+        result.FinalUrl.Should().Be(url);
+    }
+
+    [Fact]
+    public void PutBuildCache_NoOpWhenUrlNotInCache()
+    {
+        var url = "https://example.com/missing";
+        var buildCache = new PageBuildCache
+        {
+            Links = [],
+            Metadata = new PageMetadata { Title = "Test" },
+            FinalUrl = url,
+        };
+
+        _cache.PutBuildCache(url, buildCache);
+
+        _cache.TryGetBuildCache(url).Should().BeNull();
+    }
+
+    [Fact]
+    public void RemoveEntry_AlsoRemovesBuildCache()
+    {
+        var url = "https://example.com/page";
+        _cache.Put(url, CreateResult(url, "<html>content</html>"));
+        _cache.PutBuildCache(url, new PageBuildCache
+        {
+            Links = [],
+            Metadata = new PageMetadata { Title = "Test" },
+            FinalUrl = url,
+        });
+
+        _cache.Remove(url);
+
+        _cache.TryGetBuildCache(url).Should().BeNull();
+    }
+
+    [Fact]
+    public void Clear_AlsoRemovesBuildCache()
+    {
+        var url = "https://example.com/page";
+        _cache.Put(url, CreateResult(url, "<html>content</html>"));
+        _cache.PutBuildCache(url, new PageBuildCache
+        {
+            Links = [],
+            Metadata = new PageMetadata { Title = "Test" },
+            FinalUrl = url,
+        });
+
+        _cache.Clear();
+
+        _cache.TryGetBuildCache(url).Should().BeNull();
+    }
+
+    [Fact]
+    public void BuildCache_EvictedWithPageLoadResult()
+    {
+        // Fill cache to capacity
+        for (var i = 0; i < _config.MaxEntries; i++)
+        {
+            var entryUrl = $"https://example.com/page{i}";
+            _cache.Put(entryUrl, CreateResult(entryUrl, "<html>content</html>"));
+            _cache.PutBuildCache(entryUrl, new PageBuildCache
+            {
+                Links = [],
+                Metadata = new PageMetadata { Title = $"Page {i}" },
+                FinalUrl = entryUrl,
+            });
+        }
+
+        // Add one more to trigger eviction
+        var newUrl = "https://example.com/new";
+        _cache.Put(newUrl, CreateResult(newUrl, "<html>new content</html>"));
+
+        // At least one old entry should be evicted (with its build cache)
+        _cache.GetStats().EntryCount.Should().BeLessOrEqualTo(_config.MaxEntries);
+    }
+
+    #endregion
+
     private static PageLoadResult CreateResult(string url, string html)
     {
         return PageLoadResult.Successful(url, html, new PageMetadata { Title = "Test" });
