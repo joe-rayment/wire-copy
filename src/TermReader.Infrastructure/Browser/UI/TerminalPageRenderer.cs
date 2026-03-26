@@ -40,8 +40,6 @@ public class TerminalPageRenderer : IPageRenderer
         _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider);
     }
 
-    private ThemePalette CurrentPalette => BuiltInThemes.Get(_themeProvider.CurrentTheme);
-
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
         _helpers.TerminalHeight = options.TerminalHeight;
@@ -70,7 +68,6 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine();
         }
 
-        _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
 
         _helpers.ClearRemainingLines();
@@ -102,14 +99,13 @@ public class TerminalPageRenderer : IPageRenderer
             }
 
             _helpers.WriteLine();
-            _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
             _helpers.ClearRemainingLines();
             return;
         }
 
-        // Reserve space: 2 lines for status bar + 1 blank separator + 1 padding line
-        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 4);
+        // Reserve space: 1 line for status bar + 1 padding line
+        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
 
         if (wrappedLines != null)
         {
@@ -171,7 +167,6 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press{Reset} {p.PrimaryText.AnsiFg}b{Reset} {p.SecondaryText.AnsiFg}to go back or{Reset} {p.PrimaryText.AnsiFg}Shift+R{Reset} {p.SecondaryText.AnsiFg}to retry{Reset}");
         _helpers.WriteLine();
-        _helpers.RenderEndOfContentRule(CurrentPalette, Console.WindowWidth);
         _helpers.ClearRemainingLines();
     }
 
@@ -216,7 +211,6 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
-        _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }
@@ -226,7 +220,6 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
-        _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
         _helpers.ClearRemainingLines();
     }
@@ -236,7 +229,6 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
-        _helpers.RenderEndOfContentRule(CurrentPalette, options.TerminalWidth);
         _launcherRenderer.RenderFooter(options.TerminalWidth);
         _helpers.ClearRemainingLines();
     }

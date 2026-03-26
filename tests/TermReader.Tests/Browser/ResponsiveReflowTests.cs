@@ -127,15 +127,15 @@ public class ResponsiveReflowTests
     [Fact]
     public void ComputeLayout_ShortTerminal_CompactCells()
     {
-        // availableHeight = max(4, 17-1-2) = 14 < 15 → compact
-        var layout = LinkTreeRenderer.ComputeLayout(80, 17);
+        // availableHeight = max(4, 16-1-1) = 14 < 15 → compact
+        var layout = LinkTreeRenderer.ComputeLayout(80, 16);
         layout.CellHeight.Should().Be(3);
     }
 
     [Fact]
     public void ComputeLayout_TallTerminal_StandardCells()
     {
-        // availableHeight = max(4, 40-1-2) = 37 >= 15 → standard
+        // availableHeight = max(4, 40-1-1) = 38 >= 15 → standard
         var layout = LinkTreeRenderer.ComputeLayout(80, 40);
         layout.CellHeight.Should().Be(5);
     }

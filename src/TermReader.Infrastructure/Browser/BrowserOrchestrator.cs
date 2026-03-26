@@ -789,7 +789,7 @@ public class BrowserOrchestrator : IBrowserService
     /// </summary>
     private static int GetReaderViewportHeight(RenderOptions options)
     {
-        return Math.Max(3, options.TerminalHeight - 3);
+        return Math.Max(3, options.TerminalHeight - 2);
     }
 
     /// <summary>

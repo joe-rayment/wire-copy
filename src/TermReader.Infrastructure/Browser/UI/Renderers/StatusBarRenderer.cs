@@ -9,9 +9,8 @@ using TermReader.Infrastructure.Browser.Themes;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders the unified two-line status bar for all views.
-/// Line 1: mode label + adaptive key hints
-/// Line 2: contextual vitals (URL/domain left, cache/status right)
+/// Renders a single-line status bar at the bottom of the screen.
+/// Format: [←] MODE  leftContent     rightContent  ?:help
 /// </summary>
 internal class StatusBarRenderer
 {
@@ -37,12 +36,53 @@ internal class StatusBarRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
+        var maxWidth = width - 1;
 
-        // Line 1: mode label + adaptive key hints
-        RenderLine1(context, mode, p, width);
+        // Build components
+        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
+        var backWidth = context.CanGoBack ? 5 : 0;
 
-        // Line 2: contextual vitals
-        RenderLine2(context, mode, p, width, cacheProgress, cacheUsagePercent, readerTotalLines, readerContentWidth, readerViewportHeight);
+        var modeBadge = FormatModeBadge(mode, p);
+        var modeBadgeWidth = GetShortModeLabel(mode).Length + 2; // +2 for space padding
+
+        var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
+        var leftWidth = RenderHelpers.GetDisplayWidth(left);
+
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent);
+        var rightWidth = RenderHelpers.GetDisplayWidth(right);
+
+        var helpHint = $" {p.SecondaryText.AnsiFg}?:help{Reset}";
+        const int helpWidth = 7; // " ?:help"
+
+        // Layout: [back][mode] [left]    [right] [?:help]
+        var fixedWidth = backWidth + modeBadgeWidth + 1 + helpWidth; // +1 space after mode
+        var contentWidth = maxWidth - fixedWidth;
+
+        // If right + left don't fit, truncate left first
+        if (leftWidth + rightWidth > contentWidth)
+        {
+            var maxLeft = contentWidth - rightWidth;
+            if (maxLeft > 3)
+            {
+                left = RenderHelpers.TruncateText(left, maxLeft);
+                leftWidth = maxLeft;
+            }
+            else
+            {
+                left = string.Empty;
+                leftWidth = 0;
+            }
+        }
+
+        var padding = Math.Max(1, contentWidth - leftWidth - rightWidth);
+        var line = $"{back}{modeBadge} {left}{new string(' ', padding)}{right}{helpHint}";
+
+        if (RenderHelpers.GetDisplayWidth(line) > maxWidth)
+        {
+            line = RenderHelpers.TruncateText(line, maxWidth);
+        }
+
+        _helpers.WriteLine(line);
     }
 
     internal static string GetModeLabel(ViewMode mode)
@@ -62,7 +102,6 @@ internal class StatusBarRenderer
     {
         var tiers = GetHintTiers(mode);
 
-        // Try each tier from largest to smallest
         foreach (var tier in tiers)
         {
             var formatted = FormatHints(p, tier);
@@ -73,73 +112,50 @@ internal class StatusBarRenderer
             }
         }
 
-        // Nothing fits
         return string.Empty;
     }
 
     internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
-        const int barLength = 10;
-        var activeColor = p.GetWarningFg().AnsiFg; // Amber for active/in-progress from theme
+        const int barLength = 8;
         var fraction = total > 0 ? (double)cached / total : 0.0;
 
         if (isActive)
         {
-            // Show the bar with an amber "pulse" block at the leading edge
             var bar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
 
             if (!string.IsNullOrEmpty(currentUrl))
             {
                 var slug = FormatUrlSlug(currentUrl);
-                return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {activeColor}{slug}{Reset}";
+                return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar} {p.SecondaryText.AnsiFg}{slug}{Reset}";
             }
 
-            return $"{bar} {p.SecondaryText.AnsiFg}{cached}/{total} caching{Reset}";
+            return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar}";
         }
 
-        // Not active — smooth eighth-block bar
-        var staticBar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
-        return $"{staticBar} {p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
+        return $"{p.SecondaryText.AnsiFg}{cached}/{total} cached{Reset}";
     }
 
-    /// <summary>
-    /// Extracts a short readable slug from a URL path for the caching indicator.
-    /// e.g. "https://arstechnica.com/science/2026/03/a-century-after-rockets/" → "a-century-after-rockets"
-    /// </summary>
-    private static string FormatUrlSlug(string url)
+    private static string FormatModeBadge(ViewMode mode, ThemePalette p)
     {
-        try
-        {
-            var uri = new Uri(url);
-            var path = uri.AbsolutePath.Trim('/');
-            var segments = path.Split('/');
-
-            // Take the last meaningful segment (skip dates and short segments)
-            for (var i = segments.Length - 1; i >= 0; i--)
-            {
-                var seg = segments[i];
-                if (seg.Length > 8 && !int.TryParse(seg, out _))
-                {
-                    // Truncate long slugs and replace hyphens with spaces
-                    var readable = seg.Replace('-', ' ').Replace('_', ' ');
-                    if (readable.Length > 30)
-                    {
-                        readable = readable[..27] + "...";
-                    }
-
-                    return readable;
-                }
-            }
-
-            return path.Length > 30 ? path[..27] + "..." : path;
-        }
-        catch
-        {
-            return url.Length > 30 ? url[..27] + "..." : url;
-        }
+        var label = GetShortModeLabel(mode);
+        return $"{p.StatusBarTextFg.AnsiFg}{label}{Reset}";
     }
 
-    private static string FormatLine2Left(
+    private static string GetShortModeLabel(ViewMode mode)
+    {
+        return mode switch
+        {
+            ViewMode.Hierarchical => "LINK",
+            ViewMode.Readable => "READ",
+            ViewMode.CollectionList => "LIST",
+            ViewMode.CollectionItems => "SAVE",
+            ViewMode.Launcher => "HOME",
+            _ => "VIEW"
+        };
+    }
+
+    private static string FormatLeftContent(
         NavigationContext context,
         ViewMode mode,
         ThemePalette p,
@@ -156,7 +172,17 @@ internal class StatusBarRenderer
 
             var lineInfo = $"L{context.ScrollOffset + 1}/{readerTotalLines}";
             var widthInfo = $"W{readerContentWidth}";
-            return $" {p.SecondaryText.AnsiFg}{lineInfo} {widthInfo} {progress}%{Reset}";
+            return $"{p.SecondaryText.AnsiFg}{lineInfo} {widthInfo} {progress}%{Reset}";
+        }
+
+        // Collection items: show collection name
+        if (mode == ViewMode.CollectionItems)
+        {
+            var name = context.CurrentPage?.Metadata?.Title;
+            if (!string.IsNullOrEmpty(name))
+            {
+                return $"{p.SecondaryText.AnsiFg}{name}{Reset}";
+            }
         }
 
         // Show URL/domain for page views
@@ -164,13 +190,13 @@ internal class StatusBarRenderer
         if (!string.IsNullOrEmpty(url))
         {
             var domain = GetDomain(url);
-            return $" {p.SecondaryText.AnsiFg}{domain}{Reset}";
+            return $"{p.SecondaryText.AnsiFg}{domain}{Reset}";
         }
 
         return string.Empty;
     }
 
-    private static string FormatLine2Right(
+    private static string FormatRightContent(
         NavigationContext context,
         ViewMode mode,
         ThemePalette p,
@@ -186,7 +212,7 @@ internal class StatusBarRenderer
         }
 
         // Page classification badge
-        if (context.CurrentPage?.Classification == Domain.Enums.Browser.PageClassification.LinkList)
+        if (context.CurrentPage?.Classification == PageClassification.LinkList)
         {
             parts.Add($"{p.SecondaryText.AnsiFg}index{Reset}");
         }
@@ -194,10 +220,10 @@ internal class StatusBarRenderer
         // AI hierarchy badge
         if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
         {
-            parts.Add($"{p.SecondaryText.AnsiFg}AI layout{Reset}");
+            parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
         }
 
-        // Cache progress mini-bar or cache badge
+        // Cache progress or badge
         var cachePart = FormatCacheIndicator(context, mode, p, cacheProgress);
         if (!string.IsNullOrEmpty(cachePart))
         {
@@ -216,45 +242,72 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}");
         }
 
-        return parts.Count > 0 ? string.Join($" {p.SecondaryText.AnsiFg}\u2502{Reset} ", parts) + " " : string.Empty;
+        return parts.Count > 0 ? string.Join($" {p.SecondaryText.AnsiFg}\u00b7{Reset} ", parts) : string.Empty;
     }
 
     private static string FormatCacheIndicator(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
     {
-        // Preload progress for hierarchical/collection views
         if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null)
         {
             if (progress.TotalCacheableLinks > 0)
             {
                 if (progress.IsComplete)
                 {
-                    return $"{p.SecondaryText.AnsiFg}links cached{Reset}";
+                    return $"{p.SecondaryText.AnsiFg}cached{Reset}";
                 }
 
                 return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
             }
 
-            // Paywalled domain — no HTTP pre-fetch possible
             if (progress.PaywalledLinkCount > 0)
             {
-                // Page is loaded (has content) — just note the paywall, don't prompt login
                 if (context.CurrentPage?.HasReadableContent() == true ||
                     context.CurrentPage?.LinkTree?.TotalLinks > 0)
                 {
-                    return $"{p.SecondaryText.AnsiFg}paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login to cache{Reset}";
+                    return $"{p.SecondaryText.AnsiFg}paywall{Reset}";
                 }
 
-                return $"{p.SecondaryText.AnsiFg}no cache \u00b7 paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                return $"{p.SecondaryText.AnsiFg}paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
             }
         }
 
-        // Per-page cache badge for other views
         if (context.IsFromCache)
         {
-            return $"{p.SecondaryText.AnsiFg}cached {RenderHelpers.FormatCacheAge(context.CachedAt)}{Reset}";
+            return $"{p.SecondaryText.AnsiFg}{RenderHelpers.FormatCacheAge(context.CachedAt)}{Reset}";
         }
 
         return string.Empty;
+    }
+
+    private static string FormatUrlSlug(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var path = uri.AbsolutePath.Trim('/');
+            var segments = path.Split('/');
+
+            for (var i = segments.Length - 1; i >= 0; i--)
+            {
+                var seg = segments[i];
+                if (seg.Length > 8 && !int.TryParse(seg, out _))
+                {
+                    var readable = seg.Replace('-', ' ').Replace('_', ' ');
+                    if (readable.Length > 25)
+                    {
+                        readable = readable[..22] + "...";
+                    }
+
+                    return readable;
+                }
+            }
+
+            return path.Length > 25 ? path[..22] + "..." : path;
+        }
+        catch
+        {
+            return url.Length > 25 ? url[..22] + "..." : url;
+        }
     }
 
     private static (string Key, string Action)[][] GetHintTiers(ViewMode mode)
@@ -313,69 +366,5 @@ internal class StatusBarRenderer
         }
 
         return url.Length > 40 ? url[..40] : url;
-    }
-
-    private void RenderLine1(NavigationContext context, ViewMode mode, ThemePalette p, int width)
-    {
-        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
-        var modeLabel = $"{p.StatusBarTextFg.AnsiFg}{GetModeLabel(mode)}{Reset}";
-
-        // Calculate space used by back + mode label
-        var backWidth = context.CanGoBack ? 5 : 0; // "[←] "
-        var modeLabelWidth = GetModeLabel(mode).Length;
-        var availableForHints = width - 1 - backWidth - modeLabelWidth - 1; // -1 for space after label
-
-        var hints = GetAdaptiveHints(mode, p, availableForHints);
-
-        var line1 = $"{back}{modeLabel} {hints}";
-        if (RenderHelpers.GetDisplayWidth(line1) > width - 1)
-        {
-            line1 = RenderHelpers.TruncateText(line1, width - 1);
-        }
-
-        _helpers.WriteLine(line1);
-    }
-
-    private void RenderLine2(
-        NavigationContext context,
-        ViewMode mode,
-        ThemePalette p,
-        int width,
-        PreloadProgress? cacheProgress,
-        double cacheUsagePercent,
-        int readerTotalLines,
-        int readerContentWidth,
-        int readerViewportHeight)
-    {
-        // Left side: contextual info
-        var left = FormatLine2Left(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
-
-        // Right side: cache/search/status
-        var right = FormatLine2Right(context, mode, p, cacheProgress, cacheUsagePercent);
-
-        var leftWidth = RenderHelpers.GetDisplayWidth(left);
-        var rightWidth = RenderHelpers.GetDisplayWidth(right);
-        var maxWidth = width - 1;
-
-        string line2;
-        if (leftWidth + rightWidth + 1 <= maxWidth && rightWidth > 0)
-        {
-            var padding = maxWidth - leftWidth - rightWidth;
-            line2 = $"{left}{new string(' ', Math.Max(1, padding))}{right}";
-        }
-        else if (rightWidth > 0 && leftWidth == 0)
-        {
-            line2 = right;
-        }
-        else
-        {
-            line2 = left;
-            if (RenderHelpers.GetDisplayWidth(line2) > maxWidth)
-            {
-                line2 = RenderHelpers.TruncateText(line2, maxWidth);
-            }
-        }
-
-        _helpers.WriteLine(line2);
     }
 }

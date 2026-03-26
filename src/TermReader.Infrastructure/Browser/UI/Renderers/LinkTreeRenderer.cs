@@ -180,7 +180,7 @@ internal class LinkTreeRenderer
     internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
         const int headerLines = 1;
-        const int statusBarLines = 2;
+        const int statusBarLines = 1;
         const int columnThreshold = 50;
         const int standardCellHeight = 5;
         const int compactCellHeight = 3;
