@@ -246,6 +246,28 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         _evictionTimer.Dispose();
     }
 
+    public void ApplyLinkListTtl(string url)
+    {
+        UpdateTtl(url, _config.LinkListTtlSeconds);
+    }
+
+    public void UpdateTtl(string url, int ttlSeconds)
+    {
+        var key = NormalizeUrl(url);
+
+        if (!_entries.TryGetValue(key, out var existing) || existing.Metadata.IsExpired)
+        {
+            return;
+        }
+
+        var updatedMetadata = existing.Metadata with
+        {
+            ExpiresAtUtc = existing.Metadata.CachedAtUtc.AddSeconds(ttlSeconds),
+        };
+        var updated = existing with { Metadata = updatedMetadata };
+        _entries.TryUpdate(key, updated, existing);
+    }
+
     private static long EstimateSize(PageLoadResult result)
     {
         var htmlBytes = !string.IsNullOrEmpty(result.Html)

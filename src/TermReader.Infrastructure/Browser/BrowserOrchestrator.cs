@@ -1067,6 +1067,13 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         _pageCache.PutBuildCache(url, buildCache);
+
+        // Use shorter TTL for link-list pages (content changes frequently)
+        if (page.Classification == PageClassification.LinkList)
+        {
+            _pageCache.ApplyLinkListTtl(url);
+        }
+
         _logger.LogDebug("Stored build cache for {Url} ({LinkCount} links)", url, buildCache.Links.Count);
     }
 

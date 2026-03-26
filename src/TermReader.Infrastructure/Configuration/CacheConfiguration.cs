@@ -22,6 +22,12 @@ public class CacheConfiguration
     public int DefaultTtlSeconds { get; init; } = 86400;
 
     /// <summary>
+    /// Time-to-live for link-list/section page cache entries in seconds. Default: 1 hour.
+    /// Shorter than article TTL because section pages change frequently (new headlines).
+    /// </summary>
+    public int LinkListTtlSeconds { get; init; } = 3600;
+
+    /// <summary>
     /// Maximum size of a single cache entry in bytes. Default: 5 MB.
     /// Entries larger than this are not cached.
     /// </summary>
