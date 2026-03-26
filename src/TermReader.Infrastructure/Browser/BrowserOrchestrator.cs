@@ -458,6 +458,31 @@ public class BrowserOrchestrator : IBrowserService
             }
         }
 
+        // Article content retry: if page is classified as Article but has no readable content
+        // after browser fetch, the JS app may need more time to render. Re-fetch the page
+        // content after an additional delay (NYT React app needs 3-5s to hydrate).
+        if (!page.HasReadableContent() &&
+            page.Classification == PageClassification.Article &&
+            _lastLoadFetchMethod == FetchMethod.Browser &&
+            browserAvailable)
+        {
+            _logger.LogInformation(
+                "Article page with no readable content after browser fetch, retrying with extended wait: {Url}",
+                url);
+
+            _pageCache.Remove(url);
+
+            var retryResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                cancellationToken);
+
+            if (retryResult.Success)
+            {
+                _lastLoadFetchMethod = retryResult.FetchMethod;
+                page = await BuildPageFromLoadResultAsync(retryResult, url, cancellationToken);
+            }
+        }
+
         // Headless challenge fallback: if headless browser got a bot challenge,
         // retry in headed mode where DataDome is less likely to block.
         // Skip for LinkList pages — they load fine via HTTP.
@@ -1125,6 +1150,13 @@ public class BrowserOrchestrator : IBrowserService
         if (readable != null)
         {
             page.SetReadableContent(readable);
+        }
+        else if (classification == PageClassification.Article)
+        {
+            _logger.LogWarning(
+                "Content extraction returned null for Article-classified page: {Url} (htmlLength={HtmlLength})",
+                finalUrl,
+                loadResult.Html?.Length ?? 0);
         }
 
         if (!string.Equals(requestedUrl, loadResult.Url, StringComparison.OrdinalIgnoreCase))

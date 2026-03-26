@@ -618,17 +618,23 @@ public class PageLoader : IPageLoader
                 Timeout = timeoutMs,
             });
 
-            // Secondary wait: give JS a short window to render content.
-            // Check for article-like selectors first; fall back to raw content length.
+            // Secondary wait: give JS time to render content into the DOM.
+            // First check for structural selectors (fast exit if found), then wait
+            // for article paragraph text to appear (needed for React-rendered sites
+            // like NYT where the DOM shell loads before content is hydrated).
             try
             {
                 await page.WaitForFunctionAsync(
                     @"() => {
-                        if (document.querySelector('article, [role=""main""], .entry-content, .post-content')) return true;
-                        return document.body && document.body.innerHTML.length > 1000;
+                        // Quick check: structural article elements
+                        if (document.querySelector('[role=""main""] p, article p, .entry-content p, .post-content p')) return true;
+                        // NYT-specific: StoryBodyCompanionColumn or storyContent testid
+                        if (document.querySelector('[data-testid=""storyContent""] p, .StoryBodyCompanionColumn p')) return true;
+                        // Fallback: enough raw content rendered
+                        return document.body && document.body.innerHTML.length > 5000;
                     }",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 2000 });
+                    new PageWaitForFunctionOptions { Timeout = 5000 });
             }
             catch (TimeoutException)
             {
