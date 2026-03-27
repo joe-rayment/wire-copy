@@ -43,7 +43,7 @@ internal class CollectionRenderer
         _helpers.WriteLine($" {collTitle}{new string(' ', collPad)}{collMeta}");
         _helpers.WriteLine();
 
-        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
         var maxVisible = remainingHeight;
 
         if (collections.Count == 0)
@@ -133,7 +133,7 @@ internal class CollectionRenderer
         }
 
         const int linesPerItem = 2;
-        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 3);
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
         var maxItems = Math.Max(1, (remainingHeight + 1) / linesPerItem);
 
         if (collection.Items.Count == 0)

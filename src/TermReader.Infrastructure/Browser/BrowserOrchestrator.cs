@@ -813,7 +813,7 @@ public class BrowserOrchestrator : IBrowserService
     /// <summary>
     /// Calculates the available viewport height for the reader view.
     /// The headline is now embedded in the scrollable line cache,
-    /// so only the status bar area (2 lines) is reserved.
+    /// so only the header (1 line) and anchored status bar (1 line) are reserved.
     /// </summary>
     private static int GetReaderViewportHeight(RenderOptions options)
     {
