@@ -49,11 +49,7 @@ internal static class NavigationCommandHandler
         }
         else
         {
-            ctx.LineCacheManager.EnsureLineCache(options);
-            var vpHeight = ctx.GetReaderViewportHeight(options);
-            var maxOffset = Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight);
-            ctx.NavigationService.SetScrollOffset(
-                Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + 1, maxOffset));
+            MoveReaderCursor(ctx, options, 1);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -85,8 +81,7 @@ internal static class NavigationCommandHandler
         }
         else
         {
-            ctx.NavigationService.SetScrollOffset(
-                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - 1));
+            MoveReaderCursor(ctx, options, -1);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -121,12 +116,8 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Readable)
         {
-            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
-            var halfPage = Math.Max(1, vpHeight / 2);
-            var maxOff = Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight);
-            ctx.NavigationService.SetScrollOffset(
-                Math.Min(ctx.NavigationService.CurrentContext.ScrollOffset + halfPage, maxOff));
+            MoveReaderCursor(ctx, options, Math.Max(1, vpHeight / 2));
         }
         else if (viewMode == ViewMode.Hierarchical && tree != null)
         {
@@ -170,11 +161,8 @@ internal static class NavigationCommandHandler
         }
         else if (viewMode == ViewMode.Readable)
         {
-            ctx.LineCacheManager.EnsureLineCache(options);
             var vpHeight = ctx.GetReaderViewportHeight(options);
-            var halfPage = Math.Max(1, vpHeight / 2);
-            ctx.NavigationService.SetScrollOffset(
-                Math.Max(0, ctx.NavigationService.CurrentContext.ScrollOffset - halfPage));
+            MoveReaderCursor(ctx, options, -Math.Max(1, vpHeight / 2));
         }
         else if (viewMode == ViewMode.Hierarchical && tree != null)
         {
@@ -204,6 +192,11 @@ internal static class NavigationCommandHandler
         {
             ctx.NavigationService.CollectionItemSelectedIndex = 0;
             ctx.NavigationService.CollectionItemScrollOffset = 0;
+        }
+        else if (viewMode == ViewMode.Readable)
+        {
+            ctx.NavigationService.SetReaderCursorLine(0);
+            ctx.NavigationService.SetScrollOffset(0);
         }
         else
         {
@@ -245,9 +238,19 @@ internal static class NavigationCommandHandler
         else if (viewMode == ViewMode.Readable && page?.ReadableContent != null)
         {
             ctx.LineCacheManager.EnsureLineCache(options);
+            var totalLines = ctx.LineCacheManager.CachedLines?.Count ?? 0;
             var vpHeight = ctx.GetReaderViewportHeight(options);
-            ctx.NavigationService.SetScrollOffset(
-                Math.Max(0, (ctx.LineCacheManager.CachedLines?.Count ?? 0) - vpHeight));
+            var lastLine = Math.Max(0, totalLines - 1);
+
+            // Find the last non-blank content line
+            var lines = ctx.LineCacheManager.CachedLines;
+            while (lastLine > 0 && lines != null && string.IsNullOrEmpty(lines[lastLine]))
+            {
+                lastLine--;
+            }
+
+            ctx.NavigationService.SetReaderCursorLine(lastLine);
+            ctx.NavigationService.SetScrollOffset(Math.Max(0, totalLines - vpHeight));
         }
         else if (tree != null)
         {
@@ -646,5 +649,74 @@ internal static class NavigationCommandHandler
         {
             ctx.NavigationService.CollectionItemScrollOffset = selectedIndex - maxVisible + 1;
         }
+    }
+
+    /// <summary>
+    /// Moves the reader cursor by delta lines, skipping blank lines (paragraph separators).
+    /// Adjusts scroll to keep cursor visible in the viewport.
+    /// </summary>
+    private static void MoveReaderCursor(CommandContext ctx, RenderOptions options, int delta)
+    {
+        ctx.LineCacheManager.EnsureLineCache(options);
+        var lines = ctx.LineCacheManager.CachedLines;
+        if (lines == null || lines.Count == 0)
+        {
+            return;
+        }
+
+        var cursor = ctx.NavigationService.ReaderCursorLine;
+        var totalLines = lines.Count;
+
+        if (delta > 0)
+        {
+            // Moving down
+            var newCursor = Math.Min(cursor + delta, totalLines - 1);
+
+            // Skip blank lines
+            while (newCursor < totalLines - 1 && string.IsNullOrEmpty(lines[newCursor]))
+            {
+                newCursor++;
+            }
+
+            ctx.NavigationService.SetReaderCursorLine(newCursor);
+        }
+        else
+        {
+            // Moving up
+            var newCursor = Math.Max(0, cursor + delta);
+
+            // Skip blank lines
+            while (newCursor > 0 && string.IsNullOrEmpty(lines[newCursor]))
+            {
+                newCursor--;
+            }
+
+            ctx.NavigationService.SetReaderCursorLine(newCursor);
+        }
+
+        AdjustScrollForCursor(ctx, options);
+    }
+
+    private static void AdjustScrollForCursor(CommandContext ctx, RenderOptions options)
+    {
+        var cursor = ctx.NavigationService.ReaderCursorLine;
+        var scroll = ctx.NavigationService.CurrentContext.ScrollOffset;
+        var vpHeight = ctx.GetReaderViewportHeight(options);
+        var totalLines = ctx.LineCacheManager.CachedLines?.Count ?? 0;
+        var maxScroll = Math.Max(0, totalLines - vpHeight);
+
+        const int topMargin = 2;
+        var bottomMargin = 2;
+
+        if (cursor < scroll + topMargin)
+        {
+            scroll = Math.Max(0, cursor - topMargin);
+        }
+        else if (cursor > scroll + vpHeight - 1 - bottomMargin)
+        {
+            scroll = Math.Min(maxScroll, cursor - vpHeight + 1 + bottomMargin);
+        }
+
+        ctx.NavigationService.SetScrollOffset(Math.Clamp(scroll, 0, maxScroll));
     }
 }
