@@ -278,7 +278,19 @@ internal class StatusBarRenderer
                     return $"{p.SecondaryText.AnsiFg}\u2713 cached{Reset}";
                 }
 
-                return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, progress.IsActivelyFetching, progress.CurrentlyFetchingUrl);
+                if (progress.IsActivelyFetching)
+                {
+                    return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, true, progress.CurrentlyFetchingUrl);
+                }
+
+                // Stalled: not actively fetching but not complete either
+                var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
+                if (progress.NeedsBrowserCount > 0)
+                {
+                    return $"{p.SecondaryText.AnsiFg}{count} \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                }
+
+                return $"{p.SecondaryText.AnsiFg}{count} \u00b7 paused{Reset}";
             }
 
             if (progress.PaywalledLinkCount > 0)
