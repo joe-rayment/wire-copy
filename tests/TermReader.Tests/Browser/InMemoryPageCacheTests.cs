@@ -450,6 +450,38 @@ public class InMemoryPageCacheTests : IDisposable
         _cache.GetStats().EntryCount.Should().BeLessOrEqualTo(_config.MaxEntries);
     }
 
+    [Fact]
+    public void ApplyLinkListTtl_RefreshesTtlFromNow_NotFromCachedAt()
+    {
+        // Use a short default TTL so we can verify the refresh extends it
+        var config = new CacheConfiguration
+        {
+            DefaultTtlSeconds = 2,
+            LinkListTtlSeconds = 3600,
+            EvictionSweepIntervalSeconds = 3600,
+        };
+        using var cache = new InMemoryPageCache(
+            Options.Create(config),
+            NullLogger<InMemoryPageCache>.Instance);
+
+        var url = "https://example.com/section";
+        cache.Put(url, CreateResult(url, "<html>links</html>"));
+
+        // Entry should exist
+        cache.Contains(url).Should().BeTrue();
+
+        // Refresh TTL — should extend to 1 hour from NOW
+        var before = DateTime.UtcNow;
+        cache.ApplyLinkListTtl(url);
+
+        // Wait past the original 2-second TTL
+        Thread.Sleep(2500);
+
+        // Entry should STILL be valid because TTL was refreshed from UtcNow
+        cache.Contains(url).Should().BeTrue(
+            "ApplyLinkListTtl should refresh expiry from UtcNow, not from original CachedAtUtc");
+    }
+
     #endregion
 
     private static PageLoadResult CreateResult(string url, string html)
