@@ -90,4 +90,10 @@ public record NavigationContext
     /// Whether the current page's link tree was organized by AI hierarchy analysis.
     /// </summary>
     public bool IsAiHierarchy { get; init; }
+
+    /// <summary>
+    /// Absolute line index of the reader cursor (for dyslexia reading position indicators).
+    /// Separate from ScrollOffset — the cursor moves within and beyond the viewport.
+    /// </summary>
+    public int ReaderCursorLine { get; init; }
 }
