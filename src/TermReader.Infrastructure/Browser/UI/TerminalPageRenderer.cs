@@ -50,7 +50,7 @@ public class TerminalPageRenderer : IPageRenderer
         var sectionCount = page.LinkTree?.Root.Children.Count(c => c.IsGroupHeader) ?? 0;
         _linkTreeRenderer.RenderHeader(page.Metadata, page.Url, options, linkCount, sectionCount);
 
-        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 3);
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 1);
 
         if (page.LinkTree != null)
         {
@@ -103,8 +103,8 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        // Reserve space: 1 line for status bar + 1 padding line
-        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
+        // Reserve 1 line for the anchored status bar
+        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 1);
 
         if (wrappedLines != null)
         {
