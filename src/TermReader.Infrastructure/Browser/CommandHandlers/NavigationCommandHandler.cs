@@ -266,6 +266,18 @@ internal static class NavigationCommandHandler
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
+        // Esc with active selections: clear selection instead of navigating back (Vim/Helix pattern)
+        if (viewMode == ViewMode.Hierarchical)
+        {
+            var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+            if (tree != null && tree.SelectionCount > 0)
+            {
+                tree.ClearSelection();
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+        }
+
         // If there's no current page (e.g., after a failed navigation that rendered an error page),
         // go straight to the launcher to recover gracefully.
         if (ctx.NavigationService.CurrentPage == null && viewMode != ViewMode.Launcher
