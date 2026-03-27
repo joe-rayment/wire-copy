@@ -406,29 +406,29 @@ public class TerminalInputHandler : IInputHandler
     /// Returns scroll keys for wheel events, empty list for other mouse events, or null
     /// if this wasn't a mouse sequence (the consumed keys are lost — acceptable trade-off).
     /// </summary>
-    private static List<ConsoleKeyInfo>? TryConsumeSgrMouseViaReadKey()
+    private static (List<ConsoleKeyInfo>? MouseKeys, ConsoleKeyInfo? LostKey) TryConsumeSgrMouseViaReadKey()
     {
         // After Escape, check if '[' follows (CSI start)
         if (!Console.KeyAvailable)
         {
-            return null;
+            return (null, null);
         }
 
         var k1 = Console.ReadKey(intercept: true);
         if (k1.KeyChar != '[' && k1.Key != ConsoleKey.Oem4)
         {
-            return null; // Not a CSI — Escape + something else (keys lost)
+            return (null, k1); // Not a CSI — return the consumed key so it isn't lost
         }
 
         if (!Console.KeyAvailable)
         {
-            return null;
+            return (null, null); // Incomplete CSI — lost '[' is acceptable
         }
 
         var k2 = Console.ReadKey(intercept: true);
         if (k2.KeyChar != '<')
         {
-            return null; // Not SGR mouse — some other CSI sequence (keys lost)
+            return (null, null); // Not SGR mouse — some other CSI sequence (consumed)
         }
 
         // Read the SGR mouse payload: "button;x;y" terminated by 'M' or 'm'
@@ -454,6 +454,7 @@ public class TerminalInputHandler : IInputHandler
                 if (parts.Length >= 1 && int.TryParse(parts[0], out var button))
                 {
                     const int scrollLines = 3;
+
                     // Scroll wheel up
                     if (button == 64)
                     {
@@ -463,7 +464,7 @@ public class TerminalInputHandler : IInputHandler
                             keys.Add(new ConsoleKeyInfo('k', ConsoleKey.K, false, false, false));
                         }
 
-                        return keys;
+                        return (keys, null);
                     }
 
                     // Scroll wheel down
@@ -475,17 +476,17 @@ public class TerminalInputHandler : IInputHandler
                             keys.Add(new ConsoleKeyInfo('j', ConsoleKey.J, false, false, false));
                         }
 
-                        return keys;
+                        return (keys, null);
                     }
                 }
 
-                return []; // Other mouse event — consumed and discarded
+                return ([], null); // Other mouse event — consumed and discarded
             }
 
             payload.Append(kn.KeyChar);
         }
 
-        return []; // Runaway or incomplete — consumed and discarded
+        return ([], null); // Runaway or incomplete — consumed and discarded
     }
 
     private void EnsureKeyReaderStarted()
@@ -518,7 +519,7 @@ public class TerminalInputHandler : IInputHandler
                     // by '[' and '<' characters in quick succession, read the full sequence.
                     if (key.Key == ConsoleKey.Escape && Console.KeyAvailable)
                     {
-                        var mouseKeys = TryConsumeSgrMouseViaReadKey();
+                        var (mouseKeys, lostKey) = TryConsumeSgrMouseViaReadKey();
                         if (mouseKeys != null)
                         {
                             foreach (var mk in mouseKeys)
@@ -528,6 +529,15 @@ public class TerminalInputHandler : IInputHandler
 
                             continue;
                         }
+
+                        // Not a mouse sequence — write Escape + any consumed key back
+                        _keyChannel.Writer.TryWrite(key);
+                        if (lostKey.HasValue)
+                        {
+                            _keyChannel.Writer.TryWrite(lostKey.Value);
+                        }
+
+                        continue;
                     }
 
                     _keyChannel.Writer.TryWrite(key);
