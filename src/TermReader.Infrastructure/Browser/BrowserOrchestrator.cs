@@ -254,8 +254,16 @@ public class BrowserOrchestrator : IBrowserService
         // so articles load fully. The browser is pre-warmed after the first paywalled domain
         // visit, so subsequent loads are fast. Cache is checked first (CachingPageLoader) —
         // ForceBrowser only affects cache-miss behavior (browser instead of HTTP).
+        // Skip ForceBrowser when build cache exists — the page was already extracted
+        // successfully before, so HTTP re-fetch is sufficient (fast ~2s vs browser ~30s).
+        var hasBuildCache = _pageCache.TryGetBuildCache(url) != null;
+        if (hasBuildCache)
+        {
+            _logger.LogInformation("Skipping ForceBrowser — build cache exists for {Url}", url);
+        }
+
         var forceBrowser = false;
-        if (IsPaywalledDomain(url))
+        if (!hasBuildCache && IsPaywalledDomain(url))
         {
             var cookies = await _cookieManager.LoadCookiesAsync();
             var host = new Uri(url).Host;
