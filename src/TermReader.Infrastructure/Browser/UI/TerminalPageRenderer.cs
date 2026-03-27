@@ -73,8 +73,14 @@ public class TerminalPageRenderer : IPageRenderer
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
     }
 
+    private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
+
+    internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
+
     public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
     {
+        var paragraphSpans = _paragraphSpans;
+        _paragraphSpans = null; // Consume — set fresh each render cycle
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
 
@@ -109,8 +115,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         if (wrappedLines != null)
         {
-            var focusLineOffset = Math.Max(0, Math.Min(viewportHeight / 3, wrappedLines.Count - context.ScrollOffset - 1));
-            _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, focusLineOffset);
+            _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, paragraphSpans);
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(

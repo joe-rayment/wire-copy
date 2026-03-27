@@ -24,24 +24,63 @@ internal class ArticleRenderer
         _themeProvider = themeProvider;
     }
 
-    public void RenderLineBasedContent(List<string> allLines, NavigationContext context, int viewportHeight, RenderOptions options, int focusLineOffset = -1)
+    public void RenderLineBasedContent(
+        List<string> allLines,
+        NavigationContext context,
+        int viewportHeight,
+        RenderOptions options,
+        IReadOnlyList<LineCacheManager.ParagraphSpan>? paragraphSpans = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var startLine = context.ScrollOffset;
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
-        var indicatorAnsi = $"{p.FocusIndicatorFg.AnsiFg}\u258e{Reset}";
+
+        // Indicator ANSI strings: paragraph = thin subtle bar, line = slightly wider focus bar
+        var paraAnsi = $"{p.GetDimFg().AnsiFg}\u258f{Reset}";
+        var lineAnsi = $"{p.FocusIndicatorFg.AnsiFg}\u258e{Reset}";
+
+        // Find the active paragraph (the one containing the cursor)
+        var cursorLine = context.ReaderCursorLine;
+        LineCacheManager.ParagraphSpan? activeParagraph = null;
+        if (paragraphSpans != null)
+        {
+            foreach (var span in paragraphSpans)
+            {
+                if (cursorLine >= span.StartLine && cursorLine <= span.EndLine)
+                {
+                    activeParagraph = span;
+                    break;
+                }
+
+                if (span.StartLine > cursorLine)
+                {
+                    break;
+                }
+            }
+        }
+
+        var hasSearch = !string.IsNullOrEmpty(context.SearchQuery);
+        var searchPalette = hasSearch ? p : null;
 
         for (var i = startLine; i < endLine; i++)
         {
-            var viewportLine = i - startLine;
+            var inActiveParagraph = activeParagraph.HasValue
+                && i >= activeParagraph.Value.StartLine
+                && i <= activeParagraph.Value.EndLine;
+            var isCursorLine = i == cursorLine;
 
-            if (focusLineOffset >= 0 && viewportLine == focusLineOffset)
+            if (inActiveParagraph || isCursorLine)
             {
-                _helpers.WriteLineWithIndicator(allLines[i], indicatorAnsi, context.SearchQuery, !string.IsNullOrEmpty(context.SearchQuery) ? p : null);
+                _helpers.WriteLineWithDualIndicator(
+                    allLines[i],
+                    inActiveParagraph ? paraAnsi : null,
+                    isCursorLine ? lineAnsi : null,
+                    context.SearchQuery,
+                    searchPalette);
             }
-            else if (!string.IsNullOrEmpty(context.SearchQuery))
+            else if (hasSearch)
             {
-                _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery, p);
+                _helpers.WriteLineWithHighlight(allLines[i], context.SearchQuery!, p);
             }
             else
             {

@@ -597,6 +597,11 @@ public class BrowserOrchestrator : IBrowserService
 
             case ViewMode.Readable:
                 _lineCacheManager.EnsureLineCache(options);
+                if (_renderer is UI.TerminalPageRenderer tpr)
+                {
+                    tpr.SetParagraphSpans(_lineCacheManager.ParagraphSpans);
+                }
+
                 _renderer.RenderReadable(page, context, options, _lineCacheManager.CachedLines?.ToList());
                 break;
 
