@@ -20,6 +20,7 @@ namespace TermReader.Infrastructure.Browser.UI;
 public class TerminalPageRenderer : IPageRenderer
 {
     private const string Reset = "\x1b[0m";
+    private static readonly char[] SpinnerFrames = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
 
     private readonly IThemeProvider _themeProvider;
     private readonly RenderHelpers _helpers;
@@ -138,9 +139,16 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.Clear();
         _helpers.WriteLine();
 
-        // Stage label with elapsed time
-        var elapsed = elapsedMs > 0 ? $"  {p.SecondaryText.AnsiFg}{FormatElapsed(elapsedMs)}{Reset}" : string.Empty;
-        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}{elapsed}");
+        // Animated spinner: cycles through 10 braille frames every 500ms
+        var frameIndex = (int)((elapsedMs / 500) % SpinnerFrames.Length);
+        var spinner = SpinnerFrames[frameIndex];
+
+        // Elapsed seconds — visible proof the app is running
+        var elapsed = elapsedMs >= 1000
+            ? $"  {p.SecondaryText.AnsiFg}{elapsedMs / 1000}s{Reset}"
+            : string.Empty;
+
+        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}{spinner}{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}{elapsed}");
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
@@ -245,16 +253,5 @@ public class TerminalPageRenderer : IPageRenderer
     public void Clear()
     {
         _helpers.Clear();
-    }
-
-    private static string FormatElapsed(long ms)
-    {
-        if (ms < 1000)
-        {
-            return string.Empty;
-        }
-
-        var seconds = ms / 1000.0;
-        return $"{seconds:F1}s";
     }
 }
