@@ -82,7 +82,17 @@ internal class LinkTreeRenderer
 
             if (gr.IsGroupHeader)
             {
-                RenderGroupHeader(gr.Left, gr.Left.IsSelected, options);
+                var selIndicator = string.Empty;
+                if (tree.IsSectionFullySelected(gr.Left))
+                {
+                    selIndicator = "\u2713 ";
+                }
+                else if (tree.IsSectionPartiallySelected(gr.Left))
+                {
+                    selIndicator = "\u25d0 ";
+                }
+
+                RenderGroupHeader(gr.Left, gr.Left.IsSelected, options, selIndicator);
             }
             else
             {
@@ -147,15 +157,15 @@ internal class LinkTreeRenderer
     /// <summary>
     /// Renders a card-style group header, dispatching to sub-section or top-level rendering.
     /// </summary>
-    public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
+    public void RenderGroupHeader(LinkNode node, bool isSelected, RenderOptions options, string sectionIndicator = "")
     {
         if (node.Link.HeaderType == HeaderType.SubSection)
         {
-            RenderSubSectionHeader(node, isSelected, options);
+            RenderSubSectionHeader(node, isSelected, options, sectionIndicator);
             return;
         }
 
-        RenderTopLevelGroupHeader(node, isSelected, options);
+        RenderTopLevelGroupHeader(node, isSelected, options, sectionIndicator);
     }
 
     internal static int GetCardHeight(int availableLines)
@@ -558,7 +568,7 @@ internal class LinkTreeRenderer
     /// Compact mode (cardHeight == 1): single thin-rule title line.
     /// Format: ' ─ Title (count) ────────'
     /// </summary>
-    private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options)
+    private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options, string sectionIndicator = "")
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -569,7 +579,7 @@ internal class LinkTreeRenderer
         var childCount = node.Children.Count;
         var showCount = !isExpanded || childCount >= 5;
         var countSuffix = showCount ? $" ({childCount})" : string.Empty;
-        var titleText = $"{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
+        var titleText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
         var headerLabel = $" \u2500 {titleText} ";
 
         // Fill remaining width with thin rule (no box corners — avoids broken box appearance)
@@ -613,7 +623,7 @@ internal class LinkTreeRenderer
     /// Compact mode (cardHeight == 1): single line.
     /// Selected headers get accent bar and highlight background.
     /// </summary>
-    private void RenderTopLevelGroupHeader(LinkNode node, bool isSelected, RenderOptions options)
+    private void RenderTopLevelGroupHeader(LinkNode node, bool isSelected, RenderOptions options, string sectionIndicator = "")
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -622,7 +632,7 @@ internal class LinkTreeRenderer
         var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
         var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
         var childCount = node.Children.Count;
-        var headerText = $"{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
+        var headerText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
 
         if (cardHeight == 1)
         {
