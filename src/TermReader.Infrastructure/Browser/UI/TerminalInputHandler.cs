@@ -399,6 +399,224 @@ public class TerminalInputHandler : IInputHandler
         };
     }
 
+    /// <summary>
+    /// Reads an escape sequence from stdin after the initial \x1b byte.
+    /// Returns ConsoleKeyInfo array for recognized sequences (arrows, mouse scroll),
+    /// or null if it's just a bare Escape keypress.
+    /// </summary>
+    private static List<ConsoleKeyInfo>? ReadEscapeSequence(Stream stdin)
+    {
+        // Peek for CSI: \x1b[
+        if (!TryReadByteWithTimeout(stdin, out var next))
+        {
+            return null; // Bare Escape (no follow-up within timeout)
+        }
+
+        if (next != '[')
+        {
+            return null; // Alt+key or unknown — treat as Escape (byte is lost, acceptable)
+        }
+
+        // Read CSI parameter bytes until a final byte (0x40-0x7E)
+        if (!TryReadByteWithTimeout(stdin, out var third))
+        {
+            return null;
+        }
+
+        // SGR mouse: \x1b[<button;x;y[Mm]
+        if (third == '<')
+        {
+            return ReadSgrMouse(stdin);
+        }
+
+        // Single-letter final bytes: \x1b[A/B/C/D (arrows), H/F (Home/End)
+        if (third >= 0x40 && third <= 0x7E)
+        {
+            return third switch
+            {
+                (byte)'A' => [new ConsoleKeyInfo('\0', ConsoleKey.UpArrow, false, false, false)],
+                (byte)'B' => [new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false)],
+                (byte)'C' => [new ConsoleKeyInfo('\0', ConsoleKey.RightArrow, false, false, false)],
+                (byte)'D' => [new ConsoleKeyInfo('\0', ConsoleKey.LeftArrow, false, false, false)],
+                (byte)'H' => [new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false)],
+                (byte)'F' => [new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false)],
+                _ => [], // Unknown single-byte CSI — discard
+            };
+        }
+
+        // Parameterized CSI: \x1b[N~ (F-keys, Insert, Delete, PageUp/Down)
+        return ReadParameterizedCsi(stdin, third);
+    }
+
+    /// <summary>
+    /// Reads a parameterized CSI sequence like \x1b[15~ (F5) or \x1b[5~ (PageUp).
+    /// The third byte (first digit) has already been read.
+    /// </summary>
+    private static List<ConsoleKeyInfo>? ReadParameterizedCsi(Stream stdin, int firstParamByte)
+    {
+        var buf = new List<byte>(8) { (byte)firstParamByte };
+        while (true)
+        {
+            if (!TryReadByteWithTimeout(stdin, out var b))
+            {
+                return [];
+            }
+
+            if (b >= 0x40 && b <= 0x7E)
+            {
+                // Final byte — sequence complete
+                if (b == '~')
+                {
+                    var param = System.Text.Encoding.ASCII.GetString(buf.ToArray());
+                    return param switch
+                    {
+                        "1" or "7" => [new ConsoleKeyInfo('\0', ConsoleKey.Home, false, false, false)],
+                        "2" => [new ConsoleKeyInfo('\0', ConsoleKey.Insert, false, false, false)],
+                        "3" => [new ConsoleKeyInfo('\0', ConsoleKey.Delete, false, false, false)],
+                        "4" or "8" => [new ConsoleKeyInfo('\0', ConsoleKey.End, false, false, false)],
+                        "5" => [new ConsoleKeyInfo('\0', ConsoleKey.PageUp, false, false, false)],
+                        "6" => [new ConsoleKeyInfo('\0', ConsoleKey.PageDown, false, false, false)],
+                        "15" => [new ConsoleKeyInfo('\0', ConsoleKey.F5, false, false, false)],
+                        _ => [],
+                    };
+                }
+
+                return []; // Non-tilde final byte — unknown, discard
+            }
+
+            buf.Add((byte)b);
+            if (buf.Count > 16)
+            {
+                return []; // Runaway
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads an SGR mouse sequence: button;x;y terminated by 'M' (press) or 'm' (release).
+    /// Scroll wheel up = button 64, down = button 65.
+    /// Returns synthetic j/k keys for scroll, null for other mouse events.
+    /// </summary>
+    private static List<ConsoleKeyInfo>? ReadSgrMouse(Stream stdin)
+    {
+        var buf = new List<byte>(16);
+        while (true)
+        {
+            var b = stdin.ReadByte();
+            if (b < 0)
+            {
+                return null;
+            }
+
+            if (b == 'M' || b == 'm')
+            {
+                break;
+            }
+
+            buf.Add((byte)b);
+
+            if (buf.Count > 32)
+            {
+                return null; // Runaway sequence
+            }
+        }
+
+        // Parse "button;x;y"
+        var parts = System.Text.Encoding.ASCII.GetString(buf.ToArray()).Split(';');
+        if (parts.Length < 1 || !int.TryParse(parts[0], out var button))
+        {
+            return null;
+        }
+
+        // Scroll wheel: button 64 = up, 65 = down (3 lines per tick)
+        const int scrollLines = 3;
+        if (button == 64)
+        {
+            var keys = new List<ConsoleKeyInfo>(scrollLines);
+            for (var i = 0; i < scrollLines; i++)
+            {
+                keys.Add(new ConsoleKeyInfo('k', ConsoleKey.K, false, false, false));
+            }
+
+            return keys;
+        }
+
+        if (button == 65)
+        {
+            var keys = new List<ConsoleKeyInfo>(scrollLines);
+            for (var i = 0; i < scrollLines; i++)
+            {
+                keys.Add(new ConsoleKeyInfo('j', ConsoleKey.J, false, false, false));
+            }
+
+            return keys;
+        }
+
+        // Other mouse events (click, drag) — discard
+        return [];
+    }
+
+    private static bool TryReadByteWithTimeout(Stream stdin, out int result)
+    {
+        // Escape sequences arrive as an atomic burst from the terminal pty —
+        // all bytes are buffered at once, so ReadByte returns immediately.
+        // For a bare Escape keypress, only \x1b arrives, so the next read blocks.
+        // This blocking behavior (until next keypress) matches standard terminal
+        // apps (vim ttimeoutlen). The Escape key fires when the NEXT key arrives.
+        // This is the correct and safe approach — no orphaned tasks, no data loss.
+        result = stdin.ReadByte();
+        return result >= 0;
+    }
+
+    /// <summary>
+    /// Converts a raw stdin byte to a ConsoleKeyInfo.
+    /// Handles ASCII printable chars, Enter, Tab, Backspace, and Ctrl+key.
+    /// </summary>
+    private static ConsoleKeyInfo ByteToKeyInfo(int b)
+    {
+        // Ctrl+key: bytes 1-26 map to Ctrl+A through Ctrl+Z
+        if (b >= 1 && b <= 26)
+        {
+            var key = (ConsoleKey)((int)ConsoleKey.A + b - 1);
+            return new ConsoleKeyInfo((char)b, key, false, false, true);
+        }
+
+        return b switch
+        {
+            0 => new ConsoleKeyInfo('\0', ConsoleKey.NoName, false, false, true), // Ctrl+@/Space
+            13 or 10 => new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            9 => new ConsoleKeyInfo('\t', ConsoleKey.Tab, false, false, false),
+            127 => new ConsoleKeyInfo('\b', ConsoleKey.Backspace, false, false, false),
+            32 => new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, false, false, false),
+            >= 33 and <= 126 => MapPrintableChar((char)b),
+            _ => new ConsoleKeyInfo((char)b, ConsoleKey.NoName, false, false, false),
+        };
+    }
+
+    private static ConsoleKeyInfo MapPrintableChar(char c)
+    {
+        var shift = char.IsUpper(c) || "~!@#$%^&*()_+{}|:\"<>?".Contains(c);
+        var key = char.ToUpper(c) switch
+        {
+            >= 'A' and <= 'Z' => (ConsoleKey)((int)ConsoleKey.A + char.ToUpper(c) - 'A'),
+            >= '0' and <= '9' => (ConsoleKey)((int)ConsoleKey.D0 + c - '0'),
+            '/' => ConsoleKey.Oem2,
+            '?' => ConsoleKey.Oem2,
+            '[' or '{' => ConsoleKey.Oem4,
+            ']' or '}' => ConsoleKey.Oem6,
+            '\\' or '|' => ConsoleKey.Oem5,
+            ';' or ':' => ConsoleKey.Oem1,
+            '\'' or '"' => ConsoleKey.Oem7,
+            ',' or '<' => ConsoleKey.OemComma,
+            '.' or '>' => ConsoleKey.OemPeriod,
+            '-' or '_' => ConsoleKey.OemMinus,
+            '=' or '+' => ConsoleKey.OemPlus,
+            '`' or '~' => ConsoleKey.Oem3,
+            _ => ConsoleKey.NoName,
+        };
+        return new ConsoleKeyInfo(c, key, shift, false, false);
+    }
+
     private void EnsureKeyReaderStarted()
     {
         if (_keyReaderStarted)
@@ -419,10 +637,33 @@ public class TerminalInputHandler : IInputHandler
         {
             try
             {
+                using var stdin = Console.OpenStandardInput();
                 while (true)
                 {
-                    var key = Console.ReadKey(intercept: true);
-                    _keyChannel.Writer.TryWrite(key);
+                    var b = stdin.ReadByte();
+                    if (b < 0)
+                    {
+                        break;
+                    }
+
+                    if (b == 0x1b)
+                    {
+                        var result = ReadEscapeSequence(stdin);
+                        if (result != null)
+                        {
+                            foreach (var k in result)
+                            {
+                                _keyChannel.Writer.TryWrite(k);
+                            }
+
+                            continue;
+                        }
+
+                        _keyChannel.Writer.TryWrite(new ConsoleKeyInfo('\x1b', ConsoleKey.Escape, false, false, false));
+                        continue;
+                    }
+
+                    _keyChannel.Writer.TryWrite(ByteToKeyInfo(b));
                 }
             }
             catch (InvalidOperationException ex)
