@@ -245,6 +245,13 @@ internal class StatusBarRenderer
             parts.Add(cachePart);
         }
 
+        // Selection count badge (persistent, replaces transient status message)
+        var selCount = context.CurrentPage?.LinkTree?.SelectionCount ?? 0;
+        if (selCount > 0 && mode == ViewMode.Hierarchical)
+        {
+            parts.Add($"{p.PromptFg.AnsiFg}{selCount} sel{Reset}");
+        }
+
         // Cache usage warning
         if (cacheUsagePercent >= 90)
         {

@@ -397,15 +397,7 @@ internal static class NavigationCommandHandler
             return;
         }
 
-        var count = tree.ToggleCurrentNodeSelection();
-        if (count > 0)
-        {
-            ctx.NavigationService.SetStatusMessage(
-                tree.SelectionCount > 0
-                    ? $"{tree.SelectionCount} selected — s:save"
-                    : "Selection cleared");
-        }
-
+        tree.ToggleCurrentNodeSelection();
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
