@@ -94,35 +94,35 @@ public class NavigationCommandHandlerScrollTests
     #region HandleMoveDown - Readable scroll
 
     [Fact]
-    public async Task HandleMoveDown_Readable_IncrementsScrollByOne()
+    public async Task HandleMoveDown_Readable_IncrementsCursorByOne()
     {
-        _navigationService.SetScrollOffset(0);
+        _navigationService.SetReaderCursorLine(0);
 
         await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(1);
+        _navigationService.ReaderCursorLine.Should().Be(1);
         _renderCalled.Should().BeTrue();
     }
 
     [Fact]
-    public async Task HandleMoveDown_Readable_IncrementsFromExistingOffset()
+    public async Task HandleMoveDown_Readable_IncrementsCursorFromExistingPosition()
     {
-        _navigationService.SetScrollOffset(10);
+        _navigationService.SetReaderCursorLine(10);
 
         await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(11);
+        _navigationService.ReaderCursorLine.Should().Be(11);
     }
 
     [Fact]
-    public async Task HandleMoveDown_Readable_ClampsToMaxOffset()
+    public async Task HandleMoveDown_Readable_ClampsCursorToLastLine()
     {
-        // maxOffset = max(0, 50 - 20) = 30
-        _navigationService.SetScrollOffset(30);
+        // 50 lines, last index = 49
+        _navigationService.SetReaderCursorLine(49);
 
         await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(30);
+        _navigationService.ReaderCursorLine.Should().Be(49);
     }
 
     [Fact]
@@ -141,13 +141,13 @@ public class NavigationCommandHandlerScrollTests
     #region HandleMoveUp - Readable scroll
 
     [Fact]
-    public async Task HandleMoveUp_Readable_DecrementsScrollByOne()
+    public async Task HandleMoveUp_Readable_DecrementsCursorByOne()
     {
-        _navigationService.SetScrollOffset(10);
+        _navigationService.SetReaderCursorLine(10);
 
         await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(9);
+        _navigationService.ReaderCursorLine.Should().Be(9);
         _renderCalled.Should().BeTrue();
     }
 
@@ -176,25 +176,25 @@ public class NavigationCommandHandlerScrollTests
     #region HandlePageDown - Readable scroll
 
     [Fact]
-    public async Task HandlePageDown_Readable_ScrollsByHalfPage()
+    public async Task HandlePageDown_Readable_MovesCursorByHalfPage()
     {
-        _navigationService.SetScrollOffset(0);
+        _navigationService.SetReaderCursorLine(0);
 
         await NavigationCommandHandler.HandlePageDown(_ctx, _options, CancellationToken.None);
 
         // halfPage = max(1, 20/2) = 10
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(10);
+        _navigationService.ReaderCursorLine.Should().Be(10);
     }
 
     [Fact]
-    public async Task HandlePageDown_Readable_ClampsToMaxOffset()
+    public async Task HandlePageDown_Readable_ClampsCursorToLastLine()
     {
-        // maxOffset = 30, already at 25, halfPage = 10 → would be 35, clamped to 30
-        _navigationService.SetScrollOffset(25);
+        // 50 lines, cursor at 45, halfPage = 10 → would be 55, clamped to 49
+        _navigationService.SetReaderCursorLine(45);
 
         await NavigationCommandHandler.HandlePageDown(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(30);
+        _navigationService.ReaderCursorLine.Should().Be(49);
     }
 
     #endregion
@@ -202,14 +202,14 @@ public class NavigationCommandHandlerScrollTests
     #region HandlePageUp - Readable scroll
 
     [Fact]
-    public async Task HandlePageUp_Readable_ScrollsBackByHalfPage()
+    public async Task HandlePageUp_Readable_MovesCursorBackByHalfPage()
     {
-        _navigationService.SetScrollOffset(20);
+        _navigationService.SetReaderCursorLine(20);
 
         await NavigationCommandHandler.HandlePageUp(_ctx, _options, CancellationToken.None);
 
         // halfPage = 10, 20 - 10 = 10
-        _navigationService.CurrentContext.ScrollOffset.Should().Be(10);
+        _navigationService.ReaderCursorLine.Should().Be(10);
     }
 
     [Fact]

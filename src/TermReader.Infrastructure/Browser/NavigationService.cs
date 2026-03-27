@@ -211,6 +211,8 @@ public class NavigationService : INavigationService
         _selectedLinkIndex = Math.Max(0, index);
     }
 
+    public int ReaderCursorLine => _readerCursorLine;
+
     /// <summary>
     /// Updates the scroll offset in the current context.
     /// </summary>
@@ -218,8 +220,6 @@ public class NavigationService : INavigationService
     {
         _scrollOffset = Math.Max(0, offset);
     }
-
-    public int ReaderCursorLine => _readerCursorLine;
 
     public void SetReaderCursorLine(int line)
     {
