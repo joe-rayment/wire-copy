@@ -851,6 +851,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _needsJsDomains[origin] = true;
                 }
 
+                NotifyProgressChanged();
                 return;
             }
 
@@ -971,15 +972,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
                     await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken);
-
-                    try
-                    {
-                        ProgressChanged?.Invoke();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "ProgressChanged handler error");
-                    }
                 }
             }
             else
@@ -1002,6 +994,19 @@ internal sealed class BackgroundPreloadService : IPreloadService
         finally
         {
             _inFlight.TryRemove(normalizedUrl, out _);
+            NotifyProgressChanged();
+        }
+    }
+
+    private void NotifyProgressChanged()
+    {
+        try
+        {
+            ProgressChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ProgressChanged handler error");
         }
     }
 
