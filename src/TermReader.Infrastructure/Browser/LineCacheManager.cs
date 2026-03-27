@@ -16,12 +16,17 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 internal class LineCacheManager
 {
+    /// <summary>
+    /// A paragraph's range within the flat line cache (StartLine and EndLine are inclusive).
+    /// </summary>
+    internal record struct ParagraphSpan(int StartLine, int EndLine);
     private static readonly Regex AnsiEscapeRegex = new(@"\x1b\[[0-9;]*m", RegexOptions.Compiled);
 
     private readonly NavigationService _navigationService;
     private readonly IThemeProvider _themeProvider;
 
     private List<string>? _cachedLines;
+    private List<ParagraphSpan>? _paragraphSpans;
     private int _cachedWidth;
 
     public LineCacheManager(NavigationService navigationService, IThemeProvider themeProvider)
@@ -31,6 +36,8 @@ internal class LineCacheManager
     }
 
     public IReadOnlyList<string>? CachedLines => _cachedLines;
+
+    public IReadOnlyList<ParagraphSpan>? ParagraphSpans => _paragraphSpans;
 
     public int CachedWidth => _cachedWidth;
 
@@ -55,7 +62,16 @@ internal class LineCacheManager
 
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette, page.Url);
-        var contentLines = WrapAllContent(page.ReadableContent, contentWidth);
+        var (contentLines, spans) = WrapAllContentWithSpans(page.ReadableContent, contentWidth);
+
+        // Offset paragraph spans by headline line count so they reference absolute indices
+        var headlineCount = headlineLines.Count;
+        _paragraphSpans = new List<ParagraphSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            _paragraphSpans.Add(new ParagraphSpan(span.StartLine + headlineCount, span.EndLine + headlineCount));
+        }
+
         headlineLines.AddRange(contentLines);
         _cachedLines = headlineLines;
         _cachedWidth = contentWidth;
@@ -67,6 +83,7 @@ internal class LineCacheManager
     public void InvalidateLineCache()
     {
         _cachedLines = null;
+        _paragraphSpans = null;
         _cachedWidth = 0;
     }
 
@@ -84,6 +101,33 @@ internal class LineCacheManager
                 _navigationService.SetScrollOffset(maxScroll);
             }
         }
+    }
+
+    /// <summary>
+    /// Returns the ParagraphSpan containing the given line index, or null if the line
+    /// is a headline, blank separator, or otherwise not within a paragraph.
+    /// </summary>
+    public ParagraphSpan? GetParagraphForLine(int lineIndex)
+    {
+        if (_paragraphSpans == null)
+        {
+            return null;
+        }
+
+        foreach (var span in _paragraphSpans)
+        {
+            if (lineIndex >= span.StartLine && lineIndex <= span.EndLine)
+            {
+                return span;
+            }
+
+            if (span.StartLine > lineIndex)
+            {
+                break; // Spans are sorted — no point searching further
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -179,24 +223,44 @@ internal class LineCacheManager
         return lines;
     }
 
+
     /// <summary>
     /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
     /// </summary>
     internal static List<string> WrapAllContent(ReadableContent content, int maxWidth)
     {
+        return WrapAllContentWithSpans(content, maxWidth).Lines;
+    }
+
+    /// <summary>
+    /// Pre-wraps all paragraphs and tracks paragraph boundaries as ParagraphSpans.
+    /// Span indices are relative to the returned lines (not offset by headline).
+    /// </summary>
+    internal static (List<string> Lines, List<ParagraphSpan> Spans) WrapAllContentWithSpans(ReadableContent content, int maxWidth)
+    {
         var allLines = new List<string>();
+        var spans = new List<ParagraphSpan>();
+
         foreach (var paragraph in content.Paragraphs)
         {
             var wrapped = UI.Renderers.RenderHelpers.WrapText(paragraph, maxWidth - 4);
+            if (wrapped.Count == 0)
+            {
+                allLines.Add(string.Empty);
+                continue;
+            }
+
+            var startLine = allLines.Count;
             foreach (var line in wrapped)
             {
                 allLines.Add($"  {line}");
             }
 
-            allLines.Add(string.Empty);
+            spans.Add(new ParagraphSpan(startLine, allLines.Count - 1));
+            allLines.Add(string.Empty); // Paragraph separator
         }
 
-        return allLines;
+        return (allLines, spans);
     }
 
     /// <summary>
