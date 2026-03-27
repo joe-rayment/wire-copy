@@ -2028,6 +2028,12 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.PageUp:
                     await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken);
                     break;
+                case CommandType.ParagraphDown:
+                    await NavigationCommandHandler.HandleParagraphDown(_commandContext, options, cancellationToken);
+                    break;
+                case CommandType.ParagraphUp:
+                    await NavigationCommandHandler.HandleParagraphUp(_commandContext, options, cancellationToken);
+                    break;
                 case CommandType.GoToTop:
                     await NavigationCommandHandler.HandleGoToTop(_commandContext, options, cancellationToken);
                     break;
