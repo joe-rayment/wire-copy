@@ -2287,6 +2287,7 @@ public class BrowserOrchestrator : IBrowserService
 
                     _navigationService.SetSearchMatchIndex(wrappedIndex);
                     _navigationService.SetScrollOffset(matches[wrappedIndex]);
+                    _navigationService.SetReaderCursorLine(matches[wrappedIndex]);
                 }
             }
             else
@@ -2311,6 +2312,7 @@ public class BrowserOrchestrator : IBrowserService
 
                     _navigationService.SetSearchMatchIndex(wrappedIndex);
                     _navigationService.SetScrollOffset(matches[wrappedIndex]);
+                    _navigationService.SetReaderCursorLine(matches[wrappedIndex]);
                 }
             }
         }
