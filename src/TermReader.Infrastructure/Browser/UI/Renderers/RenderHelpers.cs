@@ -238,6 +238,34 @@ internal class RenderHelpers
         WriteLine($" {dimFg}{new string('\u2500', ruleWidth)}\x1b[0m");
     }
 
+    /// <summary>
+    /// Clears the gap between current content and the last terminal line,
+    /// then positions the cursor at TerminalHeight-1 so the next WriteLine
+    /// renders at the bottom of the screen (anchored status bar).
+    /// </summary>
+    public void PositionAtBottom()
+    {
+        try
+        {
+            var targetLine = TerminalHeight - 1;
+            if (_linesWritten < targetLine)
+            {
+                var sb = new StringBuilder((targetLine - _linesWritten) * 10);
+                for (var line = _linesWritten; line < targetLine; line++)
+                {
+                    sb.Append($"\x1b[{line + 1};1H\x1b[K");
+                }
+
+                Console.Write(sb.ToString());
+                _linesWritten = targetLine;
+            }
+        }
+        catch
+        {
+            // Ignore errors in non-standard console environments
+        }
+    }
+
     public void ClearRemainingLines()
     {
         try

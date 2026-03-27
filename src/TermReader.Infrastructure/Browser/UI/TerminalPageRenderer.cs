@@ -68,9 +68,8 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine();
         }
 
+        _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
-
-        _helpers.ClearRemainingLines();
     }
 
     public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
@@ -98,9 +97,8 @@ public class TerminalPageRenderer : IPageRenderer
                 _helpers.WriteLine("  Press 'v' to switch to link view.");
             }
 
-            _helpers.WriteLine();
+            _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
-            _helpers.ClearRemainingLines();
             return;
         }
 
@@ -111,7 +109,7 @@ public class TerminalPageRenderer : IPageRenderer
         {
             var focusLineOffset = Math.Max(0, Math.Min(viewportHeight / 3, wrappedLines.Count - context.ScrollOffset - 1));
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, focusLineOffset);
-            _helpers.WriteLine();
+            _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(
                 context,
                 ViewMode.Readable,
@@ -123,11 +121,9 @@ public class TerminalPageRenderer : IPageRenderer
         else
         {
             _articleRenderer.RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
-            _helpers.WriteLine();
+            _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
         }
-
-        _helpers.ClearRemainingLines();
     }
 
     public void RenderLoading(string url, string? status = null)
@@ -219,8 +215,8 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
+        _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth);
-        _helpers.ClearRemainingLines();
     }
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
@@ -228,8 +224,8 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
+        _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
-        _helpers.ClearRemainingLines();
     }
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
@@ -237,8 +233,8 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
+        _helpers.PositionAtBottom();
         _launcherRenderer.RenderFooter(options.TerminalWidth);
-        _helpers.ClearRemainingLines();
     }
 
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
