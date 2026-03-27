@@ -514,6 +514,12 @@ public class BackgroundPreloadServiceTests : IDisposable
         var queue = service.BuildQueue(0, nodes, "https://example.com");
 
         queue.Should().BeEmpty("domain is circuit-broken and cooldown has not elapsed");
+
+        // Verify circuit-broken URLs are counted in NeedsBrowserCount (not silently dropped)
+        var progress = service.GetProgress();
+        progress.NeedsBrowserCount.Should().Be(2,
+            "circuit-broken URLs should be counted as needing browser so progress completes");
+        progress.TotalCacheableLinks.Should().Be(2);
     }
 
     [Fact]
