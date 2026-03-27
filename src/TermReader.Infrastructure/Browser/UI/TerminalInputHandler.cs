@@ -336,6 +336,8 @@ public class TerminalInputHandler : IInputHandler
             '+' or '=' or ']' => new NavigationCommand { Type = CommandType.IncreaseWidth },
             '-' or '_' or '[' => new NavigationCommand { Type = CommandType.DecreaseWidth },
             '0' => new NavigationCommand { Type = CommandType.ResetWidth },
+            '{' => new NavigationCommand { Type = CommandType.ParagraphUp },
+            '}' => new NavigationCommand { Type = CommandType.ParagraphDown },
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
             'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },

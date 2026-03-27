@@ -46,6 +46,8 @@ public enum CommandType
     MoveRight,
     PageDown,
     PageUp,
+    ParagraphDown,
+    ParagraphUp,
     GoToTop,
     GoToBottom,
 
