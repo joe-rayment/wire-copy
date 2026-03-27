@@ -666,6 +666,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         if (IsDomainCircuitBroken(url))
         {
+            needsJs.Add(url);
             return;
         }
 
@@ -841,6 +842,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _paywalledPreloadCount,
                     _config.MaxPaywalledPreloads,
                     url);
+
+                // Mark domain as needing JS so these URLs are counted in NeedsBrowserCount
+                // on the next queue rebuild, rather than vanishing from progress tracking
+                var origin = UrlNormalizer.GetOrigin(url);
+                if (origin != null)
+                {
+                    _needsJsDomains[origin] = true;
+                }
+
                 return;
             }
 
