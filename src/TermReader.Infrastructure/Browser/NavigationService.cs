@@ -33,6 +33,7 @@ public class NavigationService : INavigationService
     private bool _isFromCache;
     private DateTime? _cachedAt;
     private bool _isAiHierarchy;
+    private int _readerCursorLine;
 
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
@@ -70,6 +71,7 @@ public class NavigationService : INavigationService
         IsFromCache = _isFromCache,
         CachedAt = _cachedAt,
         IsAiHierarchy = _isAiHierarchy,
+        ReaderCursorLine = _readerCursorLine,
     };
 
     public Page? CurrentPage => _currentPage;
@@ -98,6 +100,7 @@ public class NavigationService : INavigationService
         _currentPage = page;
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _readerCursorLine = 0;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated to: {Title} ({Url})",
@@ -135,6 +138,7 @@ public class NavigationService : INavigationService
         _currentPage = _backHistory.Pop();
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _readerCursorLine = 0;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated back to: {Title}",
@@ -159,6 +163,7 @@ public class NavigationService : INavigationService
         _currentPage = _forwardHistory.Pop();
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _readerCursorLine = 0;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated forward to: {Title}",
@@ -193,6 +198,7 @@ public class NavigationService : INavigationService
         _currentPage = null;
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
+        _readerCursorLine = 0;
 
         _logger.LogInformation("Navigation history cleared");
     }
@@ -211,6 +217,13 @@ public class NavigationService : INavigationService
     public void SetScrollOffset(int offset)
     {
         _scrollOffset = Math.Max(0, offset);
+    }
+
+    public int ReaderCursorLine => _readerCursorLine;
+
+    public void SetReaderCursorLine(int line)
+    {
+        _readerCursorLine = Math.Max(0, line);
     }
 
     /// <summary>
@@ -268,6 +281,7 @@ public class NavigationService : INavigationService
 
         // Reset scroll offset when switching views so content starts at top
         _scrollOffset = 0;
+        _readerCursorLine = 0;
 
         _logger.LogDebug("Switched to {Mode} view", _currentViewMode);
     }
@@ -282,6 +296,7 @@ public class NavigationService : INavigationService
 
         // Reset scroll offset when switching views so content starts at top
         _scrollOffset = 0;
+        _readerCursorLine = 0;
 
         _logger.LogDebug("Set view mode to {Mode}", mode);
     }

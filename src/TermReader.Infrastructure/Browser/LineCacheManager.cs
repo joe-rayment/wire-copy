@@ -223,7 +223,6 @@ internal class LineCacheManager
         return lines;
     }
 
-
     /// <summary>
     /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
     /// </summary>
