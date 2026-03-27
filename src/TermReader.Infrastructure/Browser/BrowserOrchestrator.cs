@@ -213,6 +213,13 @@ public class BrowserOrchestrator : IBrowserService
         {
             _logger.LogInformation("LoadPageAsync: build cache HIT for {Url}, skipping extraction", url);
             _lastLoadFetchMethod = FetchMethod.Cached;
+
+            // Refresh TTL so link-list pages stay cached across revisits
+            if (buildCache.Classification == PageClassification.LinkList)
+            {
+                _pageCache.ApplyLinkListTtl(url);
+            }
+
             return RebuildPageFromBuildCache(buildCache);
         }
 
@@ -1370,6 +1377,13 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _logger.LogInformation("NavigateToAsync: build cache HIT for {Url}, skipping extraction", url);
                 _lastLoadFetchMethod = FetchMethod.Cached;
+
+                // Refresh TTL so link-list pages stay cached across revisits
+                if (buildCache.Classification == PageClassification.LinkList)
+                {
+                    _pageCache.ApplyLinkListTtl(url);
+                }
+
                 var page = RebuildPageFromBuildCache(buildCache);
                 await CompleteNavigation(page, url, options);
                 return;

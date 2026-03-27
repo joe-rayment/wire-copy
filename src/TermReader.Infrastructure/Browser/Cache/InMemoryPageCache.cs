@@ -286,7 +286,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
         var updatedMetadata = existing.Metadata with
         {
-            ExpiresAtUtc = existing.Metadata.CachedAtUtc.AddSeconds(ttlSeconds),
+            ExpiresAtUtc = DateTime.UtcNow.AddSeconds(ttlSeconds),
         };
         var updated = existing with { Metadata = updatedMetadata };
         _entries.TryUpdate(key, updated, existing);
