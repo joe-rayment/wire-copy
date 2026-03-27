@@ -145,13 +145,11 @@ internal class LineCacheManager
         }
 
         var currentScroll = _navigationService.CurrentContext.ScrollOffset;
+        var currentCursor = _navigationService.ReaderCursorLine;
 
-        // Count character offset up to the current scroll line (strip ANSI codes for accurate length)
-        var charOffset = 0;
-        for (var i = 0; i < Math.Min(currentScroll, _cachedLines.Count); i++)
-        {
-            charOffset += VisibleLength(_cachedLines[i].TrimStart()) + 1; // +1 for implicit newline
-        }
+        // Count character offset up to the current scroll and cursor lines
+        var scrollCharOffset = ComputeCharOffset(currentScroll);
+        var cursorCharOffset = ComputeCharOffset(currentCursor);
 
         // Invalidate and rebuild with new width
         InvalidateLineCache();
@@ -162,22 +160,43 @@ internal class LineCacheManager
             return;
         }
 
-        // Find the line index in new lines matching the character offset
-        var accumulatedChars = 0;
-        var newLineIndex = 0;
-        for (var i = 0; i < _cachedLines.Count; i++)
+        // Find the line indices in new lines matching the character offsets
+        var newScrollIndex = FindLineByCharOffset(scrollCharOffset);
+        var newCursorIndex = FindLineByCharOffset(cursorCharOffset);
+        var maxLine = Math.Max(0, _cachedLines.Count - 1);
+
+        _navigationService.SetScrollOffset(Math.Clamp(newScrollIndex, 0, maxLine));
+        _navigationService.SetReaderCursorLine(Math.Clamp(newCursorIndex, 0, maxLine));
+    }
+
+    private int ComputeCharOffset(int lineIndex)
+    {
+        var offset = 0;
+        for (var i = 0; i < Math.Min(lineIndex, _cachedLines!.Count); i++)
         {
-            accumulatedChars += VisibleLength(_cachedLines[i].TrimStart()) + 1;
-            if (accumulatedChars >= charOffset)
+            offset += VisibleLength(_cachedLines[i].TrimStart()) + 1;
+        }
+
+        return offset;
+    }
+
+    private int FindLineByCharOffset(int charOffset)
+    {
+        var accumulated = 0;
+        var lineIndex = 0;
+        for (var i = 0; i < _cachedLines!.Count; i++)
+        {
+            accumulated += VisibleLength(_cachedLines[i].TrimStart()) + 1;
+            if (accumulated >= charOffset)
             {
-                newLineIndex = i;
+                lineIndex = i;
                 break;
             }
 
-            newLineIndex = i;
+            lineIndex = i;
         }
 
-        _navigationService.SetScrollOffset(Math.Clamp(newLineIndex, 0, Math.Max(0, _cachedLines.Count - 1)));
+        return lineIndex;
     }
 
     /// <summary>
