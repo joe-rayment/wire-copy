@@ -207,15 +207,18 @@ public class BrowserOrchestrator : IBrowserService
 
         // Fast path: if we have cached build results (extracted links, hierarchy, content),
         // rebuild the page from those without re-parsing HTML or re-running AI analysis.
+        _logger.LogInformation("LoadPageAsync: checking build cache for {Url}", url);
         var buildCache = _pageCache.TryGetBuildCache(url);
         if (buildCache != null)
         {
-            _logger.LogInformation("Build cache hit for {Url}, skipping extraction", url);
+            _logger.LogInformation("LoadPageAsync: build cache HIT for {Url}, skipping extraction", url);
             _lastLoadFetchMethod = FetchMethod.Cached;
             return RebuildPageFromBuildCache(buildCache);
         }
 
-        if (!_pageCache.Contains(url))
+        var htmlCached = _pageCache.Contains(url);
+        _logger.LogInformation("LoadPageAsync: HTML cache {Result} for {Url}", htmlCached ? "HIT" : "MISS", url);
+        if (!htmlCached)
         {
             _renderer.RenderLoading(url);
 
@@ -1107,12 +1110,18 @@ public class BrowserOrchestrator : IBrowserService
 
         if (buildCache == null || page.LinkTree == null)
         {
+            _logger.LogInformation(
+                "StoreBuildCache: skipping for {Url} (buildCache={HasBuild}, linkTree={HasTree})",
+                url,
+                buildCache != null,
+                page.LinkTree != null);
             return;
         }
 
         // Update with final state (fallbacks may have changed readable content)
         if (page.ReadableContent != buildCache.ReadableContent)
         {
+            _logger.LogInformation("StoreBuildCache: readable content updated by fallback for {Url}", url);
             buildCache = buildCache with { ReadableContent = page.ReadableContent };
         }
 
@@ -1122,9 +1131,10 @@ public class BrowserOrchestrator : IBrowserService
         if (page.Classification == PageClassification.LinkList)
         {
             _pageCache.ApplyLinkListTtl(url);
+            _logger.LogInformation("StoreBuildCache: applied LinkList TTL for {Url}", url);
         }
 
-        _logger.LogDebug("Stored build cache for {Url} ({LinkCount} links)", url, buildCache.Links.Count);
+        _logger.LogInformation("StoreBuildCache: stored for {Url} ({LinkCount} links)", url, buildCache.Links.Count);
     }
 
     /// <summary>
@@ -1354,17 +1364,20 @@ public class BrowserOrchestrator : IBrowserService
         try
         {
             // Fast path: build cache hit (Phase 1) or page cache hit — load synchronously
+            _logger.LogInformation("NavigateToAsync: checking build cache for {Url}", url);
             var buildCache = _pageCache.TryGetBuildCache(url);
             if (buildCache != null)
             {
-                _logger.LogInformation("Build cache hit for {Url}, skipping extraction", url);
+                _logger.LogInformation("NavigateToAsync: build cache HIT for {Url}, skipping extraction", url);
                 _lastLoadFetchMethod = FetchMethod.Cached;
                 var page = RebuildPageFromBuildCache(buildCache);
                 await CompleteNavigation(page, url, options);
                 return;
             }
 
-            if (_pageCache.Contains(url))
+            var htmlCached = _pageCache.Contains(url);
+            _logger.LogInformation("NavigateToAsync: HTML cache {Result} for {Url}", htmlCached ? "HIT" : "MISS", url);
+            if (htmlCached)
             {
                 // HTML cached but no build cache — extraction is fast enough to do synchronously
                 var page = await LoadPageAsync(url, cancellationToken);
@@ -1373,6 +1386,7 @@ public class BrowserOrchestrator : IBrowserService
             }
 
             // Slow path: cache miss — show skeleton page, load in background
+            _logger.LogInformation("NavigateToAsync: full cache miss, showing skeleton for {Url}", url);
             ShowSkeletonPage(url);
             StartBackgroundLoad(url, options, cancellationToken);
         }
