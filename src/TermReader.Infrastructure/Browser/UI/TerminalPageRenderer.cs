@@ -103,13 +103,15 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        // Reserve 1 line for the anchored status bar
-        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 1);
+        // Reserve 2 lines: 1 for separator rule + 1 for anchored status bar
+        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
+        var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
         if (wrappedLines != null)
         {
             var focusLineOffset = Math.Max(0, Math.Min(viewportHeight / 3, wrappedLines.Count - context.ScrollOffset - 1));
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, focusLineOffset);
+            _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(
                 context,
@@ -122,6 +124,7 @@ public class TerminalPageRenderer : IPageRenderer
         else
         {
             _articleRenderer.RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
+            _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
         }
