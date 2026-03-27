@@ -652,15 +652,15 @@ public class BrowserOrchestrator : IBrowserService
                 _logger.LogDebug(ex, "Error disposing browser session during SIGINT");
             }
 
-            Console.Write("\x1b[?1049l");
+            Console.Write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
             Console.CursorVisible = true;
             e.Cancel = false;
         };
 
         try
         {
-            // Enter alternate screen buffer and hide cursor
-            Console.Write("\x1b[?1049h");
+            // Enter alternate screen buffer, enable mouse tracking, and hide cursor
+            Console.Write("\x1b[?1049h\x1b[?1000h\x1b[?1006h");
             Console.CursorVisible = false;
 
             // Start resize detection and pre-loading in the background
@@ -797,8 +797,8 @@ public class BrowserOrchestrator : IBrowserService
                 _logger.LogDebug(ex, "Error disposing services during shutdown");
             }
 
-            // Exit alternate screen buffer and restore cursor
-            Console.Write("\x1b[?1049l");
+            // Disable mouse tracking and exit alternate screen buffer
+            Console.Write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
             Console.CursorVisible = true;
         }
     }
