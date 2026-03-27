@@ -216,14 +216,36 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         var key = NormalizeUrl(url);
 
         // Check the HTML cache entry first (build cache stored alongside HTML)
-        if (_entries.TryGetValue(key, out var entry) && !entry.Metadata.IsExpired && entry.BuildCache != null)
+        if (_entries.TryGetValue(key, out var entry))
         {
-            return entry.BuildCache;
+            if (entry.Metadata.IsExpired)
+            {
+                _logger.LogInformation("BuildCache check: HTML entry expired for {Url} (key={Key})", url, key);
+            }
+            else if (entry.BuildCache != null)
+            {
+                _logger.LogInformation("BuildCache HIT (HTML entry) for {Url} (key={Key})", url, key);
+                return entry.BuildCache;
+            }
+            else
+            {
+                _logger.LogInformation("BuildCache check: HTML entry exists but no BuildCache for {Url} (key={Key})", url, key);
+            }
+        }
+        else
+        {
+            _logger.LogInformation("BuildCache check: no HTML entry for {Url} (key={Key})", url, key);
         }
 
         // Fallback: standalone build cache (survives HTML eviction from fallback retries)
-        _standaloneBuildCache.TryGetValue(key, out var standalone);
-        return standalone;
+        if (_standaloneBuildCache.TryGetValue(key, out var standalone))
+        {
+            _logger.LogInformation("BuildCache HIT (standalone) for {Url} (key={Key})", url, key);
+            return standalone;
+        }
+
+        _logger.LogInformation("BuildCache MISS for {Url} (key={Key})", url, key);
+        return null;
     }
 
     public void PutBuildCache(string url, PageBuildCache buildCache)
@@ -232,12 +254,14 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
         // Always store in standalone dict (survives HTML cache removal by fallback retries)
         _standaloneBuildCache[key] = buildCache;
+        _logger.LogInformation("BuildCache PUT (standalone) for {Url} (key={Key})", url, key);
 
         // Also attach to the HTML entry if it exists
         if (_entries.TryGetValue(key, out var existing) && !existing.Metadata.IsExpired)
         {
             var updated = existing with { BuildCache = buildCache };
             _entries.TryUpdate(key, updated, existing);
+            _logger.LogInformation("BuildCache PUT (attached to HTML entry) for {Url} (key={Key})", url, key);
         }
     }
 
