@@ -372,6 +372,69 @@ internal class RenderHelpers
         }
     }
 
+    /// <summary>
+    /// Writes a line with up to two left-margin indicators overlaying the first two
+    /// characters (the existing 2-space indentation gutter). Column 0 = paragraph
+    /// indicator, Column 1 = line indicator. Text layout is unchanged.
+    /// </summary>
+    public void WriteLineWithDualIndicator(
+        string text,
+        string? col0Ansi,
+        string? col1Ansi,
+        string? searchQuery,
+        ThemePalette? palette)
+    {
+        try
+        {
+            if (_linesWritten >= TerminalHeight)
+            {
+                return;
+            }
+
+            Console.SetCursorPosition(0, _linesWritten);
+
+            // Column 0: paragraph indicator or original char
+            if (col0Ansi != null)
+            {
+                Console.Write(col0Ansi);
+            }
+            else
+            {
+                Console.Write(text.Length > 0 ? text[0] : ' ');
+            }
+
+            // Column 1: line indicator or original char
+            if (col1Ansi != null)
+            {
+                Console.Write(col1Ansi);
+            }
+            else
+            {
+                Console.Write(text.Length > 1 ? text[1] : ' ');
+            }
+
+            // Remaining content (columns 2+)
+            var content = text.Length > 2 ? text[2..] : string.Empty;
+
+            if (!string.IsNullOrEmpty(searchQuery) && palette != null)
+            {
+                WriteSearchHighlightedContent(content, searchQuery, palette);
+            }
+            else
+            {
+                Console.Write(content);
+            }
+
+            Console.Write("\x1b[K");
+            _linesWritten++;
+        }
+        catch
+        {
+            Console.WriteLine(text);
+            _linesWritten++;
+        }
+    }
+
     public void WriteLineWithFocusHighlight(string text, ThemePalette palette)
     {
         try
