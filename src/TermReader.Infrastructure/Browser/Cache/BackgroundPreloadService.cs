@@ -828,6 +828,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 return;
             }
 
+            RefreshPaywalledCookieState();
             var newQueue = BuildCollectionQueue(collectionSelectedIndex, collectionUrls);
 
             lock (_queueLock)
@@ -1050,8 +1051,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 {
                     // Paywall gate detected — don't cache truncated preview content.
                     // Mark domain as needing browser (browser with cookies).
-                    var domain = new Uri(url).Host;
-                    _needsJsDomains.TryAdd(domain, true);
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                    }
+
                     _logger.LogDebug("Skipping cache for paywalled content: {Url}", url);
                 }
                 else if (IsPaywalledDomain(url) && !CachingPageLoader.HasSufficientContent(result.Html, MinPaywalledWordCount))
@@ -1142,11 +1147,22 @@ internal sealed class BackgroundPreloadService : IPreloadService
             _currentlyFetchingUrl = url;
             _logger.LogDebug("Browser pre-loading: {Url}", url);
 
-            // Lazily create background page on first use
-            _backgroundPage ??= await _browserSession.CreateBackgroundPageAsync();
+            // Lazily create background page on first use.
+            // Context may not exist yet if browser warmup is still running (fire-and-forget).
+            // Retry once after a short wait to handle the race condition.
             if (_backgroundPage == null)
             {
-                _logger.LogDebug("Browser not available for background preload");
+                _backgroundPage = await _browserSession.CreateBackgroundPageAsync();
+                if (_backgroundPage == null)
+                {
+                    await Task.Delay(2000, cancellationToken);
+                    _backgroundPage = await _browserSession.CreateBackgroundPageAsync();
+                }
+            }
+
+            if (_backgroundPage == null)
+            {
+                _logger.LogWarning("Browser context not available for background preload of {Url}", url);
                 return;
             }
 
