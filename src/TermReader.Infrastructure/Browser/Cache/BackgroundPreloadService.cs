@@ -1194,11 +1194,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 return;
             }
 
-            if (ReadableContentExtractor.HasPaywallElements(html))
-            {
-                _logger.LogDebug("Paywall elements still present after browser preload: {Url}", url);
-                return;
-            }
+            // Skip paywall element check for browser preloads — authenticated pages
+            // still contain paywall CSS classes (gateway, meter-) in the DOM even though
+            // the gate is inactive. The content sufficiency check below catches truly
+            // paywalled content (too few words).
 
             if (!CachingPageLoader.HasSufficientContent(html, MinPaywalledWordCount))
             {
