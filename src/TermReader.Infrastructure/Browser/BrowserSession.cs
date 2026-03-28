@@ -227,6 +227,52 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
+    public async Task<IPage?> CreateBackgroundPageAsync()
+    {
+        if (_disposed)
+        {
+            return null;
+        }
+
+        await _lock.WaitAsync();
+        try
+        {
+            if (_context == null)
+            {
+                _logger.LogDebug("No active browser context for background page");
+                return null;
+            }
+
+            var page = await _context.NewPageAsync();
+            _logger.LogDebug("Created background page (total pages: {Count})", _context.Pages.Count);
+            return page;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to create background page");
+            return null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task CloseBackgroundPageAsync(IPage page)
+    {
+        try
+        {
+            await page.CloseAsync();
+            _logger.LogDebug("Closed background page");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error closing background page (non-fatal)");
+        }
+    }
+
+    /// <inheritdoc />
     public void Dispose()
     {
         if (_disposed)
