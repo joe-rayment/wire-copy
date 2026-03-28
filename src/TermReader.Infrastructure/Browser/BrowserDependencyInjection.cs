@@ -212,6 +212,8 @@ public static class BrowserDependencyInjection
 
             var linkExtractor = sp.GetRequiredService<ILinkExtractor>();
 
+            var browserSession = sp.GetRequiredService<IBrowserSession>();
+
             return new Cache.BackgroundPreloadService(
                 cache,
                 idleDetector,
@@ -223,7 +225,8 @@ public static class BrowserDependencyInjection
                 articleCache,
                 browserConfig.Value,
                 cookieManager,
-                httpCookieRefresher);
+                httpCookieRefresher,
+                browserSession);
         });
 
         // Register the main orchestrator

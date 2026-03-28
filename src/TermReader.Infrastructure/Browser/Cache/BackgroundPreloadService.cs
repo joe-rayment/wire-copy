@@ -10,6 +10,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
+using Microsoft.Playwright;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Podcast.Cache;
@@ -40,7 +41,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly IArticleContentCache? _articleContentCache;
     private readonly ICookieManager? _cookieManager;
     private readonly IHttpCookieRefresher? _httpCookieRefresher;
+    private readonly IBrowserSession? _browserSession;
     private readonly ILogger<BackgroundPreloadService> _logger;
+    private IPage? _backgroundPage;
+
+    private bool CanBrowserPreload => _browserSession?.HasActiveBrowser == true && _hasPaywalledCookies;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
@@ -84,7 +89,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         IArticleContentCache? articleContentCache = null,
         BrowserConfiguration? browserConfig = null,
         ICookieManager? cookieManager = null,
-        IHttpCookieRefresher? httpCookieRefresher = null)
+        IHttpCookieRefresher? httpCookieRefresher = null,
+        IBrowserSession? browserSession = null)
     {
         _cache = cache;
         _idleDetector = idleDetector;
@@ -96,6 +102,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _articleContentCache = articleContentCache;
         _cookieManager = cookieManager;
         _httpCookieRefresher = httpCookieRefresher;
+        _browserSession = browserSession;
         _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
@@ -168,6 +175,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
             _allEligibleUrls = [];
             _needsJsUrls = [];
         }
+
+        CloseBackgroundPage();
     }
 
     public void EnableEagerMode()
@@ -201,7 +210,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     }
 
                     processedAny = true;
-                    await PreloadUrlAsync(item.Url, cancellationToken);
+                    if (item.NeedsBrowser)
+                    {
+                        await BrowserPreloadUrlAsync(item.Url, cancellationToken);
+                    }
+                    else
+                    {
+                        await PreloadUrlAsync(item.Url, cancellationToken);
+                    }
 
                     // Rate limit between pre-loads (adaptive delay), but NO idle re-check
                     var delayMs = GetAdaptiveDelay(item.Url);
@@ -319,9 +335,27 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
 
         _disposed = true;
+        CloseBackgroundPage();
         _debounceTimer.Dispose();
         SignalQueueChanged();
         _queueSignal.Dispose();
+    }
+
+    private void CloseBackgroundPage()
+    {
+        var page = _backgroundPage;
+        _backgroundPage = null;
+        if (page != null && _browserSession != null)
+        {
+            try
+            {
+                _browserSession.CloseBackgroundPageAsync(page).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error closing background page during cleanup");
+            }
+        }
     }
 
     internal static bool IsBotDetectionResponse(string html)
@@ -675,7 +709,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         if (IsDomainNeedsJs(url))
         {
-            needsJs.Add(url);
+            if (CanBrowserPreload && IsPaywalledDomain(url) && !IsUrlCached(url))
+            {
+                items.Add(new PreloadItem(url, listIndex, NeedsBrowser: true));
+            }
+            else
+            {
+                needsJs.Add(url);
+            }
+
             return;
         }
 
@@ -1018,6 +1060,134 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
+    private async Task BrowserPreloadUrlAsync(string url, CancellationToken cancellationToken)
+    {
+        if (_browserSession == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _currentlyFetchingUrl = url;
+            _logger.LogDebug("Browser pre-loading: {Url}", url);
+
+            // Lazily create background page on first use
+            _backgroundPage ??= await _browserSession.CreateBackgroundPageAsync();
+            if (_backgroundPage == null)
+            {
+                _logger.LogDebug("Browser not available for background preload");
+                return;
+            }
+
+            await _backgroundPage.GotoAsync(url, new PageGotoOptions
+            {
+                Timeout = 30000,
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+            });
+
+            // Wait for JS content to render (article paragraphs or sufficient DOM size)
+            try
+            {
+                await _backgroundPage.WaitForFunctionAsync(
+                    @"() => {
+                        if (document.querySelector('[role=""main""] p, article p, .entry-content p, .post-content p')) return true;
+                        if (document.querySelector('[data-testid=""storyContent""] p, .StoryBodyCompanionColumn p')) return true;
+                        return document.body && document.body.innerHTML.length > 5000;
+                    }",
+                    null,
+                    new PageWaitForFunctionOptions { Timeout = 8000 });
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogDebug("Browser preload content render wait timed out for {Url}", url);
+            }
+            catch (PlaywrightException)
+            {
+                _logger.LogDebug("Browser preload content render wait failed for {Url}", url);
+            }
+
+            await PageLoader.DismissOverlaysAsync(_backgroundPage, _logger);
+
+            var html = await _backgroundPage.ContentAsync();
+            var finalUrl = _backgroundPage.Url;
+
+            if (PageLoader.IsBotChallengePage(html))
+            {
+                var origin = UrlNormalizer.GetOrigin(url);
+                if (origin != null)
+                {
+                    _circuitBrokenDomains[origin] = DateTime.UtcNow;
+                }
+
+                _logger.LogWarning("Bot challenge during browser preload: {Url}", url);
+                return;
+            }
+
+            if (ReadableContentExtractor.HasPaywallElements(html))
+            {
+                _logger.LogDebug("Paywall elements still present after browser preload: {Url}", url);
+                return;
+            }
+
+            if (!CachingPageLoader.HasSufficientContent(html, MinPaywalledWordCount))
+            {
+                _logger.LogDebug("Browser preload content below threshold for {Url}", url);
+                return;
+            }
+
+            // Cache the rendered HTML
+            var metadata = ExtractMetadata(html);
+            var result = PageLoadResult.Successful(finalUrl, html, metadata);
+            _cache.Put(url, result);
+
+            // Extract article content for the article cache
+            if (_contentExtractor != null && _articleContentCache != null)
+            {
+                try
+                {
+                    var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken);
+                    if (readable != null && !readable.IsPaywalled)
+                    {
+                        var article = new ExtractedArticle
+                        {
+                            Title = readable.Title,
+                            CleanedText = readable.CleanedText,
+                            Author = readable.Author,
+                            Url = url,
+                            WordCount = readable.WordCount,
+                            PublishedDate = readable.PublishedDate,
+                        };
+
+                        await _articleContentCache.PutAsync(url, article, cancellationToken);
+                        _articleCachedUrls[UrlNormalizer.Normalize(url)] = url;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "Article extraction failed for browser-preloaded {Url}", url);
+                }
+            }
+
+            _logger.LogInformation("Browser pre-loaded and cached: {Url}", url);
+        }
+        catch (PlaywrightException ex)
+        {
+            _logger.LogDebug(ex, "Browser preload failed for {Url}", url);
+            // Page may have crashed — null it so next call creates a fresh one
+            _backgroundPage = null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Browser preload error for {Url}", url);
+        }
+        finally
+        {
+            _currentlyFetchingUrl = null;
+            NotifyProgressChanged();
+        }
+    }
+
     private void NotifyProgressChanged()
     {
         try
@@ -1191,5 +1361,5 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
-    internal sealed record PreloadItem(string Url, int ListIndex);
+    internal sealed record PreloadItem(string Url, int ListIndex, bool NeedsBrowser = false);
 }

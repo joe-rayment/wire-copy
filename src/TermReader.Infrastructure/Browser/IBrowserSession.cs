@@ -54,4 +54,16 @@ public interface IBrowserSession : IBrowserSessionControl
     /// Returns null if no active page or capture fails.
     /// </summary>
     Task<byte[]?> CaptureScreenshotAsync();
+
+    /// <summary>
+    /// Creates a new background page (tab) in the existing browser context.
+    /// The page shares cookies and session with the main page.
+    /// Returns null if no browser context is active.
+    /// </summary>
+    Task<IPage?> CreateBackgroundPageAsync();
+
+    /// <summary>
+    /// Closes a background page previously created via CreateBackgroundPageAsync.
+    /// </summary>
+    Task CloseBackgroundPageAsync(IPage page);
 }
