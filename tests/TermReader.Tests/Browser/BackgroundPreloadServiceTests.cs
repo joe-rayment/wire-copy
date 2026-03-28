@@ -1784,7 +1784,7 @@ public class BackgroundPreloadServiceTests : IDisposable
         cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
 
         var browserSession = Substitute.For<IBrowserSession>();
-        browserSession.HasActiveBrowser.Returns(true);
+        browserSession.HasBrowserContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),

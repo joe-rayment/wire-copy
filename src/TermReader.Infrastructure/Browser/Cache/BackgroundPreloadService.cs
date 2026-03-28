@@ -45,7 +45,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ILogger<BackgroundPreloadService> _logger;
     private IPage? _backgroundPage;
 
-    private bool CanBrowserPreload => _browserSession?.HasActiveBrowser == true && _hasPaywalledCookies;
+    private bool CanBrowserPreload => _browserSession?.HasBrowserContext == true && _hasPaywalledCookies;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
@@ -164,6 +164,40 @@ internal sealed class BackgroundPreloadService : IPreloadService
         catch (ObjectDisposedException)
         {
             // Timer was disposed between the _disposed check and the Change call
+        }
+    }
+
+    /// <summary>
+    /// Triggers a queue rebuild using the current pending state.
+    /// Called when conditions change (e.g., domain marked as needsJs, browser becomes available)
+    /// that may affect how URLs are routed (HTTP vs browser preload).
+    /// </summary>
+    private void RequestQueueRebuild()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // Only rebuild if we have pending data (user has visited a page)
+        bool hasPending;
+        lock (_queueLock)
+        {
+            hasPending = _pendingVisibleNodes != null || _pendingCollectionUrls != null;
+        }
+
+        if (!hasPending)
+        {
+            return;
+        }
+
+        try
+        {
+            _debounceTimer.Change(50, Timeout.Infinite);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer disposed
         }
     }
 
@@ -1057,6 +1091,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             _inFlight.TryRemove(normalizedUrl, out _);
             NotifyProgressChanged();
+
+            // If this domain was marked as needsJs and browser preloading is available,
+            // trigger a queue rebuild so remaining URLs for this domain get routed
+            // through the browser path instead of being skipped.
+            if (IsDomainNeedsJs(url) && CanBrowserPreload)
+            {
+                _logger.LogInformation(
+                    "Domain {Url} marked as needsJs with browser available — triggering queue rebuild",
+                    UrlNormalizer.GetOrigin(url));
+                RequestQueueRebuild();
+            }
         }
     }
 
