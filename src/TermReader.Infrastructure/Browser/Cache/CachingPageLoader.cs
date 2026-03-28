@@ -50,8 +50,12 @@ public class CachingPageLoader : IPageLoader
                         request.Url);
                     _cache.Remove(request.Url);
                 }
-                else if (ReadableContentExtractor.HasPaywallElements(cached.Html!))
+                else if (!request.ForceBrowser && ReadableContentExtractor.HasPaywallElements(cached.Html!))
                 {
+                    // Only evict paywall-tainted cache when NOT authenticated (ForceBrowser=false).
+                    // Authenticated pages (ForceBrowser=true) still contain paywall CSS classes
+                    // in the DOM even though the gate is inactive — evicting would force a
+                    // browser load on every visit, defeating the cache.
                     _logger.LogInformation(
                         "Cached content has paywall elements, evicting and falling through: {Url}",
                         request.Url);
