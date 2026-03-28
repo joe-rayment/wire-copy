@@ -57,6 +57,9 @@ public class BrowserOrchestrator : IBrowserService
     private RenderOptions? _backgroundLoadOptions;
     private volatile LoadingStatus? _loadingStatus;
 
+    // Progressive rendering: partial page available before full extraction completes
+    private volatile Page? _partialPage;
+
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -1147,10 +1150,23 @@ public class BrowserOrchestrator : IBrowserService
 
         _pageCache.PutBuildCache(url, buildCache);
 
+        // Also store under final URL (after redirects) so cache hits work
+        // regardless of whether navigation uses the original or final URL
+        if (!string.Equals(url, buildCache.FinalUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            _pageCache.PutBuildCache(buildCache.FinalUrl, buildCache);
+            _logger.LogInformation("StoreBuildCache: also stored under final URL {FinalUrl}", buildCache.FinalUrl);
+        }
+
         // Use shorter TTL for link-list pages (content changes frequently)
         if (page.Classification == PageClassification.LinkList)
         {
             _pageCache.ApplyLinkListTtl(url);
+            if (!string.Equals(url, buildCache.FinalUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _pageCache.ApplyLinkListTtl(buildCache.FinalUrl);
+            }
+
             _logger.LogInformation("StoreBuildCache: applied LinkList TTL for {Url}", url);
         }
 
@@ -1201,17 +1217,23 @@ public class BrowserOrchestrator : IBrowserService
 
         page.SetLinkTree(tree);
 
-        var readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
-        if (readable != null)
+        // Skip content extraction for link list pages — only the link tree matters.
+        // This saves 1-3 seconds of unnecessary HTML parsing.
+        ReadableContent? readable = null;
+        if (classification != PageClassification.LinkList)
         {
-            page.SetReadableContent(readable);
-        }
-        else if (classification == PageClassification.Article)
-        {
-            _logger.LogWarning(
-                "Content extraction returned null for Article-classified page: {Url} (htmlLength={HtmlLength})",
-                finalUrl,
-                loadResult.Html?.Length ?? 0);
+            readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
+            if (readable != null)
+            {
+                page.SetReadableContent(readable);
+            }
+            else if (classification == PageClassification.Article)
+            {
+                _logger.LogWarning(
+                    "Content extraction returned null for Article-classified page: {Url} (htmlLength={HtmlLength})",
+                    finalUrl,
+                    loadResult.Html?.Length ?? 0);
+            }
         }
 
         if (!string.Equals(requestedUrl, loadResult.Url, StringComparison.OrdinalIgnoreCase))
@@ -1402,18 +1424,11 @@ public class BrowserOrchestrator : IBrowserService
                 return;
             }
 
+            // No build cache — show skeleton and load in background.
+            // This covers both HTML-cached (fast extraction) and full cache miss (network fetch).
             var htmlCached = _pageCache.Contains(url);
-            _logger.LogInformation("NavigateToAsync: HTML cache {Result} for {Url}", htmlCached ? "HIT" : "MISS", url);
-            if (htmlCached)
-            {
-                // HTML cached but no build cache — extraction is fast enough to do synchronously
-                var page = await LoadPageAsync(url, cancellationToken);
-                await CompleteNavigation(page, url, options);
-                return;
-            }
-
-            // Slow path: cache miss — show skeleton page, load in background
-            _logger.LogInformation("NavigateToAsync: full cache miss, showing skeleton for {Url}", url);
+            _logger.LogInformation("NavigateToAsync: build cache MISS, HTML cache {Result} for {Url} — loading in background",
+                htmlCached ? "HIT" : "MISS", url);
             ShowSkeletonPage(url);
             StartBackgroundLoad(url, options, cancellationToken);
         }
