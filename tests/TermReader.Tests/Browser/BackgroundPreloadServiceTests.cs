@@ -1773,4 +1773,111 @@ public class BackgroundPreloadServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Browser Preload Routing
+
+    [Fact]
+    public void BuildQueue_NeedsJsDomain_WithBrowserAndCookies_QueuesForBrowserPreload()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasActiveBrowser.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            browserSession: browserSession);
+
+        // Refresh cookie state so _hasPaywalledCookies is true
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        // Mark domain as needsJs (simulates prior HTTP preload failure)
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict["https://www.nytimes.com"] = true;
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/article1.html",
+            "https://www.nytimes.com/2026/01/article2.html");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().HaveCount(2, "needsJs URLs with browser+cookies should be queued for browser preload");
+        queue.Should().OnlyContain(item => item.NeedsBrowser, "all items should be marked as NeedsBrowser");
+    }
+
+    [Fact]
+    public void BuildQueue_NeedsJsDomain_WithoutBrowser_SkipsToNeedsJs()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        // No browser session
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict["https://www.nytimes.com"] = true;
+
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/01/article1.html");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().BeEmpty("without browser session, needsJs URLs should not be queued");
+
+        var progress = service.GetProgress();
+        progress.NeedsBrowserCount.Should().Be(1, "URL should be counted in NeedsBrowserCount");
+    }
+
+    [Fact]
+    public void BuildQueue_NeedsJsDomain_NotPaywalled_SkipsToNeedsJs()
+    {
+        // Non-paywalled domain that happens to need JS
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasActiveBrowser.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserSession: browserSession);
+
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict["https://example.com"] = true;
+
+        var nodes = CreateContentNodes("https://example.com/page1");
+        var queue = service.BuildQueue(0, nodes, "https://example.com");
+
+        queue.Should().BeEmpty("non-paywalled needsJs URLs should not be browser-preloaded");
+    }
+
+    #endregion
 }
