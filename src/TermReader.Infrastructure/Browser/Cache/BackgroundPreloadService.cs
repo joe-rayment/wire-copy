@@ -1067,6 +1067,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        if (IsPaywalledDomain(url) && _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
+        {
+            _logger.LogDebug("Browser preload skipped — paywalled limit reached ({Count}/{Max}): {Url}",
+                _paywalledPreloadCount, _config.MaxPaywalledPreloads, url);
+            return;
+        }
+
+        if (IsPaywalledDomain(url))
+        {
+            Interlocked.Increment(ref _paywalledPreloadCount);
+        }
+
         try
         {
             _currentlyFetchingUrl = url;
