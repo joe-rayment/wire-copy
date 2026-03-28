@@ -619,7 +619,21 @@ internal sealed class BackgroundPreloadService : IPreloadService
         try
         {
             var info = _cookieManager.GetCookieInfoAsync().GetAwaiter().GetResult();
+            var hadCookies = _hasPaywalledCookies;
             _hasPaywalledCookies = info is { Exists: true, IsExpired: false };
+
+            // When cookies become available, clear paywalled domains from
+            // _needsJsDomains so they can be re-queued for HTTP preloading
+            if (_hasPaywalledCookies && !hadCookies)
+            {
+                foreach (var origin in _needsJsDomains.Keys)
+                {
+                    if (IsPaywalledDomain(origin))
+                    {
+                        _needsJsDomains.TryRemove(origin, out _);
+                    }
+                }
+            }
         }
         catch
         {

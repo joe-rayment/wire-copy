@@ -1690,5 +1690,49 @@ public class BackgroundPreloadServiceTests : IDisposable
         queue.Should().HaveCount(1, "paywalled domain with valid cookies should be queued for preloading");
     }
 
+    [Fact]
+    public void RefreshPaywalledCookieState_ClearsNeedsJsWhenCookiesAppear()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+
+        // Start with no cookies
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = false, IsExpired = false });
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        // Simulate: paywalled domain was marked as needsJs (from skipping without cookies)
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField!.GetValue(service)!;
+        needsJsDict["https://www.nytimes.com"] = true;
+
+        // First refresh: no cookies, domain stays in _needsJsDomains
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        refreshMethod!.Invoke(service, null);
+        needsJsDict.Should().ContainKey("https://www.nytimes.com");
+
+        // Now cookies become available
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+        refreshMethod.Invoke(service, null);
+
+        // Paywalled domain should be cleared from _needsJsDomains
+        needsJsDict.Should().NotContainKey("https://www.nytimes.com",
+            "paywalled domain should be cleared from needsJs when cookies become available");
+
+        // Verify queue now includes the paywalled URL
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/01/article.html");
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+        queue.Should().HaveCount(1, "paywalled domain with cookies should be queued after needsJs cleared");
+    }
+
     #endregion
 }
