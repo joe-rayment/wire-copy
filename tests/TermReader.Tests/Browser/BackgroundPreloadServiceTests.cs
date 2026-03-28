@@ -1734,5 +1734,43 @@ public class BackgroundPreloadServiceTests : IDisposable
         queue.Should().HaveCount(1, "paywalled domain with cookies should be queued after needsJs cleared");
     }
 
+    [Fact]
+    public void RefreshPaywalledCookieState_CallsHttpCookieRefresher_WhenCookiesAppear()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        var httpCookieRefresher = Substitute.For<IHttpCookieRefresher>();
+        httpCookieRefresher.RefreshAsync().Returns(Task.CompletedTask);
+
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = false, IsExpired = false });
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            httpCookieRefresher: httpCookieRefresher);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        // First refresh: no cookies — refresher should NOT be called
+        refreshMethod.Invoke(service, null);
+        httpCookieRefresher.DidNotReceive().RefreshAsync();
+
+        // Cookies appear — refresher MUST be called
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+        refreshMethod.Invoke(service, null);
+        httpCookieRefresher.Received(1).RefreshAsync();
+
+        // Subsequent refresh with cookies still present — NOT called again (edge transition only)
+        httpCookieRefresher.ClearReceivedCalls();
+        refreshMethod.Invoke(service, null);
+        httpCookieRefresher.DidNotReceive().RefreshAsync();
+    }
+
     #endregion
 }
