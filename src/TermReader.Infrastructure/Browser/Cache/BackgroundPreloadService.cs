@@ -253,8 +253,10 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         await PreloadUrlAsync(item.Url, cancellationToken);
                     }
 
-                    // Rate limit between pre-loads (adaptive delay), but NO idle re-check
-                    var delayMs = GetAdaptiveDelay(item.Url);
+                    // Rate limit between pre-loads. Browser preloads already take several
+                    // seconds per page load, so use a shorter delay (3s) than HTTP preloads
+                    // which are near-instant and need longer delays to avoid bot detection.
+                    var delayMs = item.NeedsBrowser ? 3000 : GetAdaptiveDelay(item.Url);
                     await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
                 }
 
@@ -267,6 +269,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
                 // Clear the "currently fetching" indicator when batch ends
                 _currentlyFetchingUrl = null;
+
+                // If items remain uncached, trigger a queue rebuild so the loop continues.
+                // Without this, the loop stalls on WaitForSignalAsync waiting for a user
+                // interaction signal that never comes when the user is idle on the link list.
+                if (processedAny && HasUncachedEligibleUrls())
+                {
+                    RequestQueueRebuild();
+                }
 
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
                 await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
@@ -771,6 +781,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private bool IsUrlCached(string url) => _cache.Contains(url) || IsInArticleCache(url);
 
+    private bool HasUncachedEligibleUrls()
+    {
+        List<string> eligible;
+        lock (_queueLock)
+        {
+            eligible = _allEligibleUrls;
+        }
+
+        return eligible.Any(url => !IsUrlCached(url));
+    }
+
     private bool IsInArticleCache(string url) =>
         _articleContentCache != null && _articleCachedUrls.ContainsKey(UrlNormalizer.Normalize(url));
 
@@ -950,8 +971,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 NotifyProgressChanged();
                 return;
             }
-
-            Interlocked.Increment(ref _paywalledPreloadCount);
         }
 
         var normalizedUrl = UrlNormalizer.Normalize(url);
@@ -1059,6 +1078,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 else
                 {
                     _cache.Put(url, result);
+
+                    if (IsPaywalledDomain(url))
+                    {
+                        Interlocked.Increment(ref _paywalledPreloadCount);
+                    }
+
                     _logger.LogDebug("Pre-loaded and cached: {Url}", url);
 
                     // Warm the PageBuildCache: extract links and readable content
@@ -1119,11 +1144,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
-        if (IsPaywalledDomain(url))
-        {
-            Interlocked.Increment(ref _paywalledPreloadCount);
-        }
-
         try
         {
             _currentlyFetchingUrl = url;
@@ -1139,7 +1159,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
             await _backgroundPage.GotoAsync(url, new PageGotoOptions
             {
-                Timeout = 30000,
+                Timeout = 15000,
                 WaitUntil = WaitUntilState.DOMContentLoaded,
             });
 
@@ -1153,7 +1173,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         return document.body && document.body.innerHTML.length > 5000;
                     }",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 8000 });
+                    new PageWaitForFunctionOptions { Timeout = 4000 });
             }
             catch (TimeoutException)
             {
@@ -1224,6 +1244,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 {
                     _logger.LogDebug(ex, "Article extraction failed for browser-preloaded {Url}", url);
                 }
+            }
+
+            // Only count successful caches against the paywalled limit
+            if (IsPaywalledDomain(url))
+            {
+                Interlocked.Increment(ref _paywalledPreloadCount);
             }
 
             _logger.LogInformation("Browser pre-loaded and cached: {Url}", url);
