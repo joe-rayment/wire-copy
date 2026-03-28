@@ -17,6 +17,13 @@ public interface IBrowserSession : IBrowserSessionControl
     bool HasActiveBrowser { get; }
 
     /// <summary>
+    /// Gets a value indicating whether a browser context exists (even if no page is open).
+    /// This is true after the browser is launched, before any page is created.
+    /// Used by background preloading to determine if a background tab can be opened.
+    /// </summary>
+    bool HasBrowserContext { get; }
+
+    /// <summary>
     /// Gets a value indicating whether the browser automation backend is available.
     /// Always true with Playwright (no platform-specific binary issues).
     /// </summary>

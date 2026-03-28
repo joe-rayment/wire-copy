@@ -70,6 +70,31 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
+    public bool HasBrowserContext
+    {
+        get
+        {
+            try
+            {
+                _lock.Wait();
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _context != null;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public bool IsBrowserAvailable => true;
 
     /// <inheritdoc />
