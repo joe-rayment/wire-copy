@@ -57,9 +57,6 @@ public class BrowserOrchestrator : IBrowserService
     private RenderOptions? _backgroundLoadOptions;
     private volatile LoadingStatus? _loadingStatus;
 
-    // Progressive rendering: partial page available before full extraction completes
-    private volatile Page? _partialPage;
-
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -1424,11 +1421,19 @@ public class BrowserOrchestrator : IBrowserService
                 return;
             }
 
-            // No build cache — show skeleton and load in background.
-            // This covers both HTML-cached (fast extraction) and full cache miss (network fetch).
             var htmlCached = _pageCache.Contains(url);
-            _logger.LogInformation("NavigateToAsync: build cache MISS, HTML cache {Result} for {Url} — loading in background",
-                htmlCached ? "HIT" : "MISS", url);
+            _logger.LogInformation("NavigateToAsync: build cache MISS, HTML cache {Result} for {Url}", htmlCached ? "HIT" : "MISS", url);
+            if (htmlCached)
+            {
+                // HTML cached — extraction is fast (especially for LinkList with content skip).
+                // Load synchronously to avoid skeleton flash.
+                var page = await LoadPageAsync(url, cancellationToken);
+                await CompleteNavigation(page, url, options);
+                return;
+            }
+
+            // Full cache miss — show skeleton page, load in background
+            _logger.LogInformation("NavigateToAsync: full cache miss, showing skeleton for {Url}", url);
             ShowSkeletonPage(url);
             StartBackgroundLoad(url, options, cancellationToken);
         }
