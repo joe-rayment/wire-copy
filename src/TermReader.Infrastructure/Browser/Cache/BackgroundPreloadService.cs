@@ -4,13 +4,13 @@ using System.Collections.Concurrent;
 using System.Net;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
+using Microsoft.Playwright;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
-using Microsoft.Playwright;
 using TermReader.Infrastructure.Configuration;
 using TermReader.Infrastructure.Podcast;
 using TermReader.Infrastructure.Podcast.Cache;
@@ -44,9 +44,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly IBrowserSession? _browserSession;
     private readonly ILogger<BackgroundPreloadService> _logger;
     private IPage? _backgroundPage;
-
-    private bool CanBrowserPreload => _browserSession?.HasBrowserContext == true && _hasPaywalledCookies;
-
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
     private readonly ConcurrentDictionary<string, DateTime> _circuitBrokenDomains = new();
     private readonly ConcurrentDictionary<string, bool> _needsJsDomains = new();
@@ -110,6 +107,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
     /// <inheritdoc />
     public event Action? ProgressChanged;
 
+    private bool CanBrowserPreload => _browserSession?.HasBrowserContext == true && _hasPaywalledCookies;
+
     public void NotifyPageLoaded(Page page)
     {
         // Page loaded — queue will be rebuilt on next selection change
@@ -164,40 +163,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
         catch (ObjectDisposedException)
         {
             // Timer was disposed between the _disposed check and the Change call
-        }
-    }
-
-    /// <summary>
-    /// Triggers a queue rebuild using the current pending state.
-    /// Called when conditions change (e.g., domain marked as needsJs, browser becomes available)
-    /// that may affect how URLs are routed (HTTP vs browser preload).
-    /// </summary>
-    private void RequestQueueRebuild()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        // Only rebuild if we have pending data (user has visited a page)
-        bool hasPending;
-        lock (_queueLock)
-        {
-            hasPending = _pendingVisibleNodes != null || _pendingCollectionUrls != null;
-        }
-
-        if (!hasPending)
-        {
-            return;
-        }
-
-        try
-        {
-            _debounceTimer.Change(50, Timeout.Infinite);
-        }
-        catch (ObjectDisposedException)
-        {
-            // Timer disposed
         }
     }
 
@@ -710,12 +675,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 _httpCookieRefresher?.RefreshAsync().GetAwaiter().GetResult();
                 _logger.LogInformation("Paywalled cookies detected, refreshed HTTP cookie container");
 
-                foreach (var origin in _needsJsDomains.Keys)
+                foreach (var origin in _needsJsDomains.Keys.Where(IsPaywalledDomain).ToList())
                 {
-                    if (IsPaywalledDomain(origin))
-                    {
-                        _needsJsDomains.TryRemove(origin, out _);
-                    }
+                    _needsJsDomains.TryRemove(origin, out _);
                 }
             }
         }
@@ -891,6 +853,34 @@ internal sealed class BackgroundPreloadService : IPreloadService
             }
 
             SignalQueueChanged();
+        }
+    }
+
+    private void RequestQueueRebuild()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        bool hasPending;
+        lock (_queueLock)
+        {
+            hasPending = _pendingVisibleNodes != null || _pendingCollectionUrls != null;
+        }
+
+        if (!hasPending)
+        {
+            return;
+        }
+
+        try
+        {
+            _debounceTimer.Change(50, Timeout.Infinite);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Timer disposed
         }
     }
 
@@ -1139,8 +1129,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         if (IsPaywalledDomain(url) && _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
         {
-            _logger.LogDebug("Browser preload skipped — paywalled limit reached ({Count}/{Max}): {Url}",
-                _paywalledPreloadCount, _config.MaxPaywalledPreloads, url);
+            _logger.LogDebug(
+                "Browser preload skipped — paywalled limit reached ({Count}/{Max}): {Url}",
+                _paywalledPreloadCount,
+                _config.MaxPaywalledPreloads,
+                url);
             return;
         }
 
@@ -1257,6 +1250,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         catch (PlaywrightException ex)
         {
             _logger.LogDebug(ex, "Browser preload failed for {Url}", url);
+
             // Page may have crashed — null it so next call creates a fresh one
             _backgroundPage = null;
         }
