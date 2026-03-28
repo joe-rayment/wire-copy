@@ -100,8 +100,9 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
-        // IsComplete is true because CachedCount + NeedsBrowserCount >= Total
-        output.Should().Contain("cached");
+        // IsComplete with mixed cached+needsJs shows partial count with checkmark
+        output.Should().Contain("3/5");
+        output.Should().Contain("\u2713");
     }
 
     [Fact]

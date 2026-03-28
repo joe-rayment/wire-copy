@@ -273,8 +273,13 @@ internal class StatusBarRenderer
         {
             if (progress.TotalCacheableLinks > 0)
             {
-                if (progress.IsComplete)
+                if (progress.IsComplete && progress.CachedCount > 0)
                 {
+                    if (progress.NeedsBrowserCount > 0)
+                    {
+                        return $"{p.SecondaryText.AnsiFg}{progress.CachedCount}/{progress.TotalCacheableLinks} \u2713{Reset}";
+                    }
+
                     return $"{p.SecondaryText.AnsiFg}\u2713 cached{Reset}";
                 }
 
@@ -284,6 +289,7 @@ internal class StatusBarRenderer
                 }
 
                 // Stalled: not actively fetching but not complete either
+                // (or "complete" with nothing cached — all needsJs)
                 var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
                 if (progress.NeedsBrowserCount > 0)
                 {

@@ -208,6 +208,7 @@ public static class BrowserDependencyInjection
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
 
             var cookieManager = sp.GetRequiredService<ICookieManager>();
+            var httpCookieRefresher = sp.GetRequiredService<IHttpCookieRefresher>();
 
             var linkExtractor = sp.GetRequiredService<ILinkExtractor>();
 
@@ -221,7 +222,8 @@ public static class BrowserDependencyInjection
                 linkExtractor,
                 articleCache,
                 browserConfig.Value,
-                cookieManager);
+                cookieManager,
+                httpCookieRefresher);
         });
 
         // Register the main orchestrator
