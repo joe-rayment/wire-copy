@@ -39,6 +39,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ILinkExtractor? _linkExtractor;
     private readonly IArticleContentCache? _articleContentCache;
     private readonly ICookieManager? _cookieManager;
+    private readonly IHttpCookieRefresher? _httpCookieRefresher;
     private readonly ILogger<BackgroundPreloadService> _logger;
 
     private readonly ConcurrentDictionary<string, Task<PageLoadResult>> _inFlight = new();
@@ -82,7 +83,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
         ILinkExtractor? linkExtractor = null,
         IArticleContentCache? articleContentCache = null,
         BrowserConfiguration? browserConfig = null,
-        ICookieManager? cookieManager = null)
+        ICookieManager? cookieManager = null,
+        IHttpCookieRefresher? httpCookieRefresher = null)
     {
         _cache = cache;
         _idleDetector = idleDetector;
@@ -93,6 +95,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _linkExtractor = linkExtractor;
         _articleContentCache = articleContentCache;
         _cookieManager = cookieManager;
+        _httpCookieRefresher = httpCookieRefresher;
         _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
@@ -622,10 +625,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
             var hadCookies = _hasPaywalledCookies;
             _hasPaywalledCookies = info is { Exists: true, IsExpired: false };
 
-            // When cookies become available, clear paywalled domains from
-            // _needsJsDomains so they can be re-queued for HTTP preloading
+            // When cookies become available, refresh the HttpClient's CookieContainer
+            // and clear paywalled domains from _needsJsDomains so they can be re-queued
             if (_hasPaywalledCookies && !hadCookies)
             {
+                _httpCookieRefresher?.RefreshAsync().GetAwaiter().GetResult();
+                _logger.LogInformation("Paywalled cookies detected, refreshed HTTP cookie container");
+
                 foreach (var origin in _needsJsDomains.Keys)
                 {
                     if (IsPaywalledDomain(origin))
