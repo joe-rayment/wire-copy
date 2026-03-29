@@ -86,10 +86,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_Spacebar_ReturnsToggleNode()
+    public void MapKeyToCommand_Spacebar_ReturnsToggleSelection()
     {
         var result = _sut.MapKeyToCommand(ConsoleKey.Spacebar, 0);
-        result.Type.Should().Be(CommandType.ToggleNode);
+        result.Type.Should().Be(CommandType.ToggleSelection);
     }
 
     [Fact]
@@ -316,7 +316,7 @@ public class TerminalInputHandlerTests
     {
         var help = _sut.GetHelpText();
 
-        help.Should().Contain("Force-refresh");
+        help.Should().Contain("Refresh (bypass cache)");
         help.Should().Contain("Interactive refresh");
     }
 
