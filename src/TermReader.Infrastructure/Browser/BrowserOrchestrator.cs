@@ -310,6 +310,8 @@ public class BrowserOrchestrator : IBrowserService
         if (challengeResult != null)
         {
             _lastLoadFetchMethod = challengeResult.FetchMethod;
+            loadResult = challengeResult;
+            _pageCache.Put(url, challengeResult);
             page = await BuildPageFromLoadResultAsync(challengeResult, url, cancellationToken);
         }
 

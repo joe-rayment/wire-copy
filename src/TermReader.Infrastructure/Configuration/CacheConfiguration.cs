@@ -9,7 +9,7 @@ public class CacheConfiguration
     /// <summary>
     /// Maximum cache size in bytes. Default: 100 MB.
     /// </summary>
-    public long MaxSizeBytes { get; init; } = 200 * 1024 * 1024;
+    public long MaxSizeBytes { get; init; } = 100 * 1024 * 1024;
 
     /// <summary>
     /// Maximum number of cache entries. Default: 200.
@@ -28,10 +28,10 @@ public class CacheConfiguration
     public int LinkListTtlSeconds { get; init; } = 3600;
 
     /// <summary>
-    /// Maximum size of a single cache entry in bytes. Default: 15 MB.
-    /// JS-rendered pages (NYT, etc.) can be 5-10 MB after browser rendering.
+    /// Maximum size of a single cache entry in bytes. Default: 5 MB.
+    /// Entries larger than this are not cached.
     /// </summary>
-    public long MaxEntrySizeBytes { get; init; } = 15 * 1024 * 1024;
+    public long MaxEntrySizeBytes { get; init; } = 5 * 1024 * 1024;
 
     /// <summary>
     /// How often to sweep for expired entries in seconds. Default: 5 minutes.
