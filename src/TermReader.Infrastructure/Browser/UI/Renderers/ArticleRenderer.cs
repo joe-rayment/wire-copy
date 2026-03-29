@@ -35,9 +35,9 @@ internal class ArticleRenderer
         var startLine = context.ScrollOffset;
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
 
-        // Indicator ANSI strings: paragraph = thin subtle bar, line = slightly wider focus bar
-        var paraAnsi = $"{p.GetDimFg().AnsiFg}\u258f{Reset}";
-        var lineAnsi = $"{p.FocusIndicatorFg.AnsiFg}\u258e{Reset}";
+        // Indicator ANSI strings: line = thin bar on far left, paragraph = wider bar closer to text
+        var lineAnsi = $"{p.FocusIndicatorFg.AnsiFg}\u258f{Reset}";
+        var paraAnsi = $"{p.GetAccentFg().AnsiFg}\u258e{Reset}";
 
         // Find the active paragraph (the one containing the cursor)
         var cursorLine = context.ReaderCursorLine;
@@ -73,8 +73,8 @@ internal class ArticleRenderer
             {
                 _helpers.WriteLineWithDualIndicator(
                     allLines[i],
-                    inActiveParagraph ? paraAnsi : null,
                     isCursorLine ? lineAnsi : null,
+                    inActiveParagraph ? paraAnsi : null,
                     context.SearchQuery,
                     searchPalette);
             }
