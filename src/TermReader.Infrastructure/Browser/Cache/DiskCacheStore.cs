@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
+using TermReader.Domain.Entities.Browser;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 
@@ -322,10 +323,177 @@ internal sealed class DiskCacheStore
         }
     }
 
+    /// <summary>
+    /// Writes a PageBuildCache to disk as a separate .build.json file.
+    /// </summary>
+    public void WriteBuildCache(string normalizedUrl, PageBuildCache buildCache)
+    {
+        try
+        {
+            EnsureDirectoryExists();
+
+            var persisted = new PersistedBuildCache
+            {
+                FinalUrl = buildCache.FinalUrl,
+                Classification = (int)buildCache.Classification,
+                CachedAt = buildCache.CachedAt,
+                Title = buildCache.Metadata.Title,
+                MetaDescription = buildCache.Metadata.Description,
+                MetaCanonicalUrl = buildCache.Metadata.CanonicalUrl,
+                MetaAuthor = buildCache.Metadata.Author,
+                MetaPublishedDate = buildCache.Metadata.PublishedDate,
+                MetaFaviconUrl = buildCache.Metadata.FaviconUrl,
+                Links = buildCache.Links.Select(l => new PersistedLinkInfo
+                {
+                    Url = l.Url,
+                    DisplayText = l.DisplayText,
+                    Type = (int)l.Type,
+                    ImportanceScore = l.ImportanceScore,
+                    AriaLabel = l.AriaLabel,
+                    ParentSelector = l.ParentSelector,
+                    Author = l.Author,
+                    PublishedDate = l.PublishedDate,
+                    SectionTitle = l.SectionTitle,
+                    IsFromImageAlt = l.IsFromImageAlt,
+                    HeaderType = (int)l.HeaderType,
+                }).ToList(),
+            };
+
+            if (buildCache.HierarchyConfig != null)
+            {
+                persisted.HierarchyDomain = buildCache.HierarchyConfig.Domain;
+                persisted.HierarchyUrlPattern = buildCache.HierarchyConfig.UrlPattern;
+                persisted.HierarchySections = buildCache.HierarchyConfig.Sections.Select(s => new PersistedHierarchySection
+                {
+                    Name = s.Name,
+                    SortOrder = s.SortOrder,
+                    ParentSelectors = s.ParentSelectors.ToList(),
+                    UrlPatterns = s.UrlPatterns.ToList(),
+                    StartCollapsed = s.StartCollapsed,
+                }).ToList();
+            }
+
+            var json = JsonSerializer.Serialize(persisted, JsonOptions);
+            var filePath = GetBuildCacheFilePath(normalizedUrl);
+            var tmpPath = filePath + ".tmp";
+
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, filePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist build cache for {Url}", normalizedUrl);
+        }
+    }
+
+    /// <summary>
+    /// Loads all build cache entries from disk.
+    /// </summary>
+    public Dictionary<string, PageBuildCache> LoadAllBuildCaches()
+    {
+        var results = new Dictionary<string, PageBuildCache>();
+
+        if (!Directory.Exists(_cacheDirectory))
+        {
+            return results;
+        }
+
+        foreach (var filePath in Directory.EnumerateFiles(_cacheDirectory, "*.build.json"))
+        {
+            try
+            {
+                var json = File.ReadAllText(filePath);
+                var persisted = JsonSerializer.Deserialize<PersistedBuildCache>(json, JsonOptions);
+                if (persisted == null)
+                {
+                    continue;
+                }
+
+                var links = persisted.Links.Select(l => new LinkInfo
+                {
+                    Url = l.Url,
+                    DisplayText = l.DisplayText,
+                    Type = (LinkType)l.Type,
+                    ImportanceScore = l.ImportanceScore,
+                    AriaLabel = l.AriaLabel,
+                    ParentSelector = l.ParentSelector,
+                    Author = l.Author,
+                    PublishedDate = l.PublishedDate,
+                    SectionTitle = l.SectionTitle,
+                    IsFromImageAlt = l.IsFromImageAlt,
+                    HeaderType = (HeaderType)l.HeaderType,
+                }).ToList();
+
+                var metadata = new PageMetadata
+                {
+                    Title = persisted.Title ?? string.Empty,
+                    Description = persisted.MetaDescription,
+                    CanonicalUrl = persisted.MetaCanonicalUrl,
+                    Author = persisted.MetaAuthor,
+                    PublishedDate = persisted.MetaPublishedDate,
+                    FaviconUrl = persisted.MetaFaviconUrl,
+                };
+
+                SiteHierarchyConfig? hierarchyConfig = null;
+                if (persisted.HierarchySections is { Count: > 0 })
+                {
+                    hierarchyConfig = new SiteHierarchyConfig
+                    {
+                        Domain = persisted.HierarchyDomain ?? string.Empty,
+                        UrlPattern = persisted.HierarchyUrlPattern ?? string.Empty,
+                        CreatedAt = persisted.CachedAt,
+                        ModelVersion = "disk-cache",
+                        Sections = persisted.HierarchySections.Select(s => new HierarchySection
+                        {
+                            Name = s.Name,
+                            SortOrder = s.SortOrder,
+                            ParentSelectors = s.ParentSelectors,
+                            UrlPatterns = s.UrlPatterns,
+                            StartCollapsed = s.StartCollapsed,
+                        }).ToList(),
+                    };
+                }
+
+                var buildCache = new PageBuildCache
+                {
+                    Links = links,
+                    HierarchyConfig = hierarchyConfig,
+                    ReadableContent = null,
+                    Metadata = metadata,
+                    FinalUrl = persisted.FinalUrl ?? string.Empty,
+                    Classification = (PageClassification)persisted.Classification,
+                    CachedAt = persisted.CachedAt,
+                };
+
+                // Derive the normalized URL from the file name by looking up
+                // the corresponding HTML cache entry, or use FinalUrl as key
+                var key = UrlNormalizer.Normalize(persisted.FinalUrl ?? string.Empty);
+                if (!string.IsNullOrEmpty(key))
+                {
+                    results[key] = buildCache;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to load build cache from {Path}", filePath);
+            }
+        }
+
+        _logger.LogInformation("Loaded {Count} build cache entries from disk", results.Count);
+        return results;
+    }
+
     internal string GetFilePath(string normalizedUrl)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedUrl));
         var fileName = Convert.ToHexString(hash).ToLowerInvariant() + ".json";
+        return Path.Combine(_cacheDirectory, fileName);
+    }
+
+    internal string GetBuildCacheFilePath(string normalizedUrl)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedUrl));
+        var fileName = Convert.ToHexString(hash).ToLowerInvariant() + ".build.json";
         return Path.Combine(_cacheDirectory, fileName);
     }
 
@@ -370,5 +538,72 @@ internal sealed class DiskCacheStore
         public DateTime LastAccessedAtUtc { get; set; }
 
         public long SizeBytes { get; set; }
+    }
+
+    internal sealed class PersistedBuildCache
+    {
+        public string? FinalUrl { get; set; }
+
+        public int Classification { get; set; }
+
+        public DateTime CachedAt { get; set; }
+
+        public string? Title { get; set; }
+
+        public string? MetaDescription { get; set; }
+
+        public string? MetaCanonicalUrl { get; set; }
+
+        public string? MetaAuthor { get; set; }
+
+        public DateTime? MetaPublishedDate { get; set; }
+
+        public string? MetaFaviconUrl { get; set; }
+
+        public List<PersistedLinkInfo> Links { get; set; } = [];
+
+        public string? HierarchyDomain { get; set; }
+
+        public string? HierarchyUrlPattern { get; set; }
+
+        public List<PersistedHierarchySection>? HierarchySections { get; set; }
+    }
+
+    internal sealed class PersistedLinkInfo
+    {
+        public string Url { get; set; } = string.Empty;
+
+        public string DisplayText { get; set; } = string.Empty;
+
+        public int Type { get; set; }
+
+        public int ImportanceScore { get; set; }
+
+        public string? AriaLabel { get; set; }
+
+        public string? ParentSelector { get; set; }
+
+        public string? Author { get; set; }
+
+        public DateTime? PublishedDate { get; set; }
+
+        public string? SectionTitle { get; set; }
+
+        public bool IsFromImageAlt { get; set; }
+
+        public int HeaderType { get; set; }
+    }
+
+    internal sealed class PersistedHierarchySection
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public int SortOrder { get; set; }
+
+        public List<string> ParentSelectors { get; set; } = [];
+
+        public List<string> UrlPatterns { get; set; } = [];
+
+        public bool StartCollapsed { get; set; }
     }
 }
