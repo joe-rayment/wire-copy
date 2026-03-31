@@ -758,13 +758,13 @@ public class BrowserOrchestrator : IBrowserService
                 }
                 else
                 {
-                    // Timer elapsed — update loading screen or check preload progress
+                    // Timer elapsed — update loading status or check preload progress
                     if (HasActiveBackgroundLoad() && _loadingStatus != null)
                     {
-                        _renderer.RenderLoading(
-                            _loadingStatus.Url,
-                            _loadingStatus.Stage,
-                            _loadingStatus.ElapsedMs);
+                        var stage = _loadingStatus.Stage ?? "Loading...";
+                        var elapsed = _loadingStatus.ElapsedMs / 1000;
+                        _navigationService.SetStatusMessage($"{stage} ({elapsed}s)");
+                        await RenderCurrentPageAsync(options, cancellationToken);
                     }
                     else
                     {
@@ -1508,11 +1508,23 @@ public class BrowserOrchestrator : IBrowserService
             var metadata = new PageMetadata { Title = host };
             var skeletonPage = Page.Create(url, "<html></html>", metadata);
 
+            // Set as LinkList with empty tree so the hierarchical view renders
+            // the page frame (header, status bar) with a loading status instead
+            // of a blank "Loading..." screen. User sees the page structure immediately.
+            skeletonPage.SetClassification(PageClassification.LinkList);
+            var emptyTree = NavigationTree.BuildFromRoot(LinkNode.CreateRoot());
+            skeletonPage.SetLinkTree(emptyTree);
+
             _navigationService.NavigateTo(skeletonPage);
+            _navigationService.SetViewMode(ViewMode.Hierarchical);
             _navigationService.SetCacheInfo(false, null);
+            _navigationService.SetStatusMessage("Loading...");
             _lineCacheManager.InvalidateLineCache();
 
-            _renderer.RenderLoading(url);
+            _renderer.RenderHierarchical(
+                skeletonPage,
+                _navigationService.CurrentContext,
+                GetCurrentRenderOptions());
         }
         catch (Exception ex)
         {
