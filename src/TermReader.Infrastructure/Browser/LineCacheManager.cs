@@ -16,10 +16,6 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 internal class LineCacheManager
 {
-    /// <summary>
-    /// A paragraph's range within the flat line cache (StartLine and EndLine are inclusive).
-    /// </summary>
-    internal record struct ParagraphSpan(int StartLine, int EndLine);
     private static readonly Regex AnsiEscapeRegex = new(@"\x1b\[[0-9;]*m", RegexOptions.Compiled);
 
     private readonly NavigationService _navigationService;
@@ -169,36 +165,6 @@ internal class LineCacheManager
         _navigationService.SetReaderCursorLine(Math.Clamp(newCursorIndex, 0, maxLine));
     }
 
-    private int ComputeCharOffset(int lineIndex)
-    {
-        var offset = 0;
-        for (var i = 0; i < Math.Min(lineIndex, _cachedLines!.Count); i++)
-        {
-            offset += VisibleLength(_cachedLines[i].TrimStart()) + 1;
-        }
-
-        return offset;
-    }
-
-    private int FindLineByCharOffset(int charOffset)
-    {
-        var accumulated = 0;
-        var lineIndex = 0;
-        for (var i = 0; i < _cachedLines!.Count; i++)
-        {
-            accumulated += VisibleLength(_cachedLines[i].TrimStart()) + 1;
-            if (accumulated >= charOffset)
-            {
-                lineIndex = i;
-                break;
-            }
-
-            lineIndex = i;
-        }
-
-        return lineIndex;
-    }
-
     /// <summary>
     /// Builds styled headline lines (bold/uppercase title + secondary-text metadata)
     /// matching the launcher tile label style. These lines are prepended to the line cache
@@ -297,4 +263,39 @@ internal class LineCacheManager
         _cachedLines = lines;
         _cachedWidth = width;
     }
+
+    private int ComputeCharOffset(int lineIndex)
+    {
+        var offset = 0;
+        for (var i = 0; i < Math.Min(lineIndex, _cachedLines!.Count); i++)
+        {
+            offset += VisibleLength(_cachedLines[i].TrimStart()) + 1;
+        }
+
+        return offset;
+    }
+
+    private int FindLineByCharOffset(int charOffset)
+    {
+        var accumulated = 0;
+        var lineIndex = 0;
+        for (var i = 0; i < _cachedLines!.Count; i++)
+        {
+            accumulated += VisibleLength(_cachedLines[i].TrimStart()) + 1;
+            if (accumulated >= charOffset)
+            {
+                lineIndex = i;
+                break;
+            }
+
+            lineIndex = i;
+        }
+
+        return lineIndex;
+    }
+
+    /// <summary>
+    /// A paragraph's range within the flat line cache (StartLine and EndLine are inclusive).
+    /// </summary>
+    internal record struct ParagraphSpan(int StartLine, int EndLine);
 }

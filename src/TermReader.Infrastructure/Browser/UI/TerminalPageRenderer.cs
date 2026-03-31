@@ -29,6 +29,7 @@ public class TerminalPageRenderer : IPageRenderer
     private readonly CollectionRenderer _collectionRenderer;
     private readonly LauncherRenderer _launcherRenderer;
     private readonly StatusBarRenderer _statusBarRenderer;
+    private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
 
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
     {
@@ -72,10 +73,6 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
     }
-
-    private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
-
-    internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
 
     public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
     {
@@ -262,4 +259,6 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.Clear();
     }
+
+    internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
 }
