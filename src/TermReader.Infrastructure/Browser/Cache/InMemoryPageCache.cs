@@ -263,6 +263,9 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             _entries.TryUpdate(key, updated, existing);
             _logger.LogInformation("BuildCache PUT (attached to HTML entry) for {Url} (key={Key})", url, key);
         }
+
+        // Persist to disk so build cache survives app restarts
+        ThreadPool.QueueUserWorkItem(_ => _diskStore?.WriteBuildCache(key, buildCache));
     }
 
     public void Dispose()
@@ -425,6 +428,25 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
                 "Loaded {Count} page cache entries from disk ({Size} bytes)",
                 _entries.Count,
                 Interlocked.Read(ref _totalSizeBytes));
+
+            // Load persisted build caches into standalone dict
+            var buildCaches = _diskStore.LoadAllBuildCaches();
+            foreach (var (key, buildCache) in buildCaches)
+            {
+                _standaloneBuildCache[key] = buildCache;
+
+                // Attach to HTML entry if one exists
+                if (_entries.TryGetValue(key, out var existing) && !existing.Metadata.IsExpired)
+                {
+                    var updated = existing with { BuildCache = buildCache };
+                    _entries.TryUpdate(key, updated, existing);
+                }
+            }
+
+            if (buildCaches.Count > 0)
+            {
+                _logger.LogInformation("Loaded {Count} build cache entries from disk", buildCaches.Count);
+            }
         }
         catch (Exception ex)
         {
