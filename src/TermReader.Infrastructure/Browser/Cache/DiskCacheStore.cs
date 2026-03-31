@@ -65,7 +65,8 @@ internal sealed class DiskCacheStore
             }
         }
 
-        foreach (var filePath in Directory.EnumerateFiles(_cacheDirectory, "*.json"))
+        foreach (var filePath in Directory.EnumerateFiles(_cacheDirectory, "*.json")
+                     .Where(f => !f.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase)))
         {
             try
             {
@@ -252,7 +253,8 @@ internal sealed class DiskCacheStore
             return 0;
         }
 
-        return Directory.GetFiles(_cacheDirectory, "*.json").Length;
+        return Directory.GetFiles(_cacheDirectory, "*.json")
+            .Count(f => !f.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -267,6 +269,7 @@ internal sealed class DiskCacheStore
 
         return new DirectoryInfo(_cacheDirectory)
             .EnumerateFiles("*.json")
+            .Where(f => !f.Name.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase))
             .Sum(f => f.Length);
     }
 
@@ -285,6 +288,7 @@ internal sealed class DiskCacheStore
         {
             var files = new DirectoryInfo(_cacheDirectory)
                 .GetFiles("*.json")
+                .Where(f => !f.Name.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase))
                 .Select(f => new { File = f, f.Length, f.LastWriteTimeUtc })
                 .OrderBy(f => f.LastWriteTimeUtc)
                 .ToList();
