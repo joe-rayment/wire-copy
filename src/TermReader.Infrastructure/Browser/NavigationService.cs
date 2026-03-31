@@ -84,6 +84,8 @@ public class NavigationService : INavigationService
 
     public int ForwardHistoryCount => _forwardHistory.Count;
 
+    public int ReaderCursorLine => _readerCursorLine;
+
     public void NavigateTo(Page page)
     {
         if (_currentPage != null)
@@ -210,8 +212,6 @@ public class NavigationService : INavigationService
     {
         _selectedLinkIndex = Math.Max(0, index);
     }
-
-    public int ReaderCursorLine => _readerCursorLine;
 
     /// <summary>
     /// Updates the scroll offset in the current context.

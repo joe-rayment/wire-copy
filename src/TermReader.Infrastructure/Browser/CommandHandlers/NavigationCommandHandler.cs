@@ -521,6 +521,58 @@ internal static class NavigationCommandHandler
         }
     }
 
+    public static async Task HandleParagraphDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        if (viewMode == ViewMode.Readable)
+        {
+            ctx.LineCacheManager.EnsureLineCache(options);
+            var spans = ctx.LineCacheManager.ParagraphSpans;
+            if (spans != null && spans.Count > 0)
+            {
+                var cursor = ctx.NavigationService.ReaderCursorLine;
+
+                // Find the next paragraph after the current cursor position
+                var nextStart = spans.Select(span => span.StartLine)
+                    .FirstOrDefault(startLine => startLine > cursor);
+                if (nextStart > cursor)
+                {
+                    ctx.NavigationService.SetReaderCursorLine(nextStart);
+                    AdjustScrollForCursor(ctx, options);
+                }
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleParagraphUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        if (viewMode == ViewMode.Readable)
+        {
+            ctx.LineCacheManager.EnsureLineCache(options);
+            var spans = ctx.LineCacheManager.ParagraphSpans;
+            if (spans != null && spans.Count > 0)
+            {
+                var cursor = ctx.NavigationService.ReaderCursorLine;
+
+                // Find the previous paragraph before the current cursor position
+                for (var i = spans.Count - 1; i >= 0; i--)
+                {
+                    if (spans[i].StartLine < cursor)
+                    {
+                        ctx.NavigationService.SetReaderCursorLine(spans[i].StartLine);
+                        AdjustScrollForCursor(ctx, options);
+                        break;
+                    }
+                }
+            }
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
     private static void MoveVerticalInGrid(Domain.Entities.Browser.NavigationTree? tree, RenderOptions options, bool down)
     {
         if (tree == null)
@@ -649,60 +701,6 @@ internal static class NavigationCommandHandler
         {
             ctx.NavigationService.CollectionItemScrollOffset = selectedIndex - maxVisible + 1;
         }
-    }
-
-    public static async Task HandleParagraphDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
-    {
-        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
-        if (viewMode == ViewMode.Readable)
-        {
-            ctx.LineCacheManager.EnsureLineCache(options);
-            var spans = ctx.LineCacheManager.ParagraphSpans;
-            if (spans != null && spans.Count > 0)
-            {
-                var cursor = ctx.NavigationService.ReaderCursorLine;
-
-                // Find the next paragraph after the current cursor position
-                foreach (var span in spans)
-                {
-                    if (span.StartLine > cursor)
-                    {
-                        ctx.NavigationService.SetReaderCursorLine(span.StartLine);
-                        AdjustScrollForCursor(ctx, options);
-                        break;
-                    }
-                }
-            }
-        }
-
-        await ctx.RenderCurrentPageAsync(options, ct);
-    }
-
-    public static async Task HandleParagraphUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
-    {
-        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
-        if (viewMode == ViewMode.Readable)
-        {
-            ctx.LineCacheManager.EnsureLineCache(options);
-            var spans = ctx.LineCacheManager.ParagraphSpans;
-            if (spans != null && spans.Count > 0)
-            {
-                var cursor = ctx.NavigationService.ReaderCursorLine;
-
-                // Find the previous paragraph before the current cursor position
-                for (var i = spans.Count - 1; i >= 0; i--)
-                {
-                    if (spans[i].StartLine < cursor)
-                    {
-                        ctx.NavigationService.SetReaderCursorLine(spans[i].StartLine);
-                        AdjustScrollForCursor(ctx, options);
-                        break;
-                    }
-                }
-            }
-        }
-
-        await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     /// <summary>

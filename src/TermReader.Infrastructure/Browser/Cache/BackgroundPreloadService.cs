@@ -350,23 +350,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _queueSignal.Dispose();
     }
 
-    private void CloseBackgroundPage()
-    {
-        var page = _backgroundPage;
-        _backgroundPage = null;
-        if (page != null && _browserSession != null)
-        {
-            try
-            {
-                _browserSession.CloseBackgroundPageAsync(page).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error closing background page during cleanup");
-            }
-        }
-    }
-
     internal static bool IsBotDetectionResponse(string html)
     {
         var lower = html.ToLowerInvariant();
@@ -652,6 +635,23 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private static string? ExtractMetaContent(HtmlDocument doc, string name)
     {
         return HtmlMetadataExtractor.ExtractMetaContent(doc, name);
+    }
+
+    private void CloseBackgroundPage()
+    {
+        var page = _backgroundPage;
+        _backgroundPage = null;
+        if (page != null && _browserSession != null)
+        {
+            try
+            {
+                _browserSession.CloseBackgroundPageAsync(page).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error closing background page during cleanup");
+            }
+        }
     }
 
     private void RefreshPaywalledCookieState()
@@ -1214,7 +1214,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
             // still contain paywall CSS classes (gateway, meter-) in the DOM even though
             // the gate is inactive. The content sufficiency check below catches truly
             // paywalled content (too few words).
-
             if (!CachingPageLoader.HasSufficientContent(html, MinPaywalledWordCount))
             {
                 _logger.LogDebug("Browser preload content below threshold for {Url}", url);
