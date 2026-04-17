@@ -79,6 +79,10 @@ public class TerminalInputHandler : IInputHandler
    l / → / +       Widen width
    0               Reset width
 
+ Speed Reading (Reader View)
+   f               Toggle speed reading on/off
+   < / >           Slower / faster WPM
+
  Scrolling
    Ctrl+d          Page down
    Ctrl+u          Page up
@@ -342,6 +346,9 @@ public class TerminalInputHandler : IInputHandler
             'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },
             'z' => new NavigationCommand { Type = CommandType.Undo },
+            'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
+            '<' => new NavigationCommand { Type = CommandType.SpeedReadSlower },
+            '>' => new NavigationCommand { Type = CommandType.SpeedReadFaster },
             _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
         };
     }
