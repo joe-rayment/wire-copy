@@ -24,7 +24,7 @@ public class BrowserOrchestrator : IBrowserService
 {
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
-    private const int DefaultReaderWidth = 66;
+    private const int DefaultReaderWidth = 60;
 
     private readonly IPageLoader _pageLoader;
     private readonly ILinkExtractor _linkExtractor;
@@ -2293,10 +2293,14 @@ public class BrowserOrchestrator : IBrowserService
         }
     }
 
+    #pragma warning disable S1172 // Parameter kept for delegate signature compatibility
     private async Task RenderCurrentPageAsync(RenderOptions options, CancellationToken cancellationToken)
+    #pragma warning restore S1172
     {
         try
         {
+            // Recompute options so view-mode-dependent values (e.g. reader width) are fresh
+            options = GetCurrentRenderOptions();
             var viewMode = _navigationService.CurrentContext.ViewMode;
 
             // Launcher view doesn't require a page - render directly

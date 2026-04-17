@@ -74,7 +74,7 @@ public class ViewCommandHandlerTests
             {
                 TerminalWidth = 80,
                 TerminalHeight = 24,
-                MaxContentWidth = _ctx!.ContentWidthOverride ?? 66
+                MaxContentWidth = _ctx!.ContentWidthOverride ?? 60
             },
             CreateCollectionService = _ => Substitute.For<Application.Interfaces.ICollectionService>(),
             GetReaderViewportHeight = _ => 20,
@@ -184,11 +184,11 @@ public class ViewCommandHandlerTests
     [Fact]
     public async Task HandleIncreaseWidth_FromDefault_IncreasesBy10()
     {
-        _ctx.ContentWidthOverride = null; // default = 66
+        _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _ctx.ContentWidthOverride.Should().Be(76);
+        _ctx.ContentWidthOverride.Should().Be(70);
     }
 
     [Fact]
@@ -218,11 +218,11 @@ public class ViewCommandHandlerTests
     [Fact]
     public async Task HandleDecreaseWidth_FromDefault_DecreasesBy10()
     {
-        _ctx.ContentWidthOverride = null; // default = 66
+        _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _ctx.ContentWidthOverride.Should().Be(56);
+        _ctx.ContentWidthOverride.Should().Be(50);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class ViewCommandHandlerTests
 
         _renderCalled.Should().BeTrue();
         _lastRenderOptions.Should().NotBeNull();
-        _lastRenderOptions!.MaxContentWidth.Should().Be(66);
+        _lastRenderOptions!.MaxContentWidth.Should().Be(60);
     }
 
     #endregion
@@ -352,7 +352,7 @@ public class ViewCommandHandlerTests
             new List<string> { "line1", "line2", "line3", "line4", "line5" }, 80);
         _navigationService.SetScrollOffset(2);
 
-        // GetCurrentRenderOptions returns width 66, cache was at 80 → width changed
+        // GetCurrentRenderOptions returns width 60, cache was at 80 → width changed
         await ViewCommandHandler.HandleTerminalResized(_ctx, _options, CancellationToken.None);
 
         _renderCalled.Should().BeTrue();
@@ -365,21 +365,21 @@ public class ViewCommandHandlerTests
     [Fact]
     public async Task HandleIncreaseWidth_SetsStatusMessageWithNewWidth()
     {
-        _ctx.ContentWidthOverride = null; // default = 66
+        _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 76");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 70");
     }
 
     [Fact]
     public async Task HandleDecreaseWidth_SetsStatusMessageWithNewWidth()
     {
-        _ctx.ContentWidthOverride = null; // default = 66
+        _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 56");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 50");
     }
 
     [Fact]
@@ -389,7 +389,7 @@ public class ViewCommandHandlerTests
 
         await ViewCommandHandler.HandleResetWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 66");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 60");
         _navigationService.CurrentContext.StatusMessage.Should().Contain("default");
     }
 

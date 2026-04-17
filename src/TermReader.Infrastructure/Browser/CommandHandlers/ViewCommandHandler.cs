@@ -11,7 +11,7 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class ViewCommandHandler
 {
-    private const int DefaultContentWidth = 66;
+    private const int DefaultContentWidth = 60;
     private const int WidthStep = 10;
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
