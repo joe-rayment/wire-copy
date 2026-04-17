@@ -24,6 +24,7 @@ public class BrowserOrchestrator : IBrowserService
 {
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
+    private const int DefaultReaderWidth = 66;
 
     private readonly IPageLoader _pageLoader;
     private readonly ILinkExtractor _linkExtractor;
@@ -958,15 +959,34 @@ public class BrowserOrchestrator : IBrowserService
         {
             TerminalWidth = width,
             TerminalHeight = height,
-            MaxContentWidth = _commandContext.ContentWidthOverride.HasValue
-                ? Math.Clamp(Math.Min(_commandContext.ContentWidthOverride.Value, width - 2), Math.Min(MinContentWidth, width - 2), MaxContentWidth)
-                : Math.Clamp(width - 2, Math.Min(MinContentWidth, width - 2), MaxContentWidth),
+            MaxContentWidth = ComputeContentWidth(width),
             Use256Colors = use256,
             CachedUrls = GetMergedCachedUrls(),
             CacheProgress = _preloadService.GetProgress(),
             PodcastButtonState = GetPodcastButtonState(),
             CacheUsagePercent = GetCacheUsagePercent(),
         };
+    }
+
+    private int ComputeContentWidth(int terminalWidth)
+    {
+        var min = Math.Min(MinContentWidth, terminalWidth - 2);
+
+        if (_commandContext.ContentWidthOverride.HasValue)
+        {
+            return Math.Clamp(
+                Math.Min(_commandContext.ContentWidthOverride.Value, terminalWidth - 2),
+                min,
+                MaxContentWidth);
+        }
+
+        // In reader view, use a narrower default for readability
+        var isReaderView = _navigationService.CurrentContext.ViewMode == ViewMode.Readable;
+        var defaultWidth = isReaderView
+            ? Math.Min(DefaultReaderWidth, terminalWidth - 2)
+            : terminalWidth - 2;
+
+        return Math.Clamp(defaultWidth, min, MaxContentWidth);
     }
 
     private bool IsTtsConfigured()

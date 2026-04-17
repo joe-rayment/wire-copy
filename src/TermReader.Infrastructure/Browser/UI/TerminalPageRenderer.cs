@@ -110,9 +110,13 @@ public class TerminalPageRenderer : IPageRenderer
         var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
+        // Center article content when narrower than terminal
+        _helpers.LeftMargin = Math.Max(0, (options.TerminalWidth - options.MaxContentWidth) / 2);
+
         if (wrappedLines != null)
         {
             _articleRenderer.RenderLineBasedContent(wrappedLines, context, viewportHeight, options, paragraphSpans);
+            _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(
@@ -126,6 +130,7 @@ public class TerminalPageRenderer : IPageRenderer
         else
         {
             _articleRenderer.RenderArticleContent(page.ReadableContent, context, viewportHeight, options);
+            _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
