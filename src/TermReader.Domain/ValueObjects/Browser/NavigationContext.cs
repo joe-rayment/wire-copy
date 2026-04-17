@@ -96,4 +96,14 @@ public record NavigationContext
     /// Separate from ScrollOffset — the cursor moves within and beyond the viewport.
     /// </summary>
     public int ReaderCursorLine { get; init; }
+
+    /// <summary>
+    /// Whether speed reading mode is currently active (auto-scrolling line highlighter).
+    /// </summary>
+    public bool IsSpeedReadActive { get; init; }
+
+    /// <summary>
+    /// Current speed reading rate in words per minute.
+    /// </summary>
+    public int SpeedReadWpm { get; init; } = 250;
 }
