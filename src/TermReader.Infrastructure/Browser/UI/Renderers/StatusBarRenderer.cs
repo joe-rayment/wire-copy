@@ -331,8 +331,8 @@ internal class StatusBarRenderer
             ],
             ViewMode.Readable =>
             [
-                [("s", "save"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
-                [("s", "save"), ("o", "browser"), ("v", "links"), ("b", "back"), ("?", "help")],
+                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
+                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("v", "links"), ("b", "back"), ("?", "help")],
                 [("?", "help")],
             ],
             ViewMode.CollectionList =>
