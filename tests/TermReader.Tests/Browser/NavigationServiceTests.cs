@@ -257,4 +257,139 @@ public class NavigationServiceTests
         // Assert
         _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Hierarchical);
     }
+
+    // Speed reading tests
+
+    [Fact]
+    public void SpeedRead_DefaultWpm_Is250()
+    {
+        _sut.CurrentContext.SpeedReadWpm.Should().Be(250);
+    }
+
+    [Fact]
+    public void SpeedRead_DefaultState_IsInactive()
+    {
+        _sut.CurrentContext.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void StartSpeedRead_SetsActive()
+    {
+        _sut.StartSpeedRead();
+
+        _sut.IsSpeedReadActive.Should().BeTrue();
+        _sut.CurrentContext.IsSpeedReadActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public void StopSpeedRead_ClearsActive()
+    {
+        _sut.StartSpeedRead();
+        _sut.StopSpeedRead();
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+        _sut.CurrentContext.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AdjustSpeedReadWpm_IncreasesWpm()
+    {
+        _sut.AdjustSpeedReadWpm(50);
+
+        _sut.SpeedReadWpm.Should().Be(300);
+        _sut.CurrentContext.SpeedReadWpm.Should().Be(300);
+    }
+
+    [Fact]
+    public void AdjustSpeedReadWpm_DecreasesWpm()
+    {
+        _sut.AdjustSpeedReadWpm(-50);
+
+        _sut.SpeedReadWpm.Should().Be(200);
+    }
+
+    [Fact]
+    public void AdjustSpeedReadWpm_ClampsAtMinimum50()
+    {
+        _sut.AdjustSpeedReadWpm(-500);
+
+        _sut.SpeedReadWpm.Should().Be(50);
+    }
+
+    [Fact]
+    public void AdjustSpeedReadWpm_ClampsAtMaximum1000()
+    {
+        _sut.AdjustSpeedReadWpm(1000);
+
+        _sut.SpeedReadWpm.Should().Be(1000);
+    }
+
+    [Fact]
+    public void NavigateTo_StopsSpeedRead()
+    {
+        _sut.StartSpeedRead();
+
+        _sut.NavigateTo(CreateTestPage());
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GoBack_StopsSpeedRead()
+    {
+        var page1 = CreateTestPage("https://example.com/1", "Page 1");
+        var page2 = CreateTestPage("https://example.com/2", "Page 2");
+        _sut.NavigateTo(page1);
+        _sut.NavigateTo(page2);
+        _sut.StartSpeedRead();
+
+        _sut.GoBack();
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GoForward_StopsSpeedRead()
+    {
+        var page1 = CreateTestPage("https://example.com/1", "Page 1");
+        var page2 = CreateTestPage("https://example.com/2", "Page 2");
+        _sut.NavigateTo(page1);
+        _sut.NavigateTo(page2);
+        _sut.GoBack();
+        _sut.StartSpeedRead();
+
+        _sut.GoForward();
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SetViewMode_StopsSpeedRead()
+    {
+        _sut.StartSpeedRead();
+
+        _sut.SetViewMode(ViewMode.Readable);
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToggleViewMode_StopsSpeedRead()
+    {
+        _sut.StartSpeedRead();
+
+        _sut.ToggleViewMode();
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ClearHistory_StopsSpeedRead()
+    {
+        _sut.StartSpeedRead();
+
+        _sut.ClearHistory();
+
+        _sut.IsSpeedReadActive.Should().BeFalse();
+    }
 }

@@ -123,4 +123,9 @@ public enum CommandType
 
     // Undo
     Undo,
+
+    // Speed reading
+    ToggleSpeedRead,
+    SpeedReadFaster,
+    SpeedReadSlower,
 }

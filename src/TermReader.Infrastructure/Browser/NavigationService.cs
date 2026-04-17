@@ -34,6 +34,8 @@ public class NavigationService : INavigationService
     private DateTime? _cachedAt;
     private bool _isAiHierarchy;
     private int _readerCursorLine;
+    private bool _speedReadActive;
+    private int _speedReadWpm = 250;
 
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
@@ -72,6 +74,8 @@ public class NavigationService : INavigationService
         CachedAt = _cachedAt,
         IsAiHierarchy = _isAiHierarchy,
         ReaderCursorLine = _readerCursorLine,
+        IsSpeedReadActive = _speedReadActive,
+        SpeedReadWpm = _speedReadWpm,
     };
 
     public Page? CurrentPage => _currentPage;
@@ -85,6 +89,10 @@ public class NavigationService : INavigationService
     public int ForwardHistoryCount => _forwardHistory.Count;
 
     public int ReaderCursorLine => _readerCursorLine;
+
+    public bool IsSpeedReadActive => _speedReadActive;
+
+    public int SpeedReadWpm => _speedReadWpm;
 
     public void NavigateTo(Page page)
     {
@@ -103,6 +111,7 @@ public class NavigationService : INavigationService
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated to: {Title} ({Url})",
@@ -141,6 +150,7 @@ public class NavigationService : INavigationService
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated back to: {Title}",
@@ -166,6 +176,7 @@ public class NavigationService : INavigationService
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
         _currentViewMode = ViewMode.Hierarchical;
 
         _logger.LogInformation("Navigated forward to: {Title}",
@@ -201,6 +212,7 @@ public class NavigationService : INavigationService
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
 
         _logger.LogInformation("Navigation history cleared");
     }
@@ -282,6 +294,7 @@ public class NavigationService : INavigationService
         // Reset scroll offset when switching views so content starts at top
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
 
         _logger.LogDebug("Switched to {Mode} view", _currentViewMode);
     }
@@ -297,6 +310,7 @@ public class NavigationService : INavigationService
         // Reset scroll offset when switching views so content starts at top
         _scrollOffset = 0;
         _readerCursorLine = 0;
+        _speedReadActive = false;
 
         _logger.LogDebug("Set view mode to {Mode}", mode);
     }
@@ -316,6 +330,34 @@ public class NavigationService : INavigationService
     public void SetSearchMatchIndex(int index)
     {
         _searchMatchIndex = Math.Max(0, index);
+    }
+
+    /// <summary>
+    /// Starts speed reading mode at the current WPM rate.
+    /// </summary>
+    public void StartSpeedRead()
+    {
+        _speedReadActive = true;
+        _logger.LogDebug("Speed reading started at {Wpm} WPM", _speedReadWpm);
+    }
+
+    /// <summary>
+    /// Stops speed reading mode.
+    /// </summary>
+    public void StopSpeedRead()
+    {
+        _speedReadActive = false;
+        _logger.LogDebug("Speed reading stopped");
+    }
+
+    /// <summary>
+    /// Adjusts the speed reading WPM by the given delta (positive = faster, negative = slower).
+    /// Clamps to a minimum of 50 WPM and maximum of 1000 WPM.
+    /// </summary>
+    public void AdjustSpeedReadWpm(int delta)
+    {
+        _speedReadWpm = Math.Clamp(_speedReadWpm + delta, 50, 1000);
+        _logger.LogDebug("Speed reading WPM adjusted to {Wpm}", _speedReadWpm);
     }
 
 #pragma warning disable SA1201 // Delegating properties intentionally grouped after core methods

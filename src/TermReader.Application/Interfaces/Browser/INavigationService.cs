@@ -68,4 +68,29 @@ public interface INavigationService
     /// Clears all history.
     /// </summary>
     void ClearHistory();
+
+    /// <summary>
+    /// Gets whether speed reading mode is currently active.
+    /// </summary>
+    bool IsSpeedReadActive { get; }
+
+    /// <summary>
+    /// Gets the current speed reading rate in words per minute.
+    /// </summary>
+    int SpeedReadWpm { get; }
+
+    /// <summary>
+    /// Starts speed reading mode at the current WPM rate.
+    /// </summary>
+    void StartSpeedRead();
+
+    /// <summary>
+    /// Stops speed reading mode.
+    /// </summary>
+    void StopSpeedRead();
+
+    /// <summary>
+    /// Adjusts the speed reading WPM by the given delta.
+    /// </summary>
+    void AdjustSpeedReadWpm(int delta);
 }
