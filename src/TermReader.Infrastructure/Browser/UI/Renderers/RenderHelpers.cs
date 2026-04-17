@@ -378,16 +378,17 @@ internal class RenderHelpers
     }
 
     /// <summary>
-    /// Writes a line with up to two left-margin indicators overlaying the first two
-    /// characters (the existing 2-space indentation gutter). Column 0 = paragraph
-    /// indicator, Column 1 = line indicator. Text layout is unchanged.
+    /// Writes a line with a paragraph indicator and optional underline for the cursor line.
+    /// The paragraph indicator occupies column 0. When isCursorLine is true, the entire
+    /// line is underlined from the paragraph indicator to the right edge of the terminal.
     /// </summary>
     public void WriteLineWithDualIndicator(
         string text,
-        string? col0Ansi,
-        string? col1Ansi,
+        bool isCursorLine,
+        string? paragraphAnsi,
         string? searchQuery,
-        ThemePalette? palette)
+        ThemePalette? palette,
+        int terminalWidth = 0)
     {
         try
         {
@@ -398,28 +399,26 @@ internal class RenderHelpers
 
             Console.SetCursorPosition(LeftMargin, _linesWritten);
 
+            var underline = isCursorLine ? "\x1b[4m" : string.Empty;
+            var underlineOff = isCursorLine ? "\x1b[24m" : string.Empty;
+
             // Column 0: paragraph indicator or original char
-            if (col0Ansi != null)
+            if (paragraphAnsi != null)
             {
-                Console.Write(col0Ansi);
+                Console.Write($"{underline}{paragraphAnsi}{underlineOff}");
             }
             else
             {
-                Console.Write(text.Length > 0 ? text[0] : ' ');
+                Console.Write($"{underline}{(text.Length > 0 ? text[0] : ' ')}{underlineOff}");
             }
 
-            // Column 1: line indicator or original char
-            if (col1Ansi != null)
-            {
-                Console.Write(col1Ansi);
-            }
-            else
-            {
-                Console.Write(text.Length > 1 ? text[1] : ' ');
-            }
+            // Remaining content (columns 1+)
+            var content = text.Length > 1 ? text[1..] : string.Empty;
 
-            // Remaining content (columns 2+)
-            var content = text.Length > 2 ? text[2..] : string.Empty;
+            if (isCursorLine)
+            {
+                Console.Write("\x1b[4m");
+            }
 
             if (!string.IsNullOrEmpty(searchQuery) && palette != null)
             {
@@ -428,6 +427,19 @@ internal class RenderHelpers
             else
             {
                 Console.Write(content);
+            }
+
+            // Extend underline to right edge of screen
+            if (isCursorLine && terminalWidth > 0)
+            {
+                var textWidth = GetDisplayWidth(text);
+                var remaining = terminalWidth - LeftMargin - textWidth;
+                if (remaining > 0)
+                {
+                    Console.Write(new string(' ', remaining));
+                }
+
+                Console.Write("\x1b[24m");
             }
 
             Console.Write("\x1b[K");
