@@ -702,7 +702,9 @@ public class BrowserOrchestrator : IBrowserService
 
             // Main input loop — races user input against a periodic progress check
             // so the status bar can update live during background preloading.
+            // When speed reading is active, a per-line delay races as a fourth task.
             Task<NavigationCommand>? pendingInput = null;
+            Task? speedReadDelay = null;
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Re-read terminal dimensions on every iteration to handle resize
@@ -711,11 +713,28 @@ public class BrowserOrchestrator : IBrowserService
                 // Start waiting for input if not already waiting
                 pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
-                // Build the race: input, timer, and optionally background load
+                // Build the race: input, timer, and optionally background load + speed read
                 var raceTasks = new List<Task> { pendingInput, Task.Delay(500, cancellationToken) };
                 if (_backgroundPageLoad != null)
                 {
                     raceTasks.Add(_backgroundPageLoad);
+                }
+
+                // Persist speed reading timer across iterations (like pendingInput)
+                // so it isn't reset by the 500ms status timer firing first.
+                if (_navigationService.IsSpeedReadActive
+                    && _navigationService.CurrentContext.ViewMode == ViewMode.Readable)
+                {
+                    speedReadDelay ??= Task.Delay(
+                        ComputeLineDelayMs(
+                            _navigationService.ReaderCursorLine,
+                            _navigationService.SpeedReadWpm),
+                        cancellationToken);
+                    raceTasks.Add(speedReadDelay);
+                }
+                else
+                {
+                    speedReadDelay = null;
                 }
 
                 var completed = await Task.WhenAny(raceTasks);
@@ -725,11 +744,35 @@ public class BrowserOrchestrator : IBrowserService
                     // Background load completed — replace skeleton with real page
                     await CompleteBackgroundLoadAsync(options, cancellationToken);
                 }
+                else if (completed == speedReadDelay)
+                {
+                    // Speed read timer fired — advance cursor one line
+                    speedReadDelay = null; // Allow next line's timer to be created
+                    if (!AdvanceSpeedReadCursor(options))
+                    {
+                        // Reached end of article
+                        _navigationService.StopSpeedRead();
+                    }
+
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                }
                 else if (completed == pendingInput)
                 {
                     // User input received — process it
                     var command = await pendingInput;
                     pendingInput = null;
+
+                    // During speed reading: f/</> control speed, any other key stops and is consumed
+                    if (_navigationService.IsSpeedReadActive
+                        && command.Type is not CommandType.ToggleSpeedRead
+                            and not CommandType.SpeedReadFaster
+                            and not CommandType.SpeedReadSlower)
+                    {
+                        _navigationService.StopSpeedRead();
+                        speedReadDelay = null;
+                        await RenderCurrentPageAsync(options, cancellationToken);
+                        continue; // Consume the keypress
+                    }
 
                     // Gate commands during background loading: only Quit, GoBack, and
                     // passive commands are allowed. All others are silently ignored.
@@ -750,6 +793,10 @@ public class BrowserOrchestrator : IBrowserService
                     }
 
                     var shouldContinue = await HandleCommandAsync(command, options, cancellationToken);
+
+                    // Reset speed read timer after any command so WPM/toggle changes take effect
+                    speedReadDelay = null;
+
                     if (!shouldContinue)
                     {
                         CancelBackgroundLoad();
@@ -2180,6 +2227,33 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.Undo:
                     await UndoCommandHandler.HandleUndo(_commandContext, options, cancellationToken);
                     break;
+
+                case CommandType.ToggleSpeedRead:
+                    if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable)
+                    {
+                        if (_navigationService.IsSpeedReadActive)
+                        {
+                            _navigationService.StopSpeedRead();
+                        }
+                        else
+                        {
+                            _navigationService.StartSpeedRead();
+                        }
+
+                        await RenderCurrentPageAsync(options, cancellationToken);
+                    }
+
+                    break;
+                case CommandType.SpeedReadFaster:
+                    _navigationService.AdjustSpeedReadWpm(25);
+                    _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                    break;
+                case CommandType.SpeedReadSlower:
+                    _navigationService.AdjustSpeedReadWpm(-25);
+                    _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
+                    await RenderCurrentPageAsync(options, cancellationToken);
+                    break;
             }
 
             // Notify pre-loader of selection changes in hierarchical view
@@ -2640,4 +2714,133 @@ public class BrowserOrchestrator : IBrowserService
             _logger.LogWarning(ex, "Failed to refresh collections");
         }
     }
+
+    /// <summary>
+    /// Computes the delay in milliseconds for a given line during speed reading.
+    /// Delegates to the line cache to find line content and next-line context.
+    /// </summary>
+    private int ComputeLineDelayMs(int lineIndex, int wpm)
+    {
+        var lines = _lineCacheManager.CachedLines;
+        if (lines == null || lineIndex < 0 || lineIndex >= lines.Count)
+        {
+            return 300;
+        }
+
+        var nextLineBlank = lineIndex + 1 < lines.Count && string.IsNullOrEmpty(lines[lineIndex + 1]);
+        return ComputeLineDelayMs(lines[lineIndex], wpm, nextLineBlank);
+    }
+
+    /// <summary>
+    /// Pure computation: delay in ms for a line based on word count and WPM.
+    /// If nextLineBlank (paragraph boundary), adds a 300ms pause.
+    /// Minimum 50ms floor.
+    /// </summary>
+#pragma warning disable SA1202 // Internal test helper placed near its private caller
+    internal static int ComputeLineDelayMs(string line, int wpm, bool nextLineBlank)
+    {
+        var wordCount = CountWordsStrippingAnsi(line);
+        if (wordCount == 0)
+        {
+            return 50;
+        }
+
+        var msPerWord = 60000.0 / wpm;
+        var delayMs = (int)(wordCount * msPerWord);
+
+        if (nextLineBlank)
+        {
+            delayMs += 300;
+        }
+
+        return Math.Max(50, delayMs);
+    }
+
+    /// <summary>
+    /// Advances the speed reading cursor one line forward, skipping blank lines.
+    /// Paragraph pauses are handled by ComputeLineDelayMs adding extra delay
+    /// when the current line precedes a blank. Returns false if at end of article.
+    /// </summary>
+    private bool AdvanceSpeedReadCursor(RenderOptions options)
+    {
+        _lineCacheManager.EnsureLineCache(options);
+        var lines = _lineCacheManager.CachedLines;
+        if (lines == null || lines.Count == 0)
+        {
+            return false;
+        }
+
+        var cursor = _navigationService.ReaderCursorLine;
+        var totalLines = lines.Count;
+
+        var newCursor = cursor + 1;
+
+        // Skip blank lines
+        while (newCursor < totalLines && string.IsNullOrEmpty(lines[newCursor]))
+        {
+            newCursor++;
+        }
+
+        if (newCursor >= totalLines)
+        {
+            return false; // End of article
+        }
+
+        _navigationService.SetReaderCursorLine(newCursor);
+
+        // Adjust scroll to keep cursor visible
+        var scroll = _navigationService.CurrentContext.ScrollOffset;
+        var vpHeight = GetReaderViewportHeight(options);
+        var maxScroll = Math.Max(0, totalLines - vpHeight);
+
+        const int bottomMargin = 2;
+        if (newCursor > scroll + vpHeight - 1 - bottomMargin)
+        {
+            scroll = Math.Min(maxScroll, newCursor - vpHeight + 1 + bottomMargin);
+            _navigationService.SetScrollOffset(Math.Clamp(scroll, 0, maxScroll));
+        }
+
+        return true;
+    }
+
+    internal static int CountWordsStrippingAnsi(string text)
+    {
+        var wordCount = 0;
+        var inWord = false;
+        var i = 0;
+        while (i < text.Length)
+        {
+            // Skip ANSI escape sequences
+            if (text[i] == '\x1b' && i + 1 < text.Length && text[i + 1] == '[')
+            {
+                i += 2;
+                while (i < text.Length && text[i] != 'm')
+                {
+                    i++;
+                }
+
+                if (i < text.Length)
+                {
+                    i++; // skip 'm'
+                }
+
+                continue;
+            }
+
+            if (char.IsWhiteSpace(text[i]))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                wordCount++;
+            }
+
+            i++;
+        }
+
+        return wordCount;
+    }
+#pragma warning restore SA1202
 }
