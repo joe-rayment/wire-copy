@@ -731,6 +731,7 @@ public class BrowserOrchestrator : IBrowserService
                             _navigationService.ReaderCursorLine,
                             _navigationService.SpeedReadWpm),
                         cancellationToken);
+
                     raceTasks.Add(speedReadDelay);
                 }
                 else
@@ -745,7 +746,7 @@ public class BrowserOrchestrator : IBrowserService
                     // Background load completed — replace skeleton with real page
                     await CompleteBackgroundLoadAsync(options, cancellationToken);
                 }
-                else if (completed == speedReadDelay)
+                else if (speedReadDelay != null && completed == speedReadDelay)
                 {
                     // Speed read timer fired — advance cursor one line
                     speedReadDelay = null; // Allow next line's timer to be created
@@ -2255,9 +2256,13 @@ public class BrowserOrchestrator : IBrowserService
                         {
                             _navigationService.StopSpeedRead();
                         }
-                        else
+                        else if (_navigationService.CurrentPage?.HasReadableContent() == true)
                         {
                             _navigationService.StartSpeedRead();
+                        }
+                        else
+                        {
+                            _navigationService.SetStatusMessage("No readable content for speed reading");
                         }
 
                         await RenderCurrentPageAsync(options, cancellationToken);
@@ -2746,7 +2751,7 @@ public class BrowserOrchestrator : IBrowserService
     private int ComputeLineDelayMs(int lineIndex, int wpm)
     {
         var lines = _lineCacheManager.CachedLines;
-        if (lines == null || lineIndex < 0 || lineIndex >= lines.Count)
+        if (lines == null || lines.Count == 0 || lineIndex < 0 || lineIndex >= lines.Count)
         {
             return 300;
         }
