@@ -48,6 +48,8 @@ internal static class KeybindingPopup
                 ("o", "open in browser"),
                 ("[ / ]", "narrow / widen width"),
                 ("0", "reset width"),
+                ("f", "speed read on/off"),
+                ("< / >", "slower / faster WPM"),
                 ("v", "switch to link view"),
                 ("r / t", "reader / tree view"),
                 ("/", "search"),
@@ -133,8 +135,11 @@ internal static class KeybindingPopup
         var titleColor = $"{palette.StatusBarTextFg.AnsiFg}";
 
         // Top border with title
+        // Content rows are: │ + space + innerWidth + space + │ = innerWidth + 4 visible chars
+        // So top border must span innerWidth + 2 dashes between ┌ and ┐
         var titlePadded = $" {title} ";
-        var topBorderWidth = Math.Max(0, innerWidth - titlePadded.Length - 1);
+        var totalDashes = innerWidth + 2; // dashes between ┌ and ┐
+        var topBorderWidth = Math.Max(0, totalDashes - titlePadded.Length - 1);
         var topLeft = new string('\u2500', 1);
         var topRight = new string('\u2500', topBorderWidth);
         var topLine = $"{borderColor}\u250c{topLeft}{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{topRight}\u2510{Reset}";
@@ -165,7 +170,7 @@ internal static class KeybindingPopup
         var bottomRow = startRow + 1 + bindings.Length;
         if (bottomRow < terminalHeight - 1)
         {
-            var bottomLine = $"{borderColor}\u2514{new string('\u2500', innerWidth)}\u2518{Reset}";
+            var bottomLine = $"{borderColor}\u2514{new string('\u2500', innerWidth + 2)}\u2518{Reset}";
             Console.SetCursorPosition(startCol, bottomRow);
             Console.Write(bottomLine);
         }
