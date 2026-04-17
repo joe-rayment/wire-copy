@@ -363,6 +363,16 @@ internal sealed class DiskCacheStore
                 }).ToList(),
             };
 
+            if (buildCache.ReadableContent != null)
+            {
+                persisted.ReadableTitle = buildCache.ReadableContent.Title;
+                persisted.ReadableAuthor = buildCache.ReadableContent.Author;
+                persisted.ReadablePublishedDate = buildCache.ReadableContent.PublishedDate;
+                persisted.ReadableCleanedText = buildCache.ReadableContent.CleanedText;
+                persisted.ReadableParagraphs = buildCache.ReadableContent.Paragraphs.ToList();
+                persisted.ReadableIsPaywalled = buildCache.ReadableContent.IsPaywalled;
+            }
+
             if (buildCache.HierarchyConfig != null)
             {
                 persisted.HierarchyDomain = buildCache.HierarchyConfig.Domain;
@@ -458,11 +468,24 @@ internal sealed class DiskCacheStore
                     };
                 }
 
+                ReadableContent? readableContent = null;
+                if (!string.IsNullOrEmpty(persisted.ReadableCleanedText)
+                    && persisted.ReadableParagraphs is { Count: > 0 })
+                {
+                    readableContent = ReadableContent.Create(
+                        persisted.ReadableTitle ?? metadata.Title ?? "Untitled",
+                        persisted.ReadableCleanedText,
+                        persisted.ReadableParagraphs,
+                        persisted.ReadableAuthor,
+                        persisted.ReadablePublishedDate,
+                        persisted.ReadableIsPaywalled);
+                }
+
                 var buildCache = new PageBuildCache
                 {
                     Links = links,
                     HierarchyConfig = hierarchyConfig,
-                    ReadableContent = null,
+                    ReadableContent = readableContent,
                     Metadata = metadata,
                     FinalUrl = persisted.FinalUrl ?? string.Empty,
                     Classification = (PageClassification)persisted.Classification,
@@ -571,6 +594,19 @@ internal sealed class DiskCacheStore
         public string? HierarchyUrlPattern { get; set; }
 
         public List<PersistedHierarchySection>? HierarchySections { get; set; }
+
+        // ReadableContent fields (article text for reader view)
+        public string? ReadableTitle { get; set; }
+
+        public string? ReadableAuthor { get; set; }
+
+        public DateTime? ReadablePublishedDate { get; set; }
+
+        public string? ReadableCleanedText { get; set; }
+
+        public List<string>? ReadableParagraphs { get; set; }
+
+        public bool ReadableIsPaywalled { get; set; }
     }
 
     internal sealed class PersistedLinkInfo
