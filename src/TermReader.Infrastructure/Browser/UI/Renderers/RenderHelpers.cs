@@ -23,6 +23,11 @@ internal class RenderHelpers
     }
 
     /// <summary>
+    /// Left margin in columns for centering content (e.g., reader view).
+    /// </summary>
+    public int LeftMargin { get; set; }
+
+    /// <summary>
     /// Returns the display width of a character, accounting for East Asian wide characters.
     /// CJK characters and most emoji occupy 2 columns in a terminal.
     /// </summary>
@@ -303,7 +308,7 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
+            Console.SetCursorPosition(LeftMargin, _linesWritten);
             Console.Write(text);
             Console.Write("\x1b[K");
             _linesWritten++;
@@ -324,7 +329,7 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
+            Console.SetCursorPosition(LeftMargin, _linesWritten);
             WriteSearchHighlightedContent(text, searchQuery, palette);
             Console.Write("\x1b[K");
             _linesWritten++;
@@ -345,7 +350,7 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
+            Console.SetCursorPosition(LeftMargin, _linesWritten);
 
             // Write the indicator prefix
             Console.Write(indicatorAnsi);
@@ -391,7 +396,7 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
+            Console.SetCursorPosition(LeftMargin, _linesWritten);
 
             // Column 0: paragraph indicator or original char
             if (col0Ansi != null)
@@ -444,7 +449,7 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
+            Console.SetCursorPosition(LeftMargin, _linesWritten);
 
             Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
 
