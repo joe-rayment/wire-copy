@@ -308,9 +308,15 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(LeftMargin, _linesWritten);
-            Console.Write(text);
+            // Clear full line first when using left margin (centered content)
+            Console.SetCursorPosition(0, _linesWritten);
             Console.Write("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                Console.SetCursorPosition(LeftMargin, _linesWritten);
+            }
+
+            Console.Write(text);
             _linesWritten++;
         }
         catch
@@ -329,9 +335,14 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(LeftMargin, _linesWritten);
-            WriteSearchHighlightedContent(text, searchQuery, palette);
+            Console.SetCursorPosition(0, _linesWritten);
             Console.Write("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                Console.SetCursorPosition(LeftMargin, _linesWritten);
+            }
+
+            WriteSearchHighlightedContent(text, searchQuery, palette);
             _linesWritten++;
         }
         catch
@@ -350,7 +361,12 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(LeftMargin, _linesWritten);
+            Console.SetCursorPosition(0, _linesWritten);
+            Console.Write("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                Console.SetCursorPosition(LeftMargin, _linesWritten);
+            }
 
             // Write the indicator prefix
             Console.Write(indicatorAnsi);
@@ -367,7 +383,6 @@ internal class RenderHelpers
                 Console.Write(content);
             }
 
-            Console.Write("\x1b[K");
             _linesWritten++;
         }
         catch
@@ -397,7 +412,12 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(LeftMargin, _linesWritten);
+            Console.SetCursorPosition(0, _linesWritten);
+            Console.Write("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                Console.SetCursorPosition(LeftMargin, _linesWritten);
+            }
 
             var underline = isCursorLine ? "\x1b[4m" : string.Empty;
             var underlineOff = isCursorLine ? "\x1b[24m" : string.Empty;
@@ -461,7 +481,12 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(LeftMargin, _linesWritten);
+            Console.SetCursorPosition(0, _linesWritten);
+            Console.Write("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                Console.SetCursorPosition(LeftMargin, _linesWritten);
+            }
 
             Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
 
