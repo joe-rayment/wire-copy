@@ -180,8 +180,9 @@ attachments/
 sample-*-cookies.json
 
 # Debug captures
-screenshots/*.html
-screenshots/*.txt
+screenshots/
+qa-screenshots/
+Screenshot *.png
 
 # Python
 __pycache__/
@@ -191,3 +192,4 @@ obsidian/
 
 # Dolt database files (added by bd init)
 .dolt/
+drops/
