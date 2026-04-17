@@ -258,6 +258,12 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}cache {cacheUsagePercent:F0}%{Reset}");
         }
 
+        // Speed reading WPM indicator
+        if (context.IsSpeedReadActive)
+        {
+            parts.Add($"{p.PromptFg.AnsiFg}\u25b6 {context.SpeedReadWpm} WPM{Reset}");
+        }
+
         // Status message
         if (!string.IsNullOrEmpty(context.StatusMessage))
         {
