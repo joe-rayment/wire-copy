@@ -139,11 +139,11 @@ public class AutoLoginService : IAutoLoginService
     {
         try
         {
-            var pageSource = (await page.ContentAsync()).ToLowerInvariant();
-            return pageSource.Contains("invalid", StringComparison.Ordinal) ||
-                   pageSource.Contains("incorrect", StringComparison.Ordinal) ||
-                   pageSource.Contains("wrong password", StringComparison.Ordinal) ||
-                   pageSource.Contains("try again", StringComparison.Ordinal);
+            var pageSource = await page.ContentAsync();
+            return pageSource.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
+                   pageSource.Contains("incorrect", StringComparison.OrdinalIgnoreCase) ||
+                   pageSource.Contains("wrong password", StringComparison.OrdinalIgnoreCase) ||
+                   pageSource.Contains("try again", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

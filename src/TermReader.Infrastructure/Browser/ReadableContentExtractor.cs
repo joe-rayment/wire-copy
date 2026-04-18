@@ -138,15 +138,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// </summary>
     public static bool IsEmptyArticleShell(string html)
     {
-        var lowerHtml = html.ToLowerInvariant();
-
         // Only check pages that have article indicators
-        var hasArticleIndicators = lowerHtml.Contains("<article") ||
-            OgTypeArticleRegex().IsMatch(lowerHtml) ||
-            lowerHtml.Contains("article-body") ||
-            lowerHtml.Contains("article-content") ||
-            lowerHtml.Contains("entry-content") ||
-            lowerHtml.Contains("post-content");
+        var hasArticleIndicators = html.Contains("<article", StringComparison.OrdinalIgnoreCase) ||
+            OgTypeArticleRegex().IsMatch(html) ||
+            html.Contains("article-body", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("article-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("entry-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("post-content", StringComparison.OrdinalIgnoreCase);
 
         if (!hasArticleIndicators)
         {
@@ -423,22 +421,21 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static bool IsArticleCore(string html)
     {
-        var lowerHtml = html.ToLowerInvariant();
-
         // Check for article-related meta tags (actual <meta property="og:type" content="article"> tag)
-        if (OgTypeArticleRegex().IsMatch(lowerHtml))
+        if (OgTypeArticleRegex().IsMatch(html))
         {
             return true;
         }
 
         // Check for article tag
-        if (lowerHtml.Contains("<article"))
+        if (html.Contains("<article", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         // Check for ARIA role attributes
-        if (lowerHtml.Contains("role=\"article\"") || lowerHtml.Contains("role=\"main\""))
+        if (html.Contains("role=\"article\"", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("role=\"main\"", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -450,19 +447,19 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // Check for common content container classes
-        if (lowerHtml.Contains("entry-content") ||
-            lowerHtml.Contains("post-content") ||
-            lowerHtml.Contains("article-body") ||
-            lowerHtml.Contains("article-content") ||
-            lowerHtml.Contains("storybodycompanioncolumn") ||
-            lowerHtml.Contains("data-testid=\"article-body\"") ||
-            lowerHtml.Contains("wp-block-post-content") ||
-            lowerHtml.Contains("td-post-content") ||
-            lowerHtml.Contains("gh-content") ||
-            lowerHtml.Contains("post-full-content") ||
-            lowerHtml.Contains("field--name-body") ||
-            lowerHtml.Contains("data-content-type=\"article-body\"") ||
-            lowerHtml.Contains("data-content-region="))
+        if (html.Contains("entry-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("post-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("article-body", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("article-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("StoryBodyCompanionColumn", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("data-testid=\"article-body\"", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("wp-block-post-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("td-post-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("gh-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("post-full-content", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("field--name-body", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("data-content-type=\"article-body\"", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("data-content-region=", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -1316,7 +1313,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// Matches the actual og:type article meta tag: &lt;meta property="og:type" content="article"&gt;
     /// Handles both single and double quotes, with optional whitespace between attributes.
     /// </summary>
-    [GeneratedRegex("""<meta\s[^>]*property\s*=\s*["']og:type["'][^>]*content\s*=\s*["']article["']""")]
+    [GeneratedRegex("""<meta\s[^>]*property\s*=\s*["']og:type["'][^>]*content\s*=\s*["']article["']""", RegexOptions.IgnoreCase)]
     private static partial Regex OgTypeArticleRegex();
 
     /// <summary>
