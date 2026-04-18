@@ -235,8 +235,6 @@ public class PageLoader : IPageLoader
 
     private static bool IsJavaScriptRequired(string html)
     {
-        var lowerHtml = html.ToLowerInvariant();
-
         // Check for Cloudflare/DataDome challenge/block pages - these need browser to solve
         var cloudflareIndicators = new[]
         {
@@ -253,7 +251,7 @@ public class PageLoader : IPageLoader
             "geo.captcha-delivery.com"
         };
 
-        if (Array.Exists(cloudflareIndicators, i => lowerHtml.Contains(i)))
+        if (Array.Exists(cloudflareIndicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase)))
         {
             return true;
         }
@@ -268,7 +266,7 @@ public class PageLoader : IPageLoader
             "you need to enable javascript",
         };
 
-        if (Array.Exists(indicators, i => lowerHtml.Contains(i)))
+        if (Array.Exists(indicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase)))
         {
             return true;
         }

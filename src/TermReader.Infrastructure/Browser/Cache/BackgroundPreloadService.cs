@@ -352,7 +352,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     internal static bool IsBotDetectionResponse(string html)
     {
-        var lower = html.ToLowerInvariant();
         var indicators = new[]
         {
             "attention required! | cloudflare",
@@ -367,7 +366,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             "access denied"
         };
 
-        return Array.Exists(indicators, i => lower.Contains(i));
+        return Array.Exists(indicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
