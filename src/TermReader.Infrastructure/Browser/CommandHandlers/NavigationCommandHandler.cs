@@ -13,7 +13,29 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class NavigationCommandHandler
 {
-    public static async Task HandleMoveDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    public static async Task HandleMoveDown(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
+    {
+        var count = Math.Max(1, command.Count);
+        for (var i = 0; i < count; i++)
+        {
+            MoveDownOnce(ctx, options);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    public static async Task HandleMoveUp(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
+    {
+        var count = Math.Max(1, command.Count);
+        for (var i = 0; i < count; i++)
+        {
+            MoveUpOnce(ctx, options);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static void MoveDownOnce(CommandContext ctx, RenderOptions options)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
@@ -51,11 +73,9 @@ internal static class NavigationCommandHandler
         {
             MoveReaderCursor(ctx, options, 1);
         }
-
-        await ctx.RenderCurrentPageAsync(options, ct);
     }
 
-    public static async Task HandleMoveUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    private static void MoveUpOnce(CommandContext ctx, RenderOptions options)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
@@ -83,8 +103,6 @@ internal static class NavigationCommandHandler
         {
             MoveReaderCursor(ctx, options, -1);
         }
-
-        await ctx.RenderCurrentPageAsync(options, ct);
     }
 
     public static async Task HandlePageDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -178,8 +196,16 @@ internal static class NavigationCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
-    public static async Task HandleGoToTop(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    public static async Task HandleGoToTop(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
     {
+        // <number>gg jumps to that index (1-based)
+        if (command.Count > 0)
+        {
+            GoToIndex(ctx, command.Count - 1, options);
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
 
@@ -214,8 +240,16 @@ internal static class NavigationCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
-    public static async Task HandleGoToBottom(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    public static async Task HandleGoToBottom(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
     {
+        // <number>G jumps to that index (1-based)
+        if (command.Count > 0)
+        {
+            GoToIndex(ctx, command.Count - 1, options);
+            await ctx.RenderCurrentPageAsync(options, ct);
+            return;
+        }
+
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var page = ctx.NavigationService.CurrentPage;
         var tree = page?.LinkTree;
@@ -585,6 +619,50 @@ internal static class NavigationCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    private static void GoToIndex(CommandContext ctx, int index, RenderOptions options)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.Hierarchical && tree != null)
+        {
+            var visibleNodes = tree.GetVisibleNodes().ToList();
+            var clampedIndex = Math.Clamp(index, 0, Math.Max(0, visibleNodes.Count - 1));
+            if (clampedIndex < visibleNodes.Count)
+            {
+                tree.SelectNodeById(visibleNodes[clampedIndex].Id);
+                ctx.AdjustScrollForSelection(tree, options);
+            }
+        }
+        else if (viewMode == ViewMode.CollectionList)
+        {
+            var maxIdx = Math.Max(0, (ctx.Collections?.Count ?? 0) - 1);
+            ctx.NavigationService.CollectionSelectedIndex = Math.Clamp(index, 0, maxIdx);
+            AdjustCollectionListScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                var maxItemIdx = Math.Max(0, activeCol.Items.Count - 1);
+                ctx.NavigationService.CollectionItemSelectedIndex = Math.Clamp(index, 0, maxItemIdx);
+                AdjustCollectionItemScroll(ctx, options);
+            }
+        }
+        else if (viewMode == ViewMode.Readable)
+        {
+            ctx.LineCacheManager.EnsureLineCache(options);
+            var totalLines = ctx.LineCacheManager.CachedLines?.Count ?? 0;
+            var clampedLine = Math.Clamp(index, 0, Math.Max(0, totalLines - 1));
+            ctx.NavigationService.SetReaderCursorLine(clampedLine);
+
+            var vpHeight = ctx.GetReaderViewportHeight(options);
+            var maxScroll = Math.Max(0, totalLines - vpHeight);
+            ctx.NavigationService.SetScrollOffset(Math.Clamp(clampedLine - vpHeight / 2, 0, maxScroll));
+        }
     }
 
     private static void MoveVerticalInGrid(Domain.Entities.Browser.NavigationTree? tree, RenderOptions options, bool down)

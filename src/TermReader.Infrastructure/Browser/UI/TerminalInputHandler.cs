@@ -20,6 +20,7 @@ public class TerminalInputHandler : IInputHandler
     private readonly ILogger<TerminalInputHandler> _logger;
     private readonly Channel<ConsoleKeyInfo> _keyChannel = Channel.CreateUnbounded<ConsoleKeyInfo>();
     private bool _waitingForSecondKey; // For 'gg' command
+    private int _numericPrefix; // For count-prefixed motions (e.g., 10j)
     private bool _keyReaderStarted;
     private Task<ConsoleKeyInfo>? _pendingKeyTask;
     private Task<bool>? _pendingResizeTask;
@@ -63,8 +64,8 @@ public class TerminalInputHandler : IInputHandler
  ══════════════════════════════════════════════════════════════
 
  Navigation (all views)
-   j / ↓           Move down / scroll
-   k / ↑           Move up / scroll
+   j / ↓           Move down (prefix: 10j = 10 lines)
+   k / ↑           Move up (prefix: 5k = 5 lines)
    Enter           Follow link / open item
    b / Backspace   Go back
    Shift+L         Go forward
@@ -86,8 +87,8 @@ public class TerminalInputHandler : IInputHandler
  Scrolling
    Ctrl+d          Page down
    Ctrl+u          Page up
-   gg              Go to top
-   G               Go to bottom
+   gg              Go to top (5gg = go to item 5)
+   G               Go to bottom (5G = go to item 5)
 
  Views
    v / Tab         Toggle Link View ↔ Reader View
@@ -290,12 +291,27 @@ public class TerminalInputHandler : IInputHandler
             if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
             {
                 _waitingForSecondKey = false;
-                return new NavigationCommand { Type = CommandType.GoToTop };
+                var count = _numericPrefix;
+                _numericPrefix = 0;
+                return new NavigationCommand { Type = CommandType.GoToTop, Count = count };
             }
 
             if (_waitingForSecondKey)
             {
                 _waitingForSecondKey = false;
+            }
+
+            // Accumulate numeric prefix for count-prefixed motions (e.g., 10j, 5G)
+            if (keyInfo.KeyChar >= '1' && keyInfo.KeyChar <= '9' && !_waitingForSecondKey)
+            {
+                _numericPrefix = _numericPrefix * 10 + (keyInfo.KeyChar - '0');
+                continue;
+            }
+
+            if (keyInfo.KeyChar == '0' && _numericPrefix > 0)
+            {
+                _numericPrefix = _numericPrefix * 10;
+                continue;
             }
 
             if (keyInfo.Key == ConsoleKey.G && (keyInfo.Modifiers & ConsoleModifiers.Shift) == 0)
@@ -304,15 +320,23 @@ public class TerminalInputHandler : IInputHandler
                 continue;
             }
 
+            var count2 = _numericPrefix;
+            _numericPrefix = 0;
+
             var command = MapKeyInfoToCommand(keyInfo);
             if (keyInfo.KeyChar >= 32)
             {
                 command = command with { RawKeyChar = keyInfo.KeyChar };
             }
 
+            if (count2 > 0)
+            {
+                command = command with { Count = count2 };
+            }
+
             if (command.Type != CommandType.NoOp)
             {
-                _logger.LogDebug("Input: {Key} -> {CommandType}", keyInfo.Key, command.Type);
+                _logger.LogDebug("Input: {Key} -> {CommandType} (count: {Count})", keyInfo.Key, command.Type, count2);
             }
 
             return command;

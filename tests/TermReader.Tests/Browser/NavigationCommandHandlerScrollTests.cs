@@ -98,7 +98,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetReaderCursorLine(0);
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.ReaderCursorLine.Should().Be(1);
         _renderCalled.Should().BeTrue();
@@ -109,7 +109,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetReaderCursorLine(10);
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.ReaderCursorLine.Should().Be(11);
     }
@@ -120,7 +120,7 @@ public class NavigationCommandHandlerScrollTests
         // 50 lines, last index = 49
         _navigationService.SetReaderCursorLine(49);
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.ReaderCursorLine.Should().Be(49);
     }
@@ -130,7 +130,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _lineCacheManager.InvalidateLineCache();
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         // EnsureLineCache should rebuild from the page's ReadableContent
         _lineCacheManager.CachedLines.Should().NotBeNull();
@@ -145,7 +145,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetReaderCursorLine(10);
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.ReaderCursorLine.Should().Be(9);
         _renderCalled.Should().BeTrue();
@@ -156,7 +156,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetScrollOffset(0);
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.CurrentContext.ScrollOffset.Should().Be(0);
     }
@@ -166,7 +166,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetScrollOffset(1);
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.CurrentContext.ScrollOffset.Should().Be(0);
     }
@@ -232,7 +232,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetScrollOffset(0);
 
-        await NavigationCommandHandler.HandleGoToBottom(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToBottom(_ctx, new NavigationCommand { Type = CommandType.GoToBottom }, _options, CancellationToken.None);
 
         // maxOffset = max(0, 50 - 20) = 30
         _navigationService.CurrentContext.ScrollOffset.Should().Be(30);
@@ -243,7 +243,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetScrollOffset(30);
 
-        await NavigationCommandHandler.HandleGoToBottom(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToBottom(_ctx, new NavigationCommand { Type = CommandType.GoToBottom }, _options, CancellationToken.None);
 
         _navigationService.CurrentContext.ScrollOffset.Should().Be(30);
     }
@@ -257,7 +257,7 @@ public class NavigationCommandHandlerScrollTests
     {
         _navigationService.SetScrollOffset(25);
 
-        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToTop(_ctx, new NavigationCommand { Type = CommandType.GoToTop }, _options, CancellationToken.None);
 
         _navigationService.CurrentContext.ScrollOffset.Should().Be(0);
     }
@@ -278,7 +278,7 @@ public class NavigationCommandHandlerScrollTests
         // Initially at CTA button (-1), move to item 1
         _navigationService.CollectionItemSelectedIndex = 1;
 
-        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToTop(_ctx, new NavigationCommand { Type = CommandType.GoToTop }, _options, CancellationToken.None);
 
         // Should go to first item (0), NOT CTA button (-1)
         _navigationService.CollectionItemSelectedIndex.Should().Be(0,
@@ -329,7 +329,7 @@ public class NavigationCommandHandlerScrollTests
         }
 
         // Act
-        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToTop(_ctx, new NavigationCommand { Type = CommandType.GoToTop }, _options, CancellationToken.None);
 
         // Assert — selection should be the first VISIBLE node, not a collapsed child
         var firstVisible = tree.GetVisibleNodes().First();
