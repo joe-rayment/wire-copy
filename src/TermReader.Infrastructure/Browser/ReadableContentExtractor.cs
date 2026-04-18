@@ -421,6 +421,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static bool IsArticleCore(string html)
     {
+        // Fast string checks first (no DOM parsing needed)
+
         // Check for article-related meta tags (actual <meta property="og:type" content="article"> tag)
         if (OgTypeArticleRegex().IsMatch(html))
         {
@@ -436,12 +438,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         // Check for ARIA role attributes
         if (html.Contains("role=\"article\"", StringComparison.OrdinalIgnoreCase) ||
             html.Contains("role=\"main\"", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Check for common article indicators in classes or IDs (exact match via DOM)
-        if (HasArticleIndicatorElements(html))
         {
             return true;
         }
@@ -464,8 +460,18 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return true;
         }
 
+        // DOM-based checks: parse once, reuse for both
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Check for common article indicators in classes or IDs (exact match via DOM)
+        if (HasArticleIndicatorElements(doc))
+        {
+            return true;
+        }
+
         // Check for sufficient substantial paragraph content (>50 chars, outside boilerplate)
-        if (HasSubstantialParagraphs(html))
+        if (HasSubstantialParagraphs(doc))
         {
             return true;
         }
@@ -479,11 +485,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// &lt;main&gt; or &lt;article&gt; elements when available. When falling back to the full
     /// document, paragraphs inside boilerplate regions (nav, aside, footer) are excluded.
     /// </summary>
-    private static bool HasSubstantialParagraphs(string html)
+    private static bool HasSubstantialParagraphs(HtmlDocument doc)
     {
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
-
         // Prefer paragraphs inside <main> or <article> if present
         var scopeNode = doc.DocumentNode.SelectSingleNode("//main") ??
                         doc.DocumentNode.SelectSingleNode("//article");
@@ -525,11 +528,8 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// one of the <see cref="ArticleIndicators"/>. Uses DOM parsing so that
     /// "article-list" or "navigation-article" do NOT match the indicator "article".
     /// </summary>
-    private static bool HasArticleIndicatorElements(string html)
+    private static bool HasArticleIndicatorElements(HtmlDocument doc)
     {
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
-
         foreach (var indicator in ArticleIndicators)
         {
             // XPath: element whose space-separated class list contains the exact indicator word
