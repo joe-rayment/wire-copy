@@ -36,6 +36,8 @@ public class NavigationTree
     /// </summary>
     public int SelectionCount => SelectedNodeIds.Count;
 
+    private List<LinkNode>? _cachedVisibleNodes;
+
     private NavigationTree(LinkNode root)
     {
         Root = root;
@@ -207,7 +209,7 @@ public class NavigationTree
         if (CurrentSelection == null)
             return;
 
-        var visibleNodes = GetVisibleNodes().ToList();
+        var visibleNodes = GetCachedVisibleNodes();
         var currentIndex = visibleNodes.IndexOf(CurrentSelection);
 
         if (currentIndex >= 0 && currentIndex < visibleNodes.Count - 1)
@@ -226,7 +228,7 @@ public class NavigationTree
         if (CurrentSelection == null)
             return;
 
-        var visibleNodes = GetVisibleNodes().ToList();
+        var visibleNodes = GetCachedVisibleNodes();
         var currentIndex = visibleNodes.IndexOf(CurrentSelection);
 
         if (currentIndex > 0)
@@ -270,6 +272,25 @@ public class NavigationTree
     public void ToggleCollapse()
     {
         CurrentSelection?.ToggleCollapse();
+        InvalidateVisibleNodeCache();
+    }
+
+    /// <summary>
+    /// Expands the current selection.
+    /// </summary>
+    public void Expand()
+    {
+        CurrentSelection?.Expand();
+        InvalidateVisibleNodeCache();
+    }
+
+    /// <summary>
+    /// Collapses the current selection.
+    /// </summary>
+    public void Collapse()
+    {
+        CurrentSelection?.Collapse();
+        InvalidateVisibleNodeCache();
     }
 
     /// <summary>
@@ -282,8 +303,7 @@ public class NavigationTree
     /// </summary>
     public IEnumerable<LinkNode> GetVisibleNodes()
     {
-        // Root is never visible, only its descendants
-        return Root.GetVisibleDescendants();
+        return GetCachedVisibleNodes();
     }
 
     /// <summary>
@@ -346,6 +366,8 @@ public class NavigationTree
         {
             node.Expand();
         }
+
+        InvalidateVisibleNodeCache();
     }
 
     /// <summary>
@@ -357,6 +379,8 @@ public class NavigationTree
         {
             node.Collapse();
         }
+
+        InvalidateVisibleNodeCache();
     }
 
     /// <summary>
@@ -485,4 +509,15 @@ public class NavigationTree
     /// Clears all multi-select state.
     /// </summary>
     public void ClearSelection() => SelectedNodeIds.Clear();
+
+    /// <summary>
+    /// Invalidates the cached visible node list. Call after any operation
+    /// that changes node collapse state outside NavigationTree methods.
+    /// </summary>
+    public void InvalidateVisibleNodeCache() => _cachedVisibleNodes = null;
+
+    private List<LinkNode> GetCachedVisibleNodes()
+    {
+        return _cachedVisibleNodes ??= Root.GetVisibleDescendants().ToList();
+    }
 }
