@@ -354,6 +354,13 @@ internal static class NavigationCommandHandler
 
     public static async Task HandleExpandNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        // In reader view, l/→ widens the reading column (documented in help)
+        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable)
+        {
+            await ViewCommandHandler.HandleIncreaseWidth(ctx, options, ct);
+            return;
+        }
+
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
         var selected = tree?.CurrentSelection;
 
@@ -371,6 +378,13 @@ internal static class NavigationCommandHandler
 
     public static async Task HandleCollapseNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        // In reader view, h/← narrows the reading column (documented in help)
+        if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable)
+        {
+            await ViewCommandHandler.HandleDecreaseWidth(ctx, options, ct);
+            return;
+        }
+
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
         var selected = tree?.CurrentSelection;
 
