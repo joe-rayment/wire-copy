@@ -363,7 +363,7 @@ internal static class NavigationCommandHandler
         }
         else
         {
-            selected?.Expand();
+            tree?.Expand();
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -380,7 +380,7 @@ internal static class NavigationCommandHandler
         }
         else
         {
-            selected?.Collapse();
+            tree?.Collapse();
         }
 
         await ctx.RenderCurrentPageAsync(options, ct);
@@ -472,7 +472,7 @@ internal static class NavigationCommandHandler
             {
                 if (selectedNode.IsGroupHeader)
                 {
-                    selectedNode.ToggleCollapse();
+                    tree!.ToggleCollapse();
                     await ctx.RenderCurrentPageAsync(options, ct);
                 }
                 else if (!string.IsNullOrEmpty(selectedNode.Link.Url))
