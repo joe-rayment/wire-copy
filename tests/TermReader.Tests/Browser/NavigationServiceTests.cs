@@ -223,39 +223,38 @@ public class NavigationServiceTests
     }
 
     [Fact]
-    public void GoBack_ResetsViewModeToHierarchical()
+    public void GoBack_RestoresViewModeFromHistory()
     {
         // Arrange
         var page1 = CreateTestPage("https://example.com/1", "Page 1");
         var page2 = CreateTestPage("https://example.com/2", "Page 2");
         _sut.NavigateTo(page1);
-        _sut.NavigateTo(page2);
-        _sut.SetViewMode(ViewMode.Readable);
+        _sut.SetViewMode(ViewMode.Readable); // page1 in reader mode
+        _sut.NavigateTo(page2); // saves page1 with Readable
 
         // Act
         _sut.GoBack();
 
-        // Assert
-        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Hierarchical);
+        // Assert — should restore page1's saved ViewMode (Readable)
+        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Readable);
     }
 
     [Fact]
-    public void GoForward_ResetsViewModeToHierarchical()
+    public void GoForward_RestoresViewModeFromHistory()
     {
         // Arrange
         var page1 = CreateTestPage("https://example.com/1", "Page 1");
         var page2 = CreateTestPage("https://example.com/2", "Page 2");
         _sut.NavigateTo(page1);
         _sut.NavigateTo(page2);
-        _sut.SetViewMode(ViewMode.Readable);
-        _sut.GoBack();
-        _sut.SetViewMode(ViewMode.Readable);
+        _sut.SetViewMode(ViewMode.Readable); // page2 in reader mode
+        _sut.GoBack(); // saves page2 with Readable to forward history
 
         // Act
         _sut.GoForward();
 
-        // Assert
-        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Hierarchical);
+        // Assert — should restore page2's saved ViewMode (Readable)
+        _sut.CurrentContext.ViewMode.Should().Be(ViewMode.Readable);
     }
 
     // Speed reading tests
