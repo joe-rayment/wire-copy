@@ -68,6 +68,20 @@ public class CacheServingFlowTests
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         var resizeDetector = Substitute.For<IResizeDetector>();
 
+        var preloadService = Substitute.For<IPreloadService>();
+
+        var pipeline = BrowserOrchestratorTestHelper.CreatePipeline(
+            _pageLoader,
+            _linkExtractor,
+            _treeBuilder,
+            _contentExtractor,
+            _renderer,
+            navigationService,
+            scopeFactory,
+            browserSession,
+            _pageCache,
+            preloadService);
+
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -81,12 +95,13 @@ public class CacheServingFlowTests
             themeProvider,
             resizeDetector,
             _pageCache,
-            Substitute.For<IPreloadService>(),
+            preloadService,
             Substitute.For<IIdleDetector>(),
             Substitute.For<ICookieManager>(),
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
-            logger);
+            logger,
+            pipeline);
     }
 
     #region Loading screen skip for cache hits

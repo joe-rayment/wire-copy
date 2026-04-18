@@ -39,6 +39,22 @@ internal static class BrowserOrchestratorTestHelper
         var browserConfig = Options.Create(new BrowserConfiguration());
         var logger = Substitute.For<ILogger<BrowserOrchestrator>>();
 
+        var effectivePageCache = pageCache ?? Substitute.For<IPageCache>();
+        var effectivePreloadService = preloadService ?? Substitute.For<IPreloadService>();
+
+        var pipeline = CreatePipeline(
+            pageLoader,
+            linkExtractor,
+            treeBuilder,
+            contentExtractor,
+            renderer,
+            navigationService,
+            scopeFactory,
+            browserSession,
+            effectivePageCache,
+            effectivePreloadService,
+            new BrowserConfiguration());
+
         return new BrowserOrchestrator(
             pageLoader,
             linkExtractor,
@@ -51,13 +67,47 @@ internal static class BrowserOrchestratorTestHelper
             browserSession,
             themeProvider,
             resizeDetector,
-            pageCache ?? Substitute.For<IPageCache>(),
-            preloadService ?? Substitute.For<IPreloadService>(),
+            effectivePageCache,
+            effectivePreloadService,
             Substitute.For<IIdleDetector>(),
             Substitute.For<ICookieManager>(),
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
-            logger);
+            logger,
+            pipeline);
+    }
+
+    /// <summary>
+    /// Creates a PageLoadPipeline with test dependencies.
+    /// Shared by tests that construct BrowserOrchestrator directly.
+    /// </summary>
+    public static PageLoadPipeline CreatePipeline(
+        IPageLoader pageLoader,
+        ILinkExtractor linkExtractor,
+        INavigationTreeBuilder treeBuilder,
+        IReadableContentExtractor contentExtractor,
+        IPageRenderer renderer,
+        NavigationService navigationService,
+        IServiceScopeFactory scopeFactory,
+        IBrowserSessionControl browserSession,
+        IPageCache pageCache,
+        IPreloadService preloadService,
+        BrowserConfiguration? browserConfig = null)
+    {
+        return new PageLoadPipeline(
+            pageLoader,
+            linkExtractor,
+            treeBuilder,
+            contentExtractor,
+            renderer,
+            navigationService,
+            scopeFactory,
+            browserSession,
+            pageCache,
+            preloadService,
+            Substitute.For<ICookieManager>(),
+            browserConfig ?? new BrowserConfiguration(),
+            Substitute.For<ILogger<PageLoadPipeline>>());
     }
 
     private static IServiceScopeFactory CreateScopeFactory()

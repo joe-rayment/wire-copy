@@ -82,6 +82,21 @@ public class ArticleContentCacheBridgeTests
         _treeBuilder.BuildTreeAsync(Arg.Any<List<LinkInfo>>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => NavigationTree.Build(callInfo.ArgAt<List<LinkInfo>>(0)));
 
+        var pageCache = Substitute.For<IPageCache>();
+        var preloadService = Substitute.For<IPreloadService>();
+
+        var pipeline = BrowserOrchestratorTestHelper.CreatePipeline(
+            _pageLoader,
+            _linkExtractor,
+            _treeBuilder,
+            _contentExtractor,
+            _renderer,
+            _navigationService,
+            scopeFactory,
+            browserSession,
+            pageCache,
+            preloadService);
+
         _sut = new BrowserOrchestrator(
             _pageLoader,
             _linkExtractor,
@@ -94,13 +109,14 @@ public class ArticleContentCacheBridgeTests
             browserSession,
             themeProvider,
             resizeDetector,
-            Substitute.For<IPageCache>(),
-            Substitute.For<IPreloadService>(),
+            pageCache,
+            preloadService,
             Substitute.For<IIdleDetector>(),
             Substitute.For<ICookieManager>(),
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
-            logger);
+            logger,
+            pipeline);
     }
 
     /// <summary>
