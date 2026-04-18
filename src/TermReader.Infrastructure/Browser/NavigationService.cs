@@ -16,11 +16,13 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class NavigationService : INavigationService
 {
+    private record struct HistoryEntry(Page Page, ViewMode ViewMode);
+
     private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
 
     private readonly ILogger<NavigationService> _logger;
-    private readonly Stack<Page> _backHistory = new();
-    private readonly Stack<Page> _forwardHistory = new();
+    private readonly Stack<HistoryEntry> _backHistory = new();
+    private readonly Stack<HistoryEntry> _forwardHistory = new();
     private Page? _currentPage;
     private ViewMode _currentViewMode = ViewMode.Hierarchical;
     private int _selectedLinkIndex;
@@ -98,7 +100,7 @@ public class NavigationService : INavigationService
     {
         if (_currentPage != null)
         {
-            _backHistory.Push(_currentPage);
+            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
             _logger.LogDebug("Pushed {Title} to back history (count: {Count})",
                 _currentPage.Metadata.Title,
                 _backHistory.Count);
@@ -143,18 +145,20 @@ public class NavigationService : INavigationService
 
         if (_currentPage != null)
         {
-            _forwardHistory.Push(_currentPage);
+            _forwardHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
         }
 
-        _currentPage = _backHistory.Pop();
+        var entry = _backHistory.Pop();
+        _currentPage = entry.Page;
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
         _speedReadActive = false;
-        _currentViewMode = ViewMode.Hierarchical;
+        _currentViewMode = entry.ViewMode;
 
-        _logger.LogInformation("Navigated back to: {Title}",
-            _currentPage.Metadata.Title);
+        _logger.LogInformation("Navigated back to: {Title} (view: {ViewMode})",
+            _currentPage.Metadata.Title,
+            _currentViewMode);
 
         return _currentPage;
     }
@@ -169,18 +173,20 @@ public class NavigationService : INavigationService
 
         if (_currentPage != null)
         {
-            _backHistory.Push(_currentPage);
+            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
         }
 
-        _currentPage = _forwardHistory.Pop();
+        var entry = _forwardHistory.Pop();
+        _currentPage = entry.Page;
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
         _readerCursorLine = 0;
         _speedReadActive = false;
-        _currentViewMode = ViewMode.Hierarchical;
+        _currentViewMode = entry.ViewMode;
 
-        _logger.LogInformation("Navigated forward to: {Title}",
-            _currentPage.Metadata.Title);
+        _logger.LogInformation("Navigated forward to: {Title} (view: {ViewMode})",
+            _currentPage.Metadata.Title,
+            _currentViewMode);
 
         return _currentPage;
     }
@@ -196,9 +202,9 @@ public class NavigationService : INavigationService
         }
 
         // Add back history
-        foreach (var page in _backHistory.Take(maxItems))
+        foreach (var entry in _backHistory.Take(maxItems))
         {
-            history.Add($"  {page.Metadata.Title}");
+            history.Add($"  {entry.Page.Metadata.Title}");
         }
 
         return history;
@@ -530,7 +536,8 @@ public class NavigationService : INavigationService
         // Pop back history to get back to the previous page
         if (_backHistory.Count > 0)
         {
-            _currentPage = _backHistory.Pop();
+            var entry = _backHistory.Pop();
+            _currentPage = entry.Page;
         }
 
         return true;
