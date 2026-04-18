@@ -133,7 +133,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _navigationService.CollectionSelectedIndex = maxVisible - 1; // last visible item
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         // Selection moved beyond viewport, scroll should adjust
         _navigationService.CollectionSelectedIndex.Should().Be(maxVisible);
@@ -148,7 +148,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _navigationService.CollectionSelectedIndex = 3;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.CollectionSelectedIndex.Should().Be(4);
         _navigationService.CollectionListScrollOffset.Should().Be(0);
@@ -162,7 +162,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _navigationService.CollectionSelectedIndex = 4; // last item
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.CollectionSelectedIndex.Should().Be(4);
     }
@@ -180,7 +180,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.CollectionSelectedIndex = 5;
         _navigationService.CollectionListScrollOffset = 5; // scrolled down so index 5 is first visible
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         // Now selected=4 which is above scroll offset=5, scroll should adjust
         _navigationService.CollectionSelectedIndex.Should().Be(4);
@@ -195,7 +195,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _navigationService.CollectionSelectedIndex = 0;
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.CollectionSelectedIndex.Should().Be(0);
         _navigationService.CollectionListScrollOffset.Should().Be(0);
@@ -277,7 +277,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.CollectionSelectedIndex = 15;
         _navigationService.CollectionListScrollOffset = 10;
 
-        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToTop(_ctx, new NavigationCommand { Type = CommandType.GoToTop }, _options, CancellationToken.None);
 
         _navigationService.CollectionSelectedIndex.Should().Be(0);
         _navigationService.CollectionListScrollOffset.Should().Be(0);
@@ -291,7 +291,7 @@ public class ScrollSelectionCoordinationTests
         _ctx.Collections = collections;
         _navigationService.EnterCollections();
 
-        await NavigationCommandHandler.HandleGoToBottom(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToBottom(_ctx, new NavigationCommand { Type = CommandType.GoToBottom }, _options, CancellationToken.None);
 
         var lastIdx = collections.Count - 1;
         _navigationService.CollectionSelectedIndex.Should().Be(lastIdx);
@@ -312,7 +312,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollection(collection);
         _navigationService.CollectionItemSelectedIndex = maxVisible - 1;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(maxVisible);
         _navigationService.CollectionItemScrollOffset.Should().Be(1);
@@ -326,7 +326,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollection(collection);
         _navigationService.CollectionItemSelectedIndex = 2;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(3);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
@@ -340,7 +340,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollection(collection);
         _navigationService.CollectionItemSelectedIndex = 2;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(2);
     }
@@ -358,7 +358,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.CollectionItemSelectedIndex = 5;
         _navigationService.CollectionItemScrollOffset = 5;
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(4);
         _navigationService.CollectionItemScrollOffset.Should().Be(4);
@@ -372,7 +372,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollection(collection);
         _navigationService.CollectionItemSelectedIndex = 0;
 
-        await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(-1);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
@@ -453,7 +453,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.CollectionItemSelectedIndex = 15;
         _navigationService.CollectionItemScrollOffset = 10;
 
-        await NavigationCommandHandler.HandleGoToTop(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToTop(_ctx, new NavigationCommand { Type = CommandType.GoToTop }, _options, CancellationToken.None);
 
         _navigationService.CollectionItemSelectedIndex.Should().Be(0);
         _navigationService.CollectionItemScrollOffset.Should().Be(0);
@@ -467,7 +467,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _navigationService.EnterCollection(collection);
 
-        await NavigationCommandHandler.HandleGoToBottom(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleGoToBottom(_ctx, new NavigationCommand { Type = CommandType.GoToBottom }, _options, CancellationToken.None);
 
         var lastIdx = collection.Items.Count - 1;
         _navigationService.CollectionItemSelectedIndex.Should().Be(lastIdx);
@@ -594,7 +594,7 @@ public class ScrollSelectionCoordinationTests
 
         for (var i = 0; i < 5; i++)
         {
-            await NavigationCommandHandler.HandleMoveUp(_ctx, _options, CancellationToken.None);
+            await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
         }
 
         _navigationService.CollectionSelectedIndex.Should().BeGreaterOrEqualTo(0);
@@ -610,7 +610,7 @@ public class ScrollSelectionCoordinationTests
 
         for (var i = 0; i < 10; i++)
         {
-            await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+            await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
         }
 
         _navigationService.CollectionSelectedIndex.Should().BeLessOrEqualTo(collections.Count - 1);
@@ -698,7 +698,7 @@ public class ScrollSelectionCoordinationTests
         // Navigate down through all items
         for (var i = 0; i < collections.Count - 1; i++)
         {
-            await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+            await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
             var sel = _navigationService.CollectionSelectedIndex;
             var scrollOff = _navigationService.CollectionListScrollOffset;
@@ -719,7 +719,7 @@ public class ScrollSelectionCoordinationTests
 
         for (var i = 0; i < collection.Items.Count - 1; i++)
         {
-            await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+            await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
             var sel = _navigationService.CollectionItemSelectedIndex;
             var scrollOff = _navigationService.CollectionItemScrollOffset;
@@ -742,7 +742,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollections();
         _renderCalled = false;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _renderCalled.Should().BeTrue();
     }
@@ -755,7 +755,7 @@ public class ScrollSelectionCoordinationTests
         _navigationService.EnterCollection(collection);
         _renderCalled = false;
 
-        await NavigationCommandHandler.HandleMoveDown(_ctx, _options, CancellationToken.None);
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
 
         _renderCalled.Should().BeTrue();
     }

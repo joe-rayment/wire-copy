@@ -32,6 +32,12 @@ public record NavigationCommand
     /// Useful for screens that need to distinguish keys sharing a CommandType.
     /// </summary>
     public char? RawKeyChar { get; init; }
+
+    /// <summary>
+    /// Numeric prefix for motion commands (e.g., 10j moves down 10).
+    /// Zero means no prefix (default single motion).
+    /// </summary>
+    public int Count { get; init; }
 }
 
 /// <summary>

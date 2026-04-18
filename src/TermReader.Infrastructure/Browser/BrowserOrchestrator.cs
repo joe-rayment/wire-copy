@@ -1104,10 +1104,10 @@ public class BrowserOrchestrator : IBrowserService
                     return false;
 
                 case CommandType.MoveDown:
-                    await NavigationCommandHandler.HandleMoveDown(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleMoveDown(_commandContext, command, options, cancellationToken);
                     break;
                 case CommandType.MoveUp:
-                    await NavigationCommandHandler.HandleMoveUp(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleMoveUp(_commandContext, command, options, cancellationToken);
                     break;
                 case CommandType.ExpandNode:
                     await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken);
@@ -1143,10 +1143,10 @@ public class BrowserOrchestrator : IBrowserService
                     await NavigationCommandHandler.HandleParagraphUp(_commandContext, options, cancellationToken);
                     break;
                 case CommandType.GoToTop:
-                    await NavigationCommandHandler.HandleGoToTop(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoToTop(_commandContext, command, options, cancellationToken);
                     break;
                 case CommandType.GoToBottom:
-                    await NavigationCommandHandler.HandleGoToBottom(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoToBottom(_commandContext, command, options, cancellationToken);
                     break;
                 case CommandType.Refresh:
                     await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken);
