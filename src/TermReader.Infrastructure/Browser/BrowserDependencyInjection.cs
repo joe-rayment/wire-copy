@@ -229,6 +229,39 @@ public static class BrowserDependencyInjection
                 browserSession);
         });
 
+        // Register page load pipeline (extracted from BrowserOrchestrator)
+        services.AddSingleton<PageLoadPipeline>(sp =>
+        {
+            var pageLoader = sp.GetRequiredService<IPageLoader>();
+            var linkExtractor = sp.GetRequiredService<ILinkExtractor>();
+            var treeBuilder = sp.GetRequiredService<INavigationTreeBuilder>();
+            var contentExtractor = sp.GetRequiredService<IReadableContentExtractor>();
+            var renderer = sp.GetRequiredService<IPageRenderer>();
+            var navigationService = sp.GetRequiredService<NavigationService>();
+            var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+            var browserSession = sp.GetRequiredService<IBrowserSessionControl>();
+            var pageCache = sp.GetRequiredService<IPageCache>();
+            var preloadService = sp.GetRequiredService<IPreloadService>();
+            var cookieManager = sp.GetRequiredService<ICookieManager>();
+            var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
+            var pipelineLogger = sp.GetRequiredService<ILogger<PageLoadPipeline>>();
+
+            return new PageLoadPipeline(
+                pageLoader,
+                linkExtractor,
+                treeBuilder,
+                contentExtractor,
+                renderer,
+                navigationService,
+                scopeFactory,
+                browserSession,
+                pageCache,
+                preloadService,
+                cookieManager,
+                browserConfig.Value,
+                pipelineLogger);
+        });
+
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();
 

@@ -651,9 +651,8 @@ public class BrowserOrchestratorNavigationTests
         // Act
         await _sut.RunAsync("https://example.com");
 
-        // Assert - in Readable mode, CollapseNode is no longer remapped (width uses [/] keys now)
-        // CollapseNode should be a no-op in reader mode, no width status message
-        _navigationService.CurrentContext.StatusMessage.Should().BeNull();
+        // Assert - in Readable mode, CollapseNode (h key) adjusts width
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width");
     }
 
     [Fact]
