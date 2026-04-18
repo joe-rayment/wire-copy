@@ -35,7 +35,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly IIdleDetector _idleDetector;
     private readonly HttpClient _httpClient;
     private readonly CacheConfiguration _config;
-    private readonly string[] _paywalledDomains;
+    private readonly BrowserConfiguration _browserConfig;
     private readonly IReadableContentExtractor? _contentExtractor;
     private readonly ILinkExtractor? _linkExtractor;
     private readonly IArticleContentCache? _articleContentCache;
@@ -100,7 +100,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _cookieManager = cookieManager;
         _httpCookieRefresher = httpCookieRefresher;
         _browserSession = browserSession;
-        _paywalledDomains = browserConfig?.PaywalledDomains ?? [];
+        _browserConfig = browserConfig ?? new BrowserConfiguration { PaywalledDomains = [] };
         _debounceTimer = new Timer(OnDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
     }
 
@@ -686,25 +686,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
-    private bool IsPaywalledDomain(string url)
-    {
-        if (_paywalledDomains.Length == 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            var host = new Uri(url).Host;
-            return _paywalledDomains.Any(d =>
-                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private bool IsPaywalledDomain(string url) => _browserConfig.IsPaywalledDomain(url);
 
     private void TryAddEligibleUrl(
         string url,

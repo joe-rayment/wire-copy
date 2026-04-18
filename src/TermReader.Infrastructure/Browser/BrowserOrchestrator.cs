@@ -1107,33 +1107,7 @@ public class BrowserOrchestrator : IBrowserService
         return merged;
     }
 
-    /// <summary>
-    /// Checks whether the given URL belongs to a known paywalled domain.
-    /// Matches both exact domain (e.g., "nytimes.com") and subdomains (e.g., "www.nytimes.com").
-    /// </summary>
-    private bool IsPaywalledDomain(string url)
-    {
-        if (_browserConfig.PaywalledDomains.Length == 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            var host = new Uri(url).Host;
-            return _browserConfig.PaywalledDomains.Any(d =>
-                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private bool IsPaywalledDomain(string url) => _browserConfig.IsPaywalledDomain(url);
 
     /// <summary>
     /// Returns the podcast button state integer for RenderOptions.
