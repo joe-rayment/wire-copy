@@ -1823,15 +1823,16 @@ public class BrowserOrchestrator : IBrowserService
 
         _navigationService.SetReaderCursorLine(newCursor);
 
-        // Adjust scroll to keep cursor visible
+        // Scroll only when the cursor reaches the very last line of the viewport,
+        // then jump a full page to minimize visual movement during speed reading.
         var scroll = _navigationService.CurrentContext.ScrollOffset;
         var vpHeight = GetReaderViewportHeight(options);
         var maxScroll = Math.Max(0, totalLines - vpHeight);
 
-        const int bottomMargin = 2;
-        if (newCursor > scroll + vpHeight - 1 - bottomMargin)
+        if (newCursor >= scroll + vpHeight)
         {
-            scroll = Math.Min(maxScroll, newCursor - vpHeight + 1 + bottomMargin);
+            // Jump a full viewport (cursor lands at top of new page)
+            scroll = Math.Min(maxScroll, newCursor);
             _navigationService.SetScrollOffset(Math.Clamp(scroll, 0, maxScroll));
         }
 

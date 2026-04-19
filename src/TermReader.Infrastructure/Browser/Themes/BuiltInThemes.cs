@@ -44,6 +44,7 @@ public static class BuiltInThemes
                 SuccessFg = new ThemeColor(ConsoleColor.Green, 119),          // #87ff5f warm bright success
                 CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink (accent)
                 WarningFg = new ThemeColor(ConsoleColor.Yellow, 214),         // #ffaf00 amber warnings
+                ReaderCursorFg = new ThemeColor(ConsoleColor.Yellow, 228),   // #ffff87 warm yellow cursor line
             },
             [ThemeName.Amber] = new ThemePalette
             {
@@ -73,6 +74,7 @@ public static class BuiltInThemes
                 SuccessFg = new ThemeColor(ConsoleColor.Yellow, 220),          // bright amber for success
                 CelebrationFg = new ThemeColor(ConsoleColor.Yellow, 208),      // warm orange celebration
                 WarningFg = new ThemeColor(ConsoleColor.Red, 196),             // red for warnings
+                ReaderCursorFg = new ThemeColor(ConsoleColor.Red, 203),      // #ff5f5f red cursor line
             },
             [ThemeName.Dracula] = new ThemePalette
             {
@@ -102,6 +104,7 @@ public static class BuiltInThemes
                 SuccessFg = new ThemeColor(ConsoleColor.Green, 114),           // Dracula green
                 CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 212),     // Dracula pink
                 WarningFg = new ThemeColor(ConsoleColor.Yellow, 220),          // Dracula yellow
+                ReaderCursorFg = new ThemeColor(ConsoleColor.Magenta, 212), // #ff87d7 Dracula pink cursor
             },
             [ThemeName.Light] = new ThemePalette
             {
@@ -131,6 +134,7 @@ public static class BuiltInThemes
                 SuccessFg = new ThemeColor(ConsoleColor.DarkGreen, 28),        // dark green success
                 CelebrationFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // dark magenta celebration
                 WarningFg = new ThemeColor(ConsoleColor.DarkYellow, 172),      // dark amber warning
+                ReaderCursorFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // dark magenta cursor
             },
         };
 

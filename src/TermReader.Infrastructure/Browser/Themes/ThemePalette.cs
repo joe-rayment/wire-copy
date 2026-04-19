@@ -87,6 +87,12 @@ public record ThemePalette
     public ThemeColor? WarningFg { get; init; }
 
     /// <summary>
+    /// Reader cursor line color (distinct from paragraph highlight).
+    /// Defaults to SelectedItemFg if not explicitly set.
+    /// </summary>
+    public ThemeColor? ReaderCursorFg { get; init; }
+
+    /// <summary>
     /// Gets the accent color, falling back to PromptFg.
     /// </summary>
     public ThemeColor GetAccentFg() => AccentFg ?? PromptFg;
@@ -115,4 +121,9 @@ public record ThemePalette
     /// Gets the warning color, falling back to ErrorFg.
     /// </summary>
     public ThemeColor GetWarningFg() => WarningFg ?? ErrorFg;
+
+    /// <summary>
+    /// Gets the reader cursor color, falling back to SelectedItemFg.
+    /// </summary>
+    public ThemeColor GetReaderCursorFg() => ReaderCursorFg ?? SelectedItemFg;
 }
