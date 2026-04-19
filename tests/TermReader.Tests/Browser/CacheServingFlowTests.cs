@@ -118,14 +118,16 @@ public class CacheServingFlowTests
     }
 
     [Fact]
-    public async Task LoadPageAsync_CacheMiss_ShowsLoadingScreen()
+    public async Task LoadPageAsync_CacheMiss_DoesNotShowBlockingLoadingScreen()
     {
         _pageCache.Contains("https://example.com").Returns(false);
         SetupPageLoad("https://example.com");
 
         await _sut.LoadPageAsync("https://example.com");
 
-        _renderer.Received().RenderLoading("https://example.com");
+        // Pipeline no longer calls RenderLoading — loading status is communicated
+        // through the status bar (progressive loading)
+        _renderer.DidNotReceive().RenderLoading(Arg.Any<string>());
     }
 
     #endregion
@@ -159,7 +161,7 @@ public class CacheServingFlowTests
     }
 
     [Fact]
-    public async Task LoadPageAsync_HttpNoContent_ShowsLoadingScreenOnRetry()
+    public async Task LoadPageAsync_HttpNoContent_DoesNotShowBlockingLoadingScreen()
     {
         var url = "https://example.com/article";
         _pageCache.Contains(url).Returns(true);
@@ -167,8 +169,8 @@ public class CacheServingFlowTests
 
         await _sut.LoadPageAsync(url);
 
-        // Cache hit skips initial loading screen, but fallback shows it
-        _renderer.Received(1).RenderLoading(url);
+        // Pipeline no longer calls RenderLoading — status communicated via status bar
+        _renderer.DidNotReceive().RenderLoading(Arg.Any<string>());
     }
 
     [Fact]

@@ -78,6 +78,12 @@ public class CacheConfiguration
     public int MaxPaywalledPreloads { get; init; } = 15;
 
     /// <summary>
+    /// Maximum number of pages to pre-load via browser per session for non-paywalled
+    /// JS-heavy domains. Default: 20.
+    /// </summary>
+    public int MaxBrowserPreloads { get; init; } = 20;
+
+    /// <summary>
     /// Maximum number of links to pre-load per page/collection. Default: 50.
     /// After priority sorting, only the top N items are kept in the queue.
     /// </summary>

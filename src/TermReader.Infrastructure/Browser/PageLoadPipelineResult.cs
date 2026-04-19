@@ -27,4 +27,11 @@ public sealed record PageLoadPipelineResult
     /// Null when the page was served from article content cache or build cache.
     /// </summary>
     public PageBuildCache? BuildResult { get; init; }
+
+    /// <summary>
+    /// Background task that attempts to improve the page quality (e.g., paywall retry,
+    /// bot challenge retry). Null when no quality improvement is needed.
+    /// The caller should await this and replace the current page if it produces a better result.
+    /// </summary>
+    public Task<PageLoadPipelineResult>? QualityRetryTask { get; init; }
 }

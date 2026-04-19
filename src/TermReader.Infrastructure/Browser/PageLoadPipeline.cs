@@ -154,27 +154,40 @@ public class PageLoadPipeline
         var buildCache = _pageCache.TryGetBuildCache(url);
         if (buildCache != null)
         {
-            _logger.LogInformation("LoadAsync: build cache HIT for {Url}, skipping extraction", url);
-
-            // Refresh TTL so link-list pages stay cached across revisits
-            if (buildCache.Classification == PageClassification.LinkList)
+            // Quality gate: reject build caches that misclassified article URLs as LinkList.
+            // HTTP-fetched JS shells often have nav links but no article content, producing
+            // a bad LinkList classification that persists in cache.
+            if (buildCache.Classification == PageClassification.LinkList
+                && !PageClassifier.IsSectionUrlPattern(url))
             {
-                _pageCache.ApplyLinkListTtl(url);
+                _logger.LogInformation(
+                    "LoadAsync: rejecting stale build cache (LinkList for non-section URL): {Url}", url);
+                _pageCache.Remove(url);
             }
-
-            return new PageLoadPipelineResult
+            else
             {
-                Page = RebuildFromBuildCache(buildCache),
-                FetchMethod = FetchMethod.Cached,
-                BuildResult = null,
-            };
+                _logger.LogInformation("LoadAsync: build cache HIT for {Url}, skipping extraction", url);
+
+                // Refresh TTL so link-list pages stay cached across revisits
+                if (buildCache.Classification == PageClassification.LinkList)
+                {
+                    _pageCache.ApplyLinkListTtl(url);
+                }
+
+                return new PageLoadPipelineResult
+                {
+                    Page = RebuildFromBuildCache(buildCache),
+                    FetchMethod = FetchMethod.Cached,
+                    BuildResult = null,
+                };
+            }
         }
 
         var htmlCached = _pageCache.Contains(url);
         _logger.LogInformation("LoadAsync: HTML cache {Result} for {Url}", htmlCached ? "HIT" : "MISS", url);
         if (!htmlCached)
         {
-            _renderer.RenderLoading(url);
+            reportStage?.Invoke("Checking pre-load...");
 
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
@@ -251,7 +264,7 @@ public class PageLoadPipeline
         (page, lastBuildResult) = await BuildPageAsync(loadResult, url, cancellationToken);
 
         // Bot challenge handling: if browser returned a challenge page in headed mode,
-        // wait for the user to solve it in the visible browser window
+        // wait for the user to solve it in the visible browser window (interactive, must be synchronous)
         var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken);
         if (challengeResult != null)
         {
@@ -261,7 +274,8 @@ public class PageLoadPipeline
             (page, lastBuildResult) = await BuildPageAsync(challengeResult, url, cancellationToken);
         }
 
-        // Content-quality fallback: if no content from HTTP/cached page, retry with browser.
+        // Content-quality fallback: if no content at all from HTTP/cached page, retry with browser
+        // synchronously — the user has nothing to interact with otherwise.
         var browserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
         var hasLinks = page.LinkTree != null && page.LinkTree.TotalLinks > 0;
 
@@ -273,7 +287,7 @@ public class PageLoadPipeline
                 url);
 
             _pageCache.Remove(url);
-            _renderer.RenderLoading(url);
+            reportStage?.Invoke("Retrying with browser...");
 
             var retryResult = await _pageLoader.LoadAsync(
                 new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
@@ -286,227 +300,39 @@ public class PageLoadPipeline
             }
         }
 
-        // Paywalled domain content-quality fallback: if HTTP returned truncated content
-        // from a paywalled domain, either retry with authenticated browser (cookies exist)
-        // or prompt user to log in (no cookies -- silent retry would show same paywall).
-        // Skip for LinkList pages -- section pages aren't paywalled.
-        if (browserAvailable &&
-            page.Classification != PageClassification.LinkList &&
-            page.HasReadableContent() &&
-            fetchMethod != FetchMethod.Browser &&
-            _browserConfig.IsPaywalledDomain(url) &&
-            page.ReadableContent!.WordCount < 500)
-        {
-            var cookieInfo = await _cookieManager.GetCookieInfoAsync();
-            var hasCookies = cookieInfo is { Exists: true, IsExpired: false };
-
-            if (hasCookies)
-            {
-                // Have cookies -- retry with browser using authenticated session
-                _logger.LogInformation(
-                    "Paywalled domain with truncated content ({Words} words), retrying with authenticated browser: {Url}",
-                    page.ReadableContent.WordCount,
-                    url);
-
-                _pageCache.Remove(url);
-                _renderer.RenderLoading(url);
-
-                var truncRetryResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                    cancellationToken);
-
-                if (truncRetryResult.Success)
-                {
-                    fetchMethod = truncRetryResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(truncRetryResult, url, cancellationToken);
-                }
-            }
-            else
-            {
-                // No cookies -- don't retry (browser would show same paywall).
-                // Show preview content with a clear prompt to use Shift+I.
-                _logger.LogInformation(
-                    "Paywalled domain with truncated content ({Words} words) and no cookies, prompting Shift+I: {Url}",
-                    page.ReadableContent.WordCount,
-                    url);
-
-                _navigationService.SetStatusMessage(
-                    "Shift+I to log in for full content",
-                    TimeSpan.FromMinutes(5));
-            }
-        }
-
-        // Paywall fallback: if content is paywalled and was fetched via HTTP, retry with
-        // browser (which has cookie support) if cookies are available
-        if (browserAvailable && page.ReadableContent?.IsPaywalled == true && fetchMethod != FetchMethod.Browser)
-        {
-            var cookieInfo = await _cookieManager.GetCookieInfoAsync();
-            if (cookieInfo is { Exists: true, IsExpired: false })
-            {
-                _logger.LogInformation(
-                    "Paywall detected, retrying with authenticated session: {Url}", url);
-
-                _pageCache.Remove(url);
-                _renderer.RenderLoading(url);
-
-                var paywallRetryResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                    cancellationToken);
-
-                if (paywallRetryResult.Success)
-                {
-                    fetchMethod = paywallRetryResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(paywallRetryResult, url, cancellationToken);
-                }
-            }
-            else
-            {
-                _logger.LogInformation(
-                    "Paywall detected but no valid cookies available: {Url}", url);
-            }
-        }
-
-        // Auto-login fallback: if content is still paywalled, attempt auto-login using stored credentials
-        if (page.ReadableContent?.IsPaywalled == true)
-        {
-            try
-            {
-                using var loginScope = _scopeFactory.CreateScope();
-                var autoLogin = loginScope.ServiceProvider.GetService<IAutoLoginService>();
-                if (autoLogin != null)
-                {
-                    var host = new Uri(url).Host;
-                    var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
-                        ? host[4..] : host;
-
-                    if (await autoLogin.HasCredentialsAsync(domain, cancellationToken))
-                    {
-                        _logger.LogInformation(
-                            "Paywall detected with stored credentials, attempting auto-login: {Url}", url);
-
-                        var loginResult = await autoLogin.LoginAsync(domain, cancellationToken);
-                        if (loginResult.Success || loginResult.ManualLoginRequired)
-                        {
-                            if (loginResult.ManualLoginRequired)
-                            {
-                                _logger.LogInformation(
-                                    "Manual login required for {Domain}, waiting for user: {Reason}",
-                                    domain,
-                                    loginResult.ErrorMessage);
-                                var manualLoginOk = await WaitForManualLoginAsync(url, domain, cancellationToken);
-                                if (!manualLoginOk)
-                                {
-                                    _logger.LogInformation("Manual login was not completed for {Domain}", domain);
-                                }
-                            }
-                            else
-                            {
-                                _logger.LogInformation("Auto-login succeeded for {Domain}, retrying page load", domain);
-                            }
-
-                            _pageCache.Remove(url);
-                            _renderer.RenderLoading(url);
-
-                            var autoLoginRetryResult = await _pageLoader.LoadAsync(
-                                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
-                                cancellationToken);
-
-                            if (autoLoginRetryResult.Success)
-                            {
-                                fetchMethod = autoLoginRetryResult.FetchMethod;
-                                (page, lastBuildResult) = await BuildPageAsync(autoLoginRetryResult, url, cancellationToken);
-                            }
-                        }
-                        else
-                        {
-                            _logger.LogInformation(
-                                "Auto-login failed for {Domain}: {Error}",
-                                domain,
-                                loginResult.ErrorMessage);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Auto-login attempt failed for {Url}", url);
-            }
-        }
-
-        // Article content retry: if page is classified as Article but has no readable content
-        // after browser fetch, the JS app may need more time to render.
-        if (!page.HasReadableContent() &&
-            page.Classification == PageClassification.Article &&
-            fetchMethod == FetchMethod.Browser &&
-            browserAvailable)
-        {
-            _logger.LogInformation(
-                "Article page with no readable content after browser fetch, retrying with extended wait: {Url}",
-                url);
-
-            _pageCache.Remove(url);
-
-            var retryResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                cancellationToken);
-
-            if (retryResult.Success)
-            {
-                fetchMethod = retryResult.FetchMethod;
-                (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken);
-            }
-        }
-
-        // Headless challenge fallback: if headless browser got a bot challenge,
-        // retry in headed mode where DataDome is less likely to block.
-        if (!page.HasReadableContent() &&
-            page.Classification != PageClassification.LinkList &&
-            loadResult.FetchMethod == FetchMethod.Browser &&
-            _browserConfig.Headless &&
-            PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
-        {
-            _logger.LogWarning(
-                "Bot challenge detected in headless mode, retrying headed: {Url}",
-                url);
-
-            _pageCache.Remove(url);
-            _renderer.RenderLoading(url);
-
-            var headedResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
-                cancellationToken);
-
-            if (headedResult.Success)
-            {
-                fetchMethod = headedResult.FetchMethod;
-                (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken);
-            }
-        }
-
-        // If content is still paywalled after all fallback attempts, guide the user
-        if (page.ReadableContent?.IsPaywalled == true)
-        {
-            var host = new Uri(url).Host;
-            var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
-                ? host[4..] : host;
-            _navigationService.SetStatusMessage(
-                $"Paywall detected on {domain}. Use :cred add {domain} to store credentials, or Shift+I to log in manually.");
-        }
-
         _logger.LogInformation("Page loaded: {Title} - {LinkCount} links, {HasReadable} readable",
             page.Metadata.Title,
             page.LinkTree?.TotalLinks ?? 0,
             page.HasReadableContent() ? "has" : "no");
 
-        // Cache build results so repeat visits skip extraction entirely.
-        // Only cache after all fallbacks complete to avoid storing intermediate/truncated results.
-        StoreBuildCache(url, page, lastBuildResult);
+        // Determine if quality improvement retries are needed.
+        // If so, return the current page immediately and schedule retries in the background.
+        // The user can interact with the (possibly truncated) content while retries run.
+        Task<PageLoadPipelineResult>? qualityRetryTask = null;
+        var needsQualityRetry = NeedsQualityRetry(page, fetchMethod, loadResult, browserAvailable, url);
+
+        if (needsQualityRetry)
+        {
+            // Cache what we have so far (will be replaced if retry succeeds)
+            StoreBuildCache(url, page, lastBuildResult);
+
+            var capturedFetchMethod = fetchMethod;
+            var capturedLoadResult = loadResult;
+            qualityRetryTask = Task.Run(() =>
+                RunQualityRetriesAsync(url, page, capturedFetchMethod, capturedLoadResult, browserAvailable, cancellationToken),
+                cancellationToken);
+        }
+        else
+        {
+            StoreBuildCache(url, page, lastBuildResult);
+        }
 
         return new PageLoadPipelineResult
         {
             Page = page,
             FetchMethod = fetchMethod,
             BuildResult = lastBuildResult,
+            QualityRetryTask = qualityRetryTask,
         };
     }
 
@@ -714,13 +540,263 @@ public class PageLoadPipeline
             return null;
         }
 
-        _renderer.RenderLoading(url);
         _pageCache.Remove(url);
         var retryResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = url, Headless = headless, ForceRefresh = true },
             cancellationToken);
 
         return retryResult.Success ? retryResult : null;
+    }
+
+    /// <summary>
+    /// Determines whether the page needs background quality improvement retries.
+    /// </summary>
+    private bool NeedsQualityRetry(
+        Page page,
+        FetchMethod fetchMethod,
+        PageLoadResult loadResult,
+        bool browserAvailable,
+        string url)
+    {
+        if (!browserAvailable)
+        {
+            return false;
+        }
+
+        // Paywalled domain with truncated content
+        if (page.Classification != PageClassification.LinkList &&
+            page.HasReadableContent() &&
+            fetchMethod != FetchMethod.Browser &&
+            _browserConfig.IsPaywalledDomain(url) &&
+            page.ReadableContent!.WordCount < 500)
+        {
+            return true;
+        }
+
+        // Paywall detected
+        if (page.ReadableContent?.IsPaywalled == true && fetchMethod != FetchMethod.Browser)
+        {
+            return true;
+        }
+
+        // Article with no readable content after browser fetch
+        if (!page.HasReadableContent() &&
+            page.Classification == PageClassification.Article &&
+            fetchMethod == FetchMethod.Browser)
+        {
+            return true;
+        }
+
+        // Headless bot challenge
+        if (!page.HasReadableContent() &&
+            page.Classification != PageClassification.LinkList &&
+            loadResult.FetchMethod == FetchMethod.Browser &&
+            _browserConfig.Headless &&
+            PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Runs quality improvement retries in the background. Returns an improved result
+    /// if any retry produces better content, otherwise returns the original page.
+    /// </summary>
+    private async Task<PageLoadPipelineResult> RunQualityRetriesAsync(
+        string url,
+        Page originalPage,
+        FetchMethod fetchMethod,
+        PageLoadResult loadResult,
+        bool browserAvailable,
+        CancellationToken cancellationToken)
+    {
+        var page = originalPage;
+        PageBuildCache? lastBuildResult = null;
+
+        try
+        {
+            // Paywalled domain content-quality fallback
+            if (browserAvailable &&
+                page.Classification != PageClassification.LinkList &&
+                page.HasReadableContent() &&
+                fetchMethod != FetchMethod.Browser &&
+                _browserConfig.IsPaywalledDomain(url) &&
+                page.ReadableContent!.WordCount < 500)
+            {
+                var cookieInfo = await _cookieManager.GetCookieInfoAsync();
+                var hasCookies = cookieInfo is { Exists: true, IsExpired: false };
+
+                if (hasCookies)
+                {
+                    _logger.LogInformation(
+                        "Quality retry: paywalled domain with truncated content ({Words} words): {Url}",
+                        page.ReadableContent.WordCount,
+                        url);
+
+                    _pageCache.Remove(url);
+                    var truncRetryResult = await _pageLoader.LoadAsync(
+                        new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                        cancellationToken);
+
+                    if (truncRetryResult.Success)
+                    {
+                        fetchMethod = truncRetryResult.FetchMethod;
+                        (page, lastBuildResult) = await BuildPageAsync(truncRetryResult, url, cancellationToken);
+                    }
+                }
+                else
+                {
+                    _navigationService.SetStatusMessage(
+                        "Shift+I to log in for full content",
+                        TimeSpan.FromMinutes(5));
+                }
+            }
+
+            // Paywall fallback with authenticated session
+            if (browserAvailable && page.ReadableContent?.IsPaywalled == true && fetchMethod != FetchMethod.Browser)
+            {
+                var cookieInfo = await _cookieManager.GetCookieInfoAsync();
+                if (cookieInfo is { Exists: true, IsExpired: false })
+                {
+                    _logger.LogInformation(
+                        "Quality retry: paywall detected, retrying with auth: {Url}", url);
+
+                    _pageCache.Remove(url);
+                    var paywallRetryResult = await _pageLoader.LoadAsync(
+                        new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                        cancellationToken);
+
+                    if (paywallRetryResult.Success)
+                    {
+                        fetchMethod = paywallRetryResult.FetchMethod;
+                        (page, lastBuildResult) = await BuildPageAsync(paywallRetryResult, url, cancellationToken);
+                    }
+                }
+            }
+
+            // Auto-login fallback
+            if (page.ReadableContent?.IsPaywalled == true)
+            {
+                try
+                {
+                    using var loginScope = _scopeFactory.CreateScope();
+                    var autoLogin = loginScope.ServiceProvider.GetService<IAutoLoginService>();
+                    if (autoLogin != null)
+                    {
+                        var host = new Uri(url).Host;
+                        var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                            ? host[4..] : host;
+
+                        if (await autoLogin.HasCredentialsAsync(domain, cancellationToken))
+                        {
+                            _logger.LogInformation(
+                                "Quality retry: auto-login for {Domain}: {Url}", domain, url);
+
+                            var loginResult = await autoLogin.LoginAsync(domain, cancellationToken);
+                            if (loginResult.Success || loginResult.ManualLoginRequired)
+                            {
+                                if (loginResult.ManualLoginRequired)
+                                {
+                                    var manualLoginOk = await WaitForManualLoginAsync(url, domain, cancellationToken);
+                                    if (!manualLoginOk)
+                                    {
+                                        _logger.LogInformation("Manual login was not completed for {Domain}", domain);
+                                    }
+                                }
+
+                                _pageCache.Remove(url);
+                                var autoLoginRetryResult = await _pageLoader.LoadAsync(
+                                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                                    cancellationToken);
+
+                                if (autoLoginRetryResult.Success)
+                                {
+                                    fetchMethod = autoLoginRetryResult.FetchMethod;
+                                    (page, lastBuildResult) = await BuildPageAsync(autoLoginRetryResult, url, cancellationToken);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Auto-login attempt failed for {Url}", url);
+                }
+            }
+
+            // Article content retry with extended wait
+            if (!page.HasReadableContent() &&
+                page.Classification == PageClassification.Article &&
+                fetchMethod == FetchMethod.Browser &&
+                browserAvailable)
+            {
+                _logger.LogInformation(
+                    "Quality retry: article with no content after browser, retrying: {Url}", url);
+
+                _pageCache.Remove(url);
+                var retryResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    cancellationToken);
+
+                if (retryResult.Success)
+                {
+                    fetchMethod = retryResult.FetchMethod;
+                    (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken);
+                }
+            }
+
+            // Headless challenge fallback
+            if (!page.HasReadableContent() &&
+                page.Classification != PageClassification.LinkList &&
+                loadResult.FetchMethod == FetchMethod.Browser &&
+                _browserConfig.Headless &&
+                PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
+            {
+                _logger.LogWarning(
+                    "Quality retry: bot challenge in headless, retrying headed: {Url}", url);
+
+                _pageCache.Remove(url);
+                var headedResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                    cancellationToken);
+
+                if (headedResult.Success)
+                {
+                    fetchMethod = headedResult.FetchMethod;
+                    (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken);
+                }
+            }
+
+            // Guide user if still paywalled
+            if (page.ReadableContent?.IsPaywalled == true)
+            {
+                var host = new Uri(url).Host;
+                var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                    ? host[4..] : host;
+                _navigationService.SetStatusMessage(
+                    $"Paywall detected on {domain}. Use :cred add {domain} to store credentials, or Shift+I to log in manually.");
+            }
+
+            StoreBuildCache(url, page, lastBuildResult);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Quality retry cancelled for {Url}", url);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Quality retry failed for {Url}", url);
+        }
+
+        return new PageLoadPipelineResult
+        {
+            Page = page,
+            FetchMethod = fetchMethod,
+            BuildResult = lastBuildResult,
+        };
     }
 
     /// <summary>
@@ -894,7 +970,6 @@ public class PageLoadPipeline
         try
         {
             _logger.LogInformation("Running AI hierarchy analysis for {Url}", pageUrl);
-            _renderer.RenderLoading(pageUrl, "Analyzing layout...");
 
             var config = await analyzer.AnalyzePageHierarchyAsync(screenshot, links, pageUrl, cancellationToken);
 

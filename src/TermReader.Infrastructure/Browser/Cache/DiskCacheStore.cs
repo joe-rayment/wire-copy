@@ -202,6 +202,25 @@ internal sealed class DiskCacheStore
     }
 
     /// <summary>
+    /// Deletes a build cache entry from disk.
+    /// </summary>
+    public void DeleteBuildCache(string normalizedUrl)
+    {
+        try
+        {
+            var filePath = GetBuildCacheFilePath(normalizedUrl);
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete build cache entry for {Url}", normalizedUrl);
+        }
+    }
+
+    /// <summary>
     /// Deletes all cache entries from disk.
     /// </summary>
     public void ClearAll()
