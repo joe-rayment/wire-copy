@@ -94,4 +94,10 @@ public interface IPreloadService : IDisposable
     /// </summary>
     /// <returns>Set of original (non-normalized) URLs with article cache entries.</returns>
     IReadOnlySet<string> GetArticleCachedUrls();
+
+    /// <summary>
+    /// Checks if a URL's domain has been identified as requiring JavaScript rendering
+    /// (browser-based loading) for content extraction.
+    /// </summary>
+    bool IsDomainNeedsJs(string url);
 }
