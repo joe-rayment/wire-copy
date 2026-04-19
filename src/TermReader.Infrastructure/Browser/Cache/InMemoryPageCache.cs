@@ -240,8 +240,18 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         // Fallback: standalone build cache (survives HTML eviction from fallback retries)
         if (_standaloneBuildCache.TryGetValue(key, out var standalone))
         {
-            _logger.LogInformation("BuildCache HIT (standalone) for {Url} (key={Key})", url, key);
-            return standalone;
+            // Check TTL — standalone build cache entries expire at the same rate as page cache
+            var age = DateTime.UtcNow - standalone.CachedAt;
+            if (age.TotalSeconds > _config.DefaultTtlSeconds)
+            {
+                _logger.LogInformation("BuildCache EXPIRED (standalone) for {Url} (age={AgeHours:F1}h, key={Key})", url, age.TotalHours, key);
+                _standaloneBuildCache.TryRemove(key, out _);
+            }
+            else
+            {
+                _logger.LogInformation("BuildCache HIT (standalone) for {Url} (key={Key})", url, key);
+                return standalone;
+            }
         }
 
         _logger.LogInformation("BuildCache MISS for {Url} (key={Key})", url, key);
@@ -430,7 +440,7 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
                 Interlocked.Read(ref _totalSizeBytes));
 
             // Load persisted build caches into standalone dict
-            var buildCaches = _diskStore.LoadAllBuildCaches();
+            var buildCaches = _diskStore.LoadAllBuildCaches(_config.DefaultTtlSeconds);
             foreach (var (key, buildCache) in buildCaches)
             {
                 _standaloneBuildCache[key] = buildCache;

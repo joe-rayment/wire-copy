@@ -16,7 +16,7 @@ namespace TermReader.Infrastructure.Podcast.Cache;
 internal sealed class ArticleContentCache : IArticleContentCache
 {
     private const int DefaultMaxEntries = 1000;
-    private static readonly TimeSpan DefaultTtl = TimeSpan.FromDays(7);
+    private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(16);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

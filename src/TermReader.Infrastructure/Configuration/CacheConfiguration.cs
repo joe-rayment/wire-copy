@@ -17,9 +17,9 @@ public class CacheConfiguration
     public int MaxEntries { get; init; } = 200;
 
     /// <summary>
-    /// Default time-to-live for cache entries in seconds. Default: 24 hours.
+    /// Default time-to-live for cache entries in seconds. Default: 16 hours.
     /// </summary>
-    public int DefaultTtlSeconds { get; init; } = 86400;
+    public int DefaultTtlSeconds { get; init; } = 57600;
 
     /// <summary>
     /// Time-to-live for link-list/section page cache entries in seconds. Default: 1 hour.
