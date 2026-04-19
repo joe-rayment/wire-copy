@@ -401,9 +401,9 @@ internal sealed class DiskCacheStore
     }
 
     /// <summary>
-    /// Loads all build cache entries from disk.
+    /// Loads all build cache entries from disk, filtering out expired entries.
     /// </summary>
-    public Dictionary<string, PageBuildCache> LoadAllBuildCaches()
+    public Dictionary<string, PageBuildCache> LoadAllBuildCaches(int ttlSeconds = 57600)
     {
         var results = new Dictionary<string, PageBuildCache>();
 
@@ -491,6 +491,15 @@ internal sealed class DiskCacheStore
                     Classification = (PageClassification)persisted.Classification,
                     CachedAt = persisted.CachedAt,
                 };
+
+                // Skip expired build cache entries
+                var age = DateTime.UtcNow - buildCache.CachedAt;
+                if (age.TotalSeconds > ttlSeconds)
+                {
+                    _logger.LogDebug("Skipping expired build cache (age={AgeHours:F1}h): {Url}", age.TotalHours, persisted.FinalUrl);
+                    File.Delete(filePath);
+                    continue;
+                }
 
                 // Derive the normalized URL from the file name by looking up
                 // the corresponding HTML cache entry, or use FinalUrl as key
