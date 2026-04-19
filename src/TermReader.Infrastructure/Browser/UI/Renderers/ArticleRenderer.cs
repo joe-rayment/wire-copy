@@ -36,6 +36,7 @@ internal class ArticleRenderer
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
 
         var paraAnsi = $"{p.GetAccentFg().AnsiFg}\u258e{Reset}";
+        var cursorColor = p.GetReaderCursorFg();
 
         // Find the active paragraph (the one containing the cursor)
         var cursorLine = context.ReaderCursorLine;
@@ -75,7 +76,8 @@ internal class ArticleRenderer
                     inActiveParagraph ? paraAnsi : null,
                     context.SearchQuery,
                     searchPalette,
-                    options.TerminalWidth);
+                    options.TerminalWidth,
+                    isCursorLine ? cursorColor : null);
             }
             else if (hasSearch)
             {

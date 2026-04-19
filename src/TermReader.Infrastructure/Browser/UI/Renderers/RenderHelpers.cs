@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.Themes;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
@@ -403,7 +404,8 @@ internal class RenderHelpers
         string? paragraphAnsi,
         string? searchQuery,
         ThemePalette? palette,
-        int terminalWidth = 0)
+        int terminalWidth = 0,
+        ThemeColor? cursorColor = null)
     {
         try
         {
@@ -419,6 +421,8 @@ internal class RenderHelpers
                 Console.SetCursorPosition(LeftMargin, _linesWritten);
             }
 
+            var cursorFg = isCursorLine && cursorColor != null ? cursorColor.Value.AnsiFg : string.Empty;
+            var cursorFgOff = isCursorLine && cursorColor != null ? "\x1b[0m" : string.Empty;
             var underline = isCursorLine ? "\x1b[4m" : string.Empty;
             var underlineOff = isCursorLine ? "\x1b[24m" : string.Empty;
 
@@ -429,7 +433,7 @@ internal class RenderHelpers
             }
             else
             {
-                Console.Write($"{underline}{(text.Length > 0 ? text[0] : ' ')}{underlineOff}");
+                Console.Write($"{underline}{cursorFg}{(text.Length > 0 ? text[0] : ' ')}{cursorFgOff}{underlineOff}");
             }
 
             // Remaining content (columns 1+)
@@ -437,7 +441,7 @@ internal class RenderHelpers
 
             if (isCursorLine)
             {
-                Console.Write("\x1b[4m");
+                Console.Write($"{cursorFg}\x1b[4m");
             }
 
             if (!string.IsNullOrEmpty(searchQuery) && palette != null)
@@ -459,7 +463,7 @@ internal class RenderHelpers
                     Console.Write(new string(' ', remaining));
                 }
 
-                Console.Write("\x1b[24m");
+                Console.Write("\x1b[24m\x1b[0m");
             }
 
             Console.Write("\x1b[K");
