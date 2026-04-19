@@ -54,6 +54,10 @@ public class BrowserOrchestrator : IBrowserService
     private RenderOptions? _backgroundLoadOptions;
     private volatile LoadingStatus? _loadingStatus;
 
+    // Background quality retry state (progressive loading)
+    private Task<PageLoadPipelineResult>? _qualityRetryTask;
+    private string? _qualityRetryUrl;
+
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -146,6 +150,13 @@ public class BrowserOrchestrator : IBrowserService
 
         var result = await _pipeline.LoadAsync(url, ReportStage, cancellationToken);
         _lastLoadFetchMethod = result.FetchMethod;
+
+        // Store background quality retry task if the pipeline scheduled one
+        if (result.QualityRetryTask != null)
+        {
+            _qualityRetryTask = result.QualityRetryTask;
+            _qualityRetryUrl = url;
+        }
 
         // Clear loading status now that page is ready
         _loadingStatus = null;
@@ -299,11 +310,16 @@ public class BrowserOrchestrator : IBrowserService
                 // Start waiting for input if not already waiting
                 pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
-                // Build the race: input, timer, and optionally background load + speed read
+                // Build the race: input, timer, and optionally background load + speed read + quality retry
                 var raceTasks = new List<Task> { pendingInput, Task.Delay(500, cancellationToken) };
                 if (_backgroundPageLoad != null)
                 {
                     raceTasks.Add(_backgroundPageLoad);
+                }
+
+                if (_qualityRetryTask != null)
+                {
+                    raceTasks.Add(_qualityRetryTask);
                 }
 
                 // Persist speed reading timer across iterations (like pendingInput)
@@ -330,6 +346,11 @@ public class BrowserOrchestrator : IBrowserService
                 {
                     // Background load completed — replace skeleton with real page
                     await CompleteBackgroundLoadAsync(options, cancellationToken);
+                }
+                else if (completed == _qualityRetryTask)
+                {
+                    // Quality retry completed — replace page with improved version if better
+                    await CompleteQualityRetryAsync(options, cancellationToken);
                 }
                 else if (speedReadDelay != null && completed == speedReadDelay)
                 {
@@ -629,8 +650,10 @@ public class BrowserOrchestrator : IBrowserService
 
     private async Task NavigateToAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
-        // Cancel any existing background load
+        // Cancel any existing background load and quality retry
         CancelBackgroundLoad();
+        _qualityRetryTask = null;
+        _qualityRetryUrl = null;
 
         _preloadService.Pause();
 
@@ -641,18 +664,29 @@ public class BrowserOrchestrator : IBrowserService
             var buildCache = _pageCache.TryGetBuildCache(url);
             if (buildCache != null)
             {
-                _logger.LogInformation("NavigateToAsync: build cache HIT for {Url}, skipping extraction", url);
-                _lastLoadFetchMethod = FetchMethod.Cached;
-
-                // Refresh TTL so link-list pages stay cached across revisits
-                if (buildCache.Classification == PageClassification.LinkList)
+                // Quality gate: reject build caches that misclassified article URLs as LinkList
+                if (buildCache.Classification == PageClassification.LinkList
+                    && !PageClassifier.IsSectionUrlPattern(url))
                 {
-                    _pageCache.ApplyLinkListTtl(url);
+                    _logger.LogInformation(
+                        "NavigateToAsync: rejecting stale build cache (LinkList for non-section URL): {Url}", url);
+                    _pageCache.Remove(url);
                 }
+                else
+                {
+                    _logger.LogInformation("NavigateToAsync: build cache HIT for {Url}, skipping extraction", url);
+                    _lastLoadFetchMethod = FetchMethod.Cached;
 
-                var page = _pipeline.RebuildFromBuildCache(buildCache);
-                await CompleteNavigation(page, url, options);
-                return;
+                    // Refresh TTL so link-list pages stay cached across revisits
+                    if (buildCache.Classification == PageClassification.LinkList)
+                    {
+                        _pageCache.ApplyLinkListTtl(url);
+                    }
+
+                    var page = _pipeline.RebuildFromBuildCache(buildCache);
+                    await CompleteNavigation(page, url, options);
+                    return;
+                }
             }
 
             var htmlCached = _pageCache.Contains(url);
@@ -704,16 +738,17 @@ public class BrowserOrchestrator : IBrowserService
 
             await RenderCurrentPageAsync(options, CancellationToken.None);
 
-            // Eagerly warm up the browser for paywalled domains
+            // Eagerly warm up the browser for paywalled or JS-heavy domains
             var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
-            if (warmupBrowserAvailable && _browserConfig.IsPaywalledDomain(url) && _lastLoadFetchMethod != FetchMethod.Browser)
+            var needsBrowserWarmup = _browserConfig.IsPaywalledDomain(url) || _preloadService.IsDomainNeedsJs(url);
+            if (warmupBrowserAvailable && needsBrowserWarmup && _lastLoadFetchMethod != FetchMethod.Browser)
             {
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         _logger.LogInformation(
-                            "Paywalled domain detected, warming up browser session: {Url}", url);
+                            "JS-heavy/paywalled domain detected, warming up browser session: {Url}", url);
                         await _browserSession.WarmUpAsync();
                     }
                     catch (Exception warmupEx)
@@ -911,6 +946,78 @@ public class BrowserOrchestrator : IBrowserService
     private bool HasActiveBackgroundLoad()
     {
         return _backgroundPageLoad != null && !_backgroundPageLoad.IsCompleted;
+    }
+
+    /// <summary>
+    /// Called from the main loop when background quality retry completes.
+    /// Replaces the current page with the improved version if it has better content.
+    /// </summary>
+    private async Task CompleteQualityRetryAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        var retryTask = _qualityRetryTask;
+        var url = _qualityRetryUrl;
+
+        _qualityRetryTask = null;
+        _qualityRetryUrl = null;
+
+        if (retryTask == null || url == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await retryTask;
+
+            // Only replace if we're still on the same URL
+            if (_navigationService.CurrentPage?.Url != url)
+            {
+                _logger.LogDebug("Quality retry completed but user navigated away from {Url}", url);
+                return;
+            }
+
+            var currentPage = _navigationService.CurrentPage;
+            var improvedPage = result.Page;
+
+            // Only replace if the improved page is actually better
+            var currentWordCount = currentPage?.ReadableContent?.WordCount ?? 0;
+            var improvedWordCount = improvedPage.ReadableContent?.WordCount ?? 0;
+            var currentPaywalled = currentPage?.ReadableContent?.IsPaywalled ?? false;
+            var improvedPaywalled = improvedPage.ReadableContent?.IsPaywalled ?? false;
+
+            if (improvedWordCount > currentWordCount || (currentPaywalled && !improvedPaywalled))
+            {
+                _logger.LogInformation(
+                    "Quality retry improved page: {Url} (words: {Old} → {New}, paywall: {OldPw} → {NewPw})",
+                    url, currentWordCount, improvedWordCount, currentPaywalled, improvedPaywalled);
+
+                _navigationService.ReplaceCurrent(improvedPage);
+                _lastLoadFetchMethod = result.FetchMethod;
+
+                // Auto-switch to reader view if article now has readable content
+                if (improvedPage.Classification == PageClassification.Article && improvedPage.HasReadableContent())
+                {
+                    _navigationService.SetViewMode(ViewMode.Readable);
+                }
+
+                _lineCacheManager.InvalidateLineCache();
+                await RenderCurrentPageAsync(options, cancellationToken);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Quality retry did not improve page: {Url} (words: {Old} → {New})",
+                    url, currentWordCount, improvedWordCount);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Quality retry was cancelled for {Url}", url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Quality retry failed for {Url}", url);
+        }
     }
 
     private async Task ForceRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)

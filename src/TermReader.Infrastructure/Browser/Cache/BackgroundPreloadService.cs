@@ -73,6 +73,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private List<string> _needsJsUrls = [];
     private int _paywalledLinkCount;
     private int _paywalledPreloadCount;
+    private int _generalBrowserPreloadCount;
     private volatile bool _hasPaywalledCookies;
 
     public BackgroundPreloadService(
@@ -108,6 +109,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
     public event Action? ProgressChanged;
 
     private bool CanBrowserPreload => _browserSession?.HasBrowserContext == true && _hasPaywalledCookies;
+
+    private bool CanBrowserPreloadGeneral => _browserSession?.HasBrowserContext == true;
 
     public void NotifyPageLoaded(Page page)
     {
@@ -696,7 +699,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         if (IsDomainNeedsJs(url))
         {
-            if (CanBrowserPreload && IsPaywalledDomain(url) && !IsUrlCached(url))
+            if (CanBrowserPreloadGeneral && !IsUrlCached(url))
             {
                 items.Add(new PreloadItem(url, listIndex, NeedsBrowser: true));
             }
@@ -738,7 +741,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private bool IsInArticleCache(string url) =>
         _articleContentCache != null && _articleCachedUrls.ContainsKey(UrlNormalizer.Normalize(url));
 
-    private bool IsDomainNeedsJs(string url)
+    /// <inheritdoc />
+    public bool IsDomainNeedsJs(string url)
     {
         var origin = UrlNormalizer.GetOrigin(url);
         return origin != null && _needsJsDomains.ContainsKey(origin);
@@ -1123,6 +1127,16 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        if (!IsPaywalledDomain(url) && _generalBrowserPreloadCount >= _config.MaxBrowserPreloads)
+        {
+            _logger.LogDebug(
+                "Browser preload skipped — general limit reached ({Count}/{Max}): {Url}",
+                _generalBrowserPreloadCount,
+                _config.MaxBrowserPreloads,
+                url);
+            return;
+        }
+
         try
         {
             _currentlyFetchingUrl = url;
@@ -1234,10 +1248,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 }
             }
 
-            // Only count successful caches against the paywalled limit
             if (IsPaywalledDomain(url))
             {
                 Interlocked.Increment(ref _paywalledPreloadCount);
+            }
+            else
+            {
+                Interlocked.Increment(ref _generalBrowserPreloadCount);
             }
 
             _logger.LogInformation("Browser pre-loaded and cached: {Url}", url);
@@ -1310,6 +1327,26 @@ internal sealed class BackgroundPreloadService : IPreloadService
             doc.LoadHtml(result.Html);
             var articleContainerCount = doc.DocumentNode.SelectNodes("//article")?.Count ?? 0;
             var classification = PageClassifier.Classify(links, isArticlePage, articleContainerCount, result.Url ?? url);
+
+            // Quality gate: don't cache build results that would serve bad pages.
+            // HTTP-fetched JS shells often have nav links but no article content,
+            // causing misclassification as LinkList for article URLs.
+            if (classification == PageClassification.LinkList && !PageClassifier.IsSectionUrlPattern(url))
+            {
+                _logger.LogDebug(
+                    "Skipping build cache for non-section URL classified as LinkList: {Url}",
+                    url);
+                return;
+            }
+
+            if (readable == null && classification != PageClassification.LinkList)
+            {
+                _logger.LogDebug(
+                    "Skipping build cache for page with no readable content (classification={Classification}): {Url}",
+                    classification,
+                    url);
+                return;
+            }
 
             var buildCache = new PageBuildCache
             {

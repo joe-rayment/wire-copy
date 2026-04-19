@@ -132,7 +132,7 @@ public class BrowserOrchestratorTests
     }
 
     [Fact]
-    public async Task LoadPageAsync_CallsRendererRenderLoading()
+    public async Task LoadPageAsync_DoesNotCallBlockingRenderLoading()
     {
         // Arrange
         SetupPageLoad("https://example.com");
@@ -140,8 +140,8 @@ public class BrowserOrchestratorTests
         // Act
         await _sut.LoadPageAsync("https://example.com");
 
-        // Assert
-        _renderer.Received().RenderLoading("https://example.com");
+        // Assert — pipeline uses status bar updates instead of blocking RenderLoading
+        _renderer.DidNotReceive().RenderLoading(Arg.Any<string>());
     }
 
     [Fact]

@@ -302,7 +302,10 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             ExpiresAtUtc = DateTime.UtcNow.AddSeconds(ttlSeconds),
         };
         var updated = existing with { Metadata = updatedMetadata };
-        _entries.TryUpdate(key, updated, existing);
+        if (_entries.TryUpdate(key, updated, existing))
+        {
+            PersistToDisk(key, updated.Result, updatedMetadata);
+        }
     }
 
     private static long EstimateSize(PageLoadResult result)
@@ -401,6 +404,25 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             if (evicted > 0)
             {
                 _logger.LogDebug("Eviction sweep removed {Count} expired entries", evicted);
+            }
+
+            // Evict stale standalone build cache entries
+            var staleBuildKeys = _standaloneBuildCache
+                .Where(kvp => (DateTime.UtcNow - kvp.Value.CachedAt).TotalSeconds > _config.DefaultTtlSeconds)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var key in staleBuildKeys)
+            {
+                if (_standaloneBuildCache.TryRemove(key, out _))
+                {
+                    _diskStore?.DeleteBuildCache(key);
+                }
+            }
+
+            if (staleBuildKeys.Count > 0)
+            {
+                _logger.LogDebug("Eviction sweep removed {Count} stale standalone build cache entries", staleBuildKeys.Count);
             }
         }
         catch (Exception ex)
