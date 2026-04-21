@@ -348,12 +348,10 @@ public class PageClassifierTests
     #region IsSectionUrlPattern
 
     [Theory]
+    // Root paths — always section
     [InlineData("https://www.nytimes.com/", true)]
     [InlineData("https://www.nytimes.com", true)]
-    [InlineData("https://example.com/section/world", true)]
-    [InlineData("https://example.com/topic/climate", true)]
-    [InlineData("https://example.com/tag/javascript", true)]
-    [InlineData("https://example.com/category/tech", true)]
+    // Bare section paths — section index
     [InlineData("https://example.com/latest", true)]
     [InlineData("https://example.com/archive", true)]
     [InlineData("https://example.com/technology", true)]
@@ -365,8 +363,23 @@ public class PageClassifierTests
     [InlineData("https://example.com/reviews", true)]
     [InlineData("https://example.com/features", true)]
     [InlineData("https://example.com/culture", true)]
+    [InlineData("https://example.com/science", true)]
     [InlineData("https://example.com/us", true)]
     [InlineData("https://example.com/uk", true)]
+    // One sub-level (sub-section names, not numeric IDs) — still section
+    [InlineData("https://example.com/section/world", true)]
+    [InlineData("https://example.com/topic/climate", true)]
+    [InlineData("https://example.com/tag/javascript", true)]
+    [InlineData("https://example.com/category/tech", true)]
+    // Deep paths under section keywords — NOT section (articles)
+    [InlineData("https://www.theverge.com/science/915244/spacex-ipo-trillion-dollar-commercial-iss-nasa-launch", false)]
+    [InlineData("https://example.com/science/12345/article-slug", false)]
+    [InlineData("https://example.com/technology/99999/some-article", false)]
+    [InlineData("https://example.com/opinion/2024/columnist/piece", false)]
+    // Numeric second segment — article ID, NOT sub-section
+    [InlineData("https://example.com/science/915244", false)]
+    [InlineData("https://example.com/news/12345", false)]
+    // Non-section paths — false
     [InlineData("https://example.com/2024/01/15/article-slug", false)]
     [InlineData("https://example.com/about", false)]
     [InlineData("https://example.com/contact-us", false)]
@@ -572,6 +585,22 @@ public class PageClassifierTests
             articleContainerCount: 1,
             "https://www.theverge.com/ai-artificial-intelligence/908513/the-vibes-are-off-at-openai");
         result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_VergeArticleUnderScience_NotMisclassifiedAsSection()
+    {
+        // THE BUG: /science/915244/slug was matching IsSectionUrlPattern because
+        // /science/ was in the section regex. Now it should NOT match because
+        // 915244 is a numeric ID (article), not a sub-section name.
+        var links = CreateLinks(contentCount: 20);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.theverge.com/science/915244/spacex-ipo-trillion-dollar-commercial-iss-nasa-launch");
+        result.Should().Be(PageClassification.Article,
+            "Verge articles under /science/ should not be classified as LinkList");
     }
 
     #endregion
