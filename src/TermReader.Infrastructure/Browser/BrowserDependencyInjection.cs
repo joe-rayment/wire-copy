@@ -166,6 +166,7 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IHierarchyAnalyzer, AnthropicHierarchyAnalyzer>();
         services.AddSingleton<IReadableContentExtractor, ReadableContentExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
+        services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();
 
         // Register navigation service (manages history and state)
         services.AddSingleton<NavigationService>();

@@ -3,7 +3,28 @@
 namespace TermReader.Domain.ValueObjects.Browser;
 
 /// <summary>
-/// Saved AI-determined hierarchy configuration for a website.
+/// Layout strategy for rendering a page's link list.
+/// </summary>
+public enum LayoutKind
+{
+    /// <summary>
+    /// AI-generated hierarchy with named sections.
+    /// </summary>
+    AiHierarchical,
+
+    /// <summary>
+    /// Document-order grouping by link type (Content, Navigation, Footer, External).
+    /// </summary>
+    DocumentOrder,
+
+    /// <summary>
+    /// Chronological list from an RSS/Atom feed.
+    /// </summary>
+    RssFeed,
+}
+
+/// <summary>
+/// Saved hierarchy configuration for a website.
 /// Maps URL patterns to visual sections with link groupings and ordering.
 /// </summary>
 public record SiteHierarchyConfig
@@ -33,6 +54,22 @@ public record SiteHierarchyConfig
     /// Model identifier that generated this config (for staleness tracking).
     /// </summary>
     public required string ModelVersion { get; init; }
+
+    /// <summary>
+    /// Layout strategy that produced this config.
+    /// </summary>
+    public LayoutKind Kind { get; init; } = LayoutKind.AiHierarchical;
+
+    /// <summary>
+    /// RSS feed URL (only set when Kind is RssFeed).
+    /// </summary>
+    public string? RssFeedUrl { get; init; }
+
+    /// <summary>
+    /// Hash of section structure for layout de-duplication.
+    /// Format: sorted (section name + link count) pairs.
+    /// </summary>
+    public string? StructuralSignature { get; init; }
 }
 
 /// <summary>

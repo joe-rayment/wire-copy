@@ -106,4 +106,15 @@ public record NavigationContext
     /// Current speed reading rate in words per minute.
     /// </summary>
     public int SpeedReadWpm { get; init; } = 250;
+
+    /// <summary>
+    /// Whether the layout preview carousel is active.
+    /// </summary>
+    public bool IsInPreviewMode { get; init; }
+
+    /// <summary>
+    /// Label for the current preview layout (e.g., "Layout 1/3 · AI Layout").
+    /// Null when not in preview mode.
+    /// </summary>
+    public string? PreviewLabel { get; init; }
 }

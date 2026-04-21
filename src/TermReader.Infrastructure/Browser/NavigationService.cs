@@ -39,6 +39,12 @@ public class NavigationService : INavigationService
     private bool _speedReadActive;
     private int _speedReadWpm = 250;
 
+    // Layout preview state
+    private List<LayoutCandidate>? _previewLayouts;
+    private int _previewIndex;
+    private bool _isInPreviewMode;
+    private NavigationTree? _originalTree;
+
     // Delegated state managers
     private readonly CollectionNavigationState _collectionState;
     private readonly LauncherNavigationState _launcherState;
@@ -78,6 +84,8 @@ public class NavigationService : INavigationService
         ReaderCursorLine = _readerCursorLine,
         IsSpeedReadActive = _speedReadActive,
         SpeedReadWpm = _speedReadWpm,
+        IsInPreviewMode = _isInPreviewMode,
+        PreviewLabel = _isInPreviewMode ? GetCurrentPreviewLabel() : null,
     };
 
     public Page? CurrentPage => _currentPage;
@@ -286,6 +294,116 @@ public class NavigationService : INavigationService
     {
         _isAiHierarchy = isAiHierarchy;
     }
+
+    #region Layout Preview
+
+    /// <summary>
+    /// Whether the layout preview carousel is currently active.
+    /// </summary>
+    public bool IsInPreviewMode => _isInPreviewMode;
+
+    /// <summary>
+    /// Enters layout preview mode with pre-computed layout candidates.
+    /// Saves the current tree so it can be restored on cancel.
+    /// </summary>
+    public void EnterPreviewMode(List<LayoutCandidate> layouts)
+    {
+        if (layouts.Count == 0 || _currentPage == null)
+        {
+            return;
+        }
+
+        _previewLayouts = layouts;
+        _previewIndex = 0;
+        _isInPreviewMode = true;
+        _originalTree = _currentPage.LinkTree;
+
+        // Apply first preview
+        _currentPage.SetLinkTree(layouts[0].PreviewTree);
+        _selectedLinkIndex = 0;
+        _scrollOffset = 0;
+
+        _logger.LogInformation("Entered layout preview mode with {Count} candidate(s)", layouts.Count);
+    }
+
+    /// <summary>
+    /// Cycles to the next or previous layout preview.
+    /// </summary>
+    /// <param name="direction">+1 for next, -1 for previous.</param>
+    public void CyclePreview(int direction)
+    {
+        if (!_isInPreviewMode || _previewLayouts == null || _currentPage == null)
+        {
+            return;
+        }
+
+        _previewIndex = ((_previewIndex + direction) % _previewLayouts.Count + _previewLayouts.Count) % _previewLayouts.Count;
+        _currentPage.SetLinkTree(_previewLayouts[_previewIndex].PreviewTree);
+        _selectedLinkIndex = 0;
+        _scrollOffset = 0;
+    }
+
+    /// <summary>
+    /// Applies the currently previewed layout and exits preview mode.
+    /// Returns the selected candidate's config for saving.
+    /// </summary>
+    public LayoutCandidate? ApplyPreview()
+    {
+        if (!_isInPreviewMode || _previewLayouts == null)
+        {
+            return null;
+        }
+
+        var selected = _previewLayouts[_previewIndex];
+        ExitPreviewMode();
+        _logger.LogInformation("Applied layout: {Summary}", selected.Summary);
+        return selected;
+    }
+
+    /// <summary>
+    /// Cancels preview mode and restores the original layout.
+    /// </summary>
+    public void CancelPreview()
+    {
+        if (!_isInPreviewMode || _currentPage == null)
+        {
+            return;
+        }
+
+        if (_originalTree != null)
+        {
+            _currentPage.SetLinkTree(_originalTree);
+        }
+
+        _selectedLinkIndex = 0;
+        _scrollOffset = 0;
+        ExitPreviewMode();
+        _logger.LogInformation("Cancelled layout preview");
+    }
+
+    /// <summary>
+    /// Gets the current preview label (e.g., "Layout 1/3 · AI Layout").
+    /// </summary>
+    public string? GetCurrentPreviewLabel()
+    {
+        if (!_isInPreviewMode || _previewLayouts == null)
+        {
+            return null;
+        }
+
+        var current = _previewLayouts[_previewIndex];
+        return $"Layout {_previewIndex + 1}/{_previewLayouts.Count} · {current.Summary}";
+    }
+
+    private void ExitPreviewMode()
+    {
+        _isInPreviewMode = false;
+        _previewLayouts = null;
+        _previewIndex = 0;
+        _originalTree = null;
+    }
+
+    #endregion
 
     /// <summary>
     /// Toggles between Hierarchical and Readable view modes.
