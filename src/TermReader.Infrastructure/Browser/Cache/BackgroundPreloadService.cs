@@ -1322,11 +1322,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     result.Html, result.Url ?? url, cancellationToken);
             }
 
-            var isArticlePage = ReadableContentExtractor.IsArticlePage(result.Html);
-            var doc = new HtmlDocument();
-            doc.LoadHtml(result.Html);
-            var articleContainerCount = doc.DocumentNode.SelectNodes("//article")?.Count ?? 0;
-            var classification = PageClassifier.Classify(links, isArticlePage, articleContainerCount, result.Url ?? url);
+            var signals = PageSignalExtractor.Extract(result.Html);
+            var preloadContentLinks = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+            var (classification, classificationScore) = PageClassifier.ClassifyScored(signals, preloadContentLinks, result.Url ?? url);
 
             // Quality gate: don't cache build results that would serve bad pages.
             // HTTP-fetched JS shells often have nav links but no article content,
@@ -1356,6 +1354,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 FinalUrl = result.Url ?? url,
                 Classification = classification,
                 ClassificationVersion = PageClassifier.ClassificationVersion,
+                ClassificationScore = classificationScore,
             };
 
             _cache.PutBuildCache(url, buildCache);
