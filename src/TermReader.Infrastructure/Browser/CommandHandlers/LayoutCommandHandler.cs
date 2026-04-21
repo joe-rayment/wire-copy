@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Domain.Enums.Browser;
+using TermReader.Domain.ValueObjects.Browser;
 
 namespace TermReader.Infrastructure.Browser.CommandHandlers;
 
@@ -14,9 +15,22 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class LayoutCommandHandler
 {
+    // Braille spinner + stage messages for the generation animation
+    private static readonly string[] Spinner = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"];
+
+    private static readonly string[] WarmUpPhrases =
+    [
+        "Analyzing page structure",
+        "Studying the layout",
+        "Reading the room",
+        "Mapping the terrain",
+        "Surveying the landscape",
+    ];
+
     /// <summary>
-    /// Opens the layout chooser. Generates candidates (document-order instantly,
-    /// AI and RSS in parallel), enters preview mode, and renders.
+    /// Opens the layout chooser. Shows an animated progress sequence while
+    /// generating candidates (document-order instantly, AI and RSS in parallel),
+    /// then enters preview mode.
     /// </summary>
     public static async Task HandleChooseLayout(
         CommandContext ctx,
@@ -39,7 +53,9 @@ internal static class LayoutCommandHandler
             return;
         }
 
-        ctx.NavigationService.SetStatusMessage("Generating layouts...");
+        // Pick a random warm-up phrase for variety
+        var phrase = WarmUpPhrases[Environment.TickCount % WarmUpPhrases.Length];
+        ctx.NavigationService.SetStatusMessage($"{phrase}...", TimeSpan.FromMinutes(1));
         await ctx.RenderCurrentPageAsync(options, ct);
 
         try
@@ -58,7 +74,7 @@ internal static class LayoutCommandHandler
 
             // Get the build cache for the current page to access the extracted links
             var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
-            var links = buildCache?.Links ?? new List<Domain.ValueObjects.Browser.LinkInfo>();
+            var links = buildCache?.Links ?? new List<LinkInfo>();
 
             // Capture screenshot for AI analysis (may be null)
             byte[]? screenshot = null;
@@ -67,19 +83,35 @@ internal static class LayoutCommandHandler
                 screenshot = await session.CaptureScreenshotAsync();
             }
 
-            var candidates = await generator.GenerateCandidatesAsync(
+            // Generate candidates with animated progress updates
+            var generateTask = generator.GenerateCandidatesAsync(
                 links, html, page.Url, screenshot, ct);
+
+            var candidates = await AnimateWhileWaiting(
+                generateTask, ctx, options, phrase, ct);
 
             if (candidates.Count == 0)
             {
-                ctx.NavigationService.SetStatusMessage("No layout candidates available");
+                ctx.NavigationService.SetStatusMessage("No layout candidates found");
                 await ctx.RenderCurrentPageAsync(options, ct);
                 return;
             }
 
+            // Celebration moment before entering preview
+            var summary = candidates.Count == 1
+                ? $"\u2728 1 layout ready"
+                : $"\u2728 {candidates.Count} layouts ready!";
+            ctx.NavigationService.SetStatusMessage(summary);
+            await ctx.RenderCurrentPageAsync(options, ct);
+            await Task.Delay(600, ct);
+
             // Enter preview mode
             ctx.NavigationService.EnterPreviewMode(candidates);
             await ctx.RenderCurrentPageAsync(options, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // User cancelled — clean exit
         }
         catch (Exception ex)
         {
@@ -87,6 +119,39 @@ internal static class LayoutCommandHandler
             ctx.NavigationService.SetStatusMessage("Layout generation failed");
             await ctx.RenderCurrentPageAsync(options, ct);
         }
+    }
+
+    /// <summary>
+    /// Animates the status bar with a spinner while a task is running.
+    /// </summary>
+    private static async Task<List<LayoutCandidate>> AnimateWhileWaiting(
+        Task<List<LayoutCandidate>> task,
+        CommandContext ctx,
+        RenderOptions options,
+        string basePhrase,
+        CancellationToken ct)
+    {
+        var frame = 0;
+        var dots = 0;
+
+        while (!task.IsCompleted)
+        {
+            var spinChar = Spinner[frame % Spinner.Length];
+            var dotStr = new string('.', (dots % 3) + 1).PadRight(3);
+            ctx.NavigationService.SetStatusMessage(
+                $"{spinChar} {basePhrase}{dotStr}",
+                TimeSpan.FromMinutes(1));
+            await ctx.RenderCurrentPageAsync(options, ct);
+
+            frame++;
+            dots++;
+
+            // Wait 250ms or until the task completes, whichever is first
+            var delayTask = Task.Delay(250, ct);
+            await Task.WhenAny(task, delayTask);
+        }
+
+        return await task;
     }
 
     /// <summary>
@@ -135,11 +200,11 @@ internal static class LayoutCommandHandler
             if (configStore != null)
             {
                 await configStore.SaveConfigAsync(selected.Config);
-                ctx.NavigationService.SetStatusMessage($"Layout saved · {selected.Summary}");
+                ctx.NavigationService.SetStatusMessage($"\u2714 Layout saved \u00b7 {selected.Summary}");
             }
             else
             {
-                ctx.NavigationService.SetStatusMessage($"Applied · {selected.Summary}");
+                ctx.NavigationService.SetStatusMessage($"\u2714 Applied \u00b7 {selected.Summary}");
             }
         }
         catch (Exception ex)
