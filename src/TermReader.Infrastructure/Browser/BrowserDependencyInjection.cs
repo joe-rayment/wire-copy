@@ -165,6 +165,7 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IHierarchyConfigStore, HierarchyConfigStore>();
         services.AddSingleton<IHierarchyAnalyzer, AnthropicHierarchyAnalyzer>();
         services.AddSingleton<IReadableContentExtractor, ReadableContentExtractor>();
+        services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
 
         // Register navigation service (manages history and state)
         services.AddSingleton<NavigationService>();
@@ -236,6 +237,7 @@ public static class BrowserDependencyInjection
             var linkExtractor = sp.GetRequiredService<ILinkExtractor>();
             var treeBuilder = sp.GetRequiredService<INavigationTreeBuilder>();
             var contentExtractor = sp.GetRequiredService<IReadableContentExtractor>();
+            var feedDetector = sp.GetRequiredService<IRssFeedDetector>();
             var renderer = sp.GetRequiredService<IPageRenderer>();
             var navigationService = sp.GetRequiredService<NavigationService>();
             var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
@@ -251,6 +253,7 @@ public static class BrowserDependencyInjection
                 linkExtractor,
                 treeBuilder,
                 contentExtractor,
+                feedDetector,
                 renderer,
                 navigationService,
                 scopeFactory,

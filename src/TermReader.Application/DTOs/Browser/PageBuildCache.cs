@@ -32,5 +32,11 @@ public sealed record PageBuildCache
     /// </summary>
     public int ClassificationVersion { get; init; }
 
+    /// <summary>
+    /// RSS/Atom feeds discovered on the page. Preserved in cache so feed
+    /// detection does not need to be repeated on cache hits.
+    /// </summary>
+    public List<FeedInfo>? DetectedFeeds { get; init; }
+
     public DateTime CachedAt { get; init; } = DateTime.UtcNow;
 }
