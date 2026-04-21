@@ -74,6 +74,20 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         // De-duplicate by structural signature
         candidates = DeduplicateCandidates(candidates);
 
+        // If we only have the document-order layout and AI is available,
+        // try a creative alternative grouping. The AI gets a nudge to try
+        // something unconventional — a "wild shot" that might surface an
+        // interesting way to organize the content.
+        if (candidates.Count <= 1 && screenshot != null && screenshot.Length > 0)
+        {
+            var altCandidate = await TryGenerateCreativeAlternativeAsync(
+                links, pageUrl, screenshot, aiCandidate, cancellationToken);
+            if (altCandidate != null)
+            {
+                candidates.Add(altCandidate);
+            }
+        }
+
         _logger.LogInformation(
             "Generated {Count} layout candidate(s) for {Url}",
             candidates.Count,
@@ -205,7 +219,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
             }
 
             var config = await analyzer.AnalyzePageHierarchyAsync(
-                screenshot, links, pageUrl, cancellationToken);
+                screenshot, links, pageUrl, promptSuffix: null, cancellationToken);
 
             config = config with
             {
@@ -229,6 +243,73 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         }
     }
 
+    /// <summary>
+    /// When the standard AI layout was identical to document-order (or unavailable),
+    /// asks the AI for a deliberately different grouping — a creative "wild shot."
+    /// </summary>
+    private async Task<LayoutCandidate?> TryGenerateCreativeAlternativeAsync(
+        List<LinkInfo> links,
+        string pageUrl,
+        byte[] screenshot,
+        LayoutCandidate? firstAiResult,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+            if (analyzer == null || !analyzer.IsConfigured)
+            {
+                return null;
+            }
+
+            var creativeSuffix = "IMPORTANT: Your previous grouping was too similar to the default. " +
+                "Try a COMPLETELY DIFFERENT approach. Some ideas:\n" +
+                "- Group by topic/theme instead of page position (e.g., all politics together, all tech together)\n" +
+                "- Group by content type (opinion pieces vs news reports vs features vs reviews)\n" +
+                "- Group by recency (breaking/today vs this week vs older)\n" +
+                "- Group by format (long reads vs quick takes vs multimedia)\n" +
+                "Pick whichever approach produces the most useful grouping for a reader.";
+
+            _logger.LogInformation("Trying creative alternative layout for {Url}", pageUrl);
+
+            var config = await analyzer.AnalyzePageHierarchyAsync(
+                screenshot, links, pageUrl, creativeSuffix, cancellationToken);
+
+            config = config with
+            {
+                Kind = LayoutKind.AiHierarchical,
+                StructuralSignature = ComputeSignature(config) + "-alt",
+                ModelVersion = config.ModelVersion + "-creative",
+            };
+
+            // Check it's actually different from the first AI result
+            if (firstAiResult != null &&
+                config.Sections.Count == firstAiResult.Config.Sections.Count &&
+                config.Sections.All(s =>
+                    firstAiResult.Config.Sections.Any(fs =>
+                        string.Equals(fs.Name, s.Name, StringComparison.OrdinalIgnoreCase))))
+            {
+                _logger.LogDebug("Creative alternative was identical to first AI result, skipping");
+                return null;
+            }
+
+            var tree = await _treeBuilder.BuildTreeAsync(links, config, cancellationToken);
+
+            return new LayoutCandidate
+            {
+                Config = config,
+                Summary = $"AI Alternative \u00b7 {config.Sections.Count} sections",
+                PreviewTree = tree,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Creative alternative generation failed for {Url}", pageUrl);
+            return null;
+        }
+    }
+
     private async Task<LayoutCandidate?> TryGenerateRssCandidateAsync(
         string html,
         string pageUrl,
@@ -240,6 +321,13 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         }
 
         var feeds = _feedDetector.DetectFeeds(html, pageUrl);
+
+        // If <link> tag detection found nothing, probe well-known feed URLs
+        if (feeds == null || feeds.Count == 0)
+        {
+            feeds = await _feedDetector.ProbeWellKnownFeedsAsync(pageUrl, cancellationToken);
+        }
+
         if (feeds == null || feeds.Count == 0)
         {
             return null;

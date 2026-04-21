@@ -23,11 +23,13 @@ public interface IHierarchyAnalyzer
     /// <param name="screenshot">PNG screenshot bytes of the page viewport.</param>
     /// <param name="links">Links already extracted from the page HTML.</param>
     /// <param name="pageUrl">The URL of the page being analyzed.</param>
+    /// <param name="promptSuffix">Optional extra instructions appended to the prompt.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Hierarchy configuration determined by AI analysis.</returns>
     Task<SiteHierarchyConfig> AnalyzePageHierarchyAsync(
         byte[] screenshot,
         List<LinkInfo> links,
         string pageUrl,
+        string? promptSuffix = null,
         CancellationToken cancellationToken = default);
 }

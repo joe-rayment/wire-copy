@@ -124,7 +124,7 @@ public class RssFeedDetector : IRssFeedDetector
             if (feeds.Count > 0)
             {
                 _logger.LogInformation(
-                    "Detected {Count} feed(s) on {Url}: {Feeds}",
+                    "Detected {Count} feed(s) via link tags on {Url}: {Feeds}",
                     feeds.Count,
                     pageUrl,
                     string.Join(", ", feeds.Select(f => $"{f.Type}:{f.Url}")));
@@ -133,6 +133,74 @@ public class RssFeedDetector : IRssFeedDetector
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Feed detection failed for {Url}", pageUrl);
+        }
+
+        return feeds;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<FeedInfo>> ProbeWellKnownFeedsAsync(string pageUrl, CancellationToken cancellationToken = default)
+    {
+        var feeds = new List<FeedInfo>();
+
+        Uri baseUri;
+        try
+        {
+            baseUri = new Uri(pageUrl);
+        }
+        catch
+        {
+            return feeds;
+        }
+
+        var origin = $"{baseUri.Scheme}://{baseUri.Host}";
+        string[] probePaths = ["/feed/", "/feed", "/rss", "/feed.xml", "/rss.xml", "/atom.xml", "/feed/rss/"];
+
+        foreach (var path in probePaths)
+        {
+            var feedUrl = origin + path;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Head, feedUrl);
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (compatible; TermReader/1.0)");
+
+                using var response = await _httpClient.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    continue;
+                }
+
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+                if (contentType.Contains("xml", StringComparison.OrdinalIgnoreCase) ||
+                    contentType.Contains("rss", StringComparison.OrdinalIgnoreCase) ||
+                    contentType.Contains("atom", StringComparison.OrdinalIgnoreCase))
+                {
+                    var feedType = contentType.Contains("atom", StringComparison.OrdinalIgnoreCase)
+                        ? FeedType.Atom
+                        : FeedType.Rss;
+
+                    feeds.Add(new FeedInfo
+                    {
+                        Url = feedUrl,
+                        Title = null,
+                        Type = feedType,
+                    });
+
+                    _logger.LogInformation(
+                        "Discovered feed via well-known URL probe: {FeedUrl} ({ContentType})",
+                        feedUrl,
+                        contentType);
+
+                    // Found one — that's enough, don't probe further
+                    break;
+                }
+            }
+            catch
+            {
+                // Probe failed — try next path
+            }
         }
 
         return feeds;
