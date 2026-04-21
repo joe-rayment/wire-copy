@@ -370,19 +370,20 @@ public class PageLoadPipeline
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
 
-        // Classify the page (Article vs LinkList) using existing extraction signals
-        var isArticlePage = ReadableContentExtractor.IsArticlePage(loadResult.Html);
-        var articleContainerCount = CountArticleContainers(loadResult.Html);
-        var classification = PageClassifier.Classify(links, isArticlePage, articleContainerCount, finalUrl);
-        page.SetClassification(classification);
+        // Classify the page using signal-scored approach
+        var signals = PageSignalExtractor.Extract(loadResult.Html);
         var contentLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+        var (classification, classificationScore) = PageClassifier.ClassifyScored(signals, contentLinkCount, finalUrl);
+        page.SetClassification(classification);
         _logger.LogInformation(
-            "Page classified as {Classification}: {Url} (contentLinks={ContentLinks}, articleContainers={ArticleContainers}, isArticle={IsArticle})",
+            "Page classified as {Classification} (score={Score}): {Url} (contentLinks={ContentLinks}, og:type={OgType}, ld+json={LdJson}, articles={Articles})",
             classification,
+            classificationScore,
             finalUrl,
             contentLinkCount,
-            articleContainerCount,
-            isArticlePage);
+            signals.OgType ?? "none",
+            signals.LdJsonType ?? "none",
+            signals.ArticleContainerCount);
 
         // Try saved hierarchy config, then fall back to document-order
         NavigationTree tree;
@@ -476,6 +477,7 @@ public class PageLoadPipeline
             FinalUrl = finalUrl,
             Classification = classification,
             ClassificationVersion = PageClassifier.ClassificationVersion,
+            ClassificationScore = classificationScore,
             DetectedFeeds = detectedFeeds,
         };
 

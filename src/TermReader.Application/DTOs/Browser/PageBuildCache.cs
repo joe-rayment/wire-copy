@@ -33,6 +33,12 @@ public sealed record PageBuildCache
     public int ClassificationVersion { get; init; }
 
     /// <summary>
+    /// Raw score from the signal-scored classifier. Positive = article, negative = link list.
+    /// Stored for debugging when classification is wrong.
+    /// </summary>
+    public int ClassificationScore { get; init; }
+
+    /// <summary>
     /// RSS/Atom feeds discovered on the page. Preserved in cache so feed
     /// detection does not need to be repeated on cache hits.
     /// </summary>
