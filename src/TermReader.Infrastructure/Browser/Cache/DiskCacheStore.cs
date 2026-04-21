@@ -359,6 +359,7 @@ internal sealed class DiskCacheStore
             {
                 FinalUrl = buildCache.FinalUrl,
                 Classification = (int)buildCache.Classification,
+                ClassificationVersion = buildCache.ClassificationVersion,
                 CachedAt = buildCache.CachedAt,
                 Title = buildCache.Metadata.Title,
                 MetaDescription = buildCache.Metadata.Description,
@@ -508,6 +509,7 @@ internal sealed class DiskCacheStore
                     Metadata = metadata,
                     FinalUrl = persisted.FinalUrl ?? string.Empty,
                     Classification = (PageClassification)persisted.Classification,
+                    ClassificationVersion = persisted.ClassificationVersion,
                     CachedAt = persisted.CachedAt,
                 };
 
@@ -600,6 +602,8 @@ internal sealed class DiskCacheStore
         public string? FinalUrl { get; set; }
 
         public int Classification { get; set; }
+
+        public int ClassificationVersion { get; set; }
 
         public DateTime CachedAt { get; set; }
 

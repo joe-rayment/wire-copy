@@ -154,10 +154,22 @@ public class PageLoadPipeline
         var buildCache = _pageCache.TryGetBuildCache(url);
         if (buildCache != null)
         {
+            // Quality gate: reject build caches with stale classification logic.
+            // When PageClassifier rules change, old caches may have wrong classifications.
+            if (buildCache.ClassificationVersion != PageClassifier.ClassificationVersion)
+            {
+                _logger.LogInformation(
+                    "LoadAsync: rejecting stale build cache (classification v{Old} != v{New}): {Url}",
+                    buildCache.ClassificationVersion,
+                    PageClassifier.ClassificationVersion,
+                    url);
+                _pageCache.Remove(url);
+            }
+
             // Quality gate: reject build caches that misclassified article URLs as LinkList.
             // HTTP-fetched JS shells often have nav links but no article content, producing
             // a bad LinkList classification that persists in cache.
-            if (buildCache.Classification == PageClassification.LinkList
+            else if (buildCache.Classification == PageClassification.LinkList
                 && !PageClassifier.IsSectionUrlPattern(url))
             {
                 _logger.LogInformation(
@@ -429,6 +441,7 @@ public class PageLoadPipeline
             Metadata = metadata,
             FinalUrl = finalUrl,
             Classification = classification,
+            ClassificationVersion = PageClassifier.ClassificationVersion,
         };
 
         return (page, buildResult);
