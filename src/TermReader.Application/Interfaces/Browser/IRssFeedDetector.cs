@@ -16,4 +16,14 @@ public interface IRssFeedDetector
     /// <param name="pageUrl">Base URL for resolving relative feed URLs.</param>
     /// <returns>List of discovered feeds (may be empty).</returns>
     List<FeedInfo> DetectFeeds(string html, string pageUrl);
+
+    /// <summary>
+    /// Fetches and parses an RSS or Atom feed, returning items as LinkInfo objects.
+    /// Items are sorted chronologically (newest first) and capped at 100.
+    /// This is a lazy operation — only called when the user requests the RSS layout.
+    /// </summary>
+    /// <param name="feedUrl">Absolute URL of the feed to parse.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of feed items as LinkInfo, or empty on failure.</returns>
+    Task<List<LinkInfo>> ParseFeedAsync(string feedUrl, CancellationToken cancellationToken = default);
 }
