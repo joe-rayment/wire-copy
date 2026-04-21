@@ -383,7 +383,7 @@ public class TerminalInputHandler : IInputHandler
             // Accumulate numeric prefix for count-prefixed motions (e.g., 10j, 5G)
             if (keyInfo.KeyChar >= '1' && keyInfo.KeyChar <= '9' && !_waitingForSecondKey)
             {
-                _numericPrefix = _numericPrefix * 10 + (keyInfo.KeyChar - '0');
+                _numericPrefix = (_numericPrefix * 10) + (keyInfo.KeyChar - '0');
                 continue;
             }
 
@@ -703,9 +703,9 @@ public class TerminalInputHandler : IInputHandler
     {
         return c switch
         {
-            >= 'a' and <= 'z' => (ConsoleKey)(ConsoleKey.A + (c - 'a')),
-            >= 'A' and <= 'Z' => (ConsoleKey)(ConsoleKey.A + (c - 'A')),
-            >= '0' and <= '9' => (ConsoleKey)(ConsoleKey.D0 + (c - '0')),
+            >= 'a' and <= 'z' => ConsoleKey.A + (c - 'a'),
+            >= 'A' and <= 'Z' => ConsoleKey.A + (c - 'A'),
+            >= '0' and <= '9' => ConsoleKey.D0 + (c - '0'),
             _ => ConsoleKey.NoName,
         };
     }

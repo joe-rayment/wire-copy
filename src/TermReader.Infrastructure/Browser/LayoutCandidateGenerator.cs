@@ -82,6 +82,102 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         return candidates;
     }
 
+    /// <summary>
+    /// Computes a structural signature for de-duplication.
+    /// Two configs with the same section names and link counts are considered identical.
+    /// </summary>
+    internal static string ComputeSignature(SiteHierarchyConfig config)
+    {
+        var sb = new StringBuilder();
+        foreach (var section in config.Sections.OrderBy(s => s.SortOrder))
+        {
+            sb.Append(section.Name);
+            sb.Append(':');
+            sb.Append(section.ParentSelectors.Count + section.UrlPatterns.Count);
+            sb.Append(';');
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hash)[..16];
+    }
+
+    private static SiteHierarchyConfig BuildDocumentOrderConfig(string pageUrl, NavigationTree tree)
+    {
+        string domain;
+        try
+        {
+            domain = new Uri(pageUrl).Host.ToLowerInvariant();
+        }
+        catch
+        {
+            domain = "unknown";
+        }
+
+        return new SiteHierarchyConfig
+        {
+            Domain = domain,
+            UrlPattern = BuildUrlPattern(pageUrl),
+            Sections = [],
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "document-order",
+            Kind = LayoutKind.DocumentOrder,
+            StructuralSignature = $"doc-order:{tree.TotalLinks}",
+        };
+    }
+
+    private static string BuildUrlPattern(string pageUrl)
+    {
+        try
+        {
+            var uri = new Uri(pageUrl);
+            var escapedDomain = System.Text.RegularExpressions.Regex.Escape(uri.Host);
+            var pathPattern = uri.AbsolutePath == "/"
+                ? "/?"
+                : System.Text.RegularExpressions.Regex.Escape(uri.AbsolutePath);
+            return $"^https?://(www\\.)?{escapedDomain}{pathPattern}";
+        }
+        catch
+        {
+            return ".*";
+        }
+    }
+
+    private static List<LayoutCandidate> DeduplicateCandidates(List<LayoutCandidate> candidates)
+    {
+        var seen = new HashSet<string>();
+        var unique = new List<LayoutCandidate>();
+
+        foreach (var candidate in candidates)
+        {
+            var sig = candidate.Config.StructuralSignature ?? string.Empty;
+            if (seen.Add(sig))
+            {
+                unique.Add(candidate);
+            }
+            else
+            {
+                // Keep document-order if it's the duplicate (it's the fallback)
+                // Skip AI/RSS duplicates
+            }
+        }
+
+        return unique;
+    }
+
+    private static int CountContentLinks(List<LinkInfo> links)
+    {
+        var count = 0;
+        foreach (var link in links)
+        {
+            if (link.Type == LinkType.Content)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     private async Task<LayoutCandidate?> TryGenerateAiCandidateAsync(
         List<LinkInfo> links,
         string pageUrl,
@@ -187,101 +283,5 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
             _logger.LogWarning(ex, "RSS layout candidate generation failed for {Url}", pageUrl);
             return null;
         }
-    }
-
-    private static SiteHierarchyConfig BuildDocumentOrderConfig(string pageUrl, NavigationTree tree)
-    {
-        string domain;
-        try
-        {
-            domain = new Uri(pageUrl).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            domain = "unknown";
-        }
-
-        return new SiteHierarchyConfig
-        {
-            Domain = domain,
-            UrlPattern = BuildUrlPattern(pageUrl),
-            Sections = [],
-            CreatedAt = DateTime.UtcNow,
-            ModelVersion = "document-order",
-            Kind = LayoutKind.DocumentOrder,
-            StructuralSignature = $"doc-order:{tree.TotalLinks}",
-        };
-    }
-
-    private static string BuildUrlPattern(string pageUrl)
-    {
-        try
-        {
-            var uri = new Uri(pageUrl);
-            var escapedDomain = System.Text.RegularExpressions.Regex.Escape(uri.Host);
-            var pathPattern = uri.AbsolutePath == "/"
-                ? "/?"
-                : System.Text.RegularExpressions.Regex.Escape(uri.AbsolutePath);
-            return $"^https?://(www\\.)?{escapedDomain}{pathPattern}";
-        }
-        catch
-        {
-            return ".*";
-        }
-    }
-
-    /// <summary>
-    /// Computes a structural signature for de-duplication.
-    /// Two configs with the same section names and link counts are considered identical.
-    /// </summary>
-    internal static string ComputeSignature(SiteHierarchyConfig config)
-    {
-        var sb = new StringBuilder();
-        foreach (var section in config.Sections.OrderBy(s => s.SortOrder))
-        {
-            sb.Append(section.Name);
-            sb.Append(':');
-            sb.Append(section.ParentSelectors.Count + section.UrlPatterns.Count);
-            sb.Append(';');
-        }
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
-        return Convert.ToHexString(hash)[..16];
-    }
-
-    private static List<LayoutCandidate> DeduplicateCandidates(List<LayoutCandidate> candidates)
-    {
-        var seen = new HashSet<string>();
-        var unique = new List<LayoutCandidate>();
-
-        foreach (var candidate in candidates)
-        {
-            var sig = candidate.Config.StructuralSignature ?? string.Empty;
-            if (seen.Add(sig))
-            {
-                unique.Add(candidate);
-            }
-            else
-            {
-                // Keep document-order if it's the duplicate (it's the fallback)
-                // Skip AI/RSS duplicates
-            }
-        }
-
-        return unique;
-    }
-
-    private static int CountContentLinks(List<LinkInfo> links)
-    {
-        var count = 0;
-        foreach (var link in links)
-        {
-            if (link.Type == LinkType.Content)
-            {
-                count++;
-            }
-        }
-
-        return count;
     }
 }

@@ -23,6 +23,16 @@ internal static partial class PageClassifier
     private const int ArticleThreshold = 25;
     private const int LinkListThreshold = -25;
 
+    private static readonly HashSet<string> SectionKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "section", "topic", "tag", "category", "categories", "latest", "archive",
+        "search", "live", "series", "trending", "popular", "opinion", "world",
+        "politics", "business", "technology", "science", "health", "sports", "arts",
+        "style", "food", "travel", "magazine", "books", "podcasts", "video", "news",
+        "tech", "entertainment", "reviews", "features", "culture", "money", "climate",
+        "education", "real-estate", "nyregion", "briefing", "interactive", "us", "uk",
+    };
+
     /// <summary>
     /// Classifies a page using additive signal scoring. Each HTML/URL signal
     /// contributes weighted points; the total score determines classification.
@@ -136,7 +146,7 @@ internal static partial class PageClassifier
         // Modest penalty — articles like Wikipedia can have 200+ inline links
         if (contentLinkCount > 10)
         {
-            var linkPenalty = Math.Min(20, ((contentLinkCount - 10) / 15 + 1) * 5);
+            var linkPenalty = Math.Min(20, (((contentLinkCount - 10) / 15) + 1) * 5);
             score -= linkPenalty;
         }
 
@@ -216,28 +226,6 @@ internal static partial class PageClassifier
         return PageClassification.Unknown;
     }
 
-    private static bool IsArticleLdJsonType(string type) =>
-        type.Contains("Article", StringComparison.OrdinalIgnoreCase) ||
-        type.Contains("BlogPosting", StringComparison.OrdinalIgnoreCase) ||
-        type.Contains("NewsArticle", StringComparison.OrdinalIgnoreCase) ||
-        type.Contains("ReportageNewsArticle", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsIndexLdJsonType(string type) =>
-        type is "WebSite" or "CollectionPage" or "SearchResultsPage" or "ItemList";
-
-    private static bool IsRootUrl(string url)
-    {
-        try
-        {
-            var path = new Uri(url).AbsolutePath.TrimEnd('/');
-            return string.IsNullOrEmpty(path);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     /// <summary>
     /// Checks if a URL is a section index or homepage — NOT an article under a section.
     /// Matches root paths, bare section paths (/science), and one-level sub-sections
@@ -298,27 +286,6 @@ internal static partial class PageClassifier
     }
 
     /// <summary>
-    /// Checks if a path segment looks like a numeric article ID or a content slug
-    /// rather than a sub-section name.
-    /// </summary>
-    private static bool IsNumericOrSlug(string segment)
-    {
-        // Pure numeric = article ID (e.g., "915244" in /science/915244)
-        if (long.TryParse(segment, out _))
-        {
-            return true;
-        }
-
-        // Contains digits mixed with hyphens = content slug (e.g., "24038888-meta-threads")
-        if (segment.Length > 10 && segment.Any(char.IsDigit) && segment.Contains('-'))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
     /// Checks if a URL looks like an article path (contains date patterns).
     /// Used as a positive article signal in classification.
     /// </summary>
@@ -342,15 +309,48 @@ internal static partial class PageClassifier
         }
     }
 
-    private static readonly HashSet<string> SectionKeywords = new(StringComparer.OrdinalIgnoreCase)
+    private static bool IsArticleLdJsonType(string type) =>
+        type.Contains("Article", StringComparison.OrdinalIgnoreCase) ||
+        type.Contains("BlogPosting", StringComparison.OrdinalIgnoreCase) ||
+        type.Contains("NewsArticle", StringComparison.OrdinalIgnoreCase) ||
+        type.Contains("ReportageNewsArticle", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsIndexLdJsonType(string type) =>
+        type is "WebSite" or "CollectionPage" or "SearchResultsPage" or "ItemList";
+
+    private static bool IsRootUrl(string url)
     {
-        "section", "topic", "tag", "category", "categories", "latest", "archive",
-        "search", "live", "series", "trending", "popular", "opinion", "world",
-        "politics", "business", "technology", "science", "health", "sports", "arts",
-        "style", "food", "travel", "magazine", "books", "podcasts", "video", "news",
-        "tech", "entertainment", "reviews", "features", "culture", "money", "climate",
-        "education", "real-estate", "nyregion", "briefing", "interactive", "us", "uk",
-    };
+        try
+        {
+            var path = new Uri(url).AbsolutePath.TrimEnd('/');
+            return string.IsNullOrEmpty(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a path segment looks like a numeric article ID or a content slug
+    /// rather than a sub-section name.
+    /// </summary>
+    private static bool IsNumericOrSlug(string segment)
+    {
+        // Pure numeric = article ID (e.g., "915244" in /science/915244)
+        if (long.TryParse(segment, out _))
+        {
+            return true;
+        }
+
+        // Contains digits mixed with hyphens = content slug (e.g., "24038888-meta-threads")
+        if (segment.Length > 10 && segment.Any(char.IsDigit) && segment.Contains('-'))
+        {
+            return true;
+        }
+
+        return false;
+    }
 
     [GeneratedRegex(@"/\d{4}/\d{2}/(\d{2}/)?", RegexOptions.Compiled)]
     private static partial Regex ArticleDateRegex();

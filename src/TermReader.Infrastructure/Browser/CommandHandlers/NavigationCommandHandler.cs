@@ -35,76 +35,6 @@ internal static class NavigationCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
-    private static void MoveDownOnce(CommandContext ctx, RenderOptions options)
-    {
-        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
-        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
-
-        if (viewMode == ViewMode.CollectionList)
-        {
-            var maxIdx = (ctx.Collections?.Count ?? 0) - 1;
-            if (maxIdx >= 0)
-            {
-                ctx.NavigationService.CollectionSelectedIndex =
-                    Math.Min(ctx.NavigationService.CollectionSelectedIndex + 1, maxIdx);
-                AdjustCollectionListScroll(ctx, options);
-            }
-        }
-        else if (viewMode == ViewMode.CollectionItems)
-        {
-            var activeCol = ctx.NavigationService.ActiveCollection;
-            if (activeCol != null)
-            {
-                var maxItemIdx = activeCol.Items.Count - 1;
-                if (maxItemIdx >= 0)
-                {
-                    ctx.NavigationService.CollectionItemSelectedIndex =
-                        Math.Min(ctx.NavigationService.CollectionItemSelectedIndex + 1, maxItemIdx);
-                    AdjustCollectionItemScroll(ctx, options);
-                }
-            }
-        }
-        else if (viewMode == ViewMode.Hierarchical)
-        {
-            MoveVerticalInGrid(tree, options, down: true);
-            ctx.AdjustScrollForSelection(tree, options);
-        }
-        else
-        {
-            MoveReaderCursor(ctx, options, 1);
-        }
-    }
-
-    private static void MoveUpOnce(CommandContext ctx, RenderOptions options)
-    {
-        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
-        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
-
-        if (viewMode == ViewMode.CollectionList)
-        {
-            ctx.NavigationService.CollectionSelectedIndex =
-                Math.Max(ctx.NavigationService.CollectionSelectedIndex - 1, 0);
-            AdjustCollectionListScroll(ctx, options);
-        }
-        else if (viewMode == ViewMode.CollectionItems)
-        {
-            var activeCol = ctx.NavigationService.ActiveCollection;
-            var minIdx = activeCol != null && activeCol.Items.Count > 0 ? -1 : 0;
-            ctx.NavigationService.CollectionItemSelectedIndex =
-                Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, minIdx);
-            AdjustCollectionItemScroll(ctx, options);
-        }
-        else if (viewMode == ViewMode.Hierarchical)
-        {
-            MoveVerticalInGrid(tree, options, down: false);
-            ctx.AdjustScrollForSelection(tree, options);
-        }
-        else
-        {
-            MoveReaderCursor(ctx, options, -1);
-        }
-    }
-
     public static async Task HandlePageDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
@@ -621,6 +551,76 @@ internal static class NavigationCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct);
     }
 
+    private static void MoveDownOnce(CommandContext ctx, RenderOptions options)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.CollectionList)
+        {
+            var maxIdx = (ctx.Collections?.Count ?? 0) - 1;
+            if (maxIdx >= 0)
+            {
+                ctx.NavigationService.CollectionSelectedIndex =
+                    Math.Min(ctx.NavigationService.CollectionSelectedIndex + 1, maxIdx);
+                AdjustCollectionListScroll(ctx, options);
+            }
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            if (activeCol != null)
+            {
+                var maxItemIdx = activeCol.Items.Count - 1;
+                if (maxItemIdx >= 0)
+                {
+                    ctx.NavigationService.CollectionItemSelectedIndex =
+                        Math.Min(ctx.NavigationService.CollectionItemSelectedIndex + 1, maxItemIdx);
+                    AdjustCollectionItemScroll(ctx, options);
+                }
+            }
+        }
+        else if (viewMode == ViewMode.Hierarchical)
+        {
+            MoveVerticalInGrid(tree, options, down: true);
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            MoveReaderCursor(ctx, options, 1);
+        }
+    }
+
+    private static void MoveUpOnce(CommandContext ctx, RenderOptions options)
+    {
+        var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
+        var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        if (viewMode == ViewMode.CollectionList)
+        {
+            ctx.NavigationService.CollectionSelectedIndex =
+                Math.Max(ctx.NavigationService.CollectionSelectedIndex - 1, 0);
+            AdjustCollectionListScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.CollectionItems)
+        {
+            var activeCol = ctx.NavigationService.ActiveCollection;
+            var minIdx = activeCol != null && activeCol.Items.Count > 0 ? -1 : 0;
+            ctx.NavigationService.CollectionItemSelectedIndex =
+                Math.Max(ctx.NavigationService.CollectionItemSelectedIndex - 1, minIdx);
+            AdjustCollectionItemScroll(ctx, options);
+        }
+        else if (viewMode == ViewMode.Hierarchical)
+        {
+            MoveVerticalInGrid(tree, options, down: false);
+            ctx.AdjustScrollForSelection(tree, options);
+        }
+        else
+        {
+            MoveReaderCursor(ctx, options, -1);
+        }
+    }
+
     private static void GoToIndex(CommandContext ctx, int index, RenderOptions options)
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
@@ -661,7 +661,7 @@ internal static class NavigationCommandHandler
 
             var vpHeight = ctx.GetReaderViewportHeight(options);
             var maxScroll = Math.Max(0, totalLines - vpHeight);
-            ctx.NavigationService.SetScrollOffset(Math.Clamp(clampedLine - vpHeight / 2, 0, maxScroll));
+            ctx.NavigationService.SetScrollOffset(Math.Clamp(clampedLine - (vpHeight / 2), 0, maxScroll));
         }
     }
 

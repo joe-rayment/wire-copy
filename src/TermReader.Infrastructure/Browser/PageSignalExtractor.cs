@@ -169,27 +169,13 @@ internal static class PageSignalExtractor
             return false;
         }
 
-        foreach (var element in allElements)
-        {
-            var classAttr = element.GetAttributeValue("class", string.Empty);
-            if (string.IsNullOrEmpty(classAttr))
-            {
-                continue;
-            }
-
-            // Check each class against known article-body patterns
-            // Split by space and check each class token, also check
-            // if any class segment (split by -) contains the patterns
-            foreach (var known in ArticleBodyClasses)
-            {
-                if (classAttr.Contains(known, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        // Check each class against known article-body patterns
+        // Split by space and check each class token, also check
+        // if any class segment (split by -) contains the patterns
+        return allElements
+            .Where(e => !string.IsNullOrEmpty(e.GetAttributeValue("class", string.Empty)))
+            .Any(e => ArticleBodyClasses.Any(known =>
+                e.GetAttributeValue("class", string.Empty).Contains(known, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static int CountDeepParagraphs(HtmlDocument doc)

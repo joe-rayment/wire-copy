@@ -61,6 +61,12 @@ public class BrowserConfiguration
     /// </summary>
     public string[] PaywalledDomains { get; init; } = ["nytimes.com", "wsj.com", "washingtonpost.com", "theathletic.com"];
 
+    public string[] ExperimentalOptions { get; init; } =
+    [
+        "excludeSwitches", "enable-automation",
+        "useAutomationExtension", "false"
+    ];
+
     /// <summary>
     /// Checks whether the given URL belongs to a known paywalled domain.
     /// Matches both exact domain (e.g., "nytimes.com") and subdomains (e.g., "www.nytimes.com").
@@ -84,10 +90,4 @@ public class BrowserConfiguration
             return false;
         }
     }
-
-    public string[] ExperimentalOptions { get; init; } =
-    [
-        "excludeSwitches", "enable-automation",
-        "useAutomationExtension", "false"
-    ];
 }
