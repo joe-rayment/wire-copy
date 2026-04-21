@@ -226,37 +226,14 @@ public class PageLoadPipeline
             }
         }
 
-        // For paywalled domains with cookies, use the background browser (with auth cookies)
-        // so articles load fully.
-        var hasBuildCache = _pageCache.TryGetBuildCache(url) != null;
-        if (hasBuildCache)
-        {
-            _logger.LogInformation("Skipping ForceBrowser -- build cache exists for {Url}", url);
-        }
-
-        var forceBrowser = false;
-        if (!hasBuildCache && _browserConfig.IsPaywalledDomain(url))
-        {
-            var cookies = await _cookieManager.LoadCookiesAsync();
-            var host = new Uri(url).Host;
-            var hasDomainCookies = cookies.Any(c =>
-            {
-                var d = c.Domain.TrimStart('.');
-                return host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                       host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase);
-            });
-
-            if (hasDomainCookies)
-            {
-                _logger.LogInformation("Paywalled domain with cookies, using browser for cache miss: {Url}", url);
-                forceBrowser = true;
-            }
-        }
-
-        reportStage?.Invoke(forceBrowser ? "Loading via browser..." : "Fetching page...");
+        // Browser-first: always use the browser for primary navigation.
+        // The HTTP fast-path caused recurring issues with Cloudflare challenges,
+        // JS shells, and dynamic sites that need rendering. The browser (Patchright)
+        // handles all of these transparently. Background preloading still uses HTTP.
+        reportStage?.Invoke("Loading via browser...");
 
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = forceBrowser },
+            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = true },
             cancellationToken);
 
         _logger.LogDebug(
@@ -618,23 +595,7 @@ public class PageLoadPipeline
             return false;
         }
 
-        // Paywalled domain with truncated content
-        if (page.Classification != PageClassification.LinkList &&
-            page.HasReadableContent() &&
-            fetchMethod != FetchMethod.Browser &&
-            _browserConfig.IsPaywalledDomain(url) &&
-            page.ReadableContent!.WordCount < 500)
-        {
-            return true;
-        }
-
-        // Paywall detected
-        if (page.ReadableContent?.IsPaywalled == true && fetchMethod != FetchMethod.Browser)
-        {
-            return true;
-        }
-
-        // Article with no readable content after browser fetch
+        // Article with no readable content after browser fetch (JS rendering race)
         if (!page.HasReadableContent() &&
             page.Classification == PageClassification.Article &&
             fetchMethod == FetchMethod.Browser)
@@ -642,24 +603,18 @@ public class PageLoadPipeline
             return true;
         }
 
-        // Bot challenge detection — applies to ALL classifications including LinkList.
-        // A Cloudflare challenge page classified as LinkList (from URL pattern) still
-        // needs retry. An empty LinkList is just as broken as an empty Article.
-        if (loadResult.FetchMethod == FetchMethod.Browser &&
+        // Bot challenge in headless mode — retry headed so user can solve CAPTCHA
+        if (fetchMethod == FetchMethod.Browser &&
             _browserConfig.Headless &&
             PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
         {
             return true;
         }
 
-        // Empty LinkList after HTTP fetch — content may need browser to render
-        // (JS-heavy sites, Cloudflare challenge, etc.)
+        // Empty LinkList — browser may have hit a challenge or JS rendering issue
         if (page.Classification == PageClassification.LinkList &&
-            !page.HasLinks() &&
-            fetchMethod != FetchMethod.Browser)
+            !page.HasLinks())
         {
-            _logger.LogInformation(
-                "Empty LinkList from HTTP fetch, needs browser retry: {Url}", url);
             return true;
         }
 
@@ -683,66 +638,7 @@ public class PageLoadPipeline
 
         try
         {
-            // Paywalled domain content-quality fallback
-            if (browserAvailable &&
-                page.Classification != PageClassification.LinkList &&
-                page.HasReadableContent() &&
-                fetchMethod != FetchMethod.Browser &&
-                _browserConfig.IsPaywalledDomain(url) &&
-                page.ReadableContent!.WordCount < 500)
-            {
-                var cookieInfo = await _cookieManager.GetCookieInfoAsync();
-                var hasCookies = cookieInfo is { Exists: true, IsExpired: false };
-
-                if (hasCookies)
-                {
-                    _logger.LogInformation(
-                        "Quality retry: paywalled domain with truncated content ({Words} words): {Url}",
-                        page.ReadableContent.WordCount,
-                        url);
-
-                    _pageCache.Remove(url);
-                    var truncRetryResult = await _pageLoader.LoadAsync(
-                        new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                        cancellationToken);
-
-                    if (truncRetryResult.Success)
-                    {
-                        fetchMethod = truncRetryResult.FetchMethod;
-                        (page, lastBuildResult) = await BuildPageAsync(truncRetryResult, url, cancellationToken);
-                    }
-                }
-                else
-                {
-                    _navigationService.SetStatusMessage(
-                        "Shift+I to log in for full content",
-                        TimeSpan.FromMinutes(5));
-                }
-            }
-
-            // Paywall fallback with authenticated session
-            if (browserAvailable && page.ReadableContent?.IsPaywalled == true && fetchMethod != FetchMethod.Browser)
-            {
-                var cookieInfo = await _cookieManager.GetCookieInfoAsync();
-                if (cookieInfo is { Exists: true, IsExpired: false })
-                {
-                    _logger.LogInformation(
-                        "Quality retry: paywall detected, retrying with auth: {Url}", url);
-
-                    _pageCache.Remove(url);
-                    var paywallRetryResult = await _pageLoader.LoadAsync(
-                        new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                        cancellationToken);
-
-                    if (paywallRetryResult.Success)
-                    {
-                        fetchMethod = paywallRetryResult.FetchMethod;
-                        (page, lastBuildResult) = await BuildPageAsync(paywallRetryResult, url, cancellationToken);
-                    }
-                }
-            }
-
-            // Auto-login fallback
+            // Auto-login fallback for paywalled content
             if (page.ReadableContent?.IsPaywalled == true)
             {
                 try
@@ -832,27 +728,6 @@ public class PageLoadPipeline
                 {
                     fetchMethod = headedResult.FetchMethod;
                     (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken);
-                }
-            }
-
-            // Empty LinkList from HTTP — retry with browser (JS-heavy or challenge page)
-            if (page.Classification == PageClassification.LinkList &&
-                !page.HasLinks() &&
-                fetchMethod != FetchMethod.Browser &&
-                browserAvailable)
-            {
-                _logger.LogInformation(
-                    "Quality retry: empty LinkList from HTTP, retrying with browser: {Url}", url);
-
-                _pageCache.Remove(url);
-                var browserResult = await _pageLoader.LoadAsync(
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                    cancellationToken);
-
-                if (browserResult.Success)
-                {
-                    fetchMethod = browserResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(browserResult, url, cancellationToken);
                 }
             }
 
