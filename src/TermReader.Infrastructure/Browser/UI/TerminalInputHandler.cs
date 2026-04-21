@@ -177,9 +177,12 @@ public class TerminalInputHandler : IInputHandler
             // Position at specified row or default to bottom of terminal
             var targetRow = row ?? Console.WindowHeight - 1;
             var targetCol = col ?? 0;
-            Console.SetCursorPosition(targetCol, targetRow);
 
-            // Clear the line and show prompt
+            // Show cursor during input — it's hidden globally by BrowserOrchestrator
+            Console.CursorVisible = true;
+
+            // Clear the line and render prompt
+            Console.SetCursorPosition(targetCol, targetRow);
             var clearWidth = Math.Max(1, Console.WindowWidth - 1 - targetCol);
             Console.Write(new string(' ', clearWidth));
             Console.SetCursorPosition(targetCol, targetRow);
@@ -190,12 +193,15 @@ public class TerminalInputHandler : IInputHandler
 
             var promptStart = targetCol + prompt.Length;
 
-            // Read input from the key channel
+            // Read input with cursor position tracking
             var input = new System.Text.StringBuilder();
+            var cursorPos = 0;
+
             if (!string.IsNullOrEmpty(initialInput))
             {
                 input.Append(initialInput);
-                Console.Write(initialInput);
+                cursorPos = initialInput.Length;
+                RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
             }
 
             while (!cancellationToken.IsCancellationRequested)
@@ -215,25 +221,69 @@ public class TerminalInputHandler : IInputHandler
 
                 if (keyInfo.Key == ConsoleKey.Backspace)
                 {
-                    if (input.Length > 0)
+                    if (cursorPos > 0)
                     {
-                        input.Remove(input.Length - 1, 1);
-
-                        // Redraw the input line
-                        Console.SetCursorPosition(promptStart, targetRow);
-                        var display = isSecret ? new string('*', input.Length) : input.ToString();
-                        Console.Write(display + " ");
-                        Console.SetCursorPosition(promptStart + input.Length, targetRow);
+                        input.Remove(cursorPos - 1, 1);
+                        cursorPos--;
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
                     }
 
                     continue;
                 }
 
-                // Printable character
+                if (keyInfo.Key == ConsoleKey.Delete)
+                {
+                    if (cursorPos < input.Length)
+                    {
+                        input.Remove(cursorPos, 1);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                    }
+
+                    continue;
+                }
+
+                if (keyInfo.Key == ConsoleKey.LeftArrow)
+                {
+                    if (cursorPos > 0)
+                    {
+                        cursorPos--;
+                        Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                    }
+
+                    continue;
+                }
+
+                if (keyInfo.Key == ConsoleKey.RightArrow)
+                {
+                    if (cursorPos < input.Length)
+                    {
+                        cursorPos++;
+                        Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                    }
+
+                    continue;
+                }
+
+                if (keyInfo.Key == ConsoleKey.Home)
+                {
+                    cursorPos = 0;
+                    Console.SetCursorPosition(promptStart, targetRow);
+                    continue;
+                }
+
+                if (keyInfo.Key == ConsoleKey.End)
+                {
+                    cursorPos = input.Length;
+                    Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                    continue;
+                }
+
+                // Printable character — insert at cursor position
                 if (keyInfo.KeyChar >= 32)
                 {
-                    input.Append(keyInfo.KeyChar);
-                    Console.Write(isSecret ? '*' : keyInfo.KeyChar);
+                    input.Insert(cursorPos, keyInfo.KeyChar);
+                    cursorPos++;
+                    RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
                 }
             }
         }
@@ -245,8 +295,37 @@ public class TerminalInputHandler : IInputHandler
         {
             // Fallback if console operations fail
         }
+        finally
+        {
+            // Hide cursor again when leaving input mode
+            try
+            {
+                Console.CursorVisible = false;
+            }
+            catch
+            {
+                // Ignore if console is unavailable
+            }
+        }
 
         return null;
+    }
+
+    /// <summary>
+    /// Redraws the input text at the prompt position and sets cursor.
+    /// </summary>
+    private static void RedrawInput(System.Text.StringBuilder input, int promptStart, int targetRow, int cursorPos, bool isSecret)
+    {
+        Console.SetCursorPosition(promptStart, targetRow);
+        var display = isSecret ? new string('*', input.Length) : input.ToString();
+        var maxWidth = Math.Max(1, Console.WindowWidth - 1 - promptStart);
+        if (display.Length > maxWidth)
+        {
+            display = display[..maxWidth];
+        }
+
+        Console.Write(display + " "); // trailing space clears deleted char
+        Console.SetCursorPosition(promptStart + Math.Min(cursorPos, maxWidth), targetRow);
     }
 
     private async Task<NavigationCommand> WaitForInputCoreAsync(CancellationToken cancellationToken)
@@ -460,6 +539,21 @@ public class TerminalInputHandler : IInputHandler
         }
 
         var k2 = Console.ReadKey(intercept: true);
+
+        // Bracketed paste mode: \x1b[200~ starts paste, \x1b[201~ ends it.
+        // Pass through all characters between brackets as normal key presses.
+        if (k2.KeyChar == '2')
+        {
+            var pasteKeys = TryConsumeBracketedPaste();
+            if (pasteKeys != null)
+            {
+                return (pasteKeys, null);
+            }
+
+            // Not a paste sequence — the '2' and any consumed chars are lost
+            return (null, null);
+        }
+
         if (k2.KeyChar != '<')
         {
             return (null, null); // Not SGR mouse — some other CSI sequence (consumed)
@@ -521,6 +615,99 @@ public class TerminalInputHandler : IInputHandler
         }
 
         return ([], null); // Runaway or incomplete — consumed and discarded
+    }
+
+    /// <summary>
+    /// Handles bracketed paste mode sequences. Called after \x1b[2 has been consumed.
+    /// Reads through 00~ to start paste, then collects all characters until \x1b[201~.
+    /// Returns the paste content as a list of ConsoleKeyInfo, or null if not a paste sequence.
+    /// </summary>
+    private static List<ConsoleKeyInfo>? TryConsumeBracketedPaste()
+    {
+        // We've already consumed \x1b[2. Check for 00~ to confirm paste start.
+        var confirmBuf = new char[3]; // expecting '0', '0', '~'
+        for (int i = 0; i < 3; i++)
+        {
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(2);
+                if (!Console.KeyAvailable)
+                {
+                    return null;
+                }
+            }
+
+            confirmBuf[i] = Console.ReadKey(intercept: true).KeyChar;
+        }
+
+        if (confirmBuf[0] != '0' || confirmBuf[1] != '0' || confirmBuf[2] != '~')
+        {
+            return null; // Not a paste sequence
+        }
+
+        // Read paste content until we see \x1b[201~ (end bracket)
+        var pasteKeys = new List<ConsoleKeyInfo>(256);
+        var limit = 8192; // safety limit for paste size
+
+        while (limit-- > 0)
+        {
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(2);
+                if (!Console.KeyAvailable)
+                {
+                    break; // Paste ended without closing bracket — return what we have
+                }
+            }
+
+            var k = Console.ReadKey(intercept: true);
+
+            // Check for end-of-paste: Escape starts \x1b[201~
+            if (k.Key == ConsoleKey.Escape)
+            {
+                // Try to consume [201~
+                var endBuf = new char[5];
+                var endRead = 0;
+                for (int i = 0; i < 5 && Console.KeyAvailable; i++)
+                {
+                    endBuf[i] = Console.ReadKey(intercept: true).KeyChar;
+                    endRead++;
+                }
+
+                if (endRead == 5 && endBuf[0] == '[' && endBuf[1] == '2' &&
+                    endBuf[2] == '0' && endBuf[3] == '1' && endBuf[4] == '~')
+                {
+                    break; // End of paste
+                }
+
+                // Not the end sequence — put the Escape back as regular char
+                // (this is lossy for the consumed chars, but paste content is more important)
+                continue;
+            }
+
+            // Regular paste character — add to output
+            if (k.KeyChar >= 32 || k.KeyChar == '\t')
+            {
+                var consoleKey = CharToConsoleKey(k.KeyChar);
+                pasteKeys.Add(new ConsoleKeyInfo(k.KeyChar, consoleKey, false, false, false));
+            }
+        }
+
+        return pasteKeys;
+    }
+
+    /// <summary>
+    /// Best-effort mapping of a char to ConsoleKey for synthetic key events.
+    /// </summary>
+    private static ConsoleKey CharToConsoleKey(char c)
+    {
+        return c switch
+        {
+            >= 'a' and <= 'z' => (ConsoleKey)(ConsoleKey.A + (c - 'a')),
+            >= 'A' and <= 'Z' => (ConsoleKey)(ConsoleKey.A + (c - 'A')),
+            >= '0' and <= '9' => (ConsoleKey)(ConsoleKey.D0 + (c - '0')),
+            _ => ConsoleKey.NoName,
+        };
     }
 
     private void EnsureKeyReaderStarted()
