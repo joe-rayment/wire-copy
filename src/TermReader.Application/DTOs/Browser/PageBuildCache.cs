@@ -26,5 +26,11 @@ public sealed record PageBuildCache
 
     public PageClassification Classification { get; init; } = PageClassification.Unknown;
 
+    /// <summary>
+    /// Version of the classification logic used when this cache was built.
+    /// Caches with a stale version are rejected to prevent misclassification.
+    /// </summary>
+    public int ClassificationVersion { get; init; }
+
     public DateTime CachedAt { get; init; } = DateTime.UtcNow;
 }

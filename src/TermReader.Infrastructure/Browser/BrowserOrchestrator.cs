@@ -664,8 +664,18 @@ public class BrowserOrchestrator : IBrowserService
             var buildCache = _pageCache.TryGetBuildCache(url);
             if (buildCache != null)
             {
+                // Quality gate: reject build caches with stale classification logic
+                if (buildCache.ClassificationVersion != PageClassifier.ClassificationVersion)
+                {
+                    _logger.LogInformation(
+                        "NavigateToAsync: rejecting stale build cache (classification v{Old} != v{New}): {Url}",
+                        buildCache.ClassificationVersion,
+                        PageClassifier.ClassificationVersion,
+                        url);
+                    _pageCache.Remove(url);
+                }
                 // Quality gate: reject build caches that misclassified article URLs as LinkList
-                if (buildCache.Classification == PageClassification.LinkList
+                else if (buildCache.Classification == PageClassification.LinkList
                     && !PageClassifier.IsSectionUrlPattern(url))
                 {
                     _logger.LogInformation(

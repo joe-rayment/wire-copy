@@ -1355,6 +1355,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 Metadata = result.Metadata ?? new PageMetadata { Title = "Untitled" },
                 FinalUrl = result.Url ?? url,
                 Classification = classification,
+                ClassificationVersion = PageClassifier.ClassificationVersion,
             };
 
             _cache.PutBuildCache(url, buildCache);

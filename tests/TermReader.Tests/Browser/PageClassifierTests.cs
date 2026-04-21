@@ -39,13 +39,173 @@ public class PageClassifierTests
         return links;
     }
 
-    #region Article Classification
+    #region Rule 1: Section/homepage URLs are always LinkList
+
+    [Theory]
+    [InlineData("https://www.nytimes.com/")]
+    [InlineData("https://www.nytimes.com")]
+    [InlineData("https://www.theverge.com/")]
+    [InlineData("https://news.ycombinator.com/")]
+    [InlineData("https://arstechnica.com/")]
+    public void Classify_HomepageUrl_WithContentLinks_ReturnsLinkList(string url)
+    {
+        // Homepages must ALWAYS be LinkList regardless of article indicators.
+        // This is the critical fix: The Verge homepage has <article> cards
+        // which caused isArticlePage=true, leading to Article misclassification.
+        var links = CreateLinks(contentCount: 8);
+        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 5, url);
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_HomepageUrl_FewLinks_StillLinkList()
+    {
+        // Even with just 1 content link, a homepage is a link list
+        var links = CreateLinks(contentCount: 1);
+        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 1, "https://www.nytimes.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_HomepageUrl_NoLinks_ReturnsUnknown()
+    {
+        // Edge case: homepage with zero content links — not useful as a link list
+        var links = CreateLinks(contentCount: 0);
+        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 0, "https://example.com/");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/section/politics")]
+    [InlineData("https://example.com/topic/climate")]
+    [InlineData("https://example.com/technology")]
+    [InlineData("https://example.com/opinion")]
+    [InlineData("https://nytimes.com/section/world")]
+    [InlineData("https://example.com/sports")]
+    [InlineData("https://example.com/news")]
+    [InlineData("https://example.com/tech")]
+    [InlineData("https://example.com/entertainment")]
+    [InlineData("https://example.com/reviews")]
+    public void Classify_SectionUrl_WithContentLinks_ReturnsLinkList(string url)
+    {
+        var links = CreateLinks(contentCount: 5);
+        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, url);
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_SectionUrl_OverridesArticleSignals()
+    {
+        // A section URL with article HTML structure should still be LinkList.
+        // This catches the case where a section page has a featured story preview.
+        var links = CreateLinks(contentCount: 12);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.nytimes.com/section/opinion");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    #endregion
+
+    #region Rule 2: Article URL pattern (date slug) + article structure
+
+    [Fact]
+    public void Classify_DateSlugUrl_ArticlePage_ReturnsArticle()
+    {
+        // NYT article: /2024/01/15/us/politics/story-slug
+        var links = CreateLinks(contentCount: 3);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.nytimes.com/2024/01/15/us/politics/story-slug");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_DateSlugUrl_ManyInlineLinks_StillArticle()
+    {
+        // Long-form article with 8 inline links to related reading
+        var links = CreateLinks(contentCount: 8);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.nytimes.com/2024/11/15/magazine/long-form-piece");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_DateSlugUrl_NotArticlePage_FallsThrough()
+    {
+        // Date slug URL but HTML doesn't have article structure — falls to later rules
+        var links = CreateLinks(contentCount: 3);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://example.com/2024/01/15/roundup");
+        result.Should().Be(PageClassification.Unknown);
+    }
+
+    #endregion
+
+    #region Rule 3: Many links + multiple article containers = index page
+
+    [Fact]
+    public void Classify_ManyLinks_ManyArticleContainers_ReturnsLinkList()
+    {
+        // Verge/NYT homepage with article cards: many <article> elements
+        var links = CreateLinks(contentCount: 50);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 20,
+            "https://www.theverge.com/some-path");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_TenLinks_TwoContainers_ReturnsLinkList()
+    {
+        // Eliminates the old "dead zone" — 10 links + 2 containers is enough
+        var links = CreateLinks(contentCount: 10);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 2,
+            "https://example.com/blog");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_DeadZone_TwelveLinks_TwoContainers_ReturnsLinkList()
+    {
+        // Old dead zone (11-14 links) now correctly classified
+        var links = CreateLinks(contentCount: 12);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 2,
+            "https://example.com/feed");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    #endregion
+
+    #region Rule 4: Article with few links + single container
 
     [Fact]
     public void Classify_ArticlePage_FewLinks_ReturnsArticle()
     {
         var links = CreateLinks(contentCount: 3);
-        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 1, "https://example.com/2024/01/story");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/2024/01/story");
         result.Should().Be(PageClassification.Article);
     }
 
@@ -53,74 +213,99 @@ public class PageClassifierTests
     public void Classify_ArticlePage_NoLinks_ReturnsArticle()
     {
         var links = CreateLinks(contentCount: 0);
-        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 1, "https://example.com/article");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/article");
         result.Should().Be(PageClassification.Article);
     }
 
     [Fact]
-    public void Classify_ArticlePage_SidebarLinks_StillArticle()
+    public void Classify_ArticlePage_FiveLinks_SingleContainer_ReturnsArticle()
     {
-        // Article page with many sidebar links (12) but single <article> container
-        var links = CreateLinks(contentCount: 12);
-        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 1, "https://example.com/article");
+        // Boundary: exactly 5 content links is the upper bound for rule 4
+        var links = CreateLinks(contentCount: 5);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/article-with-links");
         result.Should().Be(PageClassification.Article);
     }
 
     [Fact]
-    public void Classify_ArticlePage_TenLinks_ReturnsArticle()
+    public void Classify_ArticlePage_SixLinks_SingleContainer_ReturnsArticle()
     {
-        var links = CreateLinks(contentCount: 10);
-        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 1, "https://example.com/article");
+        // 6 links, single container — falls to rule 6 (article with moderate links)
+        var links = CreateLinks(contentCount: 6);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/article-many-links");
         result.Should().Be(PageClassification.Article);
     }
 
     #endregion
 
-    #region LinkList Classification
+    #region Rule 5: Many content links = LinkList
 
     [Fact]
-    public void Classify_ManyLinks_ManyArticleContainers_ReturnsLinkList()
+    public void Classify_TenLinks_NoArticle_ReturnsLinkList()
     {
-        // NYT homepage: 50+ content links, 20+ <article> containers
-        var links = CreateLinks(contentCount: 50);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 20, "https://www.nytimes.com/");
+        // HN-style page: many links, no article markup
+        var links = CreateLinks(contentCount: 10);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://news.ycombinator.com/news");
         result.Should().Be(PageClassification.LinkList);
     }
 
     [Fact]
-    public void Classify_ManyLinks_NotArticle_ReturnsLinkList()
-    {
-        // HN-style page: 30 content links, no <article> tags, not an article
-        var links = CreateLinks(contentCount: 30);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, "https://news.ycombinator.com/");
-        result.Should().Be(PageClassification.LinkList);
-    }
-
-    [Fact]
-    public void Classify_FifteenLinks_ThreeArticleContainers_ReturnsLinkList()
+    public void Classify_FifteenLinks_NotArticle_ReturnsLinkList()
     {
         var links = CreateLinks(contentCount: 15);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 3, "https://example.com/section/tech");
-        result.Should().Be(PageClassification.LinkList);
-    }
-
-    [Fact]
-    public void Classify_SectionUrl_FiveLinks_ReturnsLinkList()
-    {
-        var links = CreateLinks(contentCount: 5);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, "https://example.com/section/politics");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://example.com/feed");
         result.Should().Be(PageClassification.LinkList);
     }
 
     #endregion
 
-    #region Unknown Classification
+    #region Rule 6: Article with moderate links (6-9)
+
+    [Fact]
+    public void Classify_ArticlePage_NineLinks_SingleContainer_ReturnsArticle()
+    {
+        // Article page with 9 inline links — still article via rule 6
+        var links = CreateLinks(contentCount: 9);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/long-article");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    #endregion
+
+    #region Rule 7: Unknown fallback
 
     [Fact]
     public void Classify_FewLinks_NotArticle_ReturnsUnknown()
     {
         var links = CreateLinks(contentCount: 2);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, "https://example.com/about");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://example.com/about");
         result.Should().Be(PageClassification.Unknown);
     }
 
@@ -128,16 +313,24 @@ public class PageClassifierTests
     public void Classify_NoLinks_NotArticle_ReturnsUnknown()
     {
         var links = CreateLinks(contentCount: 0);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, "https://example.com/page");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://example.com/page");
         result.Should().Be(PageClassification.Unknown);
     }
 
     [Fact]
     public void Classify_ModerateLinks_NoArticleSignals_ReturnsUnknown()
     {
-        // 8 content links, no article indicators — ambiguous
+        // 8 content links, no article indicators — ambiguous, user can press 'v'
         var links = CreateLinks(contentCount: 8);
-        var result = PageClassifier.Classify(links, isArticlePage: false, articleContainerCount: 0, "https://example.com/page");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://example.com/page");
         result.Should().Be(PageClassification.Unknown);
     }
 
@@ -157,10 +350,21 @@ public class PageClassifierTests
     [InlineData("https://example.com/technology", true)]
     [InlineData("https://example.com/politics", true)]
     [InlineData("https://example.com/opinion", true)]
+    [InlineData("https://example.com/news", true)]
+    [InlineData("https://example.com/tech", true)]
+    [InlineData("https://example.com/entertainment", true)]
+    [InlineData("https://example.com/reviews", true)]
+    [InlineData("https://example.com/features", true)]
+    [InlineData("https://example.com/culture", true)]
+    [InlineData("https://example.com/us", true)]
+    [InlineData("https://example.com/uk", true)]
     [InlineData("https://example.com/2024/01/15/article-slug", false)]
     [InlineData("https://example.com/about", false)]
     [InlineData("https://example.com/contact-us", false)]
     [InlineData("https://example.com/p/some-article", false)]
+    [InlineData("https://example.com/login", false)]
+    [InlineData("https://example.com/pricing", false)]
+    [InlineData("https://example.com/settings", false)]
     public void IsSectionUrlPattern_CorrectlyIdentifiesSectionUrls(string url, bool expected)
     {
         PageClassifier.IsSectionUrlPattern(url).Should().Be(expected);
@@ -175,6 +379,181 @@ public class PageClassifierTests
 
     #endregion
 
+    #region IsArticleUrlPattern
+
+    [Theory]
+    [InlineData("https://nytimes.com/2024/01/15/us/story", true)]
+    [InlineData("https://nytimes.com/2024/11/article-slug", true)]
+    [InlineData("https://example.com/blog/2023/06/12/post", true)]
+    [InlineData("https://example.com/", false)]
+    [InlineData("https://example.com/about", false)]
+    [InlineData("https://example.com/section/tech", false)]
+    [InlineData("https://example.com/article-slug", false)]
+    public void IsArticleUrlPattern_CorrectlyIdentifiesArticleUrls(string url, bool expected)
+    {
+        PageClassifier.IsArticleUrlPattern(url).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsArticleUrlPattern_EmptyUrl_ReturnsFalse()
+    {
+        PageClassifier.IsArticleUrlPattern("").Should().BeFalse();
+        PageClassifier.IsArticleUrlPattern(null!).Should().BeFalse();
+    }
+
+    #endregion
+
+    #region Real-World Regression Scenarios
+
+    [Fact]
+    public void Classify_VergeHomepage_ManyArticleCards_ReturnsLinkList()
+    {
+        // The Verge: root URL, many <article> cards, isArticlePage=true from article tags
+        // This was the original bug — homepage showed as article view
+        var links = CreateLinks(contentCount: 25);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 25,
+            "https://www.theverge.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_VergeHomepage_SingleArticleWrapper_ReturnsLinkList()
+    {
+        // Even if The Verge wraps everything in one <article>, root URL wins
+        var links = CreateLinks(contentCount: 20);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.theverge.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_NytHomepage_ReturnsLinkList()
+    {
+        var links = CreateLinks(contentCount: 50);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 20,
+            "https://www.nytimes.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_NytArticle_ReturnsArticle()
+    {
+        var links = CreateLinks(contentCount: 5);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.nytimes.com/2024/11/15/us/politics/story-slug");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_SubstackHomepage_NoArticleTags_ReturnsLinkList()
+    {
+        // Substack: root URL, no <article> tags, many post links
+        var links = CreateLinks(contentCount: 20);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://newsletter.example.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_SubstackWithFeaturedStory_RootUrl_ReturnsLinkList()
+    {
+        // Substack homepage with featured post (triggers isArticlePage) + few links
+        var links = CreateLinks(contentCount: 3);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://newsletter.example.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_LongFormArticle_ManyInlineLinks_NotMisclassified()
+    {
+        // Long investigative piece with 9 inline "see also" links
+        // Must NOT be classified as LinkList
+        var links = CreateLinks(contentCount: 9);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/investigations/big-story");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_HackerNewsStyle_ReturnsLinkList()
+    {
+        // No article tags, many links, not a section URL
+        var links = CreateLinks(contentCount: 30);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 0,
+            "https://news.ycombinator.com/");
+        result.Should().Be(PageClassification.LinkList);
+    }
+
+    [Fact]
+    public void Classify_OldDeadZone_TwelveLinks_SingleContainer_NonSectionUrl()
+    {
+        // The old dead zone: 12 content links, isArticlePage true, single container, non-section URL
+        // With new rules: rule 2 needs date slug URL (no). Rule 4 needs <= 5 links (no).
+        // Rule 6 catches: isArticlePage + single container → Article
+        var links = CreateLinks(contentCount: 12);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/some-page");
+
+        // This is the ambiguous case. With single container + article structure,
+        // it's treated as article. The user can press 'v' to see the link list.
+        // However, if the page has 10+ links and 2+ containers, it would be LinkList (rule 3).
+        result.Should().Be(PageClassification.LinkList,
+            "12 content links reaches rule 5 threshold (>= 10) before rule 6 can fire");
+    }
+
+    [Fact]
+    public void Classify_NineLinks_ArticlePage_SingleContainer_ReturnsArticle()
+    {
+        // 9 links, article structure, single container — rule 6 catches this
+        var links = CreateLinks(contentCount: 9);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/some-article-page");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    #endregion
+
+    #region Classification Version
+
+    [Fact]
+    public void ClassificationVersion_IsPositive()
+    {
+        PageClassifier.ClassificationVersion.Should().BeGreaterThan(0);
+    }
+
+    #endregion
+
     #region Edge Cases
 
     [Fact]
@@ -183,19 +562,51 @@ public class PageClassifierTests
         // Page where IsArticle returns true (has og:type=article) but has many <article>
         // containers — this is actually a section page with article cards
         var links = CreateLinks(contentCount: 20);
-        var result = PageClassifier.Classify(links, isArticlePage: true, articleContainerCount: 10, "https://example.com/");
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 10,
+            "https://example.com/");
 
-        // Even though IsArticle is true, 20 content links + 10 containers = LinkList
-        // (isArticlePage && contentLinks > 10 && articleContainerCount <= 1 → Article,
-        //  but articleContainerCount is 10, so it falls through to the 15+ && 3+ check)
+        // Root URL fires rule 1 → LinkList
         result.Should().Be(PageClassification.LinkList);
     }
 
     [Fact]
     public void Classify_EmptyLinks_ArticlePage_ReturnsArticle()
     {
-        var result = PageClassifier.Classify([], isArticlePage: true, articleContainerCount: 1, "https://example.com/article");
+        var result = PageClassifier.Classify(
+            [],
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/article");
         result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_NonSectionSingleSegment_NotTreatedAsSection()
+    {
+        // /about, /login, /pricing should NOT be treated as section URLs
+        var links = CreateLinks(contentCount: 3);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/about");
+        result.Should().Be(PageClassification.Article, "/about is not a section URL");
+    }
+
+    [Fact]
+    public void Classify_TenLinks_OneContainer_NonArticle_ReturnsLinkList()
+    {
+        // 10 content links with no article page indicator — rule 5 catches
+        var links = CreateLinks(contentCount: 10);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: false,
+            articleContainerCount: 1,
+            "https://example.com/blog");
+        result.Should().Be(PageClassification.LinkList);
     }
 
     #endregion
