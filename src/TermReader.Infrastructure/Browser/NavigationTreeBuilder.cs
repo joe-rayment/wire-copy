@@ -14,6 +14,12 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class NavigationTreeBuilder : INavigationTreeBuilder
 {
+    /// <summary>
+    /// Maximum number of content links to include in a navigation tree.
+    /// Prevents UI slowdowns on pages with hundreds of links.
+    /// </summary>
+    internal const int MaxContentLinks = 100;
+
     private readonly ILogger<NavigationTreeBuilder> _logger;
 
     public NavigationTreeBuilder(ILogger<NavigationTreeBuilder> logger)
@@ -42,6 +48,17 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         var grouped = links
             .GroupBy(l => l.Type)
             .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Cap content links to prevent UI slowdowns on large pages
+        var totalContent = grouped.GetValueOrDefault(LinkType.Content)?.Count ?? 0;
+        if (totalContent > MaxContentLinks && grouped.TryGetValue(LinkType.Content, out var contentLinks))
+        {
+            grouped[LinkType.Content] = contentLinks.Take(MaxContentLinks).ToList();
+            _logger.LogInformation(
+                "Capped content links from {Total} to {Max} (document order)",
+                totalContent,
+                MaxContentLinks);
+        }
 
         // Build hierarchical tree with group headers
         var tree = NavigationTree.BuildWithGroups(grouped);
@@ -92,8 +109,19 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             .OrderBy(s => s.SortOrder)
             .ToList();
 
-        // Separate content links from non-content
-        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        // Separate content links from non-content, capping content to MaxContentLinks
+        var allContentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        if (allContentLinks.Count > MaxContentLinks)
+        {
+            _logger.LogInformation(
+                "Capped content links from {Total} to {Max} (document order, AI hierarchy)",
+                allContentLinks.Count,
+                MaxContentLinks);
+        }
+
+        var contentLinks = allContentLinks.Count > MaxContentLinks
+            ? allContentLinks.Take(MaxContentLinks).ToList()
+            : allContentLinks;
         var nonContentLinks = links.Where(l => l.Type != LinkType.Content).ToList();
 
         // Build sections from AI config for content links
