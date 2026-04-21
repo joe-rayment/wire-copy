@@ -48,14 +48,23 @@ public class PageLoader : IPageLoader
             return false;
         }
 
-        // DataDome detection
+        // Real pages can be large (100KB+). Bot challenge interstitials are small (<20KB).
+        // Cloudflare injects "challenge-platform" scripts into real pages for ongoing
+        // monitoring, so keyword detection alone causes false positives on large pages.
+        const int realPageThreshold = 20 * 1024;
+        if (html.Length > realPageThreshold)
+        {
+            return false;
+        }
+
+        // DataDome detection (small page with DataDome markers)
         if (html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
             html.Contains("datadome", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        // Cloudflare challenge detection
+        // Cloudflare challenge interstitial (small page with challenge markers)
         if (html.Contains("cf-challenge", StringComparison.OrdinalIgnoreCase) ||
             html.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase))
         {
