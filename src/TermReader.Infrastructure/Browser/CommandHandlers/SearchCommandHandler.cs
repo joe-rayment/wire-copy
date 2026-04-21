@@ -269,6 +269,10 @@ internal static class SearchCommandHandler
                 await HandleReanalyze(ctx, options, ct);
                 return true;
 
+            case "layout":
+                await LayoutCommandHandler.HandleChooseLayout(ctx, options, ct);
+                return true;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct);
