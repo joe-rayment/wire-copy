@@ -642,13 +642,24 @@ public class PageLoadPipeline
             return true;
         }
 
-        // Headless bot challenge
-        if (!page.HasReadableContent() &&
-            page.Classification != PageClassification.LinkList &&
-            loadResult.FetchMethod == FetchMethod.Browser &&
+        // Bot challenge detection — applies to ALL classifications including LinkList.
+        // A Cloudflare challenge page classified as LinkList (from URL pattern) still
+        // needs retry. An empty LinkList is just as broken as an empty Article.
+        if (loadResult.FetchMethod == FetchMethod.Browser &&
             _browserConfig.Headless &&
             PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
         {
+            return true;
+        }
+
+        // Empty LinkList after HTTP fetch — content may need browser to render
+        // (JS-heavy sites, Cloudflare challenge, etc.)
+        if (page.Classification == PageClassification.LinkList &&
+            !page.HasLinks() &&
+            fetchMethod != FetchMethod.Browser)
+        {
+            _logger.LogInformation(
+                "Empty LinkList from HTTP fetch, needs browser retry: {Url}", url);
             return true;
         }
 
@@ -802,10 +813,10 @@ public class PageLoadPipeline
                 }
             }
 
-            // Headless challenge fallback
-            if (!page.HasReadableContent() &&
-                page.Classification != PageClassification.LinkList &&
-                loadResult.FetchMethod == FetchMethod.Browser &&
+            // Headless challenge fallback — applies to ALL classifications.
+            // Cloudflare-protected homepages get classified as LinkList from URL alone,
+            // but the HTML is a challenge page with no real content.
+            if (loadResult.FetchMethod == FetchMethod.Browser &&
                 _browserConfig.Headless &&
                 PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
             {
@@ -821,6 +832,27 @@ public class PageLoadPipeline
                 {
                     fetchMethod = headedResult.FetchMethod;
                     (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken);
+                }
+            }
+
+            // Empty LinkList from HTTP — retry with browser (JS-heavy or challenge page)
+            if (page.Classification == PageClassification.LinkList &&
+                !page.HasLinks() &&
+                fetchMethod != FetchMethod.Browser &&
+                browserAvailable)
+            {
+                _logger.LogInformation(
+                    "Quality retry: empty LinkList from HTTP, retrying with browser: {Url}", url);
+
+                _pageCache.Remove(url);
+                var browserResult = await _pageLoader.LoadAsync(
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    cancellationToken);
+
+                if (browserResult.Success)
+                {
+                    fetchMethod = browserResult.FetchMethod;
+                    (page, lastBuildResult) = await BuildPageAsync(browserResult, url, cancellationToken);
                 }
             }
 

@@ -194,9 +194,10 @@ public class BrowserOrchestratorTests
     [Fact]
     public async Task ExtractReadableContentAsync_WithExistingContent_ReturnsExistingContent()
     {
-        // Arrange
-        SetupPageLoad("https://example.com", hasReadableContent: true);
-        var page = await _sut.LoadPageAsync("https://example.com");
+        // Arrange — use a non-root URL so the page isn't classified as LinkList
+        // (LinkList skips content extraction, leaving ReadableContent null)
+        SetupPageLoad("https://example.com/article", hasReadableContent: true);
+        var page = await _sut.LoadPageAsync("https://example.com/article");
 
         // Act
         var content = await _sut.ExtractReadableContentAsync(page);
