@@ -226,16 +226,24 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
         }
 
-        // Page classification badge
-        if (context.CurrentPage?.Classification == PageClassification.LinkList)
+        // Layout preview indicator (takes priority over classification/AI badges)
+        if (context.IsInPreviewMode && context.PreviewLabel != null)
         {
-            parts.Add($"{p.SecondaryText.AnsiFg}index{Reset}");
+            parts.Add($"{p.PromptFg.AnsiFg}{context.PreviewLabel}{Reset}");
         }
-
-        // AI hierarchy badge
-        if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
+        else
         {
-            parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
+            // Page classification badge
+            if (context.CurrentPage?.Classification == PageClassification.LinkList)
+            {
+                parts.Add($"{p.SecondaryText.AnsiFg}index{Reset}");
+            }
+
+            // AI hierarchy badge
+            if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
+            {
+                parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
+            }
         }
 
         // Cache progress or badge

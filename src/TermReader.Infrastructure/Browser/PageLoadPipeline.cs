@@ -970,56 +970,16 @@ public class PageLoadPipeline
             _logger.LogDebug(ex, "Failed to check hierarchy config for {Url}", pageUrl);
         }
 
-        // No saved config -- try AI analysis if configured
-        var analyzer = GetHierarchyAnalyzer();
-        if (analyzer == null || !analyzer.IsConfigured)
+        // No saved config — show hint for layout customization.
+        // AI analysis is now on-demand only (via L key / layout chooser),
+        // not auto-triggered on page load.
+        var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+        if (hintLinkCount >= 3)
         {
-            // Hint about AI layout on pages with enough content links
-            var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
-            if (hintLinkCount >= 5)
-            {
-                _navigationService.SetStatusMessage("AI layout available \u00b7 :set anthropic-key");
-            }
-
-            return null;
+            _navigationService.SetStatusMessage("L to customize layout");
         }
 
-        // Only analyze if we have content links worth analyzing
-        var contentLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
-        if (contentLinkCount < 3)
-        {
-            _logger.LogDebug("Skipping AI analysis for {Url}: only {Count} content links", pageUrl, contentLinkCount);
-            return null;
-        }
-
-        // Capture screenshot for AI analysis
-        var browserSession = _browserSession as IBrowserSession;
-        var screenshot = browserSession != null ? await browserSession.CaptureScreenshotAsync() : null;
-        if (screenshot == null || screenshot.Length == 0)
-        {
-            _logger.LogDebug("No screenshot available for AI analysis of {Url}", pageUrl);
-            return null;
-        }
-
-        try
-        {
-            _logger.LogInformation("Running AI hierarchy analysis for {Url}", pageUrl);
-
-            var config = await analyzer.AnalyzePageHierarchyAsync(screenshot, links, pageUrl, cancellationToken);
-
-            // Save for future use
-            await configStore.SaveConfigAsync(config);
-            _logger.LogInformation("Saved AI hierarchy config for {Url} ({SectionCount} sections)", pageUrl, config.Sections.Count);
-
-            _navigationService.SetStatusMessage($"AI layout \u00b7 {config.Sections.Count} sections");
-
-            return config;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "AI hierarchy analysis failed for {Url}, falling back to heuristic", pageUrl);
-            return null;
-        }
+        return null;
     }
 
     /// <summary>
