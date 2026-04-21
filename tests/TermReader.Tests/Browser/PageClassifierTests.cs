@@ -195,7 +195,7 @@ public class PageClassifierTests
 
     #endregion
 
-    #region Rule 4: Article with few links + single container
+    #region Rule 4: Article structure + single container (any number of links)
 
     [Fact]
     public void Classify_ArticlePage_FewLinks_ReturnsArticle()
@@ -224,7 +224,6 @@ public class PageClassifierTests
     [Fact]
     public void Classify_ArticlePage_FiveLinks_SingleContainer_ReturnsArticle()
     {
-        // Boundary: exactly 5 content links is the upper bound for rule 4
         var links = CreateLinks(contentCount: 5);
         var result = PageClassifier.Classify(
             links,
@@ -235,21 +234,48 @@ public class PageClassifierTests
     }
 
     [Fact]
-    public void Classify_ArticlePage_SixLinks_SingleContainer_ReturnsArticle()
+    public void Classify_ArticlePage_ManyInlineLinks_SingleContainer_ReturnsArticle()
     {
-        // 6 links, single container — falls to rule 6 (article with moderate links)
-        var links = CreateLinks(contentCount: 6);
+        // Wikipedia, Verge longform: 50+ inline links but single article container.
+        // Rule 4 must protect these from Rule 5 (link-count → LinkList).
+        var links = CreateLinks(contentCount: 50);
         var result = PageClassifier.Classify(
             links,
             isArticlePage: true,
             articleContainerCount: 1,
-            "https://example.com/article-many-links");
+            "https://en.wikipedia.org/wiki/Terminal_emulator");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_ArticlePage_HundredLinks_SingleContainer_ReturnsArticle()
+    {
+        // Extreme case: 100+ inline links in a single article
+        var links = CreateLinks(contentCount: 100);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://example.com/comprehensive-guide");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_ArticlePage_ZeroContainers_ReturnsArticle()
+    {
+        // Article detection via paragraphs/og:type but no <article> tag (articleContainerCount=0)
+        var links = CreateLinks(contentCount: 15);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 0,
+            "https://example.com/blog-post");
         result.Should().Be(PageClassification.Article);
     }
 
     #endregion
 
-    #region Rule 5: Many content links = LinkList
+    #region Rule 5: Many content links without article structure = LinkList
 
     [Fact]
     public void Classify_TenLinks_NoArticle_ReturnsLinkList()
@@ -278,24 +304,7 @@ public class PageClassifierTests
 
     #endregion
 
-    #region Rule 6: Article with moderate links (6-9)
-
-    [Fact]
-    public void Classify_ArticlePage_NineLinks_SingleContainer_ReturnsArticle()
-    {
-        // Article page with 9 inline links — still article via rule 6
-        var links = CreateLinks(contentCount: 9);
-        var result = PageClassifier.Classify(
-            links,
-            isArticlePage: true,
-            articleContainerCount: 1,
-            "https://example.com/long-article");
-        result.Should().Be(PageClassification.Article);
-    }
-
-    #endregion
-
-    #region Rule 7: Unknown fallback
+    #region Rule 6: Unknown fallback
 
     [Fact]
     public void Classify_FewLinks_NotArticle_ReturnsUnknown()
@@ -513,8 +522,8 @@ public class PageClassifierTests
     public void Classify_OldDeadZone_TwelveLinks_SingleContainer_NonSectionUrl()
     {
         // The old dead zone: 12 content links, isArticlePage true, single container, non-section URL
-        // With new rules: rule 2 needs date slug URL (no). Rule 4 needs <= 5 links (no).
-        // Rule 6 catches: isArticlePage + single container → Article
+        // With new rules: rule 4 catches isArticlePage + single container → Article
+        // This protects link-heavy articles (Wikipedia, Verge longform, etc.)
         var links = CreateLinks(contentCount: 12);
         var result = PageClassifier.Classify(
             links,
@@ -522,23 +531,46 @@ public class PageClassifierTests
             articleContainerCount: 1,
             "https://example.com/some-page");
 
-        // This is the ambiguous case. With single container + article structure,
-        // it's treated as article. The user can press 'v' to see the link list.
-        // However, if the page has 10+ links and 2+ containers, it would be LinkList (rule 3).
-        result.Should().Be(PageClassification.LinkList,
-            "12 content links reaches rule 5 threshold (>= 10) before rule 6 can fire");
+        result.Should().Be(PageClassification.Article,
+            "rule 4 (isArticlePage + single container) fires before rule 5 (link count)");
     }
 
     [Fact]
     public void Classify_NineLinks_ArticlePage_SingleContainer_ReturnsArticle()
     {
-        // 9 links, article structure, single container — rule 6 catches this
+        // 9 links, article structure, single container — rule 4 catches this
         var links = CreateLinks(contentCount: 9);
         var result = PageClassifier.Classify(
             links,
             isArticlePage: true,
             articleContainerCount: 1,
             "https://example.com/some-article-page");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_WikipediaArticle_ManyLinks_ReturnsArticle()
+    {
+        // Wikipedia: 200+ inline wiki links, no <article> tags, isArticlePage from paragraphs
+        var links = CreateLinks(contentCount: 200);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 0,
+            "https://en.wikipedia.org/wiki/Terminal_emulator");
+        result.Should().Be(PageClassification.Article);
+    }
+
+    [Fact]
+    public void Classify_VergeLongform_ManyInlineLinks_ReturnsArticle()
+    {
+        // Verge article: 50+ inline links, 1 <article> container, og:type=article
+        var links = CreateLinks(contentCount: 50);
+        var result = PageClassifier.Classify(
+            links,
+            isArticlePage: true,
+            articleContainerCount: 1,
+            "https://www.theverge.com/ai-artificial-intelligence/908513/the-vibes-are-off-at-openai");
         result.Should().Be(PageClassification.Article);
     }
 

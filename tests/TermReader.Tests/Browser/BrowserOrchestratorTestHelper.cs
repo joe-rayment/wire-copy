@@ -99,6 +99,7 @@ internal static class BrowserOrchestratorTestHelper
             linkExtractor,
             treeBuilder,
             contentExtractor,
+            Substitute.For<IRssFeedDetector>(),
             renderer,
             navigationService,
             scopeFactory,

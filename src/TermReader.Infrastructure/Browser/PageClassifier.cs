@@ -17,7 +17,7 @@ internal static partial class PageClassifier
     /// <summary>
     /// Bump this when classification logic changes to invalidate stale build caches.
     /// </summary>
-    public const int ClassificationVersion = 2;
+    public const int ClassificationVersion = 3;
 
     /// <summary>
     /// Classifies a page using URL-first logic with HTML tiebreakers.
@@ -63,28 +63,22 @@ internal static partial class PageClassifier
             return PageClassification.LinkList;
         }
 
-        // Rule 4: Article structure with few content links and single container.
-        // Classic article page with sidebar links.
-        if (isArticlePage && contentLinks <= 5 && articleContainerCount <= 1)
-        {
-            return PageClassification.Article;
-        }
-
-        // Rule 5: Many content links, regardless of article tags.
-        // Pages with 10+ content links are more useful as link lists.
-        if (contentLinks >= 10)
-        {
-            return PageClassification.LinkList;
-        }
-
-        // Rule 6: Article HTML structure with single container, moderate links (6-9).
-        // Still an article — user can press 'v' to see links.
+        // Rule 4: Article HTML structure with single container, any number of inline links.
+        // Protects link-heavy articles (Wikipedia, Verge longform) from being
+        // misclassified as LinkList by the content-link-count rule below.
         if (isArticlePage && articleContainerCount <= 1)
         {
             return PageClassification.Article;
         }
 
-        // Rule 7: Conservative default — Unknown pages show hierarchical view
+        // Rule 5: Many content links without article structure.
+        // Pages with 10+ content links and no article indicators are link lists.
+        if (contentLinks >= 10)
+        {
+            return PageClassification.LinkList;
+        }
+
+        // Rule 6: Conservative default — Unknown pages show hierarchical view
         // without auto-switching to readable. User can still press 'v'.
         return PageClassification.Unknown;
     }

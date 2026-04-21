@@ -47,6 +47,12 @@ public class Page
     public PageClassification Classification { get; private set; } = PageClassification.Unknown;
 
     /// <summary>
+    /// RSS/Atom feeds discovered on this page via &lt;link rel="alternate"&gt;.
+    /// Empty if no feeds found.
+    /// </summary>
+    public IReadOnlyList<FeedInfo> DetectedFeeds { get; private set; } = Array.Empty<FeedInfo>();
+
+    /// <summary>
     /// Timestamp when the page was loaded.
     /// </summary>
     public DateTime LoadedAt { get; private set; }
@@ -96,6 +102,14 @@ public class Page
     public void SetClassification(PageClassification classification)
     {
         Classification = classification;
+    }
+
+    /// <summary>
+    /// Sets discovered RSS/Atom feeds for this page.
+    /// </summary>
+    public void SetDetectedFeeds(IReadOnlyList<FeedInfo> feeds)
+    {
+        DetectedFeeds = feeds ?? Array.Empty<FeedInfo>();
     }
 
     /// <summary>

@@ -27,6 +27,7 @@ public class PageLoadPipeline
     private readonly ILinkExtractor _linkExtractor;
     private readonly INavigationTreeBuilder _treeBuilder;
     private readonly IReadableContentExtractor _contentExtractor;
+    private readonly IRssFeedDetector _feedDetector;
     private readonly IPageRenderer _renderer;
     private readonly NavigationService _navigationService;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -52,6 +53,7 @@ public class PageLoadPipeline
         ILinkExtractor linkExtractor,
         INavigationTreeBuilder treeBuilder,
         IReadableContentExtractor contentExtractor,
+        IRssFeedDetector feedDetector,
         IPageRenderer renderer,
         NavigationService navigationService,
         IServiceScopeFactory scopeFactory,
@@ -66,6 +68,7 @@ public class PageLoadPipeline
         _linkExtractor = linkExtractor;
         _treeBuilder = treeBuilder;
         _contentExtractor = contentExtractor;
+        _feedDetector = feedDetector;
         _renderer = renderer;
         _navigationService = navigationService;
         _scopeFactory = scopeFactory;
@@ -432,6 +435,18 @@ public class PageLoadPipeline
             page.ReadableContent?.Paragraphs.Count ?? 0,
             loadResult.Html?.Length ?? 0);
 
+        // Detect RSS/Atom feeds from page HTML
+        List<FeedInfo>? detectedFeeds = null;
+        if (!string.IsNullOrEmpty(loadResult.Html))
+        {
+            var feeds = _feedDetector.DetectFeeds(loadResult.Html, finalUrl);
+            if (feeds != null && feeds.Count > 0)
+            {
+                detectedFeeds = feeds;
+                page.SetDetectedFeeds(feeds);
+            }
+        }
+
         // Capture build inputs for StoreBuildCache
         var buildResult = new PageBuildCache
         {
@@ -442,6 +457,7 @@ public class PageLoadPipeline
             FinalUrl = finalUrl,
             Classification = classification,
             ClassificationVersion = PageClassifier.ClassificationVersion,
+            DetectedFeeds = detectedFeeds,
         };
 
         return (page, buildResult);
@@ -474,6 +490,11 @@ public class PageLoadPipeline
         if (cache.ReadableContent != null)
         {
             page.SetReadableContent(cache.ReadableContent);
+        }
+
+        if (cache.DetectedFeeds is { Count: > 0 })
+        {
+            page.SetDetectedFeeds(cache.DetectedFeeds);
         }
 
         return page;
