@@ -1262,6 +1262,12 @@ public class BrowserOrchestrator : IBrowserService
                     await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
                     break;
                 case CommandType.ToggleSelection:
+                    // Spacebar: toggle speed read in Readable view, toggle selection in Hierarchical
+                    if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable)
+                    {
+                        goto case CommandType.ToggleSpeedRead;
+                    }
+
                     await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken);
                     break;
                 case CommandType.ActivateLink:
