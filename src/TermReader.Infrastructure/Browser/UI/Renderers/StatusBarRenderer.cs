@@ -231,7 +231,7 @@ internal class StatusBarRenderer
             parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
         }
 
-        // Layout preview indicator (takes priority over classification/AI badges)
+        // Layout preview indicator (takes priority over other badges)
         if (context.IsInPreviewMode && context.PreviewLabel != null)
         {
             parts.Add($"{p.PromptFg.AnsiFg}{context.PreviewLabel}{Reset}");
@@ -248,6 +248,13 @@ internal class StatusBarRenderer
             if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
             {
                 parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
+            }
+
+            // Layout chooser hint — always visible on link list pages in hierarchical view
+            if (mode == ViewMode.Hierarchical &&
+                context.CurrentPage?.Classification == PageClassification.LinkList)
+            {
+                parts.Add($"{p.SecondaryText.AnsiFg}^L:layout{Reset}");
             }
         }
 

@@ -885,7 +885,7 @@ public class PageLoadPipeline
         var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
         if (hintLinkCount >= 3)
         {
-            _navigationService.SetStatusMessage("L to customize layout");
+            _navigationService.SetStatusMessage("Ctrl+L to customize layout");
         }
 
         return null;
