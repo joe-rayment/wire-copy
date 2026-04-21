@@ -152,6 +152,40 @@ internal static class LayoutCommandHandler
     }
 
     /// <summary>
+    /// Clears the saved layout config for the current URL.
+    /// </summary>
+    public static async Task HandleClearLayout(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentContext.CurrentPage;
+        if (page == null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            if (configStore != null)
+            {
+                var deleted = await configStore.DeleteConfigAsync(page.Url);
+                ctx.NavigationService.SetStatusMessage(
+                    deleted ? "Layout config cleared" : "No saved layout for this page");
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to clear layout config");
+            ctx.NavigationService.SetStatusMessage("Failed to clear layout config");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    /// <summary>
     /// Cancels preview mode and restores the original layout (Esc in preview mode).
     /// </summary>
     public static async Task HandleCancel(

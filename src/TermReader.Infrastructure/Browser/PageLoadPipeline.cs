@@ -384,10 +384,29 @@ public class PageLoadPipeline
             articleContainerCount,
             isArticlePage);
 
-        // Try AI-powered hierarchy: check saved config first, then analyze if configured
+        // Try saved hierarchy config, then fall back to document-order
         NavigationTree tree;
         var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl, cancellationToken);
-        if (hierarchyConfig != null)
+        if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
+            && !string.IsNullOrEmpty(hierarchyConfig.RssFeedUrl))
+        {
+            // Saved RSS layout: fetch feed and build tree from feed items
+            var feedItems = await _feedDetector.ParseFeedAsync(hierarchyConfig.RssFeedUrl, cancellationToken);
+            if (feedItems.Count > 0)
+            {
+                tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken);
+                _navigationService.SetAiHierarchy(false);
+                _navigationService.SetStatusMessage($"RSS feed · {feedItems.Count} articles");
+            }
+            else
+            {
+                // Feed unavailable — fallback to document-order
+                tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+                _navigationService.SetAiHierarchy(false);
+                _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+L to reconfigure");
+            }
+        }
+        else if (hierarchyConfig != null)
         {
             tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken);
             _navigationService.SetAiHierarchy(true);
