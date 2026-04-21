@@ -353,6 +353,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
         _queueSignal.Dispose();
     }
 
+    /// <inheritdoc />
+    public bool IsDomainNeedsJs(string url)
+    {
+        var origin = UrlNormalizer.GetOrigin(url);
+        return origin != null && _needsJsDomains.ContainsKey(origin);
+    }
+
     internal static bool IsBotDetectionResponse(string html)
     {
         var indicators = new[]
@@ -740,13 +747,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private bool IsInArticleCache(string url) =>
         _articleContentCache != null && _articleCachedUrls.ContainsKey(UrlNormalizer.Normalize(url));
-
-    /// <inheritdoc />
-    public bool IsDomainNeedsJs(string url)
-    {
-        var origin = UrlNormalizer.GetOrigin(url);
-        return origin != null && _needsJsDomains.ContainsKey(origin);
-    }
 
     private bool IsDomainCircuitBroken(string url)
     {

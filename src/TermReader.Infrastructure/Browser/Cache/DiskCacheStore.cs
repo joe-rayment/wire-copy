@@ -293,60 +293,6 @@ internal sealed class DiskCacheStore
     }
 
     /// <summary>
-    /// Evicts oldest cache files (by last write time) until total disk usage
-    /// is within <see cref="_maxDiskSizeBytes"/>. No-op when the limit is 0 (disabled).
-    /// </summary>
-    internal void EnforceSizeLimit()
-    {
-        if (_maxDiskSizeBytes <= 0 || !Directory.Exists(_cacheDirectory))
-        {
-            return;
-        }
-
-        try
-        {
-            var files = new DirectoryInfo(_cacheDirectory)
-                .GetFiles("*.json")
-                .Where(f => !f.Name.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase))
-                .Select(f => new { File = f, f.Length, f.LastWriteTimeUtc })
-                .OrderBy(f => f.LastWriteTimeUtc)
-                .ToList();
-
-            var totalSize = files.Sum(f => f.Length);
-
-            var evicted = 0;
-            while (totalSize > _maxDiskSizeBytes && evicted < files.Count)
-            {
-                var oldest = files[evicted];
-                try
-                {
-                    oldest.File.Delete();
-                    totalSize -= oldest.Length;
-                    evicted++;
-                }
-                catch
-                {
-                    // Best effort eviction; skip files that can't be deleted
-                    evicted++;
-                }
-            }
-
-            if (evicted > 0)
-            {
-                _logger.LogInformation(
-                    "Disk cache eviction: removed {Count} oldest files, total size now {Size} bytes (limit: {Limit} bytes)",
-                    evicted,
-                    totalSize,
-                    _maxDiskSizeBytes);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to enforce disk cache size limit");
-        }
-    }
-
-    /// <summary>
     /// Writes a PageBuildCache to disk as a separate .build.json file.
     /// </summary>
     public void WriteBuildCache(string normalizedUrl, PageBuildCache buildCache)
@@ -538,6 +484,60 @@ internal sealed class DiskCacheStore
 
         _logger.LogInformation("Loaded {Count} build cache entries from disk", results.Count);
         return results;
+    }
+
+    /// <summary>
+    /// Evicts oldest cache files (by last write time) until total disk usage
+    /// is within <see cref="_maxDiskSizeBytes"/>. No-op when the limit is 0 (disabled).
+    /// </summary>
+    internal void EnforceSizeLimit()
+    {
+        if (_maxDiskSizeBytes <= 0 || !Directory.Exists(_cacheDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            var files = new DirectoryInfo(_cacheDirectory)
+                .GetFiles("*.json")
+                .Where(f => !f.Name.EndsWith(".build.json", StringComparison.OrdinalIgnoreCase))
+                .Select(f => new { File = f, f.Length, f.LastWriteTimeUtc })
+                .OrderBy(f => f.LastWriteTimeUtc)
+                .ToList();
+
+            var totalSize = files.Sum(f => f.Length);
+
+            var evicted = 0;
+            while (totalSize > _maxDiskSizeBytes && evicted < files.Count)
+            {
+                var oldest = files[evicted];
+                try
+                {
+                    oldest.File.Delete();
+                    totalSize -= oldest.Length;
+                    evicted++;
+                }
+                catch
+                {
+                    // Best effort eviction; skip files that can't be deleted
+                    evicted++;
+                }
+            }
+
+            if (evicted > 0)
+            {
+                _logger.LogInformation(
+                    "Disk cache eviction: removed {Count} oldest files, total size now {Size} bytes (limit: {Limit} bytes)",
+                    evicted,
+                    totalSize,
+                    _maxDiskSizeBytes);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enforce disk cache size limit");
+        }
     }
 
     internal string GetFilePath(string normalizedUrl)

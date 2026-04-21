@@ -45,8 +45,6 @@ public class PageLoadPipeline
     // Lazily resolved hierarchy services (may not need to construct until first use)
     private IHierarchyConfigStore? _hierarchyConfigStore;
     private bool _hierarchyConfigStoreResolved;
-    private IHierarchyAnalyzer? _hierarchyAnalyzer;
-    private bool _hierarchyAnalyzerResolved;
 
     public PageLoadPipeline(
         IPageLoader pageLoader,
@@ -301,7 +299,7 @@ public class PageLoadPipeline
         // If so, return the current page immediately and schedule retries in the background.
         // The user can interact with the (possibly truncated) content while retries run.
         Task<PageLoadPipelineResult>? qualityRetryTask = null;
-        var needsQualityRetry = NeedsQualityRetry(page, fetchMethod, loadResult, browserAvailable, url);
+        var needsQualityRetry = NeedsQualityRetry(page, fetchMethod, loadResult, browserAvailable);
 
         if (needsQualityRetry)
         {
@@ -364,7 +362,7 @@ public class PageLoadPipeline
 
         // Try saved hierarchy config, then fall back to document-order
         NavigationTree tree;
-        var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl, cancellationToken);
+        var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl);
         if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
             && !string.IsNullOrEmpty(hierarchyConfig.RssFeedUrl))
         {
@@ -587,8 +585,7 @@ public class PageLoadPipeline
         Page page,
         FetchMethod fetchMethod,
         PageLoadResult loadResult,
-        bool browserAvailable,
-        string url)
+        bool browserAvailable)
     {
         if (!browserAvailable)
         {
@@ -762,21 +759,6 @@ public class PageLoadPipeline
     }
 
     /// <summary>
-    /// Returns the number of &lt;article&gt; elements in the HTML.
-    /// </summary>
-    private static int CountArticleContainers(string html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return 0;
-        }
-
-        var doc = new HtmlAgilityPack.HtmlDocument();
-        doc.LoadHtml(html);
-        return doc.DocumentNode.SelectNodes("//article")?.Count ?? 0;
-    }
-
-    /// <summary>
     /// Stores the build result in the page cache so repeat visits skip extraction.
     /// </summary>
     private void StoreBuildCache(string url, Page page, PageBuildCache? buildCache)
@@ -874,8 +856,7 @@ public class PageLoadPipeline
     /// </summary>
     private async Task<SiteHierarchyConfig?> TryGetOrAnalyzeHierarchyAsync(
         List<LinkInfo> links,
-        string pageUrl,
-        CancellationToken cancellationToken)
+        string pageUrl)
     {
         var configStore = GetHierarchyConfigStore();
         if (configStore == null)
@@ -1029,28 +1010,5 @@ public class PageLoadPipeline
         }
 
         return _hierarchyConfigStore;
-    }
-
-    /// <summary>
-    /// Lazily resolves the hierarchy analyzer from the DI container.
-    /// </summary>
-    private IHierarchyAnalyzer? GetHierarchyAnalyzer()
-    {
-        if (!_hierarchyAnalyzerResolved)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                _hierarchyAnalyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
-            }
-            catch
-            {
-                // Service may not be registered
-            }
-
-            _hierarchyAnalyzerResolved = true;
-        }
-
-        return _hierarchyAnalyzer;
     }
 }

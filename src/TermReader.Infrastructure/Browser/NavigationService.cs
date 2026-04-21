@@ -16,8 +16,6 @@ namespace TermReader.Infrastructure.Browser;
 /// </summary>
 public class NavigationService : INavigationService
 {
-    private record struct HistoryEntry(Page Page, ViewMode ViewMode);
-
     private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
 
     private readonly ILogger<NavigationService> _logger;
@@ -103,6 +101,11 @@ public class NavigationService : INavigationService
     public bool IsSpeedReadActive => _speedReadActive;
 
     public int SpeedReadWpm => _speedReadWpm;
+
+    /// <summary>
+    /// Whether the layout preview carousel is currently active.
+    /// </summary>
+    public bool IsInPreviewMode => _isInPreviewMode;
 
     public void NavigateTo(Page page)
     {
@@ -295,13 +298,6 @@ public class NavigationService : INavigationService
         _isAiHierarchy = isAiHierarchy;
     }
 
-    #region Layout Preview
-
-    /// <summary>
-    /// Whether the layout preview carousel is currently active.
-    /// </summary>
-    public bool IsInPreviewMode => _isInPreviewMode;
-
     /// <summary>
     /// Enters layout preview mode with pre-computed layout candidates.
     /// Saves the current tree so it can be restored on cancel.
@@ -337,7 +333,7 @@ public class NavigationService : INavigationService
             return;
         }
 
-        _previewIndex = ((_previewIndex + direction) % _previewLayouts.Count + _previewLayouts.Count) % _previewLayouts.Count;
+        _previewIndex = (((_previewIndex + direction) % _previewLayouts.Count) + _previewLayouts.Count) % _previewLayouts.Count;
         _currentPage.SetLinkTree(_previewLayouts[_previewIndex].PreviewTree);
         _selectedLinkIndex = 0;
         _scrollOffset = 0;
@@ -394,16 +390,6 @@ public class NavigationService : INavigationService
         var current = _previewLayouts[_previewIndex];
         return $"Layout {_previewIndex + 1}/{_previewLayouts.Count} · {current.Summary}";
     }
-
-    private void ExitPreviewMode()
-    {
-        _isInPreviewMode = false;
-        _previewLayouts = null;
-        _previewIndex = 0;
-        _originalTree = null;
-    }
-
-    #endregion
 
     /// <summary>
     /// Toggles between Hierarchical and Readable view modes.
@@ -661,6 +647,14 @@ public class NavigationService : INavigationService
         return true;
     }
 
+    private void ExitPreviewMode()
+    {
+        _isInPreviewMode = false;
+        _previewLayouts = null;
+        _previewIndex = 0;
+        _originalTree = null;
+    }
+
     private string? GetActiveStatusMessage()
     {
         if (_statusMessage == null || _statusMessageSetAt == null)
@@ -677,4 +671,6 @@ public class NavigationService : INavigationService
 
         return _statusMessage;
     }
+
+    private record struct HistoryEntry(Page Page, ViewMode ViewMode);
 }

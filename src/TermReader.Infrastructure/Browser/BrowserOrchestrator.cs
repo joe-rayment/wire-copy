@@ -674,7 +674,6 @@ public class BrowserOrchestrator : IBrowserService
                         url);
                     _pageCache.Remove(url);
                 }
-                // Quality gate: reject build caches that misclassified article URLs as LinkList
                 else if (buildCache.Classification == PageClassification.LinkList
                     && !PageClassifier.IsSectionUrlPattern(url))
                 {
@@ -999,7 +998,11 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _logger.LogInformation(
                     "Quality retry improved page: {Url} (words: {Old} → {New}, paywall: {OldPw} → {NewPw})",
-                    url, currentWordCount, improvedWordCount, currentPaywalled, improvedPaywalled);
+                    url,
+                    currentWordCount,
+                    improvedWordCount,
+                    currentPaywalled,
+                    improvedPaywalled);
 
                 _navigationService.ReplaceCurrent(improvedPage);
                 _lastLoadFetchMethod = result.FetchMethod;
@@ -1017,7 +1020,9 @@ public class BrowserOrchestrator : IBrowserService
             {
                 _logger.LogDebug(
                     "Quality retry did not improve page: {Url} (words: {Old} → {New})",
-                    url, currentWordCount, improvedWordCount);
+                    url,
+                    currentWordCount,
+                    improvedWordCount);
             }
         }
         catch (OperationCanceledException)
@@ -1265,10 +1270,26 @@ public class BrowserOrchestrator : IBrowserService
                     // Spacebar: toggle speed read in Readable view, toggle selection in Hierarchical
                     if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable)
                     {
-                        goto case CommandType.ToggleSpeedRead;
+                        if (_navigationService.IsSpeedReadActive)
+                        {
+                            _navigationService.StopSpeedRead();
+                        }
+                        else if (_navigationService.CurrentPage?.HasReadableContent() == true)
+                        {
+                            _navigationService.StartSpeedRead();
+                        }
+                        else
+                        {
+                            _navigationService.SetStatusMessage("No readable content for speed reading");
+                        }
+
+                        await RenderCurrentPageAsync(options, cancellationToken);
+                    }
+                    else
+                    {
+                        await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken);
                     }
 
-                    await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken);
                     break;
                 case CommandType.ActivateLink:
                     await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
