@@ -84,9 +84,9 @@ internal static partial class PageClassifier
     }
 
     /// <summary>
-    /// Checks if a URL matches common section/index page patterns.
-    /// Used as the primary signal in classification (rule 1) and for
-    /// cache quality gates.
+    /// Checks if a URL is a section index or homepage — NOT an article under a section.
+    /// Matches root paths, bare section paths (/science), and one-level sub-sections
+    /// (/section/world), but NOT deep paths like /science/915244/slug which are articles.
     /// </summary>
     public static bool IsSectionUrlPattern(string url)
     {
@@ -106,13 +106,61 @@ internal static partial class PageClassifier
                 return true;
             }
 
-            // Known section path prefixes
-            return SectionPathRegex().IsMatch(path);
+            // Split path into segments: "/science/915244/slug" → ["science", "915244", "slug"]
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length == 0)
+            {
+                return true;
+            }
+
+            // First segment must be a known section keyword
+            if (!SectionKeywords.Contains(segments[0]))
+            {
+                return false;
+            }
+
+            // Bare section path (/science) — always a section index
+            if (segments.Length == 1)
+            {
+                return true;
+            }
+
+            // One sub-level (/section/world, /tag/javascript) — still a section
+            // BUT: if the second segment is a numeric ID, it's likely an article
+            // (e.g., /science/915244 on The Verge)
+            if (segments.Length == 2 && !IsNumericOrSlug(segments[1]))
+            {
+                return true;
+            }
+
+            // 3+ segments (/science/915244/spacex-ipo) — too deep, likely an article
+            return false;
         }
         catch
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Checks if a path segment looks like a numeric article ID or a content slug
+    /// rather than a sub-section name.
+    /// </summary>
+    private static bool IsNumericOrSlug(string segment)
+    {
+        // Pure numeric = article ID (e.g., "915244" in /science/915244)
+        if (long.TryParse(segment, out _))
+        {
+            return true;
+        }
+
+        // Contains digits mixed with hyphens = content slug (e.g., "24038888-meta-threads")
+        if (segment.Length > 10 && segment.Any(char.IsDigit) && segment.Contains('-'))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -139,10 +187,15 @@ internal static partial class PageClassifier
         }
     }
 
-    [GeneratedRegex(
-        @"^/(section|topic|tag|category|categories|latest|archive|search|live|series|trending|popular|opinion|world|politics|business|technology|science|health|sports|arts|style|food|travel|magazine|books|podcasts|video|news|tech|entertainment|reviews|features|culture|money|climate|education|real-estate|nyregion|briefing|interactive|us|uk)(/|$)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled)]
-    private static partial Regex SectionPathRegex();
+    private static readonly HashSet<string> SectionKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "section", "topic", "tag", "category", "categories", "latest", "archive",
+        "search", "live", "series", "trending", "popular", "opinion", "world",
+        "politics", "business", "technology", "science", "health", "sports", "arts",
+        "style", "food", "travel", "magazine", "books", "podcasts", "video", "news",
+        "tech", "entertainment", "reviews", "features", "culture", "money", "climate",
+        "education", "real-estate", "nyregion", "briefing", "interactive", "us", "uk",
+    };
 
     [GeneratedRegex(@"/\d{4}/\d{2}/(\d{2}/)?", RegexOptions.Compiled)]
     private static partial Regex ArticleDateRegex();
