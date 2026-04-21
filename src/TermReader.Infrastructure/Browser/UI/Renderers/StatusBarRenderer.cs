@@ -53,10 +53,15 @@ internal class StatusBarRenderer
         var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
-        // Responsive help hint: full at wide, abbreviated at narrow
+        // Responsive help hint: show preview controls or standard help
         string helpHint;
         int helpWidth;
-        if (width >= 60)
+        if (context.IsInPreviewMode)
+        {
+            helpHint = $" {p.SecondaryText.AnsiFg}\u25c0/\u25b6:cycle Enter:save Esc:cancel{Reset}";
+            helpWidth = 30;
+        }
+        else if (width >= 60)
         {
             helpHint = $" {p.SecondaryText.AnsiFg}?:help{Reset}";
             helpWidth = 7;

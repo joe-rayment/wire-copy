@@ -121,6 +121,9 @@ public enum CommandType
     OpenInBrowser,
     GoToUrl,
 
+    // Layout
+    ChooseLayout,
+
     // Debug/Utility
     DumpHtml,
 

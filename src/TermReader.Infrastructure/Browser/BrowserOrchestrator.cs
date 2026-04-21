@@ -1213,6 +1213,32 @@ public class BrowserOrchestrator : IBrowserService
                 return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
             }
 
+            // Layout preview mode: intercept keys for carousel control
+            if (_navigationService.IsInPreviewMode)
+            {
+                switch (command.Type)
+                {
+                    case CommandType.ExpandNode or CommandType.MoveRight:
+                        await LayoutCommandHandler.HandleCycleRight(_commandContext, options, cancellationToken);
+                        return true;
+                    case CommandType.CollapseNode or CommandType.MoveLeft:
+                        await LayoutCommandHandler.HandleCycleLeft(_commandContext, options, cancellationToken);
+                        return true;
+                    case CommandType.ActivateLink:
+                        await LayoutCommandHandler.HandleApplyAndSave(_commandContext, options, cancellationToken);
+                        return true;
+                    case CommandType.GoBack:
+                        await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken);
+                        return true;
+                    case CommandType.Quit:
+                        return false;
+                    case CommandType.TerminalResized:
+                        break; // Fall through to normal handling
+                    default:
+                        return true; // Ignore other keys in preview mode
+                }
+            }
+
             var commandType = command.Type;
 
             switch (commandType)
@@ -1354,6 +1380,10 @@ public class BrowserOrchestrator : IBrowserService
                 case CommandType.GeneratePodcast:
                     await PodcastCommandHandler.HandleGeneratePodcast(
                         _commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.ChooseLayout:
+                    await LayoutCommandHandler.HandleChooseLayout(_commandContext, options, cancellationToken);
                     break;
 
                 case CommandType.DumpHtml:
