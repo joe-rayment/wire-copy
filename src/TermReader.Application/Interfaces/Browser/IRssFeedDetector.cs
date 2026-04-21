@@ -26,4 +26,14 @@ public interface IRssFeedDetector
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of feed items as LinkInfo, or empty on failure.</returns>
     Task<List<LinkInfo>> ParseFeedAsync(string feedUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Probes well-known feed URL paths (/feed/, /rss, /feed.xml, etc.) when
+    /// &lt;link&gt; tag detection finds nothing. Many sites serve feeds at standard
+    /// paths without advertising them in HTML.
+    /// </summary>
+    /// <param name="pageUrl">URL of the page to probe from (uses origin).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Discovered feeds, or empty.</returns>
+    Task<List<FeedInfo>> ProbeWellKnownFeedsAsync(string pageUrl, CancellationToken cancellationToken = default);
 }

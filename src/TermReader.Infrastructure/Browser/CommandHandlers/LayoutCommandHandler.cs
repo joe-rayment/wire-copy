@@ -97,15 +97,21 @@ internal static class LayoutCommandHandler
                 return;
             }
 
-            // Celebration moment before entering preview
-            var summary = candidates.Count == 1
-                ? $"\u2728 1 layout ready"
-                : $"\u2728 {candidates.Count} layouts ready!";
-            ctx.NavigationService.SetStatusMessage(summary);
+            if (candidates.Count == 1)
+            {
+                // Only one layout — skip preview mode, just apply it directly
+                ctx.NavigationService.SetStatusMessage(
+                    $"\u2714 {candidates[0].Summary} (only layout available)");
+                await ctx.RenderCurrentPageAsync(options, ct);
+                return;
+            }
+
+            // Multiple layouts — celebrate and enter preview mode
+            ctx.NavigationService.SetStatusMessage(
+                $"\u2728 {candidates.Count} layouts ready! Use \u25c0/\u25b6 to browse");
             await ctx.RenderCurrentPageAsync(options, ct);
             await Task.Delay(600, ct);
 
-            // Enter preview mode
             ctx.NavigationService.EnterPreviewMode(candidates);
             await ctx.RenderCurrentPageAsync(options, ct);
         }

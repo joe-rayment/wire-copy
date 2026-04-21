@@ -61,6 +61,7 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
         byte[] screenshot,
         List<LinkInfo> links,
         string pageUrl,
+        string? promptSuffix = null,
         CancellationToken cancellationToken = default)
     {
         var apiKey = GetApiKey()
@@ -69,6 +70,11 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
 
         var domain = new Uri(pageUrl).Host.ToLowerInvariant();
         var prompt = BuildPrompt(links, pageUrl);
+        if (!string.IsNullOrEmpty(promptSuffix))
+        {
+            prompt += "\n\n" + promptSuffix;
+        }
+
         var screenshotBase64 = Convert.ToBase64String(screenshot);
 
         _logger.LogInformation(
