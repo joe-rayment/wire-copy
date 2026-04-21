@@ -115,11 +115,12 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
     private static string BuildPrompt(List<LinkInfo> links, string pageUrl)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are analyzing a webpage screenshot to determine how links are visually organized on the page.");
+        sb.AppendLine("You are analyzing a webpage screenshot for a terminal-based news reader.");
+        sb.AppendLine("Group the content links below by visual section, ordered by editorial prominence.");
         sb.AppendLine();
         sb.AppendLine($"Page URL: {pageUrl}");
         sb.AppendLine();
-        sb.AppendLine("Here are the links extracted from the page HTML. Each link has an index, display text, URL, and the CSS selector of its parent element:");
+        sb.AppendLine("Content links extracted from the page (index, text, URL, CSS parent):");
         sb.AppendLine();
 
         var contentLinks = links
@@ -136,15 +137,20 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         sb.AppendLine();
-        sb.AppendLine("Looking at the screenshot, group these content links into visual sections as they appear on the page.");
-        sb.AppendLine("For each section, provide:");
-        sb.AppendLine("- name: A short descriptive name for the section (e.g., \"Top Stories\", \"Opinion\", \"Trending\")");
-        sb.AppendLine("- linkIndices: The indices of links belonging to this section");
-        sb.AppendLine("- parentSelectors: Common CSS parent selectors shared by links in this section (from the parent field above)");
-        sb.AppendLine("- urlPatterns: URL path patterns common to links in this section (e.g., \"/opinion/\", \"/sports/\")");
-        sb.AppendLine("- startCollapsed: true if this section is visually less prominent (sidebar, below fold)");
+        sb.AppendLine("Group these links into sections by editorial prominence:");
+        sb.AppendLine("- Hero/lead stories at top (most prominent, largest on page)");
+        sb.AppendLine("- Main content feed (primary article list)");
+        sb.AppendLine("- Secondary sections (opinion, trending, below-fold areas)");
+        sb.AppendLine("- Sidebar content last (least prominent)");
         sb.AppendLine();
-        sb.AppendLine("Order sections from top to bottom as they appear visually on the page.");
+        sb.AppendLine("Each section should contain ONLY article/story links. Exclude navigation, ads, newsletter signups, and utility links.");
+        sb.AppendLine();
+        sb.AppendLine("For each section provide:");
+        sb.AppendLine("- name: Short descriptive name (e.g., \"Lead Stories\", \"Opinion\", \"Trending\")");
+        sb.AppendLine("- linkIndices: Indices of links in this section");
+        sb.AppendLine("- parentSelectors: Common CSS parent selectors from the parent field above");
+        sb.AppendLine("- urlPatterns: URL path patterns shared by links (e.g., \"/opinion/\")");
+        sb.AppendLine("- startCollapsed: true for less prominent sections (sidebar, below fold)");
         sb.AppendLine();
         sb.AppendLine("Respond with ONLY a JSON array (no markdown fences, no explanation):");
         sb.AppendLine("[");
