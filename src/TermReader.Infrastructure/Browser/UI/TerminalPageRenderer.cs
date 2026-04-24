@@ -64,7 +64,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}This page is keeping its links to itself.{Reset}");
             if (page.ReadableContent != null)
             {
-                _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}Try reader view \u2014 press{Reset} {ep.PrimaryText.AnsiFg}v{Reset}");
+                _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}Try reader view \u2014 press{Reset} {ep.GetAccentFg().AnsiFg}v{Reset}");
             }
 
             _helpers.WriteLine();
@@ -187,7 +187,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.WriteLine();
         _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
         _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Press{Reset} {p.PrimaryText.AnsiFg}b{Reset} {p.SecondaryText.AnsiFg}to go back or{Reset} {p.PrimaryText.AnsiFg}Shift+R{Reset} {p.SecondaryText.AnsiFg}to retry{Reset}");
+        _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:back{Reset}  {p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}");
         _helpers.WriteLine();
         _helpers.ClearRemainingLines();
     }

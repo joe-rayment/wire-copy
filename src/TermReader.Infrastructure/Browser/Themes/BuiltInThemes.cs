@@ -17,29 +17,29 @@ public static class BuiltInThemes
         {
             [ThemeName.Phosphor] = new ThemePalette
             {
-                // Phosphor 2.0: bright green is primary/dominant, pink is accent only
+                // Phosphor 2.0: green body text, pink titles, cyan interactive keys
                 PrimaryText = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 pure phosphor green
-                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 108),  // #87af87 sage green, readable on dark bg
+                SecondaryText = new ThemeColor(ConsoleColor.DarkGreen, 34),   // #00af00 medium green metadata
                 LinkContent = new ThemeColor(ConsoleColor.Green, 40),         // #00d700 article links match primary
                 LinkNavigation = new ThemeColor(ConsoleColor.Green, 40),       // bright green — nav links are primary UI
                 LinkExternal = new ThemeColor(ConsoleColor.Green, 40),       // bright green — external links are important
-                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 108),    // sage green — footer links are secondary
-                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 28),  // #008700 medium green structural
-                HeaderTitleFg = new ThemeColor(ConsoleColor.Green, 40),       // #00d700 bright green titles
+                LinkFooter = new ThemeColor(ConsoleColor.DarkGreen, 34),     // #00af00 medium green — footer links are secondary
+                HeaderBorderFg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dim green structural
+                HeaderTitleFg = new ThemeColor(ConsoleColor.Magenta, 212),     // #ff87d7 pink titles per design system
                 HeaderUrlFg = new ThemeColor(ConsoleColor.Green, 40),        // bright green — URL in header should be readable
                 SelectedItemFg = new ThemeColor(ConsoleColor.White, 254),     // #e4e4e4 warm off-white
                 SelectedItemBg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dark green selection (keep dark for bg)
-                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 28),  // #008700 visible dividers
+                StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGreen, 22),  // #005f00 dim structural dividers
                 StatusBarTextFg = new ThemeColor(ConsoleColor.Green, 40),     // #00d700 phosphor green
                 PromptFg = new ThemeColor(ConsoleColor.Green, 40),
-                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 108),
+                PromptLabelFg = new ThemeColor(ConsoleColor.DarkGreen, 34),
                 ErrorFg = new ThemeColor(ConsoleColor.Red, 203),              // #ff5f5f
                 SearchHighlightFg = new ThemeColor(ConsoleColor.White, 15),   // white on blue-teal
                 SearchHighlightBg = new ThemeColor(ConsoleColor.DarkCyan, 24), // #005f87 blue-teal highlight
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGreen, 65),      // #5f875f muted aged phosphor
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.Green, 40),     // bright green — sub-headings should stand out
                 AccentFg = new ThemeColor(ConsoleColor.Cyan, 51),             // #00ffff bright cyan interactive
-                DimFg = new ThemeColor(ConsoleColor.DarkGreen, 28),           // #008700 structural chrome
+                DimFg = new ThemeColor(ConsoleColor.DarkGreen, 22),           // #005f00 structural chrome
                 MutedFg = new ThemeColor(ConsoleColor.DarkGreen, 65),         // #5f875f quiet text
                 SuccessFg = new ThemeColor(ConsoleColor.Green, 119),          // #87ff5f warm bright success
                 CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink (accent)

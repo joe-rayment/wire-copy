@@ -125,84 +125,10 @@ public class SetCommandTests
 
     #endregion
 
-    #region :set apikey
-
-    [Fact(Skip = "Hangs in CI: FormField.PromptAsync calls Console.ReadKey directly, bypassing mocked IInputHandler")]
-    public async Task SetApiKey_ValidKey_PersistsEncrypted()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true)
-            .Returns(Task.FromResult<string?>("sk-test-key-12345"));
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(new TtsValidationResult { IsValid = true });
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set apikey", _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Set("OpenAiApiKey", "sk-test-key-12345", encrypt: true);
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("saved");
-    }
-
-    [Fact(Skip = "Hangs in CI: FormField.PromptAsync calls Console.ReadKey directly, bypassing mocked IInputHandler")]
-    public async Task SetApiKey_InvalidKey_DoesNotPersist()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true)
-            .Returns(Task.FromResult<string?>("bad-key"));
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(new TtsValidationResult { IsValid = false, ErrorMessage = "Invalid API key" });
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set apikey", _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
-        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Invalid API key");
-    }
-
-    [Fact(Skip = "Hangs in CI: FormField.PromptAsync calls Console.ReadKey directly, bypassing mocked IInputHandler")]
-    public async Task SetApiKey_EmptyInput_DoesNothing()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true)
-            .Returns(Task.FromResult<string?>(""));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set apikey", _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
-        _renderCalled.Should().BeTrue();
-    }
-
-    [Fact(Skip = "Hangs in CI: FormField.PromptAsync calls Console.ReadKey directly, bypassing mocked IInputHandler")]
-    public async Task SetApiKey_WhitespaceKey_IsTrimmedBeforeValidation()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true)
-            .Returns(Task.FromResult<string?>("  sk-trimmed  "));
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(new TtsValidationResult { IsValid = true });
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set apikey", _options, CancellationToken.None);
-
-        _ttsService.Received(1).SetApiKeyOverride("sk-trimmed");
-        _settingsStore.Received(1).Set("OpenAiApiKey", "sk-trimmed", encrypt: true);
-    }
-
-    [Fact(Skip = "Hangs in CI: FormField.PromptAsync calls Console.ReadKey directly, bypassing mocked IInputHandler")]
-    public async Task SetApiKey_UsesSecretInput()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true)
-            .Returns(Task.FromResult<string?>(null));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set apikey", _options, CancellationToken.None);
-
-        await _inputHandler.Received(1).PromptForInputAsync(
-            Arg.Any<string>(), Arg.Any<CancellationToken>(), isSecret: true);
-    }
-
-    #endregion
+    // NOTE: SetApiKey tests removed — they mocked IInputHandler.PromptForInputAsync but
+    // the code path goes through FormField.PromptAsync which calls Console.ReadKey directly,
+    // so the mocks were never reached and the tests hung indefinitely in CI.
+    // To properly test :set apikey, FormField needs to accept an IInputHandler dependency.
 
     #region :set bucket
 
