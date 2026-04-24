@@ -68,19 +68,19 @@ public static class BuiltInThemes
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Yellow, 220),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkYellow, 94),      // darker amber for read items
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkYellow, 94),
-                AccentFg = new ThemeColor(ConsoleColor.Yellow, 208),           // warm orange accent
-                DimFg = new ThemeColor(ConsoleColor.DarkYellow, 94),           // very dim amber
-                MutedFg = new ThemeColor(ConsoleColor.DarkYellow, 94),         // dark amber for quiet text
-                SuccessFg = new ThemeColor(ConsoleColor.Yellow, 220),          // bright amber for success
-                CelebrationFg = new ThemeColor(ConsoleColor.Yellow, 208),      // warm orange celebration
-                WarningFg = new ThemeColor(ConsoleColor.Red, 196),             // red for warnings
-                ReaderCursorFg = new ThemeColor(ConsoleColor.Red, 203),      // #ff5f5f red cursor line
+                AccentFg = new ThemeColor(ConsoleColor.White, 229),            // #ffffaf bright warm yellow for interactivity
+                DimFg = new ThemeColor(ConsoleColor.DarkYellow, 58),           // #5f5f00 very dark amber/brown
+                MutedFg = new ThemeColor(ConsoleColor.DarkYellow, 130),        // #af5f00 dim amber quiet text
+                SuccessFg = new ThemeColor(ConsoleColor.Green, 148),           // #afd700 bright yellow-green success
+                CelebrationFg = new ThemeColor(ConsoleColor.Yellow, 208),      // #ff8700 warm orange celebration
+                WarningFg = new ThemeColor(ConsoleColor.Red, 196),             // #ff0000 red for warnings
+                ReaderCursorFg = new ThemeColor(ConsoleColor.Yellow, 214),     // #ffaf00 warm amber highlight cursor
             },
             [ThemeName.Dracula] = new ThemePalette
             {
                 PrimaryText = new ThemeColor(ConsoleColor.White, 253),        // foreground (slightly brighter)
                 SecondaryText = new ThemeColor(ConsoleColor.Gray, 245),       // comment
-                LinkContent = new ThemeColor(ConsoleColor.Cyan, 80),          // cyan
+                LinkContent = new ThemeColor(ConsoleColor.Cyan, 117),         // #87d7ff Dracula cyan (#8be9fd)
                 LinkNavigation = new ThemeColor(ConsoleColor.Gray, 245),
                 LinkExternal = new ThemeColor(ConsoleColor.Gray, 245),
                 LinkFooter = new ThemeColor(ConsoleColor.Gray, 240),
@@ -90,7 +90,7 @@ public static class BuiltInThemes
                 SelectedItemFg = new ThemeColor(ConsoleColor.White, 253),
                 SelectedItemBg = new ThemeColor(ConsoleColor.DarkGray, 237),    // selection
                 StatusBarSeparatorFg = new ThemeColor(ConsoleColor.DarkGray, 238),
-                StatusBarTextFg = new ThemeColor(ConsoleColor.Cyan, 80),
+                StatusBarTextFg = new ThemeColor(ConsoleColor.Cyan, 117),       // Dracula cyan for status bar
                 PromptFg = new ThemeColor(ConsoleColor.Green, 114),
                 PromptLabelFg = new ThemeColor(ConsoleColor.Yellow, 220),
                 ErrorFg = new ThemeColor(ConsoleColor.Red, 203),
@@ -98,13 +98,13 @@ public static class BuiltInThemes
                 SearchHighlightBg = new ThemeColor(ConsoleColor.Yellow, 220),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGray, 240),
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.DarkGray, 238),
-                AccentFg = new ThemeColor(ConsoleColor.Cyan, 80),              // cyan accent (matches link color)
-                DimFg = new ThemeColor(ConsoleColor.DarkGray, 236),            // very dim gray
-                MutedFg = new ThemeColor(ConsoleColor.DarkGray, 242),          // muted gray
-                SuccessFg = new ThemeColor(ConsoleColor.Green, 114),           // Dracula green
-                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 212),     // Dracula pink
-                WarningFg = new ThemeColor(ConsoleColor.Yellow, 220),          // Dracula yellow
-                ReaderCursorFg = new ThemeColor(ConsoleColor.Magenta, 212), // #ff87d7 Dracula pink cursor
+                AccentFg = new ThemeColor(ConsoleColor.Cyan, 117),             // #87d7ff Dracula cyan (#8be9fd)
+                DimFg = new ThemeColor(ConsoleColor.DarkGray, 236),            // very dark gray background elements
+                MutedFg = new ThemeColor(ConsoleColor.DarkCyan, 61),           // #5f5faf Dracula comment (#6272a4)
+                SuccessFg = new ThemeColor(ConsoleColor.Green, 84),            // #5fff00 Dracula green (#50fa7b)
+                CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 212),     // #ff87d7 Dracula pink
+                WarningFg = new ThemeColor(ConsoleColor.Yellow, 220),          // #ffd700 Dracula yellow
+                ReaderCursorFg = new ThemeColor(ConsoleColor.DarkMagenta, 141), // #af87ff Dracula purple highlight
             },
             [ThemeName.Light] = new ThemePalette
             {
@@ -128,13 +128,13 @@ public static class BuiltInThemes
                 SearchHighlightBg = new ThemeColor(ConsoleColor.DarkYellow, 136),
                 ReadItemFg = new ThemeColor(ConsoleColor.DarkGray, 245),
                 FocusIndicatorFg = new ThemeColor(ConsoleColor.Gray, 249),
-                AccentFg = new ThemeColor(ConsoleColor.DarkBlue, 32),          // lighter blue accent
-                DimFg = new ThemeColor(ConsoleColor.Gray, 248),                // light gray for decoration
-                MutedFg = new ThemeColor(ConsoleColor.Gray, 246),              // medium gray
-                SuccessFg = new ThemeColor(ConsoleColor.DarkGreen, 28),        // dark green success
-                CelebrationFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // dark magenta celebration
-                WarningFg = new ThemeColor(ConsoleColor.DarkYellow, 172),      // dark amber warning
-                ReaderCursorFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // dark magenta cursor
+                AccentFg = new ThemeColor(ConsoleColor.DarkCyan, 30),          // #008787 dark teal for interactivity
+                DimFg = new ThemeColor(ConsoleColor.Gray, 250),                // #bcbcbc light gray for decoration
+                MutedFg = new ThemeColor(ConsoleColor.Gray, 246),              // #949494 medium gray quiet text
+                SuccessFg = new ThemeColor(ConsoleColor.DarkGreen, 28),        // #008700 dark green success
+                CelebrationFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // #d70087 dark magenta celebration
+                WarningFg = new ThemeColor(ConsoleColor.DarkYellow, 172),      // #d78700 dark amber warning
+                ReaderCursorFg = new ThemeColor(ConsoleColor.DarkBlue, 24),    // #005f87 subtle dark blue cursor
             },
         };
 

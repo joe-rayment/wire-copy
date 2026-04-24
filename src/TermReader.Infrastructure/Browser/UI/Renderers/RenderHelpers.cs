@@ -245,15 +245,15 @@ internal class RenderHelpers
     }
 
     /// <summary>
-    /// Clears the gap between current content and the last terminal line,
-    /// then positions the cursor at TerminalHeight-1 so the next WriteLine
-    /// renders at the bottom of the screen (anchored status bar).
+    /// Clears the gap between current content and the 2-line status bar,
+    /// then positions the cursor at TerminalHeight-2 so the next WriteLines
+    /// render the separator + content at the bottom of the screen.
     /// </summary>
     public void PositionAtBottom()
     {
         try
         {
-            var targetLine = TerminalHeight - 1;
+            var targetLine = TerminalHeight - 2;
             if (_linesWritten < targetLine)
             {
                 var sb = new StringBuilder((targetLine - _linesWritten) * 10);

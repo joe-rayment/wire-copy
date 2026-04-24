@@ -25,6 +25,6 @@ internal static class Spacing
     /// <summary>Number of header lines reserved at top of scrollable views.</summary>
     public const int DefaultHeaderLines = 1;
 
-    /// <summary>Number of status bar lines reserved at bottom.</summary>
-    public const int StatusBarLines = 1;
+    /// <summary>Number of status bar lines reserved at bottom (separator + content).</summary>
+    public const int StatusBarLines = 2;
 }

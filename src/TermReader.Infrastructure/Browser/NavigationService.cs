@@ -36,6 +36,7 @@ public class NavigationService : INavigationService
     private int _readerCursorLine;
     private bool _speedReadActive;
     private int _speedReadWpm = 250;
+    private ToastNotification? _activeToast;
 
     // Layout preview state
     private List<LayoutCandidate>? _previewLayouts;
@@ -84,6 +85,7 @@ public class NavigationService : INavigationService
         SpeedReadWpm = _speedReadWpm,
         IsInPreviewMode = _isInPreviewMode,
         PreviewLabel = _isInPreviewMode ? GetCurrentPreviewLabel() : null,
+        ActiveToast = _activeToast,
     };
 
     public Page? CurrentPage => _currentPage;
@@ -282,6 +284,49 @@ public class NavigationService : INavigationService
     {
         _statusMessage = null;
         _statusMessageSetAt = null;
+    }
+
+    /// <summary>
+    /// Shows a toast notification. Replaces any existing toast.
+    /// </summary>
+    public void ShowToast(ToastType type, string message, string? detail = null)
+    {
+        _activeToast = new ToastNotification
+        {
+            Type = type,
+            Message = message,
+            Detail = detail,
+        };
+    }
+
+    /// <summary>
+    /// Clears the active toast immediately.
+    /// </summary>
+    public void ClearToast()
+    {
+        _activeToast = null;
+    }
+
+    /// <summary>
+    /// Marks the active toast as rendered. Non-sticky toasts are cleared on the next call.
+    /// Call this after rendering the toast so auto-dismiss works on the next render pass.
+    /// </summary>
+    public void MarkToastRendered()
+    {
+        if (_activeToast == null)
+        {
+            return;
+        }
+
+        if (_activeToast.HasBeenRendered && !_activeToast.IsSticky)
+        {
+            // Non-sticky toast was already shown once — auto-dismiss
+            _activeToast = null;
+        }
+        else
+        {
+            _activeToast = _activeToast with { HasBeenRendered = true };
+        }
     }
 
     /// <summary>

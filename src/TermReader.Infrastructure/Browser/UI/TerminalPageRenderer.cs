@@ -9,6 +9,7 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 
 namespace TermReader.Infrastructure.Browser.UI;
@@ -20,6 +21,8 @@ namespace TermReader.Infrastructure.Browser.UI;
 public class TerminalPageRenderer : IPageRenderer
 {
     private const string Reset = "\x1b[0m";
+    private const int MinBoxWidth = 30;
+    private const int MaxBoxContentWidth = 46;
     private static readonly char[] SpinnerFrames = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
 
     private readonly IThemeProvider _themeProvider;
@@ -72,6 +75,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
+        RenderToastOverlay(context, options.TerminalWidth);
     }
 
     public void RenderReadable(Page page, NavigationContext context, RenderOptions options, List<string>? wrappedLines = null)
@@ -103,6 +107,7 @@ public class TerminalPageRenderer : IPageRenderer
 
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
+            RenderToastOverlay(context, options.TerminalWidth);
             return;
         }
 
@@ -135,6 +140,8 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
         }
+
+        RenderToastOverlay(context, options.TerminalWidth);
     }
 
     public void RenderLoading(string url, string? status = null)
@@ -146,86 +153,110 @@ public class TerminalPageRenderer : IPageRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var label = status ?? "Loading...";
-        _helpers.Clear();
-        _helpers.WriteLine();
 
         // Animated spinner: cycles through 10 braille frames every 500ms
         var frameIndex = (int)((elapsedMs / 500) % SpinnerFrames.Length);
         var spinner = SpinnerFrames[frameIndex];
 
         // Elapsed seconds — visible proof the app is running
-        var elapsed = elapsedMs >= 1000
-            ? $"  {p.SecondaryText.AnsiFg}{elapsedMs / 1000}s{Reset}"
-            : string.Empty;
+        var elapsed = elapsedMs >= 1000 ? $" {elapsedMs / 1000}s" : string.Empty;
 
-        _helpers.WriteLine($"  {p.PromptFg.AnsiFg}{spinner}{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}{elapsed}");
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 70)}{Reset}");
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
-        _helpers.WriteLine();
-        _helpers.ClearRemainingLines();
+        var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.PromptFg.AnsiFg}{spinner}{Reset} {p.PrimaryText.AnsiFg}{label}{Reset}{(elapsed.Length > 0 ? $"{p.SecondaryText.AnsiFg}{elapsed}{Reset}" : string.Empty)}", $"{spinner} {label}{elapsed}"),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
+            CenteredBoxLine.Empty,
+            new($"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}", "Esc:cancel"),
+            CenteredBoxLine.Empty,
+        };
+
+        RenderCenteredBox(lines, p.GetMutedFg());
     }
 
     public void RenderError(string message, string url)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        _helpers.Clear();
+        var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+        var truncatedMsg = RenderHelpers.TruncateText(message, MaxBoxContentWidth - 2);
 
-        // Title bar showing the URL that failed
-        var domain = LauncherRenderer.ExtractDomain(url);
-        var title = $"{p.ErrorFg.AnsiFg}\x1b[1mError\x1b[0m";
-        var meta = $"{p.SecondaryText.AnsiFg}{domain}\x1b[0m";
-        var titleLen = "Error".Length;
-        var metaLen = domain.Length;
-        var width = Math.Max(1, Console.WindowWidth - 2);
-        var padding = Math.Max(1, width - 1 - titleLen - metaLen);
-        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.PrimaryText.AnsiFg}Something went wrong{Reset}", "Something went wrong"),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedMsg}{Reset}", truncatedMsg),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
+            CenteredBoxLine.Empty,
+            new(
+                $"{p.GetAccentFg().AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:back{Reset}  {p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}",
+                "b:back  Shift+R:retry"),
+            CenteredBoxLine.Empty,
+        };
 
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.ErrorFg.AnsiFg}Something went wrong loading this page.{Reset}");
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{message}{Reset}");
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:back{Reset}  {p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}");
-        _helpers.WriteLine();
-        _helpers.ClearRemainingLines();
+        RenderCenteredBox(lines, p.ErrorFg);
     }
 
     public void RenderChallenge(string url)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        _helpers.Clear();
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.GetWarningFg().AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}");
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Please solve it in the browser window.{Reset}");
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateUrl(url, 65)}{Reset}");
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Waiting for you to finish...{Reset}");
-        _helpers.ClearRemainingLines();
+
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.GetWarningFg().AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}", "\u2847 Bot challenge detected"),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}Waiting for manual intervention...{Reset}", "Waiting for manual intervention..."),
+            CenteredBoxLine.Empty,
+        };
+
+        RenderCenteredBox(lines, p.GetWarningFg());
     }
 
     public void RenderInteractiveRefresh(string url)
     {
-        _helpers.Clear();
-        _helpers.WriteLine();
-        _helpers.WriteLine("  Interactive refresh — browser window is open.");
-        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
-        _helpers.WriteLine();
-        _helpers.WriteLine("  Complete any captcha or login in the browser window.");
-        _helpers.WriteLine("  Press Enter to accept the page, or Esc to cancel.");
-        _helpers.ClearRemainingLines();
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.PrimaryText.AnsiFg}Interactive refresh{Reset}", "Interactive refresh"),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}Complete any captcha or login in the browser.{Reset}", "Complete any captcha or login in the browser."),
+            new(
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:accept{Reset}  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}",
+                "Enter:accept  Esc:cancel"),
+            CenteredBoxLine.Empty,
+        };
+
+        RenderCenteredBox(lines, p.GetMutedFg());
     }
 
     public void RenderManualLogin(string url, string domain)
     {
-        _helpers.Clear();
-        _helpers.WriteLine();
-        _helpers.WriteLine($"  Login required for {domain}. Please log in via the browser window.");
-        _helpers.WriteLine($"  URL: {RenderHelpers.TruncateUrl(url, 60)}");
-        _helpers.WriteLine();
-        _helpers.WriteLine("  Waiting for login to complete...");
-        _helpers.ClearRemainingLines();
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+        var loginMsg = RenderHelpers.TruncateText($"Login required for {domain}", MaxBoxContentWidth - 2);
+
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.PrimaryText.AnsiFg}{loginMsg}{Reset}", loginMsg),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}Waiting for login to complete...{Reset}", "Waiting for login to complete..."),
+            CenteredBoxLine.Empty,
+        };
+
+        RenderCenteredBox(lines, p.GetMutedFg());
     }
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
@@ -266,4 +297,94 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
+
+    /// <summary>
+    /// Renders the active toast notification as an overlay in the top-right corner.
+    /// Called after the main content and status bar have been rendered.
+    /// </summary>
+    private void RenderToastOverlay(NavigationContext context, int terminalWidth)
+    {
+        if (context.ActiveToast == null)
+        {
+            return;
+        }
+
+        var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        ToastRenderer.RenderToast(context.ActiveToast, palette, terminalWidth);
+    }
+
+    /// <summary>
+    /// Renders a centered rounded box with the given content lines.
+    /// The box is horizontally centered and positioned at 1/3 from the top.
+    /// </summary>
+    private void RenderCenteredBox(List<CenteredBoxLine> lines, ThemeColor borderColor)
+    {
+        // Calculate box width from longest content line + 4 (2 border chars + 2 padding)
+        var maxContentWidth = 0;
+        foreach (var line in lines)
+        {
+            var w = RenderHelpers.GetDisplayWidth(line.PlainText);
+            if (w > maxContentWidth)
+            {
+                maxContentWidth = w;
+            }
+        }
+
+        // Box inner width is content + 2 spaces padding per side
+        var innerWidth = Math.Max(MinBoxWidth - 4, Math.Min(maxContentWidth + 2, MaxBoxContentWidth));
+        var boxWidth = innerWidth + 4; // 2 border chars + 2 padding spaces
+
+        int termWidth;
+        int termHeight;
+        try
+        {
+            termWidth = Console.WindowWidth;
+            termHeight = _helpers.TerminalHeight;
+        }
+        catch
+        {
+            termWidth = 80;
+            termHeight = 24;
+        }
+
+        var leftPad = Math.Max(0, (termWidth - boxWidth) / 2);
+        var boxHeight = lines.Count + 2; // content lines + top/bottom borders
+        var topPad = Math.Max(0, (termHeight - boxHeight) / 3);
+        var pad = new string(' ', leftPad);
+        var borderFg = borderColor.AnsiFg;
+
+        _helpers.Clear();
+
+        // Top padding
+        for (var i = 0; i < topPad; i++)
+        {
+            _helpers.WriteLine();
+        }
+
+        // Top border: ╭────────╮
+        _helpers.WriteLine($"{pad}{borderFg}\u256d{new string('\u2500', boxWidth - 2)}\u256e{Reset}");
+
+        // Content lines
+        foreach (var line in lines)
+        {
+            var displayWidth = RenderHelpers.GetDisplayWidth(line.PlainText);
+            var rightPadding = Math.Max(0, innerWidth - displayWidth);
+            _helpers.WriteLine($"{pad}{borderFg}\u2502{Reset} {line.StyledText}{new string(' ', rightPadding)} {borderFg}\u2502{Reset}");
+        }
+
+        // Bottom border: ╰────────╯
+        _helpers.WriteLine($"{pad}{borderFg}\u2570{new string('\u2500', boxWidth - 2)}\u256f{Reset}");
+
+        _helpers.ClearRemainingLines();
+    }
+
+    /// <summary>
+    /// Represents a line inside a centered box, carrying both styled (ANSI) and plain text
+    /// so the box can measure display width from plain text while rendering styled text.
+    /// </summary>
+    private readonly record struct CenteredBoxLine(string StyledText, string PlainText)
+    {
+        /// <summary>An empty line (no text content).</summary>
+        public static CenteredBoxLine Empty => new(string.Empty, string.Empty);
+    }
 }
