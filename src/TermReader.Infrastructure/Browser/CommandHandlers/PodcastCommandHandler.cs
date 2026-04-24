@@ -12,6 +12,7 @@ using TermReader.Application.Interfaces.Browser;
 using TermReader.Application.Interfaces.Podcast;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Animations;
 using TermReader.Infrastructure.Browser.UI.Components;
 using TermReader.Infrastructure.Browser.UI.Renderers;
 using TermReader.Infrastructure.Configuration;
@@ -1301,6 +1302,30 @@ internal static class PodcastCommandHandler
         PodcastResult result,
         CancellationToken ct)
     {
+        // Play celebration animation before showing the completion screen
+        try
+        {
+            using var animScope = ctx.ScopeFactory.CreateScope();
+            var browserConfig = animScope.ServiceProvider
+                .GetRequiredService<IOptions<BrowserConfiguration>>().Value;
+
+            if (!browserConfig.DisableAnimations)
+            {
+                var celebrationMessage = CelebrationAnimation.BuildMessage(
+                    result.ArticlesProcessed, result.TotalDuration);
+                CelebrationAnimation.Play(
+                    BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
+                    celebrationMessage,
+                    options.TerminalWidth,
+                    options.TerminalHeight);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Animation failure is non-fatal — proceed to the completion screen
+            ctx.Logger.LogDebug(ex, "Celebration animation failed (non-fatal)");
+        }
+
         if (!string.IsNullOrEmpty(result.FeedUrl))
         {
             CopyToClipboardOsc52(result.FeedUrl);

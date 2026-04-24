@@ -170,6 +170,91 @@ internal class StatusBarRenderer
         return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset}";
     }
 
+    /// <summary>
+    /// Plays a bright-green wave animation across the dimmed separator rule (line 1 of the status bar).
+    /// 10 frames at 60ms = 600ms total. A segment of 4 characters sweeps left to right.
+    /// Must be called from a background thread. Uses ConsoleSync.Lock for thread safety.
+    /// </summary>
+    internal static void PlayCacheWarmWave(ThemePalette p, int width)
+    {
+        const int frameCount = 10;
+        const int segmentWidth = 4;
+        const int frameDelayMs = 60;
+        var ruleWidth = Math.Max(1, width);
+        var dimFg = p.GetDimFg().AnsiFg;
+        var brightFg = p.PrimaryText.AnsiFg;
+
+        for (var frame = 0; frame < frameCount; frame++)
+        {
+            var wavePos = (int)(frame * (ruleWidth / (double)frameCount));
+            var beforeLen = Math.Max(0, wavePos);
+            var brightLen = Math.Min(segmentWidth, ruleWidth - wavePos);
+            var afterLen = Math.Max(0, ruleWidth - wavePos - segmentWidth);
+
+            lock (ConsoleSync.Lock)
+            {
+                try
+                {
+                    Console.SetCursorPosition(0, Console.WindowHeight - 2);
+                    Console.Write(
+                        $"{dimFg}\x1b[2m{new string('\u2500', beforeLen)}{Reset}" +
+                        $"{brightFg}{new string('\u2500', brightLen)}{Reset}" +
+                        $"{dimFg}\x1b[2m{new string('\u2500', afterLen)}{Reset}");
+                }
+                catch
+                {
+                    // Ignore console errors (e.g., redirected output)
+                }
+            }
+
+            Thread.Sleep(frameDelayMs);
+        }
+
+        // Restore the separator to its normal dimmed state
+        lock (ConsoleSync.Lock)
+        {
+            try
+            {
+                Console.SetCursorPosition(0, Console.WindowHeight - 2);
+                Console.Write($"{dimFg}\x1b[2m{new string('\u2500', ruleWidth)}{Reset}");
+            }
+            catch
+            {
+                // Ignore console errors
+            }
+        }
+    }
+
+    /// <summary>
+    /// Plays a 3-frame color pulse on the cache progress count text.
+    /// Cycles: AccentFg (cyan) -> PrimaryText (green) -> SecondaryText (settled).
+    /// 3 frames at 100ms = 300ms total. Must be called from a background thread.
+    /// </summary>
+    internal static void PlayCacheItemPulse(ThemePalette p, int count, int total, int col, int row)
+    {
+        const int frameDelayMs = 100;
+        var colors = new[] { p.GetAccentFg().AnsiFg, p.PrimaryText.AnsiFg, p.SecondaryText.AnsiFg };
+        var text = $"{count}/{total}";
+
+        foreach (var color in colors)
+        {
+            lock (ConsoleSync.Lock)
+            {
+                try
+                {
+                    Console.SetCursorPosition(col, row);
+                    Console.Write($"{color}{text}{Reset}");
+                }
+                catch
+                {
+                    // Ignore console errors
+                }
+            }
+
+            Thread.Sleep(frameDelayMs);
+        }
+    }
+
     private static string FormatModeBadge(ViewMode mode, ThemePalette p)
     {
         var label = GetShortModeLabel(mode);
