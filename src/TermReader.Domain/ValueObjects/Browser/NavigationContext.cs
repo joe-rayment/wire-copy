@@ -117,4 +117,9 @@ public record NavigationContext
     /// Null when not in preview mode.
     /// </summary>
     public string? PreviewLabel { get; init; }
+
+    /// <summary>
+    /// Active toast notification to render as an overlay, or null if none.
+    /// </summary>
+    public ToastNotification? ActiveToast { get; init; }
 }

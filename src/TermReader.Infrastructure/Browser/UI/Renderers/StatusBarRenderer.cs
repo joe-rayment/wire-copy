@@ -9,8 +9,9 @@ using TermReader.Infrastructure.Browser.Themes;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders a single-line status bar at the bottom of the screen.
-/// Format: [←] MODE  leftContent     rightContent  ?:help
+/// Renders a 2-line status bar at the bottom of the screen.
+/// Line 1: full-width dimmed separator rule (──────)
+/// Line 2: [←] MODE  leftContent     rightContent  ?:help
 /// </summary>
 internal class StatusBarRenderer
 {
@@ -107,6 +108,10 @@ internal class StatusBarRenderer
             line = RenderHelpers.TruncateText(line, maxWidth);
         }
 
+        // Line 1: full-width dimmed separator
+        _helpers.WriteLine(Components.Borders.DimmedRule(p, width));
+
+        // Line 2: status bar content
         _helpers.WriteLine(line);
     }
 

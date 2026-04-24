@@ -1484,6 +1484,9 @@ public class BrowserOrchestrator : IBrowserService
     {
         try
         {
+            // Auto-dismiss non-sticky toasts that were already shown once
+            _navigationService.MarkToastRendered();
+
             // Recompute options so view-mode-dependent values (e.g. reader width) are fresh
             options = GetCurrentRenderOptions();
             var viewMode = _navigationService.CurrentContext.ViewMode;

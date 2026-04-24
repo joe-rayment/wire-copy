@@ -169,10 +169,67 @@ public class ThemeRenderingTests
     {
         var p = BuiltInThemes.Get(theme);
 
+        p.AccentFg.Should().NotBeNull($"{theme} should define AccentFg");
+        p.DimFg.Should().NotBeNull($"{theme} should define DimFg");
         p.MutedFg.Should().NotBeNull($"{theme} should define MutedFg");
         p.SuccessFg.Should().NotBeNull($"{theme} should define SuccessFg");
         p.CelebrationFg.Should().NotBeNull($"{theme} should define CelebrationFg");
         p.WarningFg.Should().NotBeNull($"{theme} should define WarningFg");
+        p.ReaderCursorFg.Should().NotBeNull($"{theme} should define ReaderCursorFg");
+    }
+
+    #endregion
+
+    #region Test 9: Amber palette has intentional semantic ANSI codes
+
+    [Fact]
+    public void AmberPalette_HasIntentionalSemanticCodes()
+    {
+        var p = BuiltInThemes.Get(ThemeName.Amber);
+
+        p.GetAccentFg().AnsiFg.Should().Be("\x1b[38;5;229m", "AccentFg should be bright warm yellow (229)");
+        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;58m", "DimFg should be very dark amber/brown (58)");
+        p.GetMutedFg().AnsiFg.Should().Be("\x1b[38;5;130m", "MutedFg should be dim amber (130)");
+        p.GetSuccessFg().AnsiFg.Should().Be("\x1b[38;5;148m", "SuccessFg should be bright yellow-green (148)");
+        p.GetCelebrationFg().AnsiFg.Should().Be("\x1b[38;5;208m", "CelebrationFg should be warm orange (208)");
+        p.GetWarningFg().AnsiFg.Should().Be("\x1b[38;5;196m", "WarningFg should be red (196)");
+        p.GetReaderCursorFg().AnsiFg.Should().Be("\x1b[38;5;214m", "ReaderCursorFg should be warm amber (214)");
+    }
+
+    #endregion
+
+    #region Test 10: Dracula palette has intentional semantic ANSI codes
+
+    [Fact]
+    public void DraculaPalette_HasIntentionalSemanticCodes()
+    {
+        var p = BuiltInThemes.Get(ThemeName.Dracula);
+
+        p.GetAccentFg().AnsiFg.Should().Be("\x1b[38;5;117m", "AccentFg should be Dracula cyan (117)");
+        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;236m", "DimFg should be very dark gray (236)");
+        p.GetMutedFg().AnsiFg.Should().Be("\x1b[38;5;61m", "MutedFg should be Dracula comment gray (61)");
+        p.GetSuccessFg().AnsiFg.Should().Be("\x1b[38;5;84m", "SuccessFg should be Dracula green (84)");
+        p.GetCelebrationFg().AnsiFg.Should().Be("\x1b[38;5;212m", "CelebrationFg should be Dracula pink (212)");
+        p.GetWarningFg().AnsiFg.Should().Be("\x1b[38;5;220m", "WarningFg should be Dracula yellow (220)");
+        p.GetReaderCursorFg().AnsiFg.Should().Be("\x1b[38;5;141m", "ReaderCursorFg should be Dracula purple (141)");
+    }
+
+    #endregion
+
+    #region Test 11: Light palette has intentional semantic ANSI codes
+
+    [Fact]
+    public void LightPalette_HasIntentionalSemanticCodes()
+    {
+        var p = BuiltInThemes.Get(ThemeName.Light);
+
+        p.GetAccentFg().AnsiFg.Should().Be("\x1b[38;5;30m", "AccentFg should be dark teal (30)");
+        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;250m", "DimFg should be light gray (250)");
+        p.GetMutedFg().AnsiFg.Should().Be("\x1b[38;5;246m", "MutedFg should be medium gray (246)");
+        p.GetSuccessFg().AnsiFg.Should().Be("\x1b[38;5;28m", "SuccessFg should be dark green (28)");
+        p.GetCelebrationFg().AnsiFg.Should().Be("\x1b[38;5;162m", "CelebrationFg should be dark magenta (162)");
+        p.GetWarningFg().AnsiFg.Should().Be("\x1b[38;5;172m", "WarningFg should be dark amber (172)");
+        p.GetReaderCursorFg().AnsiFg.Should().Be("\x1b[38;5;24m", "ReaderCursorFg should be subtle dark blue (24)");
     }
 
     #endregion
