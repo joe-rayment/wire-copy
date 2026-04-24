@@ -117,18 +117,18 @@ public class RenderHelpersTests
     public void TruncateText_TextLongerThanMax_TruncatesWithEllipsis()
     {
         var result = RenderHelpers.TruncateText("hello world", 8);
-        result.Should().Be("hello...");
+        result.Should().Be("hello w\u2026");
     }
 
     [Fact]
-    public void TruncateText_MaxLengthThree_NoEllipsis()
+    public void TruncateText_MaxLengthThree_TruncatesWithEllipsis()
     {
         var result = RenderHelpers.TruncateText("hello", 3);
-        result.Should().Be("hel");
+        result.Should().Be("he\u2026");
     }
 
     [Fact]
-    public void TruncateText_MaxLengthOne_ReturnsSingleChar()
+    public void TruncateText_MaxLengthOne_NoEllipsis()
     {
         var result = RenderHelpers.TruncateText("hello", 1);
         result.Should().Be("h");
@@ -138,7 +138,7 @@ public class RenderHelpersTests
     public void TruncateText_MaxLengthFour_TruncatesWithEllipsis()
     {
         var result = RenderHelpers.TruncateText("hello", 4);
-        result.Should().Be("h...");
+        result.Should().Be("hel\u2026");
     }
 
     #endregion
@@ -267,9 +267,9 @@ public class RenderHelpersTests
     [Fact]
     public void TruncateText_CjkText_TruncatesByDisplayWidth()
     {
-        // "漢字漢字漢字" = 12 display cols. Truncate to 8 = "漢字" (4) + "..." (3) = 7 (fits in 8)
+        // "漢字漢字漢字" = 12 display cols. Truncate to 8 = "漢字漢字" (8-1=7 display cols) + "…" (1) = 8
         var result = RenderHelpers.TruncateText("漢字漢字漢字", 8);
-        result.Should().EndWith("...");
+        result.Should().EndWith("\u2026");
         RenderHelpers.GetDisplayWidth(result).Should().BeLessOrEqualTo(8);
     }
 

@@ -60,7 +60,7 @@ public class ThemeRenderingTests
         p.PrimaryText.AnsiFg.Should().Be("\x1b[38;5;40m", "PrimaryText should be phosphor green (40)");
         p.HeaderTitleFg.AnsiFg.Should().Be("\x1b[38;5;40m", "HeaderTitleFg should be green (40)");
         p.GetAccentFg().AnsiFg.Should().Be("\x1b[38;5;51m", "AccentFg should be cyan (51)");
-        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;22m", "DimFg should be dark green (22)");
+        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;28m", "DimFg should be dark green (28)");
         p.GetWarningFg().AnsiFg.Should().Be("\x1b[38;5;214m", "WarningFg should be amber (214)");
         p.GetSuccessFg().AnsiFg.Should().Be("\x1b[38;5;119m", "SuccessFg should be success green (119)");
         p.GetCelebrationFg().AnsiFg.Should().Be("\x1b[38;5;206m", "CelebrationFg should be hot pink (206)");
@@ -128,8 +128,8 @@ public class ThemeRenderingTests
 
         var rule = Borders.DimmedRule(p, 40);
 
-        rule.Should().Contain("\x1b[38;5;22m",
-            "DimmedRule should use DimFg dark green (22)");
+        rule.Should().Contain("\x1b[38;5;28m",
+            "DimmedRule should use DimFg dark green (28)");
         rule.Should().NotContain("\x1b[38;5;34m",
             "DimmedRule should not use SecondaryText (34) — it should use the dedicated DimFg role");
     }

@@ -101,12 +101,12 @@ public class ReadableContent
         if (CleanedText.Length <= maxLength)
             return CleanedText;
 
-        return CleanedText.Substring(0, maxLength) + "...";
+        return CleanedText.Substring(0, maxLength) + "\u2026";
     }
 
     /// <summary>
     /// Gets formatted metadata string for display.
-    /// Example: "By Jane Doe | Jan 22, 2024 | 5 min read"
+    /// Example: "By Jane Doe · Jan 22, 2024 · 5 min read"
     /// </summary>
     public string GetMetadataString()
     {
@@ -120,6 +120,6 @@ public class ReadableContent
 
         parts.Add($"{EstimatedReadingMinutes} min read");
 
-        return string.Join(" | ", parts);
+        return string.Join(" \u00b7 ", parts);
     }
 }

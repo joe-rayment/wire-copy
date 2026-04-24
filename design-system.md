@@ -31,7 +31,7 @@ renderer code; all colors come through `ThemePalette`.
 
 | Role | ANSI 256 | Hex | Usage |
 |------|----------|-----|-------|
-| **PrimaryText** | 40 | `#00d700` | Body text, item names, active key labels |
+| **PrimaryText** | 40 | `#00d700` | Body text, item names |
 | **SecondaryText** | 34 | `#00af00` | Subtitles, domains, metadata, inactive hints |
 | **TertiaryText** (DimFg) | 22 | `#005f00` | Decorative elements, version strings, disabled text |
 | **MutedFg** | 65 | `#5f875f` | Quiet text, muted labels, subdued UI elements |
@@ -332,6 +332,7 @@ with `cached` text in PromptFg/AccentFg when not selected).
 - Page/section headers (top of Launcher, Link Tree, Collections, Collection Items)
 - URL bar on Launcher screen
 - Toast notifications
+- Loading, error, and bot-challenge modal screens (centered horizontally and vertically)
 - Never for individual list items or cards (cards use accent bars and separator rules)
 
 #### Box Drawing Characters
@@ -485,7 +486,7 @@ consistency across all progress indicators.
 > explicitly presses `Esc` to dismiss it.
 
 - Dismissed on next keypress or next screen redraw (NOT on a timer)
-- Only one toast visible at a time; new toast replaces existing
+- Only one toast visible at a time; new toast replaces existing (no queue, no stacking)
 - Does not steal focus
 - Does not block input (the keypress that dismisses the toast is also processed normally)
 - Rendered as overlay on the next render pass; cleared on the subsequent render pass
@@ -867,7 +868,7 @@ Generating podcast...
 5. Badges `[1]`, `[c]` (SecondaryText)
 6. Domain subtitles (SecondaryText+Dim)
 7. URL bar placeholder (when unfocused: SecondaryText+Dim)
-8. Footer key hints (mixed PrimaryText/SecondaryText)
+8. Footer key hints (AccentFg keys, SecondaryText actions)
 9. Version string (SecondaryText+Dim)
 10. Borders (HeaderBorderFg)
 
@@ -1106,8 +1107,8 @@ When the reader scrolls to the end of the article, display a summary footer:
 
 ### 5.6 Loading Screen
 
-Centered rounded box with animated braille spinner. See `loading-error.txt`
-Screen 1 for the full mockup.
+Centered boxed modal (rounded-box overlay, centered both horizontally and
+vertically at roughly 1/3 from the top) with animated braille spinner.
 
 ```
             ╭──────────────────────────────────────╮
@@ -1119,7 +1120,6 @@ Screen 1 for the full mockup.
             ╰──────────────────────────────────────╯
 ```
 
-- Centered horizontally and vertically (roughly 1/3 from top)
 - Rounded box border in HeaderBorderFg
 - Animated braille spinner (⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏) in PromptFg
 - "Loading page..." in PrimaryText
@@ -1129,8 +1129,8 @@ Screen 1 for the full mockup.
 
 ### 5.7 Error Screen
 
-Centered rounded box with error headline and action hints. See
-`loading-error.txt` Screen 2 for the full mockup.
+Centered boxed modal (same layout pattern as Loading Screen) with error
+headline and action hints.
 
 ```
             ╭──────────────────────────────────────╮
@@ -1153,8 +1153,8 @@ Centered rounded box with error headline and action hints. See
 
 ### 5.8 Bot Challenge Screen
 
-Centered rounded box with amber spinner and breathing bar. See
-`loading-error.txt` Screen 3 for the full mockup.
+Centered boxed modal (same layout pattern as Loading Screen) with amber
+spinner and breathing bar.
 
 ```
             ╭──────────────────────────────────────╮
@@ -1380,7 +1380,7 @@ screens if no preference is set.
 
 | ANSI Code | Hex | Role Name | When to Use | When NOT to Use |
 |-----------|-----|-----------|-------------|-----------------|
-| 40 | `#00d700` | PrimaryText, HeaderTitleFg, LinkContent | Body text, item names, headlines, page titles, content link text, key shortcuts, mode labels, prompts | Borders (use 35), accents (use 51) |
+| 40 | `#00d700` | PrimaryText, HeaderTitleFg, LinkContent | Body text, item names, headlines, page titles, content link text, mode labels, prompts | Borders (use 35), accents (use 51), key hint labels (use AccentFg 51) |
 | 119 | `#87ff5f` | SuccessFg | Completion messages, checkmarks, success indicators | Body text, borders |
 | 34 | `#00af00` | LinkNavigation/External/Footer | Non-content link types in link tree, secondary metadata | Headlines, primary content |
 | 35 | `#00af5f` | HeaderBorderFg, StatusBarSeparatorFg | All box-drawing borders, separator rules, accent bars on selected items | Text content, link names |
@@ -1391,7 +1391,7 @@ screens if no preference is set.
 ### 7.2 Accent Color Rules (Cyan, ANSI 51)
 
 **USE for**:
-- Key shortcut letters in brackets when emphasis is needed (future enhancement)
+- Key hint labels on all screens (status bar hints, launcher footer hints, error screen action hints, toast hints)
 - Toast notification borders (non-celebration)
 - Cache status badges and indicators
 - Interactive element highlights

@@ -255,7 +255,7 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("READ");
+        output.Should().Contain("ReaderView");
     }
 
     [Fact]
@@ -351,7 +351,7 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
         // Single line with mode badge and domain
-        output.Should().Contain("LINK");
+        output.Should().Contain("LinkView");
         output.Should().Contain("example.com");
     }
 
@@ -363,7 +363,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        output.Should().Contain("LINK");
+        output.Should().Contain("LinkView");
     }
 
     [Fact]

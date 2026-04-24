@@ -88,7 +88,7 @@ internal class RenderHelpers
             return string.Empty;
         }
 
-        if (maxWidth <= 3)
+        if (maxWidth <= 1)
         {
             return GetDisplayWidth(text) <= maxWidth ? text : TruncateToWidth(text, maxWidth);
         }
@@ -98,7 +98,7 @@ internal class RenderHelpers
             return text;
         }
 
-        return TruncateToWidth(text, maxWidth - 3) + "...";
+        return TruncateToWidth(text, maxWidth - 1) + "\u2026";
     }
 
     public static string FormatCacheAge(DateTime? cachedAt)

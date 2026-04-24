@@ -117,7 +117,7 @@ internal class StatusBarRenderer
             ViewMode.Hierarchical => "LinkView",
             ViewMode.Readable => "ReaderView",
             ViewMode.CollectionList => "Collections",
-            ViewMode.CollectionItems => "Reading List",
+            ViewMode.CollectionItems => "ReadingList",
             ViewMode.Launcher => "Launcher",
             _ => "Browser"
         };
@@ -143,14 +143,22 @@ internal class StatusBarRenderer
     internal static string FormatProgressBar(int cached, int total, ThemePalette p, bool isActive = false, string? currentUrl = null)
     {
         const int barLength = 6;
-        var fraction = total > 0 ? (double)cached / total : 0.0;
+        var isComplete = cached >= total && total > 0;
 
         if (isActive)
         {
             var spinner = SpinnerFrames[_spinnerFrame % SpinnerFrames.Length];
             _spinnerFrame++;
-            var bar = Components.Indicators.RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, fraction, barLength);
-            return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar} {p.PromptFg.AnsiFg}{spinner}{Reset}";
+            var bar = Components.Indicators.RenderEighthBlockBar(
+                p.GetWarningFg().AnsiFg, p.GetMutedFg().AnsiFg, (double)cached / Math.Max(1, total), barLength);
+            return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar} {p.GetWarningFg().AnsiFg}{spinner}{Reset}";
+        }
+
+        if (isComplete)
+        {
+            var bar = Components.Indicators.RenderEighthBlockBar(
+                p.GetSuccessFg().AnsiFg, p.GetMutedFg().AnsiFg, 1.0, barLength);
+            return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset} {bar}";
         }
 
         return $"{p.SecondaryText.AnsiFg}{cached}/{total}{Reset}";
@@ -166,12 +174,12 @@ internal class StatusBarRenderer
     {
         return mode switch
         {
-            ViewMode.Hierarchical => "LINK",
-            ViewMode.Readable => "READ",
-            ViewMode.CollectionList => "LIST",
-            ViewMode.CollectionItems => "SAVE",
-            ViewMode.Launcher => "HOME",
-            _ => "VIEW"
+            ViewMode.Hierarchical => "LinkView",
+            ViewMode.Readable => "ReaderView",
+            ViewMode.CollectionList => "Collections",
+            ViewMode.CollectionItems => "ReadingList",
+            ViewMode.Launcher => "Launcher",
+            _ => "Browser"
         };
     }
 
