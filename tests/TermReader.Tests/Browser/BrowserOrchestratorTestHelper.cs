@@ -74,7 +74,8 @@ internal static class BrowserOrchestratorTestHelper
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger,
-            pipeline);
+            pipeline,
+            Substitute.For<ILayoutVariantProvider>());
     }
 
     /// <summary>

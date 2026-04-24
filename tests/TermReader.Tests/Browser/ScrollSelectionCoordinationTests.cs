@@ -68,6 +68,7 @@ public class ScrollSelectionCoordinationTests
             LineCacheManager = lineCacheManager,
             ThemeProvider = themeProvider,
             PreloadService = Substitute.For<IPreloadService>(),
+            LayoutVariantProvider = Substitute.For<ILayoutVariantProvider>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,

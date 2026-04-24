@@ -168,6 +168,13 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
         services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();
 
+        // Register layout variant provider (cycles visual layout variants per ViewMode)
+        services.AddSingleton<ILayoutVariantProvider>(sp =>
+        {
+            var settingsStore = sp.GetRequiredService<IUserSettingsStore>();
+            return new LayoutVariantProvider(settingsStore);
+        });
+
         // Register navigation service (manages history and state)
         services.AddSingleton<NavigationService>();
         services.AddSingleton<INavigationService>(sp => sp.GetRequiredService<NavigationService>());
