@@ -74,7 +74,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel);
         RenderToastOverlay(context, options.TerminalWidth);
     }
 
@@ -106,7 +106,7 @@ public class TerminalPageRenderer : IPageRenderer
             }
 
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
             RenderToastOverlay(context, options.TerminalWidth);
             return;
         }
@@ -130,7 +130,8 @@ public class TerminalPageRenderer : IPageRenderer
                 options.TerminalWidth,
                 readerTotalLines: wrappedLines.Count,
                 readerContentWidth: options.MaxContentWidth,
-                readerViewportHeight: viewportHeight);
+                readerViewportHeight: viewportHeight,
+                layoutVariantLabel: options.LayoutVariantLabel);
         }
         else
         {
@@ -138,7 +139,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
         }
 
         RenderToastOverlay(context, options.TerminalWidth);
@@ -265,7 +266,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.Clear();
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
     }
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
@@ -274,7 +275,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.Clear();
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel);
     }
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)

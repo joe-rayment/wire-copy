@@ -43,6 +43,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly ILogger<BrowserOrchestrator> _logger;
     private readonly LineCacheManager _lineCacheManager;
     private readonly PageLoadPipeline _pipeline;
+    private readonly ILayoutVariantProvider _layoutVariantProvider;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
@@ -88,7 +89,8 @@ public class BrowserOrchestrator : IBrowserService
         IHttpCookieRefresher httpCookieRefresher,
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger,
-        PageLoadPipeline pipeline)
+        PageLoadPipeline pipeline,
+        ILayoutVariantProvider layoutVariantProvider)
     {
         _pageLoader = pageLoader;
         _treeBuilder = treeBuilder;
@@ -107,6 +109,7 @@ public class BrowserOrchestrator : IBrowserService
         _httpCookieRefresher = httpCookieRefresher;
         _logger = logger;
         _pipeline = pipeline;
+        _layoutVariantProvider = layoutVariantProvider;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
         // Subscribe to preload progress changes for live status bar updates
@@ -123,6 +126,7 @@ public class BrowserOrchestrator : IBrowserService
             LineCacheManager = _lineCacheManager,
             ThemeProvider = themeProvider,
             PreloadService = _preloadService,
+            LayoutVariantProvider = layoutVariantProvider,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
@@ -556,6 +560,7 @@ public class BrowserOrchestrator : IBrowserService
             CacheProgress = _preloadService.GetProgress(),
             PodcastButtonState = GetPodcastButtonState(),
             CacheUsagePercent = GetCacheUsagePercent(),
+            LayoutVariantLabel = GetLayoutVariantLabel(),
         };
     }
 
@@ -608,6 +613,20 @@ public class BrowserOrchestrator : IBrowserService
     {
         var stats = _pageCache.GetStats();
         return stats?.UsagePercent ?? 0;
+    }
+
+    private string? GetLayoutVariantLabel()
+    {
+        var mode = _navigationService.CurrentContext.ViewMode;
+        var total = _layoutVariantProvider.GetTotalVariants(mode);
+        if (total <= 1)
+        {
+            return null;
+        }
+
+        var variant = _layoutVariantProvider.GetCurrentVariant(mode);
+        var index = _layoutVariantProvider.GetCurrentIndex(mode) + 1; // 1-based
+        return $"{variant} {index}/{total}";
     }
 
     private IReadOnlySet<string> GetMergedCachedUrls()
@@ -1411,6 +1430,10 @@ public class BrowserOrchestrator : IBrowserService
 
                 case CommandType.ChooseLayout:
                     await LayoutCommandHandler.HandleChooseLayout(_commandContext, options, cancellationToken);
+                    break;
+
+                case CommandType.CycleLayoutVariant:
+                    await LayoutCommandHandler.HandleCycleLayoutVariant(_commandContext, options, cancellationToken);
                     break;
 
                 case CommandType.DumpHtml:

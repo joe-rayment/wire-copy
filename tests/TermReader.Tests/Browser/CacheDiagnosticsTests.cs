@@ -472,6 +472,7 @@ public class CacheDiagnosticsTests : IDisposable
             LineCacheManager = new LineCacheManager(navigationService, themeProvider),
             ThemeProvider = themeProvider,
             PreloadService = preloadService,
+            LayoutVariantProvider = Substitute.For<ILayoutVariantProvider>(),
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,

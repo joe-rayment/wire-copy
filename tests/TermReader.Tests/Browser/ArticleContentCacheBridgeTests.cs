@@ -116,7 +116,8 @@ public class ArticleContentCacheBridgeTests
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger,
-            pipeline);
+            pipeline,
+            Substitute.For<ILayoutVariantProvider>());
     }
 
     /// <summary>

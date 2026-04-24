@@ -101,7 +101,8 @@ public class CacheServingFlowTests
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger,
-            pipeline);
+            pipeline,
+            Substitute.For<ILayoutVariantProvider>());
     }
 
     #region Loading screen skip for cache hits

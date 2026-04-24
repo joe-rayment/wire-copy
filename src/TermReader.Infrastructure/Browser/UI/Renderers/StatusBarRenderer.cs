@@ -35,7 +35,8 @@ internal class StatusBarRenderer
         double cacheUsagePercent = 0,
         int readerTotalLines = 0,
         int readerContentWidth = 0,
-        int readerViewportHeight = 0)
+        int readerViewportHeight = 0,
+        string? layoutVariantLabel = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
@@ -51,7 +52,7 @@ internal class StatusBarRenderer
         var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
         var leftWidth = RenderHelpers.GetDisplayWidth(left);
 
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent);
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
         // Responsive help hint: show preview controls or standard help
@@ -234,7 +235,8 @@ internal class StatusBarRenderer
         ViewMode mode,
         ThemePalette p,
         PreloadProgress? cacheProgress,
-        double cacheUsagePercent)
+        double cacheUsagePercent,
+        string? layoutVariantLabel = null)
     {
         var parts = new List<string>();
 
@@ -268,6 +270,12 @@ internal class StatusBarRenderer
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
                 parts.Add($"{p.GetAccentFg().AnsiFg}^L{Reset}{p.SecondaryText.AnsiFg}:layout{Reset}");
+            }
+
+            // Layout variant indicator (e.g., "Grid 1/3")
+            if (!string.IsNullOrEmpty(layoutVariantLabel))
+            {
+                parts.Add($"{p.SecondaryText.AnsiFg}{layoutVariantLabel}{Reset}");
             }
         }
 

@@ -52,6 +52,7 @@ public class CollectionCommandStatusTests
             LineCacheManager = new LineCacheManager(_navService, themeProvider),
             ThemeProvider = themeProvider,
             PreloadService = Substitute.For<IPreloadService>(),
+            LayoutVariantProvider = Substitute.For<ILayoutVariantProvider>(),
             RenderCurrentPageAsync = (_, _) =>
             {
                 _lastStatusMessage = _navService.CurrentContext.StatusMessage;
@@ -409,6 +410,7 @@ public class CollectionCommandStatusTests
             LineCacheManager = new LineCacheManager(navService, themeProvider),
             ThemeProvider = themeProvider,
             PreloadService = Substitute.For<IPreloadService>(),
+            LayoutVariantProvider = Substitute.For<ILayoutVariantProvider>(),
             RenderCurrentPageAsync = (_, _) =>
             {
                 statusMessage = navService.CurrentContext.StatusMessage;

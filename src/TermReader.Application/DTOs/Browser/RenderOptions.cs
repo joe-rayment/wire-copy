@@ -67,4 +67,10 @@ public record RenderOptions
     /// a warning indicator when the cache is nearly full.
     /// </summary>
     public double CacheUsagePercent { get; init; }
+
+    /// <summary>
+    /// Current layout variant label for status bar display (e.g., "Grid 1/3").
+    /// Null when there is only one variant for the current mode.
+    /// </summary>
+    public string? LayoutVariantLabel { get; init; }
 }

@@ -480,7 +480,7 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
                 ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
                 ConsoleKey.P => new NavigationCommand { Type = CommandType.CycleTheme },
-                ConsoleKey.L => new NavigationCommand { Type = CommandType.ChooseLayout },
+                ConsoleKey.L => new NavigationCommand { Type = CommandType.CycleLayoutVariant },
                 ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };

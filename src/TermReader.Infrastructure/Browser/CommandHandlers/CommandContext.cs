@@ -34,6 +34,8 @@ internal class CommandContext
 
     public required IPreloadService PreloadService { get; init; }
 
+    public required ILayoutVariantProvider LayoutVariantProvider { get; init; }
+
     // Mutable shared state
     public IReadOnlyList<Collection>? Collections { get; set; }
 
