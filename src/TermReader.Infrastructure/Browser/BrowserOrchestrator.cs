@@ -12,6 +12,8 @@ using TermReader.Domain.Entities.Collections;
 using TermReader.Domain.Enums.Browser;
 using TermReader.Domain.ValueObjects.Browser;
 using TermReader.Infrastructure.Browser.CommandHandlers;
+using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI;
 
 namespace TermReader.Infrastructure.Browser;
 
@@ -43,6 +45,7 @@ public class BrowserOrchestrator : IBrowserService
     private readonly LineCacheManager _lineCacheManager;
     private readonly PageLoadPipeline _pipeline;
     private readonly ILayoutVariantProvider _layoutVariantProvider;
+    private readonly IThemeProvider _themeProvider;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
@@ -65,6 +68,10 @@ public class BrowserOrchestrator : IBrowserService
     // Live preload progress indicator: set by background thread, read by main loop
     private volatile bool _progressDirty;
     private DateTime _lastProgressRender = DateTime.MinValue;
+
+    // Cache animation state: tracks previous cached count to detect new-item and warm-complete transitions
+    private volatile int _prevCachedCount;
+    private volatile bool _prevIsComplete;
 
     // Shared context for command handlers (single source of truth for mutable state)
     private readonly CommandContext _commandContext;
@@ -109,6 +116,7 @@ public class BrowserOrchestrator : IBrowserService
         _logger = logger;
         _pipeline = pipeline;
         _layoutVariantProvider = layoutVariantProvider;
+        _themeProvider = themeProvider;
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
         // Subscribe to preload progress changes for live status bar updates
@@ -782,6 +790,8 @@ public class BrowserOrchestrator : IBrowserService
 
             await RenderCurrentPageAsync(options, CancellationToken.None);
 
+            PlayDecryptRevealAnimation(page);
+
             // Eagerly warm up the browser for paywalled or JS-heavy domains
             var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
             var needsBrowserWarmup = _browserConfig.IsPaywalledDomain(url) || _preloadService.IsDomainNeedsJs(url);
@@ -840,6 +850,41 @@ public class BrowserOrchestrator : IBrowserService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to show skeleton page for {Url}", url);
+        }
+    }
+
+    /// <summary>
+    /// Plays the decrypt-reveal animation on the page title after a new page is rendered.
+    /// The title resolves from noise through random letters to the correct text.
+    /// Skipped when animations are disabled or the page has no title.
+    /// </summary>
+    private void PlayDecryptRevealAnimation(Page page)
+    {
+        if (_browserConfig.DisableAnimations)
+        {
+            return;
+        }
+
+        var title = page.ReadableContent?.Title ?? page.Metadata?.Title;
+        if (string.IsNullOrEmpty(title))
+        {
+            return;
+        }
+
+        try
+        {
+            var terminalWidth = Console.WindowWidth;
+            var maxTitleWidth = Math.Max(1, (terminalWidth - 2) / 2);
+            var displayTitle = UI.Renderers.RenderHelpers.TruncateText(title, maxTitleWidth);
+
+            var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+
+            // Title is rendered at row 0, column 1 (after leading space in RenderHeader)
+            DecryptRevealAnimation.Play(displayTitle, row: 0, col: 1, palette);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Decrypt reveal animation failed");
         }
     }
 
@@ -966,6 +1011,8 @@ public class BrowserOrchestrator : IBrowserService
             NotifyPreloadSelectionChanged();
 
             await RenderCurrentPageAsync(loadOptions, cancellationToken);
+
+            PlayDecryptRevealAnimation(page);
         }
         catch (OperationCanceledException)
         {
@@ -1785,6 +1832,56 @@ public class BrowserOrchestrator : IBrowserService
     private void OnPreloadProgressChanged()
     {
         _progressDirty = true;
+
+        // Skip animations if disabled or not in a view that shows cache progress
+        if (_browserConfig.DisableAnimations)
+        {
+            return;
+        }
+
+        var viewMode = _navigationService.CurrentContext.ViewMode;
+        if (viewMode != ViewMode.Hierarchical && viewMode != ViewMode.CollectionItems)
+        {
+            return;
+        }
+
+        try
+        {
+            var progress = _preloadService.GetProgress();
+            var prevCount = _prevCachedCount;
+            var prevComplete = _prevIsComplete;
+            _prevCachedCount = progress.CachedCount;
+            _prevIsComplete = progress.IsComplete;
+
+            if (progress.TotalCacheableLinks <= 0)
+            {
+                return;
+            }
+
+            var palette = Themes.BuiltInThemes.Get(_themeProvider.CurrentTheme);
+            var width = Console.WindowWidth;
+
+            // Item pulse: a new item was just cached
+            if (progress.CachedCount > prevCount && prevCount >= 0)
+            {
+                // The count text is rendered near the right side of the status bar content line.
+                // Use a rough estimate for column position; exact position varies with other badges.
+                var col = Math.Max(0, width - 25);
+                var row = Console.WindowHeight - 1;
+                UI.Renderers.StatusBarRenderer.PlayCacheItemPulse(
+                    palette, progress.CachedCount, progress.TotalCacheableLinks, col, row);
+            }
+
+            // Warm wave: cache warming just completed
+            if (progress.IsComplete && !prevComplete && progress.CachedCount > 0)
+            {
+                UI.Renderers.StatusBarRenderer.PlayCacheWarmWave(palette, width);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error playing cache animation");
+        }
     }
 
     /// <summary>
