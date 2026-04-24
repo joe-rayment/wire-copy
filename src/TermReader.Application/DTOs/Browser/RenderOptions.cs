@@ -73,4 +73,10 @@ public record RenderOptions
     /// Null when there is only one variant for the current mode.
     /// </summary>
     public string? LayoutVariantLabel { get; init; }
+
+    /// <summary>
+    /// Current layout variant name for the active view mode (e.g., "Cards", "DenseList", "Magazine").
+    /// Used by renderers to select the appropriate layout algorithm.
+    /// </summary>
+    public string? LayoutVariant { get; init; }
 }

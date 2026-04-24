@@ -9,7 +9,8 @@ using TermReader.Infrastructure.Browser.UI.Components;
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Renders the launcher home screen with a fixed-height 2-column grid layout.
+/// Renders the launcher home screen with layout variant support:
+/// Grid (2-column cards), List (single-column rows), Compact (3-column mini-cards).
 /// </summary>
 internal class LauncherRenderer
 {
@@ -27,6 +28,28 @@ internal class LauncherRenderer
     }
 
     public void RenderLauncher(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var variant = options.LayoutVariant ?? "Grid";
+
+        switch (variant)
+        {
+            case "List":
+                RenderListVariant(bookmarks, selectedIndex, scrollOffset, options);
+                break;
+            case "Compact":
+                RenderCompactVariant(bookmarks, selectedIndex, scrollOffset, options);
+                break;
+            default:
+                RenderGridVariant(bookmarks, selectedIndex, scrollOffset, options);
+                break;
+        }
+    }
+
+    private void RenderGridVariant(
         List<Bookmark> bookmarks,
         int selectedIndex,
         int scrollOffset,
@@ -111,6 +134,130 @@ internal class LauncherRenderer
         }
     }
 
+    private void RenderListVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "List");
+
+        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
+
+        var totalItems = bookmarks.Count + 1;
+
+        if (bookmarks.Count == 0)
+        {
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        var totalRows = totalItems; // 1 item per row
+        var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow;
+        var belowCount = totalItems - endRow;
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            if (row == startRow && hasMoreAbove)
+            {
+                RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                continue;
+            }
+
+            if (row == endRow - 1 && hasMoreBelow)
+            {
+                RenderScrollIndicator(layout.Width, p, false, belowCount);
+                continue;
+            }
+
+            _helpers.WriteLine(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
+        }
+    }
+
+    private void RenderCompactVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Compact");
+
+        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
+
+        var totalItems = bookmarks.Count + 1;
+
+        if (bookmarks.Count == 0)
+        {
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
+        var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow * layout.Columns;
+        var belowCount = totalItems - (endRow * layout.Columns);
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            var isFirstVisible = row == startRow;
+            var isLastVisible = row == endRow - 1;
+
+            for (var line = 0; line < layout.CellHeight; line++)
+            {
+                if (isFirstVisible && line == 0 && hasMoreAbove)
+                {
+                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                    continue;
+                }
+
+                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
+                {
+                    RenderScrollIndicator(layout.Width, p, false, belowCount);
+                    continue;
+                }
+
+                var sb = new System.Text.StringBuilder();
+
+                for (var col = 0; col < layout.Columns; col++)
+                {
+                    var itemIdx = (row * layout.Columns) + col;
+                    var isLastCol = col == layout.Columns - 1;
+                    var cellW = isLastCol
+                        ? layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1)
+                        : layout.CellWidth;
+
+                    if (col > 0)
+                    {
+                        sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
+                    }
+
+                    if (itemIdx < totalItems)
+                    {
+                        sb.Append(BuildCompactCellLine(
+                            bookmarks, itemIdx, selectedIndex, cellW, line, p));
+                    }
+                    else
+                    {
+                        sb.Append(new string(' ', cellW));
+                    }
+                }
+
+                _helpers.WriteLine(sb.ToString());
+            }
+        }
+    }
+
     /// <summary>
     /// Renders the launcher-specific footer with kbd-style keyboard hints.
     /// </summary>
@@ -136,19 +283,54 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
+        return ComputeLayout(terminalWidth, terminalHeight, "Grid");
+    }
+
+    /// <summary>
+    /// Computes shared layout parameters from terminal dimensions and layout variant.
+    /// </summary>
+    internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
+    {
         const int headerLines = 1;
         const int urlBarLines = 5;
         const int footerLines = 2;
-        const int columnThreshold = 40;
-        const int standardCellHeight = 5;
-        const int compactCellHeight = 3;
 
         var width = Math.Max(1, terminalWidth - 2);
-        var columns = width >= columnThreshold ? 2 : 1;
         var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
-        var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+
+        int columns;
+        int cellHeight;
+
+        switch (variant)
+        {
+            case "List":
+                columns = 1;
+                cellHeight = 1;
+                break;
+
+            case "Compact":
+            {
+                var baseColumns = width >= 40 ? 2 : 1;
+                columns = width >= 60 ? 3 : baseColumns;
+                cellHeight = 3;
+                break;
+            }
+
+            default: // Grid
+            {
+                const int columnThreshold = 40;
+                const int standardCellHeight = 5;
+                const int compactCellHeight = 3;
+                columns = width >= columnThreshold ? 2 : 1;
+                cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+                break;
+            }
+        }
+
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
-        var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
+        var cellWidth = columns <= 1
+            ? width
+            : Math.Max(1, (width - (columns - 1)) / columns);
 
         return new LauncherLayout(
             Width: width,
@@ -358,6 +540,239 @@ internal class LauncherRenderer
             return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{truncDomain}{Reset}{new string(' ', pad)}";
         }
 
+        return new string(' ', cellWidth);
+    }
+
+    /// <summary>
+    /// Builds a single line for the List layout variant.
+    /// Format: " [n] NAME                    domain.com"
+    /// Selected: "▌[n] NAME                    domain.com" with highlight bg.
+    /// </summary>
+    private static string BuildListLine(
+        List<Bookmark> bookmarks,
+        int itemIdx,
+        int selectedIndex,
+        int width,
+        ThemePalette p)
+    {
+        var totalItems = bookmarks.Count + 1;
+        if (itemIdx >= totalItems)
+        {
+            return new string(' ', width);
+        }
+
+        var isCollections = itemIdx == bookmarks.Count;
+        var isSelected = itemIdx == selectedIndex;
+
+        string name;
+        string domain;
+
+        if (isCollections)
+        {
+            name = "\u2605 READING LIST";
+            domain = "reading list";
+        }
+        else
+        {
+            var bookmark = bookmarks[itemIdx];
+            name = bookmark.Name.ToUpperInvariant();
+            domain = ExtractDomain(bookmark.Url);
+        }
+
+        string badge;
+        if (isCollections)
+        {
+            badge = "[c]";
+        }
+        else if (itemIdx < 9)
+        {
+            badge = $"[{itemIdx + 1}]";
+        }
+        else
+        {
+            badge = "   ";
+        }
+
+        // Layout:  [n] NAME            domain
+        // Widths:  1 + badge(3) + 1 + name(variable) + gap(>=2) + domain + 1
+        const int badgeWidth = 3;
+        const int gapMin = 2;
+        var domainMaxWidth = Math.Min(domain.Length, (width - badgeWidth - gapMin - 3) / 3);
+        var truncDomain = RenderHelpers.TruncateText(domain, domainMaxWidth);
+        var nameMaxWidth = Math.Max(1, width - badgeWidth - 2 - gapMin - truncDomain.Length - 1);
+        var truncName = RenderHelpers.TruncateText(name, nameMaxWidth);
+        var gap = Math.Max(0, width - 2 - badgeWidth - truncName.Length - truncDomain.Length - 1);
+
+        if (isSelected)
+        {
+            var selFg = p.SelectedItemFg.AnsiFg;
+            var selBg = p.SelectedItemBg.AnsiBg;
+            var sb = new System.Text.StringBuilder();
+            sb.Append(Selection.AccentBar(p));
+            sb.Append($"{selBg}{selFg}{badge} ");
+            sb.Append($"{Bold}{selFg}{selBg}{truncName}{Reset}");
+            sb.Append($"{selBg}{new string(' ', gap)}");
+            sb.Append($"{p.SecondaryText.AnsiFg}{selBg}{truncDomain}");
+            sb.Append($" {Reset}");
+            return sb.ToString();
+        }
+
+        var sb2 = new System.Text.StringBuilder();
+        sb2.Append($" {p.GetAccentFg().AnsiFg}{badge}{Reset} ");
+        sb2.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+        sb2.Append(new string(' ', gap));
+        sb2.Append($"{p.SecondaryText.AnsiFg}{truncDomain}{Reset}");
+        sb2.Append(' ');
+        return sb2.ToString();
+    }
+
+    /// <summary>
+    /// Builds a single line within a Compact layout cell.
+    /// 3-line cells: line 0 = badge+name, line 1 = domain, line 2 = blank separator.
+    /// </summary>
+    private static string BuildCompactCellLine(
+        List<Bookmark> bookmarks,
+        int itemIdx,
+        int selectedIndex,
+        int cellWidth,
+        int lineIdx,
+        ThemePalette p)
+    {
+        var totalItems = bookmarks.Count + 1;
+        if (itemIdx >= totalItems)
+        {
+            return new string(' ', cellWidth);
+        }
+
+        var isCollections = itemIdx == bookmarks.Count;
+        var isSelected = itemIdx == selectedIndex;
+
+        string name;
+        string domain;
+
+        if (isCollections)
+        {
+            name = "\u2605LIST";
+            domain = "reading list";
+        }
+        else
+        {
+            var bookmark = bookmarks[itemIdx];
+            // Abbreviate name to fit compact cells
+            name = bookmark.Name.ToUpperInvariant();
+            domain = ExtractDomain(bookmark.Url);
+        }
+
+        string badge;
+        if (isCollections)
+        {
+            badge = "[c]";
+        }
+        else if (itemIdx < 9)
+        {
+            badge = $"[{itemIdx + 1}]";
+        }
+        else
+        {
+            badge = string.Empty;
+        }
+
+        // For compact 3-line cells: 0=badge+name, 1=domain, 2=blank
+        const int indent = 1;
+        var textWidth = Math.Max(1, cellWidth - indent - 1);
+
+        if (isSelected)
+        {
+            return BuildCompactSelectedLine(lineIdx, name, domain, badge, indent, textWidth, cellWidth, p);
+        }
+
+        return BuildCompactNormalLine(lineIdx, name, domain, badge, indent, textWidth, cellWidth, p);
+    }
+
+    private static string BuildCompactSelectedLine(
+        int lineIdx,
+        string name,
+        string domain,
+        string badge,
+        int indent,
+        int textWidth,
+        int cellWidth,
+        ThemePalette p)
+    {
+        var selFg = p.SelectedItemFg.AnsiFg;
+        var selBg = p.SelectedItemBg.AnsiBg;
+        var sb = new System.Text.StringBuilder();
+
+        // Accent bar on lines 0 and 1
+        if (lineIdx <= 1)
+        {
+            sb.Append(Selection.AccentBar(p));
+        }
+        else
+        {
+            sb.Append(' ');
+        }
+
+        var contentWidth = cellWidth - 1;
+
+        if (lineIdx == 0)
+        {
+            // Badge + name
+            var combined = badge.Length > 0 ? $"{badge} {name}" : name;
+            var truncCombined = RenderHelpers.TruncateText(combined, textWidth);
+            sb.Append($"{selBg}{selFg}{Bold}{truncCombined}{Reset}");
+            sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - truncCombined.Length))}{Reset}");
+        }
+        else if (lineIdx == 1)
+        {
+            // Domain
+            var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
+            sb.Append($"{selBg}{p.SecondaryText.AnsiFg}{Dim} {truncDomain}{Reset}");
+            sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - truncDomain.Length - 1))}{Reset}");
+        }
+        else
+        {
+            // Blank separator line
+            sb.Append(new string(' ', contentWidth));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildCompactNormalLine(
+        int lineIdx,
+        string name,
+        string domain,
+        string badge,
+        int indent,
+        int textWidth,
+        int cellWidth,
+        ThemePalette p)
+    {
+        if (lineIdx == 0)
+        {
+            // Badge + name
+            var combined = badge.Length > 0
+                ? $"{p.GetAccentFg().AnsiFg}{badge}{Reset} {Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, Math.Max(1, textWidth - badge.Length - 1))}{Reset}"
+                : $"{Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, textWidth)}{Reset}";
+
+            var combinedPlain = badge.Length > 0
+                ? $"{badge} {RenderHelpers.TruncateText(name, Math.Max(1, textWidth - badge.Length - 1))}"
+                : RenderHelpers.TruncateText(name, textWidth);
+
+            var pad = Math.Max(0, cellWidth - indent - combinedPlain.Length);
+            return $" {combined}{new string(' ', pad)}";
+        }
+
+        if (lineIdx == 1)
+        {
+            // Domain
+            var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, textWidth - 1));
+            var pad = Math.Max(0, cellWidth - indent - truncDomain.Length - 1);
+            return $"  {p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}{new string(' ', pad)}";
+        }
+
+        // Blank separator line
         return new string(' ', cellWidth);
     }
 

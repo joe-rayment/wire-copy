@@ -19,22 +19,28 @@ public class TerminalInputHandler : IInputHandler
     private readonly IResizeDetector _resizeDetector;
     private readonly ILogger<TerminalInputHandler> _logger;
     private readonly Channel<ConsoleKeyInfo> _keyChannel = Channel.CreateUnbounded<ConsoleKeyInfo>();
+    private readonly TerminalAnimationController _animationController;
     private bool _waitingForSecondKey; // For 'gg' command
     private int _numericPrefix; // For count-prefixed motions (e.g., 10j)
     private bool _keyReaderStarted;
     private Task<ConsoleKeyInfo>? _pendingKeyTask;
     private Task<bool>? _pendingResizeTask;
+    private Task? _pendingAnimationTick;
 
     public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, ILogger<TerminalInputHandler> logger)
     {
         _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
         _logger = logger;
+        _animationController = new TerminalAnimationController();
         IsInteractive = !Console.IsInputRedirected;
     }
 
     /// <inheritdoc />
     public bool IsInteractive { get; }
+
+    /// <inheritdoc />
+    public IAnimationController AnimationController => _animationController;
 
     public async Task<NavigationCommand> WaitForInputAsync(CancellationToken cancellationToken = default)
     {
@@ -342,10 +348,36 @@ public class TerminalInputHandler : IInputHandler
                 _pendingResizeTask = null;
             }
 
+            if (_pendingAnimationTick is { IsFaulted: true } or { IsCanceled: true })
+            {
+                _pendingAnimationTick = null;
+            }
+
             _pendingKeyTask ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
             _pendingResizeTask ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
 
-            var completed = await Task.WhenAny(_pendingKeyTask, _pendingResizeTask).ConfigureAwait(false);
+            // Build the task list: always key + resize, optionally animation tick
+            var raceTasks = new List<Task>(3) { _pendingKeyTask, _pendingResizeTask };
+
+            if (_animationController.AnimationState.HasActiveAnimation)
+            {
+                _pendingAnimationTick ??= Task.Delay(_animationController.AnimationIntervalMs, cancellationToken);
+                raceTasks.Add(_pendingAnimationTick);
+            }
+            else
+            {
+                _pendingAnimationTick = null;
+            }
+
+            var completed = await Task.WhenAny(raceTasks).ConfigureAwait(false);
+
+            // Animation tick fired — return AnimationTick command without consuming key input
+            if (_pendingAnimationTick != null && completed == _pendingAnimationTick)
+            {
+                _pendingAnimationTick = null;
+                _animationController.AnimationState.AdvanceFrame();
+                return new NavigationCommand { Type = CommandType.AnimationTick };
+            }
 
             if (completed == _pendingResizeTask)
             {
@@ -825,5 +857,8 @@ public class TerminalInputHandler : IInputHandler
 
         // Resize events are coalesced; safe to discard any pending resize read
         _pendingResizeTask = null;
+
+        // Animation ticks are fire-and-forget; safe to discard
+        _pendingAnimationTick = null;
     }
 }

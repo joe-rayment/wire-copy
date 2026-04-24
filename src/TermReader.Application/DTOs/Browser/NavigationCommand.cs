@@ -138,4 +138,7 @@ public enum CommandType
     ToggleSpeedRead,
     SpeedReadFaster,
     SpeedReadSlower,
+
+    // Animation
+    AnimationTick,
 }
