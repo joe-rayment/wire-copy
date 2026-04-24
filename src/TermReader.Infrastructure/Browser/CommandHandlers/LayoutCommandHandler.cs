@@ -128,39 +128,6 @@ internal static class LayoutCommandHandler
     }
 
     /// <summary>
-    /// Animates the status bar with a spinner while a task is running.
-    /// </summary>
-    private static async Task<List<LayoutCandidate>> AnimateWhileWaiting(
-        Task<List<LayoutCandidate>> task,
-        CommandContext ctx,
-        RenderOptions options,
-        string basePhrase,
-        CancellationToken ct)
-    {
-        var frame = 0;
-        var dots = 0;
-
-        while (!task.IsCompleted)
-        {
-            var spinChar = Spinner[frame % Spinner.Length];
-            var dotStr = new string('.', (dots % 3) + 1).PadRight(3);
-            ctx.NavigationService.SetStatusMessage(
-                $"{spinChar} {basePhrase}{dotStr}",
-                TimeSpan.FromMinutes(1));
-            await ctx.RenderCurrentPageAsync(options, ct);
-
-            frame++;
-            dots++;
-
-            // Wait 250ms or until the task completes, whichever is first
-            var delayTask = Task.Delay(250, ct);
-            await Task.WhenAny(task, delayTask);
-        }
-
-        return await task;
-    }
-
-    /// <summary>
     /// Cycles to the next layout preview (Right arrow in preview mode).
     /// </summary>
     public static async Task HandleCycleRight(
@@ -266,5 +233,38 @@ internal static class LayoutCommandHandler
     {
         ctx.NavigationService.CancelPreview();
         await ctx.RenderCurrentPageAsync(options, ct);
+    }
+
+    /// <summary>
+    /// Animates the status bar with a spinner while a task is running.
+    /// </summary>
+    private static async Task<List<LayoutCandidate>> AnimateWhileWaiting(
+        Task<List<LayoutCandidate>> task,
+        CommandContext ctx,
+        RenderOptions options,
+        string basePhrase,
+        CancellationToken ct)
+    {
+        var frame = 0;
+        var dots = 0;
+
+        while (!task.IsCompleted)
+        {
+            var spinChar = Spinner[frame % Spinner.Length];
+            var dotStr = new string('.', (dots % 3) + 1).PadRight(3);
+            ctx.NavigationService.SetStatusMessage(
+                $"{spinChar} {basePhrase}{dotStr}",
+                TimeSpan.FromMinutes(1));
+            await ctx.RenderCurrentPageAsync(options, ct);
+
+            frame++;
+            dots++;
+
+            // Wait 250ms or until the task completes, whichever is first
+            var delayTask = Task.Delay(250, ct);
+            await Task.WhenAny(task, delayTask);
+        }
+
+        return await task;
     }
 }
