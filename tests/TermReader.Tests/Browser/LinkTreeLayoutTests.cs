@@ -243,7 +243,7 @@ public class LinkTreeLayoutTests
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 0, 40, TestPalette);
 
-        line.Should().Contain("...");
+        line.Should().Contain("\u2026");
         line.Length.Should().BeLessThan(200);
     }
 
@@ -467,7 +467,7 @@ public class LinkTreeLayoutTests
 
         var line2 = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 40, TestPalette);
 
-        line2.Should().Contain("...");
+        line2.Should().Contain("\u2026");
     }
 
     [Fact]
@@ -498,7 +498,7 @@ public class LinkTreeLayoutTests
 
         var titleLine = LinkTreeRenderer.BuildCardLine(node, false, 3, 0, 40, TestPalette);
 
-        titleLine.Should().Contain("...");
+        titleLine.Should().Contain("\u2026");
     }
 
     [Fact]
@@ -653,7 +653,7 @@ public class LinkTreeLayoutTests
         // Many words that need 3+ lines at width=10
         var title = "one two three four five six seven eight nine ten";
         var result = LinkTreeRenderer.GetWrappedTitleLine(title, 10, 1);
-        result.Should().Contain("...");
+        result.Should().Contain("\u2026");
     }
 
     #endregion

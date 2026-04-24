@@ -679,7 +679,7 @@ internal static class PodcastCommandHandler
             {
                 if (isKeyConfigured)
                 {
-                    var displayPath = keyPath!.Length > 40 ? "..." + keyPath[^37..] : keyPath;
+                    var displayPath = keyPath!.Length > 40 ? "\u2026" + keyPath[^39..] : keyPath;
                     helpers.WriteLine($"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS service account    {p.PromptFg.AnsiFg}{displayPath}{Reset}  {p.SecondaryText.AnsiFg}[k] change{Reset}");
                 }
                 else
@@ -2085,12 +2085,11 @@ internal static class PodcastCommandHandler
 
         var percent = progress?.PercentComplete ?? 0;
         var barWidth = Math.Max(10, width - 12);
-        var filled = (int)(barWidth * percent / 100.0);
-        var empty = barWidth - filled;
-        var filledBar = new string('\u2588', filled);
-        var emptyBar = new string('.', empty);
-        helpers.WriteLine(
-            $"  {p.PromptFg.AnsiFg}{filledBar}{p.SecondaryText.AnsiFg}{emptyBar}{Reset} {percent}%");
+        var fraction = percent / 100.0;
+        var isComplete = percent >= 100;
+        var filledColor = isComplete ? p.GetSuccessFg().AnsiFg : p.GetWarningFg().AnsiFg;
+        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+        helpers.WriteLine($"  {bar} {percent}%");
         helpers.WriteLine();
 
         var maxArticleLines = Math.Max(1, terminalHeight - helpers.LinesWritten - 4);

@@ -32,6 +32,9 @@ internal static class Indicators
 
     private const string Reset = "\x1b[0m";
 
+    /// <summary>Empty track character — white parallelogram (U+25B1).</summary>
+    private const char EmptyTrack = '\u25b1';
+
     // Eighth-block characters for smooth progress bars (from full to 1/8).
     private static readonly char[] EighthBlocks = [
         '\u2588', // █ Full block (8/8)
@@ -46,14 +49,34 @@ internal static class Indicators
 
     /// <summary>
     /// Renders a smooth progress bar using eighth-block Unicode characters.
+    /// Uses WarningFg for active progress and MutedFg for the empty track.
     /// </summary>
     public static string ProgressBar(ThemePalette p, int filled, int total)
     {
-        return RenderEighthBlockBar(p.PromptFg.AnsiFg, p.SecondaryText.AnsiFg, (double)filled / Math.Max(1, total), total);
+        return RenderEighthBlockBar(
+            p.GetWarningFg().AnsiFg,
+            p.GetMutedFg().AnsiFg,
+            (double)filled / Math.Max(1, total),
+            total);
+    }
+
+    /// <summary>
+    /// Renders a themed progress bar that changes color based on completion state:
+    /// WarningFg/amber when in progress, SuccessFg when complete, MutedFg for empty track.
+    /// </summary>
+    public static string ProgressBar(ThemePalette p, int filled, int total, bool isComplete)
+    {
+        var filledColor = isComplete ? p.GetSuccessFg().AnsiFg : p.GetWarningFg().AnsiFg;
+        return RenderEighthBlockBar(
+            filledColor,
+            p.GetMutedFg().AnsiFg,
+            (double)filled / Math.Max(1, total),
+            total);
     }
 
     /// <summary>
     /// Renders a smooth eighth-block progress bar for a given fraction and bar length.
+    /// The empty portion renders as ▱ (U+25B1) characters in the empty color.
     /// </summary>
     internal static string RenderEighthBlockBar(string filledColor, string emptyColor, double fraction, int barLength)
     {
@@ -71,13 +94,13 @@ internal static class Indicators
             sb.Append(EighthBlocks[8 - remainder]);
             sb.Append(Reset);
             sb.Append(emptyColor);
-            sb.Append(new string(' ', Math.Max(0, barLength - fullBlocks - 1)));
+            sb.Append(new string(EmptyTrack, Math.Max(0, barLength - fullBlocks - 1)));
         }
         else
         {
             sb.Append(Reset);
             sb.Append(emptyColor);
-            sb.Append(new string(' ', Math.Max(0, barLength - fullBlocks)));
+            sb.Append(new string(EmptyTrack, Math.Max(0, barLength - fullBlocks)));
         }
 
         sb.Append(Reset);

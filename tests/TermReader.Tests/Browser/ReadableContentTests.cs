@@ -169,8 +169,8 @@ public class ReadableContentTests
         var preview = content.GetPreview(100);
 
         // Assert
-        preview.Should().HaveLength(103); // 100 chars + "..."
-        preview.Should().EndWith("...");
+        preview.Should().HaveLength(101); // 100 chars + "…"
+        preview.Should().EndWith("\u2026");
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public class ReadableContentTests
 
         // Assert
         preview.Should().Be(text);
-        preview.Should().NotEndWith("...");
+        preview.Should().NotEndWith("\u2026");
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public class ReadableContentTests
         var preview = content.GetPreview();
 
         // Assert
-        preview.Should().HaveLength(203); // 200 chars + "..."
+        preview.Should().HaveLength(201); // 200 chars + "…"
     }
 
     [Fact]
