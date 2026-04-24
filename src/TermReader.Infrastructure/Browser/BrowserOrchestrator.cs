@@ -23,7 +23,6 @@ public class BrowserOrchestrator : IBrowserService
 {
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
-    private const int DefaultReaderWidth = 60;
 
     private readonly IPageLoader _pageLoader;
     private readonly INavigationTreeBuilder _treeBuilder;
@@ -374,6 +373,13 @@ public class BrowserOrchestrator : IBrowserService
                     var command = await pendingInput;
                     pendingInput = null;
 
+                    // Animation tick: lightweight render update for animated regions only
+                    if (command.Type == CommandType.AnimationTick)
+                    {
+                        await HandleAnimationTickAsync(options, cancellationToken);
+                        continue;
+                    }
+
                     // During speed reading: f/</> control speed, any other key stops and is consumed
                     if (_navigationService.IsSpeedReadActive
                         && command.Type is not CommandType.ToggleSpeedRead
@@ -392,7 +398,8 @@ public class BrowserOrchestrator : IBrowserService
                         command.Type is not CommandType.Quit
                             and not CommandType.GoBack
                             and not CommandType.NoOp
-                            and not CommandType.TerminalResized)
+                            and not CommandType.TerminalResized
+                            and not CommandType.AnimationTick)
                     {
                         // Ignore the command — user will see the loading screen
                         continue;
@@ -471,7 +478,7 @@ public class BrowserOrchestrator : IBrowserService
 
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
-        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.LayoutVariant);
         return layout.VisibleRows;
     }
 
@@ -561,6 +568,7 @@ public class BrowserOrchestrator : IBrowserService
             PodcastButtonState = GetPodcastButtonState(),
             CacheUsagePercent = GetCacheUsagePercent(),
             LayoutVariantLabel = GetLayoutVariantLabel(),
+            LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
         };
     }
 
@@ -576,13 +584,21 @@ public class BrowserOrchestrator : IBrowserService
                 MaxContentWidth);
         }
 
-        // In reader view, use a narrower default for readability
+        // In reader view, use the layout variant to determine content width
         var isReaderView = _navigationService.CurrentContext.ViewMode == ViewMode.Readable;
-        var defaultWidth = isReaderView
-            ? Math.Min(DefaultReaderWidth, terminalWidth - 2)
-            : terminalWidth - 2;
+        if (isReaderView)
+        {
+            var variant = _layoutVariantProvider.GetCurrentVariant(ViewMode.Readable);
+            var readerWidth = variant switch
+            {
+                "FullWidth" => terminalWidth - 2,
+                "Narrow" => Math.Min(60, terminalWidth - 2),
+                _ => Math.Min(80, terminalWidth - 2), // Comfortable (default)
+            };
+            return Math.Clamp(readerWidth, min, MaxContentWidth);
+        }
 
-        return Math.Clamp(defaultWidth, min, MaxContentWidth);
+        return Math.Clamp(terminalWidth - 2, min, MaxContentWidth);
     }
 
     private bool IsTtsConfigured()
@@ -1736,6 +1752,29 @@ public class BrowserOrchestrator : IBrowserService
             var idealOffset = gridRow - contentHeight + 2;
             var maxOffset = Math.Max(0, gridRows.Count - contentHeight);
             _navigationService.SetScrollOffset(Math.Min(idealOffset, maxOffset));
+        }
+    }
+
+    /// <summary>
+    /// Handles an animation timer tick. Performs a lightweight render update
+    /// for just the animated region (e.g., status bar) without processing
+    /// the full command pipeline. This keeps animation overhead minimal.
+    /// </summary>
+    private async Task HandleAnimationTickAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Re-render only the current page — renderers can check AnimationState
+            // to decide which regions need updating for the current frame.
+            await RenderCurrentPageAsync(options, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error during animation tick render");
         }
     }
 

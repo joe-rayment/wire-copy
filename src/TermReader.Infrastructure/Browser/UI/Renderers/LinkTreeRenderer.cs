@@ -49,8 +49,29 @@ internal class LinkTreeRenderer
     {
         tree.EnsureSelection();
 
+        var variant = options.LayoutVariant;
+
+        switch (variant)
+        {
+            case "DenseList":
+                RenderDenseList(tree, context, maxLines, options);
+                return;
+            case "Magazine":
+                RenderMagazineList(tree, context, maxLines, options);
+                return;
+            default:
+                RenderCardsLayout(tree, context, maxLines, options);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Renders the Cards layout (original 2-column grid with 5-line cells).
+    /// </summary>
+    private void RenderCardsLayout(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Cards");
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
         var startRow = context.ScrollOffset;
@@ -104,6 +125,114 @@ internal class LinkTreeRenderer
         }
 
         // Scroll-down indicator
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
+        if (totalRemaining > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+        }
+    }
+
+    /// <summary>
+    /// Renders the DenseList layout: single-column, 1 line per link with right-aligned domain.
+    /// </summary>
+    private void RenderDenseList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "DenseList");
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
+
+        var linesUsed = 0;
+        var rowsRendered = 0;
+
+        if (startRow > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, true, startRow);
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var linesNeeded = gr.IsGroupHeader ? GetDenseGroupHeaderLines(gr.Left) : 1;
+
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            if (gr.IsGroupHeader)
+            {
+                RenderDenseGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
+            }
+            else
+            {
+                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
+                RenderDenseListRow(gr.Left, layout.Width, p, isToggled);
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
+        if (totalRemaining > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+        }
+    }
+
+    /// <summary>
+    /// Renders the Magazine layout: single-column, 2 lines per link (title + metadata).
+    /// </summary>
+    private void RenderMagazineList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Magazine");
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
+
+        var linesUsed = 0;
+        var rowsRendered = 0;
+
+        if (startRow > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, true, startRow);
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var linesNeeded = gr.IsGroupHeader ? GetMagazineGroupHeaderLines(gr.Left) : 2;
+
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            if (gr.IsGroupHeader)
+            {
+                RenderMagazineGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
+            }
+            else
+            {
+                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
+                RenderMagazineRow(gr.Left, layout.Width, p, isToggled);
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
         var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
         if (totalRemaining > 0)
         {
@@ -187,18 +316,38 @@ internal class LinkTreeRenderer
     /// Computes shared layout parameters from terminal dimensions.
     /// Single source of truth for card dimensions, called by both the renderer and BrowserOrchestrator.
     /// </summary>
-    internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
+    internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight, string? layoutVariant = null)
     {
         const int headerLines = 1;
         const int statusBarLines = 2;
-        const int columnThreshold = 50;
-        const int standardCellHeight = 5;
-        const int compactCellHeight = 3;
 
         var width = Math.Max(1, terminalWidth - 2);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - statusBarLines);
-        var columns = width >= columnThreshold ? 2 : 1;
-        var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+
+        int columns;
+        int cellHeight;
+
+        switch (layoutVariant)
+        {
+            case "DenseList":
+                columns = 1;
+                cellHeight = 1;
+                break;
+            case "Magazine":
+                columns = 1;
+                cellHeight = 2;
+                break;
+            default: // "Cards" or null
+            {
+                const int columnThreshold = 50;
+                const int standardCellHeight = 5;
+                const int compactCellHeight = 3;
+                columns = width >= columnThreshold ? 2 : 1;
+                cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+                break;
+            }
+        }
+
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
         var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
 
@@ -309,17 +458,34 @@ internal class LinkTreeRenderer
     /// </summary>
     internal static int GetLinesForGroupHeader(LinkNode node, int cardHeight)
     {
-        if (cardHeight == 1)
-        {
-            return 1;
-        }
+        return GetLinesForGroupHeader(node, cardHeight, null);
+    }
 
-        if (node.Link.HeaderType == HeaderType.SubSection)
+    /// <summary>
+    /// Gets the number of lines a group header occupies, respecting the layout variant.
+    /// </summary>
+    internal static int GetLinesForGroupHeader(LinkNode node, int cardHeight, string? layoutVariant)
+    {
+        switch (layoutVariant)
         {
-            return 2;
-        }
+            case "DenseList":
+                return GetDenseGroupHeaderLines(node);
+            case "Magazine":
+                return GetMagazineGroupHeaderLines(node);
+            default:
+                // Cards layout (original behavior)
+                if (cardHeight == 1)
+                {
+                    return 1;
+                }
 
-        return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+                if (node.Link.HeaderType == HeaderType.SubSection)
+                {
+                    return 2;
+                }
+
+                return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
+        }
     }
 
     private static string BuildHeaderSubtitle(PageMetadata metadata, string url, int linkCount, int sectionCount)
@@ -742,5 +908,292 @@ internal class LinkTreeRenderer
         _helpers.WriteLine(
             $"{new string(' ', indicatorPad)}{p.SecondaryText.AnsiFg}{Dim}{indicator}{Reset}" +
             $"{new string(' ', Math.Max(0, width - indicatorPad - indicator.Length))}");
+    }
+
+    // ── DenseList layout helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// Returns how many lines a group header occupies in DenseList mode.
+    /// All group headers are a single line in this compact layout.
+    /// </summary>
+    internal static int GetDenseGroupHeaderLines(LinkNode node)
+    {
+        // DenseList: always 1 line per group header
+        return 1;
+    }
+
+    /// <summary>
+    /// Renders a group header in DenseList mode: single line, ALL CAPS, with collapse indicator.
+    /// </summary>
+    private void RenderDenseGroupHeader(LinkNode node, bool isSelected, int width, ThemePalette p, NavigationTree tree)
+    {
+        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
+        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
+        var childCount = node.Children.Count;
+
+        var selIndicator = string.Empty;
+        if (tree.IsSectionFullySelected(node))
+        {
+            selIndicator = "\u2713 ";
+        }
+        else if (tree.IsSectionPartiallySelected(node))
+        {
+            selIndicator = "\u25d0 ";
+        }
+
+        string headerText;
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            var showCount = !isExpanded || childCount >= 5;
+            var countSuffix = showCount ? $" ({childCount})" : string.Empty;
+            headerText = $"{selIndicator}{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
+        }
+        else
+        {
+            headerText = $"{selIndicator}{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
+        }
+
+        var truncText = RenderHelpers.TruncateText(headerText, width - 2);
+
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncText}");
+            sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncText.Length))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else
+        {
+            var color = isExpanded ? $"{p.PrimaryText.AnsiFg}{Bold}" : p.SecondaryText.AnsiFg;
+            _helpers.WriteLine($" {color}{truncText}{Reset}");
+        }
+    }
+
+    /// <summary>
+    /// Renders a single link row in DenseList mode: title left-aligned, domain right-aligned.
+    /// </summary>
+    private void RenderDenseListRow(LinkNode node, int width, ThemePalette p, bool isToggled)
+    {
+        var isSelected = node.IsSelected;
+        var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
+
+        // Layout: " title          domain " or "▌ title          domain "
+        // Reserve: 2 chars left (accent bar + space or space + space), 1 char right padding, domain length, 2 chars gap
+        var domainLen = domain.Length;
+        var maxTitleLen = Math.Max(1, width - domainLen - 5);
+        var truncTitle = RenderHelpers.TruncateText(node.Link.DisplayText, maxTitleLen);
+        var gap = Math.Max(2, width - 2 - truncTitle.Length - domainLen);
+
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            if (isToggled)
+            {
+                sb.Append($"{p.GetAccentFg().AnsiFg}\u2713{Reset}");
+            }
+            else
+            {
+                sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            }
+
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncTitle}");
+            sb.Append($"{new string(' ', gap)}");
+            sb.Append($"{p.SecondaryText.AnsiFg}{domain}");
+            var totalContent = 1 + truncTitle.Length + gap + domainLen;
+            sb.Append($"{new string(' ', Math.Max(0, width - totalContent))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else
+        {
+            var colorFg = node.Link.Type switch
+            {
+                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Navigation => p.LinkNavigation.AnsiFg,
+                LinkType.External => p.LinkExternal.AnsiFg,
+                LinkType.Footer => p.LinkFooter.AnsiFg,
+                _ => p.PrimaryText.AnsiFg
+            };
+            var prefix = isToggled ? $"{p.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
+            var sb = new StringBuilder();
+            sb.Append($"{prefix}{colorFg} {truncTitle}{Reset}");
+            sb.Append(new string(' ', gap));
+            sb.Append($"{p.SecondaryText.AnsiFg}{domain}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+    }
+
+    // ── Magazine layout helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// Returns how many lines a group header occupies in Magazine mode.
+    /// Top-level expanded headers get 2 lines (blank + header), collapsed get 1.
+    /// Sub-section headers get 1 line.
+    /// </summary>
+    internal static int GetMagazineGroupHeaderLines(LinkNode node)
+    {
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            return 1;
+        }
+
+        // Top-level: expanded gets 2 lines (blank + header), collapsed gets 1
+        return node.CollapseState == NodeCollapseState.Expanded ? 2 : 1;
+    }
+
+    /// <summary>
+    /// Renders a group header in Magazine mode.
+    /// </summary>
+    private void RenderMagazineGroupHeader(LinkNode node, bool isSelected, int width, ThemePalette p, NavigationTree tree)
+    {
+        var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
+        var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
+        var childCount = node.Children.Count;
+
+        var selIndicator = string.Empty;
+        if (tree.IsSectionFullySelected(node))
+        {
+            selIndicator = "\u2713 ";
+        }
+        else if (tree.IsSectionPartiallySelected(node))
+        {
+            selIndicator = "\u25d0 ";
+        }
+
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            // Sub-section: single compact line with thin rule
+            var showCount = !isExpanded || childCount >= 5;
+            var countSuffix = showCount ? $" ({childCount})" : string.Empty;
+            var titleText = $"{selIndicator}{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
+            var headerLabel = $" \u2500 {titleText} ";
+            var ruleLen = Math.Max(0, width - headerLabel.Length - 1);
+            var headerLine = $"{headerLabel}{new string('\u2500', ruleLen)}";
+            var truncLine = RenderHelpers.TruncateText(headerLine, width - 1);
+
+            if (isSelected)
+            {
+                var sb = new StringBuilder();
+                sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+                sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{truncLine}");
+                sb.Append($"{new string(' ', Math.Max(0, width - 1 - truncLine.Length))}{Reset}");
+                _helpers.WriteLine(sb.ToString());
+            }
+            else
+            {
+                _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncLine}{Reset}");
+            }
+
+            return;
+        }
+
+        // Top-level header
+        var headerText = $"{selIndicator}{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
+        var truncHeader = RenderHelpers.TruncateText(headerText, width - 2);
+
+        if (isExpanded)
+        {
+            // Line 0: blank line
+            if (isSelected)
+            {
+                _helpers.WriteLine(
+                    $"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', Math.Max(0, width - 1))}{Reset}");
+            }
+            else
+            {
+                _helpers.WriteLine();
+            }
+        }
+
+        // Header text line
+        if (isSelected)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {truncHeader}");
+            sb.Append($"{new string(' ', Math.Max(0, width - 2 - truncHeader.Length))}{Reset}");
+            _helpers.WriteLine(sb.ToString());
+        }
+        else if (isExpanded)
+        {
+            _helpers.WriteLine($" {p.PrimaryText.AnsiFg}{Bold}{truncHeader}{Reset}");
+        }
+        else
+        {
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncHeader}{Reset}");
+        }
+    }
+
+    /// <summary>
+    /// Renders a link row in Magazine mode: line 1 = title (bold), line 2 = author/date/domain.
+    /// Selection highlights both lines.
+    /// </summary>
+    private void RenderMagazineRow(LinkNode node, int width, ThemePalette p, bool isToggled)
+    {
+        var isSelected = node.IsSelected;
+        var domain = LauncherRenderer.ExtractDomain(node.Link.Url);
+        var titleMaxWidth = Math.Max(1, width - 2);
+        var truncTitle = RenderHelpers.TruncateText(node.Link.DisplayText, titleMaxWidth);
+
+        // Build metadata line: author · date · domain
+        var metaParts = new List<string>();
+        if (!string.IsNullOrEmpty(node.Link.Author))
+        {
+            metaParts.Add(node.Link.Author);
+        }
+
+        var dateStr = FormatDate(node.Link.PublishedDate);
+        if (dateStr != null)
+        {
+            metaParts.Add(dateStr);
+        }
+
+        metaParts.Add(domain);
+        var metaText = string.Join(" \u00b7 ", metaParts);
+        var metaMaxWidth = Math.Max(1, width - 4); // 2 extra indent
+        var truncMeta = RenderHelpers.TruncateText(metaText, metaMaxWidth);
+
+        if (isSelected)
+        {
+            // Line 1: title with accent bar and highlight
+            var sb1 = new StringBuilder();
+            if (isToggled)
+            {
+                sb1.Append($"{p.GetAccentFg().AnsiFg}\u2713{Reset}");
+            }
+            else
+            {
+                sb1.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            }
+
+            sb1.Append($"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{Bold} {truncTitle}");
+            sb1.Append($"{new string(' ', Math.Max(0, width - 1 - truncTitle.Length))}{Reset}");
+            _helpers.WriteLine(sb1.ToString());
+
+            // Line 2: metadata with accent bar and highlight
+            var sb2 = new StringBuilder();
+            sb2.Append($"{p.HeaderBorderFg.AnsiFg}\u258c{Reset}");
+            sb2.Append($"{p.SelectedItemBg.AnsiBg}{p.SecondaryText.AnsiFg}   {truncMeta}");
+            sb2.Append($"{new string(' ', Math.Max(0, width - 3 - truncMeta.Length))}{Reset}");
+            _helpers.WriteLine(sb2.ToString());
+        }
+        else
+        {
+            // Line 1: title
+            var colorFg = node.Link.Type switch
+            {
+                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Navigation => p.LinkNavigation.AnsiFg,
+                LinkType.External => p.LinkExternal.AnsiFg,
+                LinkType.Footer => p.LinkFooter.AnsiFg,
+                _ => p.PrimaryText.AnsiFg
+            };
+            var prefix = isToggled ? $"{p.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
+            _helpers.WriteLine($"{prefix}{colorFg}{Bold} {truncTitle}{Reset}");
+
+            // Line 2: metadata (indented 2 extra)
+            _helpers.WriteLine($"    {p.SecondaryText.AnsiFg}{truncMeta}{Reset}");
+        }
     }
 }

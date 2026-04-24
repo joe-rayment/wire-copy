@@ -16,6 +16,13 @@ public interface IInputHandler
     bool IsInteractive { get; }
 
     /// <summary>
+    /// Gets the animation controller for managing timer-tick behavior.
+    /// When an animation is active, WaitForInputAsync races keyboard input against
+    /// a periodic timer, returning AnimationTick commands between keypresses.
+    /// </summary>
+    IAnimationController AnimationController { get; }
+
+    /// <summary>
     /// Waits for user input and returns the corresponding command.
     /// Blocks until input is received.
     /// </summary>

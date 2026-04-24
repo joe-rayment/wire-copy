@@ -13,6 +13,13 @@ public class BrowserConfiguration
     public bool Headless { get; init; } = true;
 
     /// <summary>
+    /// When true, disables all UI animations. The timer-tick mechanism in the input handler
+    /// will not fire, and animation frames will be skipped. Useful for low-resource environments
+    /// or terminals that don't handle rapid redraws well.
+    /// </summary>
+    public bool DisableAnimations { get; init; }
+
+    /// <summary>
     /// Gets implicit wait timeout in seconds. Pages with heavy JavaScript and dynamic content
     /// require longer waits. Recommended: 30+ seconds for reliable element detection.
     /// </summary>

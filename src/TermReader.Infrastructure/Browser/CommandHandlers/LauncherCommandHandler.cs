@@ -51,6 +51,7 @@ internal static class LauncherCommandHandler
 
             case CommandType.MoveDown:
             {
+                var cols = GetLayoutColumns(options);
                 if (ctx.NavigationService.LauncherSelectedIndex == -1)
                 {
                     // From URL bar → first bookmark
@@ -58,7 +59,7 @@ internal static class LauncherCommandHandler
                 }
                 else
                 {
-                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1);
+                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 }
 
@@ -69,6 +70,7 @@ internal static class LauncherCommandHandler
 
             case CommandType.MoveUp:
             {
+                var cols = GetLayoutColumns(options);
                 var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
                 if (currentIdx <= 0 && currentIdx != -1)
                 {
@@ -77,7 +79,7 @@ internal static class LauncherCommandHandler
                 }
                 else if (currentIdx != -1)
                 {
-                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0);
+                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 }
 
@@ -88,7 +90,8 @@ internal static class LauncherCommandHandler
 
             case CommandType.CollapseNode: // h = left
             {
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 2);
+                var cols = GetLayoutColumns(options);
+                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 2, cols);
                 ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
@@ -96,7 +99,8 @@ internal static class LauncherCommandHandler
 
             case CommandType.ExpandNode: // l = right
             {
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 3);
+                var cols = GetLayoutColumns(options);
+                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 3, cols);
                 ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 await ctx.RenderCurrentPageAsync(options, ct);
                 break;
@@ -235,7 +239,7 @@ internal static class LauncherCommandHandler
 
             case CommandType.PageDown:
             {
-                var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+                var layout = ComputeVariantLayout(options);
                 var halfRows = Math.Max(1, layout.VisibleRows / 2);
                 var step = halfRows * layout.Columns;
                 ctx.NavigationService.LauncherSelectedIndex =
@@ -247,7 +251,7 @@ internal static class LauncherCommandHandler
 
             case CommandType.PageUp:
             {
-                var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+                var layout = ComputeVariantLayout(options);
                 var halfRows = Math.Max(1, layout.VisibleRows / 2);
                 var step = halfRows * layout.Columns;
                 ctx.NavigationService.LauncherSelectedIndex =
@@ -448,7 +452,7 @@ internal static class LauncherCommandHandler
 
     private static void AdjustLauncherScroll(CommandContext ctx, RenderOptions options)
     {
-        var layout = LauncherRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = ComputeVariantLayout(options);
         var selectedRow = ctx.NavigationService.LauncherSelectedIndex / layout.Columns;
         var currentOffset = ctx.NavigationService.LauncherScrollOffset;
 
@@ -460,5 +464,18 @@ internal static class LauncherCommandHandler
         {
             ctx.NavigationService.LauncherScrollOffset = selectedRow - layout.VisibleRows + 1;
         }
+    }
+
+    private static LauncherLayout ComputeVariantLayout(RenderOptions options)
+    {
+        return LauncherRenderer.ComputeLayout(
+            options.TerminalWidth,
+            options.TerminalHeight,
+            options.LayoutVariant ?? "Grid");
+    }
+
+    private static int GetLayoutColumns(RenderOptions options)
+    {
+        return ComputeVariantLayout(options).Columns;
     }
 }

@@ -54,7 +54,7 @@ internal static class NavigationCommandHandler
             var activeCol = ctx.NavigationService.ActiveCollection;
             if (activeCol != null)
             {
-                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight, options.TerminalWidth, string.Equals(options.LayoutVariant, "Compact", StringComparison.Ordinal));
                 var halfPage = Math.Max(1, maxVisible / 2);
                 var maxIdx = Math.Max(0, activeCol.Items.Count - 1);
                 ctx.NavigationService.CollectionItemSelectedIndex =
@@ -99,7 +99,7 @@ internal static class NavigationCommandHandler
             var activeCol = ctx.NavigationService.ActiveCollection;
             if (activeCol != null)
             {
-                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+                var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight, options.TerminalWidth, string.Equals(options.LayoutVariant, "Compact", StringComparison.Ordinal));
                 var halfPage = Math.Max(1, maxVisible / 2);
                 var minIdx = activeCol.Items.Count > 0 ? -1 : 0;
                 ctx.NavigationService.CollectionItemSelectedIndex =
@@ -781,7 +781,7 @@ internal static class NavigationCommandHandler
 
     private static void AdjustCollectionItemScroll(CommandContext ctx, RenderOptions options)
     {
-        var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight);
+        var maxVisible = CollectionRenderer.GetCollectionItemsVisibleCount(options.TerminalHeight, options.TerminalWidth, string.Equals(options.LayoutVariant, "Compact", StringComparison.Ordinal));
         var selectedIndex = ctx.NavigationService.CollectionItemSelectedIndex;
         var currentOffset = ctx.NavigationService.CollectionItemScrollOffset;
 
