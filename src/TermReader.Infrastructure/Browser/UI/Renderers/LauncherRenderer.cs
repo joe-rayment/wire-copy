@@ -423,7 +423,7 @@ internal class LauncherRenderer
 
         var instruction = "Press [a] to add your first site";
         var instrPad = Math.Max(0, (width - instruction.Length) / 2);
-        var instrFormatted = $"Press {p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+        var instrFormatted = $"Press {p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
                              $"{p.SecondaryText.AnsiFg}{Dim} to add your first site{Reset}";
         _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
         _helpers.WriteLine();
@@ -431,7 +431,7 @@ internal class LauncherRenderer
         var collLabel = "[c]  READING LIST";
         var collPad = Math.Max(0, (width - collLabel.Length) / 2);
         _helpers.WriteLine(
-            $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.PrimaryText.AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+            $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
             $"  {p.PrimaryText.AnsiFg}{Bold}READING LIST{Reset}");
 
         var domainPad = Math.Max(0, (width - "reading list".Length) / 2);

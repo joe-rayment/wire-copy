@@ -58,17 +58,17 @@ internal class StatusBarRenderer
         int helpWidth;
         if (context.IsInPreviewMode)
         {
-            helpHint = $" {p.SecondaryText.AnsiFg}\u25c0/\u25b6:cycle Enter:save Esc:cancel{Reset}";
+            helpHint = $" {p.GetAccentFg().AnsiFg}\u25c0/\u25b6{Reset}{p.SecondaryText.AnsiFg}:cycle{Reset} {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:save{Reset} {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}";
             helpWidth = 30;
         }
         else if (width >= 60)
         {
-            helpHint = $" {p.SecondaryText.AnsiFg}?:help{Reset}";
+            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}{p.SecondaryText.AnsiFg}:help{Reset}";
             helpWidth = 7;
         }
         else
         {
-            helpHint = $" {p.SecondaryText.AnsiFg}?{Reset}";
+            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}";
             helpWidth = 2;
         }
 
@@ -262,7 +262,7 @@ internal class StatusBarRenderer
             if (mode == ViewMode.Hierarchical &&
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
-                parts.Add($"{p.SecondaryText.AnsiFg}^L:layout{Reset}");
+                parts.Add($"{p.GetAccentFg().AnsiFg}^L{Reset}{p.SecondaryText.AnsiFg}:layout{Reset}");
             }
         }
 
@@ -327,7 +327,7 @@ internal class StatusBarRenderer
                 var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
                 if (progress.NeedsBrowserCount > 0)
                 {
-                    return $"{p.SecondaryText.AnsiFg}{count} \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                    return $"{p.SecondaryText.AnsiFg}{count} \u00b7 {Reset}{p.GetAccentFg().AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
                 }
 
                 return $"{p.SecondaryText.AnsiFg}{count} \u00b7 paused{Reset}";
@@ -341,7 +341,7 @@ internal class StatusBarRenderer
                     return $"{p.SecondaryText.AnsiFg}paywall{Reset}";
                 }
 
-                return $"{p.SecondaryText.AnsiFg}paywall \u00b7 {Reset}{p.PrimaryText.AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                return $"{p.SecondaryText.AnsiFg}paywall \u00b7 {Reset}{p.GetAccentFg().AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
             }
         }
 

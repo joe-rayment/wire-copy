@@ -58,9 +58,9 @@ public class ThemeRenderingTests
         var p = BuiltInThemes.Get(ThemeName.Phosphor);
 
         p.PrimaryText.AnsiFg.Should().Be("\x1b[38;5;40m", "PrimaryText should be phosphor green (40)");
-        p.HeaderTitleFg.AnsiFg.Should().Be("\x1b[38;5;40m", "HeaderTitleFg should be green (40)");
+        p.HeaderTitleFg.AnsiFg.Should().Be("\x1b[38;5;212m", "HeaderTitleFg should be pink (212)");
         p.GetAccentFg().AnsiFg.Should().Be("\x1b[38;5;51m", "AccentFg should be cyan (51)");
-        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;28m", "DimFg should be dark green (28)");
+        p.GetDimFg().AnsiFg.Should().Be("\x1b[38;5;22m", "DimFg should be dim green (22)");
         p.GetWarningFg().AnsiFg.Should().Be("\x1b[38;5;214m", "WarningFg should be amber (214)");
         p.GetSuccessFg().AnsiFg.Should().Be("\x1b[38;5;119m", "SuccessFg should be success green (119)");
         p.GetCelebrationFg().AnsiFg.Should().Be("\x1b[38;5;206m", "CelebrationFg should be hot pink (206)");
@@ -128,15 +128,15 @@ public class ThemeRenderingTests
 
         var rule = Borders.DimmedRule(p, 40);
 
-        rule.Should().Contain("\x1b[38;5;28m",
-            "DimmedRule should use DimFg dark green (28)");
+        rule.Should().Contain("\x1b[38;5;22m",
+            "DimmedRule should use DimFg dim green (22)");
         rule.Should().NotContain("\x1b[38;5;34m",
             "DimmedRule should not use SecondaryText (34) — it should use the dedicated DimFg role");
     }
 
     #endregion
 
-    #region Test 6: BuildHeadlineLines uses HeaderTitleFg (ANSI 40), not hardcoded white (ANSI 15)
+    #region Test 6: BuildHeadlineLines uses HeaderTitleFg (ANSI 212), not hardcoded white (ANSI 15)
 
     [Fact]
     public void BuildHeadlineLines_UsesHeaderTitleFg()
@@ -150,8 +150,8 @@ public class ThemeRenderingTests
         var headlineLines = LineCacheManager.BuildHeadlineLines(content, 80, p);
 
         var allText = string.Join("\n", headlineLines);
-        allText.Should().Contain("\x1b[38;5;40m",
-            "headline title should use HeaderTitleFg green (40)");
+        allText.Should().Contain("\x1b[38;5;212m",
+            "headline title should use HeaderTitleFg pink (212)");
         allText.Should().NotContain("\x1b[38;5;15m",
             "headline title should not use hardcoded white (15)");
     }

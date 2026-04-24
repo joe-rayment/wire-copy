@@ -138,7 +138,7 @@ internal class CollectionRenderer
 
         if (collection.Items.Count == 0)
         {
-            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet \u2014 press{Reset} {p.PrimaryText.AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet \u2014 press{Reset} {p.GetAccentFg().AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
         }
         else
         {
