@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Colors — accent &amp; state</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { padding: 20px 24px; margin: 0; background: var(--tr-bg); display: flex; flex-direction: column; gap: 12px; }
+  .swatch { display: grid; grid-template-columns: 40px 110px 70px 60px 1fr; gap: 14px; align-items: center; }
+  .chip { width: 40px; height: 40px; border: 1px solid #222; }
+  .name { color: var(--tr-green); font-size: 14px; font-weight: 700; }
+  .hex  { color: var(--tr-muted); font-size: 12px; }
+  .ansi { color: var(--tr-muted); font-size: 12px; }
+  .use  { color: var(--tr-med); font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="swatch"><div class="chip" style="background:#00ffff"></div><div class="name" style="color:#00ffff">cyan</div><div class="hex">#00ffff</div><div class="ansi">ANSI 51</div><div class="use">Interactive keys only</div></div>
+  <div class="swatch"><div class="chip" style="background:#ff5fd7"></div><div class="name" style="color:#ff5fd7">pink</div><div class="hex">#ff5fd7</div><div class="ansi">ANSI 206</div><div class="use">Celebration · rare</div></div>
+  <div class="swatch"><div class="chip" style="background:#87ff5f"></div><div class="name" style="color:#87ff5f">success</div><div class="hex">#87ff5f</div><div class="ansi">ANSI 119</div><div class="use">Checkmarks, completion</div></div>
+  <div class="swatch"><div class="chip" style="background:#ffaf00"></div><div class="name" style="color:#ffaf00">amber</div><div class="hex">#ffaf00</div><div class="ansi">ANSI 214</div><div class="use">Warnings, active progress</div></div>
+  <div class="swatch"><div class="chip" style="background:#ff5f5f"></div><div class="name" style="color:#ff5f5f">red</div><div class="hex">#ff5f5f</div><div class="ansi">ANSI 203</div><div class="use">Errors</div></div>
+  <div class="swatch"><div class="chip" style="background:#e4e4e4"></div><div class="name" style="color:#e4e4e4">white</div><div class="hex">#e4e4e4</div><div class="ansi">ANSI 254</div><div class="use">Selected-row text</div></div>
+</body>
+</html>

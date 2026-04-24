@@ -1,0 +1,177 @@
+/* =============================================================================
+   TermReader Design System — Phosphor 2.0
+   ----------------------------------------------------------------------------
+   Old-school phosphor green terminal with playful pink accents.
+   Everything ANSI-256 safe. Runs inside Ghostty.
+   ============================================================================= */
+
+:root {
+  /* ── Text hierarchy (ANSI 256 mappings in comments) ──────────────────── */
+  --tr-bright:  #ff87d7; /* ANSI 212 · Titles, content link headlines        */
+  --tr-green:   #00d700; /* ANSI 40  · Body text — the phosphor              */
+  --tr-med:     #00af00; /* ANSI 34  · Metadata, domains, secondary text     */
+  --tr-muted:   #5f875f; /* ANSI 65  · Hints, aged phosphor, quiet labels    */
+  --tr-dim:     #005f00; /* ANSI 22  · Borders, structural chrome            */
+
+  /* ── Accent colors ──────────────────────────────────────────────────── */
+  --tr-cyan:    #00ffff; /* ANSI 51  · Interactive keys ONLY                 */
+  --tr-white:   #e4e4e4; /* ANSI 254 · Selected item text (warm off-white)   */
+  --tr-pink:    #ff5fd7; /* ANSI 206 · Celebration only (rare)               */
+  --tr-success: #87ff5f; /* ANSI 119 · Completion / success                  */
+  --tr-amber:   #ffaf00; /* ANSI 214 · Warnings, active progress             */
+  --tr-red:     #ff5f5f; /* ANSI 203 · Errors                                */
+
+  /* ── Backgrounds ────────────────────────────────────────────────────── */
+  --tr-bg:      #0a0a0a; /*          · Page / terminal background            */
+  --tr-bg-pure: #000000; /*          · Pure terminal black (inside chrome)   */
+  --tr-sel-bg:  #005f00; /* ANSI 22  · Selection row background              */
+  --tr-hi-bg:   #005f87; /* ANSI 24  · Search highlight background           */
+  --tr-hi-fg:   #ffffff; /*          · Search highlight foreground           */
+
+  /* ── Semantic aliases ───────────────────────────────────────────────── */
+  --tr-fg-primary:   var(--tr-green);
+  --tr-fg-secondary: var(--tr-med);
+  --tr-fg-tertiary:  var(--tr-muted);
+  --tr-fg-title:     var(--tr-bright);
+  --tr-fg-accent:    var(--tr-cyan);
+  --tr-border:       var(--tr-dim);
+  --tr-border-strong:var(--tr-muted);
+
+  /* ── Typography ─────────────────────────────────────────────────────── */
+  /* Everything is monospace. This is a terminal. */
+  --tr-font-mono: 'Berkeley Mono', 'JetBrains Mono', 'Fira Code',
+                  'Cascadia Code', 'SF Mono', 'Menlo', 'Consolas',
+                  'DejaVu Sans Mono', ui-monospace, monospace;
+
+  /* Baseline sizes — cell-based; scale with your terminal, not px */
+  --tr-size-base:    15px;  /* standard terminal cell                */
+  --tr-size-small:   13px;  /* sub-hint / footer                     */
+  --tr-size-display: 28px;  /* doc-level mockup titles (out-of-app)  */
+
+  --tr-line-tight:  1.3;    /* dense list rows                       */
+  --tr-line-body:   1.5;    /* article body                          */
+  --tr-line-loose:  1.7;    /* terminal frames (generous cells)      */
+
+  --tr-letter-caps: 0.08em; /* for TITLE UPPERCASE labels            */
+
+  /* ── Spacing (cell-based: 1 cell ≈ 9px @ 15px mono) ─────────────────── */
+  --tr-cell:   9px;
+  --tr-sp-0:   0;
+  --tr-sp-1:   9px;   /* 1 cell  */
+  --tr-sp-2:   18px;  /* 2 cells */
+  --tr-sp-3:   27px;  /* 3 cells */
+  --tr-sp-4:   36px;  /* 4 cells */
+  --tr-sp-6:   54px;  /* 6 cells */
+
+  /* ── Borders & radii ────────────────────────────────────────────────── */
+  --tr-border-width: 1px;
+  --tr-radius-box:   6px;  /* mockup terminal frame only — in-app uses ╭╮ */
+
+  /* ── Focus / state ─────────────────────────────────────────────────── */
+  --tr-focus-bar: var(--tr-muted); /* ▌ accent bar color                    */
+}
+
+/* =============================================================================
+   Base elements — semantic defaults
+   ============================================================================= */
+
+html, body {
+  background: var(--tr-bg);
+  color: var(--tr-fg-primary);
+  font-family: var(--tr-font-mono);
+  font-size: var(--tr-size-base);
+  line-height: var(--tr-line-body);
+}
+
+/* Document-level headings (for README-style pages, NOT in-terminal) */
+h1 {
+  color: var(--tr-green);
+  font-family: var(--tr-font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin: 0 0 var(--tr-sp-1);
+}
+h2 {
+  color: var(--tr-amber);
+  font-family: var(--tr-font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: var(--tr-sp-4) 0 var(--tr-sp-1);
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2a2a2a;
+}
+h3 {
+  color: var(--tr-bright);
+  font-family: var(--tr-font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  margin: var(--tr-sp-3) 0 var(--tr-sp-1);
+}
+p, li {
+  color: var(--tr-fg-primary);
+  font-family: var(--tr-font-mono);
+  font-size: var(--tr-size-base);
+  line-height: var(--tr-line-body);
+}
+small, .tr-small { color: var(--tr-muted); font-size: var(--tr-size-small); }
+
+a { color: var(--tr-cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, kbd, pre {
+  font-family: var(--tr-font-mono);
+  color: var(--tr-bright);
+}
+
+/* =============================================================================
+   Terminal frame (for recreating in-app mockups inside an HTML page)
+   ============================================================================= */
+
+.tr-terminal {
+  background: var(--tr-bg-pure);
+  border: 1px solid #333;
+  border-radius: var(--tr-radius-box);
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: var(--tr-font-mono);
+  font-size: var(--tr-size-base);
+  line-height: var(--tr-line-loose);
+  color: var(--tr-green);
+  position: relative;
+}
+.tr-terminal::before {
+  content: '● ● ●';
+  display: block;
+  color: #555;
+  font-size: 10px;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #222;
+}
+
+/* =============================================================================
+   Color utility classes (match codebase/mockup template.css)
+   ============================================================================= */
+
+.tr-g,  .tr-text    { color: var(--tr-green); }
+.tr-b,  .tr-title   { color: var(--tr-bright); }
+.tr-c,  .tr-accent  { color: var(--tr-cyan); }
+.tr-m,  .tr-meta    { color: var(--tr-med); }
+.tr-mu, .tr-quiet   { color: var(--tr-muted); }
+.tr-d,  .tr-chrome  { color: var(--tr-dim); }
+.tr-w               { color: var(--tr-white); }
+.tr-pk              { color: var(--tr-pink); }
+.tr-am              { color: var(--tr-amber); }
+.tr-r               { color: var(--tr-red); }
+.tr-ok              { color: var(--tr-success); }
+.tr-bold            { font-weight: 700; }
+.tr-caps            { text-transform: uppercase; letter-spacing: var(--tr-letter-caps); }
+
+/* Selection / highlight backgrounds */
+.tr-sel      { background: var(--tr-sel-bg); color: var(--tr-white); }
+.tr-sel-dim  { background: var(--tr-sel-bg); color: var(--tr-med); }
+.tr-hi       { background: var(--tr-hi-bg); color: var(--tr-hi-fg); }
