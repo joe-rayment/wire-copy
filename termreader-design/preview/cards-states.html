@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cards — normal vs selected</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { padding: 18px 22px; margin: 0; background: var(--tr-bg); font-family: var(--tr-font-mono); font-size: 14px; line-height: 1.6; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { background: #000; border: 1px solid #1a1a1a; padding: 8px 10px; white-space: pre; min-height: 120px; }
+  .lbl  { color: var(--tr-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .c { color: #00ffff; } .g { color: #00d700; font-weight: 700; } .m { color: #00af00; } .d { color: #005f00; }
+  .sel { background: #005f00; color: #e4e4e4; }
+  .bar { color: #5f875f; }
+</style>
+</head>
+<body>
+  <div class="pair">
+    <div>
+      <div class="lbl">Normal</div>
+      <div class="card"> <span class="c">[4]</span>   <span class="g">NEW YORK TIMES</span> <span class="g">★</span>
+       <span class="m">nytimes.com</span>
+ <span class="d">──────────────────────────</span></div>
+    </div>
+    <div>
+      <div class="lbl">Selected</div>
+      <div class="card"><span class="sel"><span class="bar">▌</span>[4]   NEW YORK TIMES ★        </span>
+<span class="sel"><span class="bar">▌</span>     nytimes.com                </span>
+<span class="sel"><span class="bar">▌</span>                                </span></div>
+    </div>
+  </div>
+</body>
+</html>

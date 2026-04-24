@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spacing &amp; indentation</title>
+<style>
+  /* Preview card — intentionally brighter than in-terminal colors
+     so it reads at Design-System thumbnail scale. In-terminal, the
+     ruler would use --tr-dim; here we boost it to --tr-green. */
+  html, body { background: #0a0a0a; margin: 0; }
+  body {
+    padding: 20px 24px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 15px;
+    line-height: 1.6;
+    color: #00d700;
+  }
+  h1 {
+    color: #87ff87;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    margin: 0 0 12px;
+  }
+  .ruler {
+    color: #5fff5f;
+    white-space: pre;
+    margin: 0 0 10px;
+    font-size: 15px;
+  }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 4px 12px 4px 0; vertical-align: baseline; }
+  td.k {
+    color: #87ff87;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    width: 110px;
+    font-weight: 700;
+  }
+  td.s {
+    color: #00d700;
+    white-space: pre;
+    font-size: 15px;
+  }
+  .edge { color: #00ff5f; font-weight: 700; }
+  .title{ color: #ff87d7; font-weight: 700; }
+  .meta { color: #5fff87; }
+  .key  { color: #00ffff; font-weight: 700; }
+</style>
+</head>
+<body>
+  <h1>Indent scale · 1 cell = 1ch</h1>
+  <div class="ruler">0         1         2         3         4         5         6
+0123456789012345678901234567890123456789012345678901234567890123</div>
+  <table>
+    <tr><td class="k">0 · edge</td><td class="s"><span class="edge">▏</span>Horizontal rule / border glyph</td></tr>
+    <tr><td class="k">1 · accent</td><td class="s"><span class="edge">▏</span> Accent bar · list bullet</td></tr>
+    <tr><td class="k">2 · reader</td><td class="s"><span class="edge">▏</span>  Reader body text &amp; general inset</td></tr>
+    <tr><td class="k">3 · list</td><td class="s"><span class="edge">▏</span>   <span class="key">[1]</span> <span class="title">Collection list item title</span></td></tr>
+    <tr><td class="k">5 · domain</td><td class="s"><span class="edge">▏</span>     <span class="meta">arstechnica.com · cached</span></td></tr>
+    <tr><td class="k">7 · card</td><td class="s"><span class="edge">▏</span>       <span class="key">[1]</span>  <span class="title">LAUNCHER CARD TITLE</span></td></tr>
+  </table>
+</body>
+</html>

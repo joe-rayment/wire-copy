@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Iconography — box drawing &amp; progress</title>
+<style>
+  /* PREVIEW-CARD NOTE:
+     Real TermReader draws boxes as Unicode box-drawing chars (╭─╮ │ ╰─╯)
+     inside a monospace terminal where every cell is guaranteed equal width.
+     In an HTML preview the web font load is fragile and some ─ glyphs
+     render narrower than │ in fallback fonts — causing visible
+     mis-alignment. For these cards we render the box with CSS borders
+     (same visual result, guaranteed alignment) and reserve char-art only
+     for the in-line specimens. */
+  html, body { background: #0a0a0a; margin: 0; }
+  body {
+    padding: 20px 24px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #00d700;
+  }
+  .block { margin-bottom: 18px; }
+  .label {
+    color: #87ff87;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  pre { margin: 0; white-space: pre; letter-spacing: 0; }
+
+  /* CSS rounded box — phosphor green, 1px, rounded corners */
+  .rbox {
+    display: inline-block;
+    border: 1.5px solid #5fff5f;
+    border-radius: 10px;
+    padding: 8px 14px;
+    min-width: 360px;
+  }
+  .rbox .title-row {
+    color: #00d700;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .rbox .sub {
+    color: #5fff87;
+  }
+
+  /* Progress bar as a CSS flex row with fixed cells */
+  .bar { display: inline-flex; align-items: center; gap: 10px; }
+  .bar .track {
+    display: inline-block;
+    width: 220px;
+    height: 14px;
+    background: #1a2a1a;
+    border: 1px solid #2a4a2a;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bar .fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    background: #00d700;
+    width: 62%;
+  }
+  .bar .fill::after {
+    content: "";
+    position: absolute;
+    top: 0; right: -1px; bottom: 0;
+    width: 3px;
+    background: #ffd75f;
+  }
+  .bar .num { color: #5fff87; }
+
+  /* Segmented cache bar (real ▰▱ chars — lined up because they're the SAME glyph family) */
+  .segbar .filled { color: #5fff5f; font-weight: 700; letter-spacing: 1px; }
+  .segbar .empty  { color: #2a4a2a; letter-spacing: 1px; }
+  .segbar .num    { color: #5fff87; margin-left: 10px; }
+
+  /* Breathing glyph row — uses box-drawing, but all from same family (eighth-block) */
+  .breath {
+    color: #5fff5f;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+</style>
+</head>
+<body>
+
+  <div class="block">
+    <div class="label">Rounded box · the canonical page header</div>
+    <div class="rbox">
+      <div class="title-row">Page title</div>
+      <div class="sub">subtitle, metadata, counts</div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="label">Eighth-block progress · 62%</div>
+    <div class="bar">
+      <span class="track"><span class="fill"></span></span>
+      <span class="num">62% &nbsp; Chunk 5/8</span>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="label">Cache bar · link tree status</div>
+    <div class="segbar">
+      <span class="filled">▰▰▰▰▰▰▰</span><span class="empty">▱▱▱</span><span class="num">17/24 cached</span>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="label">Breathing bar · bot challenge</div>
+    <pre class="breath">▏▎▍▌▋▊▉█▉▊▋▌▍▎▏</pre>
+  </div>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# TermReader wordmark — ASCII
+
+╭─ TermReader ─────────────────────────╮
+│ A better reading experience          │
+╰──────────────────────────────────────╯
+
+Minimal variant:
+
+  TermReader
+
+Monogram (single-cell):
+
+  ▌T
