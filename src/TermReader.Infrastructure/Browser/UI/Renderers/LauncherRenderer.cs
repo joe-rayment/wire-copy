@@ -56,14 +56,17 @@ internal class LauncherRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        var hints = FormatKbdHint("Enter", "open", p) + " " +
-                    FormatKbdHint("o", "go to url", p) + " " +
-                    FormatKbdHint(":", "config", p) + " " +
+        var hints = FormatKbdHint("Enter", "open", p) + "  " +
+                    FormatKbdHint("o", "go to url", p) + "  " +
+                    FormatKbdHint("a", "add", p) + "  " +
+                    FormatKbdHint("d", "delete", p) + "  " +
                     FormatKbdHint("?", "help", p);
 
         var version = $"{p.GetMutedFg().AnsiFg}{Dim}v1.0{Reset}";
         var versionTextLen = "v1.0".Length;
-        var hintsTextLen = "Enter:open o:go to url ::config ?:help".Length;
+
+        // [Enter] open  [o] go to url  [a] add  [d] delete  [?] help
+        var hintsTextLen = "[Enter] open  [o] go to url  [a] add  [d] delete  [?] help".Length;
         var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
         _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
     }
@@ -569,7 +572,7 @@ internal class LauncherRenderer
 
     private static string FormatKbdHint(string key, string action, ThemePalette p)
     {
-        return $"{p.GetAccentFg().AnsiFg}[{key}]{Reset}{p.GetDimFg().AnsiFg}:{action}{Reset}";
+        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset} {p.SecondaryText.AnsiFg}{action}{Reset}";
     }
 
     private void RenderGridVariant(
@@ -783,12 +786,27 @@ internal class LauncherRenderer
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
     {
-        var title = $"{p.HeaderTitleFg.AnsiFg}{Bold}TermReader{Reset}";
-        var meta = $"{p.SecondaryText.AnsiFg}{bookmarkCount} bookmarks{Reset}";
-        var titleTextLen = "TermReader".Length;
-        var metaTextLen = $"{bookmarkCount} bookmarks".Length;
-        var padding = Math.Max(1, width - 1 - titleTextLen - metaTextLen);
-        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
+        var title = "TermReader";
+        var subtitle = $"{bookmarkCount} bookmarks";
+        var borderColor = p.GetDimFg().AnsiFg;
+        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+
+        // ╭─ TermReader ──────────────────────────────────────╮
+        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        _helpers.WriteLine(
+            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
+            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+
+        // │ 6 bookmarks                                       │
+        var innerWidth = boxWidth - 2;
+        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+        _helpers.WriteLine(
+            $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
+            $"{borderColor}\u2502{Reset}");
+
+        // ╰──────────────────────────────────────────────────╯
+        _helpers.WriteLine(
+            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
     }
 
     private void RenderUrlBar(int width, bool isSelected, ThemePalette p)

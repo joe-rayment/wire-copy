@@ -60,18 +60,18 @@ internal class StatusBarRenderer
         int helpWidth;
         if (context.IsInPreviewMode)
         {
-            helpHint = $" {p.GetAccentFg().AnsiFg}[\u25c0/\u25b6]{Reset}{p.GetDimFg().AnsiFg}:cycle{Reset} {p.GetAccentFg().AnsiFg}[Enter]{Reset}{p.GetDimFg().AnsiFg}:save{Reset} {p.GetAccentFg().AnsiFg}[Esc]{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}";
-            helpWidth = 36;
+            helpHint = $" {p.GetAccentFg().AnsiFg}\u25c0/\u25b6{Reset}{p.GetDimFg().AnsiFg}:cycle{Reset} {p.GetAccentFg().AnsiFg}Enter{Reset}{p.GetDimFg().AnsiFg}:save{Reset} {p.GetAccentFg().AnsiFg}Esc{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}";
+            helpWidth = 30;
         }
         else if (width >= 60)
         {
-            helpHint = $" {p.GetAccentFg().AnsiFg}[?]{Reset}{p.GetDimFg().AnsiFg}:help{Reset}";
-            helpWidth = 9;
+            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}{p.GetDimFg().AnsiFg}:help{Reset}";
+            helpWidth = 7;
         }
         else
         {
-            helpHint = $" {p.GetAccentFg().AnsiFg}[?]{Reset}";
-            helpWidth = 4;
+            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}";
+            helpWidth = 2;
         }
 
         // Layout: [back][mode] [left]    [right] [?:help]
@@ -364,7 +364,7 @@ internal class StatusBarRenderer
             if (mode == ViewMode.Hierarchical &&
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
-                parts.Add($"{p.GetAccentFg().AnsiFg}[Ctrl+L]{Reset}{p.GetDimFg().AnsiFg}:layout{Reset}");
+                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+L{Reset}{p.GetDimFg().AnsiFg}:layout{Reset}");
             }
 
             // Layout variant indicator (e.g., "Grid 1/3")
@@ -506,7 +506,7 @@ internal class StatusBarRenderer
     private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
-            $"{p.GetAccentFg().AnsiFg}[{h.Key}]{Reset}{p.GetDimFg().AnsiFg}:{h.Action}{Reset}"));
+            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.GetDimFg().AnsiFg}:{h.Action}{Reset}"));
     }
 
     private static string GetDomain(string url)
