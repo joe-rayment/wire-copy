@@ -808,16 +808,16 @@ internal class LauncherRenderer
         var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2); // center the box
         var margin = new string(' ', leftMargin);
 
-        // Helper to render a box content line with exact alignment
+        // Helper: ╭ + boxOuter dashes + ╮, so │ + boxOuter chars + │
         void BoxLine(string content, int contentLen)
         {
-            var pad = Math.Max(0, boxInner - contentLen);
+            var pad = Math.Max(0, boxOuter - contentLen - 1);
             _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset} {content}{new string(' ', pad)}{borderColor}\u2502{Reset}");
         }
 
         void BlankLine()
         {
-            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset}{new string(' ', boxInner + 1)}{borderColor}\u2502{Reset}");
+            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset}{new string(' ', boxOuter)}{borderColor}\u2502{Reset}");
         }
 
         // ╭──────────────────────────────────────────────────╮
