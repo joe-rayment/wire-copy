@@ -18,6 +18,15 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
+    // Large-text wordmark lines (compact block-letter style, 4 lines tall)
+    private static readonly string[] WordmarkLines =
+    [
+        " _____ _____ __  __ ___  ___  _   ___  ___ ___ ",
+        "|_   _| ____|  \\/  | _ \\| __|| | |   \\| __| _ \\",
+        "  | | | _|  | |\\/| |   /| _| | |_| |) | _||   /",
+        "  |_| |_____|_|  |_|_|_\\|___||___|___/|___|_|_\\",
+    ];
+
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
 
@@ -85,7 +94,9 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
     {
-        const int headerLines = 1;
+        // Large wordmark: top border + 4 art lines + subtitle + bottom border = 7
+        // Narrow fallback: top border + subtitle + bottom border = 3
+        var headerLines = terminalWidth >= 52 ? 7 : 3;
         const int urlBarLines = 5;
         const int footerLines = 2;
 
@@ -293,8 +304,8 @@ internal class LauncherRenderer
         }
         else
         {
-            // Padding lines — full highlight background
-            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+            // Padding lines — no background fill, just empty space
+            sb.Append(new string(' ', contentWidth));
         }
 
         return sb.ToString();
@@ -584,7 +595,7 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
 
-        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderHeader(layout.Width, p);
         RenderUrlBar(layout.Width, selectedIndex == -1, p);
 
         var totalItems = bookmarks.Count + 1;
@@ -669,7 +680,7 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "List");
 
-        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderHeader(layout.Width, p);
         RenderUrlBar(layout.Width, selectedIndex == -1, p);
 
         var totalItems = bookmarks.Count + 1;
@@ -715,7 +726,7 @@ internal class LauncherRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Compact");
 
-        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderHeader(layout.Width, p);
         RenderUrlBar(layout.Width, selectedIndex == -1, p);
 
         var totalItems = bookmarks.Count + 1;
@@ -784,29 +795,69 @@ internal class LauncherRenderer
         }
     }
 
-    private void RenderHeader(int bookmarkCount, int width, ThemePalette p)
+    private void RenderHeader(int width, ThemePalette p)
     {
-        var title = "TermReader";
-        var subtitle = $"{bookmarkCount} bookmarks";
         var borderColor = p.GetDimFg().AnsiFg;
-        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+        var titleColor = p.HeaderTitleFg.AnsiFg;
+        var subtitle = "a better reading experience";
 
-        // ╭─ TermReader ──────────────────────────────────────╮
-        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
-        _helpers.WriteLine(
-            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
-            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+        // Determine if we have room for the large wordmark (needs ~48 chars)
+        var wordmarkWidth = WordmarkLines.Max(l => l.Length);
+        var useLargeWordmark = width >= wordmarkWidth + 4;
 
-        // │ 6 bookmarks                                       │
-        var innerWidth = boxWidth - 2;
-        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
-        _helpers.WriteLine(
-            $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
-            $"{borderColor}\u2502{Reset}");
+        if (useLargeWordmark)
+        {
+            var boxWidth = Math.Max(wordmarkWidth + 4, Math.Min(width - 2, 78));
+            var innerWidth = boxWidth - 2;
 
-        // ╰──────────────────────────────────────────────────╯
-        _helpers.WriteLine(
-            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+            // ╭──────────────────────────────────────────────────╮
+            _helpers.WriteLine(
+                $" {borderColor}\u256d{new string('\u2500', boxWidth)}\u256e{Reset}");
+
+            // Wordmark lines (centered in box)
+            foreach (var wl in WordmarkLines)
+            {
+                var leftPad = Math.Max(0, (innerWidth - wl.Length) / 2);
+                var rightPad = Math.Max(0, innerWidth - wl.Length - leftPad);
+                _helpers.WriteLine(
+                    $" {borderColor}\u2502{Reset} " +
+                    $"{new string(' ', leftPad)}{titleColor}{Bold}{wl}{Reset}" +
+                    $"{new string(' ', rightPad)}" +
+                    $"{borderColor}\u2502{Reset}");
+            }
+
+            // Subtitle line
+            var subLeftPad = Math.Max(0, (innerWidth - subtitle.Length) / 2);
+            var subRightPad = Math.Max(0, innerWidth - subtitle.Length - subLeftPad);
+            _helpers.WriteLine(
+                $" {borderColor}\u2502 {Reset}" +
+                $"{new string(' ', subLeftPad)}{p.SecondaryText.AnsiFg}{subtitle}{Reset}" +
+                $"{new string(' ', subRightPad)}" +
+                $"{borderColor}\u2502{Reset}");
+
+            // ╰──────────────────────────────────────────────────╯
+            _helpers.WriteLine(
+                $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+        }
+        else
+        {
+            // Narrow fallback: single-line title in pink
+            var title = "TermReader";
+            var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+            var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+            _helpers.WriteLine(
+                $" {borderColor}\u256d\u2500 {Reset}{titleColor}{Bold}{title}{Reset}" +
+                $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+
+            var innerWidth = boxWidth - 2;
+            var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+            _helpers.WriteLine(
+                $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
+                $"{borderColor}\u2502{Reset}");
+
+            _helpers.WriteLine(
+                $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+        }
     }
 
     private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
