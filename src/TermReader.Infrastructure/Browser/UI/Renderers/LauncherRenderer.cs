@@ -18,12 +18,12 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    // Block-letter wordmark using ▄ ▀ █ half-block characters for smooth 2-row-tall text.
-    // Each character is ~4 cols wide. Total width ~46 chars for "TermReader".
+    // 3-line-tall block-letter wordmark using █▀▄ characters for solid, readable text.
     private static readonly string[] Wordmark =
     [
         "▀█▀ █▀▀ █▀█ █▀▄▀█ █▀█ █▀▀ ▄▀█ █▀▄ █▀▀ █▀█",
-        " █  ██▄ █▀▄ █ ▀ █ █▀▄ ██▄ █▀█ █▄▀ ██▄ █▀▄",
+        " █  █▀  █▀▄ █ ▀ █ █▀▄ █▀  █▀█ █ █ █▀  █▀▄",
+        " █  ▀▀▀ ▀ ▀ ▀   ▀ ▀ ▀ ▀▀▀ ▀ ▀ ▀▀  ▀▀▀ ▀ ▀",
     ];
 
     private readonly RenderHelpers _helpers;
@@ -93,9 +93,9 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
     {
-        // Large wordmark: border + pad + 2 art + subtitle + pad + border = 7
+        // Large wordmark: border + pad + 3 art + subtitle + pad + border = 8
         // Narrow: border + title + subtitle + pad + border = 5
-        var headerLines = terminalWidth >= 56 ? 7 : 5;
+        var headerLines = terminalWidth >= 56 ? 8 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
 
@@ -800,54 +800,49 @@ internal class LauncherRenderer
         var titleColor = p.HeaderTitleFg.AnsiFg;
         var subtitle = "a better reading experience";
         var wordmarkWidth = Wordmark[0].Length;
-        var useLargeWordmark = width >= wordmarkWidth + 6;
-        var boxWidth = Math.Min(width - 2, 78);
-        var innerWidth = boxWidth - 2;
+        var useLargeWordmark = width >= wordmarkWidth + 8;
+
+        // Box sizing: ~75% of width, same proportion as the URL bar
+        var boxOuter = Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
+        var boxInner = boxOuter - 2; // space inside │...│
+        var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2); // center the box
+        var margin = new string(' ', leftMargin);
+
+        // Helper to render a box content line with exact alignment
+        void BoxLine(string content, int contentLen)
+        {
+            var pad = Math.Max(0, boxInner - contentLen);
+            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset} {content}{new string(' ', pad)}{borderColor}\u2502{Reset}");
+        }
+
+        void BlankLine()
+        {
+            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset}{new string(' ', boxInner + 1)}{borderColor}\u2502{Reset}");
+        }
 
         // ╭──────────────────────────────────────────────────╮
         _helpers.WriteLine(
-            $" {borderColor}\u256d{new string('\u2500', boxWidth)}\u256e{Reset}");
+            $"{margin} {borderColor}\u256d{new string('\u2500', boxOuter)}\u256e{Reset}");
 
         if (useLargeWordmark)
         {
-            // │                                                  │
-            _helpers.WriteLine(
-                $" {borderColor}\u2502{Reset}{new string(' ', innerWidth + 1)}{borderColor}\u2502{Reset}");
-
-            // │  ▀█▀ █▀▀ █▀█ ...                                │  (wordmark line 1)
-            // │   █  ██▄ █▀▄ ...                                │  (wordmark line 2)
+            BlankLine();
             foreach (var wl in Wordmark)
             {
-                var leftPad = 2;
-                var rightPad = Math.Max(0, innerWidth - wl.Length - leftPad);
-                _helpers.WriteLine(
-                    $" {borderColor}\u2502{Reset}{new string(' ', leftPad)}" +
-                    $"{titleColor}{Bold}{wl}{Reset}" +
-                    $"{new string(' ', rightPad + 1)}{borderColor}\u2502{Reset}");
+                BoxLine($" {titleColor}{Bold}{wl}{Reset}", wl.Length + 1);
             }
         }
         else
         {
-            // Narrow fallback: single-line pink title
-            var titlePad = Math.Max(0, innerWidth - "TermReader".Length - 2);
-            _helpers.WriteLine(
-                $" {borderColor}\u2502{Reset}  {titleColor}{Bold}{"TermReader"}{Reset}" +
-                $"{new string(' ', titlePad)} {borderColor}\u2502{Reset}");
+            BoxLine($" {titleColor}{Bold}{"TermReader"}{Reset}", "TermReader".Length + 1);
         }
 
-        // │  a better reading experience                     │
-        var subPad = Math.Max(0, innerWidth - subtitle.Length - 2);
-        _helpers.WriteLine(
-            $" {borderColor}\u2502{Reset}  {p.SecondaryText.AnsiFg}{subtitle}{Reset}" +
-            $"{new string(' ', subPad)} {borderColor}\u2502{Reset}");
-
-        // │                                                  │
-        _helpers.WriteLine(
-            $" {borderColor}\u2502{Reset}{new string(' ', innerWidth + 1)}{borderColor}\u2502{Reset}");
+        BoxLine($" {p.SecondaryText.AnsiFg}{subtitle}{Reset}", subtitle.Length + 1);
+        BlankLine();
 
         // ╰──────────────────────────────────────────────────╯
         _helpers.WriteLine(
-            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+            $"{margin} {borderColor}\u2570{new string('\u2500', boxOuter)}\u256f{Reset}");
     }
 
     private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
