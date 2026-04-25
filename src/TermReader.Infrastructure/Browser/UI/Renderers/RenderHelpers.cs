@@ -124,10 +124,10 @@ internal class RenderHelpers
             return url;
         }
 
-        var halfWidth = (maxWidth - 3) / 2;
+        var halfWidth = (maxWidth - 1) / 2;
         var prefix = TruncateToWidth(url, halfWidth);
         var suffix = TakeTrailingWidth(url, halfWidth);
-        return $"{prefix}...{suffix}";
+        return $"{prefix}\u2026{suffix}";
     }
 
     public static List<string> WrapText(string text, int maxWidth)

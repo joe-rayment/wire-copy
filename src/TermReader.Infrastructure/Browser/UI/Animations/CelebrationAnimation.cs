@@ -34,6 +34,11 @@ internal static class CelebrationAnimation
         int terminalHeight,
         int? seed = null)
     {
+        if (Console.IsOutputRedirected)
+        {
+            return;
+        }
+
         var rng = seed.HasValue ? new Random(seed.Value) : new Random();
         var celebrationColor = palette.GetCelebrationFg().AnsiFg;
         var normalBorder = palette.HeaderBorderFg.AnsiFg;
@@ -85,8 +90,15 @@ internal static class CelebrationAnimation
                 var sparkleChar = rng.Next(2) == 0 ? SparkleA : SparkleB;
                 lock (ConsoleSync.Lock)
                 {
-                    Console.SetCursorPosition(col, row);
-                    Console.Write($"{celebrationColor}{sparkleChar}{Reset}");
+                    try
+                    {
+                        Console.SetCursorPosition(col, row);
+                        Console.Write($"{celebrationColor}{sparkleChar}{Reset}");
+                    }
+                    catch
+                    {
+                        // Ignore console errors
+                    }
                 }
 
                 sparklePositions.Add((row, col));
@@ -130,8 +142,15 @@ internal static class CelebrationAnimation
         // Clear the message area first
         lock (ConsoleSync.Lock)
         {
-            Console.SetCursorPosition(boxLeft + 1, msgRow);
-            Console.Write(new string(' ', innerWidth));
+            try
+            {
+                Console.SetCursorPosition(boxLeft + 1, msgRow);
+                Console.Write(new string(' ', innerWidth));
+            }
+            catch
+            {
+                // Ignore console errors
+            }
         }
 
         var delayPerChar = Math.Max(1, 600 / Math.Max(1, displayMessage.Length));
@@ -140,8 +159,15 @@ internal static class CelebrationAnimation
         {
             lock (ConsoleSync.Lock)
             {
-                Console.SetCursorPosition(msgStartCol + i, msgRow);
-                Console.Write($"{celebrationColor}{displayMessage[i]}{Reset}");
+                try
+                {
+                    Console.SetCursorPosition(msgStartCol + i, msgRow);
+                    Console.Write($"{celebrationColor}{displayMessage[i]}{Reset}");
+                }
+                catch
+                {
+                    // Ignore console errors
+                }
             }
 
             Thread.Sleep(delayPerChar);
@@ -163,8 +189,15 @@ internal static class CelebrationAnimation
                 var (row, col) = sparklePositions[i];
                 lock (ConsoleSync.Lock)
                 {
-                    Console.SetCursorPosition(col, row);
-                    Console.Write(' ');
+                    try
+                    {
+                        Console.SetCursorPosition(col, row);
+                        Console.Write(' ');
+                    }
+                    catch
+                    {
+                        // Ignore console errors
+                    }
                 }
             }
 
@@ -186,17 +219,24 @@ internal static class CelebrationAnimation
 
         lock (ConsoleSync.Lock)
         {
-            // Top border
-            Console.SetCursorPosition(left, top);
-            Console.Write($"{borderColor}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
+            try
+            {
+                // Top border
+                Console.SetCursorPosition(left, top);
+                Console.Write($"{borderColor}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
 
-            // Message line
-            Console.SetCursorPosition(left, top + 1);
-            Console.Write($"{borderColor}\u2502{textColor}{centeredMessage}{borderColor}\u2502{Reset}");
+                // Message line
+                Console.SetCursorPosition(left, top + 1);
+                Console.Write($"{borderColor}\u2502{textColor}{centeredMessage}{borderColor}\u2502{Reset}");
 
-            // Bottom border
-            Console.SetCursorPosition(left, top + 2);
-            Console.Write($"{borderColor}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
+                // Bottom border
+                Console.SetCursorPosition(left, top + 2);
+                Console.Write($"{borderColor}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
+            }
+            catch
+            {
+                // Ignore console errors
+            }
         }
     }
 }
