@@ -18,7 +18,13 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    private const string BrandTitle = "TermReader";
+    // Block-letter wordmark using ▄ ▀ █ half-block characters for smooth 2-row-tall text.
+    // Each character is ~4 cols wide. Total width ~46 chars for "TermReader".
+    private static readonly string[] Wordmark =
+    [
+        "▀█▀ █▀▀ █▀█ █▀▄▀█ █▀█ █▀▀ ▄▀█ █▀▄ █▀▀ █▀█",
+        " █  ██▄ █▀▄ █ ▀ █ █▀▄ ██▄ █▀█ █▄▀ ██▄ █▀▄",
+    ];
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -87,8 +93,9 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
     {
-        // Header box: top border + padding + title + subtitle + padding + bottom border = 6
-        const int headerLines = 6;
+        // Large wordmark: border + pad + 2 art + subtitle + pad + border = 7
+        // Narrow: border + title + subtitle + pad + border = 5
+        var headerLines = terminalWidth >= 56 ? 7 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
 
@@ -792,6 +799,8 @@ internal class LauncherRenderer
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;
         var subtitle = "a better reading experience";
+        var wordmarkWidth = Wordmark[0].Length;
+        var useLargeWordmark = width >= wordmarkWidth + 6;
         var boxWidth = Math.Min(width - 2, 78);
         var innerWidth = boxWidth - 2;
 
@@ -799,15 +808,32 @@ internal class LauncherRenderer
         _helpers.WriteLine(
             $" {borderColor}\u256d{new string('\u2500', boxWidth)}\u256e{Reset}");
 
-        // │  (blank padding line)                            │
-        _helpers.WriteLine(
-            $" {borderColor}\u2502{Reset}{new string(' ', innerWidth + 1)}{borderColor}\u2502{Reset}");
+        if (useLargeWordmark)
+        {
+            // │                                                  │
+            _helpers.WriteLine(
+                $" {borderColor}\u2502{Reset}{new string(' ', innerWidth + 1)}{borderColor}\u2502{Reset}");
 
-        // │  TermReader                                      │  (pink bold, large visual weight)
-        var titlePad = Math.Max(0, innerWidth - BrandTitle.Length - 2);
-        _helpers.WriteLine(
-            $" {borderColor}\u2502{Reset}  {titleColor}{Bold}{BrandTitle}{Reset}" +
-            $"{new string(' ', titlePad)} {borderColor}\u2502{Reset}");
+            // │  ▀█▀ █▀▀ █▀█ ...                                │  (wordmark line 1)
+            // │   █  ██▄ █▀▄ ...                                │  (wordmark line 2)
+            foreach (var wl in Wordmark)
+            {
+                var leftPad = 2;
+                var rightPad = Math.Max(0, innerWidth - wl.Length - leftPad);
+                _helpers.WriteLine(
+                    $" {borderColor}\u2502{Reset}{new string(' ', leftPad)}" +
+                    $"{titleColor}{Bold}{wl}{Reset}" +
+                    $"{new string(' ', rightPad + 1)}{borderColor}\u2502{Reset}");
+            }
+        }
+        else
+        {
+            // Narrow fallback: single-line pink title
+            var titlePad = Math.Max(0, innerWidth - "TermReader".Length - 2);
+            _helpers.WriteLine(
+                $" {borderColor}\u2502{Reset}  {titleColor}{Bold}{"TermReader"}{Reset}" +
+                $"{new string(' ', titlePad)} {borderColor}\u2502{Reset}");
+        }
 
         // │  a better reading experience                     │
         var subPad = Math.Max(0, innerWidth - subtitle.Length - 2);
@@ -815,7 +841,7 @@ internal class LauncherRenderer
             $" {borderColor}\u2502{Reset}  {p.SecondaryText.AnsiFg}{subtitle}{Reset}" +
             $"{new string(' ', subPad)} {borderColor}\u2502{Reset}");
 
-        // │  (blank padding line)                            │
+        // │                                                  │
         _helpers.WriteLine(
             $" {borderColor}\u2502{Reset}{new string(' ', innerWidth + 1)}{borderColor}\u2502{Reset}");
 
