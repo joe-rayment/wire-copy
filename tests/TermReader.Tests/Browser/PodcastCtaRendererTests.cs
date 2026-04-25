@@ -26,9 +26,9 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — tier selection
 
     [Theory]
-    [InlineData(80, 40, 5)]  // Full slab (height > 35, width >= 52)
-    [InlineData(80, 36, 5)]  // Full slab (just above threshold)
-    [InlineData(52, 40, 5)]  // Full slab (width boundary: 52-2=50 >= 50)
+    [InlineData(80, 40, 7)]  // Hero box (height > 35, width >= 52)
+    [InlineData(80, 36, 7)]  // Hero box (just above threshold)
+    [InlineData(52, 40, 7)]  // Hero box (width boundary: 52-2=50 >= 50)
     [InlineData(49, 40, 3)]  // Compact slab (height > 35, width < 50 but >= 37)
     [InlineData(80, 30, 1)]  // Inline (height <= 35)
     [InlineData(80, 24, 1)]  // Inline (height <= 35)
@@ -151,9 +151,9 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — boundary tests
 
     [Fact]
-    public void GetCtaLineCount_ExactlyAt36Height50Width_Returns5()
+    public void GetCtaLineCount_ExactlyAt36Height50Width_Returns7()
     {
-        PodcastCtaRenderer.GetCtaLineCount(52, 36).Should().Be(5);
+        PodcastCtaRenderer.GetCtaLineCount(52, 36).Should().Be(7);
     }
 
     [Fact]

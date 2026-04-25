@@ -49,6 +49,18 @@ internal class CommandContext
     // Undo state for deferred destructive actions
     public UndoState? PendingUndo { get; set; }
 
+    /// <summary>
+    /// When true, the podcast CTA renders in "Generating" state with a progress bar.
+    /// Set by PodcastCommandHandler during active generation.
+    /// </summary>
+    public bool IsPodcastGenerating { get; set; }
+
+    /// <summary>
+    /// Progress fraction (0.0 to 1.0) for the podcast generation progress bar.
+    /// Only meaningful when <see cref="IsPodcastGenerating"/> is true.
+    /// </summary>
+    public double PodcastGenerationProgress { get; set; }
+
     // Delegates for operations that remain in BrowserOrchestrator
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 

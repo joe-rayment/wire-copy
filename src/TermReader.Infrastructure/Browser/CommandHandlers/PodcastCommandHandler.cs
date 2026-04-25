@@ -1093,6 +1093,10 @@ internal static class PodcastCommandHandler
             };
         }
 
+        // Signal generating state so the CTA renders with progress bar
+        ctx.IsPodcastGenerating = true;
+        ctx.PodcastGenerationProgress = 0.0;
+
         PodcastProgress? latestProgress = null;
         var animFrame = 0;
 
@@ -1101,6 +1105,9 @@ internal static class PodcastCommandHandler
         var progress = new Progress<PodcastProgress>(p =>
         {
             Volatile.Write(ref latestProgress, p);
+
+            // Update shared progress for CTA rendering
+            ctx.PodcastGenerationProgress = Math.Clamp(p.PercentComplete / 100.0, 0.0, 1.0);
 
             // Phase transition: reset article statuses when moving to GeneratingAudio
             if (p.Phase == PodcastPhase.GeneratingAudio && lastPhase == PodcastPhase.CachingContent)
@@ -1266,6 +1273,10 @@ internal static class PodcastCommandHandler
         }
         finally
         {
+            // Clear generating state so the CTA returns to normal
+            ctx.IsPodcastGenerating = false;
+            ctx.PodcastGenerationProgress = 0.0;
+
             if (!generationTask.IsCompleted)
             {
                 await genCts.CancelAsync();

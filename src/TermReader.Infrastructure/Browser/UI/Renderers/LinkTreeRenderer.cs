@@ -100,7 +100,7 @@ internal class LinkTreeRenderer
         {
             colorStart = node.Link.Type switch
             {
-                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Content => p.HeaderTitleFg.AnsiFg,
                 LinkType.Navigation => p.LinkNavigation.AnsiFg,
                 LinkType.External => p.LinkExternal.AnsiFg,
                 LinkType.Footer => p.LinkFooter.AnsiFg,
@@ -488,7 +488,7 @@ internal class LinkTreeRenderer
         {
             var colorFg = node.Link.Type switch
             {
-                LinkType.Content => palette.LinkContent.AnsiFg,
+                LinkType.Content => palette.HeaderTitleFg.AnsiFg,
                 LinkType.Navigation => palette.LinkNavigation.AnsiFg,
                 LinkType.External => palette.LinkExternal.AnsiFg,
                 LinkType.Footer => palette.LinkFooter.AnsiFg,
@@ -512,7 +512,7 @@ internal class LinkTreeRenderer
             {
                 var colorFg = node.Link.Type switch
                 {
-                    LinkType.Content => palette.LinkContent.AnsiFg,
+                    LinkType.Content => palette.HeaderTitleFg.AnsiFg,
                     LinkType.Navigation => palette.LinkNavigation.AnsiFg,
                     LinkType.External => palette.LinkExternal.AnsiFg,
                     LinkType.Footer => palette.LinkFooter.AnsiFg,
@@ -1038,7 +1038,7 @@ internal class LinkTreeRenderer
         {
             var colorFg = node.Link.Type switch
             {
-                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Content => p.HeaderTitleFg.AnsiFg,
                 LinkType.Navigation => p.LinkNavigation.AnsiFg,
                 LinkType.External => p.LinkExternal.AnsiFg,
                 LinkType.Footer => p.LinkFooter.AnsiFg,
@@ -1197,7 +1197,7 @@ internal class LinkTreeRenderer
             // Line 1: title
             var colorFg = node.Link.Type switch
             {
-                LinkType.Content => p.LinkContent.AnsiFg,
+                LinkType.Content => p.HeaderTitleFg.AnsiFg,
                 LinkType.Navigation => p.LinkNavigation.AnsiFg,
                 LinkType.External => p.LinkExternal.AnsiFg,
                 LinkType.Footer => p.LinkFooter.AnsiFg,

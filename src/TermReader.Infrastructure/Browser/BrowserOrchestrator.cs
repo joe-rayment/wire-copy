@@ -574,6 +574,8 @@ public class BrowserOrchestrator : IBrowserService
             CachedUrls = GetMergedCachedUrls(),
             CacheProgress = _preloadService.GetProgress(),
             PodcastButtonState = GetPodcastButtonState(),
+            PodcastProgressFraction = _commandContext.PodcastGenerationProgress,
+            PodcastArticleCount = GetPodcastArticleCount(),
             CacheUsagePercent = GetCacheUsagePercent(),
             LayoutVariantLabel = GetLayoutVariantLabel(),
             LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
@@ -670,10 +672,16 @@ public class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Returns the podcast button state integer for RenderOptions.
-    /// 0=Idle, 2=Disabled, 3=Unconfigured, 4=Selected (CTA focused via j/k).
+    /// 0=Idle, 2=Disabled, 3=Unconfigured, 4=Selected, 5=Generating.
     /// </summary>
     private int GetPodcastButtonState()
     {
+        // Generating state takes priority — active podcast generation in progress
+        if (_commandContext.IsPodcastGenerating)
+        {
+            return 5; // Generating
+        }
+
         // Empty collections → Disabled (dimmed/inactive button)
         if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
             && _navigationService.ActiveCollection is { } col
@@ -689,6 +697,20 @@ public class BrowserOrchestrator : IBrowserService
         }
 
         return IsTtsConfigured() ? 0 : 3; // Idle or Unconfigured
+    }
+
+    /// <summary>
+    /// Returns the number of articles in the active collection for podcast CTA metadata display.
+    /// </summary>
+    private int GetPodcastArticleCount()
+    {
+        if (_navigationService.CurrentContext.ViewMode == ViewMode.CollectionItems
+            && _navigationService.ActiveCollection is { } col)
+        {
+            return col.Items.Count;
+        }
+
+        return 0;
     }
 
     private async Task NavigateToAsync(string url, RenderOptions options, CancellationToken cancellationToken)

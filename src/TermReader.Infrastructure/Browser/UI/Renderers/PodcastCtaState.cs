@@ -31,4 +31,9 @@ internal enum PodcastCtaState
     /// CTA button is focused via j/k navigation — renders with selection highlight.
     /// </summary>
     Selected,
+
+    /// <summary>
+    /// Podcast generation is in progress — shows progress bar and percentage.
+    /// </summary>
+    Generating,
 }

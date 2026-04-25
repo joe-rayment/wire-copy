@@ -147,15 +147,18 @@ internal class CollectionRenderer
         // Podcast button (only shown when collection has items)
         if (collection.Items.Count > 0)
         {
-            _podcastCtaRenderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
+            _podcastCtaRenderer.Render(options, (PodcastCtaState)options.PodcastButtonState, collection.Items.Count);
         }
 
         var isCompact = string.Equals(options.LayoutVariant, "Compact", StringComparison.Ordinal);
-        var linesPerItem = isCompact ? 1 : 2;
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
+
+        // Each item takes linesPerItem lines, plus 1 separator line between items.
+        // Total lines for N items = N * linesPerItem + (N-1) separators.
+        // So N = (remainingHeight + 1) / (linesPerItem + 1).
         var maxItems = isCompact
-            ? remainingHeight
-            : Math.Max(1, (remainingHeight + 1) / linesPerItem);
+            ? Math.Max(1, (remainingHeight + 1) / 2)
+            : Math.Max(1, (remainingHeight + 1) / 3);
 
         if (collection.Items.Count == 0)
         {
@@ -187,11 +190,12 @@ internal class CollectionRenderer
         var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
         if (isCompact)
         {
-            return remainingHeight;
+            // 1 line per item + 1 separator line between items
+            return Math.Max(1, (remainingHeight + 1) / 2);
         }
 
-        const int linesPerItem = 2;
-        return Math.Max(1, (remainingHeight + 1) / linesPerItem);
+        // 2 lines per item + 1 separator line between items
+        return Math.Max(1, (remainingHeight + 1) / 3);
     }
 
     private static string ExtractDomain(string url)
@@ -252,6 +256,12 @@ internal class CollectionRenderer
                 var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
                 _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
             }
+
+            // Item separator between items (not after the last visible one)
+            if (i < endIndex - 1)
+            {
+                _helpers.WriteLine(Borders.ItemSeparator(p, 6));
+            }
         }
 
         if (collection.Items.Count > endIndex)
@@ -310,6 +320,12 @@ internal class CollectionRenderer
                 var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
                 var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
                 _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}{new string(' ', gap)}{p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
+            }
+
+            // Item separator between items (not after the last visible one)
+            if (i < endIndex - 1)
+            {
+                _helpers.WriteLine(Borders.ItemSeparator(p, 6));
             }
         }
 

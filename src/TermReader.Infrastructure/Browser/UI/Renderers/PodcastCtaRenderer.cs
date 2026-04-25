@@ -4,24 +4,30 @@ using System.Text;
 using TermReader.Application.DTOs.Browser;
 using TermReader.Application.Interfaces.Browser;
 using TermReader.Infrastructure.Browser.Themes;
+using TermReader.Infrastructure.Browser.UI.Components;
 
 namespace TermReader.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
 /// Renders the podcast call-to-action button in collection views.
-/// Three tiers: Full Slab (5 lines), Compact Slab (3 lines), Inline (1 line).
+/// Three tiers: Hero (7 lines, bordered box), Compact Slab (3 lines), Inline (1 line).
 /// </summary>
 internal class PodcastCtaRenderer
 {
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
+    private const string HeroPlayIcon = "\u25b6\u25b6\u25b6";
     private const string PlayIcon = "\u25b6\u25b6";
+    private const string HeroLabel = "GENERATE PODCAST";
     private const string Label = "Generate Podcast";
+    private const string HeroSubtitle = "turn your reading list into audio";
+    private const string GeneratingLabel = "GENERATING...";
     private const string KeyHint = "[p]";
     private const string SelectedKeyHint = "[Enter]";
     private const int MinButtonWidth = 40;
     private const int MaxButtonWidth = 72;
+    private const double MinutesPerArticle = 3.5;
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -40,7 +46,7 @@ internal class PodcastCtaRenderer
     {
         if (terminalHeight > 35 && terminalWidth - 2 >= 50)
         {
-            return 5;
+            return 7;
         }
 
         if (terminalHeight > 35 && terminalWidth - 2 >= 35)
@@ -55,15 +61,34 @@ internal class PodcastCtaRenderer
     /// Renders the podcast CTA button at the current cursor position.
     /// Automatically selects the appropriate tier based on terminal dimensions.
     /// </summary>
-    public void Render(RenderOptions options, PodcastCtaState state = PodcastCtaState.Idle)
+    public void Render(RenderOptions options, PodcastCtaState state = PodcastCtaState.Idle, int articleCount = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
+        var progressFraction = options.PodcastProgressFraction;
+
+        if (state == PodcastCtaState.Generating)
+        {
+            if (height > 35 && width >= 50)
+            {
+                RenderGeneratingHeroBox(width, p, progressFraction, articleCount);
+            }
+            else if (height > 35 && width >= 35)
+            {
+                RenderGeneratingCompactSlab(width, p, progressFraction);
+            }
+            else
+            {
+                RenderGeneratingInline(width, p, progressFraction);
+            }
+
+            return;
+        }
 
         if (height > 35 && width >= 50)
         {
-            RenderFullSlab(width, p, state);
+            RenderHeroBox(width, p, state, articleCount);
         }
         else if (height > 35 && width >= 35)
         {
@@ -106,6 +131,11 @@ internal class PodcastCtaRenderer
                 p.SelectedItemBg.AnsiFg,
                 p.SelectedItemBg.AnsiFg,
                 false),
+            PodcastCtaState.Generating => (
+                p.SelectedItemBg.AnsiBg,
+                p.GetCelebrationFg().AnsiFg,
+                p.GetCelebrationFg().AnsiFg,
+                false),
             _ => (
                 p.SelectedItemBg.AnsiBg,
                 p.SelectedItemFg.AnsiFg,
@@ -115,34 +145,154 @@ internal class PodcastCtaRenderer
     }
 
     /// <summary>
-    /// Full Slab: 5 lines — blank, top fill, content line, bottom fill, blank.
+    /// Computes the inner width and centering padding for the hero bordered box.
     /// </summary>
-    private void RenderFullSlab(int width, ThemePalette p, PodcastCtaState state)
+    private static (int InnerWidth, string PadStr) ComputeHeroBox(int terminalWidth)
     {
-        var buttonWidth = ComputeButtonWidth(width);
-        var pad = Math.Max(0, (width - buttonWidth) / 2);
-        var padStr = new string(' ', pad);
-
-        var (bgAnsi, fgAnsi, hintAnsi, dimmed) = GetStateColors(p, state);
-
-        // Line 1: blank
-        _helpers.WriteLine();
-
-        // Line 2: top fill
-        _helpers.WriteLine($"{padStr}{bgAnsi}{new string(' ', buttonWidth)}{Reset}");
-
-        // Line 3: content line
-        RenderContentLine(padStr, buttonWidth, bgAnsi, fgAnsi, hintAnsi, dimmed, state);
-
-        // Line 4: bottom fill
-        _helpers.WriteLine($"{padStr}{bgAnsi}{new string(' ', buttonWidth)}{Reset}");
-
-        // Line 5: blank
-        _helpers.WriteLine();
+        var boxWidth = Math.Clamp(terminalWidth - 8, MinButtonWidth, MaxButtonWidth);
+        var pad = Math.Max(0, (terminalWidth - boxWidth) / 2);
+        var innerWidth = Math.Max(1, boxWidth - 2);
+        return (innerWidth, new string(' ', pad));
     }
 
     /// <summary>
-    /// Compact Slab: 3 lines — blank, content line, blank.
+    /// Hero Box: 7 lines -- pink-bordered box with title, subtitle, and metadata.
+    /// Layout:
+    /// ╭──────────────────────────────────────────────╮
+    /// │                                              │
+    /// │       ▶▶▶  GENERATE PODCAST                 │
+    /// │       turn your reading list into audio      │
+    /// │                                              │
+    /// │       5 articles · ~18 min          [p]      │
+    /// ╰──────────────────────────────────────────────╯
+    /// </summary>
+    private void RenderHeroBox(int width, ThemePalette p, PodcastCtaState state, int articleCount)
+    {
+        var (innerWidth, padStr) = ComputeHeroBox(width);
+        var borderFg = p.GetCelebrationFg().AnsiFg;
+        var titleFg = p.GetCelebrationFg().AnsiFg;
+        var subtitleFg = p.GetSuccessFg().AnsiFg;
+        var metaFg = p.GetSuccessFg().AnsiFg;
+        var accentFg = p.GetAccentFg().AnsiFg;
+        var contentIndent = 6;
+
+        // Build metadata text
+        var estMinutes = Math.Max(1, (int)Math.Round(articleCount * MinutesPerArticle));
+        var articleText = articleCount == 1 ? "1 article" : $"{articleCount} articles";
+        var metaText = $"{articleText} \u00b7 ~{estMinutes} min";
+
+        // Line 1: top border  ╭────╮
+        _helpers.WriteLine($"{padStr}{borderFg}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
+
+        // Line 2: blank row  │    │
+        _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+
+        // Line 3: ▶▶▶  GENERATE PODCAST
+        var titleContent = $"{HeroPlayIcon}  {HeroLabel}";
+        var titlePad = Math.Max(0, innerWidth - contentIndent - titleContent.Length);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{titleFg}{Bold}{titleContent}{Reset}" +
+            $"{new string(' ', titlePad)}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 4: subtitle
+        var subPad = Math.Max(0, innerWidth - contentIndent - HeroSubtitle.Length);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{subtitleFg}{HeroSubtitle}{Reset}" +
+            $"{new string(' ', subPad)}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 5: blank row  │    │
+        _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+
+        // Line 6: metadata + key hint
+        var activeHint = state == PodcastCtaState.Selected ? SelectedKeyHint : KeyHint;
+        var metaAndHint = metaText.Length + activeHint.Length;
+        var metaGap = Math.Max(2, innerWidth - contentIndent - metaAndHint);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{metaFg}{metaText}{Reset}" +
+            $"{new string(' ', metaGap)}" +
+            $"{accentFg}{activeHint}{Reset}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 7: bottom border  ╰────╯
+        _helpers.WriteLine($"{padStr}{borderFg}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
+    }
+
+    /// <summary>
+    /// Generating state in hero box: shows progress bar instead of metadata.
+    /// </summary>
+    private void RenderGeneratingHeroBox(int width, ThemePalette p, double progressFraction, int articleCount)
+    {
+        var (innerWidth, padStr) = ComputeHeroBox(width);
+        var borderFg = p.GetCelebrationFg().AnsiFg;
+        var titleFg = p.GetCelebrationFg().AnsiFg;
+        var subtitleFg = p.GetSuccessFg().AnsiFg;
+        var contentIndent = 6;
+
+        var percent = (int)(Math.Clamp(progressFraction, 0.0, 1.0) * 100);
+        var pctText = $" {percent}%";
+
+        var articleText = articleCount == 1 ? "1 article" : $"{articleCount} articles";
+        var subText = $"mixing {articleText} into a single episode";
+
+        // Progress bar width: inner width minus indent, pctText, and small padding
+        var barWidth = Math.Max(4, innerWidth - contentIndent - pctText.Length - 1);
+        var filledColor = percent >= 100 ? p.GetSuccessFg().AnsiFg : p.GetCelebrationFg().AnsiFg;
+        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, progressFraction, barWidth);
+
+        // Line 1: top border
+        _helpers.WriteLine($"{padStr}{borderFg}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
+
+        // Line 2: blank
+        _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+
+        // Line 3: ▶▶▶  GENERATING...
+        var genTitle = $"{HeroPlayIcon}  {GeneratingLabel}";
+        var genTitlePad = Math.Max(0, innerWidth - contentIndent - genTitle.Length);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{titleFg}{Bold}{genTitle}{Reset}" +
+            $"{new string(' ', genTitlePad)}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 4: subtitle
+        var subPad = Math.Max(0, innerWidth - contentIndent - subText.Length);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{subtitleFg}{subText}{Reset}" +
+            $"{new string(' ', subPad)}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 5: blank
+        _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+
+        // Line 6: progress bar + percentage
+        // bar is already ANSI-colored; we need to pad to fill innerWidth
+        var barDisplayWidth = barWidth + pctText.Length;
+        var barPad = Math.Max(0, innerWidth - contentIndent - barDisplayWidth);
+        _helpers.WriteLine(
+            $"{padStr}{borderFg}\u2502{Reset}" +
+            $"{new string(' ', contentIndent)}" +
+            $"{bar}" +
+            $"{titleFg}{Bold}{pctText}{Reset}" +
+            $"{new string(' ', barPad)}" +
+            $"{borderFg}\u2502{Reset}");
+
+        // Line 7: bottom border
+        _helpers.WriteLine($"{padStr}{borderFg}\u2570{new string('\u2500', innerWidth)}\u256f{Reset}");
+    }
+
+    /// <summary>
+    /// Compact Slab: 3 lines -- blank, content line, blank.
     /// </summary>
     private void RenderCompactSlab(int width, ThemePalette p, PodcastCtaState state)
     {
@@ -163,7 +313,29 @@ internal class PodcastCtaRenderer
     }
 
     /// <summary>
-    /// Inline: 1 line — centered content only.
+    /// Compact Slab Generating: 3 lines -- blank, title+progress, blank.
+    /// </summary>
+    private void RenderGeneratingCompactSlab(int width, ThemePalette p, double fraction)
+    {
+        var buttonWidth = ComputeButtonWidth(width);
+        var pad = Math.Max(0, (width - buttonWidth) / 2);
+        var padStr = new string(' ', pad);
+
+        var bgAnsi = p.SelectedItemBg.AnsiBg;
+        var titleColor = p.GetCelebrationFg().AnsiFg;
+
+        // Line 1: blank
+        _helpers.WriteLine();
+
+        // Line 2: title + progress bar
+        RenderGeneratingContentLine(padStr, buttonWidth, bgAnsi, titleColor, p, fraction);
+
+        // Line 3: blank
+        _helpers.WriteLine();
+    }
+
+    /// <summary>
+    /// Inline: 1 line -- centered content only.
     /// </summary>
     private void RenderInline(int width, ThemePalette p, PodcastCtaState state)
     {
@@ -186,6 +358,56 @@ internal class PodcastCtaRenderer
             sb.Append($"{fgAnsi}{Bold}{content}{Reset}{hintAnsi}{hint}{Reset}");
         }
 
+        _helpers.WriteLine(sb.ToString());
+    }
+
+    /// <summary>
+    /// Inline Generating: 1 line -- chevrons + GENERATING... + percentage.
+    /// </summary>
+    private void RenderGeneratingInline(int width, ThemePalette p, double fraction)
+    {
+        var titleColor = p.GetCelebrationFg().AnsiFg;
+        var percent = (int)(Math.Clamp(fraction, 0.0, 1.0) * 100);
+
+        var content = $" {HeroPlayIcon}  {GeneratingLabel} ";
+        var pctText = $" {percent}%";
+        var totalLen = content.Length + pctText.Length;
+        var pad = Math.Max(0, (width - totalLen) / 2);
+
+        var sb = new StringBuilder();
+        sb.Append(new string(' ', pad));
+        sb.Append($"{titleColor}{Bold}{content}{Reset}{titleColor}{pctText}{Reset}");
+
+        _helpers.WriteLine(sb.ToString());
+    }
+
+    /// <summary>
+    /// Renders the generating content line with chevrons, title, progress bar, and percentage.
+    /// </summary>
+    private void RenderGeneratingContentLine(
+        string padStr,
+        int buttonWidth,
+        string bgAnsi,
+        string titleColor,
+        ThemePalette p,
+        double fraction)
+    {
+        var percent = (int)(Math.Clamp(fraction, 0.0, 1.0) * 100);
+        var iconLabel = $" {HeroPlayIcon}  {GeneratingLabel} ";
+        var pctText = $" {percent}% ";
+
+        // Progress bar fills remaining space between label and percentage
+        var barWidth = Math.Max(4, buttonWidth - iconLabel.Length - pctText.Length - 1);
+        var filledColor = percent >= 100 ? p.GetSuccessFg().AnsiFg : p.GetCelebrationFg().AnsiFg;
+        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+
+        var sb = new StringBuilder();
+        sb.Append(padStr);
+        sb.Append(bgAnsi);
+        sb.Append($"{titleColor}{Bold}{iconLabel}{Reset}{bgAnsi}");
+        sb.Append(bar);
+        sb.Append($"{bgAnsi}{titleColor}{pctText}{Reset}{bgAnsi}");
+        sb.Append(Reset);
         _helpers.WriteLine(sb.ToString());
     }
 
