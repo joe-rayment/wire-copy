@@ -17,19 +17,19 @@ internal static class Selection
     private const string Reset = "\x1b[0m";
 
     /// <summary>
-    /// Renders a left accent bar in the given color.
+    /// Renders a left accent bar in muted green (the design system accent bar color).
     /// </summary>
     public static string AccentBar(ThemePalette p)
     {
-        return $"{p.HeaderBorderFg.AnsiFg}{AccentBarChar}{Reset}";
+        return $"{p.GetMutedFg().AnsiFg}{AccentBarChar}{Reset}";
     }
 
     /// <summary>
-    /// Renders a left accent bar with the selected item foreground color.
+    /// Renders a left accent bar in muted green on a selected row.
     /// </summary>
     public static string SelectedAccentBar(ThemePalette p)
     {
-        return $"{p.SelectedItemFg.AnsiFg}{AccentBarChar}{Reset}";
+        return $"{p.GetMutedFg().AnsiFg}{AccentBarChar}{Reset}";
     }
 
     /// <summary>
