@@ -84,15 +84,15 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_IsCompactWhenShort()
     {
-        // availableHeight = max(4, 18 - 1 - 2) = 15 >= 15 → standard (5)
+        // availableHeight = max(4, 18 - 3 - 2) = 13 < 15 → compact (3)
         var layout = LinkTreeRenderer.ComputeLayout(80, 18);
-        layout.CellHeight.Should().Be(5);
+        layout.CellHeight.Should().Be(3);
     }
 
     [Fact]
     public void CellHeight_IsStandardWhenTall()
     {
-        // availableHeight = max(4, 30 - 1 - 2) = 27 >= 15 → standard (5)
+        // availableHeight = max(4, 30 - 3 - 2) = 25 >= 15 → standard (5)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.CellHeight.Should().Be(5);
     }
@@ -100,7 +100,7 @@ public class LinkTreeLayoutTests
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 1 - 2) = 27, cellHeight = 5 → 27/5 = 5
+        // availableHeight = max(4, 30 - 3 - 2) = 25, cellHeight = 5 → 25/5 = 5
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
         layout.VisibleRows.Should().Be(5);
     }
@@ -109,7 +109,7 @@ public class LinkTreeLayoutTests
     public void ComputeLayout_HeaderAndStatusBarLines()
     {
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(1);
+        layout.HeaderLines.Should().Be(3);
         layout.StatusBarLines.Should().Be(2);
     }
 
@@ -711,11 +711,11 @@ public class LinkTreeLayoutTests
     #region Header rendering - compact style layout
 
     [Fact]
-    public void ComputeLayout_HeaderIs1Line_MatchesCompactStyle()
+    public void ComputeLayout_HeaderIs3Lines_MatchesBoxHeaderStyle()
     {
-        // Compact header: single line with title and metadata
+        // BoxHeader: top border + subtitle + bottom border = 3 lines
         var layout = LinkTreeRenderer.ComputeLayout(80, 24);
-        layout.HeaderLines.Should().Be(1, "compact header is 1 line");
+        layout.HeaderLines.Should().Be(3, "BoxHeader is 3 lines");
     }
 
     [Fact]
@@ -726,11 +726,11 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void ComputeLayout_AvailableHeight_AccountsForCompactHeader()
+    public void ComputeLayout_AvailableHeight_AccountsForBoxHeader()
     {
-        // availableHeight = terminalHeight - headerLines(1) - statusBarLines(2)
+        // availableHeight = terminalHeight - headerLines(3) - statusBarLines(2)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        var expectedAvailable = 30 - 1 - 2; // 27
+        var expectedAvailable = 30 - 3 - 2; // 25
         var expectedVisibleRows = expectedAvailable / layout.CellHeight;
         layout.VisibleRows.Should().Be(expectedVisibleRows);
     }

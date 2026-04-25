@@ -32,16 +32,26 @@ internal class CollectionRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
-        // Single-line header
-        _helpers.WriteLine();
+        // BoxHeader
+        var title = "Collections";
         var collCount = collections.Count;
-        var collTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{"Collections"}\x1b[0m";
-        var collMeta = $"{p.SecondaryText.AnsiFg}{collCount} collection{(collCount == 1 ? string.Empty : "s")}\x1b[0m";
-        var collTitleLen = "Collections".Length;
-        var collMetaLen = $"{collCount} collection{(collCount == 1 ? string.Empty : "s")}".Length;
-        var collPad = Math.Max(1, width - 1 - collTitleLen - collMetaLen);
-        _helpers.WriteLine($" {collTitle}{new string(' ', collPad)}{collMeta}");
-        _helpers.WriteLine();
+        var subtitle = $"{collCount} collection{(collCount == 1 ? string.Empty : "s")}";
+        var borderColor = p.GetDimFg().AnsiFg;
+        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+
+        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        _helpers.WriteLine(
+            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}\x1b[1m{title}{Reset}" +
+            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+
+        var innerWidth = boxWidth - 2;
+        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+        _helpers.WriteLine(
+            $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
+            $"{borderColor}\u2502{Reset}");
+
+        _helpers.WriteLine(
+            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
 
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
         var maxVisible = remainingHeight;
@@ -115,16 +125,24 @@ internal class CollectionRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var height = options.TerminalHeight;
 
-        // Single-line header with collection name and item count
-        _helpers.WriteLine();
+        // BoxHeader
         var itemCount = collection.Items.Count;
-        var itemTitle = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2))}\x1b[0m";
-        var itemMeta = $"{p.SecondaryText.AnsiFg}{itemCount} item{(itemCount == 1 ? string.Empty : "s")}\x1b[0m";
-        var itemTitleLen = RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2)).Length;
-        var itemMetaLen = $"{itemCount} item{(itemCount == 1 ? string.Empty : "s")}".Length;
-        var itemPad = Math.Max(1, width - 1 - itemTitleLen - itemMetaLen);
-        _helpers.WriteLine($" {itemTitle}{new string(' ', itemPad)}{itemMeta}");
-        _helpers.WriteLine();
+        var title = $"{RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2))} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})";
+        var borderColor = p.GetDimFg().AnsiFg;
+        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+
+        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        _helpers.WriteLine(
+            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}\x1b[1m{title}{Reset}" +
+            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+
+        var innerWidth = boxWidth - 2;
+        _helpers.WriteLine(
+            $" {borderColor}\u2502 {Reset}{new string(' ', innerWidth)}{Reset}" +
+            $"{borderColor}\u2502{Reset}");
+
+        _helpers.WriteLine(
+            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
 
         // Podcast button (only shown when collection has items)
         if (collection.Items.Count > 0)

@@ -67,7 +67,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}This page is keeping its links to itself.{Reset}");
             if (page.ReadableContent != null)
             {
-                _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}Try reader view \u2014 press{Reset} {ep.GetAccentFg().AnsiFg}[v]{Reset}");
+                _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}Try reader view \u2014 press{Reset} {ep.GetAccentFg().AnsiFg}v{Reset}");
             }
 
             _helpers.WriteLine();
@@ -171,7 +171,7 @@ public class TerminalPageRenderer : IPageRenderer
             CenteredBoxLine.Empty,
             new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
             CenteredBoxLine.Empty,
-            new($"{p.GetAccentFg().AnsiFg}[Esc]{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}", "[Esc]:cancel"),
+            new($"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}", "Esc:cancel"),
             CenteredBoxLine.Empty,
         };
 
@@ -194,8 +194,8 @@ public class TerminalPageRenderer : IPageRenderer
             new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
             CenteredBoxLine.Empty,
             new(
-                $"{p.GetAccentFg().AnsiFg}[b]{Reset}{p.GetDimFg().AnsiFg}:back{Reset}  {p.GetAccentFg().AnsiFg}[Shift+R]{Reset}{p.GetDimFg().AnsiFg}:retry{Reset}",
-                "[b]:back  [Shift+R]:retry"),
+                $"{p.GetAccentFg().AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}:back{Reset}  {p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}",
+                "b:back  Shift+R:retry"),
             CenteredBoxLine.Empty,
         };
 
@@ -232,8 +232,8 @@ public class TerminalPageRenderer : IPageRenderer
             CenteredBoxLine.Empty,
             new($"{p.SecondaryText.AnsiFg}Complete any captcha or login in the browser.{Reset}", "Complete any captcha or login in the browser."),
             new(
-                $"{p.GetAccentFg().AnsiFg}[Enter]{Reset}{p.GetDimFg().AnsiFg}:accept{Reset}  {p.GetAccentFg().AnsiFg}[Esc]{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}",
-                "[Enter]:accept  [Esc]:cancel"),
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:accept{Reset}  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}",
+                "Enter:accept  Esc:cancel"),
             CenteredBoxLine.Empty,
         };
 

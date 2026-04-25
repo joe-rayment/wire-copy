@@ -33,16 +33,30 @@ internal class LinkTreeRenderer
         var width = Math.Max(1, options.TerminalWidth - 2);
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        var titleText = metadata.Title ?? "Untitled";
-        var metaText = BuildHeaderSubtitle(metadata, url, linkCount, sectionCount);
+        var title = RenderHelpers.TruncateText(metadata.Title ?? "Untitled", Math.Max(1, width / 2));
+        var subtitle = RenderHelpers.TruncateText(
+            BuildHeaderSubtitle(metadata, url, linkCount, sectionCount),
+            Math.Max(1, width - 6));
 
-        var displayTitle = RenderHelpers.TruncateText(titleText, Math.Max(1, width / 2));
-        var displayMeta = RenderHelpers.TruncateText(metaText, Math.Max(1, width - displayTitle.Length - 2));
+        var borderColor = p.GetDimFg().AnsiFg;
+        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
 
-        var title = $"{p.HeaderTitleFg.AnsiFg}\x1b[1m{displayTitle}\x1b[0m";
-        var meta = $"{p.SecondaryText.AnsiFg}{displayMeta}\x1b[0m";
-        var padding = Math.Max(1, width - 1 - displayTitle.Length - displayMeta.Length);
-        _helpers.WriteLine($" {title}{new string(' ', padding)}{meta}");
+        // ╭─ Title ──────────────────────────────────────╮
+        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        _helpers.WriteLine(
+            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
+            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+
+        // │ subtitle                                      │
+        var innerWidth = boxWidth - 2;
+        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+        _helpers.WriteLine(
+            $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
+            $"{borderColor}\u2502{Reset}");
+
+        // ╰──────────────────────────────────────────────╯
+        _helpers.WriteLine(
+            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
     }
 
     public void RenderLinkTree(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
@@ -143,7 +157,7 @@ internal class LinkTreeRenderer
     /// </summary>
     internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight, string? layoutVariant = null)
     {
-        const int headerLines = 1;
+        const int headerLines = 3;
         const int statusBarLines = 2;
 
         var width = Math.Max(1, terminalWidth - 2);
