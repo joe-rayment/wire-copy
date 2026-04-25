@@ -57,10 +57,22 @@ public record RenderOptions
     public PreloadProgress? CacheProgress { get; init; }
 
     /// <summary>
-    /// Visual state of the podcast CTA button (0=Idle, 1=Pressed, 2=Disabled, 3=Unconfigured).
+    /// Visual state of the podcast CTA button (0=Idle, 1=Pressed, 2=Disabled, 3=Unconfigured, 5=Generating).
     /// Mapped to PodcastCtaState enum in the rendering layer.
     /// </summary>
     public int PodcastButtonState { get; init; }
+
+    /// <summary>
+    /// Progress fraction (0.0 to 1.0) for the podcast generation progress bar.
+    /// Only meaningful when <see cref="PodcastButtonState"/> is 5 (Generating).
+    /// </summary>
+    public double PodcastProgressFraction { get; init; }
+
+    /// <summary>
+    /// Number of articles in the active collection. Used by the podcast CTA
+    /// hero tier to display article count and estimated duration.
+    /// </summary>
+    public int PodcastArticleCount { get; init; }
 
     /// <summary>
     /// Memory cache usage percentage (0-100). Used by the status bar to show

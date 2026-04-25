@@ -35,7 +35,7 @@ internal class ArticleRenderer
         var startLine = context.ScrollOffset;
         var endLine = Math.Min(startLine + viewportHeight, allLines.Count);
 
-        var paraAnsi = $"{p.GetAccentFg().AnsiFg}\u258e{Reset}";
+        var paraAnsi = $"{p.GetMutedFg().AnsiFg}\u258e{Reset}";
         var cursorColor = p.GetReaderCursorFg();
 
         // Find the active paragraph (the one containing the cursor)

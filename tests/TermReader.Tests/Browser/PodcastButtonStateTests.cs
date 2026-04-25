@@ -27,6 +27,7 @@ public class PodcastButtonStateTests
     [InlineData(1)] // Pressed
     [InlineData(2)] // Disabled
     [InlineData(3)] // Unconfigured
+    [InlineData(5)] // Generating
     public void RenderOptions_PodcastButtonState_CanBeSetToAnyValidState(int state)
     {
         var options = new RenderOptions { PodcastButtonState = state };
@@ -202,6 +203,7 @@ public class PodcastButtonStateTests
     [InlineData(1)] // Pressed
     [InlineData(2)] // Disabled
     [InlineData(3)] // Unconfigured
+    [InlineData(5)] // Generating
     public void CollectionRenderer_RenderCollectionItems_AllPodcastStates_DoesNotThrow(int podcastButtonState)
     {
         var themeProvider = Substitute.For<IThemeProvider>();
@@ -242,6 +244,115 @@ public class PodcastButtonStateTests
         };
 
         var act = () => renderer.RenderCollectionItems(collection, 0, 0, options);
+        act.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region Generating state rendering
+
+    [Theory]
+    [InlineData(80, 40)]  // Full slab
+    [InlineData(80, 30)]  // Compact slab (height <= 35 not eligible for full slab)
+    [InlineData(80, 22)]  // Compact slab
+    [InlineData(80, 15)]  // Inline
+    [InlineData(40, 40)]  // Narrow full slab
+    [InlineData(30, 40)]  // Narrow compact slab
+    [InlineData(30, 15)]  // Narrow inline
+    public void Render_GeneratingState_AllTiers_DoesNotThrow(int width, int height)
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = height };
+        var renderer = new PodcastCtaRenderer(helpers, themeProvider);
+
+        var options = new RenderOptions
+        {
+            TerminalWidth = width,
+            TerminalHeight = height,
+            PodcastButtonState = 5, // Generating
+            PodcastProgressFraction = 0.42,
+        };
+
+        var act = () => renderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.28)]
+    [InlineData(0.5)]
+    [InlineData(0.99)]
+    [InlineData(1.0)]
+    public void Render_GeneratingState_VariousProgressFractions_DoesNotThrow(double fraction)
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 40 };
+        var renderer = new PodcastCtaRenderer(helpers, themeProvider);
+
+        var options = new RenderOptions
+        {
+            TerminalWidth = 80,
+            TerminalHeight = 40,
+            PodcastButtonState = 5,
+            PodcastProgressFraction = fraction,
+        };
+
+        var act = () => renderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void RenderOptions_PodcastProgressFraction_DefaultsToZero()
+    {
+        var options = new RenderOptions();
+        options.PodcastProgressFraction.Should().Be(0.0);
+    }
+
+    [Fact]
+    public void RenderOptions_PodcastProgressFraction_CanBeSet()
+    {
+        var options = new RenderOptions { PodcastProgressFraction = 0.75 };
+        options.PodcastProgressFraction.Should().Be(0.75);
+    }
+
+    [Fact]
+    public void RenderOptions_WithExpression_PreservesPodcastProgressFraction()
+    {
+        var original = new RenderOptions
+        {
+            PodcastButtonState = 5,
+            PodcastProgressFraction = 0.5,
+        };
+
+        var modified = original with { PodcastProgressFraction = 0.8 };
+
+        modified.PodcastProgressFraction.Should().Be(0.8);
+        modified.PodcastButtonState.Should().Be(5, "other properties should be preserved");
+    }
+
+    [Theory]
+    [InlineData(ThemeName.Phosphor)]
+    [InlineData(ThemeName.Amber)]
+    [InlineData(ThemeName.Dracula)]
+    [InlineData(ThemeName.Light)]
+    public void Render_GeneratingState_AllThemes_DoesNotThrow(ThemeName theme)
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(theme);
+        var helpers = new RenderHelpers { TerminalHeight = 40 };
+        var renderer = new PodcastCtaRenderer(helpers, themeProvider);
+
+        var options = new RenderOptions
+        {
+            TerminalWidth = 80,
+            TerminalHeight = 40,
+            PodcastButtonState = 5,
+            PodcastProgressFraction = 0.42,
+        };
+
+        var act = () => renderer.Render(options, (PodcastCtaState)options.PodcastButtonState);
         act.Should().NotThrow();
     }
 

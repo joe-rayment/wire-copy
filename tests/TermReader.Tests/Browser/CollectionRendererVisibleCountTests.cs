@@ -46,19 +46,21 @@ public class CollectionRendererVisibleCountTests
     {
         // height=20, width=80: CTA is inline (1 line, height <= 35), linesPerItem=2
         // remainingHeight = Max(3, 20-3-2-1) = 14
-        // Max(1, (14+1)/2) = 7
+        // With separators: 2 lines/item + 1 separator between = 3 lines per slot
+        // Max(1, (14+1)/3) = 5
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(20);
-        result.Should().Be(7);
+        result.Should().Be(5);
     }
 
     [Fact]
-    public void GetCollectionItemsVisibleCount_LargeTerminal_SlabCta()
+    public void GetCollectionItemsVisibleCount_LargeTerminal_HeroCta()
     {
-        // height=40, width=80: CTA is full slab (5 lines, height > 35), linesPerItem=2
-        // remainingHeight = Max(3, 40-3-2-5) = 30
-        // Max(1, (30+1)/2) = 15
+        // height=40, width=80: CTA is hero box (7 lines, height > 35 && width >= 50), linesPerItem=2
+        // remainingHeight = Max(3, 40-3-2-7) = 28
+        // With separators: 2 lines/item + 1 separator between = 3 lines per slot
+        // Max(1, (28+1)/3) = 9
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(40);
-        result.Should().Be(15);
+        result.Should().Be(9);
     }
 
     [Fact]

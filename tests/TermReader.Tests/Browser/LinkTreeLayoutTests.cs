@@ -381,13 +381,13 @@ public class LinkTreeLayoutTests
     #region BuildCardLine - Link type colors
 
     [Fact]
-    public void BuildCardLine_ContentLink_UsesContentColor()
+    public void BuildCardLine_ContentLink_UsesBrightPinkColor()
     {
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, false, 2, 0, 80, TestPalette);
 
-        line.Should().Contain(TestPalette.LinkContent.AnsiFg);
+        line.Should().Contain(TestPalette.HeaderTitleFg.AnsiFg);
     }
 
     [Fact]
