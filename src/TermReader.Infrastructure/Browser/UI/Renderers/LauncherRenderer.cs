@@ -569,7 +569,7 @@ internal class LauncherRenderer
 
     private static string FormatKbdHint(string key, string action, ThemePalette p)
     {
-        return $"{p.GetAccentFg().AnsiFg}{key}{Reset}{p.GetDimFg().AnsiFg}:{action}{Reset}";
+        return $"{p.GetAccentFg().AnsiFg}[{key}]{Reset}{p.GetDimFg().AnsiFg}:{action}{Reset}";
     }
 
     private void RenderGridVariant(
