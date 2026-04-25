@@ -2104,8 +2104,9 @@ public class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Pure computation: delay in ms for a line based on word count and WPM.
-    /// If nextLineBlank (paragraph boundary), adds a 300ms pause.
-    /// Minimum 50ms floor.
+    /// If nextLineBlank (paragraph boundary), adds a 150ms pause.
+    /// Subtracts estimated rendering overhead so effective WPM matches the setting.
+    /// Minimum 30ms floor.
     /// </summary>
 #pragma warning disable SA1202 // Internal test helper placed near its private caller
     internal static int ComputeLineDelayMs(string line, int wpm, bool nextLineBlank)
@@ -2113,7 +2114,7 @@ public class BrowserOrchestrator : IBrowserService
         var wordCount = CountWordsStrippingAnsi(line);
         if (wordCount == 0)
         {
-            return 50;
+            return 30;
         }
 
         var msPerWord = 60000.0 / wpm;
@@ -2121,10 +2122,13 @@ public class BrowserOrchestrator : IBrowserService
 
         if (nextLineBlank)
         {
-            delayMs += 300;
+            delayMs += 150;
         }
 
-        return Math.Max(50, delayMs);
+        // Subtract estimated rendering overhead (~100ms for terminal write + layout)
+        // so effective WPM matches the configured setting
+        const int RenderingOverheadMs = 100;
+        return Math.Max(30, delayMs - RenderingOverheadMs);
     }
 
     /// <summary>
