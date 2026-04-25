@@ -177,6 +177,11 @@ internal class StatusBarRenderer
     /// </summary>
     internal static void PlayCacheWarmWave(ThemePalette p, int width)
     {
+        if (Console.IsOutputRedirected)
+        {
+            return;
+        }
+
         const int frameCount = 10;
         const int segmentWidth = 4;
         const int frameDelayMs = 60;
@@ -232,6 +237,11 @@ internal class StatusBarRenderer
     /// </summary>
     internal static void PlayCacheItemPulse(ThemePalette p, int count, int total, int col, int row)
     {
+        if (Console.IsOutputRedirected)
+        {
+            return;
+        }
+
         const int frameDelayMs = 100;
         var colors = new[] { p.GetAccentFg().AnsiFg, p.PrimaryText.AnsiFg, p.SecondaryText.AnsiFg };
         var text = $"{count}/{total}";
@@ -496,7 +506,7 @@ internal class StatusBarRenderer
     private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {
         return string.Join(" ", hints.Select(h =>
-            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
+            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.GetDimFg().AnsiFg}:{h.Action}{Reset}"));
     }
 
     private static string GetDomain(string url)

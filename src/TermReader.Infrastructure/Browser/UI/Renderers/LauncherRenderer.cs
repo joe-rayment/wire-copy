@@ -49,215 +49,6 @@ internal class LauncherRenderer
         }
     }
 
-    private void RenderGridVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
-
-        RenderHeader(bookmarks.Count, layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow * layout.Columns;
-        var belowCount = totalItems - (endRow * layout.Columns);
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            var isFirstVisible = row == startRow;
-            var isLastVisible = row == endRow - 1;
-
-            for (var line = 0; line < layout.CellHeight; line++)
-            {
-                if (isFirstVisible && line == 0 && hasMoreAbove)
-                {
-                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                    continue;
-                }
-
-                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
-                {
-                    RenderScrollIndicator(layout.Width, p, false, belowCount);
-                    continue;
-                }
-
-                var sb = new System.Text.StringBuilder();
-                var leftIdx = row * layout.Columns;
-                sb.Append(BuildCellLine(
-                    bookmarks,
-                    leftIdx,
-                    selectedIndex,
-                    layout.CellWidth,
-                    layout.CellHeight,
-                    line,
-                    p));
-
-                if (layout.Columns == 2)
-                {
-                    sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
-                    var rightIdx = leftIdx + 1;
-                    var rightWidth = layout.Width - layout.CellWidth - 1;
-                    if (rightIdx < totalItems)
-                    {
-                        sb.Append(BuildCellLine(
-                            bookmarks,
-                            rightIdx,
-                            selectedIndex,
-                            rightWidth,
-                            layout.CellHeight,
-                            line,
-                            p));
-                    }
-                    else
-                    {
-                        sb.Append(new string(' ', rightWidth));
-                    }
-                }
-
-                _helpers.WriteLine(sb.ToString());
-            }
-        }
-    }
-
-    private void RenderListVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "List");
-
-        RenderHeader(bookmarks.Count, layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = totalItems; // 1 item per row
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow;
-        var belowCount = totalItems - endRow;
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            if (row == startRow && hasMoreAbove)
-            {
-                RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                continue;
-            }
-
-            if (row == endRow - 1 && hasMoreBelow)
-            {
-                RenderScrollIndicator(layout.Width, p, false, belowCount);
-                continue;
-            }
-
-            _helpers.WriteLine(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
-        }
-    }
-
-    private void RenderCompactVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Compact");
-
-        RenderHeader(bookmarks.Count, layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow * layout.Columns;
-        var belowCount = totalItems - (endRow * layout.Columns);
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            var isFirstVisible = row == startRow;
-            var isLastVisible = row == endRow - 1;
-
-            for (var line = 0; line < layout.CellHeight; line++)
-            {
-                if (isFirstVisible && line == 0 && hasMoreAbove)
-                {
-                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                    continue;
-                }
-
-                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
-                {
-                    RenderScrollIndicator(layout.Width, p, false, belowCount);
-                    continue;
-                }
-
-                var sb = new System.Text.StringBuilder();
-
-                for (var col = 0; col < layout.Columns; col++)
-                {
-                    var itemIdx = (row * layout.Columns) + col;
-                    var isLastCol = col == layout.Columns - 1;
-                    var cellW = isLastCol
-                        ? layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1)
-                        : layout.CellWidth;
-
-                    if (col > 0)
-                    {
-                        sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
-                    }
-
-                    if (itemIdx < totalItems)
-                    {
-                        sb.Append(BuildCompactCellLine(
-                            bookmarks, itemIdx, selectedIndex, cellW, line, p));
-                    }
-                    else
-                    {
-                        sb.Append(new string(' ', cellW));
-                    }
-                }
-
-                _helpers.WriteLine(sb.ToString());
-            }
-        }
-    }
-
     /// <summary>
     /// Renders the launcher-specific footer with kbd-style keyboard hints.
     /// </summary>
@@ -658,6 +449,7 @@ internal class LauncherRenderer
         else
         {
             var bookmark = bookmarks[itemIdx];
+
             // Abbreviate name to fit compact cells
             name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
@@ -683,7 +475,7 @@ internal class LauncherRenderer
 
         if (isSelected)
         {
-            return BuildCompactSelectedLine(lineIdx, name, domain, badge, indent, textWidth, cellWidth, p);
+            return BuildCompactSelectedLine(lineIdx, name, domain, badge, textWidth, cellWidth, p);
         }
 
         return BuildCompactNormalLine(lineIdx, name, domain, badge, indent, textWidth, cellWidth, p);
@@ -694,7 +486,6 @@ internal class LauncherRenderer
         string name,
         string domain,
         string badge,
-        int indent,
         int textWidth,
         int cellWidth,
         ThemePalette p)
@@ -778,7 +569,216 @@ internal class LauncherRenderer
 
     private static string FormatKbdHint(string key, string action, ThemePalette p)
     {
-        return $"{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}:{action}{Reset}";
+        return $"{p.GetAccentFg().AnsiFg}{key}{Reset}{p.GetDimFg().AnsiFg}:{action}{Reset}";
+    }
+
+    private void RenderGridVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+
+        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
+
+        var totalItems = bookmarks.Count + 1;
+
+        if (bookmarks.Count == 0)
+        {
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
+        var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow * layout.Columns;
+        var belowCount = totalItems - (endRow * layout.Columns);
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            var isFirstVisible = row == startRow;
+            var isLastVisible = row == endRow - 1;
+
+            for (var line = 0; line < layout.CellHeight; line++)
+            {
+                if (isFirstVisible && line == 0 && hasMoreAbove)
+                {
+                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                    continue;
+                }
+
+                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
+                {
+                    RenderScrollIndicator(layout.Width, p, false, belowCount);
+                    continue;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                var leftIdx = row * layout.Columns;
+                sb.Append(BuildCellLine(
+                    bookmarks,
+                    leftIdx,
+                    selectedIndex,
+                    layout.CellWidth,
+                    layout.CellHeight,
+                    line,
+                    p));
+
+                if (layout.Columns == 2)
+                {
+                    sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
+                    var rightIdx = leftIdx + 1;
+                    var rightWidth = layout.Width - layout.CellWidth - 1;
+                    if (rightIdx < totalItems)
+                    {
+                        sb.Append(BuildCellLine(
+                            bookmarks,
+                            rightIdx,
+                            selectedIndex,
+                            rightWidth,
+                            layout.CellHeight,
+                            line,
+                            p));
+                    }
+                    else
+                    {
+                        sb.Append(new string(' ', rightWidth));
+                    }
+                }
+
+                _helpers.WriteLine(sb.ToString());
+            }
+        }
+    }
+
+    private void RenderListVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "List");
+
+        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
+
+        var totalItems = bookmarks.Count + 1;
+
+        if (bookmarks.Count == 0)
+        {
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        var totalRows = totalItems; // 1 item per row
+        var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow;
+        var belowCount = totalItems - endRow;
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            if (row == startRow && hasMoreAbove)
+            {
+                RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                continue;
+            }
+
+            if (row == endRow - 1 && hasMoreBelow)
+            {
+                RenderScrollIndicator(layout.Width, p, false, belowCount);
+                continue;
+            }
+
+            _helpers.WriteLine(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
+        }
+    }
+
+    private void RenderCompactVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Compact");
+
+        RenderHeader(bookmarks.Count, layout.Width, p);
+        RenderUrlBar(layout.Width, selectedIndex == -1, p);
+
+        var totalItems = bookmarks.Count + 1;
+
+        if (bookmarks.Count == 0)
+        {
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
+        var startRow = scrollOffset;
+        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
+        var hasMoreAbove = startRow > 0;
+        var hasMoreBelow = totalRows > endRow;
+        var aboveCount = startRow * layout.Columns;
+        var belowCount = totalItems - (endRow * layout.Columns);
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            var isFirstVisible = row == startRow;
+            var isLastVisible = row == endRow - 1;
+
+            for (var line = 0; line < layout.CellHeight; line++)
+            {
+                if (isFirstVisible && line == 0 && hasMoreAbove)
+                {
+                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
+                    continue;
+                }
+
+                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
+                {
+                    RenderScrollIndicator(layout.Width, p, false, belowCount);
+                    continue;
+                }
+
+                var sb = new System.Text.StringBuilder();
+
+                for (var col = 0; col < layout.Columns; col++)
+                {
+                    var itemIdx = (row * layout.Columns) + col;
+                    var isLastCol = col == layout.Columns - 1;
+                    var cellW = isLastCol
+                        ? layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1)
+                        : layout.CellWidth;
+
+                    if (col > 0)
+                    {
+                        sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
+                    }
+
+                    if (itemIdx < totalItems)
+                    {
+                        sb.Append(BuildCompactCellLine(
+                            bookmarks, itemIdx, selectedIndex, cellW, line, p));
+                    }
+                    else
+                    {
+                        sb.Append(new string(' ', cellW));
+                    }
+                }
+
+                _helpers.WriteLine(sb.ToString());
+            }
+        }
     }
 
     private void RenderHeader(int bookmarkCount, int width, ThemePalette p)

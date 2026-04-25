@@ -65,181 +65,6 @@ internal class LinkTreeRenderer
         }
     }
 
-    /// <summary>
-    /// Renders the Cards layout (original 2-column grid with 5-line cells).
-    /// </summary>
-    private void RenderCardsLayout(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Cards");
-        var visibleNodes = tree.GetVisibleNodes().ToList();
-        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
-        var startRow = context.ScrollOffset;
-
-        var linesUsed = 0;
-        var rowsRendered = 0;
-
-        // Scroll-up indicator
-        if (startRow > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, true, startRow);
-            linesUsed++;
-        }
-
-        for (var row = startRow; row < gridRows.Count; row++)
-        {
-            var gr = gridRows[row];
-            var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
-            var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
-
-            // Reserve 1 line for scroll-down indicator if more rows follow
-            var hasMoreAfter = row + 1 < gridRows.Count;
-            var available = hasMoreAfter ? maxLines - 1 : maxLines;
-
-            if (linesUsed + linesNeeded > available)
-            {
-                break;
-            }
-
-            if (gr.IsGroupHeader)
-            {
-                var selIndicator = string.Empty;
-                if (tree.IsSectionFullySelected(gr.Left))
-                {
-                    selIndicator = "\u2713 ";
-                }
-                else if (tree.IsSectionPartiallySelected(gr.Left))
-                {
-                    selIndicator = "\u25d0 ";
-                }
-
-                RenderGroupHeader(gr.Left, gr.Left.IsSelected, options, selIndicator);
-            }
-            else
-            {
-                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds);
-            }
-
-            linesUsed += linesNeeded;
-            rowsRendered++;
-        }
-
-        // Scroll-down indicator
-        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
-        if (totalRemaining > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
-        }
-    }
-
-    /// <summary>
-    /// Renders the DenseList layout: single-column, 1 line per link with right-aligned domain.
-    /// </summary>
-    private void RenderDenseList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "DenseList");
-        var visibleNodes = tree.GetVisibleNodes().ToList();
-        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
-        var startRow = context.ScrollOffset;
-
-        var linesUsed = 0;
-        var rowsRendered = 0;
-
-        if (startRow > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, true, startRow);
-            linesUsed++;
-        }
-
-        for (var row = startRow; row < gridRows.Count; row++)
-        {
-            var gr = gridRows[row];
-            var linesNeeded = gr.IsGroupHeader ? GetDenseGroupHeaderLines(gr.Left) : 1;
-
-            var hasMoreAfter = row + 1 < gridRows.Count;
-            var available = hasMoreAfter ? maxLines - 1 : maxLines;
-
-            if (linesUsed + linesNeeded > available)
-            {
-                break;
-            }
-
-            if (gr.IsGroupHeader)
-            {
-                RenderDenseGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
-            }
-            else
-            {
-                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
-                RenderDenseListRow(gr.Left, layout.Width, p, isToggled);
-            }
-
-            linesUsed += linesNeeded;
-            rowsRendered++;
-        }
-
-        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
-        if (totalRemaining > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
-        }
-    }
-
-    /// <summary>
-    /// Renders the Magazine layout: single-column, 2 lines per link (title + metadata).
-    /// </summary>
-    private void RenderMagazineList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Magazine");
-        var visibleNodes = tree.GetVisibleNodes().ToList();
-        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
-        var startRow = context.ScrollOffset;
-
-        var linesUsed = 0;
-        var rowsRendered = 0;
-
-        if (startRow > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, true, startRow);
-            linesUsed++;
-        }
-
-        for (var row = startRow; row < gridRows.Count; row++)
-        {
-            var gr = gridRows[row];
-            var linesNeeded = gr.IsGroupHeader ? GetMagazineGroupHeaderLines(gr.Left) : 2;
-
-            var hasMoreAfter = row + 1 < gridRows.Count;
-            var available = hasMoreAfter ? maxLines - 1 : maxLines;
-
-            if (linesUsed + linesNeeded > available)
-            {
-                break;
-            }
-
-            if (gr.IsGroupHeader)
-            {
-                RenderMagazineGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
-            }
-            else
-            {
-                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
-                RenderMagazineRow(gr.Left, layout.Width, p, isToggled);
-            }
-
-            linesUsed += linesNeeded;
-            rowsRendered++;
-        }
-
-        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
-        if (totalRemaining > 0)
-        {
-            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
-        }
-    }
-
     public void RenderLinkNode(LinkNode node, bool isSelected, RenderOptions options)
     {
         if (node.IsGroupHeader)
@@ -488,6 +313,32 @@ internal class LinkTreeRenderer
         }
     }
 
+    /// <summary>
+    /// Returns how many lines a group header occupies in DenseList mode.
+    /// All group headers are a single line in this compact layout.
+    /// </summary>
+    internal static int GetDenseGroupHeaderLines(LinkNode node)
+    {
+        // DenseList: always 1 line per group header
+        return 1;
+    }
+
+    /// <summary>
+    /// Returns how many lines a group header occupies in Magazine mode.
+    /// Top-level expanded headers get 2 lines (blank + header), collapsed get 1.
+    /// Sub-section headers get 1 line.
+    /// </summary>
+    internal static int GetMagazineGroupHeaderLines(LinkNode node)
+    {
+        if (node.Link.HeaderType == HeaderType.SubSection)
+        {
+            return 1;
+        }
+
+        // Top-level: expanded gets 2 lines (blank + header), collapsed gets 1
+        return node.CollapseState == NodeCollapseState.Expanded ? 2 : 1;
+    }
+
     private static string BuildHeaderSubtitle(PageMetadata metadata, string url, int linkCount, int sectionCount)
     {
         var parts = new List<string>();
@@ -729,6 +580,181 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
+    /// Renders the Cards layout (original 2-column grid with 5-line cells).
+    /// </summary>
+    private void RenderCardsLayout(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Cards");
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
+
+        var linesUsed = 0;
+        var rowsRendered = 0;
+
+        // Scroll-up indicator
+        if (startRow > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, true, startRow);
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
+            var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
+
+            // Reserve 1 line for scroll-down indicator if more rows follow
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            if (gr.IsGroupHeader)
+            {
+                var selIndicator = string.Empty;
+                if (tree.IsSectionFullySelected(gr.Left))
+                {
+                    selIndicator = "\u2713 ";
+                }
+                else if (tree.IsSectionPartiallySelected(gr.Left))
+                {
+                    selIndicator = "\u25d0 ";
+                }
+
+                RenderGroupHeader(gr.Left, gr.Left.IsSelected, options, selIndicator);
+            }
+            else
+            {
+                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds);
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
+        // Scroll-down indicator
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
+        if (totalRemaining > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+        }
+    }
+
+    /// <summary>
+    /// Renders the DenseList layout: single-column, 1 line per link with right-aligned domain.
+    /// </summary>
+    private void RenderDenseList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "DenseList");
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
+
+        var linesUsed = 0;
+        var rowsRendered = 0;
+
+        if (startRow > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, true, startRow);
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var linesNeeded = gr.IsGroupHeader ? GetDenseGroupHeaderLines(gr.Left) : 1;
+
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            if (gr.IsGroupHeader)
+            {
+                RenderDenseGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
+            }
+            else
+            {
+                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
+                RenderDenseListRow(gr.Left, layout.Width, p, isToggled);
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
+        if (totalRemaining > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+        }
+    }
+
+    /// <summary>
+    /// Renders the Magazine layout: single-column, 2 lines per link (title + metadata).
+    /// </summary>
+    private void RenderMagazineList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Magazine");
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = context.ScrollOffset;
+
+        var linesUsed = 0;
+        var rowsRendered = 0;
+
+        if (startRow > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, true, startRow);
+            linesUsed++;
+        }
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var linesNeeded = gr.IsGroupHeader ? GetMagazineGroupHeaderLines(gr.Left) : 2;
+
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            if (gr.IsGroupHeader)
+            {
+                RenderMagazineGroupHeader(gr.Left, gr.Left.IsSelected, layout.Width, p, tree);
+            }
+            else
+            {
+                var isToggled = tree.SelectedNodeIds != null && tree.SelectedNodeIds.Contains(gr.Left.Id);
+                RenderMagazineRow(gr.Left, layout.Width, p, isToggled);
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
+        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
+        if (totalRemaining > 0)
+        {
+            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+        }
+    }
+
+    /// <summary>
     /// Renders a sub-section header with visually lighter style than top-level groups.
     /// Standard mode (cardHeight >= 2): blank line + thin-rule title line.
     /// Compact mode (cardHeight == 1): single thin-rule title line.
@@ -913,16 +939,6 @@ internal class LinkTreeRenderer
     // ── DenseList layout helpers ──────────────────────────────────────────
 
     /// <summary>
-    /// Returns how many lines a group header occupies in DenseList mode.
-    /// All group headers are a single line in this compact layout.
-    /// </summary>
-    internal static int GetDenseGroupHeaderLines(LinkNode node)
-    {
-        // DenseList: always 1 line per group header
-        return 1;
-    }
-
-    /// <summary>
     /// Renders a group header in DenseList mode: single line, ALL CAPS, with collapse indicator.
     /// </summary>
     private void RenderDenseGroupHeader(LinkNode node, bool isSelected, int width, ThemePalette p, NavigationTree tree)
@@ -1024,22 +1040,6 @@ internal class LinkTreeRenderer
     }
 
     // ── Magazine layout helpers ──────────────────────────────────────────
-
-    /// <summary>
-    /// Returns how many lines a group header occupies in Magazine mode.
-    /// Top-level expanded headers get 2 lines (blank + header), collapsed get 1.
-    /// Sub-section headers get 1 line.
-    /// </summary>
-    internal static int GetMagazineGroupHeaderLines(LinkNode node)
-    {
-        if (node.Link.HeaderType == HeaderType.SubSection)
-        {
-            return 1;
-        }
-
-        // Top-level: expanded gets 2 lines (blank + header), collapsed gets 1
-        return node.CollapseState == NodeCollapseState.Expanded ? 2 : 1;
-    }
 
     /// <summary>
     /// Renders a group header in Magazine mode.

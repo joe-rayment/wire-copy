@@ -153,6 +153,42 @@ internal class CollectionRenderer
         }
     }
 
+    internal static int GetCollectionListVisibleCount(int terminalHeight)
+    {
+        const int headerLines = 3;
+        const int statusBarLines = 2;
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
+        return remainingHeight;
+    }
+
+    internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80, bool isCompact = false)
+    {
+        const int headerLines = 3;
+        const int statusBarLines = 2;
+        var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
+        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
+        if (isCompact)
+        {
+            return remainingHeight;
+        }
+
+        const int linesPerItem = 2;
+        return Math.Max(1, (remainingHeight + 1) / linesPerItem);
+    }
+
+    private static string ExtractDomain(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            return uri.Host;
+        }
+        catch
+        {
+            return url;
+        }
+    }
+
     private void RenderStandardItems(
         Collection collection,
         int selectedIndex,
@@ -263,41 +299,5 @@ internal class CollectionRenderer
         {
             _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}... {collection.Items.Count - endIndex} more items below{Reset}");
         }
-    }
-
-    private static string ExtractDomain(string url)
-    {
-        try
-        {
-            var uri = new Uri(url);
-            return uri.Host;
-        }
-        catch
-        {
-            return url;
-        }
-    }
-
-    internal static int GetCollectionListVisibleCount(int terminalHeight)
-    {
-        const int headerLines = 3;
-        const int statusBarLines = 2;
-        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines);
-        return remainingHeight;
-    }
-
-    internal static int GetCollectionItemsVisibleCount(int terminalHeight, int terminalWidth = 80, bool isCompact = false)
-    {
-        const int headerLines = 3;
-        const int statusBarLines = 2;
-        var podcastButtonLines = PodcastCtaRenderer.GetCtaLineCount(terminalWidth, terminalHeight);
-        var remainingHeight = Math.Max(3, terminalHeight - headerLines - statusBarLines - podcastButtonLines);
-        if (isCompact)
-        {
-            return remainingHeight;
-        }
-
-        const int linesPerItem = 2;
-        return Math.Max(1, (remainingHeight + 1) / linesPerItem);
     }
 }

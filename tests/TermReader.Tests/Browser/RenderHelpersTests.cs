@@ -178,16 +178,16 @@ public class RenderHelpersTests
     public void TruncateUrl_UrlLongerThanMax_TruncatesMiddle()
     {
         var result = RenderHelpers.TruncateUrl("https://example.com/very/long/path", 20);
-        // halfLen = (20-3)/2 = 8
-        result.Should().Be("https://...ong/path");
+        // halfLen = (20-1)/2 = 9
+        result.Should().Be("https://e\u2026long/path");
     }
 
     [Fact]
     public void TruncateUrl_VeryShortMax_StillProducesResult()
     {
         var result = RenderHelpers.TruncateUrl("https://example.com", 5);
-        // halfLen = (5-3)/2 = 1
-        result.Should().Be("h...m");
+        // halfLen = (5-1)/2 = 2
+        result.Should().Be("ht\u2026om");
     }
 
     #endregion
