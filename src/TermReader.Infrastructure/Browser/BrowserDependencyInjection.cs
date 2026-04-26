@@ -1,4 +1,4 @@
-// Educational and personal use only.
+// Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Net;
 using Microsoft.AspNetCore.DataProtection;
@@ -73,6 +73,8 @@ public static class BrowserDependencyInjection
             {
                 var container = sp.GetRequiredService<CookieContainer>();
 
+                var logger = sp.GetRequiredService<ILogger<PageLoader>>();
+
                 try
                 {
                     var cookieManager = sp.GetRequiredService<ICookieManager>();
@@ -84,21 +86,26 @@ public static class BrowserDependencyInjection
                         {
                             container.Add(new System.Net.Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
                         }
-                        catch (Exception)
+                        catch (CookieException ex)
                         {
-                            // Skip invalid cookies silently
+                            logger.LogDebug(ex, "Skipped invalid stored cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
+                        }
+                        catch (ArgumentException ex)
+                        {
+                            logger.LogDebug(ex, "Skipped malformed stored cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
                         }
                     }
 
                     if (storedCookies.Count > 0)
                     {
-                        var logger = sp.GetRequiredService<ILogger<PageLoader>>();
                         logger.LogDebug("Injected {Count} stored cookies into HTTP client", storedCookies.Count);
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Cookie loading failure should never prevent HttpClient creation
+                    // Cookie loading failure must never prevent HttpClient creation, but it
+                    // should be visible — silent failures here have caused production debugging pain.
+                    logger.LogWarning(ex, "Failed to inject stored cookies into HTTP client; continuing without them");
                 }
 
                 return new HttpClientHandler

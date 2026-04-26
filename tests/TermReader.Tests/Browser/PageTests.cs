@@ -1,5 +1,5 @@
 // <copyright file="PageTests.cs" company="TermReader">
-// Educational and personal use only.
+// Licensed under the MIT License. See LICENSE in the repository root.
 // </copyright>
 
 using FluentAssertions;
