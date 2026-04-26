@@ -10,7 +10,7 @@ This design system is the single source of truth for how the product looks, read
 
 Everything here is distilled from the TermReader repo:
 
-- Repository: `joe-rayment/newspaper_reader` (private, main branch)
+- Repository: `joe-rayment/newspaper_reader`
 - `README.md` — product overview, features, keybindings
 - `design-system.md` (65 KB) — the canonical in-app spec: palette, typography, components, animations, screen-by-screen rules
 - `design-inspiration.md` — reference-direction notes

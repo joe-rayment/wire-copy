@@ -1,4 +1,4 @@
-// Educational and personal use only.
+// Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Net;
 using Microsoft.Extensions.Logging;
@@ -40,9 +40,13 @@ internal sealed class HttpCookieRefresher : IHttpCookieRefresher
                     _container.Add(new Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
                     added++;
                 }
-                catch (Exception)
+                catch (CookieException ex)
                 {
-                    // Skip invalid cookies
+                    _logger.LogDebug(ex, "Skipped invalid cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
+                }
+                catch (ArgumentException ex)
+                {
+                    _logger.LogDebug(ex, "Skipped malformed cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
                 }
             }
 
