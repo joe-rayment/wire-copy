@@ -1,4 +1,4 @@
-// Educational and personal use only.
+// Licensed under the MIT License. See LICENSE in the repository root.
 
 using TermReader.Infrastructure.Browser.Themes;
 using TermReader.Infrastructure.Browser.UI.Renderers;

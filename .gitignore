@@ -193,3 +193,7 @@ obsidian/
 # Dolt database files (added by bd init)
 .dolt/
 drops/
+
+# Agent / assistant workflow docs (untracked; local copies persist across pulls)
+AGENTS.md
+CLAUDE.md
