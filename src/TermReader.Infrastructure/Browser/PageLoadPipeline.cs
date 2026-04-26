@@ -189,7 +189,7 @@ public class PageLoadPipeline
 
                 return new PageLoadPipelineResult
                 {
-                    Page = RebuildFromBuildCache(buildCache),
+                    Page = await RebuildFromBuildCacheAsync(buildCache).ConfigureAwait(false),
                     FetchMethod = FetchMethod.Cached,
                     BuildResult = null,
                 };
@@ -464,19 +464,19 @@ public class PageLoadPipeline
     /// Creates a fresh NavigationTree with clean selection state.
     /// Used by NavigateToAsync for build cache hits.
     /// </summary>
-    public Page RebuildFromBuildCache(PageBuildCache cache)
+    public async Task<Page> RebuildFromBuildCacheAsync(PageBuildCache cache)
     {
         var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
 
         NavigationTree tree;
         if (cache.HierarchyConfig != null)
         {
-            tree = _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).GetAwaiter().GetResult();
+            tree = await _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
         else
         {
-            tree = _treeBuilder.BuildTreeAsync(cache.Links).GetAwaiter().GetResult();
+            tree = await _treeBuilder.BuildTreeAsync(cache.Links).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(false);
         }
 

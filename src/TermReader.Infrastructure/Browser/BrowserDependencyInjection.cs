@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TermReader.Application.Interfaces;
@@ -67,46 +68,17 @@ public static class BrowserDependencyInjection
                 sp.GetRequiredService<ICookieManager>(),
                 sp.GetRequiredService<ILogger<HttpCookieRefresher>>()));
 
-        // Register HTTP client for PageLoader with automatic decompression and stored cookies
+        // Warm the shared CookieContainer at startup so the HttpClient handler
+        // factory below stays fully synchronous and never has to block on
+        // LoadCookiesAsync.
+        services.AddHostedService<CookieContainerWarmupService>();
+
+        // Register HTTP client for PageLoader with automatic decompression. Cookies
+        // are populated separately by CookieContainerWarmupService.
         services.AddHttpClient("BrowserPageLoader")
             .ConfigurePrimaryHttpMessageHandler(sp =>
             {
                 var container = sp.GetRequiredService<CookieContainer>();
-
-                var logger = sp.GetRequiredService<ILogger<PageLoader>>();
-
-                try
-                {
-                    var cookieManager = sp.GetRequiredService<ICookieManager>();
-                    var storedCookies = cookieManager.LoadCookiesAsync().GetAwaiter().GetResult();
-
-                    foreach (var cookie in storedCookies)
-                    {
-                        try
-                        {
-                            container.Add(new System.Net.Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
-                        }
-                        catch (CookieException ex)
-                        {
-                            logger.LogDebug(ex, "Skipped invalid stored cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
-                        }
-                        catch (ArgumentException ex)
-                        {
-                            logger.LogDebug(ex, "Skipped malformed stored cookie {Name} for {Domain}", cookie.Name, cookie.Domain);
-                        }
-                    }
-
-                    if (storedCookies.Count > 0)
-                    {
-                        logger.LogDebug("Injected {Count} stored cookies into HTTP client", storedCookies.Count);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Cookie loading failure must never prevent HttpClient creation, but it
-                    // should be visible — silent failures here have caused production debugging pain.
-                    logger.LogWarning(ex, "Failed to inject stored cookies into HTTP client; continuing without them");
-                }
 
                 return new HttpClientHandler
                 {

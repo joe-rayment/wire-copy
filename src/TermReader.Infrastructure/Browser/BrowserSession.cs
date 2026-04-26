@@ -15,7 +15,7 @@ namespace TermReader.Infrastructure.Browser;
 /// Uses <c>LaunchPersistentContextAsync</c> to maintain cookies and local storage
 /// across sessions via a user-data directory.
 /// </summary>
-public sealed class BrowserSession : IBrowserSession
+public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 {
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
@@ -257,7 +257,11 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
-    public void Dispose()
+    // Sync disposal kept for IDisposable consumers; the DI container will prefer
+    // DisposeAsync below when both are present, avoiding sync-over-async.
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
         {
@@ -267,7 +271,7 @@ public sealed class BrowserSession : IBrowserSession
         bool lockAcquired;
         try
         {
-            lockAcquired = _lock.Wait(TimeSpan.FromSeconds(5));
+            lockAcquired = await _lock.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
@@ -287,7 +291,7 @@ public sealed class BrowserSession : IBrowserSession
             }
 
             _disposed = true;
-            DisposeContextUnsafeAsync().GetAwaiter().GetResult();
+            await DisposeContextUnsafeAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
