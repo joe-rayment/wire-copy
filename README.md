@@ -1,10 +1,10 @@
 # TermReader
 
-A .NET 9 terminal-based web browser with Helix-style keybindings and an integrated audio pipeline for generating audiobooks from web articles.
+A .NET 9 terminal-based web browser with Helix-style keybindings, a distraction-free reader view, and an optional pipeline that turns saved articles into M4B audiobooks.
 
-Browse any website from your terminal with keyboard-only navigation, reader view for distraction-free reading, and optional text-to-speech conversion to M4B audiobook files.
+Browse any website from your terminal with keyboard-only navigation, save articles to reading lists, and (optionally) generate narrated audio with chapter markers from your collections.
 
-> **Note**: When scraping websites, always respect robots.txt and Terms of Service. This project is for educational and personal use.
+> **Note:** When scraping websites, always respect robots.txt and Terms of Service. This project is for educational and personal use.
 
 ## Quick Start
 
@@ -15,18 +15,20 @@ dotnet build
 dotnet run --project src/TermReader.API
 ```
 
+See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configuration.
+
 ## Features
 
-- **Launcher** -- Bookmark grid with numbered quick-jump shortcuts and a URL bar
-- **Link Tree** -- Browse a page's links in a categorized, collapsible tree (content, navigation, external, footer)
-- **Reader View** -- Distraction-free article reading with adjustable width, search, and a focus indicator
-- **Collections** -- Save articles to reading lists with read/unread tracking and per-item caching
-- **Podcast Generation** -- Convert a reading list into an audio podcast via ElevenLabs TTS
-- **Helix-style keybindings** (j/k, h/l, gg/G) for fast keyboard navigation
+- **Launcher** — Bookmark grid with numbered quick-jump shortcuts and a URL bar
+- **Link Tree** — Browse a page's links in a categorized, collapsible tree (content, navigation, external, footer)
+- **Reader View** — Distraction-free article reading with adjustable width, search, and a focus indicator
+- **Collections** — Save articles to reading lists with read/unread tracking and per-item caching
+- **Podcast Generation** — Convert a reading list into a narrated M4B with chapter markers
+- **Helix-style keybindings** (`j`/`k`, `h`/`l`, `gg`/`G`) for fast keyboard navigation
 - **In-page search** with `/` to find text, `n`/`N` to jump between matches
 - **Page caching** for instant back/forward navigation
 - **Smart link classification** groups links into content, navigation, and footer sections
-- **Selenium fallback** for JavaScript-heavy sites, with WebDriver session reuse
+- **Anti-detection browsing** via Patchright (patched Playwright) for sites with bot protection
 
 ## Themes
 
@@ -110,61 +112,65 @@ Each screen supports alternative layouts, toggled with `Ctrl+L`:
 
 Layout preferences persist between sessions.
 
-## Audio Mode
+## Audio / Podcast Mode
 
-Generate audiobook files from scraped articles using Eleven Labs text-to-speech.
+Generate narrated M4B files from your saved articles. Two API keys are required:
 
-### Setup
+- **OpenAI** — text-to-speech (`tts-1`, `nova` voice by default)
+- **Anthropic** — page-structure analysis for cleaner article extraction
 
 ```bash
 cd src/TermReader.API
 dotnet user-secrets init
-dotnet user-secrets set "ElevenLabs:ApiKey" "your-api-key"
+dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
+dotnet user-secrets set "Anthropic:ApiKey" "sk-ant-..."
 ```
 
-### Cost Management
+Cloud publishing of podcast feeds via Google Cloud Storage is supported but optional — see [docs/cookie-encryption.md](docs/cookie-encryption.md) and [docs/data-storage.md](docs/data-storage.md) for details on credential handling.
 
-Eleven Labs charges ~$0.30 per 1,000 characters. The application estimates costs before generating audio, enforces configurable budget limits, and caches generated audio to avoid regeneration.
+### Cost management
 
-## Authentication
+Both APIs enforce per-session budget limits configured in `appsettings.json` (`OpenAiTts:MaxBudgetUsd`, `Anthropic:MaxBudgetUsd`). Generated audio is cached on disk to avoid regeneration when re-running with the same content.
 
-For sites requiring login, provide a session cookie on first run:
+## Authentication for paywalled sites
 
-1. Open Chrome and navigate to the site
-2. Log in to your account
-3. Open DevTools (F12) > Application tab > Cookies
-4. Copy the session cookie value
-5. Paste when prompted
-
-The cookie is encrypted and stored locally for future sessions.
+For sites requiring login, TermReader supports paste-once session cookies that are encrypted at rest with ASP.NET DataProtection. See [docs/cookie-encryption.md](docs/cookie-encryption.md) for the flow.
 
 ## Configuration
 
-Configuration is loaded from `appsettings.json` and can be overridden with environment variables or user secrets.
+Configuration is loaded from `appsettings.json` and can be overridden with environment variables, `dotnet user-secrets`, or a local `secrets.json` (gitignored — see [`secrets.json.example`](secrets.json.example)).
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `ElevenLabs:ApiKey` | Eleven Labs API key | (required for audio) |
-| `ElevenLabs:VoiceId` | Voice ID for narration | `21m00Tcm4TlvDq8ikWAM` |
-| `Audio:OutputDirectory` | Audio file output directory | `./output` |
-| `Audio:BudgetLimitUsd` | Max spend per session | `5.00` |
-| `Browser:Headless` | Run Chrome headless | `false` |
+| `OpenAiTts:ApiKey` | OpenAI API key | (required for audio) |
+| `OpenAiTts:Voice` | TTS voice | `nova` |
+| `OpenAiTts:MaxBudgetUsd` | Max spend per session | `1.00` |
+| `Anthropic:ApiKey` | Anthropic API key | (required for audio) |
+| `Anthropic:Model` | Claude model for analysis | `claude-haiku-4-5-20251001` |
+| `Anthropic:MaxBudgetUsd` | Max spend per session | `0.10` |
+| `Browser:Headless` | Run browser headless | `false` |
+| `Browser:ImplicitWaitSeconds` | Page-element timeout | `30` |
+| `Podcast:Title` | Podcast feed title | `TermReader Podcast` |
 
 ## Project Structure
 
 ```
 src/
-├── TermReader.Domain/          # Core entities and value objects
+├── TermReader.Domain/          # Entities (Bookmarks, Browser, Collections, Credentials)
 ├── TermReader.Application/     # Service interfaces and DTOs
+├── TermReader.Persistence/     # EF Core DbContext, repositories, UnitOfWork
 ├── TermReader.Infrastructure/  # External integrations
-│   ├── Browser/                # Page loading, link extraction, reader view
-│   │   └── UI/                 # Terminal renderer, input handler
-│   ├── Audio/                  # ElevenLabs, FFmpeg, chapter markers
-│   └── Configuration/          # Settings and validation
+│   ├── Browser/                # Patchright automation, link extraction, reader view
+│   │   ├── UI/                 # Terminal renderer, input handler
+│   │   └── Cache/              # Page and content caches
+│   ├── Podcast/                # OpenAI TTS, FFmpeg, M4B chapter markers, GCS publishing
+│   └── Configuration/          # Options classes and validators
 └── TermReader.API/             # Console application entry point
 
 tests/
-└── TermReader.Tests/           # Unit and integration tests
+└── TermReader.Tests/           # Unit and integration tests, organized by feature area
+
+docs/                           # Setup, testing, architecture, cookie encryption, design
 ```
 
 ## Development
@@ -173,67 +179,61 @@ tests/
 # Build
 dotnet build
 
-# Run tests
-dotnet test
+# Fast unit tests (~15s)
+./scripts/test.sh
 
-# Code formatting
+# Full suite including integration tests (~90s)
+./scripts/test.sh --all
+
+# Format
 dotnet format
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 
 ## Docker
 
 ```bash
 docker build -t termreader:latest .
 docker run --rm \
-  -e ELEVEN_LABS_API_KEY="your-api-key" \
+  -e OpenAiTts__ApiKey="sk-..." \
+  -e Anthropic__ApiKey="sk-ant-..." \
   -v $(pwd)/output:/app/output \
   termreader:latest
 ```
 
-## Design System
+## Design
 
-A comprehensive design specification covering color palettes, spacing rules, component catalog, and animation specs is maintained in [`design-system.md`](design-system.md). Visual mockups for all screens are in the [`mockups/`](mockups/) directory.
+A comprehensive design specification covering color palettes, spacing rules, component catalog, and animation specs is maintained in [`docs/design/design-system.md`](docs/design/design-system.md). Visual mockups for all screens are in [`docs/design/mockups/`](docs/design/mockups/).
 
 ## Issue Tracking (Beads)
 
-This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored locally in the `.beads/` directory alongside the code -- no external service required.
-
-### Setting up Beads on a new machine
-
-1. Install the `bd` binary from [github.com/steveyegge/beads](https://github.com/steveyegge/beads) (download the release for your platform and place it on your `PATH`)
-2. The `.beads/` directory is already in the repo -- no `bd init` needed after cloning
-
-### Common commands
+This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored locally in the `.beads/` directory alongside the code — no external service required. Beads is optional for contributors; you can also open standard GitHub issues.
 
 ```bash
-bd ready                  # Show issues ready to work (no blockers)
+bd ready                  # Issues ready to work on
 bd list --status=open     # All open issues
-bd show <id>              # Issue details with dependencies
-bd create --title="Fix bug" --description="Details" --type=bug --priority=2
-bd update <id> --status=in_progress   # Claim work
-bd close <id>             # Mark complete
-bd dep add <issue> <depends-on>       # Add dependency
-bd stats                  # Project health overview
+bd show <id>              # Issue details
+bd create --title="..." --description="..." --type=bug --priority=2
+bd update <id> --status=in_progress
+bd close <id>
 ```
-
-### Notes
-
-- The `.beads/` directory is committed to the repo so issues travel with the code
-- Priority scale: P0 (critical) through P4 (backlog), default P2
-- Issue IDs are short hashes like `docs-1p7` -- use them with any `bd` command
-- Run `bd doctor` if something seems off
 
 ## Technology Stack
 
 - **.NET 9.0** with C# 12
-- **Selenium WebDriver** for JavaScript-heavy site fallback
+- **[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-dotnet)** — patched Playwright for .NET (CDP-leak patched, ARM64-native)
 - **HtmlAgilityPack** for HTML parsing and content extraction
-- **ElevenLabs-DotNet** for text-to-speech
+- **OpenAI .NET SDK** for text-to-speech
+- **Anthropic .NET SDK** for page-structure analysis
 - **FFMpegCore** for audio processing
-- **ATL.NET** for M4B chapter markers
+- **z440.atl.core** (ATL.NET) for M4B chapter markers
+- **Entity Framework Core 9** + **SQLite** for local persistence
+- **ASP.NET DataProtection** for cookie / credential encryption at rest
+- **Google.Cloud.Storage** for optional podcast feed publishing
+- **Terminal.Gui 2** for the terminal UI shell
 - **Serilog** for structured logging
-- **Polly** for retry/resilience
 
 ## License
 
-Educational use only.
+[MIT](LICENSE) — see the LICENSE file.

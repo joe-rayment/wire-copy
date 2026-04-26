@@ -1,4 +1,4 @@
-// Educational and personal use only.
+// Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Text.Json;
 using FluentAssertions;
@@ -15,8 +15,8 @@ namespace TermReader.Tests.Podcast;
 /// <summary>
 /// Unit tests for GcsStorageClient initialization, validation, and error paths.
 /// These complement the always-skipped integration tests that require GCS credentials.
-/// The CLAUDE.md documents an incident where mocking ICloudStorageClient hid the fact
-/// that StorageClient.CreateAsync() throws InvalidOperationException without credentials.
+/// They exist because mocking ICloudStorageClient previously hid the fact that
+/// StorageClient.CreateAsync() throws InvalidOperationException without credentials.
 /// These tests exercise the actual exception types and validation logic.
 /// </summary>
 [Trait("Category", "Unit")]

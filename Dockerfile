@@ -8,6 +8,7 @@ WORKDIR /src
 COPY ["TermReader.sln", "./"]
 COPY ["src/TermReader.Domain/TermReader.Domain.csproj", "src/TermReader.Domain/"]
 COPY ["src/TermReader.Application/TermReader.Application.csproj", "src/TermReader.Application/"]
+COPY ["src/TermReader.Persistence/TermReader.Persistence.csproj", "src/TermReader.Persistence/"]
 COPY ["src/TermReader.Infrastructure/TermReader.Infrastructure.csproj", "src/TermReader.Infrastructure/"]
 COPY ["src/TermReader.API/TermReader.API.csproj", "src/TermReader.API/"]
 
@@ -35,7 +36,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
-    chromium-driver \
     xvfb \
     fonts-liberation \
     libasound2 \
@@ -57,13 +57,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
-
-# Set Chrome/chromedriver paths for Selenium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
-
-# Prevent Selenium Manager from downloading its own binaries
-ENV SE_MANAGER_OFFLINE=true
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
