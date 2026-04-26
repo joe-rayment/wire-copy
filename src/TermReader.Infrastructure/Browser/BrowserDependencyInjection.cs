@@ -182,16 +182,9 @@ public static class BrowserDependencyInjection
             var preloadLogger = sp.GetRequiredService<ILogger<Cache.BackgroundPreloadService>>();
             var contentExtractor = sp.GetRequiredService<IReadableContentExtractor>();
 
-            // Article content cache is optional (only available when podcast services are registered)
-            Podcast.Cache.IArticleContentCache? articleCache = null;
-            try
-            {
-                articleCache = sp.GetService<Podcast.Cache.IArticleContentCache>();
-            }
-            catch
-            {
-                // Podcast services may not be registered
-            }
+            // Article content cache is optional (only available when podcast services are registered).
+            // GetService returns null for unregistered services, no try/catch needed.
+            var articleCache = sp.GetService<Podcast.Cache.IArticleContentCache>();
 
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
 

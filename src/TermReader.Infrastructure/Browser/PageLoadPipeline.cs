@@ -973,16 +973,11 @@ public class PageLoadPipeline
     {
         if (!_articleContentCacheResolved)
         {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                _articleContentCache = scope.ServiceProvider.GetService<IArticleContentCache>();
-            }
-            catch
-            {
-                // Podcast services may not be registered
-            }
-
+            // GetService returns null for unregistered services; the only realistic
+            // exception path here is scope-creation failure, which would be a deeper
+            // host problem we shouldn't silently swallow.
+            using var scope = _scopeFactory.CreateScope();
+            _articleContentCache = scope.ServiceProvider.GetService<IArticleContentCache>();
             _articleContentCacheResolved = true;
         }
 
@@ -996,16 +991,8 @@ public class PageLoadPipeline
     {
         if (!_hierarchyConfigStoreResolved)
         {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                _hierarchyConfigStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-            }
-            catch
-            {
-                // Service may not be registered
-            }
-
+            using var scope = _scopeFactory.CreateScope();
+            _hierarchyConfigStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
             _hierarchyConfigStoreResolved = true;
         }
 
