@@ -35,7 +35,7 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.7" />
-    <PackageReference Include="Terminal.Gui" Version="2.0.0-*" />
+    <PackageReference Include="Terminal.Gui" Version="2.0.0" />
     <PackageReference Include="z440.atl.core" Version="6.8.0" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.20.0.135146">
       <PrivateAssets>all</PrivateAssets>
@@ -54,14 +54,10 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <AnalysisLevel>latest</AnalysisLevel>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- Explicitly suppress StyleCop rules that have 100+ violations -->
+    <!-- StyleCop rules with 100+ existing violations and the NuGet downgrade
+         warning from mixed Microsoft.Extensions.* (9.0.13 + 10.0.2) versions. -->
     <NoWarn>$(NoWarn);SA1413;SA1116;SA0001;SA1101;SA1309;NU1608</NoWarn>
   </PropertyGroup>
 

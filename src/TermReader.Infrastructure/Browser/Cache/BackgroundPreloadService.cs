@@ -690,8 +690,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogDebug(ex, "Failed to refresh paywalled cookie state; assuming none");
             _hasPaywalledCookies = false;
         }
     }
