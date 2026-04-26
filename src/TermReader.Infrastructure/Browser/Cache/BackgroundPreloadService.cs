@@ -663,7 +663,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
-    private void RefreshPaywalledCookieState()
+    // Synchronous variant for timer-callback callers (OnDebounceElapsed) which run
+    // on the thread pool with no sync context — no deadlock risk.
+    private void RefreshPaywalledCookieState() =>
+        RefreshPaywalledCookieStateAsync().GetAwaiter().GetResult();
+
+    private async Task RefreshPaywalledCookieStateAsync()
     {
         if (_cookieManager == null)
         {
@@ -673,7 +678,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         try
         {
-            var info = _cookieManager.GetCookieInfoAsync().GetAwaiter().GetResult();
+            var info = await _cookieManager.GetCookieInfoAsync().ConfigureAwait(false);
             var hadCookies = _hasPaywalledCookies;
             _hasPaywalledCookies = info is { Exists: true, IsExpired: false };
 
@@ -681,7 +686,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             // and clear paywalled domains from _needsJsDomains so they can be re-queued
             if (_hasPaywalledCookies && !hadCookies)
             {
-                _httpCookieRefresher?.RefreshAsync().GetAwaiter().GetResult();
+                if (_httpCookieRefresher != null)
+                {
+                    await _httpCookieRefresher.RefreshAsync().ConfigureAwait(false);
+                }
+
                 _logger.LogInformation("Paywalled cookies detected, refreshed HTTP cookie container");
 
                 foreach (var origin in _needsJsDomains.Keys.Where(IsPaywalledDomain).ToList())
@@ -927,7 +936,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         // expire mid-session) and enforce per-session limit
         if (IsPaywalledDomain(url))
         {
-            RefreshPaywalledCookieState();
+            await RefreshPaywalledCookieStateAsync().ConfigureAwait(false);
             if (!_hasPaywalledCookies || _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
             {
                 _logger.LogDebug(
