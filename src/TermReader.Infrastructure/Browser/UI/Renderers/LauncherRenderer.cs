@@ -18,13 +18,24 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    // Wider block-letter wordmark for better readability. Each letter ~5 cols wide.
+    private const int WordmarkWidth = 87;
+
+    // 6-row ASCII-art wordmark from termreader-design-system/dist/preview/brand-logo.html.
+    // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
+    // inner rows (3,4) in CelebrationFg (#ff5fd7 ANSI 206) for vertical stripe.
+    // Width: 87 columns. Falls back to single-line title when terminal is narrower.
     private static readonly string[] Wordmark =
     [
-        "▀▀█▀▀ █▀▀ █▀▀█ █▀▄▀█ █▀▀█ █▀▀ █▀▀█ █▀▀▄ █▀▀ █▀▀█",
-        "  █   █▀▀ █▄▄▀ █ ▀ █ █▄▄▀ █▀▀ █▄▄█ █  █ █▀▀ █▄▄▀",
-        "  █   ▀▀▀ ▀ ▀▀ ▀   ▀ ▀ ▀▀ ▀▀▀ ▀  ▀ ▀▀▀  ▀▀▀ ▀ ▀▀",
+        " ████████╗███████╗██████╗ ███╗   ███╗  ██████╗ ███████╗ █████╗ ██████╗ ███████╗██████╗ ",
+        " ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║  ██╔══██╗██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗",
+        "    ██║   █████╗  ██████╔╝██╔████╔██║  ██████╔╝█████╗  ███████║██║  ██║█████╗  ██████╔╝",
+        "    ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║  ██╔══██╗██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗",
+        "    ██║   ███████╗██║  ██║██║ ╚═╝ ██║  ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║",
+        "    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝",
     ];
+
+    // Rows 3 and 4 (zero-indexed 2 and 3) use the darker pink (CelebrationFg) for vertical stripe.
+    private static readonly bool[] WordmarkUsesDark = [false, false, true, true, false, false];
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -93,9 +104,10 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
     {
-        // Large wordmark: border + pad + 3 art + subtitle + pad + border = 8
+        // Large wordmark: border + pad + 6 art rows + subtitle + pad + border = 11
         // Narrow: border + title + subtitle + pad + border = 5
-        var headerLines = terminalWidth >= 56 ? 8 : 5;
+        // Threshold: large wordmark needs WordmarkWidth (87) + 8 chars of margin/border.
+        var headerLines = terminalWidth >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
 
@@ -797,13 +809,15 @@ internal class LauncherRenderer
     private void RenderHeader(int width, ThemePalette p)
     {
         var borderColor = p.GetDimFg().AnsiFg;
-        var titleColor = p.HeaderTitleFg.AnsiFg;
+        var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
+        var titleColorDark = p.GetCelebrationFg().AnsiFg; // dark pink  (#ff5fd7 ANSI 206)
         var subtitle = "a better reading experience";
-        var wordmarkWidth = Wordmark[0].Length;
-        var useLargeWordmark = width >= wordmarkWidth + 8;
+        var useLargeWordmark = width >= WordmarkWidth + 8;
 
-        // Box sizing: ~75% of width, same proportion as the URL bar
-        var boxOuter = Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
+        // Box sizing: large enough to fit the wordmark when shown, else ~75% of width.
+        var boxOuter = useLargeWordmark
+            ? Math.Min(width - 4, WordmarkWidth + 6)
+            : Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
         var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2); // center the box
         var margin = new string(' ', leftMargin);
 
@@ -826,9 +840,10 @@ internal class LauncherRenderer
         if (useLargeWordmark)
         {
             BlankLine();
-            foreach (var wl in Wordmark)
+            for (var i = 0; i < Wordmark.Length; i++)
             {
-                BoxLine($" {titleColor}{Bold}{wl}{Reset}", wl.Length + 1);
+                var rowColor = WordmarkUsesDark[i] ? titleColorDark : titleColor;
+                BoxLine($"{rowColor}{Bold}{Wordmark[i]}{Reset}", Wordmark[i].Length);
             }
         }
         else

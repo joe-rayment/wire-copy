@@ -64,8 +64,9 @@
   --tr-sp-6:   54px;  /* 6 cells */
 
   /* ── Borders & radii ────────────────────────────────────────────────── */
-  --tr-border-width: 1px;
-  --tr-radius-box:   6px;  /* mockup terminal frame only — in-app uses ╭╮ */
+  /* Real terminals do not have CSS borders or border-radius. All boxes are
+     drawn with box-drawing characters (╭─╮ │ ╰─╯ for rounded, ┌─┐ │ └─┘ for
+     square, ╔═╗ ║ ╚═╝ for double). See TERMINAL_REALITY.md.                */
 
   /* ── Focus / state ─────────────────────────────────────────────────── */
   --tr-focus-bar: var(--tr-muted); /* ▌ accent bar color                    */
@@ -93,14 +94,16 @@ h1 {
   margin: 0 0 var(--tr-sp-1);
 }
 h2 {
+  /* In-app, h2 is just bold amber UPPERCASE preceded by a row of ─ glyphs.
+     In docs we leave the text bare and let ── lines (drawn in markdown or
+     as <hr> with appearance:none + content) provide the rule. */
   color: var(--tr-amber);
   font-family: var(--tr-font-mono);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
   margin: var(--tr-sp-4) 0 var(--tr-sp-1);
-  padding-bottom: 6px;
-  border-bottom: 1px solid #2a2a2a;
 }
 h3 {
   color: var(--tr-bright);
@@ -127,30 +130,24 @@ code, kbd, pre {
 
 /* =============================================================================
    Terminal frame (for recreating in-app mockups inside an HTML page)
+   -----------------------------------------------------------------------------
+   The "frame" of a real terminal is the OS window chrome — not part of the UI.
+   When you render an in-app mockup on an HTML page, just give it a black
+   background and a generous padding. NO CSS borders, NO border-radius, NO
+   traffic-light dots. If you need a window-chrome treatment for marketing
+   contexts, draw it with box-drawing chars: ╭─ TermReader ─╮ across the top
+   row of the frame.
    ============================================================================= */
 
 .tr-terminal {
   background: var(--tr-bg-pure);
-  border: 1px solid #333;
-  border-radius: var(--tr-radius-box);
-  padding: 8px 12px;
+  padding: 12px 14px;
   overflow-x: auto;
   white-space: pre;
   font-family: var(--tr-font-mono);
   font-size: var(--tr-size-base);
   line-height: var(--tr-line-loose);
   color: var(--tr-green);
-  position: relative;
-}
-.tr-terminal::before {
-  content: '● ● ●';
-  display: block;
-  color: #555;
-  font-size: 10px;
-  letter-spacing: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #222;
 }
 
 /* =============================================================================

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Modal states</title>
+<title>Modals — terminal-native</title>
 <style>
   html, body { background: #0a0a0a; margin: 0; }
   body {
@@ -12,85 +12,76 @@
     line-height: 1.55;
     color: #00d700;
   }
-  .lbl {
-    color: #87ff87;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin: 0 0 6px;
-    font-weight: 700;
-  }
-  .block { margin-bottom: 20px; }
+  .lbl { color: #87ff87; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 6px; font-weight: 700; }
+  .block { margin-bottom: 22px; }
+  pre { margin: 0; white-space: pre; font-family: inherit; font-size: 15px; line-height: 1.55; }
 
-  /* Modals rendered with CSS borders for guaranteed alignment.
-     In-terminal, these draw with ╭─╮ │ ╰─╯ — here we preserve the look
-     with border + border-radius. */
-  .modal {
-    display: inline-block;
-    border: 1.5px solid #5fff5f;
-    border-radius: 10px;
-    padding: 18px 22px;
-    min-width: 340px;
-    color: #00d700;
-  }
-  .modal .row { margin: 0 0 4px; }
-  .modal .row:last-child { margin-bottom: 0; }
+  .g  { color: #00d700; font-weight: 700; }
+  .m  { color: #5fff87; }
+  .mu { color: #87ff87; }
+  .r  { color: #ff5f5f; font-weight: 700; }
+  .rd { color: #ff5f5f; }
+  .c  { color: #00ffff; font-weight: 700; }
+  .am { color: #ffaf00; font-weight: 700; }
+  .pk { color: #ff87d7; font-weight: 700; }
+  .pkd{ color: #ff87d7; }
+  .d  { color: #5fff5f; }
 
-  .g   { color: #00d700; font-weight: 700; }
-  .m   { color: #5fff87; }
-  .r   { color: #ff5f5f; font-weight: 700; }
-  .c   { color: #00ffff; font-weight: 700; }
-  .am  { color: #ffd75f; font-weight: 700; }
-  .b   { color: #ff87d7; font-weight: 700; }
-  .spin { color: #00d700; font-weight: 700; display: inline-block; animation: spin 1s steps(4) infinite; }
-  @keyframes spin {
-    0%   { content: "|"; }
-    25%  { content: "/"; }
-    50%  { content: "-"; }
-    75%  { content: "\\"; }
-  }
-  .spin::before { content: "|"; animation: spinChar 1s steps(4) infinite; }
-  @keyframes spinChar {
-    0%   { content: "|"; }
-    25%  { content: "/"; }
-    50%  { content: "-"; }
-    75%  { content: "\\"; }
-  }
+  /* Spinner is a braille glyph (⠹⠸⠼⠴⠦⠧⠇⠏) cycled by glyph-swap on a tick.
+     No CSS rotation — that's not a thing in a terminal. */
 </style>
 </head>
 <body>
 
   <div class="block">
-    <div class="lbl">Loading</div>
-    <div class="modal">
-      <div class="row"><span class="g">Loading page...</span></div>
-      <div class="row"><span class="m">arstechnica.com/science/2026</span></div>
-    </div>
+    <div class="lbl">Loading · thin-rule frame, single-cell braille spinner</div>
+<pre><span class="d">┌──────────────────────────────────────┐</span>
+<span class="d">│</span>  <span class="g">⠹</span> <span class="g">Loading page...</span>                  <span class="d">│</span>
+<span class="d">│</span>     <span class="m">arstechnica.com/science/2026</span>   <span class="d">│</span>
+<span class="d">└──────────────────────────────────────┘</span></pre>
   </div>
 
   <div class="block">
-    <div class="lbl">Error</div>
-    <div class="modal" style="border-color:#ff5f5f">
-      <div class="row"><span class="r">Page failed to load</span></div>
-      <div class="row"><span class="m">Connection timed out after 30s</span></div>
-      <div class="row" style="margin-top:10px">
-        <span class="c">R</span><span class="m">:retry &nbsp;</span>
-        <span class="c">b</span><span class="m">:back &nbsp;</span>
-        <span class="c">o</span><span class="m">:browser</span>
-      </div>
-    </div>
+    <div class="lbl">Error · red rule + key hints in cyan</div>
+<pre><span class="rd">┌──────────────────────────────────────┐</span>
+<span class="rd">│</span>  <span class="r">✗ Page failed to load</span>               <span class="rd">│</span>
+<span class="rd">│</span>     <span class="m">Connection timed out after 30s</span>   <span class="rd">│</span>
+<span class="rd">│</span>                                      <span class="rd">│</span>
+<span class="rd">│</span>     <span class="c">R</span><span class="m">:retry  </span><span class="c">b</span><span class="m">:back  </span><span class="c">o</span><span class="m">:browser</span>     <span class="rd">│</span>
+<span class="rd">└──────────────────────────────────────┘</span></pre>
   </div>
 
   <div class="block">
-    <div class="lbl">Confirm — delete bookmark</div>
-    <div class="modal" style="border-color:#ff87d7">
-      <div class="row"><span class="b">Delete this bookmark?</span></div>
-      <div class="row"><span class="m">NEW YORK TIMES &nbsp;·&nbsp; nytimes.com</span></div>
-      <div class="row" style="margin-top:10px">
-        <span class="c">y</span><span class="m">:yes &nbsp; &nbsp;</span>
-        <span class="c">n</span><span class="m">:no / Esc</span>
-      </div>
-    </div>
+    <div class="lbl">Confirm — delete bookmark · pink rule for destructive intent</div>
+<pre><span class="pkd">┌──────────────────────────────────────┐</span>
+<span class="pkd">│</span>  <span class="pk">Delete this bookmark?</span>               <span class="pkd">│</span>
+<span class="pkd">│</span>     <span class="m">NEW YORK TIMES · nytimes.com</span>     <span class="pkd">│</span>
+<span class="pkd">│</span>                                      <span class="pkd">│</span>
+<span class="pkd">│</span>     <span class="c">y</span><span class="m">:yes    </span><span class="c">n</span><span class="m">:no / Esc</span>           <span class="pkd">│</span>
+<span class="pkd">└──────────────────────────────────────┘</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Help · double rule for "system" surfaces</div>
+<pre><span class="d">╔══════════════════════════════════════╗</span>
+<span class="d">║</span>  <span class="g">KEYBOARD SHORTCUTS</span>                  <span class="d">║</span>
+<span class="d">║</span>                                      <span class="d">║</span>
+<span class="d">║</span>  <span class="c">j/k</span><span class="m">     move down/up</span>              <span class="d">║</span>
+<span class="d">║</span>  <span class="c">Enter</span><span class="m">   open                     </span> <span class="d">║</span>
+<span class="d">║</span>  <span class="c">s</span><span class="m">       save to reading list  </span>     <span class="d">║</span>
+<span class="d">║</span>  <span class="c">p</span><span class="m">       generate podcast      </span>     <span class="d">║</span>
+<span class="d">║</span>  <span class="c">?</span><span class="m">       help (this dialog)   </span>     <span class="d">║</span>
+<span class="d">║</span>                                      <span class="d">║</span>
+<span class="d">║</span>  <span class="mu">Esc · close</span>                         <span class="d">║</span>
+<span class="d">╚══════════════════════════════════════╝</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Why this works · all chrome is text in cells, not CSS borders</div>
+<pre><span class="mu"> · ┌─┐ │ └─┘ thin · ╔═╗ ║ ╚═╝ double · ╭─╮ │ ╰─╯ round
+ · Border color is just the foreground of those glyphs.
+ · Width is fixed in cells (here 40), so corners always align.
+ · Spinners are braille glyphs animated by frame, not CSS rotate.</span></pre>
   </div>
 
 </body>
