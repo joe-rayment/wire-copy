@@ -18,12 +18,12 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    // 3-line-tall block-letter wordmark using █▀▄ characters for solid, readable text.
+    // Wider block-letter wordmark for better readability. Each letter ~5 cols wide.
     private static readonly string[] Wordmark =
     [
-        "▀█▀ █▀▀ █▀█ █▀▄▀█ █▀█ █▀▀ ▄▀█ █▀▄ █▀▀ █▀█",
-        " █  █▀  █▀▄ █ ▀ █ █▀▄ █▀  █▀█ █ █ █▀  █▀▄",
-        " █  ▀▀▀ ▀ ▀ ▀   ▀ ▀ ▀ ▀▀▀ ▀ ▀ ▀▀  ▀▀▀ ▀ ▀",
+        "▀▀█▀▀ █▀▀ █▀▀█ █▀▄▀█ █▀▀█ █▀▀ █▀▀█ █▀▀▄ █▀▀ █▀▀█",
+        "  █   █▀▀ █▄▄▀ █ ▀ █ █▄▄▀ █▀▀ █▄▄█ █  █ █▀▀ █▄▄▀",
+        "  █   ▀▀▀ ▀ ▀▀ ▀   ▀ ▀ ▀▀ ▀▀▀ ▀  ▀ ▀▀▀  ▀▀▀ ▀ ▀▀",
     ];
 
     private readonly RenderHelpers _helpers;
