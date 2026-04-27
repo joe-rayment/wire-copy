@@ -189,7 +189,7 @@ public class PageLoadPipeline
 
                 return new PageLoadPipelineResult
                 {
-                    Page = RebuildFromBuildCache(buildCache),
+                    Page = await RebuildFromBuildCacheAsync(buildCache).ConfigureAwait(false),
                     FetchMethod = FetchMethod.Cached,
                     BuildResult = null,
                 };
@@ -464,19 +464,19 @@ public class PageLoadPipeline
     /// Creates a fresh NavigationTree with clean selection state.
     /// Used by NavigateToAsync for build cache hits.
     /// </summary>
-    public Page RebuildFromBuildCache(PageBuildCache cache)
+    public async Task<Page> RebuildFromBuildCacheAsync(PageBuildCache cache)
     {
         var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
 
         NavigationTree tree;
         if (cache.HierarchyConfig != null)
         {
-            tree = _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).GetAwaiter().GetResult();
+            tree = await _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
         else
         {
-            tree = _treeBuilder.BuildTreeAsync(cache.Links).GetAwaiter().GetResult();
+            tree = await _treeBuilder.BuildTreeAsync(cache.Links).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(false);
         }
 
@@ -973,16 +973,11 @@ public class PageLoadPipeline
     {
         if (!_articleContentCacheResolved)
         {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                _articleContentCache = scope.ServiceProvider.GetService<IArticleContentCache>();
-            }
-            catch
-            {
-                // Podcast services may not be registered
-            }
-
+            // GetService returns null for unregistered services; the only realistic
+            // exception path here is scope-creation failure, which would be a deeper
+            // host problem we shouldn't silently swallow.
+            using var scope = _scopeFactory.CreateScope();
+            _articleContentCache = scope.ServiceProvider.GetService<IArticleContentCache>();
             _articleContentCacheResolved = true;
         }
 
@@ -996,16 +991,8 @@ public class PageLoadPipeline
     {
         if (!_hierarchyConfigStoreResolved)
         {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                _hierarchyConfigStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-            }
-            catch
-            {
-                // Service may not be registered
-            }
-
+            using var scope = _scopeFactory.CreateScope();
+            _hierarchyConfigStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
             _hierarchyConfigStoreResolved = true;
         }
 

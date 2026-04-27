@@ -146,7 +146,7 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiTts:Voice` | TTS voice | `nova` |
 | `OpenAiTts:MaxBudgetUsd` | Max spend per session | `1.00` |
 | `Anthropic:ApiKey` | Anthropic API key | (required for audio) |
-| `Anthropic:Model` | Claude model for analysis | `claude-haiku-4-5-20251001` |
+| `Anthropic:Model` | Claude model for analysis | see `appsettings.json` |
 | `Anthropic:MaxBudgetUsd` | Max spend per session | `0.10` |
 | `Browser:Headless` | Run browser headless | `false` |
 | `Browser:ImplicitWaitSeconds` | Page-element timeout | `30` |

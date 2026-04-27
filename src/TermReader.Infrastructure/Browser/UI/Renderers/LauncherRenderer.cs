@@ -804,7 +804,6 @@ internal class LauncherRenderer
 
         // Box sizing: ~75% of width, same proportion as the URL bar
         var boxOuter = Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
-        var boxInner = boxOuter - 2; // space inside │...│
         var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2); // center the box
         var margin = new string(' ', leftMargin);
 
