@@ -135,7 +135,7 @@ public class BookmarkRepositoryTests : TestDatabaseFixture
         await DbContext.SaveChangesAsync();
 
         var all = await _sut.GetAllAsync();
-        all.Should().HaveCount(7);
+        all.Should().HaveCount(9);
         all.Select(b => b.Name).Should().Contain("CBC News");
     }
 

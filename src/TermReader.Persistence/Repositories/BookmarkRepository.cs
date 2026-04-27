@@ -75,6 +75,8 @@ public class BookmarkRepository : IBookmarkRepository
             Bookmark.Create("The Toronto Star", "https://www.thestar.com", 4),
             Bookmark.Create("Techmeme", "https://www.techmeme.com", 5),
             Bookmark.Create("Wall Street Journal", "https://www.wsj.com", 6),
+            Bookmark.Create("Wired", "https://www.wired.com", 7),
+            Bookmark.Create("The New Yorker", "https://www.newyorker.com", 8),
         };
 
         foreach (var bookmark in defaults)
