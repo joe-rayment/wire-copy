@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reader view elements</title>
+<style>
+  html, body { background: #0a0a0a; margin: 0; }
+  body {
+    padding: 22px 24px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #00d700;
+  }
+  .lbl { color: #87ff87; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px; font-weight: 700; }
+  .block { margin-bottom: 22px; }
+  pre { margin: 0; white-space: pre; font-family: inherit; font-size: 15px; line-height: 1.55; }
+
+  .b   { color: #00d700; font-weight: 700; }
+  .g   { color: #00d700; }
+  .gB  { color: #00d700; font-weight: 700; }
+  .m   { color: #5fff87; }
+  .mu  { color: #87ff87; }
+  .d   { color: #5fff5f; }
+  .c   { color: #00ffff; font-weight: 700; }
+  .am  { color: #ffaf00; font-weight: 700; }
+  .pk  { color: #ff87d7; font-weight: 700; }
+
+  .rail { color: #ffaf00; font-weight: 700; }
+  .active { color: #ffd787; font-weight: 700; }
+  .underline { color: #ffaf00; font-weight: 700; }
+
+  mark.search { background: #005f87; color: #d7ffff; padding: 0; }
+  .quote { color: #ff87d7; font-weight: 700; }
+</style>
+</head>
+<body>
+
+  <div class="block">
+    <div class="lbl">Article header — uppercase title, byline, double rule</div>
+<pre><span class="b">SPACEX STARSHIP REACHES ORBIT ON ITS FIRST FULL FLIGHT</span>
+
+<span class="m">Stephen Clark  ·  March 18, 2026  ·  arstechnica.com</span>
+<span class="d">══════════════════════════════════════════════════════════</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Reading position — paragraph rail + active-line underline (one mark in two parts)</div>
+<pre><span class="g">SpaceX's massive Starship rocket completed its first full</span>
+<span class="rail">│</span> <span class="g">orbital flight on Tuesday, marking what engineers called</span>
+<span class="rail">│</span> <span class="active">a watershed moment for the program after years of</span>
+<span class="rail">│</span> <span class="underline">────────────────────────────────────────────────</span>
+<span class="rail">│</span> <span class="g">explosive failures during atmospheric reentry tests.</span>
+
+<span class="g">The Super Heavy booster separated cleanly at stage one,</span>
+<span class="g">then performed a controlled descent back to the launch pad.</span></pre>
+    <div class="lbl" style="margin-top: 10px; color: #87ff87;">
+      The vertical │ marks the paragraph you're in. The ─── drops underneath the active line.
+      Same color, same weight — one mark in two parts.
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Saved paragraph — rail without underline (annotated)</div>
+<pre><span class="rail">│</span> <span class="g">The booster has now flown four missions in 2026, with</span>
+<span class="rail">│</span> <span class="g">a fifth scheduled before the end of Q2. Each reflight</span>
+<span class="rail">│</span> <span class="g">trims roughly 8% off cost-per-kilogram-to-orbit.</span>
+
+  <span class="c">└─ note </span><span class="mu">(you, today)</span><span class="c">  reread this when explaining</span>
+                  <span class="c">the launch sequence to anyone</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Inline highlights — blue bg = search hit, bright pink = pulled quote</div>
+<pre><span class="g">Engineers had spent </span><mark class="search">three years</mark><span class="g"> refining the
+flap actuators after the Mk1 prototype's </span><mark class="search">three years</mark><span class="g"> of
+ground testing failures.</span>
+
+<span class="quote">"This is the most significant launch since Apollo,"</span>
+<span class="g">said one mission director on the post-flight call.</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Footnote refs — amber [N], dashed ASCII divider</div>
+<pre><span class="g">The booster has now flown four missions in 2026 </span><span class="am">[1]</span><span class="g">.
+The reentry corridor was shortened by 12% vs IFT-3 </span><span class="am">[2]</span><span class="g">.</span>
+
+<span class="d">- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</span>
+<span class="am">[1]</span><span class="mu"> Includes the IFT-7 retest in February.</span>
+<span class="am">[2]</span><span class="mu"> Per SpaceX flight data published March 17.</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Reading progress — eighth-block bar, all single-cell glyphs</div>
+<pre><span class="mu">L 32/87  </span><span class="d">▕</span><span class="gB">█████████</span><span class="am">▍</span><span class="d">                          ▏</span><span class="gB">  38%</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Reader status line</div>
+<pre><span class="d">──────────────────────────────────────────────────────────</span>
+ <span class="gB">ReaderView</span>  <span class="c">s</span><span class="m">:save  </span><span class="c">o</span><span class="m">:browser  </span><span class="c">h/l</span><span class="m">:width  </span><span class="c">v</span><span class="m">:links  </span><span class="c">b</span><span class="m">:back</span></pre>
+  </div>
+
+</body>
+</html>

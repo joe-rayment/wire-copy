@@ -6,148 +6,86 @@
 <style>
   html, body { background: #0a0a0a; margin: 0; }
   body {
-    padding: 24px;
+    padding: 22px 24px;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.55;
     color: #00d700;
   }
-  .lbl {
-    color: #87ff87;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin: 0 0 10px;
-    font-weight: 700;
-  }
+  .lbl { color: #87ff87; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px; font-weight: 700; }
   .block { margin-bottom: 22px; }
+  pre { margin: 0; white-space: pre; font-family: inherit; font-size: 15px; line-height: 1.55; }
 
-  /* HERO CTA — CSS-rendered rounded box with pink pulsing border */
-  .hero {
-    display: block;
-    border: 2px solid #ff87d7;
-    border-radius: 12px;
-    padding: 20px 26px;
-    position: relative;
-    min-height: 100px;
-    animation: pulse 1.8s ease-in-out infinite;
-    max-width: 560px;
-  }
-  @keyframes pulse {
-    0%, 100% { border-color: #ff87d7; box-shadow: 0 0 0 0 rgba(255,135,215,0.0); }
-    50%      { border-color: #ff5fd7; box-shadow: 0 0 18px 0 rgba(255,95,215,0.35); }
-  }
-  .hero .row { display: flex; align-items: center; gap: 16px; }
-  .hero .chev {
-    color: #ff87d7;
-    font-weight: 700;
-    font-size: 22px;
-    animation: march 1.4s linear infinite;
-    letter-spacing: 2px;
-  }
-  @keyframes march {
-    0%   { color: #ff87d7; transform: translateX(0); }
-    50%  { color: #ffafff; transform: translateX(3px); }
-    100% { color: #ff87d7; transform: translateX(0); }
-  }
-  .hero .title {
-    color: #ffafe0;
-    font-weight: 700;
-    font-size: 22px;
-    letter-spacing: 0.08em;
-  }
-  .hero .sub {
-    color: #5fff87;
-    margin-top: 6px;
-    margin-left: 52px;
-  }
-  .hero .meta-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 14px;
-    margin-left: 52px;
-    margin-right: 4px;
-  }
-  .hero .meta { color: #5fff87; }
-  .hero .key {
-    color: #00ffff;
-    font-weight: 700;
-    border: 1px solid #00ffff;
-    padding: 2px 10px;
-    border-radius: 4px;
+  .pk  { color: #ff87d7; font-weight: 700; }
+  .pk2 { color: #ff5fd7; font-weight: 700; }
+  .pkB { color: #ffafff; font-weight: 700; }
+  .g   { color: #00d700; }
+  .gB  { color: #00d700; font-weight: 700; }
+  .m   { color: #5fff87; }
+  .c   { color: #00ffff; font-weight: 700; }
+
+  /* Border palette-cycle: re-renders the border rows in 4 pink shades each tick.
+     This is what an ANSI palette swap looks like in a real terminal. */
+  .cycle .row { animation: cycle 0.72s steps(1) infinite; }
+  .cycle .row.r0 { animation-delay: 0s; }
+  .cycle .row.r1 { animation-delay: 0.18s; }
+  .cycle .row.r2 { animation-delay: 0.36s; }
+  .cycle .row.r3 { animation-delay: 0.54s; }
+  @keyframes cycle {
+    0%   { color: #ff87d7; }
+    25%  { color: #ff5fd7; }
+    50%  { color: #ffafff; }
+    75%  { color: #ff5fd7; }
+    100% { color: #ff87d7; }
   }
 
-  /* Generating state */
-  .generating { animation: none; border-color: #ff5fd7; }
-  .generating .title { color: #ffafff; }
-  .progress-track {
-    display: inline-block;
-    height: 10px;
-    width: 260px;
-    background: #1a0a1a;
-    border: 1px solid #2a1a2a;
-    border-radius: 3px;
-    position: relative;
-    overflow: hidden;
-    vertical-align: middle;
-  }
-  .progress-fill {
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 28%;
-    background: linear-gradient(90deg, #ff5fd7, #ffd75f);
-  }
-  .pct { color: #ffafff; margin-left: 10px; font-weight: 700; }
-
-  /* Compact footer slab */
-  .strip {
-    display: inline-block;
-    background: #005f00;
-    color: #ffffff;
-    padding: 10px 18px;
-    border-radius: 4px;
-    font-weight: 700;
-  }
-  .strip .chev2 { color: #87ff87; margin-right: 10px; letter-spacing: 1px; }
-  .strip .key2 { color: #00ffff; margin-left: 14px; border: 1px solid #00ffff; padding: 1px 8px; border-radius: 3px; font-size: 13px; }
+  /* Compact reverse-video footer. */
+  .rev { background: #005f00; color: #fff; font-weight: 700; padding: 0; }
+  .rev .key { color: #00ffff; font-weight: 700; }
 </style>
 </head>
 <body>
 
   <div class="block">
-    <div class="lbl">Hero · idle with ambient pulse</div>
-    <div class="hero">
-      <div class="row">
-        <span class="chev">▶▶▶</span>
-        <span class="title">GENERATE PODCAST</span>
-      </div>
-      <div class="sub">turn your reading list into audio</div>
-      <div class="meta-row">
-        <span class="meta">5 articles &nbsp;·&nbsp; ~18 min</span>
-        <span class="key">p</span>
-      </div>
-    </div>
+    <div class="lbl">Hero · idle (border color cycles each tick — palette swap)</div>
+<pre class="cycle"><span class="row r0">╔══════════════════════════════════════════════════════╗</span>
+<span class="row r1">║  <span class="pkB">▶▶▶</span>   <span class="pkB">GENERATE PODCAST</span>                            ║</span>
+<span class="row r1">║                                                      ║</span>
+<span class="row r2">║  <span class="m">turn your reading list into audio</span>                   ║</span>
+<span class="row r2">║                                                      ║</span>
+<span class="row r3">║  <span class="m">5 articles · ~18 min</span>                       <span class="c">[ p ]</span>   ║</span>
+<span class="row r3">╚══════════════════════════════════════════════════════╝</span></pre>
   </div>
 
   <div class="block">
-    <div class="lbl">Hero · just pressed (generating)</div>
-    <div class="hero generating">
-      <div class="row">
-        <span class="chev">▶▶▶</span>
-        <span class="title">GENERATING...</span>
-      </div>
-      <div class="sub">mixing 5 articles into a single episode</div>
-      <div class="meta-row">
-        <span class="progress-track"><span class="progress-fill"></span></span>
-        <span class="pct">28%</span>
-      </div>
-    </div>
+    <div class="lbl">Hero · generating (eighth-block progress bar, braille spinner)</div>
+<pre><span class="pk2">╔══════════════════════════════════════════════════════╗
+║</span>  <span class="g">⠹</span>  <span class="gB">GENERATING...</span>                                    <span class="pk2">║
+║                                                      ║
+║</span>  <span class="m">mixing 5 articles into a single episode</span>             <span class="pk2">║
+║                                                      ║
+║</span>  <span class="pk2">██████████████████▌</span><span class="m" style="color:#3a1a2a">                       </span>  <span class="pkB">42%</span>  <span class="pk2">║
+╚══════════════════════════════════════════════════════╝</span></pre>
   </div>
 
   <div class="block">
-    <div class="lbl">Compact · reading-list footer slab</div>
-    <div class="strip"><span class="chev2">▶▶</span>Generate Podcast<span class="key2">p</span></div>
+    <div class="lbl">Compact · reading-list footer slab (full-width reverse video)</div>
+<pre class="rev">  ▶▶  Generate Podcast                          <span class="key">[ p ]</span>  </pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Compact · alt (quiet, blends with key hints)</div>
+<pre> <span class="pk">[ ▶▶ Generate Podcast </span><span class="c">(p)</span><span class="pk"> ]</span>     <span class="m">use when CTA isn't the only thing on screen</span></pre>
+  </div>
+
+  <div class="block">
+    <div class="lbl">Why this works in a real terminal</div>
+<pre><span class="m"> · Border is ╔═╗ box-drawing chars in column 0/W-1 of every row.
+ · Color cycles by re-rendering border cells with a new fg color
+   each tick — exactly what an ANSI palette swap does.
+ · Marching chevrons shift one cell per tick. No CSS transforms.
+ · Progress bar uses ▏▎▍▌▋▊▉█ for 8 sub-cell widths.
+ · Spinner is one cell, 8 braille frames: ⠹⠸⠼⠴⠦⠧⠇⠏</span></pre>
   </div>
 
 </body>

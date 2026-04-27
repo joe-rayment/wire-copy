@@ -5,9 +5,9 @@
 <title>Colors — green scale</title>
 <link rel="stylesheet" href="../colors_and_type.css">
 <style>
-  body { padding: 20px 24px; margin: 0; background: var(--tr-bg); display: flex; flex-direction: column; gap: 12px; }
-  .swatch { display: grid; grid-template-columns: 40px 110px 70px 60px 1fr; gap: 14px; align-items: center; }
-  .chip { width: 40px; height: 40px; border: 1px solid #222; }
+  body { padding: 20px 24px; margin: 0; background: var(--tr-bg); display: flex; flex-direction: column; gap: 10px; font-family: var(--tr-font-mono); }
+  .swatch { display: grid; grid-template-columns: 60px 110px 70px 60px 1fr; gap: 14px; align-items: center; }
+  .chip { font-size: 22px; line-height: 1; letter-spacing: 0; }
   .name { color: var(--tr-green); font-size: 14px; font-weight: 700; }
   .hex  { color: var(--tr-muted); font-size: 12px; }
   .ansi { color: var(--tr-muted); font-size: 12px; }
@@ -15,10 +15,10 @@
 </style>
 </head>
 <body>
-  <div class="swatch"><div class="chip" style="background:#ff87d7"></div><div class="name" style="color:#ff87d7">bright</div><div class="hex">#ff87d7</div><div class="ansi">ANSI 212</div><div class="use">Titles, content links</div></div>
-  <div class="swatch"><div class="chip" style="background:#00d700"></div><div class="name">green</div><div class="hex">#00d700</div><div class="ansi">ANSI 40</div><div class="use">Body text — the phosphor</div></div>
-  <div class="swatch"><div class="chip" style="background:#00af00"></div><div class="name" style="color:#00af00">med</div><div class="hex">#00af00</div><div class="ansi">ANSI 34</div><div class="use">Metadata, domains</div></div>
-  <div class="swatch"><div class="chip" style="background:#5f875f"></div><div class="name" style="color:#5f875f">muted</div><div class="hex">#5f875f</div><div class="ansi">ANSI 65</div><div class="use">Hints, aged phosphor</div></div>
-  <div class="swatch"><div class="chip" style="background:#005f00"></div><div class="name" style="color:#5f875f">dim</div><div class="hex">#005f00</div><div class="ansi">ANSI 22</div><div class="use">Borders, structural chrome</div></div>
+  <div class="swatch"><div class="chip" style="color:#ff87d7">███</div><div class="name" style="color:#ff87d7">bright</div><div class="hex">#ff87d7</div><div class="ansi">ANSI 212</div><div class="use">Titles, content links</div></div>
+  <div class="swatch"><div class="chip" style="color:#00d700">███</div><div class="name">green</div><div class="hex">#00d700</div><div class="ansi">ANSI 40</div><div class="use">Body text — the phosphor</div></div>
+  <div class="swatch"><div class="chip" style="color:#00af00">███</div><div class="name" style="color:#00af00">med</div><div class="hex">#00af00</div><div class="ansi">ANSI 34</div><div class="use">Metadata, domains</div></div>
+  <div class="swatch"><div class="chip" style="color:#5f875f">███</div><div class="name" style="color:#5f875f">muted</div><div class="hex">#5f875f</div><div class="ansi">ANSI 65</div><div class="use">Hints, aged phosphor</div></div>
+  <div class="swatch"><div class="chip" style="color:#005f00">███</div><div class="name" style="color:#5f875f">dim</div><div class="hex">#005f00</div><div class="ansi">ANSI 22</div><div class="use">Borders, structural chrome</div></div>
 </body>
 </html>
