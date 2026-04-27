@@ -403,6 +403,14 @@ public class PageLoadPipeline
             if (readable != null)
             {
                 page.SetReadableContent(readable);
+
+                // Populate the persistent article cache so podcast generation can
+                // skip re-extraction for any article the user has already loaded.
+                // Skip paywalled-domain articles with low word count (likely truncated previews).
+                if (!_browserConfig.IsPaywalledDomain(finalUrl) || readable.WordCount >= 200)
+                {
+                    await TryPopulateArticleCacheAsync(finalUrl, readable, cancellationToken).ConfigureAwait(false);
+                }
             }
             else if (classification == PageClassification.Article)
             {
@@ -982,6 +990,47 @@ public class PageLoadPipeline
         }
 
         return _articleContentCache;
+    }
+
+    /// <summary>
+    /// Stores extracted readable content in the persistent article cache so podcast
+    /// generation can skip re-extraction. No-op when the article cache service
+    /// is not registered or the put fails (cache is best-effort).
+    /// </summary>
+    private async Task TryPopulateArticleCacheAsync(
+        string url,
+        ReadableContent content,
+        CancellationToken cancellationToken)
+    {
+        var articleCache = ResolveArticleContentCache();
+        if (articleCache is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var article = new Podcast.ExtractedArticle
+            {
+                Title = content.Title,
+                CleanedText = content.CleanedText,
+                Author = content.Author,
+                Url = url,
+                WordCount = content.WordCount,
+                PublishedDate = content.PublishedDate,
+            };
+
+            await articleCache.PutAsync(url, article, cancellationToken).ConfigureAwait(false);
+            _logger.LogDebug("Pre-populated article cache for {Url} ({Words} words)", url, content.WordCount);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to populate article cache for {Url}", url);
+        }
     }
 
     /// <summary>
