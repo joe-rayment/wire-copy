@@ -52,3 +52,6 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+# Database name (set after migrating from server mode 2026-04-27)
+database: beads
