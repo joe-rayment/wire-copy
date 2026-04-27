@@ -600,72 +600,44 @@ internal static class PodcastConfirmationScreens
                 continue;
             }
 
-            // [k] set/change GCS service account key
+            // [k] set/change GCS service account key — always run the wizard so
+            // the user gets the same paste-JSON-or-file-path UX for set and change.
             if (command.RawKeyChar == 'k' && gcsClient != null)
             {
-                if (!isKeyConfigured)
+                var wizardResult = await PodcastGcsWizard.RunGcsKeyWizardAsync(
+                    ctx, options, p, gcsClient, gcsConfig, settingsStore, ct).ConfigureAwait(false);
+
+                if (wizardResult.KeySaved)
                 {
-                    // --- Multi-step wizard for first-time setup ---
-                    var wizardResult = await PodcastGcsWizard.RunGcsKeyWizardAsync(
-                        ctx, options, p, gcsClient, gcsConfig, settingsStore, ct).ConfigureAwait(false);
+                    keyPath = gcsClient.GetServiceAccountKeyPath();
+                    isKeyConfigured = true;
 
-                    if (wizardResult.KeySaved)
+                    // Re-validate the bucket against the new key if a bucket is
+                    // already configured but no fresh wizard bucket update came back.
+                    var changeBucket = gcsConfig.BucketName;
+                    if (!wizardResult.BucketSaved && isGcsConfigured && !string.IsNullOrWhiteSpace(changeBucket))
                     {
-                        keyPath = gcsClient.GetServiceAccountKeyPath();
-                        isKeyConfigured = true;
-                    }
-
-                    if (wizardResult.BucketSaved)
-                    {
-                        isGcsConfigured = true;
-                        feedUrl = wizardResult.FeedUrl;
-                        feedStatusNote = wizardResult.FeedStatusNote;
-                        bucketError = wizardResult.BucketError;
+                        bucketError = null;
+                        var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
+                            ctx, options, changeBucket, gcsConfig, ct).ConfigureAwait(false);
+                        if (success)
+                        {
+                            feedUrl = url;
+                            feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
+                        }
+                        else if (error != null)
+                        {
+                            bucketError = error;
+                        }
                     }
                 }
-                else
+
+                if (wizardResult.BucketSaved)
                 {
-                    // --- Direct prompt for changing existing key ---
-                    var keyInput = await ctx.InputHandler.PromptForInputAsync(
-                        "GCS key (file path or paste JSON): ", ct).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(keyInput))
-                    {
-                        var (keySaved, keyError) = await PodcastGcsWizard.ValidateAndSaveKeyAsync(
-                            keyInput.Trim(), gcsClient).ConfigureAwait(false);
-
-                        if (keySaved)
-                        {
-                            keyPath = gcsClient.GetServiceAccountKeyPath();
-                            isKeyConfigured = true;
-
-                            Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");
-                            await Task.Delay(800, ct).ConfigureAwait(false);
-
-                            var changeBucket = gcsConfig.BucketName;
-                            if (isGcsConfigured && !string.IsNullOrWhiteSpace(changeBucket))
-                            {
-                                bucketError = null;
-                                var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
-                                    ctx, options, changeBucket, gcsConfig, ct).ConfigureAwait(false);
-                                if (success)
-                                {
-                                    feedUrl = url;
-                                    feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
-                                }
-                                else if (error != null)
-                                {
-                                    bucketError = error;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            Console.Write(
-                                $"\r  {p.ErrorFg.AnsiFg}{keyError}{Reset}" +
-                                new string(' ', 20));
-                            await Task.Delay(2000, ct).ConfigureAwait(false);
-                        }
-                    }
+                    isGcsConfigured = true;
+                    feedUrl = wizardResult.FeedUrl;
+                    feedStatusNote = wizardResult.FeedStatusNote;
+                    bucketError = wizardResult.BucketError;
                 }
 
                 continue;

@@ -274,13 +274,20 @@ internal static class PodcastGcsWizard
         {
             Console.Clear();
             var row = RenderWizardStepHeader(
-                p, "GCS Setup", 2, 3, "Paste JSON key content or enter the file path.", fieldWidth);
+                p,
+                "GCS Setup",
+                2,
+                3,
+                "Paste the JSON content (Cmd/Ctrl+V) or type a file path like ~/keys/sa.json",
+                fieldWidth);
             row++;
 
             var keyField = new FormFieldConfig
             {
                 Label = "Service Account Key",
-                Placeholder = "Paste JSON or enter file path",
+                Placeholder = "Paste JSON content here, or type a file path",
+                HelpText = "JSON starts with { · paths support ~/ for your home dir",
+                MaxLength = 8192,
                 Validate = v => string.IsNullOrWhiteSpace(v) ? "Key cannot be empty" : null,
             };
 
