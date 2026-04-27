@@ -24,99 +24,99 @@ public class CollectionService : ICollectionService
 
     public async Task<CollectionItem?> SaveToDefaultCollectionAsync(string url, string title, CancellationToken cancellationToken = default)
     {
-        var collection = await _repository.GetOrCreateDefaultAsync(cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return await SaveItemToCollection(collection, url, title, cancellationToken);
+        var collection = await _repository.GetOrCreateDefaultAsync(cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return await SaveItemToCollection(collection, url, title, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CollectionItem?> SaveToCollectionByNameAsync(string collectionName, string url, string title, CancellationToken cancellationToken = default)
     {
-        var collection = await _repository.GetByNameAsync(collectionName, cancellationToken);
+        var collection = await _repository.GetByNameAsync(collectionName, cancellationToken).ConfigureAwait(false);
         if (collection == null)
         {
             collection = Collection.Create(collectionName);
-            await _repository.AddAsync(collection, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _repository.AddAsync(collection, cancellationToken).ConfigureAwait(false);
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Created new collection: {Name}", collectionName);
         }
 
-        return await SaveItemToCollection(collection, url, title, cancellationToken);
+        return await SaveItemToCollection(collection, url, title, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<Collection>> GetAllCollectionsAsync(CancellationToken cancellationToken = default)
     {
-        await MergeLegacyReadLaterAsync(cancellationToken);
-        return await _repository.GetAllAsync(cancellationToken);
+        await MergeLegacyReadLaterAsync(cancellationToken).ConfigureAwait(false);
+        return await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Collection> CreateCollectionAsync(string name, CancellationToken cancellationToken = default)
     {
-        var existing = await _repository.GetByNameAsync(name, cancellationToken);
+        var existing = await _repository.GetByNameAsync(name, cancellationToken).ConfigureAwait(false);
         if (existing != null)
         {
             throw new InvalidOperationException($"A collection named '{name}' already exists");
         }
 
         var collection = Collection.Create(name);
-        await _repository.AddAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.AddAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Created collection: {Name}", name);
         return collection;
     }
 
     public async Task RenameCollectionAsync(Guid collectionId, string newName, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         collection.Rename(newName);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Renamed collection {Id} to {Name}", collectionId, newName);
     }
 
     public async Task DeleteCollectionAsync(Guid collectionId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
-        await _repository.DeleteAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
+        await _repository.DeleteAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Deleted collection: {Name}", collection.Name);
     }
 
     public async Task ClearCollectionAsync(Guid collectionId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         collection.Clear();
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Cleared collection: {Name}", collection.Name);
     }
 
     public async Task RemoveItemAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         collection.RemoveItem(itemId);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MoveItemUpAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         collection.MoveItemUp(itemId);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MoveItemDownAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         collection.MoveItemDown(itemId);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MarkItemAsReadAsync(Guid collectionId, Guid itemId, CancellationToken cancellationToken = default)
     {
-        var collection = await GetCollectionOrThrow(collectionId, cancellationToken);
+        var collection = await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
         var item = collection.Items.FirstOrDefault(i => i.Id == itemId);
         if (item == null)
         {
@@ -124,62 +124,62 @@ public class CollectionService : ICollectionService
         }
 
         item.MarkAsRead();
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SetDefaultCollectionAsync(Guid collectionId, CancellationToken cancellationToken = default)
     {
         // Verify the collection exists
-        await GetCollectionOrThrow(collectionId, cancellationToken);
-        await _repository.SetLastUsedCollectionIdAsync(collectionId, cancellationToken);
+        await GetCollectionOrThrow(collectionId, cancellationToken).ConfigureAwait(false);
+        await _repository.SetLastUsedCollectionIdAsync(collectionId, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Set default collection to {Id}", collectionId);
     }
 
     public async Task<Collection> GetDefaultCollectionAsync(CancellationToken cancellationToken = default)
     {
-        var lastUsedId = await _repository.GetLastUsedCollectionIdAsync(cancellationToken);
+        var lastUsedId = await _repository.GetLastUsedCollectionIdAsync(cancellationToken).ConfigureAwait(false);
         if (lastUsedId.HasValue)
         {
-            var collection = await _repository.GetByIdAsync(lastUsedId.Value, cancellationToken);
+            var collection = await _repository.GetByIdAsync(lastUsedId.Value, cancellationToken).ConfigureAwait(false);
             if (collection != null)
             {
                 return collection;
             }
         }
 
-        var defaultCollection = await _repository.GetOrCreateDefaultAsync(cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var defaultCollection = await _repository.GetOrCreateDefaultAsync(cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return defaultCollection;
     }
 
     public async Task<Collection> GetReadingListAsync(CancellationToken cancellationToken = default)
     {
-        return await GetOrCreateReadingListAsync(cancellationToken);
+        return await GetOrCreateReadingListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CollectionItem> SaveToReadingListAsync(string url, string title, CancellationToken cancellationToken = default)
     {
-        var collection = await GetOrCreateReadingListAsync(cancellationToken);
+        var collection = await GetOrCreateReadingListAsync(cancellationToken).ConfigureAwait(false);
         var item = collection.AddOrMoveToTop(url, title);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Saved {Url} to Reading List (move-to-top)", url);
         return item;
     }
 
     public async Task SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default)
     {
-        var collection = await GetOrCreateReadingListAsync(cancellationToken);
+        var collection = await GetOrCreateReadingListAsync(cancellationToken).ConfigureAwait(false);
         collection.AddItemsAtEnd(items);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Saved multiple items to Reading List");
     }
 
     public async Task<int> PurgeExpiredReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
     {
-        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken).ConfigureAwait(false);
         if (collection == null)
         {
             return 0;
@@ -188,8 +188,8 @@ public class CollectionService : ICollectionService
         var removed = collection.RemoveExpiredItems(maxAge);
         if (removed > 0)
         {
-            await _repository.UpdateAsync(collection, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Purged {Count} expired items from Reading List", removed);
         }
 
@@ -198,13 +198,13 @@ public class CollectionService : ICollectionService
 
     private async Task MergeLegacyReadLaterAsync(CancellationToken cancellationToken)
     {
-        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken);
+        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken).ConfigureAwait(false);
         if (legacy == null)
         {
             return;
         }
 
-        var readingList = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        var readingList = await _repository.GetByNameAsync("Reading List", cancellationToken).ConfigureAwait(false);
         if (readingList != null)
         {
             // Both exist — merge items from legacy into Reading List, then delete legacy
@@ -213,17 +213,17 @@ public class CollectionService : ICollectionService
                 readingList.AddItem(item.Url, item.Title);
             }
 
-            await _repository.UpdateAsync(readingList, cancellationToken);
-            await _repository.DeleteAsync(legacy, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _repository.UpdateAsync(readingList, cancellationToken).ConfigureAwait(false);
+            await _repository.DeleteAsync(legacy, cancellationToken).ConfigureAwait(false);
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Merged legacy 'Read Later' ({Count} items) into Reading List", legacy.Items.Count);
         }
         else
         {
             // Only legacy exists — rename it
             legacy.Rename("Reading List");
-            await _repository.UpdateAsync(legacy, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _repository.UpdateAsync(legacy, cancellationToken).ConfigureAwait(false);
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Renamed legacy 'Read Later' to 'Reading List'");
         }
     }
@@ -231,26 +231,26 @@ public class CollectionService : ICollectionService
     private async Task<Collection> GetOrCreateReadingListAsync(CancellationToken cancellationToken)
     {
         // Try "Reading List" first
-        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken);
+        var collection = await _repository.GetByNameAsync("Reading List", cancellationToken).ConfigureAwait(false);
         if (collection != null)
         {
             return collection;
         }
 
         // Rename legacy "Read Later" to "Reading List" if found
-        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken);
+        var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken).ConfigureAwait(false);
         if (legacy != null)
         {
             legacy.Rename("Reading List");
-            await _repository.UpdateAsync(legacy, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _repository.UpdateAsync(legacy, cancellationToken).ConfigureAwait(false);
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return legacy;
         }
 
         // Create new Reading List
         collection = Collection.Create("Reading List");
-        await _repository.AddAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.AddAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Created Reading List collection");
         return collection;
     }
@@ -265,15 +265,15 @@ public class CollectionService : ICollectionService
         }
 
         var item = collection.AddItem(url, title);
-        await _repository.UpdateAsync(collection, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Saved {Url} to collection {Name}", url, collection.Name);
         return item;
     }
 
     private async Task<Collection> GetCollectionOrThrow(Guid collectionId, CancellationToken cancellationToken)
     {
-        var collection = await _repository.GetByIdAsync(collectionId, cancellationToken);
+        var collection = await _repository.GetByIdAsync(collectionId, cancellationToken).ConfigureAwait(false);
         if (collection == null)
         {
             throw new InvalidOperationException($"Collection {collectionId} not found");

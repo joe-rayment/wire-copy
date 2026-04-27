@@ -30,7 +30,7 @@ internal sealed class HttpCookieRefresher : IHttpCookieRefresher
     {
         try
         {
-            var cookies = await _cookieManager.LoadCookiesAsync();
+            var cookies = await _cookieManager.LoadCookiesAsync().ConfigureAwait(false);
             var added = 0;
 
             foreach (var cookie in cookies)

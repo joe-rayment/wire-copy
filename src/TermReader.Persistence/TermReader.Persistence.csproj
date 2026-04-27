@@ -24,7 +24,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <NoWarn>$(NoWarn);SA1413;SA1116;SA0001;SA1101;SA1309;NU1608</NoWarn>
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
 </Project>

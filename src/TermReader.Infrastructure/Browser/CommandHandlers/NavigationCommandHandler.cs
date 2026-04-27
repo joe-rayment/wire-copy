@@ -21,7 +21,7 @@ internal static class NavigationCommandHandler
             MoveDownOnce(ctx, options);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleMoveUp(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
@@ -32,7 +32,7 @@ internal static class NavigationCommandHandler
             MoveUpOnce(ctx, options);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandlePageDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -78,7 +78,7 @@ internal static class NavigationCommandHandler
             ctx.AdjustScrollForSelection(tree, options);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandlePageUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -123,7 +123,7 @@ internal static class NavigationCommandHandler
             ctx.AdjustScrollForSelection(tree, options);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleGoToTop(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
@@ -132,7 +132,7 @@ internal static class NavigationCommandHandler
         if (command.Count > 0)
         {
             GoToIndex(ctx, command.Count - 1, options);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -167,7 +167,7 @@ internal static class NavigationCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleGoToBottom(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
@@ -176,7 +176,7 @@ internal static class NavigationCommandHandler
         if (command.Count > 0)
         {
             GoToIndex(ctx, command.Count - 1, options);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -226,7 +226,7 @@ internal static class NavigationCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleGoBack(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -240,7 +240,7 @@ internal static class NavigationCommandHandler
             if (tree != null && tree.SelectionCount > 0)
             {
                 tree.ClearSelection();
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
         }
@@ -251,8 +251,8 @@ internal static class NavigationCommandHandler
             && viewMode != ViewMode.CollectionList && viewMode != ViewMode.CollectionItems)
         {
             ctx.NavigationService.EnterLauncher();
-            await ctx.RefreshBookmarksAsync(ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -269,40 +269,40 @@ internal static class NavigationCommandHandler
             }
 
             ctx.LineCacheManager.InvalidateLineCache();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         else if (viewMode == ViewMode.CollectionList)
         {
             ctx.NavigationService.ExitCollections();
             ctx.LineCacheManager.InvalidateLineCache();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         else if (ctx.NavigationService.TryRestoreCollectionReturnPoint())
         {
             // Navigated from a collection (any view mode) — restore collection state
-            await ctx.RefreshCollectionsAsync(ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         else if (ctx.NavigationService.CanGoBack)
         {
             // Has history — go back to previous page (works for both Readable and Hierarchical)
             ctx.NavigationService.GoBack();
             ctx.LineCacheManager.InvalidateLineCache();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         else if (viewMode == ViewMode.Readable)
         {
             // Readable view with no history — fall back to link view of same page
             ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
             ctx.LineCacheManager.InvalidateLineCache();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         else
         {
             // No history, not in readable — go to launcher
             ctx.NavigationService.EnterLauncher();
-            await ctx.RefreshBookmarksAsync(ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
@@ -312,7 +312,7 @@ internal static class NavigationCommandHandler
         if (nextPage != null)
         {
             ctx.LineCacheManager.InvalidateLineCache();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
@@ -321,7 +321,7 @@ internal static class NavigationCommandHandler
         // In reader view, l/→ widens the reading column (documented in help)
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable)
         {
-            await ViewCommandHandler.HandleIncreaseWidth(ctx, options, ct);
+            await ViewCommandHandler.HandleIncreaseWidth(ctx, options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -337,7 +337,7 @@ internal static class NavigationCommandHandler
             tree?.Expand();
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleCollapseNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -345,7 +345,7 @@ internal static class NavigationCommandHandler
         // In reader view, h/← narrows the reading column (documented in help)
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Readable)
         {
-            await ViewCommandHandler.HandleDecreaseWidth(ctx, options, ct);
+            await ViewCommandHandler.HandleDecreaseWidth(ctx, options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -361,13 +361,13 @@ internal static class NavigationCommandHandler
             tree?.Collapse();
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleToggleNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.NavigationService.CurrentPage?.LinkTree?.ToggleCollapse();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleToggleSelection(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -379,7 +379,7 @@ internal static class NavigationCommandHandler
         }
 
         tree.ToggleCurrentNodeSelection();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleActivateLink(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -402,7 +402,7 @@ internal static class NavigationCommandHandler
                     ctx.PreloadService.NotifyCollectionChanged(0, urls);
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             }
         }
         else if (viewMode == ViewMode.CollectionItems)
@@ -410,7 +410,7 @@ internal static class NavigationCommandHandler
             // CTA button focused — trigger podcast generation
             if (ctx.NavigationService.CollectionItemSelectedIndex == -1)
             {
-                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
+                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -420,14 +420,14 @@ internal static class NavigationCommandHandler
             {
                 var selectedItem = activeCol.Items[activateIdx];
                 ctx.NavigationService.SaveCollectionReturnPoint();
-                await ctx.NavigateToAsync(selectedItem.Url, options, ct);
+                await ctx.NavigateToAsync(selectedItem.Url, options, ct).ConfigureAwait(false);
 
                 // Mark item as read
                 try
                 {
                     using var markScope = ctx.ScopeFactory.CreateScope();
                     var markService = ctx.CreateCollectionService(markScope);
-                    await markService.MarkItemAsReadAsync(activeCol.Id, selectedItem.Id, ct);
+                    await markService.MarkItemAsReadAsync(activeCol.Id, selectedItem.Id, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -439,7 +439,7 @@ internal static class NavigationCommandHandler
                 {
                     ctx.NavigationService.SetViewMode(ViewMode.Readable);
                     ctx.LineCacheManager.InvalidateLineCache();
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -451,17 +451,17 @@ internal static class NavigationCommandHandler
                 if (selectedNode.IsGroupHeader)
                 {
                     tree!.ToggleCollapse();
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
                 else if (!string.IsNullOrEmpty(selectedNode.Link.Url))
                 {
-                    await ctx.NavigateToAsync(selectedNode.Link.Url, options, ct);
+                    await ctx.NavigateToAsync(selectedNode.Link.Url, options, ct).ConfigureAwait(false);
 
                     if (ctx.NavigationService.CurrentPage?.HasReadableContent() == true)
                     {
                         ctx.NavigationService.SetViewMode(ViewMode.Readable);
                         ctx.LineCacheManager.InvalidateLineCache();
-                        await ctx.RenderCurrentPageAsync(options, ct);
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                     }
                 }
             }
@@ -475,7 +475,7 @@ internal static class NavigationCommandHandler
         var page = ctx.NavigationService.CurrentPage;
         if (page != null)
         {
-            await ctx.ForceRefreshAsync(page.Url, options, ct);
+            await ctx.ForceRefreshAsync(page.Url, options, ct).ConfigureAwait(false);
         }
     }
 
@@ -487,7 +487,7 @@ internal static class NavigationCommandHandler
         var page = ctx.NavigationService.CurrentPage;
         if (page != null)
         {
-            await ctx.InteractiveRefreshAsync(page.Url, options, ct);
+            await ctx.InteractiveRefreshAsync(page.Url, options, ct).ConfigureAwait(false);
         }
     }
 
@@ -495,7 +495,7 @@ internal static class NavigationCommandHandler
     {
         if (!string.IsNullOrEmpty(command.TargetUrl))
         {
-            await ctx.NavigateToAsync(command.TargetUrl, options, ct);
+            await ctx.NavigateToAsync(command.TargetUrl, options, ct).ConfigureAwait(false);
         }
     }
 
@@ -521,7 +521,7 @@ internal static class NavigationCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleParagraphUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -548,7 +548,7 @@ internal static class NavigationCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static void MoveDownOnce(CommandContext ctx, RenderOptions options)

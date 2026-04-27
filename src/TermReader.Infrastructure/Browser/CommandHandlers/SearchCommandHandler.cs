@@ -23,18 +23,18 @@ internal static class SearchCommandHandler
         if (IsCollectionView(ctx))
         {
             ctx.NavigationService.SetStatusMessage("Search not available in collections");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
-        var query = await ctx.InputHandler.PromptForInputAsync("/", ct);
+        var query = await ctx.InputHandler.PromptForInputAsync("/", ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(query))
         {
             ctx.NavigationService.SetSearchQuery(query);
             ctx.ScrollToSearchMatch(0, options);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleSearchNext(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -48,7 +48,7 @@ internal static class SearchCommandHandler
         {
             var nextIndex = ctx.NavigationService.CurrentContext.SearchMatchIndex + 1;
             ctx.ScrollToSearchMatch(nextIndex, options);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
@@ -63,20 +63,20 @@ internal static class SearchCommandHandler
         {
             var prevIndex = ctx.NavigationService.CurrentContext.SearchMatchIndex - 1;
             ctx.ScrollToSearchMatch(prevIndex, options);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
     public static async Task<bool> HandleOpenCommandLine(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
+        var input = await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(input))
         {
-            return await HandleCommandLineInput(ctx, input.Trim(), options, ct);
+            return await HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);
         }
         else
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return true;
         }
     }
@@ -96,7 +96,7 @@ internal static class SearchCommandHandler
                 if (prevPage != null)
                 {
                     ctx.LineCacheManager.InvalidateLineCache();
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
 
                 return true;
@@ -106,40 +106,40 @@ internal static class SearchCommandHandler
                 if (fwdPage != null)
                 {
                     ctx.LineCacheManager.InvalidateLineCache();
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
 
                 return true;
 
             case "help" or "h":
-                await ViewCommandHandler.HandleShowHelp(ctx, options, ct);
+                await ViewCommandHandler.HandleShowHelp(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "open" or "go" or "o":
                 if (parts.Length > 1)
                 {
                     var url = NormalizeUrl(parts[1]);
-                    await ctx.NavigateToAsync(url, options, ct);
+                    await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
 
                 return true;
 
             case "home":
                 ctx.NavigationService.EnterLauncher();
-                await ctx.RefreshBookmarksAsync(ct);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
 
             case "add":
                 // Delegate to launcher handler's add bookmark
-                var name = await ctx.InputHandler.PromptForInputAsync("Bookmark name: ", ct);
+                var name = await ctx.InputHandler.PromptForInputAsync("Bookmark name: ", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(name))
                 {
-                    var bookmarkUrl = await ctx.InputHandler.PromptForInputAsync("URL: ", ct);
+                    var bookmarkUrl = await ctx.InputHandler.PromptForInputAsync("URL: ", ct).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(bookmarkUrl))
                     {
                         bookmarkUrl = NormalizeUrl(bookmarkUrl);
@@ -147,8 +147,8 @@ internal static class SearchCommandHandler
                         {
                             using var scope = ctx.ScopeFactory.CreateScope();
                             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                            await bookmarkService.AddBookmarkAsync(name, bookmarkUrl, ct);
-                            await ctx.RefreshBookmarksAsync(ct);
+                            await bookmarkService.AddBookmarkAsync(name, bookmarkUrl, ct).ConfigureAwait(false);
+                            await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
                             ctx.Logger.LogInformation("Added bookmark: {Name} ({Url})", name, bookmarkUrl);
                         }
                         catch (Exception ex)
@@ -158,11 +158,11 @@ internal static class SearchCommandHandler
                     }
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
 
             case "collections" or "readlater":
-                await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
+                await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "new":
@@ -172,8 +172,8 @@ internal static class SearchCommandHandler
                     {
                         using var scope = ctx.ScopeFactory.CreateScope();
                         var service = ctx.CreateCollectionService(scope);
-                        await service.CreateCollectionAsync(parts[1], ct);
-                        await ctx.RefreshCollectionsAsync(ct);
+                        await service.CreateCollectionAsync(parts[1], ct).ConfigureAwait(false);
+                        await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
                         ctx.Logger.LogInformation("Created collection: {Name}", parts[1]);
                     }
                     catch (Exception ex)
@@ -182,7 +182,7 @@ internal static class SearchCommandHandler
                     }
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
 
             case "rename":
@@ -192,7 +192,7 @@ internal static class SearchCommandHandler
 
                     if (renameViewMode == ViewMode.Launcher)
                     {
-                        await HandleRenameLauncherBookmark(ctx, parts[1], ct);
+                        await HandleRenameLauncherBookmark(ctx, parts[1], ct).ConfigureAwait(false);
                     }
                     else
                     {
@@ -214,8 +214,8 @@ internal static class SearchCommandHandler
                             {
                                 using var scope = ctx.ScopeFactory.CreateScope();
                                 var service = ctx.CreateCollectionService(scope);
-                                await service.RenameCollectionAsync(renameCol.Id, parts[1], ct);
-                                await ctx.RefreshCollectionsAsync(ct);
+                                await service.RenameCollectionAsync(renameCol.Id, parts[1], ct).ConfigureAwait(false);
+                                await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
                                 ctx.Logger.LogInformation("Renamed collection to: {Name}", parts[1]);
                             }
                             catch (Exception ex)
@@ -226,60 +226,60 @@ internal static class SearchCommandHandler
                     }
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
 
             case "clear":
-                await SettingsCommandHandler.HandleClearCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                await SettingsCommandHandler.HandleClearCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
             case "export":
-                await HandleExportCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                await HandleExportCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
             case "cache":
-                await HandleCacheCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                await HandleCacheCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
             case "podcast":
-                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct);
+                await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "settings":
-                await PodcastCommandHandler.HandlePodcastSettings(ctx, options, ct);
+                await PodcastCommandHandler.HandlePodcastSettings(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "config":
-                await SettingsCommandHandler.HandleConfigScreen(ctx, options, ct);
+                await SettingsCommandHandler.HandleConfigScreen(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "set":
-                await SettingsCommandHandler.HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                await SettingsCommandHandler.HandleSetCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
             case "cred" or "credentials":
-                await CredentialCommandHandler.HandleCredentialCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct);
+                await CredentialCommandHandler.HandleCredentialCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
             case "dump" or "dump-html":
-                await ViewCommandHandler.HandleDumpHtml(ctx, options, ct);
+                await ViewCommandHandler.HandleDumpHtml(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "reanalyze":
-                await HandleReanalyze(ctx, options, ct);
+                await HandleReanalyze(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "layout":
-                await LayoutCommandHandler.HandleChooseLayout(ctx, options, ct);
+                await LayoutCommandHandler.HandleChooseLayout(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "layout clear":
-                await LayoutCommandHandler.HandleClearLayout(ctx, options, ct);
+                await LayoutCommandHandler.HandleClearLayout(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             default:
                 var navigateUrl = NormalizeUrl(input);
-                await ctx.NavigateToAsync(navigateUrl, options, ct);
+                await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);
                 return true;
         }
     }
@@ -291,7 +291,7 @@ internal static class SearchCommandHandler
         {
             ctx.NavigationService.SetStatusMessage("No active collection to export. Open a collection first.");
             ctx.Logger.LogWarning("No active collection to export. Open a collection first.");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -309,7 +309,7 @@ internal static class SearchCommandHandler
                 var available = string.Join(", ", exporters.Select(e => e.Format));
                 ctx.NavigationService.SetStatusMessage($"Unknown format '{requestedFormat}'. Available: {available}");
                 ctx.Logger.LogWarning("Unknown export format '{Format}'. Available: {Available}", requestedFormat, available);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -321,7 +321,7 @@ internal static class SearchCommandHandler
             var safeName = FileNameSanitizer.Sanitize(collection.Name);
             var outputPath = Path.Combine(outputDir, $"{safeName}.{requestedFormat}");
 
-            await exporter.ExportAsync(collection, new ExportOptions(outputPath), ct);
+            await exporter.ExportAsync(collection, new ExportOptions(outputPath), ct).ConfigureAwait(false);
             ctx.NavigationService.SetStatusMessage($"Exported to {outputPath}");
             ctx.Logger.LogInformation("Exported collection '{Name}' to {Path}", collection.Name, outputPath);
         }
@@ -331,7 +331,7 @@ internal static class SearchCommandHandler
             ctx.Logger.LogWarning(ex, "Failed to export collection");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleCacheCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
@@ -347,7 +347,7 @@ internal static class SearchCommandHandler
                 : string.Empty;
             ctx.NavigationService.SetStatusMessage(
                 $"Cache: {stats.EntryCount} pages ({stats.UsagePercent}%) | {stats.HitRatePercent}% hit rate{diskPart}{articlePart}");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -362,7 +362,7 @@ internal static class SearchCommandHandler
                 $"Hit rate: {stats.HitRatePercent}% ({stats.HitCount} hits, {stats.MissCount} misses)"
             };
             ctx.NavigationService.SetStatusMessage(string.Join(" | ", lines));
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -383,7 +383,7 @@ internal static class SearchCommandHandler
                     "Clear Cache",
                     "Clear all cached pages?",
                     palette,
-                    ct);
+                    ct).ConfigureAwait(false);
                 if (confirmed)
                 {
                     var cleared = ctx.PageCache.Clear();
@@ -392,11 +392,11 @@ internal static class SearchCommandHandler
                 }
             }
 
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -415,7 +415,7 @@ internal static class SearchCommandHandler
         if (page == null)
         {
             ctx.NavigationService.SetStatusMessage("No page loaded");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -428,26 +428,26 @@ internal static class SearchCommandHandler
             if (analyzer == null || !analyzer.IsConfigured)
             {
                 ctx.NavigationService.SetStatusMessage("Anthropic API key not configured. Use :set anthropic-key first.");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
             // Delete existing config for this URL
             if (configStore != null)
             {
-                await configStore.DeleteConfigAsync(page.Url);
+                await configStore.DeleteConfigAsync(page.Url).ConfigureAwait(false);
             }
 
             // Force refresh will re-trigger AI analysis since config is now deleted
             ctx.NavigationService.SetStatusMessage("Re-analyzing page hierarchy...");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            await ctx.ForceRefreshAsync(page.Url, options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            await ctx.ForceRefreshAsync(page.Url, options, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to re-analyze page hierarchy");
             ctx.NavigationService.SetStatusMessage("Re-analysis failed");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
@@ -462,8 +462,8 @@ internal static class SearchCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                await bookmarkService.RenameBookmarkAsync(bookmark.Id, newName, ct);
-                await ctx.RefreshBookmarksAsync(ct);
+                await bookmarkService.RenameBookmarkAsync(bookmark.Id, newName, ct).ConfigureAwait(false);
+                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
                 ctx.NavigationService.SetStatusMessage($"Renamed to: {newName}");
                 ctx.Logger.LogInformation("Renamed bookmark to: {Name}", newName);
             }

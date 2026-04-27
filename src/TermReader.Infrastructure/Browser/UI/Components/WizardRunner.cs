@@ -83,7 +83,7 @@ internal static class WizardRunner
                 }
 
                 var value = await FormField.PromptAsync(
-                    input, preFilledField, palette, currentRow, fieldWidth, ct);
+                    input, preFilledField, palette, currentRow, fieldWidth, ct).ConfigureAwait(false);
 
                 if (value == null)
                 {
@@ -146,7 +146,7 @@ internal static class WizardRunner
                 var validationRow = currentRow;
                 RenderSpinner(palette, validationRow, "Validating...");
 
-                var error = await step.OnValidateAsync(mergedValues);
+                var error = await step.OnValidateAsync(mergedValues).ConfigureAwait(false);
 
                 if (error != null)
                 {
@@ -157,7 +157,7 @@ internal static class WizardRunner
 
                     // Wait for keypress before retrying
                     await input.PromptForInputAsync(
-                        string.Empty, ct, row: validationRow + 1, col: 2);
+                        string.Empty, ct, row: validationRow + 1, col: 2).ConfigureAwait(false);
 
                     // Don't advance — re-render this step
                     continue;

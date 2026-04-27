@@ -62,6 +62,6 @@ public class OpmlExporter : ICollectionExporter
         }
 
         await using var stream = File.Create(options.OutputPath);
-        await opml.SaveAsync(stream, SaveOptions.None, cancellationToken);
+        await opml.SaveAsync(stream, SaveOptions.None, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -78,7 +78,7 @@ internal static class ConfirmationDialog
 
         // Wait for keypress
         ct.ThrowIfCancellationRequested();
-        var command = await input.WaitForInputAsync(ct);
+        var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
         return command.RawKeyChar is 'y' or 'Y';
     }
 
@@ -172,7 +172,7 @@ internal static class ConfirmationDialog
             MaxLength = 10,
         };
 
-        var result = await FormField.PromptAsync(input, field, palette, row, fieldWidth, ct);
+        var result = await FormField.PromptAsync(input, field, palette, row, fieldWidth, ct).ConfigureAwait(false);
         return result != null;
     }
 

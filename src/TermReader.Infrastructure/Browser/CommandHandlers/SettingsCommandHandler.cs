@@ -77,7 +77,7 @@ internal static class SettingsCommandHandler
                               $"{p.GetAccentFg().AnsiFg}:{reset}{p.SecondaryText.AnsiFg}run command{reset}");
             helpers.ClearRemainingLines();
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -92,17 +92,17 @@ internal static class SettingsCommandHandler
 
             if (command.Type == CommandType.OpenCommandLine)
             {
-                var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
+                var input = await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(input))
                 {
-                    await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct);
+                    await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);
                 }
 
                 continue;
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     internal static async Task HandleSetCommand(CommandContext ctx, string? subcommand, RenderOptions options, CancellationToken ct)
@@ -112,24 +112,24 @@ internal static class SettingsCommandHandler
         switch (setting)
         {
             case "apikey":
-                await HandleSetApiKey(ctx, options, ct);
+                await HandleSetApiKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "bucket":
-                await HandleSetBucket(ctx, options, ct);
+                await HandleSetBucket(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "key":
-                await HandleSetKey(ctx, options, ct);
+                await HandleSetKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "anthropic-key":
-                await HandleSetAnthropicKey(ctx, options, ct);
+                await HandleSetAnthropicKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             default:
                 ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key | :set anthropic-key");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
         }
     }
@@ -141,24 +141,24 @@ internal static class SettingsCommandHandler
         switch (setting)
         {
             case "apikey":
-                await HandleClearApiKey(ctx, options, ct);
+                await HandleClearApiKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "bucket":
-                await HandleClearBucket(ctx, options, ct);
+                await HandleClearBucket(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "key":
-                await HandleClearKey(ctx, options, ct);
+                await HandleClearKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "anthropic-key":
-                await HandleClearAnthropicKey(ctx, options, ct);
+                await HandleClearAnthropicKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             default:
                 // No recognized subcommand — delegate to existing collection clear behavior
-                await CollectionCommandHandler.HandleClearCollection(ctx, options, ct);
+                await CollectionCommandHandler.HandleClearCollection(ctx, options, ct).ConfigureAwait(false);
                 break;
         }
     }
@@ -177,11 +177,11 @@ internal static class SettingsCommandHandler
 
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
         var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
         if (apiKey == null)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -192,9 +192,9 @@ internal static class SettingsCommandHandler
         ttsService.SetApiKeyOverride(trimmedKey);
 
         ctx.NavigationService.SetStatusMessage("Verifying API key...");
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-        var validation = await ttsService.ValidateApiKeyAsync(ct);
+        var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
 
         if (validation.IsValid)
         {
@@ -216,17 +216,17 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid API key");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleSetBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var bucketName = await ctx.InputHandler.PromptForInputAsync(
-            "GCS bucket name: ", ct);
+            "GCS bucket name: ", ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(bucketName))
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -236,7 +236,7 @@ internal static class SettingsCommandHandler
         {
             ctx.NavigationService.SetStatusMessage(
                 $"Invalid: \"{trimmed}\" \u2014 must be 3\u201363 chars, lowercase a\u2013z/0\u20139/hyphens/dots");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -257,7 +257,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to save bucket name");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleSetAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -289,11 +289,11 @@ internal static class SettingsCommandHandler
 
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
         var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
         if (apiKey == null)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -312,7 +312,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to save Anthropic API key");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -348,11 +348,11 @@ internal static class SettingsCommandHandler
 
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
         var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-        var keyPath = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
+        var keyPath = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
         if (keyPath == null)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -398,7 +398,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to save key path");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleClearApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -420,7 +420,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear API key");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleClearBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -442,7 +442,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleClearAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -460,7 +460,7 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear Anthropic API key");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleClearKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -488,6 +488,6 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear service account key");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 }

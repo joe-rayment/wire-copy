@@ -73,7 +73,7 @@ public class CachingPageLoader : IPageLoader
             }
         }
 
-        var result = await _inner.LoadAsync(request, cancellationToken);
+        var result = await _inner.LoadAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (result.Success)
         {

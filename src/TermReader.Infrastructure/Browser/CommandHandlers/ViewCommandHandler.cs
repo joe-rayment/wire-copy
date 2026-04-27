@@ -26,7 +26,7 @@ internal static class ViewCommandHandler
 
         ctx.NavigationService.ToggleViewMode();
         ctx.LineCacheManager.InvalidateLineCache();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleSwitchToHierarchical(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -39,7 +39,7 @@ internal static class ViewCommandHandler
 
         ctx.NavigationService.SetViewMode(ViewMode.Hierarchical);
         ctx.LineCacheManager.InvalidateLineCache();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleSwitchToReadable(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -52,7 +52,7 @@ internal static class ViewCommandHandler
 
         ctx.NavigationService.SetViewMode(ViewMode.Readable);
         ctx.LineCacheManager.InvalidateLineCache();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleIncreaseWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -62,7 +62,7 @@ internal static class ViewCommandHandler
         ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
-        await ctx.RenderCurrentPageAsync(newOptions, ct);
+        await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleDecreaseWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -72,7 +72,7 @@ internal static class ViewCommandHandler
         ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
-        await ctx.RenderCurrentPageAsync(newOptions, ct);
+        await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleResetWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -81,14 +81,14 @@ internal static class ViewCommandHandler
         ctx.NavigationService.SetStatusMessage($"Width: {DefaultContentWidth} (default)");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
-        await ctx.RenderCurrentPageAsync(newOptions, ct);
+        await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleOpenLauncher(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.NavigationService.EnterLauncher();
-        await ctx.RefreshBookmarksAsync(ct);
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleCycleTheme(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -96,7 +96,7 @@ internal static class ViewCommandHandler
         ctx.ThemeProvider.CycleTheme();
         ctx.NavigationService.SetStatusMessage(ctx.ThemeProvider.CurrentTheme.ToString());
         ctx.LineCacheManager.InvalidateLineCache();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleTerminalResized(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -108,7 +108,7 @@ internal static class ViewCommandHandler
         }
 
         ctx.LineCacheManager.ClampScrollOffset();
-        await ctx.RenderCurrentPageAsync(newOptions, ct);
+        await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -126,11 +126,11 @@ internal static class ViewCommandHandler
         // Wait for any keypress to dismiss (re-render on resize)
         while (!ct.IsCancellationRequested)
         {
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
             if (command.Type == CommandType.TerminalResized)
             {
                 // Re-render page + popup on resize
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 options = ctx.GetCurrentRenderOptions();
                 UI.Components.KeybindingPopup.Render(
                     mode,
@@ -144,7 +144,7 @@ internal static class ViewCommandHandler
         }
 
         // Restore the original page render
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleDumpHtml(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -153,7 +153,7 @@ internal static class ViewCommandHandler
         if (page == null || string.IsNullOrEmpty(page.RawHtml))
         {
             ctx.NavigationService.SetStatusMessage("No page loaded to dump");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -181,7 +181,7 @@ internal static class ViewCommandHandler
             var fileName = $"{domain}_{safePath}_{timestamp}.html";
             var filePath = Path.Combine(fixturesDir, fileName);
 
-            await File.WriteAllTextAsync(filePath, page.RawHtml, ct);
+            await File.WriteAllTextAsync(filePath, page.RawHtml, ct).ConfigureAwait(false);
 
             ctx.NavigationService.SetStatusMessage($"HTML dumped to fixtures/{fileName}");
             ctx.Logger.LogInformation("Dumped page HTML to {FilePath} ({Bytes} bytes)", filePath, page.RawHtml.Length);
@@ -192,7 +192,7 @@ internal static class ViewCommandHandler
             ctx.Logger.LogWarning(ex, "Failed to dump page HTML");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleOpenInBrowser(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -215,7 +215,7 @@ internal static class ViewCommandHandler
         if (string.IsNullOrEmpty(url))
         {
             ctx.NavigationService.SetStatusMessage("No URL to open");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -231,6 +231,6 @@ internal static class ViewCommandHandler
             ctx.Logger.LogWarning(ex, "Failed to open URL in browser: {Url}", url);
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 }

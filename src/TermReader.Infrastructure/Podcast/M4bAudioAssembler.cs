@@ -45,7 +45,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
             if (process != null)
             {
-                await process.WaitForExitAsync(cancellationToken);
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
                 return process.ExitCode == 0;
             }
         }
@@ -98,7 +98,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
                 var duration = segment.Duration;
                 if (duration == TimeSpan.Zero)
                 {
-                    var analysis = await FFProbe.AnalyseAsync(segment.AudioFilePath, cancellationToken: cancellationToken);
+                    var analysis = await FFProbe.AnalyseAsync(segment.AudioFilePath, cancellationToken: cancellationToken).ConfigureAwait(false);
                     duration = analysis.Duration;
                 }
 
@@ -144,7 +144,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
                     .WithAudioCodec(_config.AudioCodec)
                     .WithAudioBitrate(ParseBitrate(_config.AudioBitrate))
                     .WithCustomArgument($"-ac {_config.AudioChannels} -ar {_config.SampleRate} -movflags +faststart"))
-                .ProcessAsynchronously(throwOnError: true);
+                .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 

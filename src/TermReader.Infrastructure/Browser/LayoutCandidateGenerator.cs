@@ -44,7 +44,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         var candidates = new List<LayoutCandidate>();
 
         // 1. Document-order layout (always available, instant)
-        var docOrderTree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+        var docOrderTree = await _treeBuilder.BuildTreeAsync(links, cancellationToken).ConfigureAwait(false);
         var docOrderConfig = BuildDocumentOrderConfig(pageUrl, docOrderTree);
         candidates.Add(new LayoutCandidate
         {
@@ -57,15 +57,15 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         var aiTask = TryGenerateAiCandidateAsync(links, pageUrl, screenshot, cancellationToken);
         var rssTask = TryGenerateRssCandidateAsync(html, pageUrl, cancellationToken);
 
-        await Task.WhenAll(aiTask, rssTask);
+        await Task.WhenAll(aiTask, rssTask).ConfigureAwait(false);
 
-        var aiCandidate = await aiTask;
+        var aiCandidate = await aiTask.ConfigureAwait(false);
         if (aiCandidate != null)
         {
             candidates.Add(aiCandidate);
         }
 
-        var rssCandidate = await rssTask;
+        var rssCandidate = await rssTask.ConfigureAwait(false);
         if (rssCandidate != null)
         {
             candidates.Add(rssCandidate);
@@ -81,7 +81,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         if (candidates.Count <= 1 && screenshot != null && screenshot.Length > 0)
         {
             var altCandidate = await TryGenerateCreativeAlternativeAsync(
-                links, pageUrl, screenshot, aiCandidate, cancellationToken);
+                links, pageUrl, screenshot, aiCandidate, cancellationToken).ConfigureAwait(false);
             if (altCandidate != null)
             {
                 candidates.Add(altCandidate);
@@ -219,7 +219,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
             }
 
             var config = await analyzer.AnalyzePageHierarchyAsync(
-                screenshot, links, pageUrl, promptSuffix: null, cancellationToken);
+                screenshot, links, pageUrl, promptSuffix: null, cancellationToken).ConfigureAwait(false);
 
             config = config with
             {
@@ -227,7 +227,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
                 StructuralSignature = ComputeSignature(config),
             };
 
-            var tree = await _treeBuilder.BuildTreeAsync(links, config, cancellationToken);
+            var tree = await _treeBuilder.BuildTreeAsync(links, config, cancellationToken).ConfigureAwait(false);
 
             return new LayoutCandidate
             {
@@ -274,7 +274,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
             _logger.LogInformation("Trying creative alternative layout for {Url}", pageUrl);
 
             var config = await analyzer.AnalyzePageHierarchyAsync(
-                screenshot, links, pageUrl, creativeSuffix, cancellationToken);
+                screenshot, links, pageUrl, creativeSuffix, cancellationToken).ConfigureAwait(false);
 
             config = config with
             {
@@ -294,7 +294,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
                 return null;
             }
 
-            var tree = await _treeBuilder.BuildTreeAsync(links, config, cancellationToken);
+            var tree = await _treeBuilder.BuildTreeAsync(links, config, cancellationToken).ConfigureAwait(false);
 
             return new LayoutCandidate
             {
@@ -325,7 +325,7 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
         // If <link> tag detection found nothing, probe well-known feed URLs
         if (feeds == null || feeds.Count == 0)
         {
-            feeds = await _feedDetector.ProbeWellKnownFeedsAsync(pageUrl, cancellationToken);
+            feeds = await _feedDetector.ProbeWellKnownFeedsAsync(pageUrl, cancellationToken).ConfigureAwait(false);
         }
 
         if (feeds == null || feeds.Count == 0)
@@ -338,13 +338,13 @@ public class LayoutCandidateGenerator : ILayoutCandidateGenerator
 
         try
         {
-            var feedItems = await _feedDetector.ParseFeedAsync(feedInfo.Url, cancellationToken);
+            var feedItems = await _feedDetector.ParseFeedAsync(feedInfo.Url, cancellationToken).ConfigureAwait(false);
             if (feedItems.Count == 0)
             {
                 return null;
             }
 
-            var tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken);
+            var tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken).ConfigureAwait(false);
 
             var domain = new Uri(pageUrl).Host.ToLowerInvariant();
             var config = new SiteHierarchyConfig

@@ -165,7 +165,7 @@ public class RssFeedDetector : IRssFeedDetector
                 request.Headers.Add("User-Agent", "Mozilla/5.0 (compatible; TermReader/1.0)");
 
                 using var response = await _httpClient.SendAsync(
-                    request, HttpCompletionOption.ResponseHeadersRead);
+                    request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -215,10 +215,10 @@ public class RssFeedDetector : IRssFeedDetector
         {
             _logger.LogInformation("Fetching RSS feed: {Url}", feedUrl);
 
-            using var response = await _httpClient.GetAsync(feedUrl, cancellationToken);
+            using var response = await _httpClient.GetAsync(feedUrl, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var xmlReader = XmlReader.Create(stream);
 
             var feed = SyndicationFeed.Load(xmlReader);

@@ -159,7 +159,7 @@ public class BrowserOrchestrator : IBrowserService
             Url = url,
         };
 
-        var result = await _pipeline.LoadAsync(url, ReportStage, cancellationToken);
+        var result = await _pipeline.LoadAsync(url, ReportStage, cancellationToken).ConfigureAwait(false);
         _lastLoadFetchMethod = result.FetchMethod;
 
         // Store background quality retry task if the pipeline scheduled one
@@ -293,12 +293,12 @@ public class BrowserOrchestrator : IBrowserService
             if (!string.IsNullOrWhiteSpace(initialUrl))
             {
                 // Explicit URL provided → load directly (existing behavior)
-                await NavigateToAsync(initialUrl, options, cancellationToken);
+                await NavigateToAsync(initialUrl, options, cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 // No URL → show launcher home screen
-                await EnterLauncherAsync(options, cancellationToken);
+                await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
             }
 
             // Non-interactive mode: page rendered, exit cleanly (no TTY)
@@ -351,17 +351,17 @@ public class BrowserOrchestrator : IBrowserService
                     speedReadDelay = null;
                 }
 
-                var completed = await Task.WhenAny(raceTasks);
+                var completed = await Task.WhenAny(raceTasks).ConfigureAwait(false);
 
                 if (completed == _backgroundPageLoad)
                 {
                     // Background load completed — replace skeleton with real page
-                    await CompleteBackgroundLoadAsync(options, cancellationToken);
+                    await CompleteBackgroundLoadAsync(options, cancellationToken).ConfigureAwait(false);
                 }
                 else if (completed == _qualityRetryTask)
                 {
                     // Quality retry completed — replace page with improved version if better
-                    await CompleteQualityRetryAsync(options, cancellationToken);
+                    await CompleteQualityRetryAsync(options, cancellationToken).ConfigureAwait(false);
                 }
                 else if (speedReadDelay != null && completed == speedReadDelay)
                 {
@@ -373,18 +373,18 @@ public class BrowserOrchestrator : IBrowserService
                         _navigationService.StopSpeedRead();
                     }
 
-                    await RenderCurrentPageAsync(options, cancellationToken);
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                 }
                 else if (completed == pendingInput)
                 {
                     // User input received — process it
-                    var command = await pendingInput;
+                    var command = await pendingInput.ConfigureAwait(false);
                     pendingInput = null;
 
                     // Animation tick: lightweight render update for animated regions only
                     if (command.Type == CommandType.AnimationTick)
                     {
-                        await HandleAnimationTickAsync(options, cancellationToken);
+                        await HandleAnimationTickAsync(options, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 
@@ -396,7 +396,7 @@ public class BrowserOrchestrator : IBrowserService
                     {
                         _navigationService.StopSpeedRead();
                         speedReadDelay = null;
-                        await RenderCurrentPageAsync(options, cancellationToken);
+                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                         continue; // Consume the keypress
                     }
 
@@ -419,7 +419,7 @@ public class BrowserOrchestrator : IBrowserService
                         CancelBackgroundLoad();
                     }
 
-                    var shouldContinue = await HandleCommandAsync(command, options, cancellationToken);
+                    var shouldContinue = await HandleCommandAsync(command, options, cancellationToken).ConfigureAwait(false);
 
                     // Reset speed read timer after any command so WPM/toggle changes take effect
                     speedReadDelay = null;
@@ -438,11 +438,11 @@ public class BrowserOrchestrator : IBrowserService
                         var stage = _loadingStatus.Stage ?? "Loading...";
                         var elapsed = _loadingStatus.ElapsedMs / 1000;
                         _navigationService.SetStatusMessage($"{stage} ({elapsed}s)");
-                        await RenderCurrentPageAsync(options, cancellationToken);
+                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        await CheckAndRenderProgressAsync(cancellationToken);
+                        await CheckAndRenderProgressAsync(cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
@@ -757,8 +757,8 @@ public class BrowserOrchestrator : IBrowserService
                         _pageCache.ApplyLinkListTtl(url);
                     }
 
-                    var page = await _pipeline.RebuildFromBuildCacheAsync(buildCache);
-                    await CompleteNavigation(page, url, options);
+                    var page = await _pipeline.RebuildFromBuildCacheAsync(buildCache).ConfigureAwait(false);
+                    await CompleteNavigation(page, url, options).ConfigureAwait(false);
                     return;
                 }
             }
@@ -769,8 +769,8 @@ public class BrowserOrchestrator : IBrowserService
             {
                 // HTML cached — extraction is fast (especially for LinkList with content skip).
                 // Load synchronously to avoid skeleton flash.
-                var page = await LoadPageAsync(url, cancellationToken);
-                await CompleteNavigation(page, url, options);
+                var page = await LoadPageAsync(url, cancellationToken).ConfigureAwait(false);
+                await CompleteNavigation(page, url, options).ConfigureAwait(false);
                 return;
             }
 
@@ -810,7 +810,7 @@ public class BrowserOrchestrator : IBrowserService
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
-            await RenderCurrentPageAsync(options, CancellationToken.None);
+            await RenderCurrentPageAsync(options, CancellationToken.None).ConfigureAwait(false);
 
             PlayDecryptRevealAnimation(page);
 
@@ -825,7 +825,7 @@ public class BrowserOrchestrator : IBrowserService
                     {
                         _logger.LogInformation(
                             "JS-heavy/paywalled domain detected, warming up browser session: {Url}", url);
-                        await _browserSession.WarmUpAsync();
+                        await _browserSession.WarmUpAsync().ConfigureAwait(false);
                     }
                     catch (Exception warmupEx)
                     {
@@ -926,7 +926,7 @@ public class BrowserOrchestrator : IBrowserService
             {
                 try
                 {
-                    return await LoadPageAsync(url, token);
+                    return await LoadPageAsync(url, token).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -1005,7 +1005,7 @@ public class BrowserOrchestrator : IBrowserService
 
         try
         {
-            var page = await loadTask;
+            var page = await loadTask.ConfigureAwait(false);
 
             // Only replace if we're still on the skeleton for this URL
             if (_navigationService.CurrentPage?.Url != url)
@@ -1032,7 +1032,7 @@ public class BrowserOrchestrator : IBrowserService
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
-            await RenderCurrentPageAsync(loadOptions, cancellationToken);
+            await RenderCurrentPageAsync(loadOptions, cancellationToken).ConfigureAwait(false);
 
             PlayDecryptRevealAnimation(page);
         }
@@ -1080,7 +1080,7 @@ public class BrowserOrchestrator : IBrowserService
 
         try
         {
-            var result = await retryTask;
+            var result = await retryTask.ConfigureAwait(false);
 
             // Only replace if we're still on the same URL
             if (_navigationService.CurrentPage?.Url != url)
@@ -1118,7 +1118,7 @@ public class BrowserOrchestrator : IBrowserService
                 }
 
                 _lineCacheManager.InvalidateLineCache();
-                await RenderCurrentPageAsync(options, cancellationToken);
+                await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -1149,14 +1149,14 @@ public class BrowserOrchestrator : IBrowserService
 
             var loadResult = await _pageLoader.LoadAsync(
                 new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             if (!loadResult.Success)
             {
                 throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
             }
 
-            var (page, _) = await _pipeline.BuildPageAsync(loadResult, url, cancellationToken);
+            var (page, _) = await _pipeline.BuildPageAsync(loadResult, url, cancellationToken).ConfigureAwait(false);
 
             _navigationService.ReplaceCurrent(page);
             _navigationService.SetCacheInfo(false, null);
@@ -1165,7 +1165,7 @@ public class BrowserOrchestrator : IBrowserService
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
-            await RenderCurrentPageAsync(options, cancellationToken);
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1190,7 +1190,7 @@ public class BrowserOrchestrator : IBrowserService
             // so the user gets a visible window they can interact with (login, captcha, etc.)
             var loadResult = await _pageLoader.LoadAsync(
                 new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             if (!loadResult.Success)
             {
@@ -1201,11 +1201,11 @@ public class BrowserOrchestrator : IBrowserService
             // Restore the browser window AFTER the headed browser is created and page loaded
             if (_browserSession is IBrowserSession browserSession)
             {
-                await browserSession.RestoreWindowAsync();
+                await browserSession.RestoreWindowAsync().ConfigureAwait(false);
             }
 
             // If bot challenge detected, use the challenge polling helper (force headed)
-            var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken, headlessOverride: false);
+            var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken, headlessOverride: false).ConfigureAwait(false);
             if (challengeResult != null)
             {
                 loadResult = challengeResult;
@@ -1214,27 +1214,27 @@ public class BrowserOrchestrator : IBrowserService
             // Show prompt and wait for user to accept or cancel
             _renderer.RenderInteractiveRefresh(url);
 
-            var input = await _inputHandler.WaitForInputAsync(cancellationToken);
+            var input = await _inputHandler.WaitForInputAsync(cancellationToken).ConfigureAwait(false);
             if (input.Type == CommandType.GoBack)
             {
                 // User pressed Esc — cancel, minimize browser
                 if (_browserSession is IBrowserSession cancelSession)
                 {
-                    await cancelSession.MinimizeWindowAsync();
+                    await cancelSession.MinimizeWindowAsync().ConfigureAwait(false);
                 }
 
-                await RenderCurrentPageAsync(options, cancellationToken);
+                await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
             // Minimize browser now that interaction is complete
             if (_browserSession is IBrowserSession interactiveSession)
             {
-                await interactiveSession.MinimizeWindowAsync();
+                await interactiveSession.MinimizeWindowAsync().ConfigureAwait(false);
             }
 
             // Accept: build page, cache, and re-render
-            var (page, _) = await _pipeline.BuildPageAsync(loadResult, url, cancellationToken);
+            var (page, _) = await _pipeline.BuildPageAsync(loadResult, url, cancellationToken).ConfigureAwait(false);
 
             _pageCache.Put(url, loadResult);
             _navigationService.ReplaceCurrent(page);
@@ -1243,12 +1243,12 @@ public class BrowserOrchestrator : IBrowserService
 
             // Save cookies from the headed browser session (enables future browser
             // loads of paywalled articles to use the user's login)
-            await SaveBrowserCookiesAsync(cancellationToken);
+            await SaveBrowserCookiesAsync(cancellationToken).ConfigureAwait(false);
 
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
-            await RenderCurrentPageAsync(options, cancellationToken);
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1274,8 +1274,8 @@ public class BrowserOrchestrator : IBrowserService
                 return;
             }
 
-            var page = await session.GetOrCreatePageAsync(false);
-            var playwrightCookies = await page.Context.CookiesAsync();
+            var page = await session.GetOrCreatePageAsync(false).ConfigureAwait(false);
+            var playwrightCookies = await page.Context.CookiesAsync().ConfigureAwait(false);
             var storedCookies = playwrightCookies.Select(c =>
                 new Application.Interfaces.StoredCookie(
                     c.Name,
@@ -1284,11 +1284,11 @@ public class BrowserOrchestrator : IBrowserService
                     c.Path ?? string.Empty,
                     c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
-            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
+            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("Saved {Count} browser cookies after interactive refresh", storedCookies.Count);
 
             // Refresh HTTP client cookies so the preloader can use them
-            await _httpCookieRefresher.RefreshAsync();
+            await _httpCookieRefresher.RefreshAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1301,7 +1301,7 @@ public class BrowserOrchestrator : IBrowserService
         _idleDetector.RecordActivity();
 
         // Auto-commit expired undo states
-        await UndoCommandHandler.CommitIfExpired(_commandContext, cancellationToken);
+        await UndoCommandHandler.CommitIfExpired(_commandContext, cancellationToken).ConfigureAwait(false);
 
         // For any command other than Undo, passive commands, or DeleteItem
         // (which handles its own undo commit), commit pending undo immediately
@@ -1311,7 +1311,7 @@ public class BrowserOrchestrator : IBrowserService
             and not CommandType.DeleteItem
             && _commandContext.PendingUndo != null)
         {
-            await UndoCommandHandler.ClearOnAction(_commandContext, cancellationToken);
+            await UndoCommandHandler.ClearOnAction(_commandContext, cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -1319,7 +1319,7 @@ public class BrowserOrchestrator : IBrowserService
             // Handle launcher-specific commands first
             if (_navigationService.InLauncherMode)
             {
-                return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken);
+                return await LauncherCommandHandler.Handle(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
             }
 
             // Layout preview mode: intercept keys for carousel control
@@ -1328,16 +1328,16 @@ public class BrowserOrchestrator : IBrowserService
                 switch (command.Type)
                 {
                     case CommandType.ExpandNode or CommandType.MoveRight:
-                        await LayoutCommandHandler.HandleCycleRight(_commandContext, options, cancellationToken);
+                        await LayoutCommandHandler.HandleCycleRight(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.CollapseNode or CommandType.MoveLeft:
-                        await LayoutCommandHandler.HandleCycleLeft(_commandContext, options, cancellationToken);
+                        await LayoutCommandHandler.HandleCycleLeft(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.ActivateLink:
-                        await LayoutCommandHandler.HandleApplyAndSave(_commandContext, options, cancellationToken);
+                        await LayoutCommandHandler.HandleApplyAndSave(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.GoBack:
-                        await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken);
+                        await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.Quit:
                         return false;
@@ -1356,19 +1356,19 @@ public class BrowserOrchestrator : IBrowserService
                     return false;
 
                 case CommandType.MoveDown:
-                    await NavigationCommandHandler.HandleMoveDown(_commandContext, command, options, cancellationToken);
+                    await NavigationCommandHandler.HandleMoveDown(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.MoveUp:
-                    await NavigationCommandHandler.HandleMoveUp(_commandContext, command, options, cancellationToken);
+                    await NavigationCommandHandler.HandleMoveUp(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ExpandNode:
-                    await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleExpandNode(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.CollapseNode:
-                    await NavigationCommandHandler.HandleCollapseNode(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleCollapseNode(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ToggleNode:
-                    await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleToggleNode(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ToggleSelection:
                     // Spacebar: toggle speed read in Readable view, toggle selection in Hierarchical
@@ -1387,146 +1387,146 @@ public class BrowserOrchestrator : IBrowserService
                             _navigationService.SetStatusMessage("No readable content for speed reading");
                         }
 
-                        await RenderCurrentPageAsync(options, cancellationToken);
+                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken);
+                        await NavigationCommandHandler.HandleToggleSelection(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     }
 
                     break;
                 case CommandType.ActivateLink:
-                    await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoBack:
-                    await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoForward:
-                    await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.PageDown:
-                    await NavigationCommandHandler.HandlePageDown(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandlePageDown(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.PageUp:
-                    await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandlePageUp(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ParagraphDown:
-                    await NavigationCommandHandler.HandleParagraphDown(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleParagraphDown(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ParagraphUp:
-                    await NavigationCommandHandler.HandleParagraphUp(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleParagraphUp(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoToTop:
-                    await NavigationCommandHandler.HandleGoToTop(_commandContext, command, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoToTop(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoToBottom:
-                    await NavigationCommandHandler.HandleGoToBottom(_commandContext, command, options, cancellationToken);
+                    await NavigationCommandHandler.HandleGoToBottom(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.Refresh:
-                    await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleRefresh(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ForceRefresh:
-                    await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleForceRefresh(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.InteractiveRefresh:
-                    await NavigationCommandHandler.HandleInteractiveRefresh(_commandContext, options, cancellationToken);
+                    await NavigationCommandHandler.HandleInteractiveRefresh(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.Navigate:
-                    await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken);
+                    await NavigationCommandHandler.HandleNavigate(_commandContext, command, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.SwitchView:
-                    await ViewCommandHandler.HandleSwitchView(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleSwitchView(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SwitchToHierarchical:
-                    await ViewCommandHandler.HandleSwitchToHierarchical(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleSwitchToHierarchical(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SwitchToReadable:
-                    await ViewCommandHandler.HandleSwitchToReadable(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleSwitchToReadable(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ShowHelp:
-                    await ViewCommandHandler.HandleShowHelp(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleShowHelp(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.IncreaseWidth:
-                    await ViewCommandHandler.HandleIncreaseWidth(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleIncreaseWidth(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.DecreaseWidth:
-                    await ViewCommandHandler.HandleDecreaseWidth(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleDecreaseWidth(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ResetWidth:
-                    await ViewCommandHandler.HandleResetWidth(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleResetWidth(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.OpenLauncher:
-                    await ViewCommandHandler.HandleOpenLauncher(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleOpenLauncher(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.CycleTheme:
-                    await ViewCommandHandler.HandleCycleTheme(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleCycleTheme(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.TerminalResized:
-                    await ViewCommandHandler.HandleTerminalResized(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleTerminalResized(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.OpenCommandLine:
-                    if (!await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken))
+                    if (!await SearchCommandHandler.HandleOpenCommandLine(_commandContext, options, cancellationToken).ConfigureAwait(false))
                     {
                         return false;
                     }
 
                     break;
                 case CommandType.Search:
-                    await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken);
+                    await SearchCommandHandler.HandleSearch(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SearchNext:
-                    await SearchCommandHandler.HandleSearchNext(_commandContext, options, cancellationToken);
+                    await SearchCommandHandler.HandleSearchNext(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SearchPrevious:
-                    await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken);
+                    await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.SaveToCollection:
-                    await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SaveToSpecific:
-                    await CollectionCommandHandler.HandleSaveToSpecific(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleSaveToSpecific(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SaveAllToReadingList:
-                    await CollectionCommandHandler.HandleSaveAllToReadingList(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleSaveAllToReadingList(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.OpenCollections:
-                    await CollectionCommandHandler.HandleOpenCollections(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleOpenCollections(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.DeleteItem:
-                    await CollectionCommandHandler.HandleDeleteItem(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleDeleteItem(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ReorderUp:
-                    await CollectionCommandHandler.HandleReorderUp(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleReorderUp(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ReorderDown:
-                    await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleReorderDown(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.ClearCollection:
-                    await CollectionCommandHandler.HandleClearCollection(_commandContext, options, cancellationToken);
+                    await CollectionCommandHandler.HandleClearCollection(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.GeneratePodcast:
                     await PodcastCommandHandler.HandleGeneratePodcast(
-                        _commandContext, options, cancellationToken);
+                        _commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.ChooseLayout:
-                    await LayoutCommandHandler.HandleChooseLayout(_commandContext, options, cancellationToken);
+                    await LayoutCommandHandler.HandleChooseLayout(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.CycleLayoutVariant:
-                    await LayoutCommandHandler.HandleCycleLayoutVariant(_commandContext, options, cancellationToken);
+                    await LayoutCommandHandler.HandleCycleLayoutVariant(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.DumpHtml:
-                    await ViewCommandHandler.HandleDumpHtml(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleDumpHtml(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.OpenInBrowser:
-                    await ViewCommandHandler.HandleOpenInBrowser(_commandContext, options, cancellationToken);
+                    await ViewCommandHandler.HandleOpenInBrowser(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.AddBookmark:
@@ -1534,7 +1534,7 @@ public class BrowserOrchestrator : IBrowserService
                     break;
 
                 case CommandType.Undo:
-                    await UndoCommandHandler.HandleUndo(_commandContext, options, cancellationToken);
+                    await UndoCommandHandler.HandleUndo(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.ToggleSpeedRead:
@@ -1553,19 +1553,19 @@ public class BrowserOrchestrator : IBrowserService
                             _navigationService.SetStatusMessage("No readable content for speed reading");
                         }
 
-                        await RenderCurrentPageAsync(options, cancellationToken);
+                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     }
 
                     break;
                 case CommandType.SpeedReadFaster:
                     _navigationService.AdjustSpeedReadWpm(25);
                     _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
-                    await RenderCurrentPageAsync(options, cancellationToken);
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SpeedReadSlower:
                     _navigationService.AdjustSpeedReadWpm(-25);
                     _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
-                    await RenderCurrentPageAsync(options, cancellationToken);
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     break;
             }
 
@@ -1643,7 +1643,7 @@ public class BrowserOrchestrator : IBrowserService
                 return;
             }
 
-            await RenderAsync(page, viewMode, options, cancellationToken);
+            await RenderAsync(page, viewMode, options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1835,7 +1835,7 @@ public class BrowserOrchestrator : IBrowserService
         {
             // Re-render only the current page — renderers can check AnimationState
             // to decide which regions need updating for the current frame.
-            await RenderCurrentPageAsync(options, cancellationToken);
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1938,7 +1938,7 @@ public class BrowserOrchestrator : IBrowserService
         {
             // Re-read options to get fresh CacheProgress
             var freshOptions = GetCurrentRenderOptions();
-            await RenderCurrentPageAsync(freshOptions, cancellationToken);
+            await RenderCurrentPageAsync(freshOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -2026,8 +2026,8 @@ public class BrowserOrchestrator : IBrowserService
         try
         {
             _navigationService.EnterLauncher();
-            await RefreshBookmarksAsync(cancellationToken);
-            await RenderCurrentPageAsync(options, cancellationToken);
+            await RefreshBookmarksAsync(cancellationToken).ConfigureAwait(false);
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -2044,8 +2044,8 @@ public class BrowserOrchestrator : IBrowserService
         {
             using var scope = _scopeFactory.CreateScope();
             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-            await bookmarkService.EnsureSeededAsync(cancellationToken);
-            var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken);
+            await bookmarkService.EnsureSeededAsync(cancellationToken).ConfigureAwait(false);
+            var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken).ConfigureAwait(false);
             _commandContext.Bookmarks = all.ToList();
         }
         catch (Exception ex)
@@ -2068,12 +2068,12 @@ public class BrowserOrchestrator : IBrowserService
 
             // Purge expired reading list items (16-hour TTL) before loading
             await collectionService.PurgeExpiredReadingListItemsAsync(
-                TimeSpan.FromHours(16), cancellationToken);
+                TimeSpan.FromHours(16), cancellationToken).ConfigureAwait(false);
 
-            var allCollections = await collectionService.GetAllCollectionsAsync(cancellationToken);
+            var allCollections = await collectionService.GetAllCollectionsAsync(cancellationToken).ConfigureAwait(false);
             _commandContext.Collections = allCollections.ToList();
 
-            var defaultCollection = await collectionService.GetDefaultCollectionAsync(cancellationToken);
+            var defaultCollection = await collectionService.GetDefaultCollectionAsync(cancellationToken).ConfigureAwait(false);
             _commandContext.DefaultCollectionId = defaultCollection.Id;
 
             // Update active collection reference if we're viewing one

@@ -43,7 +43,7 @@ public class CookieManager : ICookieManager
                 };
             }
 
-            var json = await File.ReadAllTextAsync(_cookieFilePath);
+            var json = await File.ReadAllTextAsync(_cookieFilePath).ConfigureAwait(false);
             CookieStorage? storage;
 
             try
@@ -125,7 +125,7 @@ public class CookieManager : ICookieManager
                 return Array.Empty<StoredCookie>();
             }
 
-            var json = await File.ReadAllTextAsync(_cookieFilePath);
+            var json = await File.ReadAllTextAsync(_cookieFilePath).ConfigureAwait(false);
             CookieStorage? storage;
 
             try
@@ -248,7 +248,7 @@ public class CookieManager : ICookieManager
         }
 
         var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
+        await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Saved {Count} browser cookies (expires: {ExpiryDate})",

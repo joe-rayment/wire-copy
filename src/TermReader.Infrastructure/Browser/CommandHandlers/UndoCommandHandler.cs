@@ -27,7 +27,7 @@ internal static class UndoCommandHandler
             return false;
         }
 
-        await CommitDeletion(ctx, undo, ct);
+        await CommitDeletion(ctx, undo, ct).ConfigureAwait(false);
         ctx.PendingUndo = null;
         return true;
     }
@@ -44,7 +44,7 @@ internal static class UndoCommandHandler
             return;
         }
 
-        await CommitDeletion(ctx, undo, ct);
+        await CommitDeletion(ctx, undo, ct).ConfigureAwait(false);
         ctx.PendingUndo = null;
     }
 
@@ -57,17 +57,17 @@ internal static class UndoCommandHandler
         if (undo == null)
         {
             ctx.NavigationService.SetStatusMessage("Nothing to undo");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
         if (undo.IsExpired)
         {
             // Window passed — commit the deletion and inform the user
-            await CommitDeletion(ctx, undo, ct);
+            await CommitDeletion(ctx, undo, ct).ConfigureAwait(false);
             ctx.PendingUndo = null;
             ctx.NavigationService.SetStatusMessage("Undo window expired");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -77,11 +77,11 @@ internal static class UndoCommandHandler
             switch (undo.Kind)
             {
                 case UndoActionKind.CollectionItemRemoved:
-                    await RestoreCollectionItem(ctx, undo, ct);
+                    await RestoreCollectionItem(ctx, undo, ct).ConfigureAwait(false);
                     break;
 
                 case UndoActionKind.BookmarkRemoved:
-                    await RestoreBookmark(ctx, undo, ct);
+                    await RestoreBookmark(ctx, undo, ct).ConfigureAwait(false);
                     break;
 
                 case UndoActionKind.CollectionDeleted:
@@ -98,7 +98,7 @@ internal static class UndoCommandHandler
         }
 
         ctx.PendingUndo = null;
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -114,8 +114,8 @@ internal static class UndoCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.RemoveItemAsync(undo.CollectionId, undo.ItemId, ct);
-                    await ctx.RefreshCollectionsAsync(ct);
+                    await service.RemoveItemAsync(undo.CollectionId, undo.ItemId, ct).ConfigureAwait(false);
+                    await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Committed removal of collection item: {Title}", undo.ItemTitle);
                     break;
                 }
@@ -124,8 +124,8 @@ internal static class UndoCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                    await bookmarkService.DeleteBookmarkAsync(undo.BookmarkId, ct);
-                    await ctx.RefreshBookmarksAsync(ct);
+                    await bookmarkService.DeleteBookmarkAsync(undo.BookmarkId, ct).ConfigureAwait(false);
+                    await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Committed removal of bookmark: {Name}", undo.BookmarkName);
                     break;
                 }
@@ -151,7 +151,7 @@ internal static class UndoCommandHandler
         // Re-add by calling SaveToReadingListAsync / SaveToCollectionByNameAsync is not ideal
         // because it doesn't preserve sort order. Instead, we reload from the DB (which still
         // has the item since we deferred the actual delete).
-        await ctx.RefreshCollectionsAsync(ct);
+        await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
 
         // Restore the selection index to where the item was
         var refreshedCol = ctx.NavigationService.ActiveCollection;
@@ -178,7 +178,7 @@ internal static class UndoCommandHandler
     {
         // Like collection items, the bookmark was only removed from the in-memory list.
         // Refreshing from the DB restores it since the actual delete was deferred.
-        await ctx.RefreshBookmarksAsync(ct);
+        await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
 
         // Restore selection
         if (ctx.Bookmarks != null)

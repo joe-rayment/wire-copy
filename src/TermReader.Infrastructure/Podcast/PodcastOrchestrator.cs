@@ -77,7 +77,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             return PodcastResult.Failure("TTS service is not configured. Set an OpenAI API key.");
         }
 
-        if (!await _audioAssembler.ValidatePrerequisitesAsync(cancellationToken))
+        if (!await _audioAssembler.ValidatePrerequisitesAsync(cancellationToken).ConfigureAwait(false))
         {
             return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
         }
@@ -94,7 +94,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             // Step 2: Extract article content (reuse cached articles from AnalyzeCacheStatusAsync if available)
             // If the user skipped the analysis UI, the extraction may still be running.
             // Await it to avoid redundant re-extraction.
-            await AwaitPendingAnalysisAsync(collection.Name, cancellationToken);
+            await AwaitPendingAnalysisAsync(collection.Name, cancellationToken).ConfigureAwait(false);
 
             IReadOnlyList<ExtractedArticle> articles;
             if (_cachedArticles != null && _cachedCollectionName == collection.Name)
@@ -138,7 +138,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                             IsArticleSuccess = p.IsSuccess,
                             PercentComplete = (int)(p.Current * 10.0 / p.Total),
                         })),
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
 
                 extractionFailures = _contentProvider.LastExtractionFailures;
             }
@@ -214,7 +214,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             // Step 3: Estimate cost (accounting for cached articles) and check budget
             var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
                 articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             var totalCost = cacheAnalysis.EstimatedCost;
 
@@ -253,7 +253,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 var spokenText = BuildSpokenText(article);
 
                 // Check cache first
-                var cached = await _audioCache.TryGetAsync(spokenText, article.Url, cancellationToken);
+                var cached = await _audioCache.TryGetAsync(spokenText, article.Url, cancellationToken).ConfigureAwait(false);
                 string audioPath;
 
                 if (cached != null)
@@ -280,7 +280,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     var ttsResult = await _ttsService.GenerateAudioAsync(
                         spokenText,
                         article.Title,
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     if (!ttsResult.Success || ttsResult.AudioData == null)
                     {
@@ -303,7 +303,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                         article.Url,
                         article.Title,
                         ttsResult.AudioData,
-                        cancellationToken);
+                        cancellationToken).ConfigureAwait(false);
                     audioPath = cacheEntry.AudioFilePath;
 
                     _logger.LogInformation(
@@ -354,7 +354,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 },
             };
 
-            var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, cancellationToken);
+            var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, cancellationToken).ConfigureAwait(false);
             if (!assemblyResult.Success || string.IsNullOrEmpty(assemblyResult.OutputPath))
             {
                 return PodcastResult.Failure(
@@ -402,7 +402,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             var publishResult = await _publisher.PublishFeedAsync(
                 podcastMetadata,
                 episodeSources,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             progress?.Report(new PodcastProgress
             {
@@ -545,7 +545,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             var articles = await _contentProvider.GetAllArticleContentAsync(
                 collection,
                 progress,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             // Cache for reuse by GeneratePodcastAsync to avoid double extraction
             _cachedArticles = articles;
@@ -566,7 +566,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             return await _audioCache.AnalyzeCollectionAsync(
                 articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -609,7 +609,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             _logger.LogInformation("Awaiting background analysis that was still running when user skipped");
             try
             {
-                await pendingTask.WaitAsync(cancellationToken);
+                await pendingTask.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

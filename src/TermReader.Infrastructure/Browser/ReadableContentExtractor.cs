@@ -567,7 +567,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // 2. og:title is usually the correct article headline (set by CMS)
         var ogTitle = CleanText(
-            doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", null!));
+            doc.DocumentNode.SelectSingleNode("//meta[@property='og:title']")?.GetAttributeValue("content", string.Empty));
         if (!string.IsNullOrWhiteSpace(ogTitle) && !IsNavigationText(ogTitle))
         {
             return ogTitle;
@@ -624,7 +624,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     private static string? ExtractAuthor(HtmlDocument doc)
     {
         // 1. meta[name="author"] — most reliable when it's a real name (not URL)
-        var metaNameAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", null!);
+        var metaNameAuthor = doc.DocumentNode.SelectSingleNode("//meta[@name='author']")?.GetAttributeValue("content", string.Empty);
         if (!string.IsNullOrWhiteSpace(metaNameAuthor) && !IsUrl(metaNameAuthor))
         {
             return CleanAuthorText(metaNameAuthor);
@@ -673,7 +673,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         // 5. article:author meta (OG spec — typically a URL)
-        var articleAuthor = doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", null!);
+        var articleAuthor = doc.DocumentNode.SelectSingleNode("//meta[@property='article:author']")?.GetAttributeValue("content", string.Empty);
         if (!string.IsNullOrWhiteSpace(articleAuthor))
         {
             if (!IsUrl(articleAuthor))
@@ -847,9 +847,9 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     private static DateTime? ExtractPublishedDate(HtmlDocument doc)
     {
         // Try meta tags with date info
-        var metaDate = doc.DocumentNode.SelectSingleNode("//meta[@property='article:published_time']")?.GetAttributeValue("content", null!) ??
-                      doc.DocumentNode.SelectSingleNode("//meta[@name='pubdate']")?.GetAttributeValue("content", null!) ??
-                      doc.DocumentNode.SelectSingleNode("//meta[@name='publishdate']")?.GetAttributeValue("content", null!);
+        var metaDate = doc.DocumentNode.SelectSingleNode("//meta[@property='article:published_time']")?.GetAttributeValue("content", string.Empty) ??
+                      doc.DocumentNode.SelectSingleNode("//meta[@name='pubdate']")?.GetAttributeValue("content", string.Empty) ??
+                      doc.DocumentNode.SelectSingleNode("//meta[@name='publishdate']")?.GetAttributeValue("content", string.Empty);
 
         if (DateTime.TryParse(metaDate, out var date))
         {
@@ -859,7 +859,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         // Try time elements
         var timeNode = doc.DocumentNode.SelectSingleNode("//time[@datetime]") ??
                        doc.DocumentNode.SelectSingleNode("//time[@itemprop='datePublished']");
-        var timeAttr = timeNode?.GetAttributeValue("datetime", null!);
+        var timeAttr = timeNode?.GetAttributeValue("datetime", string.Empty);
         if (DateTime.TryParse(timeAttr, out date))
         {
             return date;
@@ -867,7 +867,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // Try itemprop datePublished
         var datePublished = doc.DocumentNode.SelectSingleNode("//*[@itemprop='datePublished']");
-        var contentAttr = datePublished?.GetAttributeValue("content", null!) ?? CleanText(datePublished?.InnerText);
+        var contentAttr = datePublished?.GetAttributeValue("content", string.Empty) ?? CleanText(datePublished?.InnerText);
         if (DateTime.TryParse(contentAttr, out date))
         {
             return date;
@@ -1122,12 +1122,20 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         var paragraphs = new List<string>();
 
         // Get all text nodes with substantial content
-        var textNodes = contentArea.DescendantsAndSelf()
-            .Where(n => n.NodeType == HtmlNodeType.Text)
-            .Select(n => CleanText(n.InnerText))
-            .Where(t => !string.IsNullOrWhiteSpace(t) && t!.Length > 100)
-            .Cast<string>()
-            .ToList();
+        var textNodes = new List<string>();
+        foreach (var node in contentArea.DescendantsAndSelf())
+        {
+            if (node.NodeType != HtmlNodeType.Text)
+            {
+                continue;
+            }
+
+            var cleaned = CleanText(node.InnerText);
+            if (!string.IsNullOrWhiteSpace(cleaned) && cleaned.Length > 100)
+            {
+                textNodes.Add(cleaned);
+            }
+        }
 
         foreach (var text in textNodes)
         {
@@ -1204,7 +1212,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
         // Group consecutive <p> elements by their parent
         var groups = new List<List<HtmlNode>>();
-        List<HtmlNode>? currentGroup = null;
+        var currentGroup = new List<HtmlNode>();
         HtmlNode? lastParent = null;
 
         foreach (var p in allParagraphs)
@@ -1222,7 +1230,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 lastParent = parent;
             }
 
-            currentGroup!.Add(p);
+            currentGroup.Add(p);
         }
 
         // Score each group: total text length of substantial paragraphs

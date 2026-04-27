@@ -51,7 +51,7 @@ public class LocalFileStorage : IFileStorage
             throw;
         }
 
-        await Task.CompletedTask;
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     public string GetOutputDirectory()

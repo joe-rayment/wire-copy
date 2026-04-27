@@ -44,7 +44,7 @@ internal static class LayoutCommandHandler
                 ToastType.Info,
                 "Single layout",
                 $"Only one layout available for {mode}");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -55,7 +55,7 @@ internal static class LayoutCommandHandler
         ctx.NavigationService.ShowToast(
             ToastType.Info,
             $"Layout: {newVariant} ({index}/{total})");
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -80,14 +80,14 @@ internal static class LayoutCommandHandler
         if (ctx.NavigationService.IsInPreviewMode)
         {
             ctx.NavigationService.CancelPreview();
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
         // Pick a random warm-up phrase for variety
         var phrase = WarmUpPhrases[Environment.TickCount % WarmUpPhrases.Length];
         ctx.NavigationService.SetStatusMessage($"{phrase}...", TimeSpan.FromMinutes(1));
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         try
         {
@@ -96,7 +96,7 @@ internal static class LayoutCommandHandler
             if (generator == null)
             {
                 ctx.NavigationService.SetStatusMessage("Layout chooser unavailable");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -111,7 +111,7 @@ internal static class LayoutCommandHandler
             byte[]? screenshot = null;
             if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
             {
-                screenshot = await session.CaptureScreenshotAsync();
+                screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
             }
 
             // Generate candidates with animated progress updates
@@ -119,12 +119,12 @@ internal static class LayoutCommandHandler
                 links, html, page.Url, screenshot, ct);
 
             var candidates = await AnimateWhileWaiting(
-                generateTask, ctx, options, phrase, ct);
+                generateTask, ctx, options, phrase, ct).ConfigureAwait(false);
 
             if (candidates.Count == 0)
             {
                 ctx.NavigationService.SetStatusMessage("No layout candidates found");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -133,18 +133,18 @@ internal static class LayoutCommandHandler
                 // Only one layout — skip preview mode, just apply it directly
                 ctx.NavigationService.SetStatusMessage(
                     $"\u2714 {candidates[0].Summary} (only layout available)");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
             // Multiple layouts — celebrate and enter preview mode
             ctx.NavigationService.SetStatusMessage(
                 $"\u2728 {candidates.Count} layouts ready! Use \u25c0/\u25b6 to browse");
-            await ctx.RenderCurrentPageAsync(options, ct);
-            await Task.Delay(600, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            await Task.Delay(600, ct).ConfigureAwait(false);
 
             ctx.NavigationService.EnterPreviewMode(candidates);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -154,7 +154,7 @@ internal static class LayoutCommandHandler
         {
             ctx.Logger.LogError(ex, "Layout chooser failed");
             ctx.NavigationService.SetStatusMessage("Layout generation failed");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 
@@ -167,7 +167,7 @@ internal static class LayoutCommandHandler
         CancellationToken ct)
     {
         ctx.NavigationService.CyclePreview(1);
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -179,7 +179,7 @@ internal static class LayoutCommandHandler
         CancellationToken ct)
     {
         ctx.NavigationService.CyclePreview(-1);
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -203,7 +203,7 @@ internal static class LayoutCommandHandler
             var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
             if (configStore != null)
             {
-                await configStore.SaveConfigAsync(selected.Config);
+                await configStore.SaveConfigAsync(selected.Config).ConfigureAwait(false);
                 ctx.NavigationService.SetStatusMessage($"\u2714 Layout saved \u00b7 {selected.Summary}");
             }
             else
@@ -217,7 +217,7 @@ internal static class LayoutCommandHandler
             ctx.NavigationService.SetStatusMessage($"Applied · {selected.Summary} (save failed)");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -240,7 +240,7 @@ internal static class LayoutCommandHandler
             var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
             if (configStore != null)
             {
-                var deleted = await configStore.DeleteConfigAsync(page.Url);
+                var deleted = await configStore.DeleteConfigAsync(page.Url).ConfigureAwait(false);
                 ctx.NavigationService.SetStatusMessage(
                     deleted ? "Layout config cleared" : "No saved layout for this page");
             }
@@ -251,7 +251,7 @@ internal static class LayoutCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear layout config");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -263,7 +263,7 @@ internal static class LayoutCommandHandler
         CancellationToken ct)
     {
         ctx.NavigationService.CancelPreview();
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -286,16 +286,16 @@ internal static class LayoutCommandHandler
             ctx.NavigationService.SetStatusMessage(
                 $"{spinChar} {basePhrase}{dotStr}",
                 TimeSpan.FromMinutes(1));
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
             frame++;
             dots++;
 
             // Wait 250ms or until the task completes, whichever is first
             var delayTask = Task.Delay(250, ct);
-            await Task.WhenAny(task, delayTask);
+            await Task.WhenAny(task, delayTask).ConfigureAwait(false);
         }
 
-        return await task;
+        return await task.ConfigureAwait(false);
     }
 }

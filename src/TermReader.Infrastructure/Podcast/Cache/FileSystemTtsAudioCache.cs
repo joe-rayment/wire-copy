@@ -62,10 +62,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         var contentHash = ComputeHash(articleText)[..ContentHashLength];
         var cacheKey = $"{contentHash}_{_ttsConfigHash}";
 
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             if (!_index.TryGetValue(cacheKey, out var entry))
             {
@@ -78,7 +78,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
             {
                 _logger.LogDebug("Cache entry expired for {Url} (key={Key})", url, cacheKey);
                 _index.Remove(cacheKey);
-                await SaveIndexAsync(cancellationToken);
+                await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
                 TryDeleteFile(entry.AudioFilePath);
                 return null;
             }
@@ -88,13 +88,13 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
             {
                 _logger.LogWarning("Cache file missing for {Url}: {Path}", url, entry.AudioFilePath);
                 _index.Remove(cacheKey);
-                await SaveIndexAsync(cancellationToken);
+                await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
                 return null;
             }
 
             // Update last accessed time (LRU tracking)
             entry.LastAccessedAtUtc = DateTime.UtcNow;
-            await SaveIndexAsync(cancellationToken);
+            await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Cache hit for {Url} (key={Key}, size={Size})", url, cacheKey, entry.FileSizeBytes);
 
@@ -128,10 +128,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         var contentHash = ComputeHash(articleText)[..ContentHashLength];
         var cacheKey = $"{contentHash}_{_ttsConfigHash}";
 
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
             EnsureDirectoriesExist();
 
             var audioFileName = $"{cacheKey}.aac";
@@ -139,7 +139,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
             // Atomic write: write to .tmp then rename
             var tmpPath = audioFilePath + ".tmp";
-            await File.WriteAllBytesAsync(tmpPath, audioData, cancellationToken);
+            await File.WriteAllBytesAsync(tmpPath, audioData, cancellationToken).ConfigureAwait(false);
             File.Move(tmpPath, audioFilePath, overwrite: true);
 
             var entry = new CacheIndexEntry
@@ -156,7 +156,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
             };
 
             _index[cacheKey] = entry;
-            await SaveIndexAsync(cancellationToken);
+            await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Cached audio for {Url} (key={Key}, size={Size})", url, cacheKey, audioData.Length);
 
@@ -178,10 +178,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
     public async Task<CacheAnalysis> AnalyzeCollectionAsync(IReadOnlyList<(string Url, string Title, string Text)> articles, CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             var statuses = new List<ArticleCacheStatus>();
             var cachedCount = 0;
@@ -240,10 +240,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
     public async Task<TtsCacheStats> GetStatsAsync(CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             return new TtsCacheStats
             {
@@ -268,10 +268,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
     public async Task EvictAsync(CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             var now = DateTime.UtcNow;
             var expiredKeys = _index
@@ -312,7 +312,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 _logger.LogInformation("Evicted {Count} LRU entries to meet size limit", evictedLru);
             }
 
-            await SaveIndexAsync(cancellationToken);
+            await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -330,10 +330,10 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (var entry in _index.Values)
             {
@@ -341,7 +341,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
             }
 
             _index.Clear();
-            await SaveIndexAsync(cancellationToken);
+            await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Cleared all cache entries");
         }
@@ -400,7 +400,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         {
             try
             {
-                var json = await File.ReadAllTextAsync(_indexPath, cancellationToken);
+                var json = await File.ReadAllTextAsync(_indexPath, cancellationToken).ConfigureAwait(false);
                 var entries = JsonSerializer.Deserialize<List<CacheIndexEntry>>(json, JsonOptions);
                 if (entries != null)
                 {
@@ -426,7 +426,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
         // Atomic write
         var tmpPath = _indexPath + ".tmp";
-        await File.WriteAllTextAsync(tmpPath, json, cancellationToken);
+        await File.WriteAllTextAsync(tmpPath, json, cancellationToken).ConfigureAwait(false);
         File.Move(tmpPath, _indexPath, overwrite: true);
     }
 

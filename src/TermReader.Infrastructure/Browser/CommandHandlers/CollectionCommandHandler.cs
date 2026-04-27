@@ -35,7 +35,7 @@ internal static class CollectionCommandHandler
                         .Select(n => (n.Link.Url, n.Link.DisplayText))
                         .ToList();
 
-                    await service.SaveAllToReadingListAsync(links, ct);
+                    await service.SaveAllToReadingListAsync(links, ct).ConfigureAwait(false);
                     tree.ClearSelection();
                     ctx.Logger.LogInformation("Saved {Count} items to Reading List", links.Count);
                     ctx.NavigationService.SetStatusMessage($"Saved {links.Count} items to Reading List");
@@ -57,7 +57,7 @@ internal static class CollectionCommandHandler
                         using var scope = ctx.ScopeFactory.CreateScope();
                         var service = ctx.CreateCollectionService(scope);
                         await service.SaveToReadingListAsync(
-                            saveNode.Link.Url, saveNode.Link.DisplayText, ct);
+                            saveNode.Link.Url, saveNode.Link.DisplayText, ct).ConfigureAwait(false);
                         ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
                         ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
                     }
@@ -80,7 +80,7 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.SaveToReadingListAsync(url, title, ct);
+                    await service.SaveToReadingListAsync(url, title, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved to Reading List from reader: {Title}", title);
                     ctx.NavigationService.SetStatusMessage($"Saved: {title}");
                 }
@@ -99,7 +99,7 @@ internal static class CollectionCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var service = ctx.CreateCollectionService(scope);
-                await service.SetDefaultCollectionAsync(col.Id, ct);
+                await service.SetDefaultCollectionAsync(col.Id, ct).ConfigureAwait(false);
                 ctx.DefaultCollectionId = col.Id;
                 ctx.Logger.LogInformation("Set default collection: {Name}", col.Name);
             }
@@ -109,7 +109,7 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleSaveToSpecific(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -121,7 +121,7 @@ internal static class CollectionCommandHandler
             var saveNode = tree?.GetSelectedNode();
             if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
             {
-                var collectionName = await ctx.InputHandler.PromptForInputAsync("Save to collection: ", ct);
+                var collectionName = await ctx.InputHandler.PromptForInputAsync("Save to collection: ", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(collectionName))
                 {
                     try
@@ -129,7 +129,7 @@ internal static class CollectionCommandHandler
                         using var scope = ctx.ScopeFactory.CreateScope();
                         var service = ctx.CreateCollectionService(scope);
                         var savedSpecific = await service.SaveToCollectionByNameAsync(
-                            collectionName, saveNode.Link.Url, saveNode.Link.DisplayText, ct);
+                            collectionName, saveNode.Link.Url, saveNode.Link.DisplayText, ct).ConfigureAwait(false);
                         if (savedSpecific != null)
                         {
                             ctx.Logger.LogInformation(
@@ -158,7 +158,7 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -166,7 +166,7 @@ internal static class CollectionCommandHandler
         if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.Hierarchical)
         {
             ctx.NavigationService.SetStatusMessage("Switch to link view (t) to save all links");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -184,7 +184,7 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.SaveAllToReadingListAsync(visibleNodes, ct);
+                    await service.SaveAllToReadingListAsync(visibleNodes, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
                     ctx.NavigationService.SetStatusMessage(
                         $"Saved {visibleNodes.Count} links to Reading List");
@@ -197,13 +197,13 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleDeleteItem(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         // Commit any previous pending undo before starting a new delete
-        await UndoCommandHandler.ClearOnAction(ctx, ct);
+        await UndoCommandHandler.ClearOnAction(ctx, ct).ConfigureAwait(false);
 
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
 
@@ -250,10 +250,10 @@ internal static class CollectionCommandHandler
                 $"Delete \"{collection.Name}\" and all its items?",
                 palette,
                 ct,
-                isDestructive: true);
+                isDestructive: true).ConfigureAwait(false);
             if (!confirmed)
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -261,8 +261,8 @@ internal static class CollectionCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var service = ctx.CreateCollectionService(scope);
-                await service.DeleteCollectionAsync(collection.Id, ct);
-                await ctx.RefreshCollectionsAsync(ct);
+                await service.DeleteCollectionAsync(collection.Id, ct).ConfigureAwait(false);
+                await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
                 ctx.NavigationService.SetStatusMessage($"Deleted collection: {collection.Name}");
                 if (ctx.NavigationService.CollectionSelectedIndex >= ctx.Collections.Count)
                 {
@@ -276,21 +276,21 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleClearCollection(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
         var col = ctx.NavigationService.ActiveCollection;
         if (col == null || col.Items.Count == 0)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -303,10 +303,10 @@ internal static class CollectionCommandHandler
             itemTitles,
             palette,
             options.TerminalHeight,
-            ct);
+            ct).ConfigureAwait(false);
         if (!confirmed)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -314,8 +314,8 @@ internal static class CollectionCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var service = ctx.CreateCollectionService(scope);
-            await service.ClearCollectionAsync(col.Id, ct);
-            await ctx.RefreshCollectionsAsync(ct);
+            await service.ClearCollectionAsync(col.Id, ct).ConfigureAwait(false);
+            await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
             ctx.NavigationService.CollectionItemSelectedIndex = 0;
             ctx.Logger.LogInformation("Cleared collection: {Name}", col.Name);
             ctx.NavigationService.SetStatusMessage($"Cleared: {col.Name}");
@@ -326,7 +326,7 @@ internal static class CollectionCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to clear");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -342,8 +342,8 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.MoveItemUpAsync(col.Id, item.Id, ct);
-                    await ctx.RefreshCollectionsAsync(ct);
+                    await service.MoveItemUpAsync(col.Id, item.Id, ct).ConfigureAwait(false);
+                    await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
                     var refreshedUp = ctx.NavigationService.ActiveCollection;
                     if (refreshedUp != null)
                     {
@@ -359,7 +359,7 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleReorderDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -375,8 +375,8 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.MoveItemDownAsync(col.Id, item.Id, ct);
-                    await ctx.RefreshCollectionsAsync(ct);
+                    await service.MoveItemDownAsync(col.Id, item.Id, ct).ConfigureAwait(false);
+                    await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
 
                     var refreshedDown = ctx.NavigationService.ActiveCollection;
                     if (refreshedDown != null)
@@ -394,7 +394,7 @@ internal static class CollectionCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleOpenCollections(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -402,7 +402,7 @@ internal static class CollectionCommandHandler
         try
         {
             ctx.NavigationService.EnterCollections();
-            await ctx.RefreshCollectionsAsync(ct);
+            await ctx.RefreshCollectionsAsync(ct).ConfigureAwait(false);
 
             // Auto-enter the sole collection to skip the list screen
             if (ctx.Collections is { Count: 1 })
@@ -411,7 +411,7 @@ internal static class CollectionCommandHandler
                 ctx.PreloadService.EnableEagerMode();
             }
 
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -421,7 +421,7 @@ internal static class CollectionCommandHandler
         {
             ctx.Logger.LogError(ex, "Failed to open collections");
             ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
 

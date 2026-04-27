@@ -53,11 +53,11 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 episodes.Count);
 
             // Step 1: Get or create feed UUID
-            var feedUuid = await GetOrCreateFeedUuidAsync(podcast.Title, cancellationToken);
+            var feedUuid = await GetOrCreateFeedUuidAsync(podcast.Title, cancellationToken).ConfigureAwait(false);
             var feedBasePath = $"podcasts/{feedUuid}";
 
             // Step 2: Load existing episodes from manifest to preserve them
-            var existingEpisodes = await LoadExistingEpisodesAsync(feedBasePath, cancellationToken);
+            var existingEpisodes = await LoadExistingEpisodesAsync(feedBasePath, cancellationToken).ConfigureAwait(false);
 
             // Step 3: Upload new episodes (using deterministic IDs to enable skip-if-exists)
             var newEpisodeMetadata = new List<EpisodeMetadata>();
@@ -70,7 +70,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 var episodeUuid = DeriveEpisodeId(episode.Title, episode.SourceUrl);
                 var objectPath = $"{feedBasePath}/episodes/{episodeUuid}.m4b";
 
-                if (await _storage.ExistsAsync(objectPath, cancellationToken))
+                if (await _storage.ExistsAsync(objectPath, cancellationToken).ConfigureAwait(false))
                 {
                     _logger.LogDebug("Episode already uploaded, skipping: {Title}", episode.Title);
                 }
@@ -86,7 +86,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                         episode.LocalAudioFilePath,
                         objectPath,
                         "audio/x-m4b",
-                        cancellationToken);
+                        cancellationToken).ConfigureAwait(false);
 
                     _logger.LogInformation("Uploaded episode: {Title}", episode.Title);
                     episodesUploaded++;
@@ -120,20 +120,20 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             var feedXml = await _feedGenerator.GenerateFeedXmlAsync(
                 enrichedPodcast,
                 mergedEpisodes,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             // Step 6: Upload feed.xml
             await _storage.UploadStringAsync(
                 feedXml,
                 feedObjectPath,
                 "application/rss+xml",
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Published feed: {FeedUrl}", feedUrl);
 
             // Step 7: Update manifest and feed index
-            await UpdateManifestAsync(feedBasePath, podcast, mergedEpisodes, cancellationToken);
-            await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken);
+            await UpdateManifestAsync(feedBasePath, podcast, mergedEpisodes, cancellationToken).ConfigureAwait(false);
+            await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken).ConfigureAwait(false);
 
             return FeedPublishResult.Successful(feedUrl, episodesUploaded);
         }
@@ -157,7 +157,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         try
         {
             // Check for existing feed first to avoid clobbering
-            var existingUrl = await GetExistingFeedUrlAsync(podcast.Title, cancellationToken);
+            var existingUrl = await GetExistingFeedUrlAsync(podcast.Title, cancellationToken).ConfigureAwait(false);
             if (existingUrl != null)
             {
                 _logger.LogInformation("Existing feed found for '{Title}': {Url}", podcast.Title, existingUrl);
@@ -167,7 +167,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             _logger.LogInformation("Bootstrapping empty feed for '{Title}'", podcast.Title);
 
             // Get or create feed UUID
-            var feedUuid = await GetOrCreateFeedUuidAsync(podcast.Title, cancellationToken);
+            var feedUuid = await GetOrCreateFeedUuidAsync(podcast.Title, cancellationToken).ConfigureAwait(false);
             var feedBasePath = $"podcasts/{feedUuid}";
 
             // Compute feed URL so we can set it on the metadata for atom:link
@@ -181,18 +181,18 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             var feedXml = await _feedGenerator.GenerateFeedXmlAsync(
                 enrichedPodcast,
                 Array.Empty<EpisodeMetadata>(),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             // Upload feed
             await _storage.UploadStringAsync(
                 feedXml,
                 feedObjectPath,
                 "application/rss+xml",
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             // Update manifest and feed index
-            await UpdateManifestAsync(feedBasePath, podcast, [], cancellationToken);
-            await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken);
+            await UpdateManifestAsync(feedBasePath, podcast, [], cancellationToken).ConfigureAwait(false);
+            await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Bootstrapped empty feed at {FeedUrl}", feedUrl);
             return FeedPublishResult.Successful(feedUrl, 0);
@@ -214,7 +214,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
     {
         ArgumentNullException.ThrowIfNull(title);
 
-        var index = await LoadFeedIndexAsync(cancellationToken);
+        var index = await LoadFeedIndexAsync(cancellationToken).ConfigureAwait(false);
         if (index.TryGetValue(title, out var entry))
         {
             return entry.FeedUrl;
@@ -251,7 +251,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
 
     private async Task<string> GetOrCreateFeedUuidAsync(string title, CancellationToken cancellationToken)
     {
-        var index = await LoadFeedIndexAsync(cancellationToken);
+        var index = await LoadFeedIndexAsync(cancellationToken).ConfigureAwait(false);
         if (index.TryGetValue(title, out var entry))
         {
             _logger.LogDebug("Found existing feed UUID for '{Title}': {Uuid}", title, entry.Uuid);
@@ -265,7 +265,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
 
     private async Task<Dictionary<string, FeedIndexEntry>> LoadFeedIndexAsync(CancellationToken cancellationToken)
     {
-        var json = await _storage.DownloadStringAsync(FeedIndexPath, cancellationToken);
+        var json = await _storage.DownloadStringAsync(FeedIndexPath, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(json))
         {
             return new Dictionary<string, FeedIndexEntry>();
@@ -280,18 +280,18 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         string feedUrl,
         CancellationToken cancellationToken)
     {
-        var index = await LoadFeedIndexAsync(cancellationToken);
+        var index = await LoadFeedIndexAsync(cancellationToken).ConfigureAwait(false);
         index[title] = new FeedIndexEntry { Uuid = uuid, FeedUrl = feedUrl };
 
         var json = JsonSerializer.Serialize(index, JsonOptions);
-        await _storage.UploadStringAsync(json, FeedIndexPath, "application/json", cancellationToken);
+        await _storage.UploadStringAsync(json, FeedIndexPath, "application/json", cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<EpisodeMetadata>> LoadExistingEpisodesAsync(
         string feedBasePath,
         CancellationToken cancellationToken)
     {
-        var json = await _storage.DownloadStringAsync($"{feedBasePath}/manifest.json", cancellationToken);
+        var json = await _storage.DownloadStringAsync($"{feedBasePath}/manifest.json", cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(json))
         {
             return [];
@@ -330,7 +330,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             json,
             $"{feedBasePath}/manifest.json",
             "application/json",
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     private sealed record FeedIndexEntry

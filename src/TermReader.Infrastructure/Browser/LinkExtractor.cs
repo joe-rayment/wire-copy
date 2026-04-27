@@ -187,7 +187,7 @@ public class LinkExtractor : ILinkExtractor
                     }
 
                     // Set ARIA label if present
-                    var ariaLabel = anchor.GetAttributeValue("aria-label", null!);
+                    var ariaLabel = anchor.GetAttributeValue("aria-label", string.Empty);
                     if (!string.IsNullOrWhiteSpace(ariaLabel))
                     {
                         linkInfo = linkInfo with { AriaLabel = ariaLabel };
@@ -500,7 +500,7 @@ public class LinkExtractor : ILinkExtractor
             if (IsSectionContainer(current))
             {
                 // Check aria-label first
-                var ariaLabel = current.GetAttributeValue("aria-label", null!);
+                var ariaLabel = current.GetAttributeValue("aria-label", string.Empty);
                 if (!string.IsNullOrWhiteSpace(ariaLabel) && IsValidSectionTitle(ariaLabel))
                 {
                     return ariaLabel.Trim();
@@ -533,7 +533,7 @@ public class LinkExtractor : ILinkExtractor
         {
             // Fallback to meta[name="author"]
             var authorMeta = doc.DocumentNode.SelectSingleNode("//meta[@name='author']");
-            var content = authorMeta?.GetAttributeValue("content", null!);
+            var content = authorMeta?.GetAttributeValue("content", string.Empty);
             if (!string.IsNullOrWhiteSpace(content) && !content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
                 author = content.Trim();
@@ -737,7 +737,7 @@ public class LinkExtractor : ILinkExtractor
         foreach (var selector in dateSelectors)
         {
             var node = doc.DocumentNode.SelectSingleNode(selector);
-            var content = node?.GetAttributeValue("content", null!);
+            var content = node?.GetAttributeValue("content", string.Empty);
             if (!string.IsNullOrWhiteSpace(content) &&
                 DateTimeOffset.TryParse(
                     content,
