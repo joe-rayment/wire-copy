@@ -109,7 +109,7 @@ public class PageLoadPipeline
             {
                 try
                 {
-                    var cachedArticle = await articleCache.TryGetAsync(url, cancellationToken);
+                    var cachedArticle = await articleCache.TryGetAsync(url, cancellationToken).ConfigureAwait(false);
                     if (cachedArticle != null)
                     {
                         // Quality gate: reject cached articles from paywalled domains
@@ -120,7 +120,7 @@ public class PageLoadPipeline
                                 "Evicting low-quality cached article for paywalled domain: {Url} ({Words} words)",
                                 url,
                                 cachedArticle.WordCount);
-                            await articleCache.RemoveAsync(url, cancellationToken);
+                            await articleCache.RemoveAsync(url, cancellationToken).ConfigureAwait(false);
                         }
                         else
                         {
@@ -204,12 +204,12 @@ public class PageLoadPipeline
 
             // Check if preload service has an in-flight fetch for this URL
             var inFlightResult = await _preloadService.WaitForInFlightAsync(
-                url, TimeSpan.FromSeconds(3), cancellationToken);
+                url, TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
             if (inFlightResult != null && inFlightResult.Success)
             {
                 _logger.LogInformation("Using in-flight preload result for {Url}", url);
                 fetchMethod = FetchMethod.Cached;
-                var (inFlightPage, inFlightBuild) = await BuildPageAsync(inFlightResult, url, cancellationToken);
+                var (inFlightPage, inFlightBuild) = await BuildPageAsync(inFlightResult, url, cancellationToken).ConfigureAwait(false);
                 if (inFlightPage.HasReadableContent())
                 {
                     return new PageLoadPipelineResult
@@ -232,7 +232,7 @@ public class PageLoadPipeline
 
         var loadResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = true },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
             "LoadAsync initial load: url={Url}, success={Success}, method={Method}, contentLength={Length}",
@@ -251,17 +251,17 @@ public class PageLoadPipeline
         reportStage?.Invoke("Extracting content...");
         PageBuildCache? lastBuildResult;
         Page page;
-        (page, lastBuildResult) = await BuildPageAsync(loadResult, url, cancellationToken);
+        (page, lastBuildResult) = await BuildPageAsync(loadResult, url, cancellationToken).ConfigureAwait(false);
 
         // Bot challenge handling: if browser returned a challenge page in headed mode,
         // wait for the user to solve it in the visible browser window (interactive, must be synchronous)
-        var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken);
+        var challengeResult = await HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken).ConfigureAwait(false);
         if (challengeResult != null)
         {
             fetchMethod = challengeResult.FetchMethod;
             loadResult = challengeResult;
             _pageCache.Put(url, challengeResult);
-            (page, lastBuildResult) = await BuildPageAsync(challengeResult, url, cancellationToken);
+            (page, lastBuildResult) = await BuildPageAsync(challengeResult, url, cancellationToken).ConfigureAwait(false);
         }
 
         // Content-quality fallback: if no content at all from HTTP/cached page, retry with browser
@@ -281,12 +281,12 @@ public class PageLoadPipeline
 
             var retryResult = await _pageLoader.LoadAsync(
                 new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             if (retryResult.Success)
             {
                 fetchMethod = retryResult.FetchMethod;
-                (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken);
+                (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -343,7 +343,7 @@ public class PageLoadPipeline
         var finalUrl = loadResult.Url ?? requestedUrl;
         var page = Page.Create(finalUrl, loadResult.Html, metadata);
 
-        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
+        var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
 
         // Classify the page using signal-scored approach
         var signals = PageSignalExtractor.Extract(loadResult.Html);
@@ -362,34 +362,34 @@ public class PageLoadPipeline
 
         // Try saved hierarchy config, then fall back to document-order
         NavigationTree tree;
-        var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl);
+        var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl).ConfigureAwait(false);
         if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
             && !string.IsNullOrEmpty(hierarchyConfig.RssFeedUrl))
         {
             // Saved RSS layout: fetch feed and build tree from feed items
-            var feedItems = await _feedDetector.ParseFeedAsync(hierarchyConfig.RssFeedUrl, cancellationToken);
+            var feedItems = await _feedDetector.ParseFeedAsync(hierarchyConfig.RssFeedUrl, cancellationToken).ConfigureAwait(false);
             if (feedItems.Count > 0)
             {
-                tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken);
+                tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken).ConfigureAwait(false);
                 _navigationService.SetAiHierarchy(false);
                 _navigationService.SetStatusMessage($"RSS feed · {feedItems.Count} articles");
             }
             else
             {
                 // Feed unavailable — fallback to document-order
-                tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+                tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken).ConfigureAwait(false);
                 _navigationService.SetAiHierarchy(false);
                 _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+L to reconfigure");
             }
         }
         else if (hierarchyConfig != null)
         {
-            tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken);
+            tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
         else
         {
-            tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken);
+            tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(false);
         }
 
@@ -399,7 +399,7 @@ public class PageLoadPipeline
         ReadableContent? readable = null;
         if (classification != PageClassification.LinkList)
         {
-            readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken);
+            readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
             if (readable != null)
             {
                 page.SetReadableContent(readable);
@@ -521,7 +521,7 @@ public class PageLoadPipeline
         // Bring browser window to foreground so user can see and solve the challenge
         if (_browserSession is IBrowserSession challengeSession)
         {
-            await challengeSession.RestoreWindowAsync();
+            await challengeSession.RestoreWindowAsync().ConfigureAwait(false);
         }
 
         _renderer.RenderChallenge(url);
@@ -532,13 +532,13 @@ public class PageLoadPipeline
 
         while (sw.Elapsed < challengeTimeout && !cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(1500, cancellationToken);
+            await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
             try
             {
                 if (_browserSession is IBrowserSession session && session.IsBrowserAvailable)
                 {
-                    var page = await session.GetOrCreatePageAsync(headless);
-                    var currentSource = await page.ContentAsync();
+                    var page = await session.GetOrCreatePageAsync(headless).ConfigureAwait(false);
+                    var currentSource = await page.ContentAsync().ConfigureAwait(false);
                     if (!PageLoader.IsBotChallengePage(currentSource))
                     {
                         _logger.LogInformation("Bot challenge resolved by user: {Url}", url);
@@ -562,7 +562,7 @@ public class PageLoadPipeline
         // Minimize browser after challenge resolved (or timed out)
         if (_browserSession is IBrowserSession resolvedSession)
         {
-            await resolvedSession.MinimizeWindowAsync();
+            await resolvedSession.MinimizeWindowAsync().ConfigureAwait(false);
         }
 
         if (!resolved)
@@ -573,7 +573,7 @@ public class PageLoadPipeline
         _pageCache.Remove(url);
         var retryResult = await _pageLoader.LoadAsync(
             new PageLoadRequest { Url = url, Headless = headless, ForceRefresh = true },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         return retryResult.Success ? retryResult : null;
     }
@@ -648,17 +648,17 @@ public class PageLoadPipeline
                         var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
                             ? host[4..] : host;
 
-                        if (await autoLogin.HasCredentialsAsync(domain, cancellationToken))
+                        if (await autoLogin.HasCredentialsAsync(domain, cancellationToken).ConfigureAwait(false))
                         {
                             _logger.LogInformation(
                                 "Quality retry: auto-login for {Domain}: {Url}", domain, url);
 
-                            var loginResult = await autoLogin.LoginAsync(domain, cancellationToken);
+                            var loginResult = await autoLogin.LoginAsync(domain, cancellationToken).ConfigureAwait(false);
                             if (loginResult.Success || loginResult.ManualLoginRequired)
                             {
                                 if (loginResult.ManualLoginRequired)
                                 {
-                                    var manualLoginOk = await WaitForManualLoginAsync(url, domain, cancellationToken);
+                                    var manualLoginOk = await WaitForManualLoginAsync(url, domain, cancellationToken).ConfigureAwait(false);
                                     if (!manualLoginOk)
                                     {
                                         _logger.LogInformation("Manual login was not completed for {Domain}", domain);
@@ -668,12 +668,12 @@ public class PageLoadPipeline
                                 _pageCache.Remove(url);
                                 var autoLoginRetryResult = await _pageLoader.LoadAsync(
                                     new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
-                                    cancellationToken);
+                                    cancellationToken).ConfigureAwait(false);
 
                                 if (autoLoginRetryResult.Success)
                                 {
                                     fetchMethod = autoLoginRetryResult.FetchMethod;
-                                    (page, lastBuildResult) = await BuildPageAsync(autoLoginRetryResult, url, cancellationToken);
+                                    (page, lastBuildResult) = await BuildPageAsync(autoLoginRetryResult, url, cancellationToken).ConfigureAwait(false);
                                 }
                             }
                         }
@@ -697,12 +697,12 @@ public class PageLoadPipeline
                 _pageCache.Remove(url);
                 var retryResult = await _pageLoader.LoadAsync(
                     new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
 
                 if (retryResult.Success)
                 {
                     fetchMethod = retryResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken);
+                    (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -719,12 +719,12 @@ public class PageLoadPipeline
                 _pageCache.Remove(url);
                 var headedResult = await _pageLoader.LoadAsync(
                     new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
-                    cancellationToken);
+                    cancellationToken).ConfigureAwait(false);
 
                 if (headedResult.Success)
                 {
                     fetchMethod = headedResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken);
+                    (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -867,7 +867,7 @@ public class PageLoadPipeline
         // Check for saved config first
         try
         {
-            var existingConfig = await configStore.GetConfigAsync(pageUrl);
+            var existingConfig = await configStore.GetConfigAsync(pageUrl).ConfigureAwait(false);
             if (existingConfig != null)
             {
                 _logger.LogDebug("Using saved hierarchy config for {Url}", pageUrl);
@@ -899,7 +899,7 @@ public class PageLoadPipeline
         _renderer.RenderManualLogin(url, domain);
         if (_browserSession is IBrowserSession browserSession)
         {
-            await browserSession.RestoreWindowAsync();
+            await browserSession.RestoreWindowAsync().ConfigureAwait(false);
         }
 
         var timeout = TimeSpan.FromMinutes(3);
@@ -907,12 +907,12 @@ public class PageLoadPipeline
 
         while (sw.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(2000, cancellationToken);
+            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
             try
             {
                 if (_browserSession is IBrowserSession session && session.HasActiveBrowser && session.IsBrowserAvailable)
                 {
-                    var page = await session.GetOrCreatePageAsync(false);
+                    var page = await session.GetOrCreatePageAsync(false).ConfigureAwait(false);
                     var currentUrl = page.Url;
 
                     // Login complete when URL no longer contains login/signin paths
@@ -926,7 +926,7 @@ public class PageLoadPipeline
                         // Capture cookies after successful manual login
                         try
                         {
-                            var playwrightCookies = await page.Context.CookiesAsync();
+                            var playwrightCookies = await page.Context.CookiesAsync().ConfigureAwait(false);
                             var storedCookies = playwrightCookies.Select(c =>
                                 new Application.Interfaces.StoredCookie(
                                     c.Name,
@@ -935,7 +935,7 @@ public class PageLoadPipeline
                                     c.Path ?? string.Empty,
                                     c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).DateTime : null)).ToList();
 
-                            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken);
+                            await _cookieManager.SaveCookiesAsync(storedCookies, cancellationToken).ConfigureAwait(false);
                             _logger.LogInformation(
                                 "Captured {Count} cookies after manual login for {Domain}",
                                 storedCookies.Count,

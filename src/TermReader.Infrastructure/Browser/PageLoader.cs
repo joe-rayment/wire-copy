@@ -93,7 +93,7 @@ public class PageLoader : IPageLoader
             // PreferBrowser: try browser first, fall back to HTTP
             if (request.PreferBrowser && !request.ForceBrowser)
             {
-                return await LoadBrowserFirstAsync(request, totalSw, cancellationToken);
+                return await LoadBrowserFirstAsync(request, totalSw, cancellationToken).ConfigureAwait(false);
             }
 
             // Default path: try HTTP first, fall back to browser
@@ -106,7 +106,7 @@ public class PageLoader : IPageLoader
             {
                 _logger.LogInformation("HttpClient available, attempting HTTP fetch for {Url}", request.Url);
                 var httpSw = Stopwatch.StartNew();
-                var httpResult = await TryHttpFetchAsync(request, cancellationToken);
+                var httpResult = await TryHttpFetchAsync(request, cancellationToken).ConfigureAwait(false);
                 httpSw.Stop();
 
                 if (httpResult.Success)
@@ -128,7 +128,7 @@ public class PageLoader : IPageLoader
 
             // Fall back to browser for JavaScript-heavy sites
             var browserSw = Stopwatch.StartNew();
-            var result = await BrowserFetchAsync(request, cancellationToken);
+            var result = await BrowserFetchAsync(request, cancellationToken).ConfigureAwait(false);
             browserSw.Stop();
             totalSw.Stop();
             _logger.LogDebug(
@@ -151,7 +151,7 @@ public class PageLoader : IPageLoader
 
     public async Task<string> GetPageSourceAsync(string url, CancellationToken cancellationToken = default)
     {
-        var result = await LoadAsync(new PageLoadRequest { Url = url }, cancellationToken);
+        var result = await LoadAsync(new PageLoadRequest { Url = url }, cancellationToken).ConfigureAwait(false);
 
         if (!result.Success)
         {
@@ -229,7 +229,7 @@ public class PageLoader : IPageLoader
                 document.body.classList.remove('noscroll', 'no-scroll', 'modal-open', 'overlay-open');
 
                 return removed;
-            }");
+            }").ConfigureAwait(false);
 
             if (removedCount.HasValue && removedCount.Value > 0)
             {
@@ -396,7 +396,7 @@ public class PageLoader : IPageLoader
     {
         _logger.LogInformation("PreferBrowser set, attempting browser fetch first for {Url}", request.Url);
         var browserSw = Stopwatch.StartNew();
-        var browserResult = await BrowserFetchAsync(request, cancellationToken);
+        var browserResult = await BrowserFetchAsync(request, cancellationToken).ConfigureAwait(false);
         browserSw.Stop();
 
         if (browserResult.Success)
@@ -417,7 +417,7 @@ public class PageLoader : IPageLoader
         if (_httpClient != null)
         {
             var httpSw = Stopwatch.StartNew();
-            var httpResult = await TryHttpFetchAsync(request, cancellationToken);
+            var httpResult = await TryHttpFetchAsync(request, cancellationToken).ConfigureAwait(false);
             httpSw.Stop();
             totalSw.Stop();
 
@@ -467,14 +467,14 @@ public class PageLoader : IPageLoader
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(_browserConfig.HttpTimeoutMs);
 
-            using var response = await _httpClient.SendAsync(httpRequest, cts.Token);
+            using var response = await _httpClient.SendAsync(httpRequest, cts.Token).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
                 return PageLoadResult.Failure($"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
             }
 
-            var html = await response.Content.ReadAsStringAsync(cts.Token);
+            var html = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
 
             // Check if this looks like a JavaScript-required page
             var jsRequired = IsJavaScriptRequired(html);
@@ -531,7 +531,7 @@ public class PageLoader : IPageLoader
             {
                 using var pageCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 pageCts.CancelAfter(TimeSpan.FromSeconds(30));
-                page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token);
+                page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -540,16 +540,16 @@ public class PageLoader : IPageLoader
             }
 
             _logger.LogDebug("Navigating to {Url}", request.Url);
-            await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs });
+            await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs }).ConfigureAwait(false);
 
             // Wait for page to load
-            await WaitForPageLoadAsync(page, request.TimeoutMs, cancellationToken);
+            await WaitForPageLoadAsync(page, request.TimeoutMs, cancellationToken).ConfigureAwait(false);
 
-            var pageContent = await page.ContentAsync();
+            var pageContent = await page.ContentAsync().ConfigureAwait(false);
             if (IsBotChallengePage(pageContent))
             {
                 _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
-                var resolved = await PollForChallengeResolutionAsync(page, request.Url, cancellationToken);
+                var resolved = await PollForChallengeResolutionAsync(page, request.Url, cancellationToken).ConfigureAwait(false);
                 if (resolved == null)
                 {
                     _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
@@ -560,9 +560,9 @@ public class PageLoader : IPageLoader
             }
 
             // Dismiss login/subscription overlays that may cover content
-            await DismissOverlaysAsync(page, _logger);
+            await DismissOverlaysAsync(page, _logger).ConfigureAwait(false);
             var finalUrl = page.Url;
-            var html = await page.ContentAsync();
+            var html = await page.ContentAsync().ConfigureAwait(false);
 
             var metadata = ExtractMetadata(html, finalUrl);
 
@@ -599,11 +599,11 @@ public class PageLoader : IPageLoader
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await Task.Delay(pollIntervalMs, cancellationToken);
+            await Task.Delay(pollIntervalMs, cancellationToken).ConfigureAwait(false);
 
             try
             {
-                var currentHtml = await page.ContentAsync();
+                var currentHtml = await page.ContentAsync().ConfigureAwait(false);
                 if (!IsBotChallengePage(currentHtml))
                 {
                     return currentHtml;
@@ -634,7 +634,7 @@ public class PageLoader : IPageLoader
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new PageWaitForLoadStateOptions
             {
                 Timeout = timeoutMs,
-            });
+            }).ConfigureAwait(false);
 
             // Secondary wait: give JS time to render content into the DOM.
             // First check for structural selectors (fast exit if found), then wait
@@ -652,7 +652,7 @@ public class PageLoader : IPageLoader
                         return document.body && document.body.innerHTML.length > 5000;
                     }",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 5000 });
+                    new PageWaitForFunctionOptions { Timeout = 5000 }).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -666,7 +666,7 @@ public class PageLoader : IPageLoader
             // Optional post-load delay for sites needing extra JS rendering time
             if (_browserConfig.PostLoadDelayMs > 0)
             {
-                await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken);
+                await Task.Delay(_browserConfig.PostLoadDelayMs, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (TimeoutException)

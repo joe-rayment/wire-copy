@@ -46,23 +46,23 @@ internal static class CredentialCommandHandler
         switch (sub)
         {
             case "add":
-                await HandleCredentialAdd(ctx, options, ct);
+                await HandleCredentialAdd(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case "remove" or "rm":
-                await HandleCredentialRemove(ctx, subArg, options, ct);
+                await HandleCredentialRemove(ctx, subArg, options, ct).ConfigureAwait(false);
                 break;
 
             case "test":
-                await HandleCredentialTest(ctx, subArg, options, ct);
+                await HandleCredentialTest(ctx, subArg, options, ct).ConfigureAwait(false);
                 break;
 
             case "edit":
-                await HandleCredentialEdit(ctx, subArg, options, ct);
+                await HandleCredentialEdit(ctx, subArg, options, ct).ConfigureAwait(false);
                 break;
 
             default:
-                await HandleCredentialList(ctx, options, ct);
+                await HandleCredentialList(ctx, options, ct).ConfigureAwait(false);
                 break;
         }
     }
@@ -74,7 +74,7 @@ internal static class CredentialCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
-            var credentials = await repo.GetAllAsync(ct);
+            var credentials = await repo.GetAllAsync(ct).ConfigureAwait(false);
 
             if (credentials.Count == 0)
             {
@@ -94,7 +94,7 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to list credentials");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleCredentialAdd(
@@ -135,10 +135,10 @@ internal static class CredentialCommandHandler
                 },
             };
 
-            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct);
+            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct).ConfigureAwait(false);
             if (accountInfo == null)
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -202,7 +202,7 @@ internal static class CredentialCommandHandler
                     },
                 };
 
-                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct);
+                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct).ConfigureAwait(false);
 
                 // Cancelled step 2 is OK — save with basic info only
                 if (loginConfig != null)
@@ -233,8 +233,8 @@ internal static class CredentialCommandHandler
                 loginUrl,
                 loginSteps);
 
-            await repo.AddAsync(credential, ct);
-            await unitOfWork.SaveChangesAsync(ct);
+            await repo.AddAsync(credential, ct).ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
 
             var msg = loginSteps != null
                 ? $"Credential saved for {credential.Domain} (multi-step login)"
@@ -248,7 +248,7 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage($"Failed to add credential: {ex.Message}");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static string? EmptyToNull(string? value)
@@ -264,12 +264,12 @@ internal static class CredentialCommandHandler
             var domain = domainArg;
             if (string.IsNullOrWhiteSpace(domain))
             {
-                domain = await ctx.InputHandler.PromptForInputAsync("Domain to remove: ", ct);
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to remove: ", ct).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(domain))
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -279,16 +279,16 @@ internal static class CredentialCommandHandler
             var repo = scope.ServiceProvider.GetRequiredService<ISiteCredentialRepository>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-            var credential = await repo.GetByDomainAsync(domain, ct);
+            var credential = await repo.GetByDomainAsync(domain, ct).ConfigureAwait(false);
             if (credential == null)
             {
                 ctx.NavigationService.SetStatusMessage($"No credential found for {domain}");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
-            await repo.DeleteAsync(credential.Id, ct);
-            await unitOfWork.SaveChangesAsync(ct);
+            await repo.DeleteAsync(credential.Id, ct).ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
 
             ctx.NavigationService.SetStatusMessage($"Credential removed for {domain}");
             ctx.Logger.LogInformation("Removed credential for domain: {Domain}", domain);
@@ -299,7 +299,7 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage($"Failed to remove credential: {ex.Message}");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleCredentialTest(
@@ -310,12 +310,12 @@ internal static class CredentialCommandHandler
             var domain = domainArg;
             if (string.IsNullOrWhiteSpace(domain))
             {
-                domain = await ctx.InputHandler.PromptForInputAsync("Domain to test: ", ct);
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to test: ", ct).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(domain))
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -325,9 +325,9 @@ internal static class CredentialCommandHandler
             var autoLogin = scope.ServiceProvider.GetRequiredService<IAutoLoginService>();
 
             ctx.NavigationService.SetStatusMessage($"Testing login for {domain}...");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            var result = await autoLogin.LoginAsync(domain, ct);
+            var result = await autoLogin.LoginAsync(domain, ct).ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -350,7 +350,7 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage($"Login test failed: {ex.Message}");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleCredentialEdit(
@@ -361,12 +361,12 @@ internal static class CredentialCommandHandler
             var domain = domainArg;
             if (string.IsNullOrWhiteSpace(domain))
             {
-                domain = await ctx.InputHandler.PromptForInputAsync("Domain to edit: ", ct);
+                domain = await ctx.InputHandler.PromptForInputAsync("Domain to edit: ", ct).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(domain))
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -377,11 +377,11 @@ internal static class CredentialCommandHandler
             var encryption = scope.ServiceProvider.GetRequiredService<ICookieEncryptionService>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-            var credential = await repo.GetByDomainAsync(domain, ct);
+            var credential = await repo.GetByDomainAsync(domain, ct).ConfigureAwait(false);
             if (credential == null)
             {
                 ctx.NavigationService.SetStatusMessage($"No credential found for {domain}");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -412,10 +412,10 @@ internal static class CredentialCommandHandler
                 },
             };
 
-            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct);
+            var accountInfo = await WizardRunner.RunAsync(ctx.InputHandler, step1, palette, ct).ConfigureAwait(false);
             if (accountInfo == null)
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -465,7 +465,7 @@ internal static class CredentialCommandHandler
                     },
                 };
 
-                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct);
+                var loginConfig = await WizardRunner.RunAsync(ctx.InputHandler, step2, palette, ct).ConfigureAwait(false);
 
                 // Cancelled step 2 — keep existing login config
                 if (loginConfig != null)
@@ -493,13 +493,13 @@ internal static class CredentialCommandHandler
             credential.Update(
                 encryptedUsername,
                 encryptedPassword,
-                string.IsNullOrWhiteSpace(newUsernameSelector) ? credential.UsernameSelector : newUsernameSelector!.Trim(),
-                string.IsNullOrWhiteSpace(newPasswordSelector) ? credential.PasswordSelector : newPasswordSelector!.Trim(),
-                string.IsNullOrWhiteSpace(newSubmitSelector) ? credential.SubmitSelector : newSubmitSelector!.Trim(),
-                string.IsNullOrWhiteSpace(newLoginUrl) ? credential.LoginUrl : newLoginUrl!.Trim());
+                !string.IsNullOrWhiteSpace(newUsernameSelector) ? newUsernameSelector.Trim() : credential.UsernameSelector,
+                !string.IsNullOrWhiteSpace(newPasswordSelector) ? newPasswordSelector.Trim() : credential.PasswordSelector,
+                !string.IsNullOrWhiteSpace(newSubmitSelector) ? newSubmitSelector.Trim() : credential.SubmitSelector,
+                !string.IsNullOrWhiteSpace(newLoginUrl) ? newLoginUrl.Trim() : credential.LoginUrl);
 
-            await repo.UpdateAsync(credential, ct);
-            await unitOfWork.SaveChangesAsync(ct);
+            await repo.UpdateAsync(credential, ct).ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
 
             ctx.NavigationService.SetStatusMessage($"Credential updated for {domain}");
             ctx.Logger.LogInformation("Updated credential for domain: {Domain}", domain);
@@ -510,6 +510,6 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage($"Failed to edit credential: {ex.Message}");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 }

@@ -51,7 +51,7 @@ internal static class PodcastCommandHandler
         if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
         {
             ctx.NavigationService.SetStatusMessage("Open a collection first");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -59,7 +59,7 @@ internal static class PodcastCommandHandler
         if (collection == null || collection.Items.Count == 0)
         {
             ctx.NavigationService.SetStatusMessage("No articles in collection");
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -103,9 +103,9 @@ internal static class PodcastCommandHandler
             null,
             null,
             null,
-            ct);
+            ct).ConfigureAwait(false);
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     public static async Task HandleGeneratePodcast(
@@ -118,7 +118,7 @@ internal static class PodcastCommandHandler
             if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
             {
                 ctx.NavigationService.SetStatusMessage("Open a collection first, then press p");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -126,14 +126,14 @@ internal static class PodcastCommandHandler
             if (collection == null || collection.Items.Count == 0)
             {
                 ctx.NavigationService.SetStatusMessage("No articles to generate podcast from");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
             // Press feedback: render one frame with inverted button colors, then continue
             var pressedOptions = options with { PodcastButtonState = 1 }; // 1 = Pressed
-            await ctx.RenderCurrentPageAsync(pressedOptions, ct);
-            await Task.Delay(100, ct);
+            await ctx.RenderCurrentPageAsync(pressedOptions, ct).ConfigureAwait(false);
+            await Task.Delay(100, ct).ConfigureAwait(false);
 
             using var scope = ctx.ScopeFactory.CreateScope();
             var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
@@ -155,7 +155,7 @@ internal static class PodcastCommandHandler
                     {
                         using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                         validationCts.CancelAfter(TimeSpan.FromSeconds(5));
-                        var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token);
+                        var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token).ConfigureAwait(false);
 
                         if (!validation.IsValid && validation.ErrorCode is "invalid_key" or "insufficient_credits")
                         {
@@ -185,10 +185,10 @@ internal static class PodcastCommandHandler
 
             // Pre-flight FFmpeg check: fail fast before slow cache analysis
             var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
-            if (!await audioAssembler.ValidatePrerequisitesAsync(ct))
+            if (!await audioAssembler.ValidatePrerequisitesAsync(ct).ConfigureAwait(false))
             {
-                await ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct).ConfigureAwait(false);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -196,10 +196,11 @@ internal static class PodcastCommandHandler
             string? preflight_bucketError = null;
             string? preflight_feedUrl = null;
             string? preflight_feedStatusNote = null;
-            if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
+            var preflightBucketName = gcsConfig.BucketName;
+            if (!string.IsNullOrWhiteSpace(preflightBucketName))
             {
                 var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                    ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+                    ctx, options, preflightBucketName, gcsConfig, ct).ConfigureAwait(false);
 
                 if (success)
                 {
@@ -216,12 +217,12 @@ internal static class PodcastCommandHandler
             CacheAnalysis? cacheAnalysis = null;
             if (ttsService.IsConfigured)
             {
-                cacheAnalysis = await ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct);
+                cacheAnalysis = await ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
                 options = ctx.GetCurrentRenderOptions();
             }
 
             // Show cache-wait screen if preloading is still in progress
-            var skippedWait = await ShowCacheWaitScreenAsync(ctx, options, collection, ct);
+            var skippedWait = await ShowCacheWaitScreenAsync(ctx, options, collection, ct).ConfigureAwait(false);
 
             // Re-fetch render options in case terminal resized during wait
             if (!skippedWait)
@@ -244,20 +245,20 @@ internal static class PodcastCommandHandler
                 preflight_bucketError,
                 preflight_feedUrl,
                 preflight_feedStatusNote,
-                ct);
+                ct).ConfigureAwait(false);
 
             if (!confirmed)
             {
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
-            var result = await ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct);
+            var result = await ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
 
             if (result == null)
             {
                 ctx.NavigationService.SetStatusMessage("Podcast generation cancelled");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -273,13 +274,13 @@ internal static class PodcastCommandHandler
                     ttsService.SetApiKeyOverride(string.Empty);
                 }
 
-                await ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct).ConfigureAwait(false);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
-            await ShowCompletionScreenAsync(ctx, options, result, ct);
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ShowCompletionScreenAsync(ctx, options, result, ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -291,7 +292,7 @@ internal static class PodcastCommandHandler
             try
             {
                 ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}");
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             }
             catch (Exception renderEx)
             {
@@ -416,8 +417,8 @@ internal static class PodcastCommandHandler
                 try
                 {
                     var tickTask = Task.Delay(AnimationIntervalMs, tickCts.Token);
-                    completed = await Task.WhenAny(pendingKeyTask, analysisTask, tickTask);
-                    await tickCts.CancelAsync();
+                    completed = await Task.WhenAny(pendingKeyTask, analysisTask, tickTask).ConfigureAwait(false);
+                    await tickCts.CancelAsync().ConfigureAwait(false);
                 }
                 finally
                 {
@@ -426,7 +427,7 @@ internal static class PodcastCommandHandler
 
                 if (completed == pendingKeyTask)
                 {
-                    var command = await pendingKeyTask;
+                    var command = await pendingKeyTask.ConfigureAwait(false);
                     pendingKeyTask = null;
 
                     if (command.Type == CommandType.TerminalResized)
@@ -468,7 +469,7 @@ internal static class PodcastCommandHandler
             {
                 try
                 {
-                    return await analysisTask;
+                    return await analysisTask.ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -568,12 +569,12 @@ internal static class PodcastCommandHandler
             pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
             using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var tickTask = Task.Delay(pollIntervalMs, tickCts.Token);
-            var completed = await Task.WhenAny(pendingKeyTask, tickTask);
-            await tickCts.CancelAsync();
+            var completed = await Task.WhenAny(pendingKeyTask, tickTask).ConfigureAwait(false);
+            await tickCts.CancelAsync().ConfigureAwait(false);
 
             if (completed == pendingKeyTask)
             {
-                var command = await pendingKeyTask;
+                var command = await pendingKeyTask.ConfigureAwait(false);
                 pendingKeyTask = null;
 
                 if (command.Type == CommandType.TerminalResized)
@@ -635,7 +636,7 @@ internal static class PodcastCommandHandler
 
             if (hierarchyConfigStore != null)
             {
-                savedConfigCount = await hierarchyConfigStore.GetConfigCountAsync();
+                savedConfigCount = await hierarchyConfigStore.GetConfigCountAsync().ConfigureAwait(false);
             }
 
             if (anthropicConfigOpts != null)
@@ -678,9 +679,9 @@ internal static class PodcastCommandHandler
 
             if (gcsClient != null)
             {
-                if (isKeyConfigured)
+                if (isKeyConfigured && keyPath is not null)
                 {
-                    var displayPath = keyPath!.Length > 40 ? "\u2026" + keyPath[^39..] : keyPath;
+                    var displayPath = keyPath.Length > 40 ? "\u2026" + keyPath[^39..] : keyPath;
                     helpers.WriteLine($"    {p.PromptFg.AnsiFg}\u25cf{Reset} GCS service account    {p.PromptFg.AnsiFg}{displayPath}{Reset}  {p.SecondaryText.AnsiFg}[k] change{Reset}");
                 }
                 else
@@ -821,7 +822,7 @@ internal static class PodcastCommandHandler
 
             helpers.ClearRemainingLines();
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -838,14 +839,14 @@ internal static class PodcastCommandHandler
             if (command.RawKeyChar == 'a' && isTtsConfigured)
             {
                 var apiKey = await ctx.InputHandler.PromptForInputAsync(
-                    "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
+                    "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(apiKey))
                 {
                     var trimmedKey = apiKey.Trim();
                     ttsService.SetApiKeyOverride(trimmedKey);
 
                     Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
-                    var validation = await ttsService.ValidateApiKeyAsync(ct);
+                    var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
 
                     if (validation.IsValid)
                     {
@@ -859,14 +860,14 @@ internal static class PodcastCommandHandler
                             ctx.Logger.LogWarning(ex, "Failed to persist API key");
                         }
 
-                        await Task.Delay(800, ct);
+                        await Task.Delay(800, ct).ConfigureAwait(false);
                     }
                     else
                     {
                         Console.Write(
                             $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
                             new string(' ', 20));
-                        await Task.Delay(2000, ct);
+                        await Task.Delay(2000, ct).ConfigureAwait(false);
                         ttsService.SetApiKeyOverride(string.Empty);
                         isTtsConfigured = false;
                     }
@@ -882,7 +883,7 @@ internal static class PodcastCommandHandler
                 {
                     // --- Multi-step wizard for first-time setup ---
                     var wizardResult = await RunGcsKeyWizardAsync(
-                        ctx, options, p, gcsClient, gcsConfig, settingsStore, ct);
+                        ctx, options, p, gcsClient, gcsConfig, settingsStore, ct).ConfigureAwait(false);
 
                     if (wizardResult.KeySaved)
                     {
@@ -902,11 +903,11 @@ internal static class PodcastCommandHandler
                 {
                     // --- Direct prompt for changing existing key ---
                     var keyInput = await ctx.InputHandler.PromptForInputAsync(
-                        "GCS key (file path or paste JSON): ", ct);
+                        "GCS key (file path or paste JSON): ", ct).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(keyInput))
                     {
                         var (keySaved, keyError) = await ValidateAndSaveKeyAsync(
-                            keyInput.Trim(), gcsClient);
+                            keyInput.Trim(), gcsClient).ConfigureAwait(false);
 
                         if (keySaved)
                         {
@@ -914,13 +915,14 @@ internal static class PodcastCommandHandler
                             isKeyConfigured = true;
 
                             Console.Write($"\r  {p.PromptFg.AnsiFg}Service account key saved     {Reset}");
-                            await Task.Delay(800, ct);
+                            await Task.Delay(800, ct).ConfigureAwait(false);
 
-                            if (isGcsConfigured)
+                            var changeBucket = gcsConfig.BucketName;
+                            if (isGcsConfigured && !string.IsNullOrWhiteSpace(changeBucket))
                             {
                                 bucketError = null;
                                 var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                                    ctx, options, gcsConfig.BucketName!, gcsConfig, ct);
+                                    ctx, options, changeBucket, gcsConfig, ct).ConfigureAwait(false);
                                 if (success)
                                 {
                                     feedUrl = url;
@@ -937,7 +939,7 @@ internal static class PodcastCommandHandler
                             Console.Write(
                                 $"\r  {p.ErrorFg.AnsiFg}{keyError}{Reset}" +
                                 new string(' ', 20));
-                            await Task.Delay(2000, ct);
+                            await Task.Delay(2000, ct).ConfigureAwait(false);
                         }
                     }
                 }
@@ -950,7 +952,7 @@ internal static class PodcastCommandHandler
                 if (!isTtsConfigured)
                 {
                     var apiKey = await ctx.InputHandler.PromptForInputAsync(
-                        "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true);
+                        "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(apiKey))
                     {
                         var trimmedKey = apiKey.Trim();
@@ -958,7 +960,7 @@ internal static class PodcastCommandHandler
 
                         // Validate with a minimal API call before persisting
                         Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
-                        var validation = await ttsService.ValidateApiKeyAsync(ct);
+                        var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
 
                         if (validation.IsValid)
                         {
@@ -974,14 +976,14 @@ internal static class PodcastCommandHandler
                                 ctx.Logger.LogWarning(ex, "Failed to persist API key");
                             }
 
-                            await Task.Delay(800, ct);
+                            await Task.Delay(800, ct).ConfigureAwait(false);
                         }
                         else
                         {
                             Console.Write(
                                 $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
                                 new string(' ', 20));
-                            await Task.Delay(2000, ct);
+                            await Task.Delay(2000, ct).ConfigureAwait(false);
 
                             // Revert — do not persist invalid keys
                             ttsService.SetApiKeyOverride(string.Empty);
@@ -999,7 +1001,7 @@ internal static class PodcastCommandHandler
             {
                 bucketError = null;
                 var bucketName = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS bucket name (e.g. my-podcast-feed, or 'clear' to remove): ", ct);
+                    "GCS bucket name (e.g. my-podcast-feed, or 'clear' to remove): ", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(bucketName))
                 {
                     var trimmed = bucketName.Trim();
@@ -1024,7 +1026,7 @@ internal static class PodcastCommandHandler
                     else if (GcsConfiguration.IsValidBucketName(trimmed))
                     {
                         var (success, url, feedExisted, error) = await ValidateAndBootstrapBucketAsync(
-                            ctx, options, trimmed, gcsConfig, ct);
+                            ctx, options, trimmed, gcsConfig, ct).ConfigureAwait(false);
                         if (success)
                         {
                             gcsConfig.BucketName = trimmed;
@@ -1189,8 +1191,8 @@ internal static class PodcastCommandHandler
                 try
                 {
                     var tickTask = Task.Delay(AnimationIntervalMs, tickCts.Token);
-                    completed = await Task.WhenAny(pendingKeyTask, generationTask, tickTask);
-                    await tickCts.CancelAsync();
+                    completed = await Task.WhenAny(pendingKeyTask, generationTask, tickTask).ConfigureAwait(false);
+                    await tickCts.CancelAsync().ConfigureAwait(false);
                 }
                 finally
                 {
@@ -1199,7 +1201,7 @@ internal static class PodcastCommandHandler
 
                 if (completed == pendingKeyTask)
                 {
-                    var command = await pendingKeyTask;
+                    var command = await pendingKeyTask.ConfigureAwait(false);
                     pendingKeyTask = null;
 
                     if (command.Type == CommandType.TerminalResized)
@@ -1216,13 +1218,13 @@ internal static class PodcastCommandHandler
                             break;
                         }
 
-                        var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct);
+                        var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
                         if (shouldCancel)
                         {
-                            await genCts.CancelAsync();
+                            await genCts.CancelAsync().ConfigureAwait(false);
                             try
                             {
-                                await generationTask;
+                                await generationTask.ConfigureAwait(false);
                             }
                             catch (OperationCanceledException)
                             {
@@ -1248,7 +1250,7 @@ internal static class PodcastCommandHandler
             {
                 try
                 {
-                    var result = await generationTask;
+                    var result = await generationTask.ConfigureAwait(false);
 
                     for (var i = 0; i < statuses.Length; i++)
                     {
@@ -1279,10 +1281,10 @@ internal static class PodcastCommandHandler
 
             if (!generationTask.IsCompleted)
             {
-                await genCts.CancelAsync();
+                await genCts.CancelAsync().ConfigureAwait(false);
                 try
                 {
-                    await generationTask;
+                    await generationTask.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1303,7 +1305,7 @@ internal static class PodcastCommandHandler
         CancellationToken ct)
     {
         var response = await ctx.InputHandler.PromptForInputAsync(
-            "Cancel podcast generation? (y/n): ", ct);
+            "Cancel podcast generation? (y/n): ", ct).ConfigureAwait(false);
         return string.Equals(response, "y", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1382,7 +1384,7 @@ internal static class PodcastCommandHandler
             helpers.WriteLine(hints);
             helpers.ClearRemainingLines();
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -1563,7 +1565,7 @@ internal static class PodcastCommandHandler
             helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
             helpers.ClearRemainingLines();
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -1658,12 +1660,12 @@ internal static class PodcastCommandHandler
             pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
             using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var tickTask = Task.Delay(SpinnerIntervalMs, tickCts.Token);
-            var completed = await Task.WhenAny(validationTask, pendingKeyTask, tickTask);
-            await tickCts.CancelAsync();
+            var completed = await Task.WhenAny(validationTask, pendingKeyTask, tickTask).ConfigureAwait(false);
+            await tickCts.CancelAsync().ConfigureAwait(false);
 
             if (completed == pendingKeyTask)
             {
-                var command = await pendingKeyTask;
+                var command = await pendingKeyTask.ConfigureAwait(false);
                 pendingKeyTask = null;
 
                 if (command.Type == CommandType.TerminalResized)
@@ -1674,10 +1676,10 @@ internal static class PodcastCommandHandler
 
                 if (command.Type is CommandType.GoBack or CommandType.Quit)
                 {
-                    await validationCts.CancelAsync();
+                    await validationCts.CancelAsync().ConfigureAwait(false);
                     try
                     {
-                        await validationTask;
+                        await validationTask.ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -1701,7 +1703,7 @@ internal static class PodcastCommandHandler
         CloudStorageValidationResult validationResult;
         try
         {
-            validationResult = await validationTask;
+            validationResult = await validationTask.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1743,10 +1745,10 @@ internal static class PodcastCommandHandler
         try
         {
             // Check if feed already exists before bootstrapping
-            var existingUrl = await publisher.GetExistingFeedUrlAsync(podcastConfig.Title, ct);
+            var existingUrl = await publisher.GetExistingFeedUrlAsync(podcastConfig.Title, ct).ConfigureAwait(false);
             var feedExisted = existingUrl != null;
 
-            var feedResult = await publisher.BootstrapFeedAsync(metadata, ct);
+            var feedResult = await publisher.BootstrapFeedAsync(metadata, ct).ConfigureAwait(false);
             Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
 
             if (feedResult.Success)
@@ -1847,7 +1849,7 @@ internal static class PodcastCommandHandler
             Console.SetCursorPosition(6, row);
             Console.Write($"{p.GetAccentFg().AnsiFg}Esc{p.SecondaryText.AnsiFg} \u2014 Cancel{Reset}");
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -1868,7 +1870,7 @@ internal static class PodcastCommandHandler
 
             if (command.RawKeyChar is 'n' or 'N')
             {
-                await ShowGcsInstructionsAsync(ctx, p, ct);
+                await ShowGcsInstructionsAsync(ctx, p, ct).ConfigureAwait(false);
                 continue;
             }
         }
@@ -1888,13 +1890,13 @@ internal static class PodcastCommandHandler
                 Validate = v => string.IsNullOrWhiteSpace(v) ? "Key cannot be empty" : null,
             };
 
-            var keyInput = await FormField.PromptAsync(ctx.InputHandler, keyField, p, row, fieldWidth, ct);
+            var keyInput = await FormField.PromptAsync(ctx.InputHandler, keyField, p, row, fieldWidth, ct).ConfigureAwait(false);
             if (keyInput == null)
             {
                 return result; // Cancelled
             }
 
-            var (saved, error) = await ValidateAndSaveKeyAsync(keyInput.Trim(), gcsClient);
+            var (saved, error) = await ValidateAndSaveKeyAsync(keyInput.Trim(), gcsClient).ConfigureAwait(false);
 
             if (saved)
             {
@@ -1905,7 +1907,7 @@ internal static class PodcastCommandHandler
             // Show error below the field, wait briefly, then retry
             Console.SetCursorPosition(2, row + FormField.Height);
             Console.Write($"{p.ErrorFg.AnsiFg}\u2717 {error}{Reset}");
-            await Task.Delay(2000, ct);
+            await Task.Delay(2000, ct).ConfigureAwait(false);
         }
 
         if (!result.KeySaved)
@@ -1917,7 +1919,7 @@ internal static class PodcastCommandHandler
         if (!string.IsNullOrWhiteSpace(gcsConfig.BucketName))
         {
             var (success, url, feedExisted, bucketErr) = await ValidateAndBootstrapBucketAsync(
-                ctx, options, gcsConfig.BucketName, gcsConfig, ct);
+                ctx, options, gcsConfig.BucketName, gcsConfig, ct).ConfigureAwait(false);
             return new GcsWizardResult
             {
                 KeySaved = true,
@@ -1958,7 +1960,7 @@ internal static class PodcastCommandHandler
                 },
             };
 
-            var bucketInput = await FormField.PromptAsync(ctx.InputHandler, bucketField, p, row, fieldWidth, ct);
+            var bucketInput = await FormField.PromptAsync(ctx.InputHandler, bucketField, p, row, fieldWidth, ct).ConfigureAwait(false);
             if (bucketInput == null)
             {
                 return new GcsWizardResult { KeySaved = true }; // Skipped
@@ -1972,7 +1974,7 @@ internal static class PodcastCommandHandler
             Console.Write($"{p.GetAccentFg().AnsiFg}\u2847 Validating bucket...{Reset}");
 
             var (bucketSuccess, bucketUrl, bucketFeedExisted, bucketError) =
-                await ValidateAndBootstrapBucketAsync(ctx, options, trimmedBucket, gcsConfig, ct);
+                await ValidateAndBootstrapBucketAsync(ctx, options, trimmedBucket, gcsConfig, ct).ConfigureAwait(false);
 
             if (bucketSuccess)
             {
@@ -1991,7 +1993,7 @@ internal static class PodcastCommandHandler
             // Show error and retry
             Console.SetCursorPosition(2, spinnerRow);
             Console.Write($"{p.ErrorFg.AnsiFg}\u2717 {bucketError}{Reset}" + new string(' ', 20));
-            await Task.Delay(2000, ct);
+            await Task.Delay(2000, ct).ConfigureAwait(false);
         }
 
         return new GcsWizardResult { KeySaved = true };
@@ -2072,7 +2074,7 @@ internal static class PodcastCommandHandler
             Console.SetCursorPosition(4, row);
             Console.Write($"{p.SecondaryText.AnsiFg}Press any key to go back{Reset}");
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct);
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
             if (command.Type == CommandType.TerminalResized)
             {

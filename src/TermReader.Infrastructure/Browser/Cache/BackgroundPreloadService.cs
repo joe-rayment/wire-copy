@@ -198,7 +198,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 // Wait once for user to become idle before starting a batch (skip in eager mode)
                 if (!_eagerMode)
                 {
-                    await _idleDetector.WaitForIdleAsync(cancellationToken);
+                    await _idleDetector.WaitForIdleAsync(cancellationToken).ConfigureAwait(false);
                 }
 
                 // Process the entire queue while user stays idle (or eager mode is active)
@@ -214,18 +214,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     processedAny = true;
                     if (item.NeedsBrowser)
                     {
-                        await BrowserPreloadUrlAsync(item.Url, cancellationToken);
+                        await BrowserPreloadUrlAsync(item.Url, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        await PreloadUrlAsync(item.Url, cancellationToken);
+                        await PreloadUrlAsync(item.Url, cancellationToken).ConfigureAwait(false);
                     }
 
                     // Rate limit between pre-loads. Browser preloads already take several
                     // seconds per page load, so use a shorter delay (3s) than HTTP preloads
                     // which are near-instant and need longer delays to avoid bot detection.
                     var delayMs = item.NeedsBrowser ? 3000 : GetAdaptiveDelay(item.Url);
-                    await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
                 }
 
                 // Only reset eager mode if we actually processed items.
@@ -247,7 +247,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 }
 
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
-                await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                await WaitForSignalAsync(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -256,7 +256,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error in pre-load loop");
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -324,7 +324,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(timeout);
 
-            var result = await inFlightTask.WaitAsync(cts.Token);
+            var result = await inFlightTask.WaitAsync(cts.Token).ConfigureAwait(false);
             return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -900,7 +900,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         try
         {
-            await _queueSignal.WaitAsync(timeout, cancellationToken);
+            await _queueSignal.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -975,7 +975,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             _currentlyFetchingUrl = url;
             _logger.LogDebug("Pre-loading: {Url}", url);
-            var result = await HttpFetchAsync(url, cancellationToken);
+            var result = await HttpFetchAsync(url, cancellationToken).ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -1078,11 +1078,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
                     // Warm the PageBuildCache: extract links and readable content
                     // so navigation to this URL skips extraction entirely.
-                    await TryBuildAndCachePageAsync(url, result, cancellationToken);
+                    await TryBuildAndCachePageAsync(url, result, cancellationToken).ConfigureAwait(false);
 
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
-                    await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken);
+                    await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -1157,11 +1157,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             // Retry once after a short wait to handle the race condition.
             if (_backgroundPage == null)
             {
-                _backgroundPage = await _browserSession.CreateBackgroundPageAsync();
+                _backgroundPage = await _browserSession.CreateBackgroundPageAsync().ConfigureAwait(false);
                 if (_backgroundPage == null)
                 {
-                    await Task.Delay(2000, cancellationToken);
-                    _backgroundPage = await _browserSession.CreateBackgroundPageAsync();
+                    await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+                    _backgroundPage = await _browserSession.CreateBackgroundPageAsync().ConfigureAwait(false);
                 }
             }
 
@@ -1175,7 +1175,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             {
                 Timeout = 15000,
                 WaitUntil = WaitUntilState.DOMContentLoaded,
-            });
+            }).ConfigureAwait(false);
 
             // Wait for JS content to render (article paragraphs or sufficient DOM size)
             try
@@ -1187,7 +1187,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         return document.body && document.body.innerHTML.length > 5000;
                     }",
                     null,
-                    new PageWaitForFunctionOptions { Timeout = 4000 });
+                    new PageWaitForFunctionOptions { Timeout = 4000 }).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -1198,9 +1198,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 _logger.LogDebug("Browser preload content render wait failed for {Url}", url);
             }
 
-            await PageLoader.DismissOverlaysAsync(_backgroundPage, _logger);
+            await PageLoader.DismissOverlaysAsync(_backgroundPage, _logger).ConfigureAwait(false);
 
-            var html = await _backgroundPage.ContentAsync();
+            var html = await _backgroundPage.ContentAsync().ConfigureAwait(false);
             var finalUrl = _backgroundPage.Url;
 
             if (PageLoader.IsBotChallengePage(html))
@@ -1235,7 +1235,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             {
                 try
                 {
-                    var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken);
+                    var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken).ConfigureAwait(false);
                     if (readable != null && !readable.IsPaywalled)
                     {
                         var article = new ExtractedArticle
@@ -1248,7 +1248,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                             PublishedDate = readable.PublishedDate,
                         };
 
-                        await _articleContentCache.PutAsync(url, article, cancellationToken);
+                        await _articleContentCache.PutAsync(url, article, cancellationToken).ConfigureAwait(false);
                         _articleCachedUrls[UrlNormalizer.Normalize(url)] = url;
                     }
                 }
@@ -1318,7 +1318,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         try
         {
             var links = await _linkExtractor.ExtractLinksAsync(
-                result.Html, result.Url ?? url, cancellationToken);
+                result.Html, result.Url ?? url, cancellationToken).ConfigureAwait(false);
 
             if (links.Count == 0)
             {
@@ -1329,7 +1329,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             if (_contentExtractor != null)
             {
                 readable = await _contentExtractor.ExtractAsync(
-                    result.Html, result.Url ?? url, cancellationToken);
+                    result.Html, result.Url ?? url, cancellationToken).ConfigureAwait(false);
             }
 
             var signals = PageSignalExtractor.Extract(result.Html);
@@ -1407,7 +1407,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
         try
         {
-            var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken);
+            var readable = await _contentExtractor.ExtractAsync(html, url, cancellationToken).ConfigureAwait(false);
             if (readable == null || readable.IsPaywalled)
             {
                 return;
@@ -1423,7 +1423,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 PublishedDate = readable.PublishedDate,
             };
 
-            await _articleContentCache.PutAsync(url, article, cancellationToken);
+            await _articleContentCache.PutAsync(url, article, cancellationToken).ConfigureAwait(false);
             _articleCachedUrls[UrlNormalizer.Normalize(url)] = url;
             _logger.LogDebug(
                 "Article content cached from preload: {Url} ({Words} words)",
@@ -1455,7 +1455,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
 
-            using var response = await _httpClient.SendAsync(request, cts.Token);
+            using var response = await _httpClient.SendAsync(request, cts.Token).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -1464,7 +1464,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     (int)response.StatusCode);
             }
 
-            var html = await response.Content.ReadAsStringAsync(cts.Token);
+            var html = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
             var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? url;
             var metadata = ExtractMetadata(html);
 

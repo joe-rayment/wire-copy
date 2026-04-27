@@ -110,14 +110,15 @@ internal sealed class OpenAiTtsService : ITtsService
                 chunk.Length);
 
             var chunkResult = await GenerateChunkWithRetryAsync(
-                audioClient, chunk, voice, options, i + 1, chunks.Count, cancellationToken);
+                audioClient, chunk, voice, options, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
 
-            if (!chunkResult.Success)
+            if (!chunkResult.Success || chunkResult.AudioData is null)
             {
-                return TtsGenerationResult.Failure(chunkResult.ErrorMessage!, totalCharsProcessed, i);
+                var errorMessage = chunkResult.ErrorMessage ?? $"Chunk {i + 1}/{chunks.Count} failed without an error message.";
+                return TtsGenerationResult.Failure(errorMessage, totalCharsProcessed, i);
             }
 
-            allAudioSegments.Add(chunkResult.AudioData!);
+            allAudioSegments.Add(chunkResult.AudioData);
             totalCharsProcessed += chunk.Length;
 
             progress?.Report(new TtsProgress
@@ -132,7 +133,7 @@ internal sealed class OpenAiTtsService : ITtsService
             // Inter-chunk delay for rate limiting (skip after last chunk)
             if (i < chunks.Count - 1 && _config.InterChunkDelayMs > 0)
             {
-                await Task.Delay(_config.InterChunkDelayMs, cancellationToken);
+                await Task.Delay(_config.InterChunkDelayMs, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -141,7 +142,7 @@ internal sealed class OpenAiTtsService : ITtsService
         {
             concatenated = allAudioSegments.Count == 1
                 ? allAudioSegments[0]
-                : await ConcatenateWithFfmpegAsync(allAudioSegments, cancellationToken);
+                : await ConcatenateWithFfmpegAsync(allAudioSegments, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -177,7 +178,7 @@ internal sealed class OpenAiTtsService : ITtsService
             var voice = MapVoice(_config.Voice);
 
             // Minimal TTS call (~4 chars, cost ~$0.00006) to validate the full pipeline.
-            var result = await audioClient.GenerateSpeechAsync("test", voice, options, cancellationToken);
+            var result = await audioClient.GenerateSpeechAsync("test", voice, options, cancellationToken).ConfigureAwait(false);
 
             // Discard audio bytes — we only care that the call succeeded.
             _ = result.Value;
@@ -275,7 +276,7 @@ internal sealed class OpenAiTtsService : ITtsService
         {
             try
             {
-                var result = await audioClient.GenerateSpeechAsync(chunk, voice, options, cancellationToken);
+                var result = await audioClient.GenerateSpeechAsync(chunk, voice, options, cancellationToken).ConfigureAwait(false);
                 return ChunkGenerationResult.Ok(result.Value.ToArray());
             }
             catch (ClientResultException ex) when (ex.Status == 429 || ex.Status >= 500)
@@ -303,7 +304,7 @@ internal sealed class OpenAiTtsService : ITtsService
                     ex.Status,
                     delayMs);
 
-                await Task.Delay(delayMs, cancellationToken);
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
             catch (ClientResultException ex) when (ex.Status is 401 or 403)
             {
@@ -345,7 +346,12 @@ internal sealed class OpenAiTtsService : ITtsService
 
     private AudioClient CreateAudioClient()
     {
-        var apiKey = GetEffectiveApiKey()!;
+        var apiKey = GetEffectiveApiKey();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("OpenAI TTS API key is not configured.");
+        }
+
         return new AudioClient(_config.Model, new ApiKeyCredential(apiKey));
     }
 
@@ -407,7 +413,7 @@ internal sealed class OpenAiTtsService : ITtsService
         for (var i = 0; i < segments.Count; i++)
         {
             var chunkPath = tempManager.GetTempFilePath($"chunk-{i:D4}{ext}");
-            await File.WriteAllBytesAsync(chunkPath, segments[i], cancellationToken);
+            await File.WriteAllBytesAsync(chunkPath, segments[i], cancellationToken).ConfigureAwait(false);
             chunkPaths.Add(chunkPath);
         }
 
@@ -417,9 +423,9 @@ internal sealed class OpenAiTtsService : ITtsService
             .FromDemuxConcatInput(chunkPaths)
             .OutputToFile(outputPath, overwrite: true, options => options
                 .WithCustomArgument("-c copy"))
-            .ProcessAsynchronously(throwOnError: true);
+            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
-        return await File.ReadAllBytesAsync(outputPath, cancellationToken);
+        return await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
     }
 
     private string GetFileExtension()

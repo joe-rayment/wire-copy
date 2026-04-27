@@ -129,13 +129,13 @@ public class BookmarkRepositoryTests : TestDatabaseFixture
     #region SeedDefaultsAsync
 
     [Fact]
-    public async Task SeedDefaultsAsync_EmptyTable_SeedsFourDefaults()
+    public async Task SeedDefaultsAsync_EmptyTable_SeedsDefaults()
     {
         await _sut.SeedDefaultsAsync();
         await DbContext.SaveChangesAsync();
 
         var all = await _sut.GetAllAsync();
-        all.Should().HaveCount(4);
+        all.Should().HaveCount(7);
         all.Select(b => b.Name).Should().Contain("CBC News");
     }
 

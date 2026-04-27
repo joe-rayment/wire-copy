@@ -54,7 +54,7 @@ public class CookieImporter
                 };
             }
 
-            var json = await File.ReadAllTextAsync(fullPath, cancellationToken);
+            var json = await File.ReadAllTextAsync(fullPath, cancellationToken).ConfigureAwait(false);
 
             // Try to parse as Chrome DevTools format (array of cookie objects)
             List<CookieData>? cookies;
@@ -117,7 +117,7 @@ public class CookieImporter
                 : DateTime.UtcNow.AddDays(CookieExpirationDays);
 
             // Save cookies
-            await SaveCookiesAsync(nytCookies, expiresAt, cancellationToken);
+            await SaveCookiesAsync(nytCookies, expiresAt, cancellationToken).ConfigureAwait(false);
 
             var daysUntilExpiration = (expiresAt - DateTime.UtcNow).Days;
 
@@ -154,7 +154,7 @@ public class CookieImporter
                 };
             }
 
-            var json = await File.ReadAllTextAsync(_cookieFilePath, cancellationToken);
+            var json = await File.ReadAllTextAsync(_cookieFilePath, cancellationToken).ConfigureAwait(false);
             var storage = JsonSerializer.Deserialize<CookieStorage>(json);
 
             if (storage == null)
@@ -336,7 +336,7 @@ public class CookieImporter
         }
 
         var storageJson = JsonSerializer.Serialize(storage, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken);
+        await File.WriteAllTextAsync(_cookieFilePath, storageJson, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("Saved {Count} encrypted cookies (expires: {ExpiryDate})", cookies.Count, expiresAt);
     }

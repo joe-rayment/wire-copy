@@ -56,9 +56,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <AnalysisLevel>latest</AnalysisLevel>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <!-- StyleCop rules with 100+ existing violations and the NuGet downgrade
-         warning from mixed Microsoft.Extensions.* (9.0.13 + 10.0.2) versions. -->
-    <NoWarn>$(NoWarn);SA1413;SA1116;SA0001;SA1101;SA1309;NU1608</NoWarn>
+    <!-- NU1608: Microsoft.Extensions.* version skew (9.0.13 + 10.0.2). -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
 </Project>

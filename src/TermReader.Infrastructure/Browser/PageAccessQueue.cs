@@ -48,10 +48,10 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
 
         if (priority == PageAccessPriority.Foreground)
         {
-            return await AcquireForegroundAsync(headless, cancellationToken);
+            return await AcquireForegroundAsync(headless, cancellationToken).ConfigureAwait(false);
         }
 
-        return await AcquireBackgroundAsync(headless, cancellationToken);
+        return await AcquireBackgroundAsync(headless, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -85,13 +85,13 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(30));
 
-        await _mainLock.WaitAsync(cts.Token);
+        await _mainLock.WaitAsync(cts.Token).ConfigureAwait(false);
 
         _foregroundRequested = false;
 
         try
         {
-            var page = await _browserSession.GetOrCreatePageAsync(headless);
+            var page = await _browserSession.GetOrCreatePageAsync(headless).ConfigureAwait(false);
             _logger.LogDebug("Foreground acquired browser page");
             return new PageLease(page, () => ReleaseForeground());
         }
@@ -115,13 +115,13 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(60));
 
-        await _mainLock.WaitAsync(cts.Token);
+        await _mainLock.WaitAsync(cts.Token).ConfigureAwait(false);
 
         _backgroundActive = true;
 
         try
         {
-            var page = await _browserSession.GetOrCreatePageAsync(headless);
+            var page = await _browserSession.GetOrCreatePageAsync(headless).ConfigureAwait(false);
             _logger.LogDebug("Background acquired browser page");
             return new PageLease(page, () => ReleaseBackground());
         }

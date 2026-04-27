@@ -89,7 +89,7 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
             try
             {
                 var responseText = await CallAnthropicApiAsync(
-                    apiKey, screenshotBase64, prompt, cancellationToken);
+                    apiKey, screenshotBase64, prompt, cancellationToken).ConfigureAwait(false);
 
                 var config = ParseResponse(responseText, domain, pageUrl);
 
@@ -211,9 +211,9 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
         request.Headers.Add("anthropic-version", AnthropicVersionHeader);
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {

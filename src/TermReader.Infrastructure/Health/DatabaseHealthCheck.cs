@@ -30,7 +30,7 @@ public class DatabaseHealthCheck : IHealthCheck
         try
         {
             // Check if database can be accessed
-            var canConnect = await _dbContext.Database.CanConnectAsync(cancellationToken);
+            var canConnect = await _dbContext.Database.CanConnectAsync(cancellationToken).ConfigureAwait(false);
 
             if (!canConnect)
             {
@@ -39,7 +39,7 @@ public class DatabaseHealthCheck : IHealthCheck
 
             // Check if migrations are applied
             var pendingMigrations = await _dbContext.Database
-                .GetPendingMigrationsAsync(cancellationToken);
+                .GetPendingMigrationsAsync(cancellationToken).ConfigureAwait(false);
 
             var pendingMigrationsList = pendingMigrations.ToList();
 

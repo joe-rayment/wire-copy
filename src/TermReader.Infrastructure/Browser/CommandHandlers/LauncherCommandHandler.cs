@@ -33,7 +33,7 @@ internal static class LauncherCommandHandler
 
             if (!isNavKey && command.RawKeyChar.HasValue && command.RawKeyChar.Value >= 32)
             {
-                await HandleGoToUrl(ctx, options, ct, command.RawKeyChar.Value);
+                await HandleGoToUrl(ctx, options, ct, command.RawKeyChar.Value).ConfigureAwait(false);
                 return true;
             }
         }
@@ -45,8 +45,8 @@ internal static class LauncherCommandHandler
 
             case CommandType.GoBack:
                 // Re-render launcher (recovers from error pages shown over launcher mode)
-                await ctx.RefreshBookmarksAsync(ct);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.MoveDown:
@@ -64,7 +64,7 @@ internal static class LauncherCommandHandler
                 }
 
                 AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
@@ -84,7 +84,7 @@ internal static class LauncherCommandHandler
                 }
 
                 AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
@@ -93,7 +93,7 @@ internal static class LauncherCommandHandler
                 var cols = GetLayoutColumns(options);
                 var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 2, cols);
                 ctx.NavigationService.LauncherSelectedIndex = newIndex;
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
@@ -102,7 +102,7 @@ internal static class LauncherCommandHandler
                 var cols = GetLayoutColumns(options);
                 var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 3, cols);
                 ctx.NavigationService.LauncherSelectedIndex = newIndex;
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
@@ -112,29 +112,29 @@ internal static class LauncherCommandHandler
                 if (idx == -1)
                 {
                     // URL bar selected — activate URL input
-                    await HandleGoToUrl(ctx, options, ct);
+                    await HandleGoToUrl(ctx, options, ct).ConfigureAwait(false);
                 }
                 else if (idx == (ctx.Bookmarks?.Count ?? 0))
                 {
-                    await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
+                    await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 }
                 else if (ctx.Bookmarks != null && idx < ctx.Bookmarks.Count)
                 {
                     var bookmark = ctx.Bookmarks[idx];
-                    await ctx.NavigateToAsync(bookmark.Url, options, ct);
+                    await ctx.NavigateToAsync(bookmark.Url, options, ct).ConfigureAwait(false);
                 }
 
                 break;
             }
 
             case CommandType.AddBookmark:
-                await HandleAddBookmark(ctx, options, ct);
+                await HandleAddBookmark(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.DeleteItem:
             {
                 // Commit any previous pending undo before starting a new delete
-                await UndoCommandHandler.ClearOnAction(ctx, ct);
+                await UndoCommandHandler.ClearOnAction(ctx, ct).ConfigureAwait(false);
 
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
                 if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
@@ -167,43 +167,43 @@ internal static class LauncherCommandHandler
                     ctx.NavigationService.SetStatusMessage($"Removed \u00b7 z:undo", UndoState.UndoWindow);
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
             case CommandType.ReorderUp:
-                await HandleReorderUp(ctx, options, ct);
+                await HandleReorderUp(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.ReorderDown:
-                await HandleReorderDown(ctx, options, ct);
+                await HandleReorderDown(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.OpenCollections:
-                await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct);
+                await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.GoToUrl:
             case CommandType.OpenInBrowser:
                 // Select the URL bar, then activate it
                 ctx.NavigationService.LauncherSelectedIndex = -1;
-                await ctx.RenderCurrentPageAsync(options, ct);
-                await HandleGoToUrl(ctx, options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                await HandleGoToUrl(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.OpenCommandLine:
             {
-                var input = await ctx.InputHandler.PromptForInputAsync(":", ct);
+                var input = await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(input))
                 {
-                    if (!await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct))
+                    if (!await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false))
                     {
                         return false;
                     }
                 }
                 else
                 {
-                    await ctx.RenderCurrentPageAsync(options, ct);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
 
                 break;
@@ -211,7 +211,7 @@ internal static class LauncherCommandHandler
 
             case CommandType.Search:
             {
-                var query = await ctx.InputHandler.PromptForInputAsync("/", ct);
+                var query = await ctx.InputHandler.PromptForInputAsync("/", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(query) && ctx.Bookmarks != null)
                 {
                     var matchIdx = ctx.Bookmarks
@@ -229,12 +229,12 @@ internal static class LauncherCommandHandler
                     }
                 }
 
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
             case CommandType.ShowHelp:
-                await ViewCommandHandler.HandleShowHelp(ctx, options, ct);
+                await ViewCommandHandler.HandleShowHelp(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.PageDown:
@@ -245,7 +245,7 @@ internal static class LauncherCommandHandler
                 ctx.NavigationService.LauncherSelectedIndex =
                     Math.Min(ctx.NavigationService.LauncherSelectedIndex + step, totalItems - 1);
                 AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
@@ -257,24 +257,24 @@ internal static class LauncherCommandHandler
                 ctx.NavigationService.LauncherSelectedIndex =
                     Math.Max(ctx.NavigationService.LauncherSelectedIndex - step, 0);
                 AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
             case CommandType.GoToTop:
                 ctx.NavigationService.LauncherSelectedIndex = 0;
                 ctx.NavigationService.LauncherScrollOffset = 0;
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.GoToBottom:
                 ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, totalItems - 1);
                 AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.Undo:
-                await UndoCommandHandler.HandleUndo(ctx, options, ct);
+                await UndoCommandHandler.HandleUndo(ctx, options, ct).ConfigureAwait(false);
                 break;
         }
 
@@ -285,7 +285,7 @@ internal static class LauncherCommandHandler
     {
         // Select the URL bar visually
         ctx.NavigationService.LauncherSelectedIndex = -1;
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         // Calculate URL bar position for inline input (must match RenderUrlBar)
         var width = Math.Max(1, options.TerminalWidth - 2);
@@ -298,11 +298,11 @@ internal static class LauncherCommandHandler
         var seed = initialChar.HasValue ? initialChar.Value.ToString() : null;
 
         // Prompt directly inside the URL bar
-        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol, initialInput: seed);
+        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol, initialInput: seed).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(input))
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -313,7 +313,7 @@ internal static class LauncherCommandHandler
             url = "https://" + url;
         }
 
-        await ctx.NavigateToAsync(url, options, ct);
+        await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -344,10 +344,10 @@ internal static class LauncherCommandHandler
             },
         };
 
-        var result = await WizardRunner.RunAsync(ctx.InputHandler, steps, palette, ct);
+        var result = await WizardRunner.RunAsync(ctx.InputHandler, steps, palette, ct).ConfigureAwait(false);
         if (result == null)
         {
-            await ctx.RenderCurrentPageAsync(options, ct);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -364,8 +364,8 @@ internal static class LauncherCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-            await bookmarkService.AddBookmarkAsync(name, url, ct);
-            await ctx.RefreshBookmarksAsync(ct);
+            await bookmarkService.AddBookmarkAsync(name, url, ct).ConfigureAwait(false);
+            await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
             ctx.Logger.LogInformation("Added bookmark: {Name} ({Url})", name, url);
         }
         catch (Exception ex)
@@ -373,7 +373,7 @@ internal static class LauncherCommandHandler
             ctx.Logger.LogWarning(ex, "Failed to add bookmark");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -386,8 +386,8 @@ internal static class LauncherCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                await bookmarkService.MoveBookmarkUpAsync(bookmark.Id, ct);
-                await ctx.RefreshBookmarksAsync(ct);
+                await bookmarkService.MoveBookmarkUpAsync(bookmark.Id, ct).ConfigureAwait(false);
+                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
 
                 // Follow the bookmark to its new position
                 if (ctx.Bookmarks != null)
@@ -403,7 +403,7 @@ internal static class LauncherCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleReorderDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -416,8 +416,8 @@ internal static class LauncherCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                await bookmarkService.MoveBookmarkDownAsync(bookmark.Id, ct);
-                await ctx.RefreshBookmarksAsync(ct);
+                await bookmarkService.MoveBookmarkDownAsync(bookmark.Id, ct).ConfigureAwait(false);
+                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
 
                 // Follow the bookmark to its new position
                 if (ctx.Bookmarks != null)
@@ -434,7 +434,7 @@ internal static class LauncherCommandHandler
             }
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     private static int IndexOfBookmarkById(IReadOnlyList<Domain.Entities.Bookmarks.Bookmark> bookmarks, Guid id)

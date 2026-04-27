@@ -44,6 +44,6 @@ public class UrlListExporter : ICollectionExporter
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllLinesAsync(options.OutputPath, lines, cancellationToken);
+        await File.WriteAllLinesAsync(options.OutputPath, lines, cancellationToken).ConfigureAwait(false);
     }
 }

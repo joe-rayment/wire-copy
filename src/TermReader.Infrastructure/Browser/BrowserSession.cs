@@ -60,7 +60,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await _lock.WaitAsync();
+        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -74,7 +74,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     _logger.LogInformation(
                         "Switching headless→headed browser for interactive use");
-                    await DisposeContextUnsafeAsync();
+                    await DisposeContextUnsafeAsync().ConfigureAwait(false);
                 }
                 else
                 {
@@ -88,13 +88,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     catch (PlaywrightException ex)
                     {
                         _logger.LogWarning(ex, "Existing Playwright page is dead, creating a new one");
-                        await DisposeContextUnsafeAsync();
+                        await DisposeContextUnsafeAsync().ConfigureAwait(false);
                     }
                 }
             }
 
             _logger.LogInformation("Creating new Playwright browser session (headless={Headless})", headless);
-            await LaunchBrowserAsync(headless);
+            await LaunchBrowserAsync(headless).ConfigureAwait(false);
             return _page!;
         }
         finally
@@ -107,7 +107,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public async Task WarmUpAsync()
     {
         _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.Headless);
-        await GetOrCreatePageAsync(_browserConfig.Headless);
+        await GetOrCreatePageAsync(_browserConfig.Headless).ConfigureAwait(false);
         _logger.LogDebug("Browser session warm-up complete");
     }
 
@@ -131,14 +131,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             // Un-minimize via CDP first (BringToFrontAsync alone doesn't restore
             // a CDP-minimized window on macOS)
-            var cdp = await _page.Context.NewCDPSessionAsync(_page);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
             var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
                 ["windowId"] = windowId,
                 ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-            });
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -147,7 +147,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
-            await _page.BringToFrontAsync();
+            await _page.BringToFrontAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -165,14 +165,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget");
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
             var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
                 ["windowId"] = windowId,
                 ["bounds"] = new Dictionary<string, object> { ["windowState"] = "minimized" },
-            });
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -180,13 +180,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
 
         // Refocus the terminal app so keyboard input works immediately
-        await RefocusTerminalAsync();
+        await RefocusTerminalAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async Task<byte[]?> CaptureScreenshotAsync()
     {
-        await _lock.WaitAsync();
+        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (_disposed || _page == null)
@@ -196,7 +196,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             try
             {
-                return await _page.ScreenshotAsync();
+                return await _page.ScreenshotAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -218,7 +218,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return null;
         }
 
-        await _lock.WaitAsync();
+        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (_context == null)
@@ -227,7 +227,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 return null;
             }
 
-            var page = await _context.NewPageAsync();
+            var page = await _context.NewPageAsync().ConfigureAwait(false);
             _logger.LogDebug("Created background page (total pages: {Count})", _context.Pages.Count);
             return page;
         }
@@ -247,7 +247,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     {
         try
         {
-            await page.CloseAsync();
+            await page.CloseAsync().ConfigureAwait(false);
             _logger.LogDebug("Closed background page");
         }
         catch (Exception ex)
@@ -357,10 +357,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             using var process = System.Diagnostics.Process.Start(psi);
             if (process != null)
             {
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
                 if (process.HasExited && process.ExitCode != 0)
                 {
-                    var stderr = await process.StandardError.ReadToEndAsync();
+                    var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
                     _logger.LogWarning(
                         "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy → Automation permissions.",
                         process.ExitCode,
@@ -382,7 +382,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private async Task LaunchBrowserAsync(bool headless)
     {
         // Clean up any leftover state from a previous failed launch
-        await DisposeContextUnsafeAsync();
+        await DisposeContextUnsafeAsync().ConfigureAwait(false);
 
         Directory.CreateDirectory(_userDataDir);
 
@@ -412,9 +412,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     }
                 });
 
-                if (await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(60))) == installTask)
+                if (await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(60))).ConfigureAwait(false) == installTask)
                 {
-                    var exitCode = await installTask;
+                    var exitCode = await installTask.ConfigureAwait(false);
                     if (exitCode != 0)
                     {
                         _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
@@ -434,12 +434,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         try
         {
             var createTask = Playwright.CreateAsync();
-            if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))) != createTask)
+            if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)
             {
                 throw new TimeoutException("Playwright.CreateAsync timed out after 15 seconds");
             }
 
-            _playwright = await createTask;
+            _playwright = await createTask.ConfigureAwait(false);
 
             var args = new List<string>
             {
@@ -472,12 +472,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             // Additional timeout guard — LaunchPersistentContextAsync's own Timeout may not
             // cover all hang scenarios (e.g., no display for headed mode, broken Xvfb)
-            if (await Task.WhenAny(launchTask, Task.Delay(TimeSpan.FromSeconds(30))) != launchTask)
+            if (await Task.WhenAny(launchTask, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(false) != launchTask)
             {
                 throw new TimeoutException("Browser launch timed out after 30 seconds");
             }
 
-            _context = await launchTask;
+            _context = await launchTask.ConfigureAwait(false);
 
             await _context.AddInitScriptAsync(@"
                 // Patch navigator.webdriver (primary automation indicator)
@@ -509,19 +509,19 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                         get: () => ['en-US', 'en'],
                     });
                 }
-            ");
+            ").ConfigureAwait(false);
 
-            _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
+            _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync().ConfigureAwait(false);
 
             // Inject stored cookies on every launch so mid-session updates
             // (e.g., Shift+I login) are picked up on browser restart.
-            await InjectStoredCookiesAsync();
+            await InjectStoredCookiesAsync().ConfigureAwait(false);
 
             // Minimize headed browser so it stays in the background.
             // RestoreWindowAsync (BringToFront) is called when user interaction is needed.
             if (!headless)
             {
-                await MinimizeWindowAsync();
+                await MinimizeWindowAsync().ConfigureAwait(false);
             }
 
             // Set mode flag only on success — if launch throws, the flag stays
@@ -531,7 +531,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         catch
         {
             // Clean up partial state so the next call starts fresh
-            await DisposeContextUnsafeAsync();
+            await DisposeContextUnsafeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -540,7 +540,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     {
         try
         {
-            var cookies = await _cookieManager.LoadCookiesAsync();
+            var cookies = await _cookieManager.LoadCookiesAsync().ConfigureAwait(false);
             if (cookies.Count == 0)
             {
                 return;
@@ -561,7 +561,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 .Where(c => c.Expires < 0 || c.Expires > now)
                 .ToList();
 
-            await _context!.AddCookiesAsync(pwCookies);
+            await _context!.AddCookiesAsync(pwCookies).ConfigureAwait(false);
             _logger.LogDebug("Injected {Count} stored cookies into Playwright context", pwCookies.Count);
         }
         catch (Exception ex)
@@ -576,7 +576,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             try
             {
-                await _page.CloseAsync();
+                await _page.CloseAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -590,7 +590,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             try
             {
-                await _context.CloseAsync();
+                await _context.CloseAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {

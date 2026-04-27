@@ -63,7 +63,7 @@ internal static class FormField
                 isSecret: field.IsSecret,
                 row: inputRow,
                 col: inputCol,
-                initialInput: field.InitialValue);
+                initialInput: field.InitialValue).ConfigureAwait(false);
 
             if (value == null)
             {

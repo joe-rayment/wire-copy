@@ -152,8 +152,8 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         ArgumentNullException.ThrowIfNull(localFilePath);
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
-        await EnsureBucketAsync(client, cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureBucketAsync(client, cancellationToken).ConfigureAwait(false);
 
         await using var stream = File.OpenRead(localFilePath);
 
@@ -169,7 +169,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             contentType,
             stream,
             new UploadObjectOptions(),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         return GetPublicUrl(objectName);
     }
@@ -183,8 +183,8 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
-        await EnsureBucketAsync(client, cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureBucketAsync(client, cancellationToken).ConfigureAwait(false);
 
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
 
@@ -199,7 +199,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             contentType,
             stream,
             new UploadObjectOptions(),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         return GetPublicUrl(objectName);
     }
@@ -210,15 +210,15 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     {
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
             using var stream = new MemoryStream();
-            await client.DownloadObjectAsync(_config.BucketName, objectName, stream, cancellationToken: cancellationToken);
+            await client.DownloadObjectAsync(_config.BucketName, objectName, stream, cancellationToken: cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
             using var reader = new StreamReader(stream);
-            return await reader.ReadToEndAsync(cancellationToken);
+            return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -232,11 +232,11 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     {
         ArgumentNullException.ThrowIfNull(objectName);
 
-        var client = await GetClientWithDiagnosticsAsync(cancellationToken);
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            await client.GetObjectAsync(_config.BucketName, objectName, cancellationToken: cancellationToken);
+            await client.GetObjectAsync(_config.BucketName, objectName, cancellationToken: cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
@@ -266,7 +266,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             StorageClient client;
             try
             {
-                client = await GetClientAsync(ct);
+                client = await GetClientAsync(ct).ConfigureAwait(false);
             }
             catch (FileNotFoundException ex)
             {
@@ -291,7 +291,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             // Step 2: Bucket read - verify bucket exists (or create)
             try
             {
-                await client.GetBucketAsync(bucketName, cancellationToken: ct);
+                await client.GetBucketAsync(bucketName, cancellationToken: ct).ConfigureAwait(false);
             }
             catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.NotFound)
             {
@@ -320,7 +320,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                                     },
                                 },
                             },
-                            cancellationToken: ct);
+                            cancellationToken: ct).ConfigureAwait(false);
 
                         _logger.LogInformation("Created bucket {Bucket} during validation", bucketName);
                     }
@@ -355,9 +355,9 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                     probePath,
                     "text/plain",
                     probeStream,
-                    cancellationToken: ct);
+                    cancellationToken: ct).ConfigureAwait(false);
 
-                await client.DeleteObjectAsync(bucketName, probePath, cancellationToken: ct);
+                await client.DeleteObjectAsync(bucketName, probePath, cancellationToken: ct).ConfigureAwait(false);
             }
             catch (Google.GoogleApiException ex) when (
                 ex.HttpStatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
@@ -475,7 +475,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     {
         try
         {
-            return await GetClientAsync(cancellationToken);
+            return await GetClientAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
@@ -509,7 +509,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             return _client;
         }
 
-        await _initLock.WaitAsync(cancellationToken);
+        await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after lock acquisition
@@ -532,7 +532,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             }
 
             var credential = GoogleCredential.FromFile(keyPath);
-            _client = await StorageClient.CreateAsync(credential);
+            _client = await StorageClient.CreateAsync(credential).ConfigureAwait(false);
             _cachedKeyPath = keyPath;
 
             return _client;
@@ -553,7 +553,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             return;
         }
 
-        await _initLock.WaitAsync(cancellationToken);
+        await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
@@ -564,7 +564,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 
             try
             {
-                await client.GetBucketAsync(currentBucket, cancellationToken: cancellationToken);
+                await client.GetBucketAsync(currentBucket, cancellationToken: cancellationToken).ConfigureAwait(false);
                 _ensuredBucketName = currentBucket;
             }
             catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
@@ -591,7 +591,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                             },
                         },
                     },
-                    cancellationToken: cancellationToken);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 _ensuredBucketName = currentBucket;
             }

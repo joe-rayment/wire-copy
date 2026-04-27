@@ -157,14 +157,14 @@ dotnet_naming_style.begins_with_i.capitalization = pascal_case
 # SA1101: Conflicts with dotnet_style_qualification_for_field = false
 dotnet_diagnostic.SA1101.severity = none
 
-# SA0001: XML comment analysis disabled - informational only
-dotnet_diagnostic.SA0001.severity = suggestion
+# SA0001: XML comment analysis meta-warning — XML docs are not enforced project-wide
+dotnet_diagnostic.SA0001.severity = none
 
-# SA1116: Parameter formatting - reduce to warning
-dotnet_diagnostic.SA1116.severity = warning
+# SA1116: Split parameters formatting — codebase does not follow this stylistic rule
+dotnet_diagnostic.SA1116.severity = none
 
-# SA1413: Trailing comma - reduce to warning
-dotnet_diagnostic.SA1413.severity = warning
+# SA1413: Trailing comma in multi-line initializers — codebase does not follow this rule
+dotnet_diagnostic.SA1413.severity = none
 
 # SA1309: Field names should not begin with underscore - allow for private fields
 dotnet_diagnostic.SA1309.severity = none

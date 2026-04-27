@@ -58,10 +58,10 @@ internal sealed class ArticleContentCache : IArticleContentCache
     {
         var key = UrlNormalizer.Normalize(url);
 
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             if (!_index.TryGetValue(key, out var entry))
             {
@@ -83,18 +83,18 @@ internal sealed class ArticleContentCache : IArticleContentCache
                 {
                     _logger.LogWarning("Article file missing for {Url}: {Path}, removing entry", url, entry.ArticleFilePath);
                     _index.Remove(key);
-                    await SaveIndexAsync(cancellationToken);
+                    await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
                     return null;
                 }
 
-                cleanedText = await File.ReadAllTextAsync(entry.ArticleFilePath, cancellationToken);
+                cleanedText = await File.ReadAllTextAsync(entry.ArticleFilePath, cancellationToken).ConfigureAwait(false);
             }
 
             if (string.IsNullOrEmpty(cleanedText))
             {
                 _logger.LogWarning("No article text available for {Url}, removing entry", url);
                 _index.Remove(key);
-                await SaveIndexAsync(cancellationToken);
+                await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
                 return null;
             }
 
@@ -123,10 +123,10 @@ internal sealed class ArticleContentCache : IArticleContentCache
     {
         var key = UrlNormalizer.Normalize(url);
 
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureIndexLoadedAsync(cancellationToken);
+            await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
             EnsureDirectoriesExist();
 
             // Delete old article file if overwriting an existing entry
@@ -140,7 +140,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
             var articleFilePath = Path.Combine(_articlesDir, articleFileName);
 
             var tmpArticlePath = articleFilePath + ".tmp";
-            await File.WriteAllTextAsync(tmpArticlePath, article.CleanedText, cancellationToken);
+            await File.WriteAllTextAsync(tmpArticlePath, article.CleanedText, cancellationToken).ConfigureAwait(false);
             File.Move(tmpArticlePath, articleFilePath, overwrite: true);
 
             var now = DateTime.UtcNow;
@@ -179,7 +179,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
                 }
             }
 
-            await SaveIndexAsync(cancellationToken);
+            await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Cached article content for {Url} ({Words} words)",
@@ -196,7 +196,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
     {
         var key = UrlNormalizer.Normalize(url);
 
-        await _lock.WaitAsync(cancellationToken);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_index.TryGetValue(key, out var entry))
@@ -207,7 +207,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
                 }
 
                 _index.Remove(key);
-                await SaveIndexAsync(cancellationToken);
+                await SaveIndexAsync(cancellationToken).ConfigureAwait(false);
                 _logger.LogDebug("Removed cached article: {Url}", url);
             }
         }
@@ -240,7 +240,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
         {
             try
             {
-                var json = await File.ReadAllTextAsync(_indexPath, cancellationToken);
+                var json = await File.ReadAllTextAsync(_indexPath, cancellationToken).ConfigureAwait(false);
                 var entries = JsonSerializer.Deserialize<List<CacheEntry>>(json, JsonOptions);
                 if (entries != null)
                 {
@@ -267,7 +267,7 @@ internal sealed class ArticleContentCache : IArticleContentCache
         var json = JsonSerializer.Serialize(entries, JsonOptions);
 
         var tmpPath = _indexPath + ".tmp";
-        await File.WriteAllTextAsync(tmpPath, json, cancellationToken);
+        await File.WriteAllTextAsync(tmpPath, json, cancellationToken).ConfigureAwait(false);
         File.Move(tmpPath, _indexPath, overwrite: true);
     }
 

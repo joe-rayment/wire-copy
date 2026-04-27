@@ -48,7 +48,7 @@ public class TerminalInputHandler : IInputHandler
 
         try
         {
-            return await WaitForInputCoreAsync(cancellationToken);
+            return await WaitForInputCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ChannelClosedException)
         {
@@ -153,7 +153,7 @@ public class TerminalInputHandler : IInputHandler
         Console.WriteLine();
         Console.Write(prompt);
 
-        var url = await Task.Run(() => Console.ReadLine(), cancellationToken);
+        var url = await Task.Run(() => Console.ReadLine(), cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -212,7 +212,7 @@ public class TerminalInputHandler : IInputHandler
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken);
+                var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
 
                 if (keyInfo.Key == ConsoleKey.Escape)
                 {

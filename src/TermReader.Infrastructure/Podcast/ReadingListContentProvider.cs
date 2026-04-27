@@ -121,7 +121,7 @@ internal sealed class ReadingListContentProvider
             {
                 using var articleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 articleCts.CancelAfter(PerArticleTimeout);
-                var (article, fetchMethod) = await LoadAndExtractAsync(item, reportMethod, articleCts.Token);
+                var (article, fetchMethod) = await LoadAndExtractAsync(item, reportMethod, articleCts.Token).ConfigureAwait(false);
 
                 progress?.Report(new ContentExtractionProgress
                 {
@@ -160,7 +160,7 @@ internal sealed class ReadingListContentProvider
                 // Rate limit when fetching from network to respect robots.txt and avoid bot detection
                 if (fetchMethod != FetchMethod.Cached && i < items.Count - 1)
                 {
-                    await Task.Delay(NetworkFetchDelayMs, cancellationToken);
+                    await Task.Delay(NetworkFetchDelayMs, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -248,7 +248,7 @@ internal sealed class ReadingListContentProvider
         // Check persistent article content cache before any network calls
         try
         {
-            var cachedArticle = await _articleCache.TryGetAsync(item.Url, cancellationToken);
+            var cachedArticle = await _articleCache.TryGetAsync(item.Url, cancellationToken).ConfigureAwait(false);
             if (cachedArticle != null)
             {
                 reportMethod?.Invoke("content cache");
@@ -268,11 +268,11 @@ internal sealed class ReadingListContentProvider
             {
                 reportMethod?.Invoke("preload");
                 var preloadResult = await _preloadService.WaitForInFlightAsync(
-                    item.Url, InFlightWaitTimeout, cancellationToken);
+                    item.Url, InFlightWaitTimeout, cancellationToken).ConfigureAwait(false);
                 if (preloadResult is { Success: true } && !string.IsNullOrEmpty(preloadResult.Html))
                 {
                     _logger.LogDebug("Using completed in-flight preload for {Url}", item.Url);
-                    var preloadArticle = await TryExtractArticleAsync(preloadResult, item.Url, cancellationToken);
+                    var preloadArticle = await TryExtractArticleAsync(preloadResult, item.Url, cancellationToken).ConfigureAwait(false);
                     if (preloadArticle != null)
                     {
                         return (preloadArticle, FetchMethod.Cached);
@@ -295,9 +295,9 @@ internal sealed class ReadingListContentProvider
             var request = new PageLoadRequest { Url = item.Url, PreferBrowser = true };
 
             using (var lease = await _pageAccessQueue.AcquireAsync(
-                PageAccessPriority.Background, _browserConfig.Headless, cancellationToken))
+                PageAccessPriority.Background, _browserConfig.Headless, cancellationToken).ConfigureAwait(false))
             {
-                lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken);
+                lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken).ConfigureAwait(false);
             }
 
             lastFetchMethod = lastLoadResult.FetchMethod;
@@ -308,7 +308,7 @@ internal sealed class ReadingListContentProvider
             }
             else
             {
-                var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken).ConfigureAwait(false);
                 if (article != null)
                 {
                     return (article, lastLoadResult.FetchMethod);
@@ -333,7 +333,7 @@ internal sealed class ReadingListContentProvider
                     item.Url);
 
                 using (var lease = await _pageAccessQueue.AcquireAsync(
-                    PageAccessPriority.Background, _browserConfig.Headless, cancellationToken))
+                    PageAccessPriority.Background, _browserConfig.Headless, cancellationToken).ConfigureAwait(false))
                 {
                     lastLoadResult = await _pageLoader.LoadAsync(
                         new PageLoadRequest
@@ -343,7 +343,7 @@ internal sealed class ReadingListContentProvider
                             PreferBrowser = true,
                             ForceRefresh = true,
                         },
-                        cancellationToken);
+                        cancellationToken).ConfigureAwait(false);
                 }
 
                 lastFetchMethod = lastLoadResult.FetchMethod;
@@ -355,7 +355,7 @@ internal sealed class ReadingListContentProvider
                 }
                 else if (lastLoadResult.Success && !string.IsNullOrEmpty(lastLoadResult.Html))
                 {
-                    var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                    var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken).ConfigureAwait(false);
                     if (article != null)
                     {
                         return (article, lastLoadResult.FetchMethod);
@@ -381,14 +381,14 @@ internal sealed class ReadingListContentProvider
             {
                 try
                 {
-                    await _browserSession.RestoreWindowAsync();
+                    await _browserSession.RestoreWindowAsync().ConfigureAwait(false);
                     reportMethod?.Invoke("bot challenge \u2014 check browser");
                     _logger.LogWarning(
                         "Bot challenge detected, restoring browser window for user intervention: {Url}",
                         item.Url);
 
                     using (var lease = await _pageAccessQueue.AcquireAsync(
-                        PageAccessPriority.Background, false, cancellationToken))
+                        PageAccessPriority.Background, false, cancellationToken).ConfigureAwait(false))
                     {
                         lastLoadResult = await _pageLoader.LoadAsync(
                             new PageLoadRequest
@@ -397,7 +397,7 @@ internal sealed class ReadingListContentProvider
                                 Headless = false,
                                 ForceRefresh = true,
                             },
-                            cancellationToken);
+                            cancellationToken).ConfigureAwait(false);
                     }
 
                     lastFetchMethod = lastLoadResult.FetchMethod;
@@ -409,7 +409,7 @@ internal sealed class ReadingListContentProvider
                     }
                     else if (lastLoadResult.Success && !string.IsNullOrEmpty(lastLoadResult.Html))
                     {
-                        var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken);
+                        var article = await TryExtractArticleAsync(lastLoadResult, item.Url, cancellationToken).ConfigureAwait(false);
                         if (article != null)
                         {
                             return (article, lastLoadResult.FetchMethod);
@@ -433,7 +433,7 @@ internal sealed class ReadingListContentProvider
     {
         try
         {
-            var content = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken);
+            var content = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url, cancellationToken).ConfigureAwait(false);
             if (content == null || string.IsNullOrWhiteSpace(content.CleanedText))
             {
                 return null;
@@ -452,7 +452,7 @@ internal sealed class ReadingListContentProvider
             // Persist extracted content so future invocations skip re-extraction
             try
             {
-                await _articleCache.PutAsync(url, article, cancellationToken);
+                await _articleCache.PutAsync(url, article, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
