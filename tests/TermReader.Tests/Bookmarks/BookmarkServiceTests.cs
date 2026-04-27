@@ -205,7 +205,7 @@ public class BookmarkServiceTests : TestDatabaseFixture
         await _sut.EnsureSeededAsync();
 
         var all = await _sut.GetAllBookmarksAsync();
-        all.Should().HaveCount(7);
+        all.Should().HaveCount(9);
         all.Select(b => b.Name).Should().Contain("Maclean's");
         all.Select(b => b.Name).Should().Contain("CBC News");
         all.Select(b => b.Name).Should().Contain("NYT Today's Paper");
@@ -213,6 +213,8 @@ public class BookmarkServiceTests : TestDatabaseFixture
         all.Select(b => b.Name).Should().Contain("The Toronto Star");
         all.Select(b => b.Name).Should().Contain("Techmeme");
         all.Select(b => b.Name).Should().Contain("Wall Street Journal");
+        all.Select(b => b.Name).Should().Contain("Wired");
+        all.Select(b => b.Name).Should().Contain("The New Yorker");
     }
 
     [Fact]
@@ -222,7 +224,7 @@ public class BookmarkServiceTests : TestDatabaseFixture
         await _sut.EnsureSeededAsync(); // Second call
 
         var all = await _sut.GetAllBookmarksAsync();
-        all.Should().HaveCount(7);
+        all.Should().HaveCount(9);
     }
 
     [Fact]
