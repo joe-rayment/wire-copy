@@ -25,6 +25,19 @@ namespace TermReader.Infrastructure.Browser.CommandHandlers;
 internal static class PodcastConfirmationScreens
 {
     private const string Reset = PodcastCommandHandler.Reset;
+    private const string Bold = "\x1b[1m";
+
+    /// <summary>
+    /// Selectable row identity for the confirmation screen. Used to track which row
+    /// is highlighted and which action runs when the user presses Enter.
+    /// </summary>
+    private enum ConfirmRow
+    {
+        TtsKey,
+        GcsKey,
+        GcsBucket,
+        Generate,
+    }
 
     /// <summary>
     /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
@@ -343,6 +356,26 @@ internal static class PodcastConfirmationScreens
         var isKeyConfigured = !string.IsNullOrWhiteSpace(keyPath);
         string? inlineError = null;
 
+        // Build the list of selectable rows in render order. The TtsKey row is
+        // always present; GcsKey is present only when the GCS client is wired up.
+        // Default selection: first unconfigured row if any, else Generate.
+        ConfirmRow[] BuildRows() => gcsClient != null
+            ? [ConfirmRow.TtsKey, ConfirmRow.GcsKey, ConfirmRow.GcsBucket, ConfirmRow.Generate]
+            : [ConfirmRow.TtsKey, ConfirmRow.GcsBucket, ConfirmRow.Generate];
+
+        var rows = BuildRows();
+        var selectedIndex = Array.FindIndex(rows, r => r switch
+        {
+            ConfirmRow.TtsKey => !isTtsConfigured,
+            ConfirmRow.GcsKey => !isKeyConfigured,
+            ConfirmRow.GcsBucket => !isGcsConfigured,
+            _ => false,
+        });
+        if (selectedIndex < 0)
+        {
+            selectedIndex = Array.IndexOf(rows, ConfirmRow.Generate);
+        }
+
         // Resolve Anthropic services for AI Hierarchy status (optional — may not be registered)
         bool isAnthropicConfigured = false;
         int savedConfigCount = 0;
@@ -391,34 +424,70 @@ internal static class PodcastConfirmationScreens
             // --- Credentials ---
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Credentials{Reset}");
 
-            var ttsIndicator = isTtsConfigured
-                ? $"    {p.PromptFg.AnsiFg}●{Reset} OpenAI TTS API key     {p.PromptFg.AnsiFg}configured{Reset}  {p.SecondaryText.AnsiFg}[a] change{Reset}"
-                : $"    {p.ErrorFg.AnsiFg}○{Reset} OpenAI TTS API key     {p.ErrorFg.AnsiFg}not set{Reset}";
-            helpers.WriteLine(ttsIndicator);
-
-            if (!isTtsConfigured)
+            // Helper: render a selectable row with status icon, label, value, and right-aligned action button.
+            // When selected, the row gets a ▌ accent bar in muted + sel-bg fill.
+            void RenderRow(ConfirmRow rowId, string statusIcon, string statusColor, string label, string value, string valueColor, string actionLabel)
             {
+                var isSelected = rows[selectedIndex] == rowId;
+                var prefix = isSelected
+                    ? $"  {p.GetMutedFg().AnsiFg}▌{Reset} "
+                    : "    ";
+
+                // Layout: "icon  label                value           [Enter] action"
+                // We pad the label column to ~24 cols so values align.
+                const int labelCol = 24;
+                var paddedLabel = label.Length < labelCol ? label + new string(' ', labelCol - label.Length) : label;
+
+                var actionBtn = $"{p.GetAccentFg().AnsiFg}[Enter]{Reset} {p.PrimaryText.AnsiFg}{actionLabel}{Reset}";
+
+                // Compute body before the action button so we can right-align the button.
+                var body = $"{statusColor}{statusIcon}{Reset} {paddedLabel}{valueColor}{value}{Reset}";
+                var bodyPlainLen = 1 + 1 + paddedLabel.Length + value.Length; // icon + space + label + value
+                var actionPlainLen = "[Enter] ".Length + actionLabel.Length;
+                var totalPlainLen = 4 /*prefix*/ + bodyPlainLen + actionPlainLen;
+                var pad = Math.Max(2, width - totalPlainLen);
+
+                var line = isSelected
+                    ? $"{prefix}{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {body} {new string(' ', pad - 2)}{actionBtn} {Reset}"
+                    : $"{prefix}{body}{new string(' ', pad)}{actionBtn}";
+                helpers.WriteLine(line);
+            }
+
+            // OpenAI TTS API key row
+            if (isTtsConfigured)
+            {
+                RenderRow(ConfirmRow.TtsKey, "●", p.PromptFg.AnsiFg, "OpenAI TTS API key", "configured", p.PromptFg.AnsiFg, "Change");
+            }
+            else
+            {
+                RenderRow(ConfirmRow.TtsKey, "○", p.ErrorFg.AnsiFg, "OpenAI TTS API key", "not set", p.ErrorFg.AnsiFg, "Set up");
                 helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required — get a key at platform.openai.com/api-keys{Reset}");
             }
 
+            // GCS service account key row
             if (gcsClient != null)
             {
                 if (isKeyConfigured && keyPath is not null)
                 {
-                    var displayPath = keyPath.Length > 40 ? "…" + keyPath[^39..] : keyPath;
-                    helpers.WriteLine($"    {p.PromptFg.AnsiFg}●{Reset} GCS service account    {p.PromptFg.AnsiFg}{displayPath}{Reset}  {p.SecondaryText.AnsiFg}[k] change{Reset}");
+                    var displayPath = keyPath.Length > 30 ? "…" + keyPath[^29..] : keyPath;
+                    RenderRow(ConfirmRow.GcsKey, "●", p.PromptFg.AnsiFg, "GCS service account", displayPath, p.PromptFg.AnsiFg, "Change");
                 }
                 else
                 {
-                    helpers.WriteLine($"    {p.SecondaryText.AnsiFg}○{Reset} GCS service account    {p.SecondaryText.AnsiFg}not set{Reset}  {p.PrimaryText.AnsiFg}[k] setup wizard{Reset}");
+                    RenderRow(ConfirmRow.GcsKey, "○", p.SecondaryText.AnsiFg, "GCS service account", "not set", p.SecondaryText.AnsiFg, "Set up");
                     helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional — enables RSS feed publishing to Google Cloud Storage{Reset}");
                 }
             }
 
-            var gcsIndicator = isGcsConfigured
-                ? $"    {p.PromptFg.AnsiFg}●{Reset} GCS bucket             {p.PromptFg.AnsiFg}{gcsConfig.BucketName}{Reset}  {p.SecondaryText.AnsiFg}[:] change{Reset}"
-                : $"    {p.SecondaryText.AnsiFg}○{Reset} GCS bucket             {p.SecondaryText.AnsiFg}not set (local-only){Reset}";
-            helpers.WriteLine(gcsIndicator);
+            // GCS bucket row
+            if (isGcsConfigured)
+            {
+                RenderRow(ConfirmRow.GcsBucket, "●", p.PromptFg.AnsiFg, "GCS bucket", gcsConfig.BucketName ?? string.Empty, p.PromptFg.AnsiFg, "Change");
+            }
+            else
+            {
+                RenderRow(ConfirmRow.GcsBucket, "○", p.SecondaryText.AnsiFg, "GCS bucket", "not set (local-only)", p.SecondaryText.AnsiFg, "Set up");
+            }
 
             if (bucketError != null)
             {
@@ -513,36 +582,32 @@ internal static class PodcastConfirmationScreens
                 }
             }
 
-            // --- Key hints ---
+            // --- Generate button (selectable row) ---
             helpers.WriteLine();
+            var generateSelected = rows[selectedIndex] == ConfirmRow.Generate;
+            var canGenerate = isTtsConfigured;
+            var generateLabel = canGenerate ? "Generate Podcast" : "Generate Podcast (set OpenAI key first)";
+            var generateLabelColor = canGenerate ? p.HeaderTitleFg.AnsiFg : p.SecondaryText.AnsiFg;
+            var generatePrefix = generateSelected
+                ? $"  {p.GetMutedFg().AnsiFg}▌{Reset} "
+                : "    ";
+            var generateIcon = canGenerate ? "▶▶" : "○";
+            var generateHint = canGenerate ? "[Enter]" : "[Esc]";
+            var generateAccent = p.GetAccentFg().AnsiFg;
+            var generateBodyLen = generateIcon.Length + 1 + generateLabel.Length;
+            var generatePad = Math.Max(2, width - 4 - generateBodyLen - generateHint.Length);
 
-            var hints = new StringBuilder();
-            if (!isTtsConfigured)
-            {
-                hints.Append($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:set API key   {Reset}");
-            }
-            else
-            {
-                hints.Append($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:generate   {Reset}");
-                hints.Append($"{p.GetAccentFg().AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}:change API key   {Reset}");
-            }
+            var generateLine = generateSelected
+                ? $"{generatePrefix}{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {generateIcon} {generateLabel}{new string(' ', generatePad - 2)}{generateAccent}{generateHint}{Reset}{p.SelectedItemBg.AnsiBg} {Reset}"
+                : $"{generatePrefix}{generateLabelColor}{Bold}{generateIcon} {generateLabel}{Reset}{new string(' ', generatePad)}{generateAccent}{generateHint}{Reset}";
+            helpers.WriteLine(generateLine);
 
-            if (!isGcsConfigured)
-            {
-                hints.Append($"{p.GetAccentFg().AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}set bucket   {Reset}");
-            }
-            else
-            {
-                hints.Append($"{p.GetAccentFg().AnsiFg}:{Reset}{p.SecondaryText.AnsiFg}change bucket   {Reset}");
-            }
-
-            if (gcsClient != null)
-            {
-                hints.Append($"{p.GetAccentFg().AnsiFg}k{Reset}{p.SecondaryText.AnsiFg}:{(isKeyConfigured ? "change" : "set")} key   {Reset}");
-            }
-
-            hints.Append($"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
-            helpers.WriteLine(hints.ToString());
+            // --- Bottom hint bar ---
+            helpers.WriteLine();
+            helpers.WriteLine(
+                $"  {p.GetAccentFg().AnsiFg}↑↓{Reset}{p.GetDimFg().AnsiFg}:navigate   " +
+                $"{p.GetAccentFg().AnsiFg}Enter{p.GetDimFg().AnsiFg}:select   " +
+                $"{p.GetAccentFg().AnsiFg}Esc{p.GetDimFg().AnsiFg}:cancel{Reset}");
 
             helpers.ClearRemainingLines();
 
@@ -558,6 +623,93 @@ internal static class PodcastConfirmationScreens
             {
                 return false;
             }
+
+            // --- Navigation: j/k or arrow keys move selection between rows ---
+            if (command.Type == CommandType.MoveDown)
+            {
+                rows = BuildRows();
+                selectedIndex = (selectedIndex + 1) % rows.Length;
+                continue;
+            }
+
+            if (command.Type == CommandType.MoveUp)
+            {
+                rows = BuildRows();
+                selectedIndex = (selectedIndex - 1 + rows.Length) % rows.Length;
+                continue;
+            }
+
+            // --- Enter: invoke action for the selected row ---
+            if (command.Type == CommandType.ActivateLink)
+            {
+                rows = BuildRows();
+                var current = rows[selectedIndex];
+
+                if (current == ConfirmRow.Generate)
+                {
+                    if (!isTtsConfigured)
+                    {
+                        // Bounce back: jump to the TTS row so the user can fix it.
+                        selectedIndex = Array.IndexOf(rows, ConfirmRow.TtsKey);
+                        inlineError = "Set the OpenAI TTS API key first";
+                        continue;
+                    }
+
+                    return true;
+                }
+
+                if (current == ConfirmRow.TtsKey)
+                {
+                    var (ok, newConfigured) = await PromptAndSetOpenAiKeyAsync(
+                        ctx, p, ttsService, settingsStore, isTtsConfigured, ct).ConfigureAwait(false);
+                    if (ok)
+                    {
+                        isTtsConfigured = newConfigured;
+                    }
+
+                    continue;
+                }
+
+                if (current == ConfirmRow.GcsKey && gcsClient != null)
+                {
+                    var wizardResult = await PodcastGcsWizard.RunGcsKeyWizardAsync(
+                        ctx, options, p, gcsClient, gcsConfig, settingsStore, ct).ConfigureAwait(false);
+                    if (wizardResult.KeySaved)
+                    {
+                        keyPath = gcsClient.GetServiceAccountKeyPath();
+                        isKeyConfigured = true;
+                    }
+
+                    if (wizardResult.BucketSaved)
+                    {
+                        isGcsConfigured = true;
+                        feedUrl = wizardResult.FeedUrl;
+                        feedStatusNote = wizardResult.FeedStatusNote;
+                        bucketError = wizardResult.BucketError;
+                    }
+
+                    continue;
+                }
+
+                if (current == ConfirmRow.GcsBucket)
+                {
+                    bucketError = await PromptAndSetBucketAsync(
+                        ctx,
+                        options,
+                        p,
+                        gcsConfig,
+                        settingsStore,
+                        x => isGcsConfigured = x,
+                        x => feedUrl = x,
+                        x => feedStatusNote = x,
+                        ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                continue;
+            }
+
+            // --- Power-user accelerators (still work, but actions are now visible per row) ---
 
             // [a] re-enter API key when already configured
             if (command.RawKeyChar == 'a' && isTtsConfigured)
@@ -643,117 +795,19 @@ internal static class PodcastConfirmationScreens
                 continue;
             }
 
-            if (command.Type == CommandType.ActivateLink)
-            {
-                if (!isTtsConfigured)
-                {
-                    var apiKey = await ctx.InputHandler.PromptForInputAsync(
-                        "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(apiKey))
-                    {
-                        var trimmedKey = apiKey.Trim();
-                        ttsService.SetApiKeyOverride(trimmedKey);
-
-                        // Validate with a minimal API call before persisting
-                        Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
-                        var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
-
-                        if (validation.IsValid)
-                        {
-                            Console.Write($"\r  {p.PromptFg.AnsiFg}API key verified     {Reset}");
-                            isTtsConfigured = true;
-
-                            try
-                            {
-                                settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true);
-                            }
-                            catch (Exception ex)
-                            {
-                                ctx.Logger.LogWarning(ex, "Failed to persist API key");
-                            }
-
-                            await Task.Delay(800, ct).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            Console.Write(
-                                $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
-                                new string(' ', 20));
-                            await Task.Delay(2000, ct).ConfigureAwait(false);
-
-                            // Revert — do not persist invalid keys
-                            ttsService.SetApiKeyOverride(string.Empty);
-                            isTtsConfigured = false;
-                        }
-                    }
-
-                    continue;
-                }
-
-                return true;
-            }
-
+            // [: ] OpenCommandLine accelerator → bucket prompt
             if (command.Type == CommandType.OpenCommandLine)
             {
-                bucketError = null;
-                var bucketName = await ctx.InputHandler.PromptForInputAsync(
-                    "GCS bucket name (e.g. my-podcast-feed, or 'clear' to remove): ", ct).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(bucketName))
-                {
-                    var trimmed = bucketName.Trim();
-
-                    // Handle clear bucket
-                    if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase) && isGcsConfigured)
-                    {
-                        gcsConfig.BucketName = null;
-                        isGcsConfigured = false;
-                        feedUrl = null;
-                        feedStatusNote = null;
-                        bucketError = null;
-                        try
-                        {
-                            settingsStore.Remove("GcsBucketName");
-                        }
-                        catch (Exception ex)
-                        {
-                            ctx.Logger.LogWarning(ex, "Failed to remove persisted bucket name");
-                        }
-                    }
-                    else if (GcsConfiguration.IsValidBucketName(trimmed))
-                    {
-                        var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
-                            ctx, options, trimmed, gcsConfig, ct).ConfigureAwait(false);
-                        if (success)
-                        {
-                            gcsConfig.BucketName = trimmed;
-                            isGcsConfigured = true;
-                            bucketError = null;
-                            feedUrl = url;
-                            feedStatusNote = feedExisted
-                                ? "Existing feed found — new episodes will be appended"
-                                : "New feed created";
-                            try
-                            {
-                                settingsStore.Set("GcsBucketName", trimmed);
-                            }
-                            catch (Exception ex)
-                            {
-                                ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
-                            }
-                        }
-                        else if (error != null)
-                        {
-                            bucketError = error;
-                        }
-
-                        // else: cancelled (Escape) — no error, just re-render
-                    }
-                    else
-                    {
-                        bucketError = $"Invalid: \"{trimmed}\" — must be 3–63 chars, lowercase a–z/0–9/hyphens/dots";
-                    }
-                }
-
+                bucketError = await PromptAndSetBucketAsync(
+                    ctx,
+                    options,
+                    p,
+                    gcsConfig,
+                    settingsStore,
+                    x => isGcsConfigured = x,
+                    x => feedUrl = x,
+                    x => feedStatusNote = x,
+                    ct).ConfigureAwait(false);
                 continue;
             }
 
@@ -771,5 +825,133 @@ internal static class PodcastConfirmationScreens
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Prompts the user for an OpenAI API key, validates it against the API,
+    /// and persists it. Returns (handled, isConfigured) so the caller can update
+    /// its loop state. Showing nothing on a blank submission is intentional —
+    /// the user can press Esc instead.
+    /// </summary>
+    private static async Task<(bool Handled, bool IsConfigured)> PromptAndSetOpenAiKeyAsync(
+        CommandContext ctx,
+        ThemePalette p,
+        ITtsService ttsService,
+        IUserSettingsStore settingsStore,
+        bool currentlyConfigured,
+        CancellationToken ct)
+    {
+        var apiKey = await ctx.InputHandler.PromptForInputAsync(
+            "OpenAI API key (platform.openai.com/api-keys): ", ct, isSecret: true).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return (false, currentlyConfigured);
+        }
+
+        var trimmedKey = apiKey.Trim();
+        ttsService.SetApiKeyOverride(trimmedKey);
+
+        Console.Write($"\r  {p.SecondaryText.AnsiFg}Verifying API key...{Reset}");
+        var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
+
+        if (validation.IsValid)
+        {
+            Console.Write($"\r  {p.PromptFg.AnsiFg}API key verified     {Reset}");
+            try
+            {
+                settingsStore.Set("OpenAiApiKey", trimmedKey, encrypt: true);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to persist API key");
+            }
+
+            await Task.Delay(800, ct).ConfigureAwait(false);
+            return (true, true);
+        }
+
+        Console.Write(
+            $"\r  {p.ErrorFg.AnsiFg}{validation.ErrorMessage ?? "Invalid API key"}{Reset}" +
+            new string(' ', 20));
+        await Task.Delay(2000, ct).ConfigureAwait(false);
+        ttsService.SetApiKeyOverride(string.Empty);
+        return (true, false);
+    }
+
+    /// <summary>
+    /// Prompts for a GCS bucket name, validates it against the cloud, and updates
+    /// the configuration. Returns the error message to display (or null on success/skip).
+    /// </summary>
+    private static async Task<string?> PromptAndSetBucketAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        ThemePalette p,
+        GcsConfiguration gcsConfig,
+        IUserSettingsStore settingsStore,
+        Action<bool> setIsGcsConfigured,
+        Action<string?> setFeedUrl,
+        Action<string?> setFeedStatusNote,
+        CancellationToken ct)
+    {
+        _ = p; // reserved for future inline status rendering
+        var bucketName = await ctx.InputHandler.PromptForInputAsync(
+            "GCS bucket name (e.g. my-podcast-feed, or 'clear' to remove): ", ct).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(bucketName))
+        {
+            return null;
+        }
+
+        var trimmed = bucketName.Trim();
+
+        // Handle clear bucket
+        if (trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase))
+        {
+            gcsConfig.BucketName = null;
+            setIsGcsConfigured(false);
+            setFeedUrl(null);
+            setFeedStatusNote(null);
+            try
+            {
+                settingsStore.Remove("GcsBucketName");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to remove persisted bucket name");
+            }
+
+            return null;
+        }
+
+        if (!GcsConfiguration.IsValidBucketName(trimmed))
+        {
+            return $"Invalid: \"{trimmed}\" — must be 3–63 chars, lowercase a–z/0–9/hyphens/dots";
+        }
+
+        var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
+            ctx, options, trimmed, gcsConfig, ct).ConfigureAwait(false);
+
+        if (success)
+        {
+            gcsConfig.BucketName = trimmed;
+            setIsGcsConfigured(true);
+            setFeedUrl(url);
+            setFeedStatusNote(feedExisted
+                ? "Existing feed found — new episodes will be appended"
+                : "New feed created");
+            try
+            {
+                settingsStore.Set("GcsBucketName", trimmed);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
+            }
+
+            return null;
+        }
+
+        return error;
     }
 }
