@@ -15,7 +15,7 @@ namespace TermReader.Infrastructure.Browser;
 /// Uses <c>LaunchPersistentContextAsync</c> to maintain cookies and local storage
 /// across sessions via a user-data directory.
 /// </summary>
-public sealed class BrowserSession : IBrowserSession
+public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 {
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
@@ -45,54 +45,13 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
-    public bool HasActiveBrowser
-    {
-        get
-        {
-            try
-            {
-                _lock.Wait();
-            }
-            catch (ObjectDisposedException)
-            {
-                return false;
-            }
-
-            try
-            {
-                return _page != null;
-            }
-            finally
-            {
-                _lock.Release();
-            }
-        }
-    }
+    // Reference-typed field reads are atomic in .NET; we don't need to take _lock
+    // just to ask "is this currently non-null?" The reader may observe the prior
+    // state if a launch/disposal is mid-flight, which is acceptable for this probe.
+    public bool HasActiveBrowser => !_disposed && _page != null;
 
     /// <inheritdoc />
-    public bool HasBrowserContext
-    {
-        get
-        {
-            try
-            {
-                _lock.Wait();
-            }
-            catch (ObjectDisposedException)
-            {
-                return false;
-            }
-
-            try
-            {
-                return _context != null;
-            }
-            finally
-            {
-                _lock.Release();
-            }
-        }
-    }
+    public bool HasBrowserContext => !_disposed && _context != null;
 
     /// <inheritdoc />
     public bool IsBrowserAvailable => true;
@@ -298,7 +257,11 @@ public sealed class BrowserSession : IBrowserSession
     }
 
     /// <inheritdoc />
-    public void Dispose()
+    // Sync disposal kept for IDisposable consumers; the DI container will prefer
+    // DisposeAsync below when both are present, avoiding sync-over-async.
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
         {
@@ -308,7 +271,7 @@ public sealed class BrowserSession : IBrowserSession
         bool lockAcquired;
         try
         {
-            lockAcquired = _lock.Wait(TimeSpan.FromSeconds(5));
+            lockAcquired = await _lock.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
@@ -328,7 +291,7 @@ public sealed class BrowserSession : IBrowserSession
             }
 
             _disposed = true;
-            DisposeContextUnsafeAsync().GetAwaiter().GetResult();
+            await DisposeContextUnsafeAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
