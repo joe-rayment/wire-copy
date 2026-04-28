@@ -35,4 +35,11 @@ public interface IPodcastOrchestrator
         Collection collection,
         IProgress<ContentExtractionProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the absolute path the M4B for the given collection will be written to.
+    /// Creates the output folder on demand. Used by the confirmation/success screens
+    /// so the user can see (and copy) the destination before/after generation.
+    /// </summary>
+    string GetOutputFilePath(string collectionName);
 }

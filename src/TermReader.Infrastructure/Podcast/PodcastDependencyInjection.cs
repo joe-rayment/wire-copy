@@ -59,6 +59,8 @@ public static class PodcastDependencyInjection
         services.AddSingleton<ITtsAudioCache, FileSystemTtsAudioCache>();
         services.AddSingleton<IArticleContentCache, ArticleContentCache>();
         services.AddSingleton<ReadingListContentProvider>();
+        services.AddSingleton<OutputFolderPurger>();
+        services.AddHostedService<OutputFolderPurgeStartupService>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
 
         return services;

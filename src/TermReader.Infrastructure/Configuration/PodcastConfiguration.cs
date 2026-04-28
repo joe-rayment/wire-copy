@@ -86,4 +86,36 @@ public class PodcastConfiguration
     /// Default: 100.
     /// </summary>
     public int MinimumWordCount { get; init; } = 100;
+
+    /// <summary>
+    /// Gets the directory where final podcast M4B files are written.
+    /// Null resolves to <c>{LocalApplicationData}/TermReader/output/</c> at runtime
+    /// (cross-platform: ~/.local/share/TermReader/output on Linux,
+    /// Library/Application Support/TermReader/output on macOS,
+    /// %LocalAppData%/TermReader/output on Windows).
+    /// Test code may override this to point at a scratch directory.
+    /// </summary>
+    public string? OutputFolderPath { get; init; }
+
+    /// <summary>
+    /// Gets the retention window for files in <see cref="OutputFolderPath"/>, in hours.
+    /// Files older than this are auto-purged on app start. Default: 36.
+    /// Only *.m4b and *.mp3 files are eligible for purge.
+    /// </summary>
+    public int OutputRetentionHours { get; init; } = 36;
+
+    /// <summary>
+    /// Resolves the effective output folder path, defaulting to
+    /// <c>{LocalApplicationData}/TermReader/output</c> when not explicitly set.
+    /// </summary>
+    public string ResolveOutputFolderPath()
+    {
+        if (!string.IsNullOrWhiteSpace(OutputFolderPath))
+        {
+            return OutputFolderPath;
+        }
+
+        var localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return Path.Combine(localData, "TermReader", "output");
+    }
 }
