@@ -62,6 +62,17 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         _logger = logger;
     }
 
+    /// <summary>
+    /// Resolves the absolute output folder path (creating it on demand) and
+    /// returns the file path the next M4B should be written to.
+    /// </summary>
+    public string GetOutputFilePath(string collectionName)
+    {
+        var folder = _podcastConfig.ResolveOutputFolderPath();
+        Directory.CreateDirectory(folder);
+        return Path.Combine(folder, $"{SanitizeFileName(collectionName)}.m4b");
+    }
+
     public async Task<PodcastResult> GeneratePodcastAsync(
         Collection collection,
         IProgress<PodcastProgress>? progress = null,
@@ -340,7 +351,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 Message = "Assembling M4B audiobook...",
             });
 
-            var outputPath = tempFiles.GetTempFilePath($"{SanitizeFileName(collection.Name)}.m4b");
+            // Final M4B lands in the persistent output folder, not the per-run temp dir,
+            // so the user can reliably find it and the path on the success screen
+            // points at a file that survives cleanup.
+            var outputPath = GetOutputFilePath(collection.Name);
             var assemblyRequest = new AssemblyRequest
             {
                 Segments = segments,

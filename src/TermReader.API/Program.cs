@@ -87,6 +87,10 @@ public class Program
 
         try
         {
+            // Start the host so registered IHostedService implementations
+            // (cookie warmup, podcast output-folder purge) actually run.
+            await host.StartAsync();
+
             // Initialize database once at startup
             using (var scope = host.Services.CreateScope())
             {
