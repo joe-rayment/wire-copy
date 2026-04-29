@@ -46,6 +46,12 @@ internal class LauncherRenderer
         _themeProvider = themeProvider;
     }
 
+    /// <summary>
+    /// Renders the launcher. Wordmark, URL bar, and bookmark grid are treated
+    /// as a single virtual content stream; <paramref name="scrollOffset"/> is
+    /// the number of lines that have scrolled off the top. The footer stays
+    /// pinned at the bottom and is rendered separately by the caller.
+    /// </summary>
     public void RenderLauncher(
         List<Bookmark> bookmarks,
         int selectedIndex,
@@ -57,13 +63,13 @@ internal class LauncherRenderer
         switch (variant)
         {
             case "List":
-                RenderListVariant(bookmarks, selectedIndex, scrollOffset, options);
+                RenderVariant(bookmarks, selectedIndex, scrollOffset, options, "List");
                 break;
             case "Compact":
-                RenderCompactVariant(bookmarks, selectedIndex, scrollOffset, options);
+                RenderVariant(bookmarks, selectedIndex, scrollOffset, options, "Compact");
                 break;
             default:
-                RenderGridVariant(bookmarks, selectedIndex, scrollOffset, options);
+                RenderVariant(bookmarks, selectedIndex, scrollOffset, options, "Grid");
                 break;
         }
     }
@@ -102,14 +108,21 @@ internal class LauncherRenderer
     /// <summary>
     /// Computes shared layout parameters from terminal dimensions and layout variant.
     /// </summary>
+    /// <remarks>
+    /// <see cref="LauncherLayout.VisibleRows"/> is computed for the WORST CASE
+    /// (no page scroll, header + URL bar fully visible) so the initial render
+    /// fits on screen. The actual viewport when scrolled is dynamic — the
+    /// wordmark and URL bar collapse upward as the user scrolls into the
+    /// bookmark list. See <see cref="ComputeViewportHeight"/>.
+    /// </remarks>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
     {
         // Large wordmark: border + pad + 6 art rows + subtitle + pad + border = 11
         // Narrow: border + title + subtitle + pad + border = 5
         // Threshold: large wordmark needs WordmarkWidth (87) + 8 chars of margin/border.
-        // Note: RenderHeader switches on the INNER width (terminalWidth - 2), so we
-        // must mirror that calculation here to avoid an off-by-two mismatch at the
-        // boundary (terminalWidth ∈ {95, 96}).
+        // Note: the inner-width threshold (terminalWidth - 2) >= WordmarkWidth + 8
+        // mirrors the rendering switch in BuildHeaderLines and avoids an
+        // off-by-two mismatch at the boundary (terminalWidth ∈ {95, 96}).
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
@@ -162,25 +175,51 @@ internal class LauncherRenderer
     }
 
     /// <summary>
+    /// Returns the number of lines occupied by the launcher's combined
+    /// header (wordmark) + URL bar region in the virtual content stream.
+    /// </summary>
+    internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth)
+    {
+        // Mirror the BuildHeaderLines threshold: when inner width
+        // (terminalWidth - 2) is at least WordmarkWidth + 8, the large 11-line
+        // wordmark variant is shown; otherwise the 5-line narrow header.
+        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
+        const int urlBarLines = 5;
+        return headerLines + urlBarLines;
+    }
+
+    /// <summary>
+    /// Returns the viewport height (in terminal lines) available for the
+    /// launcher's scrolling content. The footer is pinned at the bottom of
+    /// the screen and is excluded from this height.
+    /// </summary>
+    internal static int ComputeViewportHeight(int terminalHeight)
+    {
+        const int footerLines = 2;
+        return Math.Max(1, terminalHeight - footerLines);
+    }
+
+    /// <summary>
     /// Returns the absolute terminal row (0-based) of the URL bar's input line,
-    /// matching the layout produced by <see cref="RenderHeader"/> followed by
-    /// <see cref="RenderUrlBar"/>. The URL bar input line is the second of three
-    /// box rows, after one leading blank line written by <see cref="RenderUrlBar"/>.
+    /// matching the layout produced by the header followed by the URL bar.
+    /// The URL bar input line is the second of three box rows, after one
+    /// leading blank line written by the URL-bar block.
     /// </summary>
     /// <remarks>
-    /// Header line counts (must mirror <see cref="RenderHeader"/>):
+    /// Header line counts:
     /// <list type="bullet">
     ///   <item>Large wordmark (terminalWidth &gt;= WordmarkWidth + 8): top border + blank + 6 wordmark + subtitle + blank + bottom border = 11.</item>
     ///   <item>Narrow: top border + title + subtitle + blank + bottom border = 5.</item>
     /// </list>
-    /// URL bar lines (must mirror <see cref="RenderUrlBar"/>): blank + top border + content + bottom border + blank.
+    /// URL bar lines: blank + top border + content + bottom border + blank.
     /// The input line is therefore at headerLines + 2 (1 blank + 1 top border).
+    /// Because the URL bar can only be focused when <c>pageScrollOffset == 0</c>
+    /// (see <see cref="CommandHandlers.LauncherCommandHandler"/>), this row is
+    /// always an absolute screen row when the URL bar is the active element.
     /// </remarks>
     internal static int ComputeUrlBarInputRow(int terminalWidth)
     {
-        // RenderHeader switches on the INNER width (terminalWidth - 2), so we
-        // must mirror that calculation here to avoid an off-by-two mismatch at
-        // the boundary (terminalWidth ∈ {95, 96}).
+        // Mirror the BuildHeaderLines switch on inner width (terminalWidth - 2).
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         return headerLines + 2;
     }
@@ -397,8 +436,6 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Builds a single line for the List layout variant.
-    /// Format: " [n] NAME                    domain.com"
-    /// Selected: "▌[n] NAME                    domain.com" with highlight bg.
     /// </summary>
     private static string BuildListLine(
         List<Bookmark> bookmarks,
@@ -421,7 +458,7 @@ internal class LauncherRenderer
 
         if (isCollections)
         {
-            name = "\u2605 READING LIST";
+            name = "★ READING LIST";
             domain = "reading list";
         }
         else
@@ -445,8 +482,6 @@ internal class LauncherRenderer
             badge = "   ";
         }
 
-        // Layout:  [n] NAME            domain
-        // Widths:  1 + badge(3) + 1 + name(variable) + gap(>=2) + domain + 1
         const int badgeWidth = 3;
         const int gapMin = 2;
         var domainMaxWidth = Math.Min(domain.Length, (width - badgeWidth - gapMin - 3) / 3);
@@ -480,7 +515,6 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Builds a single line within a Compact layout cell.
-    /// 3-line cells: line 0 = badge+name, line 1 = domain, line 2 = blank separator.
     /// </summary>
     private static string BuildCompactCellLine(
         List<Bookmark> bookmarks,
@@ -504,14 +538,12 @@ internal class LauncherRenderer
 
         if (isCollections)
         {
-            name = "\u2605LIST";
+            name = "★LIST";
             domain = "reading list";
         }
         else
         {
             var bookmark = bookmarks[itemIdx];
-
-            // Abbreviate name to fit compact cells
             name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
         }
@@ -530,7 +562,6 @@ internal class LauncherRenderer
             badge = string.Empty;
         }
 
-        // For compact 3-line cells: 0=badge+name, 1=domain, 2=blank
         const int indent = 1;
         var textWidth = Math.Max(1, cellWidth - indent - 1);
 
@@ -555,9 +586,6 @@ internal class LauncherRenderer
         var selBg = p.SelectedItemBg.AnsiBg;
         var sb = new System.Text.StringBuilder();
 
-        // Accent bar on lines 0 and 1 (badge+name and domain). Line 2 is a
-        // separator, so no accent bar there but the highlight bg still extends
-        // across the full contentWidth so the selection reads as one cell.
         if (lineIdx <= 1)
         {
             sb.Append(Selection.AccentBar(p));
@@ -571,7 +599,6 @@ internal class LauncherRenderer
 
         if (lineIdx == 0)
         {
-            // Badge + name
             var combined = badge.Length > 0 ? $"{badge} {name}" : name;
             var truncCombined = RenderHelpers.TruncateText(combined, textWidth);
             sb.Append($"{selBg}{selFg}{Bold}{truncCombined}{Reset}");
@@ -579,15 +606,12 @@ internal class LauncherRenderer
         }
         else if (lineIdx == 1)
         {
-            // Domain
             var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
             sb.Append($"{selBg}{p.SecondaryText.AnsiFg}{Dim} {truncDomain}{Reset}");
             sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - truncDomain.Length - 1))}{Reset}");
         }
         else
         {
-            // Blank separator line — fill with sel-bg so the highlight is a
-            // complete rectangle across the cell.
             sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
@@ -606,7 +630,6 @@ internal class LauncherRenderer
     {
         if (lineIdx == 0)
         {
-            // Badge + name
             var combined = badge.Length > 0
                 ? $"{p.GetAccentFg().AnsiFg}{badge}{Reset} {Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, Math.Max(1, textWidth - badge.Length - 1))}{Reset}"
                 : $"{Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, textWidth)}{Reset}";
@@ -621,13 +644,11 @@ internal class LauncherRenderer
 
         if (lineIdx == 1)
         {
-            // Domain
             var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, textWidth - 1));
             var pad = Math.Max(0, cellWidth - indent - truncDomain.Length - 1);
             return $"  {p.SecondaryText.AnsiFg}{Dim}{truncDomain}{Reset}{new string(' ', pad)}";
         }
 
-        // Blank separator line
         return new string(' ', cellWidth);
     }
 
@@ -636,216 +657,11 @@ internal class LauncherRenderer
         return $"{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset} {p.SecondaryText.AnsiFg}{action}{Reset}";
     }
 
-    private void RenderGridVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
-
-        RenderHeader(layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow * layout.Columns;
-        var belowCount = totalItems - (endRow * layout.Columns);
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            var isFirstVisible = row == startRow;
-            var isLastVisible = row == endRow - 1;
-
-            for (var line = 0; line < layout.CellHeight; line++)
-            {
-                if (isFirstVisible && line == 0 && hasMoreAbove)
-                {
-                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                    continue;
-                }
-
-                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
-                {
-                    RenderScrollIndicator(layout.Width, p, false, belowCount);
-                    continue;
-                }
-
-                var sb = new System.Text.StringBuilder();
-                var leftIdx = row * layout.Columns;
-                sb.Append(BuildCellLine(
-                    bookmarks,
-                    leftIdx,
-                    selectedIndex,
-                    layout.CellWidth,
-                    layout.CellHeight,
-                    line,
-                    p));
-
-                if (layout.Columns == 2)
-                {
-                    sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
-                    var rightIdx = leftIdx + 1;
-                    var rightWidth = layout.Width - layout.CellWidth - 1;
-                    if (rightIdx < totalItems)
-                    {
-                        sb.Append(BuildCellLine(
-                            bookmarks,
-                            rightIdx,
-                            selectedIndex,
-                            rightWidth,
-                            layout.CellHeight,
-                            line,
-                            p));
-                    }
-                    else
-                    {
-                        sb.Append(new string(' ', rightWidth));
-                    }
-                }
-
-                _helpers.WriteLine(sb.ToString());
-            }
-        }
-    }
-
-    private void RenderListVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "List");
-
-        RenderHeader(layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = totalItems; // 1 item per row
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow;
-        var belowCount = totalItems - endRow;
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            if (row == startRow && hasMoreAbove)
-            {
-                RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                continue;
-            }
-
-            if (row == endRow - 1 && hasMoreBelow)
-            {
-                RenderScrollIndicator(layout.Width, p, false, belowCount);
-                continue;
-            }
-
-            _helpers.WriteLine(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
-        }
-    }
-
-    private void RenderCompactVariant(
-        List<Bookmark> bookmarks,
-        int selectedIndex,
-        int scrollOffset,
-        RenderOptions options)
-    {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, "Compact");
-
-        RenderHeader(layout.Width, p);
-        RenderUrlBar(layout.Width, selectedIndex == -1, p);
-
-        var totalItems = bookmarks.Count + 1;
-
-        if (bookmarks.Count == 0)
-        {
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
-            return;
-        }
-
-        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
-        var startRow = scrollOffset;
-        var endRow = Math.Min(startRow + layout.VisibleRows, totalRows);
-        var hasMoreAbove = startRow > 0;
-        var hasMoreBelow = totalRows > endRow;
-        var aboveCount = startRow * layout.Columns;
-        var belowCount = totalItems - (endRow * layout.Columns);
-
-        for (var row = startRow; row < endRow; row++)
-        {
-            var isFirstVisible = row == startRow;
-            var isLastVisible = row == endRow - 1;
-
-            for (var line = 0; line < layout.CellHeight; line++)
-            {
-                if (isFirstVisible && line == 0 && hasMoreAbove)
-                {
-                    RenderScrollIndicator(layout.Width, p, true, aboveCount);
-                    continue;
-                }
-
-                if (isLastVisible && line == layout.CellHeight - 1 && hasMoreBelow)
-                {
-                    RenderScrollIndicator(layout.Width, p, false, belowCount);
-                    continue;
-                }
-
-                var sb = new System.Text.StringBuilder();
-
-                for (var col = 0; col < layout.Columns; col++)
-                {
-                    var itemIdx = (row * layout.Columns) + col;
-                    var isLastCol = col == layout.Columns - 1;
-                    var cellW = isLastCol
-                        ? layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1)
-                        : layout.CellWidth;
-
-                    if (col > 0)
-                    {
-                        sb.Append($"{p.SecondaryText.AnsiFg}\u2502{Reset}");
-                    }
-
-                    if (itemIdx < totalItems)
-                    {
-                        sb.Append(BuildCompactCellLine(
-                            bookmarks, itemIdx, selectedIndex, cellW, line, p));
-                    }
-                    else
-                    {
-                        sb.Append(new string(' ', cellW));
-                    }
-                }
-
-                _helpers.WriteLine(sb.ToString());
-            }
-        }
-    }
-
-    private void RenderHeader(int width, ThemePalette p)
+    /// <summary>
+    /// Builds the wordmark / narrow-title header as a list of lines suitable
+    /// for inclusion in the launcher's virtual content stream.
+    /// </summary>
+    private static List<string> BuildHeaderLines(int width, ThemePalette p)
     {
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
@@ -853,54 +669,52 @@ internal class LauncherRenderer
         var subtitle = "a better reading experience";
         var useLargeWordmark = width >= WordmarkWidth + 8;
 
-        // Box sizing: large enough to fit the wordmark when shown, else ~75% of width.
         var boxOuter = useLargeWordmark
             ? Math.Min(width - 4, WordmarkWidth + 6)
             : Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
-        var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2); // center the box
+        var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2);
         var margin = new string(' ', leftMargin);
 
-        // Helper: ╭ + boxOuter dashes + ╮, so │ + boxOuter chars + │
-        void BoxLine(string content, int contentLen)
+        var lines = new List<string>();
+
+        string BoxLine(string content, int contentLen)
         {
             var pad = Math.Max(0, boxOuter - contentLen - 1);
-            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset} {content}{new string(' ', pad)}{borderColor}\u2502{Reset}");
+            return $"{margin} {borderColor}│{Reset} {content}{new string(' ', pad)}{borderColor}│{Reset}";
         }
 
-        void BlankLine()
-        {
-            _helpers.WriteLine($"{margin} {borderColor}\u2502{Reset}{new string(' ', boxOuter)}{borderColor}\u2502{Reset}");
-        }
+        string BlankBoxLine() =>
+            $"{margin} {borderColor}│{Reset}{new string(' ', boxOuter)}{borderColor}│{Reset}";
 
-        // ╭──────────────────────────────────────────────────╮
-        _helpers.WriteLine(
-            $"{margin} {borderColor}\u256d{new string('\u2500', boxOuter)}\u256e{Reset}");
+        lines.Add($"{margin} {borderColor}╭{new string('─', boxOuter)}╮{Reset}");
 
         if (useLargeWordmark)
         {
-            BlankLine();
+            lines.Add(BlankBoxLine());
             for (var i = 0; i < Wordmark.Length; i++)
             {
                 var rowColor = WordmarkUsesDark[i] ? titleColorDark : titleColor;
-                BoxLine($"{rowColor}{Bold}{Wordmark[i]}{Reset}", Wordmark[i].Length);
+                lines.Add(BoxLine($"{rowColor}{Bold}{Wordmark[i]}{Reset}", Wordmark[i].Length));
             }
         }
         else
         {
-            BoxLine($" {titleColor}{Bold}{"TermReader"}{Reset}", "TermReader".Length + 1);
+            lines.Add(BoxLine($" {titleColor}{Bold}{"TermReader"}{Reset}", "TermReader".Length + 1));
         }
 
-        BoxLine($" {p.SecondaryText.AnsiFg}{subtitle}{Reset}", subtitle.Length + 1);
-        BlankLine();
+        lines.Add(BoxLine($" {p.SecondaryText.AnsiFg}{subtitle}{Reset}", subtitle.Length + 1));
+        lines.Add(BlankBoxLine());
+        lines.Add($"{margin} {borderColor}╰{new string('─', boxOuter)}╯{Reset}");
 
-        // ╰──────────────────────────────────────────────────╯
-        _helpers.WriteLine(
-            $"{margin} {borderColor}\u2570{new string('\u2500', boxOuter)}\u256f{Reset}");
+        return lines;
     }
 
-    private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
+    /// <summary>
+    /// Builds the URL bar as a list of lines: blank, top border, content,
+    /// bottom border, blank (5 lines total).
+    /// </summary>
+    private static List<string> BuildUrlBarLines(int width, bool isSelected, ThemePalette p)
     {
-        // Use ~75% of width, capped at 70, min 30
         var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
         var pad = Math.Max(0, (width - barWidth) / 2);
         var innerWidth = barWidth - 4;
@@ -916,16 +730,235 @@ internal class LauncherRenderer
             ? $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}"
             : $"{p.SecondaryText.AnsiFg}";
 
-        _helpers.WriteLine();
-        _helpers.WriteLine(
-            $"{new string(' ', pad)}{borderColor}\u256d{new string('\u2500', barWidth - 2)}\u256e{Reset}");
-        _helpers.WriteLine(
-            $"{new string(' ', pad)}{borderColor}\u2502 {Reset}" +
+        return new List<string>
+        {
+            string.Empty,
+            $"{new string(' ', pad)}{borderColor}╭{new string('─', barWidth - 2)}╮{Reset}",
+            $"{new string(' ', pad)}{borderColor}│ {Reset}" +
             $"{textColor}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
-            $"{borderColor} \u2502{Reset}");
-        _helpers.WriteLine(
-            $"{new string(' ', pad)}{borderColor}\u2570{new string('\u2500', barWidth - 2)}\u256f{Reset}");
-        _helpers.WriteLine();
+            $"{borderColor} │{Reset}",
+            $"{new string(' ', pad)}{borderColor}╰{new string('─', barWidth - 2)}╯{Reset}",
+            string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Builds the full list of bookmark-region lines for a variant. The
+    /// returned list contains <c>totalRows * cellHeight</c> lines for Grid
+    /// and Compact, or <c>totalItems</c> lines for List (one item per row).
+    /// </summary>
+    private static List<string> BuildBookmarkLines(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        LauncherLayout layout,
+        string variant,
+        ThemePalette p)
+    {
+        var totalItems = bookmarks.Count + 1;
+        var lines = new List<string>();
+
+        if (variant == "List")
+        {
+            for (var row = 0; row < totalItems; row++)
+            {
+                lines.Add(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
+            }
+
+            return lines;
+        }
+
+        var totalRows = (totalItems + layout.Columns - 1) / layout.Columns;
+
+        for (var row = 0; row < totalRows; row++)
+        {
+            for (var line = 0; line < layout.CellHeight; line++)
+            {
+                if (variant == "Compact")
+                {
+                    lines.Add(BuildCompactRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p));
+                }
+                else
+                {
+                    lines.Add(BuildGridRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p));
+                }
+            }
+        }
+
+        return lines;
+    }
+
+    private static string BuildGridRowLine(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        LauncherLayout layout,
+        int row,
+        int line,
+        int totalItems,
+        ThemePalette p)
+    {
+        var sb = new System.Text.StringBuilder();
+        var leftIdx = row * layout.Columns;
+        sb.Append(BuildCellLine(
+            bookmarks,
+            leftIdx,
+            selectedIndex,
+            layout.CellWidth,
+            layout.CellHeight,
+            line,
+            p));
+
+        if (layout.Columns == 2)
+        {
+            sb.Append($"{p.SecondaryText.AnsiFg}│{Reset}");
+            var rightIdx = leftIdx + 1;
+            var rightWidth = layout.Width - layout.CellWidth - 1;
+            if (rightIdx < totalItems)
+            {
+                sb.Append(BuildCellLine(
+                    bookmarks,
+                    rightIdx,
+                    selectedIndex,
+                    rightWidth,
+                    layout.CellHeight,
+                    line,
+                    p));
+            }
+            else
+            {
+                sb.Append(new string(' ', rightWidth));
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildCompactRowLine(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        LauncherLayout layout,
+        int row,
+        int line,
+        int totalItems,
+        ThemePalette p)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        for (var col = 0; col < layout.Columns; col++)
+        {
+            var itemIdx = (row * layout.Columns) + col;
+            var isLastCol = col == layout.Columns - 1;
+            var cellW = isLastCol
+                ? layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1)
+                : layout.CellWidth;
+
+            if (col > 0)
+            {
+                sb.Append($"{p.SecondaryText.AnsiFg}│{Reset}");
+            }
+
+            if (itemIdx < totalItems)
+            {
+                sb.Append(BuildCompactCellLine(
+                    bookmarks, itemIdx, selectedIndex, cellW, line, p));
+            }
+            else
+            {
+                sb.Append(new string(' ', cellW));
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Renders one of the three launcher variants using the combined
+    /// virtual-content-stream model. Header (wordmark), URL bar, and bookmark
+    /// rows are all built into a single list of lines; the lines from
+    /// <c>scrollOffset</c> through <c>scrollOffset + viewportHeight</c> are
+    /// then written to the screen. The footer is rendered separately at the
+    /// bottom of the screen and is not part of the scrolling stream.
+    /// </summary>
+    private void RenderVariant(
+        List<Bookmark> bookmarks,
+        int selectedIndex,
+        int scrollOffset,
+        RenderOptions options,
+        string variant)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, variant);
+        var viewportHeight = ComputeViewportHeight(options.TerminalHeight);
+
+        // Empty bookmarks: use the empty-state screen with the header pinned
+        // at the top — there are no bookmarks to scroll past.
+        if (bookmarks.Count == 0)
+        {
+            foreach (var headerLine in BuildHeaderLines(layout.Width, p))
+            {
+                _helpers.WriteLine(headerLine);
+            }
+
+            foreach (var urlBarLine in BuildUrlBarLines(layout.Width, selectedIndex == -1, p))
+            {
+                _helpers.WriteLine(urlBarLine);
+            }
+
+            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            return;
+        }
+
+        // Build the full virtual content stream:
+        //   [0 .. headerLines)              wordmark / title
+        //   [headerLines .. +5)             URL bar
+        //   [headerLines + 5 .. end)        bookmark rows
+        var content = new List<string>();
+        content.AddRange(BuildHeaderLines(layout.Width, p));
+        content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));
+        content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p));
+
+        // Clamp scrollOffset so we don't scroll past the end of content.
+        var maxScroll = Math.Max(0, content.Count - viewportHeight);
+        var effectiveOffset = Math.Clamp(scrollOffset, 0, maxScroll);
+        var endLine = Math.Min(content.Count, effectiveOffset + viewportHeight);
+
+        for (var i = effectiveOffset; i < endLine; i++)
+        {
+            _helpers.WriteLine(content[i]);
+        }
+    }
+
+    /// <summary>
+    /// Writes the wordmark/header directly via <see cref="_helpers"/>. Kept
+    /// as a private entry point so reflection-based layout tests
+    /// (<see cref="LauncherUrlBarRowTests"/>) can invoke it. Production
+    /// rendering uses <see cref="BuildHeaderLines"/> via <see cref="RenderVariant"/>.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell",
+        "S1144:Unused private types or members should be removed",
+        Justification = "Invoked by reflection from LauncherUrlBarRowTests.")]
+    private void RenderHeader(int width, ThemePalette p)
+    {
+        foreach (var line in BuildHeaderLines(width, p))
+        {
+            _helpers.WriteLine(line);
+        }
+    }
+
+    /// <summary>
+    /// Writes the URL bar directly via <see cref="_helpers"/>. See
+    /// <see cref="RenderHeader"/> for the rationale.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell",
+        "S1144:Unused private types or members should be removed",
+        Justification = "Invoked by reflection from LauncherUrlBarRowTests.")]
+    private void RenderUrlBar(int width, bool isSelected, ThemePalette p)
+    {
+        foreach (var line in BuildUrlBarLines(width, isSelected, p))
+        {
+            _helpers.WriteLine(line);
+        }
     }
 
     private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
@@ -958,16 +991,5 @@ internal class LauncherRenderer
 
         var domainPad = Math.Max(0, (width - "reading list".Length) / 2);
         _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}reading list{Reset}");
-    }
-
-    private void RenderScrollIndicator(int width, ThemePalette p, bool isUp, int count)
-    {
-        var arrow = isUp ? "\u25b2" : "\u25bc";
-        var direction = isUp ? "above" : "below";
-        var indicator = $"{arrow} {count} more {direction}";
-        var indicatorPad = Math.Max(0, (width - indicator.Length) / 2);
-        _helpers.WriteLine(
-            $"{new string(' ', indicatorPad)}{p.SecondaryText.AnsiFg}{Dim}{indicator}{Reset}" +
-            $"{new string(' ', Math.Max(0, width - indicatorPad - indicator.Length))}");
     }
 }
