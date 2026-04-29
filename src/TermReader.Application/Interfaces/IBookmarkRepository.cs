@@ -38,9 +38,4 @@ public interface IBookmarkRepository
     /// Gets the next available sort order value.
     /// </summary>
     Task<int> GetNextSortOrderAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Seeds default bookmarks if the table is empty.
-    /// </summary>
-    Task SeedDefaultsAsync(CancellationToken cancellationToken = default);
 }

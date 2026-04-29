@@ -40,7 +40,10 @@ public interface IBookmarkService
     Task DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Seeds default bookmarks if none exist.
+    /// Reconciles the user's bookmarks.json config file with the runtime DB
+    /// mirror: creates the config file from defaults (or from the DB for
+    /// existing-user upgrades) when missing, and applies any new shipped
+    /// defaults additively. Replaces the legacy one-shot seed.
     /// </summary>
-    Task EnsureSeededAsync(CancellationToken cancellationToken = default);
+    Task ReconcileAsync(CancellationToken cancellationToken = default);
 }

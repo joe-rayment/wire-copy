@@ -1307,7 +1307,9 @@ public partial class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Refreshes the cached bookmarks from the database, seeding defaults on first run.
+    /// Refreshes the cached bookmarks from the database, reconciling against
+    /// the user's bookmarks.json config file (creating it from shipped defaults
+    /// or DB on first run, and additively merging new shipped defaults).
     /// </summary>
     private async Task RefreshBookmarksAsync(CancellationToken cancellationToken)
     {
@@ -1315,7 +1317,7 @@ public partial class BrowserOrchestrator : IBrowserService
         {
             using var scope = _scopeFactory.CreateScope();
             var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-            await bookmarkService.EnsureSeededAsync(cancellationToken).ConfigureAwait(false);
+            await bookmarkService.ReconcileAsync(cancellationToken).ConfigureAwait(false);
             var all = await bookmarkService.GetAllBookmarksAsync(cancellationToken).ConfigureAwait(false);
             _commandContext.Bookmarks = all.ToList();
         }

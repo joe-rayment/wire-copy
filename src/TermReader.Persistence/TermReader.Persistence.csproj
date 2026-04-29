@@ -20,6 +20,10 @@
     <InternalsVisibleTo Include="TermReader.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\bookmarks.default.json" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <AnalysisLevel>latest</AnalysisLevel>

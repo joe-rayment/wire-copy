@@ -7,18 +7,29 @@ using TermReader.Domain.Entities.Bookmarks;
 namespace TermReader.Infrastructure.Bookmarks;
 
 /// <summary>
-/// Application service for managing launcher bookmarks.
+/// Application service for managing launcher bookmarks. Every mutating method
+/// writes the resulting full list back to the user's bookmarks.json so the
+/// config file stays in sync with the DB after every change.
 /// </summary>
 public class BookmarkService : IBookmarkService
 {
     private readonly IBookmarkRepository _repository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IBookmarkConfigStore _configStore;
+    private readonly IBookmarkReconciler _reconciler;
     private readonly ILogger<BookmarkService> _logger;
 
-    public BookmarkService(IBookmarkRepository repository, IUnitOfWork unitOfWork, ILogger<BookmarkService> logger)
+    public BookmarkService(
+        IBookmarkRepository repository,
+        IUnitOfWork unitOfWork,
+        IBookmarkConfigStore configStore,
+        IBookmarkReconciler reconciler,
+        ILogger<BookmarkService> logger)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _configStore = configStore ?? throw new ArgumentNullException(nameof(configStore));
+        _reconciler = reconciler ?? throw new ArgumentNullException(nameof(reconciler));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -34,6 +45,7 @@ public class BookmarkService : IBookmarkService
         await _repository.AddAsync(bookmark, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Added bookmark: {Name} ({Url})", name, url);
+        await SyncConfigFileAsync(cancellationToken).ConfigureAwait(false);
         return bookmark;
     }
 
@@ -46,6 +58,7 @@ public class BookmarkService : IBookmarkService
         await _repository.UpdateAsync(bookmark, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Renamed bookmark to: {Name}", newName);
+        await SyncConfigFileAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MoveBookmarkUpAsync(Guid id, CancellationToken cancellationToken = default)
@@ -70,6 +83,7 @@ public class BookmarkService : IBookmarkService
         await _repository.UpdateAsync(current, cancellationToken).ConfigureAwait(false);
         await _repository.UpdateAsync(previous, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await SyncConfigFileAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MoveBookmarkDownAsync(Guid id, CancellationToken cancellationToken = default)
@@ -94,6 +108,7 @@ public class BookmarkService : IBookmarkService
         await _repository.UpdateAsync(current, cancellationToken).ConfigureAwait(false);
         await _repository.UpdateAsync(next, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await SyncConfigFileAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
@@ -104,12 +119,12 @@ public class BookmarkService : IBookmarkService
         await _repository.DeleteAsync(bookmark, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _logger.LogInformation("Deleted bookmark: {Name}", bookmark.Name);
+        await SyncConfigFileAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task EnsureSeededAsync(CancellationToken cancellationToken = default)
+    public async Task ReconcileAsync(CancellationToken cancellationToken = default)
     {
-        await _repository.SeedDefaultsAsync(cancellationToken).ConfigureAwait(false);
-        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await _reconciler.ReconcileAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static int IndexOfBookmarkById(IReadOnlyList<Bookmark> bookmarks, Guid id)
@@ -123,5 +138,21 @@ public class BookmarkService : IBookmarkService
         }
 
         return -1;
+    }
+
+    private async Task SyncConfigFileAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var current = await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false);
+            await _configStore.SaveUserConfigAsync(current, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Config file mirroring is best-effort: the DB is the runtime source
+            // of truth. If we fail to write the file (read-only mount, etc.),
+            // log and move on instead of breaking the user-visible mutation.
+            _logger.LogWarning(ex, "Failed to mirror bookmark mutation to config file at {Path}.", _configStore.UserConfigPath);
+        }
     }
 }

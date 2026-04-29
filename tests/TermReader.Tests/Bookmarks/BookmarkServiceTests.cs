@@ -11,18 +11,36 @@ using Xunit;
 namespace TermReader.Tests.Bookmarks;
 
 [Trait("Category", "Unit")]
-public class BookmarkServiceTests : TestDatabaseFixture
+public class BookmarkServiceTests : TestDatabaseFixture, IDisposable
 {
     private readonly BookmarkRepository _repository;
     private readonly BookmarkService _sut;
     private readonly ILogger<BookmarkService> _logger;
+    private readonly string _tempDir;
+    private readonly JsonBookmarkConfigStore _configStore;
+    private readonly BookmarkReconciler _reconciler;
+    private bool _disposed;
 
     public BookmarkServiceTests()
     {
         _repository = new BookmarkRepository(DbContext);
         var unitOfWork = new UnitOfWork(DbContext, Substitute.For<ILogger<UnitOfWork>>());
         _logger = Substitute.For<ILogger<BookmarkService>>();
-        _sut = new BookmarkService(_repository, unitOfWork, _logger);
+
+        _tempDir = Path.Combine(Path.GetTempPath(), $"termreader-bookmark-svc-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDir);
+        var configPath = Path.Combine(_tempDir, "bookmarks.json");
+        _configStore = new JsonBookmarkConfigStore(
+            Substitute.For<ILogger<JsonBookmarkConfigStore>>(),
+            configPath,
+            typeof(AppDbContext).Assembly);
+        _reconciler = new BookmarkReconciler(
+            _configStore,
+            _repository,
+            unitOfWork,
+            Substitute.For<ILogger<BookmarkReconciler>>());
+
+        _sut = new BookmarkService(_repository, unitOfWork, _configStore, _reconciler, _logger);
     }
 
     #region GetAllBookmarksAsync
@@ -73,6 +91,17 @@ public class BookmarkServiceTests : TestDatabaseFixture
         all[0].Url.Should().Be("https://test.com");
     }
 
+    [Fact]
+    public async Task AddBookmarkAsync_WritesToConfigFile()
+    {
+        await _sut.AddBookmarkAsync("Test", "https://test.com");
+
+        File.Exists(_configStore.UserConfigPath).Should().BeTrue();
+        var config = await _configStore.LoadUserConfigAsync();
+        config.Should().NotBeNull();
+        config!.Bookmarks.Should().ContainSingle(e => e.Url == "https://test.com" && e.Name == "Test");
+    }
+
     #endregion
 
     #region DeleteBookmarkAsync
@@ -94,6 +123,21 @@ public class BookmarkServiceTests : TestDatabaseFixture
         var act = () => _sut.DeleteBookmarkAsync(Guid.NewGuid());
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task DeleteBookmarkAsync_WritesToConfigFile()
+    {
+        var keep = await _sut.AddBookmarkAsync("Keep", "https://keep.com");
+        var drop = await _sut.AddBookmarkAsync("Drop", "https://drop.com");
+
+        await _sut.DeleteBookmarkAsync(drop.Id);
+
+        var config = await _configStore.LoadUserConfigAsync();
+        config!.Bookmarks.Should().ContainSingle();
+        config.Bookmarks[0].Url.Should().Be("https://keep.com");
+        // Sanity: the kept bookmark id matches the DB row.
+        keep.Id.Should().NotBe(drop.Id);
     }
 
     #endregion
@@ -119,6 +163,17 @@ public class BookmarkServiceTests : TestDatabaseFixture
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task RenameBookmarkAsync_WritesToConfigFile()
+    {
+        var bookmark = await _sut.AddBookmarkAsync("Old", "https://rename.com");
+
+        await _sut.RenameBookmarkAsync(bookmark.Id, "New");
+
+        var config = await _configStore.LoadUserConfigAsync();
+        config!.Bookmarks.Single(e => e.Url == "https://rename.com").Name.Should().Be("New");
+    }
+
     #endregion
 
     #region MoveBookmarkUpAsync
@@ -134,6 +189,10 @@ public class BookmarkServiceTests : TestDatabaseFixture
         var all = await _sut.GetAllBookmarksAsync();
         all[0].Name.Should().Be("Second");
         all[1].Name.Should().Be("First");
+
+        // Sanity-check the original IDs survived the swap rather than being recreated.
+        first.Id.Should().NotBe(second.Id);
+        all.Select(b => b.Id).Should().Contain(new[] { first.Id, second.Id });
     }
 
     [Fact]
@@ -155,6 +214,20 @@ public class BookmarkServiceTests : TestDatabaseFixture
         var act = () => _sut.MoveBookmarkUpAsync(Guid.NewGuid());
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task MoveBookmarkUpAsync_WritesToConfigFile_WithNewOrder()
+    {
+        await _sut.AddBookmarkAsync("First", "https://first.com");
+        var second = await _sut.AddBookmarkAsync("Second", "https://second.com");
+
+        await _sut.MoveBookmarkUpAsync(second.Id);
+
+        var config = await _configStore.LoadUserConfigAsync();
+        config!.Bookmarks.Should().HaveCount(2);
+        config.Bookmarks[0].Url.Should().Be("https://second.com");
+        config.Bookmarks[1].Url.Should().Be("https://first.com");
     }
 
     #endregion
@@ -197,47 +270,62 @@ public class BookmarkServiceTests : TestDatabaseFixture
 
     #endregion
 
-    #region EnsureSeededAsync
+    #region ReconcileAsync
 
     [Fact]
-    public async Task EnsureSeededAsync_SeedsDefaultBookmarks()
+    public async Task ReconcileAsync_EmptyDbAndConfig_PopulatesFromShippedDefaults()
     {
-        await _sut.EnsureSeededAsync();
+        await _sut.ReconcileAsync();
 
         var all = await _sut.GetAllBookmarksAsync();
-        all.Should().HaveCount(9);
-        all.Select(b => b.Name).Should().Contain("Maclean's");
-        all.Select(b => b.Name).Should().Contain("CBC News");
-        all.Select(b => b.Name).Should().Contain("NYT Today's Paper");
-        all.Select(b => b.Name).Should().Contain("The Verge");
-        all.Select(b => b.Name).Should().Contain("The Toronto Star");
-        all.Select(b => b.Name).Should().Contain("Techmeme");
-        all.Select(b => b.Name).Should().Contain("Wall Street Journal");
-        all.Select(b => b.Name).Should().Contain("Wired");
-        all.Select(b => b.Name).Should().Contain("The New Yorker");
+        all.Should().NotBeEmpty();
+        all.Select(b => b.Url).Should().Contain("https://www.wired.com");
+        all.Select(b => b.Url).Should().Contain("https://www.newyorker.com");
+        File.Exists(_configStore.UserConfigPath).Should().BeTrue();
     }
 
     [Fact]
-    public async Task EnsureSeededAsync_DoesNotDuplicateDefaults()
+    public async Task ReconcileAsync_DoesNotDuplicateOnSecondRun()
     {
-        await _sut.EnsureSeededAsync();
-        await _sut.EnsureSeededAsync(); // Second call
+        await _sut.ReconcileAsync();
+        var firstCount = (await _sut.GetAllBookmarksAsync()).Count;
+        await _sut.ReconcileAsync();
+        var secondCount = (await _sut.GetAllBookmarksAsync()).Count;
 
-        var all = await _sut.GetAllBookmarksAsync();
-        all.Should().HaveCount(9);
-    }
-
-    [Fact]
-    public async Task EnsureSeededAsync_AddsMissingDefaults_AlongsideUserBookmarks()
-    {
-        await _sut.AddBookmarkAsync("Custom", "https://custom.com");
-        await _sut.EnsureSeededAsync();
-
-        var all = await _sut.GetAllBookmarksAsync();
-        all.Should().Contain(b => b.Url == "https://custom.com", "user-added bookmark preserved");
-        all.Should().Contain(b => b.Url == "https://www.wired.com", "missing default added");
-        all.Where(b => b.Url == "https://custom.com").Should().HaveCount(1, "no duplicates of the user bookmark");
+        secondCount.Should().Be(firstCount);
     }
 
     #endregion
+
+    public new void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            try
+            {
+                if (Directory.Exists(_tempDir))
+                {
+                    Directory.Delete(_tempDir, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+                // Best-effort temp cleanup.
+            }
+        }
+
+        _disposed = true;
+    }
 }

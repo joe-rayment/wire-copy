@@ -17,6 +17,8 @@ public static class BookmarksDependencyInjection
     public static IServiceCollection AddBookmarks(this IServiceCollection services)
     {
         services.AddScoped<IBookmarkRepository, BookmarkRepository>();
+        services.AddSingleton<IBookmarkConfigStore, JsonBookmarkConfigStore>();
+        services.AddScoped<IBookmarkReconciler, BookmarkReconciler>();
         services.AddScoped<IBookmarkService, BookmarkService>();
         return services;
     }
