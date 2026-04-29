@@ -57,7 +57,8 @@ internal class CollectionRenderer
         _helpers.WriteLine(
             $" {borderColor}╰{new string('─', boxWidth)}╯{Reset}");
 
-        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
+        // Status bar is 2 lines (separator + content row) at the bottom; reserve both.
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 2);
         var maxVisible = remainingHeight;
 
         if (collections.Count == 0)
@@ -156,7 +157,9 @@ internal class CollectionRenderer
         }
 
         var isCompact = string.Equals(options.LayoutVariant, "Compact", StringComparison.Ordinal);
-        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
+
+        // Status bar is 2 lines (separator + content row) at the bottom; reserve both.
+        var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 2);
 
         // Each item takes linesPerItem lines, plus 1 separator line between items.
         // Total lines for N items = N * linesPerItem + (N-1) separators.
