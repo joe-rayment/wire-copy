@@ -20,8 +20,25 @@ namespace TermReader.Infrastructure.Browser;
 public partial class BrowserOrchestrator
 {
     /// <summary>
+    /// Default rendering overhead estimate (ms) used on the first speed-read line
+    /// before a real measurement is available. Subsequent lines pass the actual
+    /// measured render time from the previous tick instead of this constant.
+    /// </summary>
+    internal const int DefaultRenderOverheadMs = 100;
+
+    /// <summary>
+    /// Measured wall-clock duration (ms) of the most recent speed-read render
+    /// (advance cursor + RenderCurrentPageAsync). Subtracted from the next
+    /// line's computed delay so the timer-fire → render → next-timer cycle
+    /// equals the WPM-implied duration. Reset to <see cref="DefaultRenderOverheadMs"/>
+    /// whenever speed reading is (re)started.
+    /// </summary>
+    private int _lastLineRenderMs = DefaultRenderOverheadMs;
+
+    /// <summary>
     /// Computes the delay in milliseconds for a given line during speed reading.
     /// Delegates to the line cache to find line content and next-line context.
+    /// Uses the most recent measured render overhead so effective WPM stays accurate.
     /// </summary>
     private int ComputeLineDelayMs(int lineIndex, int wpm)
     {
@@ -32,17 +49,23 @@ public partial class BrowserOrchestrator
         }
 
         var nextLineBlank = lineIndex + 1 < lines.Count && string.IsNullOrEmpty(lines[lineIndex + 1]);
-        return ComputeLineDelayMs(lines[lineIndex], wpm, nextLineBlank);
+        return ComputeLineDelayMs(lines[lineIndex], wpm, nextLineBlank, _lastLineRenderMs);
     }
 
     /// <summary>
     /// Pure computation: delay in ms for a line based on word count and WPM.
     /// If nextLineBlank (paragraph boundary), adds a 150ms pause.
-    /// Subtracts estimated rendering overhead so effective WPM matches the setting.
+    /// Subtracts the supplied <paramref name="renderOverheadMs"/> (the actual
+    /// measured render time of the previous tick, or <see cref="DefaultRenderOverheadMs"/>
+    /// on the first tick) so total cycle time matches the configured WPM.
     /// Minimum 30ms floor.
     /// </summary>
 #pragma warning disable SA1202 // Internal test helper placed near its private caller
-    internal static int ComputeLineDelayMs(string line, int wpm, bool nextLineBlank)
+    internal static int ComputeLineDelayMs(
+        string line,
+        int wpm,
+        bool nextLineBlank,
+        int renderOverheadMs = DefaultRenderOverheadMs)
     {
         var wordCount = CountWordsStrippingAnsi(line);
         if (wordCount == 0)
@@ -58,10 +81,11 @@ public partial class BrowserOrchestrator
             delayMs += 150;
         }
 
-        // Subtract estimated rendering overhead (~100ms for terminal write + layout)
-        // so effective WPM matches the configured setting
-        const int RenderingOverheadMs = 100;
-        return Math.Max(30, delayMs - RenderingOverheadMs);
+        // Subtract measured (or default-estimated) rendering overhead so that
+        // the full timer-fire → render → next-timer cycle equals the WPM-implied
+        // duration. Without this, every line drifts slow by the render time.
+        var overhead = Math.Max(0, renderOverheadMs);
+        return Math.Max(30, delayMs - overhead);
     }
 
     /// <summary>

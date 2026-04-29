@@ -349,6 +349,10 @@ public partial class BrowserOrchestrator : IBrowserService
                 else
                 {
                     speedReadDelay = null;
+
+                    // Reset measured render overhead so the next speed-read session
+                    // starts from the default estimate rather than a stale value.
+                    _lastLineRenderMs = DefaultRenderOverheadMs;
                 }
 
                 var completed = await Task.WhenAny(raceTasks).ConfigureAwait(false);
@@ -365,8 +369,12 @@ public partial class BrowserOrchestrator : IBrowserService
                 }
                 else if (speedReadDelay != null && completed == speedReadDelay)
                 {
-                    // Speed read timer fired — advance cursor one line
+                    // Speed read timer fired — advance cursor one line.
+                    // Measure the actual render time so the NEXT line's delay
+                    // can subtract real overhead (not a fixed 100ms guess) and
+                    // the effective WPM matches the configured setting.
                     speedReadDelay = null; // Allow next line's timer to be created
+                    var renderStopwatch = Stopwatch.StartNew();
                     if (!AdvanceSpeedReadCursor(options))
                     {
                         // Reached end of article
@@ -374,6 +382,8 @@ public partial class BrowserOrchestrator : IBrowserService
                     }
 
                     await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                    renderStopwatch.Stop();
+                    _lastLineRenderMs = (int)renderStopwatch.ElapsedMilliseconds;
                 }
                 else if (completed == pendingInput)
                 {
