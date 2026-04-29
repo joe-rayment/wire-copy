@@ -54,7 +54,8 @@ public class TerminalPageRenderer : IPageRenderer
         var sectionCount = page.LinkTree?.Root.Children.Count(c => c.IsGroupHeader) ?? 0;
         _linkTreeRenderer.RenderHeader(page.Metadata, page.Url, options, linkCount, sectionCount);
 
-        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 1);
+        // Status bar is 2 lines (separator + content row) at the bottom; reserve both.
+        var remainingHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
 
         if (page.LinkTree != null)
         {
