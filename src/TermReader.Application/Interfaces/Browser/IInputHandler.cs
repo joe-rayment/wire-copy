@@ -60,4 +60,12 @@ public interface IInputHandler
     /// <param name="isSecret">When true, echoes '*' instead of the actual character.</param>
     /// <returns>User-entered text, or null if cancelled (Escape).</returns>
     Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null);
+
+    /// <summary>
+    /// Discards any keystrokes currently buffered in the input channel.
+    /// Used by retry-friendly prompts (e.g. multi-line key paste) to prevent
+    /// stale characters from a failed paste attempt cascading into the next
+    /// prompt and triggering unintended actions.
+    /// </summary>
+    void DrainBufferedInput();
 }

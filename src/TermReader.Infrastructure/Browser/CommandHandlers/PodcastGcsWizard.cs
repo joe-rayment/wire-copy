@@ -164,21 +164,58 @@ internal static class PodcastGcsWizard
     }
 
     /// <summary>
+    /// Strips bracketed-paste markers (\x1b[200~ ... \x1b[201~) and surrounding
+    /// whitespace from a user-entered key blob. Some terminals emit these markers
+    /// as literal characters when bracketed-paste mode isn't fully negotiated;
+    /// they must be removed before JSON parsing or path resolution.
+    /// </summary>
+    /// <remarks>
+    /// Public for testing. Idempotent: safe to call on already-clean input.
+    /// </remarks>
+    internal static string SanitizeKeyInput(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        // Strip ESC[200~ (paste-start) and ESC[201~ (paste-end) anywhere in the string,
+        // along with any plain bracketed-paste markers a buggy terminal might leak as
+        // bare "[200~" / "[201~" without the escape.
+        var cleaned = input
+            .Replace("\x1b[200~", string.Empty, StringComparison.Ordinal)
+            .Replace("\x1b[201~", string.Empty, StringComparison.Ordinal)
+            .Replace("[200~", string.Empty, StringComparison.Ordinal)
+            .Replace("[201~", string.Empty, StringComparison.Ordinal);
+
+        return cleaned.Trim();
+    }
+
+    /// <summary>
     /// Validates and saves a key input (JSON content or file path).
+    /// Bracketed-paste markers and surrounding whitespace are stripped before
+    /// classification so multi-line pastes from any terminal parse correctly.
     /// </summary>
     internal static Task<(bool Saved, string? Error)> ValidateAndSaveKeyAsync(
         string input,
         GcsStorageClient gcsClient)
     {
+        var sanitized = SanitizeKeyInput(input);
+
+        if (string.IsNullOrEmpty(sanitized))
+        {
+            return Task.FromResult((false, (string?)"Key cannot be empty"));
+        }
+
         ServiceAccountKeyValidationResult validation;
 
-        if (input.StartsWith('{'))
+        if (sanitized.StartsWith('{'))
         {
-            validation = gcsClient.SetServiceAccountKeyContent(input);
+            validation = gcsClient.SetServiceAccountKeyContent(sanitized);
         }
         else
         {
-            var path = input;
+            var path = sanitized;
             if (path.StartsWith('~'))
             {
                 path = Path.Combine(
@@ -186,7 +223,17 @@ internal static class PodcastGcsWizard
                     path[1..].TrimStart('/'));
             }
 
-            path = Path.GetFullPath(path);
+            try
+            {
+                path = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // Sanitized blob doesn't look like JSON and isn't a usable path either —
+                // surface a clear error rather than crashing or cascading.
+                return Task.FromResult((false, (string?)$"Not valid JSON or file path: {ex.Message}"));
+            }
+
             validation = GcsStorageClient.ValidateKeyFile(path);
             if (validation.IsValid)
             {
@@ -297,18 +344,24 @@ internal static class PodcastGcsWizard
                 return result; // Cancelled
             }
 
-            var (saved, error) = await ValidateAndSaveKeyAsync(keyInput.Trim(), gcsClient).ConfigureAwait(false);
+            var (saved, error) = await ValidateAndSaveKeyAsync(keyInput, gcsClient).ConfigureAwait(false);
 
             if (saved)
             {
+                // Drain any stale keys from the paste before we move on to the
+                // bucket step — leftover characters would otherwise pre-fill it.
+                ctx.InputHandler.DrainBufferedInput();
                 result = new GcsWizardResult { KeySaved = true };
                 break;
             }
 
-            // Show error below the field, wait briefly, then retry
+            // Show error below the field. Drain any stale keys from a partial paste
+            // so the next iteration's prompt isn't pre-filled with leftover \r's
+            // that would cascade through additional credential prompts.
             Console.SetCursorPosition(2, row + FormField.Height);
             Console.Write($"{p.ErrorFg.AnsiFg}✗ {error}{Reset}");
             await Task.Delay(2000, ct).ConfigureAwait(false);
+            ctx.InputHandler.DrainBufferedInput();
         }
 
         if (!result.KeySaved)
