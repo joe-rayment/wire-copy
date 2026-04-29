@@ -42,25 +42,35 @@ public class CollectionRendererVisibleCountTests
     #region GetCollectionItemsVisibleCount
 
     [Fact]
-    public void GetCollectionItemsVisibleCount_SmallTerminal_InlineCta()
+    public void GetCollectionItemsVisibleCount_SmallTerminal_CompactCta()
     {
-        // height=20, width=80: CTA is inline (1 line, height <= 35), linesPerItem=2
-        // remainingHeight = Max(3, 20-3-2-1) = 14
+        // height=20, width=80: CTA is compact slab (3 lines, 18 <= height < 22), linesPerItem=2
+        // remainingHeight = Max(3, 20-3-2-3) = 12
         // With separators: 2 lines/item + 1 separator between = 3 lines per slot
-        // Max(1, (14+1)/3) = 5
+        // Max(1, (12+1)/3) = 4
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(20);
-        result.Should().Be(5);
+        result.Should().Be(4);
     }
 
     [Fact]
     public void GetCollectionItemsVisibleCount_LargeTerminal_HeroCta()
     {
-        // height=40, width=80: CTA is hero box (7 lines, height > 35 && width >= 50), linesPerItem=2
+        // height=40, width=80: CTA is hero box (7 lines, height >= 22 && width-2 >= 50), linesPerItem=2
         // remainingHeight = Max(3, 40-3-2-7) = 28
         // With separators: 2 lines/item + 1 separator between = 3 lines per slot
         // Max(1, (28+1)/3) = 9
         var result = CollectionRenderer.GetCollectionItemsVisibleCount(40);
         result.Should().Be(9);
+    }
+
+    [Fact]
+    public void GetCollectionItemsVisibleCount_StandardTerminal_HeroCta()
+    {
+        // height=24, width=80: hero CTA fires (height >= 22), linesPerItem=2
+        // remainingHeight = Max(3, 24-3-2-7) = 12
+        // Max(1, (12+1)/3) = 4
+        var result = CollectionRenderer.GetCollectionItemsVisibleCount(24);
+        result.Should().Be(4);
     }
 
     [Fact]

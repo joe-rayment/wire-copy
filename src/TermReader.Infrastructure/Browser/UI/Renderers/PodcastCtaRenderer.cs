@@ -29,6 +29,17 @@ internal class PodcastCtaRenderer
     private const int MaxButtonWidth = 72;
     private const double MinutesPerArticle = 3.5;
 
+    /// <summary>
+    /// Minimum terminal height to render the hero box CTA (reserves 7 lines for the
+    /// CTA and still leaves room for the box header, status bar, and a couple items).
+    /// </summary>
+    private const int HeroHeightThreshold = 22;
+
+    /// <summary>
+    /// Minimum terminal height to render the compact slab CTA (3 lines).
+    /// </summary>
+    private const int CompactHeightThreshold = 18;
+
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
 
@@ -44,12 +55,12 @@ internal class PodcastCtaRenderer
     /// </summary>
     public static int GetCtaLineCount(int terminalWidth, int terminalHeight)
     {
-        if (terminalHeight > 35 && terminalWidth - 2 >= 50)
+        if (terminalHeight >= HeroHeightThreshold && terminalWidth - 2 >= 50)
         {
             return 7;
         }
 
-        if (terminalHeight > 35 && terminalWidth - 2 >= 35)
+        if (terminalHeight >= CompactHeightThreshold && terminalWidth - 2 >= 35)
         {
             return 3;
         }
@@ -70,11 +81,11 @@ internal class PodcastCtaRenderer
 
         if (state == PodcastCtaState.Generating)
         {
-            if (height > 35 && width >= 50)
+            if (height >= HeroHeightThreshold && width >= 50)
             {
                 RenderGeneratingHeroBox(width, p, progressFraction, articleCount);
             }
-            else if (height > 35 && width >= 35)
+            else if (height >= CompactHeightThreshold && width >= 35)
             {
                 RenderGeneratingCompactSlab(width, p, progressFraction);
             }
@@ -86,11 +97,11 @@ internal class PodcastCtaRenderer
             return;
         }
 
-        if (height > 35 && width >= 50)
+        if (height >= HeroHeightThreshold && width >= 50)
         {
             RenderHeroBox(width, p, state, articleCount);
         }
-        else if (height > 35 && width >= 35)
+        else if (height >= CompactHeightThreshold && width >= 35)
         {
             RenderCompactSlab(width, p, state);
         }

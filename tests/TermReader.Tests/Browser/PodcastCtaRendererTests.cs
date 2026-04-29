@@ -26,13 +26,17 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — tier selection
 
     [Theory]
-    [InlineData(80, 40, 7)]  // Hero box (height > 35, width >= 52)
-    [InlineData(80, 36, 7)]  // Hero box (just above threshold)
+    [InlineData(80, 40, 7)]  // Hero box (height >= 22, width-2 >= 50)
+    [InlineData(80, 36, 7)]  // Hero box
+    [InlineData(80, 30, 7)]  // Hero box (typical 30-line terminal)
+    [InlineData(80, 24, 7)]  // Hero box (standard 24-line terminal)
+    [InlineData(80, 22, 7)]  // Hero box (boundary)
     [InlineData(52, 40, 7)]  // Hero box (width boundary: 52-2=50 >= 50)
-    [InlineData(49, 40, 3)]  // Compact slab (height > 35, width < 50 but >= 37)
-    [InlineData(80, 30, 1)]  // Inline (height <= 35)
-    [InlineData(80, 24, 1)]  // Inline (height <= 35)
-    [InlineData(80, 19, 1)]  // Inline (height <= 35)
+    [InlineData(49, 40, 3)]  // Compact slab (width-2=47 < 50 but >= 35)
+    [InlineData(80, 21, 3)]  // Compact slab (height < 22 but >= 18)
+    [InlineData(80, 18, 3)]  // Compact slab (height boundary)
+    [InlineData(80, 17, 1)]  // Inline (height < 18)
+    [InlineData(80, 5, 1)]   // Inline (very short)
     [InlineData(20, 15, 1)]  // Inline (both small)
     public void GetCtaLineCount_ReturnsCorrectTier(int terminalWidth, int terminalHeight, int expectedLines)
     {
@@ -151,21 +155,21 @@ public class PodcastCtaRendererTests
     #region GetCtaLineCount — boundary tests
 
     [Fact]
-    public void GetCtaLineCount_ExactlyAt36Height50Width_Returns7()
+    public void GetCtaLineCount_ExactlyAt22Height50Width_Returns7()
     {
-        PodcastCtaRenderer.GetCtaLineCount(52, 36).Should().Be(7);
+        PodcastCtaRenderer.GetCtaLineCount(52, 22).Should().Be(7);
     }
 
     [Fact]
-    public void GetCtaLineCount_At35Height_ReturnsInline()
+    public void GetCtaLineCount_At21Height_ReturnsCompact()
     {
-        PodcastCtaRenderer.GetCtaLineCount(80, 35).Should().Be(1);
+        PodcastCtaRenderer.GetCtaLineCount(80, 21).Should().Be(3);
     }
 
     [Fact]
-    public void GetCtaLineCount_JustBelow20Height_Returns1()
+    public void GetCtaLineCount_JustBelow18Height_Returns1()
     {
-        PodcastCtaRenderer.GetCtaLineCount(80, 19).Should().Be(1);
+        PodcastCtaRenderer.GetCtaLineCount(80, 17).Should().Be(1);
     }
 
     #endregion
