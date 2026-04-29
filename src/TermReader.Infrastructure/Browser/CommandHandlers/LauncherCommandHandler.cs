@@ -283,8 +283,11 @@ internal static class LauncherCommandHandler
 
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
     {
-        // Select the URL bar visually
+        // Select the URL bar visually. Force the page scroll back to the top
+        // so the URL bar is in the viewport — the user can never type into a
+        // URL bar that has scrolled off-screen.
         ctx.NavigationService.LauncherSelectedIndex = -1;
+        ctx.NavigationService.LauncherScrollOffset = 0;
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         // Calculate URL bar position for inline input (must match RenderUrlBar).
@@ -453,19 +456,65 @@ internal static class LauncherCommandHandler
         return -1;
     }
 
+    /// <summary>
+    /// Adjusts <see cref="NavigationService.LauncherScrollOffset"/> so that the
+    /// currently selected bookmark cell is fully within the launcher viewport.
+    /// </summary>
+    /// <remarks>
+    /// The launcher is rendered as a single virtual content stream:
+    /// <c>[wordmark | URL bar | bookmark grid]</c>. The scroll offset is the
+    /// number of *page lines* that have scrolled off the top, NOT a
+    /// bookmark-row index. As the cursor moves down through the grid, the
+    /// wordmark and URL bar collapse upward off the top of the screen.
+    /// <para>
+    /// When the URL bar is focused (<c>selectedIndex == -1</c>), the scroll
+    /// offset is forced to <c>0</c> so the URL bar is always visible — the
+    /// user can never type into a URL bar that has scrolled off-screen.
+    /// </para>
+    /// <para>
+    /// When the cursor lands on the very first bookmark (index 0), the scroll
+    /// offset is also reset to 0 so the wordmark reappears together with the
+    /// URL bar — avoiding an awkward partial-header state.
+    /// </para>
+    /// </remarks>
     private static void AdjustLauncherScroll(CommandContext ctx, RenderOptions options)
     {
+        var selectedIndex = ctx.NavigationService.LauncherSelectedIndex;
+
+        // URL-bar focus → snap to top so the URL bar is in the viewport.
+        if (selectedIndex < 0)
+        {
+            ctx.NavigationService.LauncherScrollOffset = 0;
+            return;
+        }
+
+        // First bookmark → snap back to top so the wordmark reappears.
+        if (selectedIndex == 0)
+        {
+            ctx.NavigationService.LauncherScrollOffset = 0;
+            return;
+        }
+
         var layout = ComputeVariantLayout(options);
-        var selectedRow = ctx.NavigationService.LauncherSelectedIndex / layout.Columns;
+        var headerPlusUrlBarLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(options.TerminalWidth);
+        var viewportHeight = LauncherRenderer.ComputeViewportHeight(options.TerminalHeight);
+
+        // Page-line index of the top and bottom of the cell containing the selection.
+        var selectedRow = selectedIndex / layout.Columns;
+        var cellTopLine = headerPlusUrlBarLines + (selectedRow * layout.CellHeight);
+        var cellBottomLine = cellTopLine + layout.CellHeight - 1;
+
         var currentOffset = ctx.NavigationService.LauncherScrollOffset;
 
-        if (selectedRow < currentOffset)
+        if (cellTopLine < currentOffset)
         {
-            ctx.NavigationService.LauncherScrollOffset = selectedRow;
+            // Cell is above the viewport — scroll up so its top is the first visible line.
+            ctx.NavigationService.LauncherScrollOffset = cellTopLine;
         }
-        else if (selectedRow >= currentOffset + layout.VisibleRows)
+        else if (cellBottomLine >= currentOffset + viewportHeight)
         {
-            ctx.NavigationService.LauncherScrollOffset = selectedRow - layout.VisibleRows + 1;
+            // Cell is below the viewport — scroll down so its bottom is the last visible line.
+            ctx.NavigationService.LauncherScrollOffset = cellBottomLine - viewportHeight + 1;
         }
     }
 
