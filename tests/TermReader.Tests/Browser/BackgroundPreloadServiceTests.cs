@@ -1880,4 +1880,422 @@ public class BackgroundPreloadServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Paywalled Direct-To-Browser Routing (workspace-38yg)
+
+    [Fact]
+    public void BuildQueue_PaywalledArticle_WithBrowserAndCookies_RoutesDirectlyToBrowserPreload()
+    {
+        // The bug: HTTP fetches for paywalled domains even with cookies attached
+        // return truncated paywall previews (the auth cookies alone are insufficient).
+        // The fix: when browser context + paywall cookies are available, route paywalled
+        // article URLs straight to the headless browser preload instead of HTTP.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasBrowserContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            browserSession: browserSession);
+
+        // Refresh cookie state so _hasPaywalledCookies is true
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/15/us/politics/article-one.html",
+            "https://www.nytimes.com/2026/01/15/world/article-two.html");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().HaveCount(2, "paywalled articles with browser+cookies should be queued");
+        queue.Should().OnlyContain(item => item.NeedsBrowser,
+            "paywalled article URLs must use the browser preload path, not HTTP " +
+            "(HTTP returns truncated previews even with cookies)");
+    }
+
+    [Fact]
+    public void BuildQueue_PaywalledArticle_WithoutBrowser_StaysOnHttpPath()
+    {
+        // When no browser session is available, fall back to HTTP — at least the
+        // section/preview content may still be cacheable.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/01/article.html");
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().HaveCount(1);
+        queue[0].NeedsBrowser.Should().BeFalse(
+            "without browser context the only available path is HTTP");
+    }
+
+    [Fact]
+    public void BuildQueue_PaywalledSectionUrl_StaysOnHttpEvenWithBrowserAndCookies()
+    {
+        // Section URLs are free (not behind paywall). Preserve the fast HTTP path
+        // for them even when browser+cookies are available — the browser path is
+        // slower and unnecessary for unpaywalled section pages.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasBrowserContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            browserSession: browserSession);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        // A section URL pattern (e.g., /section/...) should be detected as a section
+        // and stay on HTTP. We use the well-known NYT section pattern.
+        var nodes = CreateContentNodes("https://www.nytimes.com/section/world");
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().HaveCount(1);
+        queue[0].NeedsBrowser.Should().BeFalse(
+            "section URLs are free content and should stay on the fast HTTP path");
+    }
+
+    [Fact]
+    public void BuildQueue_NonPaywalledDomain_StaysOnHttpEvenWithBrowserAndCookies()
+    {
+        // Non-paywalled domains (e.g., theverge.com) should never be routed to the
+        // browser preload — HTTP works fine and is much faster.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasBrowserContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            browserSession: browserSession);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var nodes = CreateContentNodes(
+            "https://www.theverge.com/article-one",
+            "https://www.theverge.com/article-two");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.theverge.com");
+
+        queue.Should().HaveCount(2);
+        queue.Should().OnlyContain(item => !item.NeedsBrowser,
+            "non-paywalled domains must stay on HTTP-only preload");
+    }
+
+    [Fact]
+    public void BuildQueue_PaywalledArticle_NoCookies_StaysOutOfQueue()
+    {
+        // Without paywall cookies the article is unreachable on either path —
+        // it should not be queued at all (already covered by existing test, but
+        // re-asserted here next to the direct-routing tests for clarity).
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasBrowserContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            browserSession: browserSession);
+
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/01/article.html");
+        var queue = service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        queue.Should().BeEmpty(
+            "paywalled article without cookies cannot be preloaded by either path");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_PaywalledArticle_WithBrowserAndCookies_RoutesToBrowser()
+    {
+        // Same fix applies to collection queues (e.g., reading list, podcast queue).
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasBrowserContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager,
+            browserSession: browserSession);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var urls = new List<string>
+        {
+            "https://www.nytimes.com/2026/01/15/us/article-one.html",
+            "https://www.theverge.com/article-two",
+        };
+
+        var queue = service.BuildCollectionQueue(0, urls);
+
+        queue.Should().HaveCount(2);
+        queue.Single(i => i.Url.Contains("nytimes")).NeedsBrowser.Should().BeTrue(
+            "paywalled NYT article in a collection must route to browser preload");
+        queue.Single(i => i.Url.Contains("theverge")).NeedsBrowser.Should().BeFalse(
+            "non-paywalled article in a collection must stay on HTTP");
+    }
+
+    #endregion
+
+    #region HTTP Cookie Sharing (workspace-38yg)
+
+    [Fact]
+    public async Task HttpCookieRefresher_LoadsStoredCookies_IntoSharedContainer()
+    {
+        // The HttpClient used by the preload path shares a CookieContainer with
+        // the rest of the app. Cookies persisted by browser login flows must be
+        // visible to preload HTTP requests — otherwise paywalled domains return
+        // unauthenticated content even on the (still-supported) HTTP code path.
+        var container = new System.Net.CookieContainer();
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(new List<StoredCookie>
+        {
+            new("nyt_session", "abc123", ".nytimes.com", "/", null),
+            new("__cf_bm", "def456", ".theverge.com", "/", null),
+        });
+
+        var refresher = new HttpCookieRefresher(
+            container,
+            cookieManager,
+            NullLogger<HttpCookieRefresher>.Instance);
+
+        await refresher.RefreshAsync();
+
+        container.Count.Should().BeGreaterOrEqualTo(2,
+            "stored cookies must be loaded into the shared CookieContainer");
+        container.GetCookies(new Uri("https://www.nytimes.com/")).Count.Should().BeGreaterOrEqualTo(1,
+            "NYT cookies must be visible to HTTP requests for nytimes.com");
+        container.GetCookies(new Uri("https://www.theverge.com/")).Count.Should().BeGreaterOrEqualTo(1,
+            "Verge cookies must be visible to HTTP requests for theverge.com");
+    }
+
+    [Fact]
+    public async Task HttpCookieRefresher_NoStoredCookies_DoesNotThrow()
+    {
+        var container = new System.Net.CookieContainer();
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        var refresher = new HttpCookieRefresher(
+            container,
+            cookieManager,
+            NullLogger<HttpCookieRefresher>.Instance);
+
+        var act = async () => await refresher.RefreshAsync();
+        await act.Should().NotThrowAsync();
+        container.Count.Should().Be(0);
+    }
+
+    #endregion
+
+    #region Paywalled HTTP Failure Escalation (workspace-38yg)
+
+    [Fact]
+    public async Task PreloadUrlAsync_PaywalledThinPreview_MarksDomainNeedsJs()
+    {
+        // When HTTP returns a thin preview for a paywalled domain (passes the
+        // basic content check but fails the 500-word paywalled threshold), the
+        // domain must be marked as needsJs so subsequent paywalled URLs skip
+        // HTTP and go straight to the browser preload path.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cache = Substitute.For<IPageCache>();
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        // HttpClient that returns a thin paywall preview (~100 words)
+        var thinHtml = "<html><body><article><p>" +
+            string.Join(" ", Enumerable.Range(1, 100).Select(i => $"word{i}")) +
+            "</p></article></body></html>";
+        var handler = new StubHttpHandler(thinHtml, System.Net.HttpStatusCode.OK);
+        var httpClient = new HttpClient(handler);
+
+        using var service = new BackgroundPreloadService(
+            cache,
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        // Invoke the private PreloadUrlAsync via reflection
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("PreloadUrlAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        // _paywalledPreloadCount limit allows the call through; but we need cookies:
+        refreshMethod.Invoke(service, null);
+
+        var url = "https://www.nytimes.com/2026/01/article.html";
+        var task = (Task)method.Invoke(service, new object[] { url, CancellationToken.None })!;
+        await task;
+
+        // Domain must now be marked as needsJs
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict.Should().ContainKey("https://www.nytimes.com",
+            "paywalled domain returning a thin preview must escalate to browser preload");
+
+        // And the thin preview must not be cached
+        cache.DidNotReceive().Put(Arg.Any<string>(), Arg.Any<PageLoadResult>());
+    }
+
+    [Fact]
+    public async Task PreloadUrlAsync_PaywalledHttpFailure_MarksDomainNeedsJs()
+    {
+        // When HTTP fails (e.g., 403 from NYT for unauthenticated requests), mark
+        // the domain as needsJs so subsequent paywalled URLs route to browser preload.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cache = Substitute.For<IPageCache>();
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        var handler = new StubHttpHandler("<html>403</html>", System.Net.HttpStatusCode.Forbidden);
+        var httpClient = new HttpClient(handler);
+
+        using var service = new BackgroundPreloadService(
+            cache,
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("PreloadUrlAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var url = "https://www.nytimes.com/2026/01/article.html";
+        var task = (Task)method.Invoke(service, new object[] { url, CancellationToken.None })!;
+        await task;
+
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict.Should().ContainKey("https://www.nytimes.com",
+            "HTTP 403 on a paywalled domain must escalate to browser preload");
+    }
+
+    [Fact]
+    public async Task PreloadUrlAsync_NonPaywalledHttpFailure_DoesNotMarkNeedsJs()
+    {
+        // Non-paywalled domains should NOT be marked needsJs on HTTP failure —
+        // browser preload is reserved for paywalled / JS-shell sites and we don't
+        // want a transient 5xx on theverge.com to push the whole domain to browser.
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+
+        var handler = new StubHttpHandler(
+            "<html>500</html>", System.Net.HttpStatusCode.InternalServerError);
+        var httpClient = new HttpClient(handler);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var method = typeof(BackgroundPreloadService)
+            .GetMethod("PreloadUrlAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var url = "https://www.theverge.com/article";
+        var task = (Task)method.Invoke(service, new object[] { url, CancellationToken.None })!;
+        await task;
+
+        var needsJsField = typeof(BackgroundPreloadService)
+            .GetField("_needsJsDomains", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var needsJsDict = (ConcurrentDictionary<string, bool>)needsJsField.GetValue(service)!;
+        needsJsDict.Should().NotContainKey("https://www.theverge.com",
+            "non-paywalled HTTP failures should not push the domain to the browser path");
+    }
+
+    private sealed class StubHttpHandler : HttpMessageHandler
+    {
+        private readonly string _responseHtml;
+        private readonly System.Net.HttpStatusCode _status;
+
+        public StubHttpHandler(string responseHtml, System.Net.HttpStatusCode status)
+        {
+            _responseHtml = responseHtml;
+            _status = status;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(_status)
+            {
+                Content = new StringContent(_responseHtml, System.Text.Encoding.UTF8, "text/html"),
+                RequestMessage = request,
+            });
+        }
+    }
+
+    #endregion
 }
