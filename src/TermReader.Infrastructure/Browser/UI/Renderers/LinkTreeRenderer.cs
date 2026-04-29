@@ -39,17 +39,20 @@ internal class LinkTreeRenderer
             Math.Max(1, width - 6));
 
         var borderColor = p.GetDimFg().AnsiFg;
-        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+        var titleWidth = RenderHelpers.GetDisplayWidth(title);
+        var subtitleWidth = RenderHelpers.GetDisplayWidth(subtitle);
+        var boxWidth = Math.Max(titleWidth + 6, Math.Min(width - 2, 78));
 
         // ╭─ Title ──────────────────────────────────────╮
-        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        // visible cells = " " + "╭─ " + title + " " + dashes + "╮" = boxWidth + 3
+        var titlePad = Math.Max(0, boxWidth - titleWidth - 3);
         _helpers.WriteLine(
             $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
             $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
 
         // │ subtitle                                      │
-        var innerWidth = boxWidth - 2;
-        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+        // visible cells = " " + "│ " + subtitle + spaces + "│" = boxWidth + 3
+        var subtitlePad = Math.Max(0, boxWidth - subtitleWidth - 1);
         _helpers.WriteLine(
             $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
             $"{borderColor}\u2502{Reset}");

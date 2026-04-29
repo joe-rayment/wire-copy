@@ -15,6 +15,7 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 internal class CollectionRenderer
 {
     private const string Reset = "\x1b[0m";
+    private const string Bold = "\x1b[1m";
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
     private readonly PodcastCtaRenderer _podcastCtaRenderer;
@@ -37,21 +38,24 @@ internal class CollectionRenderer
         var collCount = collections.Count;
         var subtitle = $"{collCount} collection{(collCount == 1 ? string.Empty : "s")}";
         var borderColor = p.GetDimFg().AnsiFg;
-        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+        var titleWidth = RenderHelpers.GetDisplayWidth(title);
+        var subtitleWidth = RenderHelpers.GetDisplayWidth(subtitle);
+        var boxWidth = Math.Max(titleWidth + 6, Math.Min(width - 2, 78));
 
-        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        // visible cells = " " + "╭─ " + title + " " + dashes + "╮" = boxWidth + 3
+        var titlePad = Math.Max(0, boxWidth - titleWidth - 3);
         _helpers.WriteLine(
-            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}\x1b[1m{title}{Reset}" +
-            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+            $" {borderColor}╭─ {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
+            $" {borderColor}{new string('─', titlePad)}╮{Reset}");
 
-        var innerWidth = boxWidth - 2;
-        var subtitlePad = Math.Max(0, innerWidth - subtitle.Length);
+        // visible cells = " " + "│ " + subtitle + spaces + "│" = boxWidth + 3
+        var subtitlePad = Math.Max(0, boxWidth - subtitleWidth - 1);
         _helpers.WriteLine(
-            $" {borderColor}\u2502 {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
-            $"{borderColor}\u2502{Reset}");
+            $" {borderColor}│ {Reset}{p.SecondaryText.AnsiFg}{subtitle}{new string(' ', subtitlePad)}{Reset}" +
+            $"{borderColor}│{Reset}");
 
         _helpers.WriteLine(
-            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+            $" {borderColor}╰{new string('─', boxWidth)}╯{Reset}");
 
         var remainingHeight = Math.Max(3, height - _helpers.LinesWritten - 1);
         var maxVisible = remainingHeight;
@@ -129,20 +133,21 @@ internal class CollectionRenderer
         var itemCount = collection.Items.Count;
         var title = $"{RenderHelpers.TruncateText(collection.Name, Math.Max(1, width / 2))} ({itemCount} item{(itemCount == 1 ? string.Empty : "s")})";
         var borderColor = p.GetDimFg().AnsiFg;
-        var boxWidth = Math.Max(title.Length + 6, Math.Min(width - 2, 78));
+        var titleWidth = RenderHelpers.GetDisplayWidth(title);
+        var boxWidth = Math.Max(titleWidth + 6, Math.Min(width - 2, 78));
 
-        var titlePad = Math.Max(0, boxWidth - title.Length - 5);
+        var titlePad = Math.Max(0, boxWidth - titleWidth - 3);
         _helpers.WriteLine(
-            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}\x1b[1m{title}{Reset}" +
-            $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
+            $" {borderColor}╭─ {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
+            $" {borderColor}{new string('─', titlePad)}╮{Reset}");
 
-        var innerWidth = boxWidth - 2;
+        var innerWidth = boxWidth - 1;
         _helpers.WriteLine(
-            $" {borderColor}\u2502 {Reset}{new string(' ', innerWidth)}{Reset}" +
-            $"{borderColor}\u2502{Reset}");
+            $" {borderColor}│ {Reset}{new string(' ', innerWidth)}{Reset}" +
+            $"{borderColor}│{Reset}");
 
         _helpers.WriteLine(
-            $" {borderColor}\u2570{new string('\u2500', boxWidth)}\u256f{Reset}");
+            $" {borderColor}╰{new string('─', boxWidth)}╯{Reset}");
 
         // Podcast button (only shown when collection has items)
         if (collection.Items.Count > 0)
@@ -162,7 +167,7 @@ internal class CollectionRenderer
 
         if (collection.Items.Count == 0)
         {
-            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet \u2014 press{Reset} {p.GetAccentFg().AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet — press{Reset} {p.GetAccentFg().AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
         }
         else if (isCompact)
         {
@@ -211,6 +216,11 @@ internal class CollectionRenderer
         }
     }
 
+    /// <summary>
+    /// Renders collection items in standard 2-line LinkList card style:
+    /// title in pink bold (HeaderTitleFg) on line 1 (or ReadItemFg if read),
+    /// domain on line 2 in green secondary text (or dim if read), no leading dot.
+    /// </summary>
     private void RenderStandardItems(
         Collection collection,
         int selectedIndex,
@@ -227,34 +237,41 @@ internal class CollectionRenderer
             var item = collection.Items[i];
             var isSelected = i == selectedIndex;
 
-            var marker = item.IsRead
-                ? $"{p.ReadItemFg.AnsiFg}{Indicators.EmptyCircle}{Reset}"
-                : $"{p.LinkContent.AnsiFg}{Indicators.FilledCircle}{Reset}";
-
             var domain = ExtractDomain(item.Url);
 
             var isCached = options.CachedUrls?.Contains(item.Url) == true;
-            var cacheSuffix = isCached ? " \u00b7 cached" : string.Empty;
-            var domainMaxWidth = Math.Max(1, width - 10 - cacheSuffix.Length);
+            var cacheSuffix = isCached ? " · cached" : string.Empty;
+            var domainMaxWidth = Math.Max(1, width - 8 - cacheSuffix.Length);
 
-            var displayTitle = RenderHelpers.TruncateText(item.Title, width - 10);
+            var displayTitle = RenderHelpers.TruncateText(item.Title, width - 4);
             var displayDomain = RenderHelpers.TruncateText(domain, domainMaxWidth);
 
             if (isSelected)
             {
-                var markerChar = item.IsRead ? $"{Indicators.EmptyCircle}" : $"{Indicators.FilledCircle}";
-                var selectedPad = Math.Max(0, width - 6 - displayTitle.Length);
-                var plainCache = isCached ? " \u00b7 cached" : string.Empty;
-                var domainPad = Math.Max(0, width - 9 - displayDomain.Length - plainCache.Length);
-                _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $" {markerChar} {displayTitle}{new string(' ', selectedPad)} ")}");
-                _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, $"     {displayDomain}{plainCache}{new string(' ', domainPad)} ")}");
+                // Selected: accent bar + highlight bg covering both title and domain lines (LinkList style).
+                var contentWidth = width - 1;
+                var titleFg = item.IsRead ? p.ReadItemFg.AnsiFg : p.SelectedItemFg.AnsiFg;
+                var titlePad = Math.Max(0, contentWidth - 1 - displayTitle.Length);
+                _helpers.WriteLine(
+                    $" {p.HeaderBorderFg.AnsiFg}▌{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{titleFg}{Bold} {displayTitle}{new string(' ', titlePad)}{Reset}");
+
+                var plainCache = isCached ? " · cached" : string.Empty;
+                var domainContent = $"{displayDomain}{plainCache}";
+                var domainPad = Math.Max(0, contentWidth - 5 - domainContent.Length);
+                _helpers.WriteLine(
+                    $" {p.HeaderBorderFg.AnsiFg}▌{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{p.SecondaryText.AnsiFg}     {domainContent}{new string(' ', domainPad)}{Reset}");
             }
             else
             {
-                var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
-                _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}");
-                var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
-                _helpers.WriteLine($"       {p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
+                // Normal: title in pink bold (HeaderTitleFg), or ReadItemFg if read.
+                // Domain on next line indented 5 chars in green secondary (or dim if read).
+                var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.HeaderTitleFg.AnsiFg;
+                var domainColor = item.IsRead ? p.GetDimFg().AnsiFg : p.SecondaryText.AnsiFg;
+                _helpers.WriteLine($"  {titleColor}{Bold}{displayTitle}{Reset}");
+                var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}· cached{Reset}" : string.Empty;
+                _helpers.WriteLine($"       {domainColor}{displayDomain}{Reset}{cacheLabel}");
             }
 
             // Item separator between items (not after the last visible one)
@@ -271,8 +288,8 @@ internal class CollectionRenderer
     }
 
     /// <summary>
-    /// Renders collection items in compact single-line format:
-    /// marker + title + right-aligned domain on the same line.
+    /// Renders collection items in compact single-line LinkList card style:
+    /// title in pink bold (or dim if read), right-aligned domain in green/dim, no leading dot.
     /// </summary>
     private void RenderCompactItems(
         Collection collection,
@@ -291,35 +308,38 @@ internal class CollectionRenderer
             var isSelected = i == selectedIndex;
             var domain = ExtractDomain(item.Url);
             var isCached = options.CachedUrls?.Contains(item.Url) == true;
-            var cacheTag = isCached ? " \u00b7 cached" : string.Empty;
+            var cacheTag = isCached ? " · cached" : string.Empty;
 
-            // Layout: "  ▌ ● Title...          domain · cached "
-            // Prefix takes 5 chars: "  ▌ ● " (2 spaces + accent bar + space + marker + space)
-            // Suffix: " domain · cached " (space + domain + cache + space)
-            // Available for title: width - 5 (prefix) - domain.Length - cacheTag.Length - 2 (spacing)
+            // LinkList card style: no leading dot. Title left, domain right.
+            // Unselected prefix: 2 spaces. Selected prefix: " ▌ " accent bar + space.
             var maxDomainWidth = Math.Min(domain.Length, Math.Max(8, width / 4));
             var displayDomain = RenderHelpers.TruncateText(domain, maxDomainWidth);
             var suffixLen = displayDomain.Length + cacheTag.Length;
-            var titleMaxWidth = Math.Max(10, width - 7 - suffixLen);
+            var titleMaxWidth = Math.Max(10, width - 4 - suffixLen);
             var displayTitle = RenderHelpers.TruncateText(item.Title, titleMaxWidth);
 
             // Padding between title and right-aligned domain
-            var gap = Math.Max(1, width - 6 - displayTitle.Length - suffixLen);
+            var gap = Math.Max(1, width - 3 - displayTitle.Length - suffixLen);
 
             if (isSelected)
             {
-                var markerChar = item.IsRead ? $"{Indicators.EmptyCircle}" : $"{Indicators.FilledCircle}";
-                var lineContent = $" {markerChar} {displayTitle}{new string(' ', gap)}{displayDomain}{cacheTag} ";
-                _helpers.WriteLine($"  {Selection.SelectedAccentBar(p)}{Selection.Highlight(p, lineContent)}");
+                var contentWidth = width - 1;
+                var titleFg = item.IsRead ? p.ReadItemFg.AnsiFg : p.SelectedItemFg.AnsiFg;
+                var visibleLen = 1 + displayTitle.Length + gap + suffixLen;
+                var trailingPad = Math.Max(0, contentWidth - visibleLen);
+                _helpers.WriteLine(
+                    $" {p.HeaderBorderFg.AnsiFg}▌{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{titleFg}{Bold} {displayTitle}{Reset}" +
+                    $"{p.SelectedItemBg.AnsiBg}{new string(' ', gap)}" +
+                    $"{p.SecondaryText.AnsiFg}{displayDomain}{cacheTag}" +
+                    $"{new string(' ', trailingPad)}{Reset}");
             }
             else
             {
-                var marker = item.IsRead
-                    ? $"{p.ReadItemFg.AnsiFg}{Indicators.EmptyCircle}{Reset}"
-                    : $"{p.LinkContent.AnsiFg}{Indicators.FilledCircle}{Reset}";
-                var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.PrimaryText.AnsiFg;
-                var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}\u00b7 cached{Reset}" : string.Empty;
-                _helpers.WriteLine($"   {marker} {titleColor}{displayTitle}{Reset}{new string(' ', gap)}{p.SecondaryText.AnsiFg}{displayDomain}{Reset}{cacheLabel}");
+                var titleColor = item.IsRead ? p.ReadItemFg.AnsiFg : p.HeaderTitleFg.AnsiFg;
+                var domainColor = item.IsRead ? p.GetDimFg().AnsiFg : p.SecondaryText.AnsiFg;
+                var cacheLabel = isCached ? $" {p.PromptFg.AnsiFg}· cached{Reset}" : string.Empty;
+                _helpers.WriteLine($"  {titleColor}{Bold}{displayTitle}{Reset}{new string(' ', gap)}{domainColor}{displayDomain}{Reset}{cacheLabel}");
             }
 
             // Item separator between items (not after the last visible one)
