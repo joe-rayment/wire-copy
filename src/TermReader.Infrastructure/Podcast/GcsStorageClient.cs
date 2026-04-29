@@ -102,6 +102,8 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 
     /// <summary>
     /// Validates JSON content as a service account key without requiring a file on disk.
+    /// On JSON parse failure, the returned error message includes the parser's
+    /// specific complaint (line/position) so the user can see what went wrong.
     /// </summary>
     public static ServiceAccountKeyValidationResult ValidateKeyContent(string json)
     {
@@ -112,9 +114,12 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         {
             doc = JsonDocument.Parse(json);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return ServiceAccountKeyValidationResult.Invalid("Input is not valid JSON");
+            // Surface the parser's specific message (e.g. "expected '}' at line 4 pos 12")
+            // so the user can fix the actual problem instead of guessing.
+            var detail = string.IsNullOrWhiteSpace(ex.Message) ? "Input is not valid JSON" : ex.Message;
+            return ServiceAccountKeyValidationResult.Invalid($"Input is not valid JSON: {detail}");
         }
 
         using (doc)

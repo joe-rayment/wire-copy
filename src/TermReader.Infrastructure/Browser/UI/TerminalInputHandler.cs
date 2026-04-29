@@ -317,6 +317,20 @@ public class TerminalInputHandler : IInputHandler
         return null;
     }
 
+    /// <inheritdoc />
+    public void DrainBufferedInput()
+    {
+        // Drop any in-flight pending reads first so we don't fight them.
+        DrainPendingTasks();
+
+        // Drain queued keys from the channel, then wait briefly for any in-flight
+        // paste bytes the background reader hasn't enqueued yet, then drain again.
+        // Two passes catch the common case where a partial paste is mid-flight.
+        DrainChannel();
+        Thread.Sleep(50);
+        DrainChannel();
+    }
+
     /// <summary>
     /// Redraws the input text at the prompt position and sets cursor.
     /// </summary>
@@ -553,8 +567,9 @@ public class TerminalInputHandler : IInputHandler
     /// </summary>
     private static (List<ConsoleKeyInfo>? MouseKeys, ConsoleKeyInfo? LostKey) TryConsumeSgrMouseViaReadKey()
     {
-        // After Escape, check if '[' follows (CSI start)
-        if (!Console.KeyAvailable)
+        // After Escape, check if '[' follows (CSI start). Wait briefly for the next
+        // byte — terminals deliver \x1b[... in pieces and a 0ms poll races the wire.
+        if (!WaitForKeyAvailable(maxMs: 5))
         {
             return (null, null);
         }
@@ -565,7 +580,7 @@ public class TerminalInputHandler : IInputHandler
             return (null, k1); // Not a CSI — return the consumed key so it isn't lost
         }
 
-        if (!Console.KeyAvailable)
+        if (!WaitForKeyAvailable(maxMs: 5))
         {
             return (null, null); // Incomplete CSI — lost '[' is acceptable
         }
@@ -656,20 +671,55 @@ public class TerminalInputHandler : IInputHandler
     /// </summary>
     private static List<ConsoleKeyInfo>? TryConsumeBracketedPaste()
     {
+        return TryConsumeBracketedPasteFrom(
+            tryRead: () =>
+            {
+                if (!WaitForKeyAvailable(maxMs: 20))
+                {
+                    return (false, '\0', ConsoleKey.NoName);
+                }
+
+                var k = Console.ReadKey(intercept: true);
+                return (true, k.KeyChar, k.Key);
+            },
+            confirmTimeoutMs: 5,
+            endTimeoutMs: 5);
+    }
+
+    /// <summary>
+    /// Pure parser for bracketed-paste byte sequences. Takes a delegate that
+    /// pulls one (KeyChar, Key) tuple at a time and returns success/timeout.
+    /// Exposed internally so unit tests can synthesise the byte stream
+    /// \x1b[200~&lt;content&gt;\x1b[201~ without involving Console.ReadKey.
+    /// Returns null if the leading 00~ sequence does not arrive (i.e. we
+    /// were called for some other CSI starting with '2'). Otherwise returns
+    /// the accumulated paste content with \r and \n stripped — see
+    /// PromptForInputAsync notes for why those bytes must not survive.
+    /// </summary>
+    /// <remarks>
+    /// The two timeouts are passed through unchanged to the production path
+    /// but are unused by tests, which always have a key ready.
+    /// </remarks>
+#pragma warning disable SA1202 // grouped with TryConsumeBracketedPaste, the only call site
+    internal static List<ConsoleKeyInfo>? TryConsumeBracketedPasteFrom(
+        Func<(bool Ok, char KeyChar, ConsoleKey Key)> tryRead,
+        int confirmTimeoutMs = 5,
+        int endTimeoutMs = 5)
+    {
+        _ = confirmTimeoutMs; // accepted for API parity; the delegate already encodes its own timeout
+        _ = endTimeoutMs;
+
         // We've already consumed \x1b[2. Check for 00~ to confirm paste start.
         var confirmBuf = new char[3]; // expecting '0', '0', '~'
         for (int i = 0; i < 3; i++)
         {
-            if (!Console.KeyAvailable)
+            var (ok, ch, _) = tryRead();
+            if (!ok)
             {
-                Thread.Sleep(2);
-                if (!Console.KeyAvailable)
-                {
-                    return null;
-                }
+                return null;
             }
 
-            confirmBuf[i] = Console.ReadKey(intercept: true).KeyChar;
+            confirmBuf[i] = ch;
         }
 
         if (confirmBuf[0] != '0' || confirmBuf[1] != '0' || confirmBuf[2] != '~')
@@ -677,32 +727,37 @@ public class TerminalInputHandler : IInputHandler
             return null; // Not a paste sequence
         }
 
-        // Read paste content until we see \x1b[201~ (end bracket)
+        // Read paste content until we see \x1b[201~ (end bracket).
+        // Pasted newlines (\r, \n) are dropped: they would otherwise terminate
+        // PromptForInputAsync mid-paste and cascade through follow-up prompts.
+        // The remaining content is concatenated, which is fine for JSON
+        // (whitespace is not significant) and harmless for file paths.
         var pasteKeys = new List<ConsoleKeyInfo>(256);
-        var limit = 8192; // safety limit for paste size
+        var limit = 16384; // safety limit for paste size
 
         while (limit-- > 0)
         {
-            if (!Console.KeyAvailable)
+            var (ok, ch, key) = tryRead();
+            if (!ok)
             {
-                Thread.Sleep(2);
-                if (!Console.KeyAvailable)
-                {
-                    break; // Paste ended without closing bracket — return what we have
-                }
+                break; // Paste ended without closing bracket — return what we have
             }
 
-            var k = Console.ReadKey(intercept: true);
-
             // Check for end-of-paste: Escape starts \x1b[201~
-            if (k.Key == ConsoleKey.Escape)
+            if (key == ConsoleKey.Escape)
             {
                 // Try to consume [201~
                 var endBuf = new char[5];
                 var endRead = 0;
-                for (int i = 0; i < 5 && Console.KeyAvailable; i++)
+                for (int i = 0; i < 5; i++)
                 {
-                    endBuf[i] = Console.ReadKey(intercept: true).KeyChar;
+                    var (ok2, ech, _) = tryRead();
+                    if (!ok2)
+                    {
+                        break;
+                    }
+
+                    endBuf[i] = ech;
                     endRead++;
                 }
 
@@ -717,15 +772,48 @@ public class TerminalInputHandler : IInputHandler
                 continue;
             }
 
-            // Regular paste character — add to output
-            if (k.KeyChar >= 32 || k.KeyChar == '\t')
+            // Drop newlines / carriage returns inside paste — see comment above.
+            if (ch == '\r' || ch == '\n')
             {
-                var consoleKey = CharToConsoleKey(k.KeyChar);
-                pasteKeys.Add(new ConsoleKeyInfo(k.KeyChar, consoleKey, false, false, false));
+                continue;
+            }
+
+            // Regular paste character — add to output
+            if (ch >= 32 || ch == '\t')
+            {
+                var consoleKey = CharToConsoleKey(ch);
+                pasteKeys.Add(new ConsoleKeyInfo(ch, consoleKey, false, false, false));
             }
         }
 
         return pasteKeys;
+    }
+#pragma warning restore SA1202
+
+    /// <summary>
+    /// Polls Console.KeyAvailable for up to <paramref name="maxMs"/> milliseconds.
+    /// Returns true as soon as a key is ready, false if the timeout elapsed.
+    /// Used to bridge the gap between bytes of a multi-byte escape sequence
+    /// (mouse / bracketed-paste) so we don't decide it was a bare Escape too early.
+    /// </summary>
+    private static bool WaitForKeyAvailable(int maxMs)
+    {
+        if (Console.KeyAvailable)
+        {
+            return true;
+        }
+
+        var deadline = Environment.TickCount + maxMs;
+        while (Environment.TickCount < deadline)
+        {
+            Thread.Sleep(1);
+            if (Console.KeyAvailable)
+            {
+                return true;
+            }
+        }
+
+        return Console.KeyAvailable;
     }
 
     /// <summary>
@@ -767,10 +855,11 @@ public class TerminalInputHandler : IInputHandler
                     var key = Console.ReadKey(intercept: true);
 
                     // Console.ReadKey handles terminal raw mode and escape sequence parsing.
-                    // Mouse SGR sequences (\x1b[<N;X;YM) are not recognized by .NET and may
-                    // produce garbled keys. Detect and consume them: when we see Escape followed
-                    // by '[' and '<' characters in quick succession, read the full sequence.
-                    if (key.Key == ConsoleKey.Escape && Console.KeyAvailable)
+                    // Mouse SGR sequences (\x1b[<N;X;YM) and bracketed-paste markers
+                    // (\x1b[200~ ... \x1b[201~) are not recognized by .NET — detect and
+                    // consume them ourselves. After Escape, give the terminal up to ~10ms
+                    // to deliver the rest of the sequence before deciding it was a bare Esc.
+                    if (key.Key == ConsoleKey.Escape && WaitForKeyAvailable(maxMs: 10))
                     {
                         var (mouseKeys, lostKey) = TryConsumeSgrMouseViaReadKey();
                         if (mouseKeys != null)
@@ -860,5 +949,13 @@ public class TerminalInputHandler : IInputHandler
 
         // Animation ticks are fire-and-forget; safe to discard
         _pendingAnimationTick = null;
+    }
+
+    private void DrainChannel()
+    {
+        while (_keyChannel.Reader.TryRead(out _))
+        {
+            // Discard
+        }
     }
 }

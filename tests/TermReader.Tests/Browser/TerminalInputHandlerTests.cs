@@ -427,6 +427,152 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
+    public void DrainBufferedInput_DropsKeysAlreadyInChannel()
+    {
+        // Item #3 from QA: the cascade bug was caused by leftover bytes in the
+        // _keyChannel feeding the next PromptForInputAsync. DrainBufferedInput()
+        // is the single defence against that — verify it does in fact drain.
+        var channelField = typeof(TerminalInputHandler)
+            .GetField("_keyChannel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var channel = (Channel<ConsoleKeyInfo>)channelField.GetValue(_sut)!;
+
+        // Push 5 synthetic stale keys into the channel — what a partial paste
+        // would leave behind after \r terminated the prompt mid-flight.
+        foreach (var c in "stale")
+        {
+            channel.Writer.TryWrite(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+        }
+
+        // Sanity: the keys ARE in the channel before draining.
+        channel.Reader.Count.Should().Be(5);
+
+        _sut.DrainBufferedInput();
+
+        // After drain: no keys readable.
+        var hasKey = channel.Reader.TryRead(out _);
+        hasKey.Should().BeFalse("DrainBufferedInput must empty the channel of stale keys");
+    }
+
+    [Fact]
+    public async Task DrainBufferedInput_FollowedByFreshKey_ReturnsOnlyFreshKey()
+    {
+        // Item #3: simulates the wizard end-to-end shape. First "paste" leaves
+        // residue in the channel, drain is called after the parse fail, then a
+        // second "paste" arrives — only the second paste's bytes must surface.
+        var channelField = typeof(TerminalInputHandler)
+            .GetField("_keyChannel", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var channel = (Channel<ConsoleKeyInfo>)channelField.GetValue(_sut)!;
+
+        // First "paste" residue
+        foreach (var c in "garbage-from-failed-paste")
+        {
+            channel.Writer.TryWrite(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+        }
+
+        _sut.DrainBufferedInput();
+
+        // Now the second paste arrives.
+        foreach (var c in "fresh")
+        {
+            channel.Writer.TryWrite(new ConsoleKeyInfo(c, ConsoleKey.NoName, false, false, false));
+        }
+
+        // Read everything available out of the channel.
+        var seen = new System.Text.StringBuilder();
+        while (channel.Reader.TryRead(out var k))
+        {
+            seen.Append(k.KeyChar);
+        }
+
+        seen.ToString().Should().Be(
+            "fresh",
+            "after a drain the next prompt must see ONLY the fresh paste, never residue from the failed one");
+
+        // No await needed; the helper is synchronous. This is async to match
+        // the test class style and to permit future async assertions.
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void TryConsumeBracketedPasteFrom_MultiLineJson_StripsCarriageReturnsAndNewlines()
+    {
+        // Item #4: the actual bug — \r-on-first-byte in PromptForInputAsync.
+        // Synthesise the exact byte stream that arrives at TerminalInputHandler
+        // when a user pastes multi-line JSON with bracketed-paste enabled:
+        //   \x1b[200~ + JSON-with-\r\n + \x1b[201~
+        // Caller (TryConsumeSgrMouseViaReadKey) has already consumed \x1b[2,
+        // so the parser starts reading at the "00~" confirmation.
+        var json = "{\r\n  \"type\": \"service_account\",\r\n  \"project_id\": \"p\"\r\n}";
+        var stream = "00~" + json + "\x1b[201~";
+        var queue = new Queue<char>(stream);
+
+        var keys = TerminalInputHandler.TryConsumeBracketedPasteFrom(() =>
+        {
+            if (queue.Count == 0)
+            {
+                return (false, '\0', ConsoleKey.NoName);
+            }
+
+            var c = queue.Dequeue();
+            var key = c == '\x1b' ? ConsoleKey.Escape : ConsoleKey.NoName;
+            return (true, c, key);
+        });
+
+        keys.Should().NotBeNull("a properly framed paste must parse");
+        var captured = new string(keys!.Select(k => k.KeyChar).ToArray());
+
+        // Critical assertion: \r and \n inside the paste are stripped, all
+        // other characters survive in order.
+        var expected = json.Replace("\r", string.Empty).Replace("\n", string.Empty);
+        captured.Should().Be(
+            expected,
+            "the bracketed-paste parser must drop \\r and \\n so PromptForInputAsync doesn't terminate the prompt mid-paste");
+    }
+
+    [Fact]
+    public void TryConsumeBracketedPasteFrom_PemKeyEmbeddedNewlines_PreservesAllOtherCharacters()
+    {
+        // Item #5: a realistic Google service-account JSON has a private_key
+        // field containing literal `\n` escape sequences AND, when copied via
+        // `cat key.json | pbcopy`, embedded actual newlines inside the PEM
+        // block. The bracketed-paste parser must leave both forms intact
+        // (literal backslash-n) and strip only the real newlines.
+        var pemBlock = "-----BEGIN PRIVATE KEY-----\nLine1\nLine2\n-----END PRIVATE KEY-----\n";
+        var json =
+            "{\r\n" +
+            "  \"type\": \"service_account\",\r\n" +
+            "  \"private_key\": \"" + pemBlock.Replace("\n", "\\n") + "\",\r\n" +
+            "  \"client_email\": \"x@y.iam.gserviceaccount.com\"\r\n" +
+            "}";
+
+        var stream = "00~" + json + "\x1b[201~";
+        var queue = new Queue<char>(stream);
+
+        var keys = TerminalInputHandler.TryConsumeBracketedPasteFrom(() =>
+        {
+            if (queue.Count == 0)
+            {
+                return (false, '\0', ConsoleKey.NoName);
+            }
+
+            var c = queue.Dequeue();
+            var key = c == '\x1b' ? ConsoleKey.Escape : ConsoleKey.NoName;
+            return (true, c, key);
+        });
+
+        keys.Should().NotBeNull();
+        var captured = new string(keys!.Select(k => k.KeyChar).ToArray());
+
+        // Real newlines stripped, but the literal backslash-n inside the PEM
+        // string must still be a backslash followed by an n.
+        captured.Should().NotContain("\r");
+        captured.Should().NotContain("\n");
+        captured.Should().Contain("\\nLine1\\nLine2\\n", "literal escape sequences must survive untouched");
+        captured.Should().Contain("BEGIN PRIVATE KEY");
+        captured.Should().Contain("END PRIVATE KEY");
+    }
+
+    [Fact]
     public void HandleShowHelp_UsesWaitForInputAsync_NotConsoleReadKey()
     {
         // Verify that ViewCommandHandler.HandleShowHelp calls InputHandler.WaitForInputAsync

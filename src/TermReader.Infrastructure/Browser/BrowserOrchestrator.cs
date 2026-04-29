@@ -267,15 +267,18 @@ public partial class BrowserOrchestrator : IBrowserService
                 _logger.LogDebug(ex, "Error disposing browser session during SIGINT");
             }
 
-            Console.Write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+            Console.Write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");
             Console.CursorVisible = true;
             e.Cancel = false;
         };
 
         try
         {
-            // Enter alternate screen buffer, enable mouse tracking, and hide cursor
-            Console.Write("\x1b[?1049h\x1b[?1000h\x1b[?1006h");
+            // Enter alternate screen buffer, enable mouse tracking, hide cursor,
+            // and turn on bracketed-paste mode (\x1b[?2004h) so multi-line pastes
+            // arrive wrapped in \x1b[200~ ... \x1b[201~ markers our input handler
+            // can recognize and stream as a single chunk.
+            Console.Write("\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?2004h");
             Console.CursorVisible = false;
 
             // Start resize detection and pre-loading in the background
@@ -488,8 +491,8 @@ public partial class BrowserOrchestrator : IBrowserService
                 _logger.LogDebug(ex, "Error disposing services during shutdown");
             }
 
-            // Disable mouse tracking and exit alternate screen buffer
-            Console.Write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+            // Disable bracketed-paste, mouse tracking, and exit alternate screen buffer
+            Console.Write("\x1b[?2004l\x1b[?1006l\x1b[?1000l\x1b[?1049l");
             Console.CursorVisible = true;
         }
     }
