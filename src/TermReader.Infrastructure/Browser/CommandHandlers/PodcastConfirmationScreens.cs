@@ -40,6 +40,16 @@ internal static class PodcastConfirmationScreens
     }
 
     /// <summary>
+    /// User decision returned by the local-only warning panel.
+    /// </summary>
+    private enum LocalOnlyDecision
+    {
+        GenerateLocally,
+        SetUpBucket,
+        Cancel,
+    }
+
+    /// <summary>
     /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
     /// for cache/cost analysis. Returns null if the user cancels or the analysis fails.
     /// </summary>
@@ -655,6 +665,27 @@ internal static class PodcastConfirmationScreens
                         continue;
                     }
 
+                    // No GCS bucket → warn that this run is local-only and surface
+                    // the absolute output path before the user commits to TTS spend.
+                    if (!isGcsConfigured)
+                    {
+                        var decision = await ShowLocalOnlyWarningAsync(
+                            ctx, options, collection.Name, ct).ConfigureAwait(false);
+                        if (decision == LocalOnlyDecision.Cancel)
+                        {
+                            continue;
+                        }
+
+                        if (decision == LocalOnlyDecision.SetUpBucket)
+                        {
+                            rows = BuildRows();
+                            selectedIndex = Array.IndexOf(rows, ConfirmRow.GcsBucket);
+                            continue;
+                        }
+
+                        // GenerateLocally falls through to return true
+                    }
+
                     return true;
                 }
 
@@ -828,6 +859,28 @@ internal static class PodcastConfirmationScreens
     }
 
     /// <summary>
+    /// Truncates the middle of a long path with an ellipsis so both ends stay visible.
+    /// Used for output paths the user wants to copy/paste into Finder.
+    /// </summary>
+    internal static string TruncateMiddle(string text, int maxWidth)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxWidth || maxWidth <= 1)
+        {
+            return text;
+        }
+
+        if (maxWidth <= 3)
+        {
+            return new string('.', maxWidth);
+        }
+
+        var keep = maxWidth - 1; // 1 char for the ellipsis
+        var leftKeep = (keep + 1) / 2;
+        var rightKeep = keep - leftKeep;
+        return text[..leftKeep] + "…" + text[^rightKeep..];
+    }
+
+    /// <summary>
     /// Prompts the user for an OpenAI API key, validates it against the API,
     /// and persists it. Returns (handled, isConfigured) so the caller can update
     /// its loop state. Showing nothing on a blank submission is intentional —
@@ -953,5 +1006,126 @@ internal static class PodcastConfirmationScreens
         }
 
         return error;
+    }
+
+    /// <summary>
+    /// Renders an amber-bordered warning panel telling the user that without a GCS
+    /// bucket the podcast will be saved locally only (no RSS feed). Lets the user
+    /// choose between generating locally, switching to the bucket setup row, or
+    /// cancelling outright.
+    /// </summary>
+    private static async Task<LocalOnlyDecision> ShowLocalOnlyWarningAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string collectionName,
+        CancellationToken ct)
+    {
+        // Resolve the absolute output path so the user knows exactly where the
+        // M4B will land before they spend money on TTS.
+        string outputPath;
+        try
+        {
+            using var pathScope = ctx.ScopeFactory.CreateScope();
+            var orchestrator = pathScope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
+            outputPath = orchestrator.GetOutputFilePath(collectionName);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to resolve output path for warning panel");
+            outputPath = "(output path unavailable)";
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var totalWidth = Math.Max(40, options.TerminalWidth);
+            var boxWidth = Math.Min(totalWidth - 4, 78);
+            var leftPad = Math.Max(0, (totalWidth - boxWidth) / 2);
+            var pad = new string(' ', leftPad);
+            var inner = boxWidth - 2;
+            var warnFg = p.GetWarningFg().AnsiFg;
+
+            // Vertical centering — push the box down a bit so it doesn't sit at the top.
+            var topMargin = Math.Max(1, (options.TerminalHeight - 14) / 2);
+            for (var i = 0; i < topMargin; i++)
+            {
+                helpers.WriteLine();
+            }
+
+            string Border(string mid) => $"{pad}{warnFg}{mid}{Reset}";
+            string BodyLine(string content)
+            {
+                var truncated = RenderHelpers.TruncateText(content, inner - 2);
+                var visible = truncated.PadRight(inner - 2);
+                return $"{pad}{warnFg}│{Reset} {p.PrimaryText.AnsiFg}{visible}{Reset} {warnFg}│{Reset}";
+            }
+
+            string MutedLine(string content)
+            {
+                var truncated = RenderHelpers.TruncateText(content, inner - 2);
+                var visible = truncated.PadRight(inner - 2);
+                return $"{pad}{warnFg}│{Reset} {p.SecondaryText.AnsiFg}{visible}{Reset} {warnFg}│{Reset}";
+            }
+
+            string EmptyLine() => $"{pad}{warnFg}│{Reset} {new string(' ', inner - 2)} {warnFg}│{Reset}";
+
+            string KeyLine(string key, string text)
+            {
+                var combined = $"{key} {text}";
+                var padCount = Math.Max(0, inner - 2 - combined.Length);
+                return $"{pad}{warnFg}│{Reset} {p.GetAccentFg().AnsiFg}{key}{Reset} {p.PrimaryText.AnsiFg}{text}{Reset}{new string(' ', padCount)} {warnFg}│{Reset}";
+            }
+
+            helpers.WriteLine(Border("╭" + new string('─', inner) + "╮"));
+
+            // Heading line (manually padded since icon counts as 1 visible char)
+            const string heading = "⚠  No GCS bucket configured";
+            var headingPad = Math.Max(0, inner - 2 - heading.Length);
+            helpers.WriteLine($"{pad}{warnFg}│{Reset} {Bold}{warnFg}{heading}{Reset}{new string(' ', headingPad)} {warnFg}│{Reset}");
+
+            helpers.WriteLine(EmptyLine());
+            helpers.WriteLine(BodyLine("The podcast file will be saved locally only — it"));
+            helpers.WriteLine(BodyLine("will not be published as an RSS feed for podcast"));
+            helpers.WriteLine(BodyLine("apps to subscribe to."));
+            helpers.WriteLine(EmptyLine());
+            helpers.WriteLine(MutedLine("The file will be at:"));
+            helpers.WriteLine(BodyLine(TruncateMiddle(outputPath, inner - 2)));
+            helpers.WriteLine(EmptyLine());
+            helpers.WriteLine(KeyLine("[Enter]", "generate locally"));
+            helpers.WriteLine(KeyLine("[b]    ", "set up bucket first"));
+            helpers.WriteLine(KeyLine("[Esc]  ", "cancel"));
+            helpers.WriteLine(Border("╰" + new string('─', inner) + "╯"));
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                return LocalOnlyDecision.Cancel;
+            }
+
+            if (command.Type == CommandType.ActivateLink)
+            {
+                return LocalOnlyDecision.GenerateLocally;
+            }
+
+            if (command.RawKeyChar is 'b' or 'B')
+            {
+                return LocalOnlyDecision.SetUpBucket;
+            }
+
+            // Unhandled key — re-render and wait
+        }
+
+        return LocalOnlyDecision.Cancel;
     }
 }
