@@ -105,7 +105,7 @@ public record NavigationContext
     /// <summary>
     /// Current speed reading rate in words per minute.
     /// </summary>
-    public int SpeedReadWpm { get; init; } = 250;
+    public int SpeedReadWpm { get; init; } = 500;
 
     /// <summary>
     /// Whether the layout preview carousel is active.

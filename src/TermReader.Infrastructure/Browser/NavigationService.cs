@@ -35,7 +35,7 @@ public class NavigationService : INavigationService
     private bool _isAiHierarchy;
     private int _readerCursorLine;
     private bool _speedReadActive;
-    private int _speedReadWpm = 250;
+    private int _speedReadWpm = 500;
     private ToastNotification? _activeToast;
 
     // Layout preview state
