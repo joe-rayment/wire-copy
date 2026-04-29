@@ -408,10 +408,23 @@ internal static class PodcastProgressScreens
         lines.Add(string.Empty);
 
         // --- File ---
+        // Prominent path display: surrounded by box-drawing accents so the user
+        // can clearly identify (and copy/paste) the destination. Long paths get
+        // truncated in the middle to keep both ends visible.
         if (!string.IsNullOrEmpty(result.LocalFilePath))
         {
-            lines.Add($"  {p.SecondaryText.AnsiFg}File{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}{result.LocalFilePath}{Reset}");
+            lines.Add($"  {p.SecondaryText.AnsiFg}File saved to{Reset}");
+
+            var pathInner = Math.Max(10, width - 6);
+            var displayPath = PodcastConfirmationScreens.TruncateMiddle(
+                result.LocalFilePath, pathInner - 2);
+            var bar = new string('─', pathInner);
+            lines.Add($"    {p.HeaderBorderFg.AnsiFg}╭{bar}╮{Reset}");
+            var paddedPath = displayPath.PadRight(pathInner - 2);
+            lines.Add(
+                $"    {p.HeaderBorderFg.AnsiFg}│ {p.HeaderTitleFg.AnsiFg}" +
+                $"{paddedPath}{p.HeaderBorderFg.AnsiFg} │{Reset}");
+            lines.Add($"    {p.HeaderBorderFg.AnsiFg}╰{bar}╯{Reset}");
             lines.Add(string.Empty);
         }
 
