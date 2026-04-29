@@ -438,13 +438,24 @@ internal sealed class BackgroundPreloadService : IPreloadService
             }
 
             // Paywalled domains: section pages are free (always preload),
-            // article pages need cookies (skip if unauthenticated)
+            // article pages need cookies (skip if unauthenticated). When a browser
+            // session is available with cookies, route paywalled articles directly
+            // to the browser path — HTTP-with-cookies on these sites returns thin
+            // previews even when the request is technically authenticated.
             if (IsPaywalledDomain(url))
             {
-                if (PageClassifier.IsSectionUrlPattern(url) || _hasPaywalledCookies)
+                var isSection = PageClassifier.IsSectionUrlPattern(url);
+                if (isSection || _hasPaywalledCookies)
                 {
                     allEligibleWithIndex.Add((url, i));
-                    TryAddEligibleUrl(url, i, needsJs, items);
+                    if (!isSection && CanBrowserPreload && !IsUrlCached(url))
+                    {
+                        items.Add(new PreloadItem(url, i, NeedsBrowser: true));
+                    }
+                    else
+                    {
+                        TryAddEligibleUrl(url, i, needsJs, items);
+                    }
                 }
                 else
                 {
@@ -513,9 +524,26 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 continue;
             }
 
-            // Paywalled domains: skip if no cookies, include if authenticated
-            if (IsPaywalledDomain(url) && !_hasPaywalledCookies)
+            // Paywalled domains: skip if no cookies, include if authenticated.
+            // Articles route directly to browser preload when a browser session is
+            // available — HTTP-with-cookies returns thin previews on these sites.
+            if (IsPaywalledDomain(url))
             {
+                if (!_hasPaywalledCookies)
+                {
+                    continue;
+                }
+
+                allEligibleWithIndex.Add((url, i));
+                if (!PageClassifier.IsSectionUrlPattern(url) && CanBrowserPreload && !IsUrlCached(url))
+                {
+                    items.Add(new PreloadItem(url, i, NeedsBrowser: true));
+                }
+                else
+                {
+                    TryAddEligibleUrl(url, i, needsJs, items);
+                }
+
                 continue;
             }
 
@@ -1056,10 +1084,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 }
                 else if (IsPaywalledDomain(url) && !CachingPageLoader.HasSufficientContent(result.Html, MinPaywalledWordCount))
                 {
-                    // Paywalled domain passed basic checks but has too few words.
-                    // Cookies may not have loaded correctly (domain mismatch, encryption
-                    // error), resulting in a truncated preview. Don't cache — the browser
-                    // with cookies will get the full article.
+                    // Paywalled domain passed basic checks but has too few words —
+                    // a thin preview slipped through. Mark the domain as needsJs so
+                    // future paywalled URLs route to the browser path instead.
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                    }
+
                     _logger.LogDebug(
                         "Skipping cache for paywalled domain with insufficient content (<{MinWords} words): {Url}",
                         MinPaywalledWordCount,
@@ -1088,6 +1121,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
             else
             {
                 _logger.LogDebug("Pre-load failed for {Url}: {Error}", url, result.ErrorMessage);
+
+                // Paywalled domains often return 4xx/5xx for unauthenticated HTTP requests
+                // even with cookies attached. Mark the domain as needsJs so subsequent
+                // URLs route through the browser path.
+                if (IsPaywalledDomain(url))
+                {
+                    var origin = UrlNormalizer.GetOrigin(url);
+                    if (origin != null)
+                    {
+                        _needsJsDomains[origin] = true;
+                    }
+                }
             }
 
             tcs.TrySetResult(result);
