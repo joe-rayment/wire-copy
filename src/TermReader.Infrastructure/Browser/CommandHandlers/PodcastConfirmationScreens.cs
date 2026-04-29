@@ -50,6 +50,107 @@ internal static class PodcastConfirmationScreens
     }
 
     /// <summary>
+    /// Pure helper that renders one selectable confirmation row with a stable column
+    /// layout regardless of selection state.
+    ///
+    /// Layout (visible columns, ANSI escapes excluded):
+    ///   col 0..1  : 2-space outer margin
+    ///   col 2     : selection-indicator gutter (▌ when selected, blank otherwise)
+    ///   col 3     : single space separator
+    ///   col 4     : status icon
+    ///   col 5     : single space
+    ///   col 6...  : label (padded to <paramref name="labelCol"/>), value, then right-aligned action
+    ///
+    /// The selection indicator lives in a fixed-width gutter so the label/value
+    /// text never shifts horizontally between selected and unselected rows. The
+    /// optional sub-line is indented to col 6 so it visually attaches to the row.
+    /// </summary>
+    /// <returns>(mainLine, subLine) — subLine is null when neither warning nor helper text was provided.</returns>
+    internal static (string MainLine, string? SubLine) BuildConfirmationRow(
+        ThemePalette palette,
+        int width,
+        bool isSelected,
+        bool isWarning,
+        string statusIcon,
+        string statusColor,
+        string label,
+        string value,
+        string valueColor,
+        string actionLabel,
+        string? warningText = null,
+        string? helperText = null,
+        int labelCol = 24)
+    {
+        var indicatorChar = isSelected ? "▌" : " ";
+        var indicatorColor = isWarning ? palette.GetWarningFg().AnsiFg : palette.GetMutedFg().AnsiFg;
+        var indicatorCell = $"{indicatorColor}{indicatorChar}{Reset}";
+
+        var paddedLabel = label.Length < labelCol ? label + new string(' ', labelCol - label.Length) : label;
+
+        // When the row is in a warning state, override the label/value colors
+        // so the whole row visually owns its error state.
+        var effectiveStatusColor = isWarning ? palette.GetWarningFg().AnsiFg : statusColor;
+        var effectiveLabelColor = isWarning ? palette.GetWarningFg().AnsiFg : palette.PrimaryText.AnsiFg;
+        var effectiveValueColor = isWarning ? palette.GetWarningFg().AnsiFg : valueColor;
+
+        var actionBtn = $"{palette.GetAccentFg().AnsiFg}[Enter]{Reset} {palette.PrimaryText.AnsiFg}{actionLabel}{Reset}";
+
+        // Visible-character widths (used to right-align the action button)
+        const int marginLen = 2;     // "  "
+        const int gutterLen = 1;     // ▌ or space
+        const int gapLen = 1;        // space between gutter and content
+        var contentPlainLen = 1 /*statusIcon*/ + 1 /*space*/ + paddedLabel.Length + value.Length;
+        var actionPlainLen = "[Enter] ".Length + actionLabel.Length;
+        var totalPlainLen = marginLen + gutterLen + gapLen + contentPlainLen + actionPlainLen;
+        var pad = Math.Max(2, width - totalPlainLen);
+
+        var content = $"{effectiveStatusColor}{statusIcon}{Reset} " +
+                      $"{effectiveLabelColor}{paddedLabel}{Reset}" +
+                      $"{effectiveValueColor}{value}{Reset}";
+
+        string mainLine;
+        if (isSelected)
+        {
+            // Highlight the content area only — the outer margin and indicator gutter
+            // stay outside the highlight so the gutter remains visible and the content
+            // does not horizontally shift.
+            mainLine = $"  {indicatorCell} " +
+                       $"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{content}{new string(' ', pad)}{actionBtn}{Reset}";
+        }
+        else
+        {
+            mainLine = $"  {indicatorCell} {content}{new string(' ', pad)}{actionBtn}";
+        }
+
+        string? subLine = null;
+        const string subIndent = "      "; // 2 margin + 1 gutter + 1 gap + 2 (icon+space) = 6
+        if (warningText != null)
+        {
+            subLine = $"{subIndent}{palette.GetWarningFg().AnsiFg}{warningText}{Reset}";
+        }
+        else if (helperText != null)
+        {
+            subLine = $"{subIndent}{palette.SecondaryText.AnsiFg}{helperText}{Reset}";
+        }
+
+        return (mainLine, subLine);
+    }
+
+    /// <summary>
+    /// Strips CSI ANSI escape sequences so callers can compute visible column
+    /// positions (e.g. for layout assertions in tests).
+    /// </summary>
+    internal static string StripAnsi(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            return s;
+        }
+
+        return System.Text.RegularExpressions.Regex.Replace(s, "\x1b\\[[0-9;]*[A-Za-z]", string.Empty);
+    }
+
+    /// <summary>
     /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
     /// for cache/cost analysis. Returns null if the user cancels or the analysis fails.
     /// </summary>
@@ -374,17 +475,13 @@ internal static class PodcastConfirmationScreens
             : [ConfirmRow.TtsKey, ConfirmRow.GcsBucket, ConfirmRow.Generate];
 
         var rows = BuildRows();
-        var selectedIndex = Array.FindIndex(rows, r => r switch
-        {
-            ConfirmRow.TtsKey => !isTtsConfigured,
-            ConfirmRow.GcsKey => !isKeyConfigured,
-            ConfirmRow.GcsBucket => !isGcsConfigured,
-            _ => false,
-        });
-        if (selectedIndex < 0)
-        {
-            selectedIndex = Array.IndexOf(rows, ConfirmRow.Generate);
-        }
+
+        // Always focus the first row on screen entry so the screen reads as a menu.
+        // The user can navigate down to any unconfigured row or to the Generate
+        // action; previously we'd auto-jump to whichever row was unconfigured (or
+        // straight to Generate when everything was configured), which made the
+        // focused state ambiguous on entry.
+        var selectedIndex = 0;
 
         // Resolve Anthropic services for AI Hierarchy status (optional — may not be registered)
         bool isAnthropicConfigured = false;
@@ -435,44 +532,76 @@ internal static class PodcastConfirmationScreens
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Credentials{Reset}");
 
             // Helper: render a selectable row with status icon, label, value, and right-aligned action button.
-            // When selected, the row gets a ▌ accent bar in muted + sel-bg fill.
-            void RenderRow(ConfirmRow rowId, string statusIcon, string statusColor, string label, string value, string valueColor, string actionLabel)
+            // Delegates to BuildConfirmationRow (a pure helper) so the layout logic
+            // can be unit-tested in isolation.
+            void RenderRow(
+                ConfirmRow rowId,
+                string statusIcon,
+                string statusColor,
+                string label,
+                string value,
+                string valueColor,
+                string actionLabel,
+                bool isWarning = false,
+                string? warningText = null,
+                string? helperText = null)
             {
                 var isSelected = rows[selectedIndex] == rowId;
-                var prefix = isSelected
-                    ? $"  {p.GetMutedFg().AnsiFg}▌{Reset} "
-                    : "    ";
-
-                // Layout: "icon  label                value           [Enter] action"
-                // We pad the label column to ~24 cols so values align.
-                const int labelCol = 24;
-                var paddedLabel = label.Length < labelCol ? label + new string(' ', labelCol - label.Length) : label;
-
-                var actionBtn = $"{p.GetAccentFg().AnsiFg}[Enter]{Reset} {p.PrimaryText.AnsiFg}{actionLabel}{Reset}";
-
-                // Compute body before the action button so we can right-align the button.
-                var body = $"{statusColor}{statusIcon}{Reset} {paddedLabel}{valueColor}{value}{Reset}";
-                var bodyPlainLen = 1 + 1 + paddedLabel.Length + value.Length; // icon + space + label + value
-                var actionPlainLen = "[Enter] ".Length + actionLabel.Length;
-                var totalPlainLen = 4 /*prefix*/ + bodyPlainLen + actionPlainLen;
-                var pad = Math.Max(2, width - totalPlainLen);
-
-                var line = isSelected
-                    ? $"{prefix}{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {body} {new string(' ', pad - 2)}{actionBtn} {Reset}"
-                    : $"{prefix}{body}{new string(' ', pad)}{actionBtn}";
-                helpers.WriteLine(line);
+                var (mainLine, subLine) = BuildConfirmationRow(
+                    p,
+                    width,
+                    isSelected,
+                    isWarning,
+                    statusIcon,
+                    statusColor,
+                    label,
+                    value,
+                    valueColor,
+                    actionLabel,
+                    warningText,
+                    helperText);
+                helpers.WriteLine(mainLine);
+                if (subLine != null)
+                {
+                    helpers.WriteLine(subLine);
+                }
             }
 
             // OpenAI TTS API key row
+            //
+            // The TtsKey row owns its own error/warning text on a sub-line directly
+            // beneath it, rather than emitting a disconnected error at the bottom of
+            // the screen. inlineError is set when the user attempts Generate without
+            // a TTS key — surface it right where the fix needs to happen.
             if (isTtsConfigured)
             {
-                RenderRow(ConfirmRow.TtsKey, "●", p.PromptFg.AnsiFg, "OpenAI TTS API key", "configured", p.PromptFg.AnsiFg, "Change");
+                RenderRow(
+                    ConfirmRow.TtsKey,
+                    "●",
+                    p.PromptFg.AnsiFg,
+                    "OpenAI TTS API key",
+                    "configured",
+                    p.PromptFg.AnsiFg,
+                    "Change",
+                    isWarning: false,
+                    warningText: inlineError);
             }
             else
             {
-                RenderRow(ConfirmRow.TtsKey, "○", p.ErrorFg.AnsiFg, "OpenAI TTS API key", "not set", p.ErrorFg.AnsiFg, "Set up");
-                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Required — get a key at platform.openai.com/api-keys{Reset}");
+                RenderRow(
+                    ConfirmRow.TtsKey,
+                    "○",
+                    p.GetWarningFg().AnsiFg,
+                    "OpenAI TTS API key",
+                    "not set",
+                    p.GetWarningFg().AnsiFg,
+                    "Set up",
+                    isWarning: true,
+                    warningText: inlineError ?? "Required — get a key at platform.openai.com/api-keys");
             }
+
+            // Clear inlineError now that it's been surfaced under the relevant row.
+            inlineError = null;
 
             // GCS service account key row
             if (gcsClient != null)
@@ -480,33 +609,68 @@ internal static class PodcastConfirmationScreens
                 if (isKeyConfigured && keyPath is not null)
                 {
                     var displayPath = keyPath.Length > 30 ? "…" + keyPath[^29..] : keyPath;
-                    RenderRow(ConfirmRow.GcsKey, "●", p.PromptFg.AnsiFg, "GCS service account", displayPath, p.PromptFg.AnsiFg, "Change");
+                    RenderRow(
+                        ConfirmRow.GcsKey,
+                        "●",
+                        p.PromptFg.AnsiFg,
+                        "GCS service account",
+                        displayPath,
+                        p.PromptFg.AnsiFg,
+                        "Change");
                 }
                 else
                 {
-                    RenderRow(ConfirmRow.GcsKey, "○", p.SecondaryText.AnsiFg, "GCS service account", "not set", p.SecondaryText.AnsiFg, "Set up");
-                    helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional — enables RSS feed publishing to Google Cloud Storage{Reset}");
+                    RenderRow(
+                        ConfirmRow.GcsKey,
+                        "○",
+                        p.SecondaryText.AnsiFg,
+                        "GCS service account",
+                        "not set",
+                        p.SecondaryText.AnsiFg,
+                        "Set up",
+                        helperText: "Optional — enables RSS feed publishing to Google Cloud Storage");
                 }
             }
 
             // GCS bucket row
-            if (isGcsConfigured)
+            //
+            // When bucketError is non-null we paint the entire row in warning color
+            // so the visual error attaches to the row, not to a stray bottom message.
+            if (bucketError != null)
             {
-                RenderRow(ConfirmRow.GcsBucket, "●", p.PromptFg.AnsiFg, "GCS bucket", gcsConfig.BucketName ?? string.Empty, p.PromptFg.AnsiFg, "Change");
+                RenderRow(
+                    ConfirmRow.GcsBucket,
+                    "○",
+                    p.GetWarningFg().AnsiFg,
+                    "GCS bucket",
+                    isGcsConfigured ? (gcsConfig.BucketName ?? string.Empty) : "not set",
+                    p.GetWarningFg().AnsiFg,
+                    "Change",
+                    isWarning: true,
+                    warningText: bucketError);
+            }
+            else if (isGcsConfigured)
+            {
+                RenderRow(
+                    ConfirmRow.GcsBucket,
+                    "●",
+                    p.PromptFg.AnsiFg,
+                    "GCS bucket",
+                    gcsConfig.BucketName ?? string.Empty,
+                    p.PromptFg.AnsiFg,
+                    "Change");
             }
             else
             {
-                RenderRow(ConfirmRow.GcsBucket, "○", p.SecondaryText.AnsiFg, "GCS bucket", "not set (local-only)", p.SecondaryText.AnsiFg, "Set up");
-            }
-
-            if (bucketError != null)
-            {
-                helpers.WriteLine($"      {p.ErrorFg.AnsiFg}{bucketError}{Reset}");
-            }
-            else if (!isGcsConfigured)
-            {
-                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Optional — enables RSS feed for podcast apps{Reset}");
-                helpers.WriteLine($"      {p.SecondaryText.AnsiFg}Format: my-bucket-name (3–63 chars, lowercase, a–z/0–9/hyphens/dots){Reset}");
+                RenderRow(
+                    ConfirmRow.GcsBucket,
+                    "○",
+                    p.SecondaryText.AnsiFg,
+                    "GCS bucket",
+                    "not set (local-only)",
+                    p.SecondaryText.AnsiFg,
+                    "Set up",
+                    helperText: "Optional — enables RSS feed for podcast apps");
             }
 
             // --- AI Hierarchy ---
@@ -519,13 +683,6 @@ internal static class PodcastConfirmationScreens
             helpers.WriteLine(aiKeyIndicator);
             helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Model:{Reset}                  {p.PrimaryText.AnsiFg}{anthropicModel}{Reset}");
             helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Saved Configs:{Reset}          {p.PrimaryText.AnsiFg}{savedConfigCount}{Reset}");
-
-            if (inlineError != null)
-            {
-                helpers.WriteLine();
-                helpers.WriteLine($"      {p.ErrorFg.AnsiFg}Error: {inlineError}{Reset}");
-                inlineError = null;
-            }
 
             // --- Output ---
             helpers.WriteLine();
