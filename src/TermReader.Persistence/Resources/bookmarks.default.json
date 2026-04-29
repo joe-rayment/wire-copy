@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "bookmarks": [
+    { "name": "Maclean's", "url": "https://macleans.ca" },
+    { "name": "CBC News", "url": "https://www.cbc.ca/news" },
+    { "name": "NYT Today's Paper", "url": "https://www.nytimes.com/section/todayspaper" },
+    { "name": "The Verge", "url": "https://www.theverge.com" },
+    { "name": "The Toronto Star", "url": "https://www.thestar.com" },
+    { "name": "Techmeme", "url": "https://www.techmeme.com" },
+    { "name": "Wall Street Journal", "url": "https://www.wsj.com" },
+    { "name": "Wired", "url": "https://www.wired.com" },
+    { "name": "The New Yorker", "url": "https://www.newyorker.com" }
+  ]
+}

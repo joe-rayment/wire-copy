@@ -57,42 +57,4 @@ public class BookmarkRepository : IBookmarkRepository
             .MaxAsync(b => (int?)b.SortOrder, cancellationToken);
         return (maxOrder ?? -1) + 1;
     }
-
-    public async Task SeedDefaultsAsync(CancellationToken cancellationToken = default)
-    {
-        // Additive seed: add any default that isn't already present by URL.
-        // This way defaults added in later releases (e.g. Wired, The New Yorker)
-        // land for existing users instead of being skipped because the table
-        // wasn't empty at first launch.
-        var defaults = new[]
-        {
-            ("Maclean's", "https://macleans.ca"),
-            ("CBC News", "https://www.cbc.ca/news"),
-            ("NYT Today's Paper", "https://www.nytimes.com/section/todayspaper"),
-            ("The Verge", "https://www.theverge.com"),
-            ("The Toronto Star", "https://www.thestar.com"),
-            ("Techmeme", "https://www.techmeme.com"),
-            ("Wall Street Journal", "https://www.wsj.com"),
-            ("Wired", "https://www.wired.com"),
-            ("The New Yorker", "https://www.newyorker.com"),
-        };
-
-        var existingUrls = await _context.Set<Bookmark>()
-            .Select(b => b.Url)
-            .ToListAsync(cancellationToken);
-        var existingUrlSet = new HashSet<string>(existingUrls, StringComparer.OrdinalIgnoreCase);
-
-        var nextSortOrder = await GetNextSortOrderAsync(cancellationToken);
-
-        foreach (var (name, url) in defaults)
-        {
-            if (existingUrlSet.Contains(url))
-            {
-                continue;
-            }
-
-            _context.Set<Bookmark>().Add(Bookmark.Create(name, url, nextSortOrder));
-            nextSortOrder++;
-        }
-    }
 }
