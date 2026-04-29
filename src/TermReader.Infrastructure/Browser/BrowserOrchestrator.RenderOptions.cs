@@ -67,8 +67,8 @@ public partial class BrowserOrchestrator
             var readerWidth = variant switch
             {
                 "FullWidth" => terminalWidth - 2,
-                "Narrow" => Math.Min(60, terminalWidth - 2),
-                _ => Math.Min(80, terminalWidth - 2), // Comfortable (default)
+                "Narrow" => Math.Min(50, terminalWidth - 2),
+                _ => Math.Min(60, terminalWidth - 2), // Comfortable (default) — narrow for tighter, more readable lines
             };
             return Math.Clamp(readerWidth, min, MaxContentWidth);
         }
