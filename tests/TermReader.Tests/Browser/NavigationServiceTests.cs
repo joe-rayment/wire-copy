@@ -260,9 +260,9 @@ public class NavigationServiceTests
     // Speed reading tests
 
     [Fact]
-    public void SpeedRead_DefaultWpm_Is250()
+    public void SpeedRead_DefaultWpm_Is500()
     {
-        _sut.CurrentContext.SpeedReadWpm.Should().Be(250);
+        _sut.CurrentContext.SpeedReadWpm.Should().Be(500);
     }
 
     [Fact]
@@ -295,8 +295,8 @@ public class NavigationServiceTests
     {
         _sut.AdjustSpeedReadWpm(50);
 
-        _sut.SpeedReadWpm.Should().Be(300);
-        _sut.CurrentContext.SpeedReadWpm.Should().Be(300);
+        _sut.SpeedReadWpm.Should().Be(550);
+        _sut.CurrentContext.SpeedReadWpm.Should().Be(550);
     }
 
     [Fact]
@@ -304,13 +304,13 @@ public class NavigationServiceTests
     {
         _sut.AdjustSpeedReadWpm(-50);
 
-        _sut.SpeedReadWpm.Should().Be(200);
+        _sut.SpeedReadWpm.Should().Be(450);
     }
 
     [Fact]
     public void AdjustSpeedReadWpm_ClampsAtMinimum50()
     {
-        _sut.AdjustSpeedReadWpm(-500);
+        _sut.AdjustSpeedReadWpm(-1000);
 
         _sut.SpeedReadWpm.Should().Be(50);
     }
