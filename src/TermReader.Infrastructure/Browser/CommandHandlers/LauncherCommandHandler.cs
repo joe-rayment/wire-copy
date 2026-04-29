@@ -287,11 +287,14 @@ internal static class LauncherCommandHandler
         ctx.NavigationService.LauncherSelectedIndex = -1;
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-        // Calculate URL bar position for inline input (must match RenderUrlBar)
+        // Calculate URL bar position for inline input (must match RenderUrlBar).
+        // The URL bar's vertical position depends on which header variant is shown
+        // (large 6-row wordmark vs. narrow single-line title), so we delegate the
+        // row math to LauncherRenderer.ComputeUrlBarInputRow rather than hard-coding it.
         var width = Math.Max(1, options.TerminalWidth - 2);
         var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
         var pad = Math.Max(0, (width - barWidth) / 2);
-        const int urlBarRow = 5; // Row where the URL bar content line is rendered
+        var urlBarRow = LauncherRenderer.ComputeUrlBarInputRow(options.TerminalWidth);
         var inputCol = pad + 2;  // Inside the box border
 
         // Pre-seed with the initial character if provided (user started typing on URL bar)

@@ -107,7 +107,10 @@ internal class LauncherRenderer
         // Large wordmark: border + pad + 6 art rows + subtitle + pad + border = 11
         // Narrow: border + title + subtitle + pad + border = 5
         // Threshold: large wordmark needs WordmarkWidth (87) + 8 chars of margin/border.
-        var headerLines = terminalWidth >= WordmarkWidth + 8 ? 11 : 5;
+        // Note: RenderHeader switches on the INNER width (terminalWidth - 2), so we
+        // must mirror that calculation here to avoid an off-by-two mismatch at the
+        // boundary (terminalWidth ∈ {95, 96}).
+        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
 
@@ -156,6 +159,30 @@ internal class LauncherRenderer
             CellWidth: cellWidth,
             HeaderLines: headerLines + urlBarLines,
             FooterLines: footerLines);
+    }
+
+    /// <summary>
+    /// Returns the absolute terminal row (0-based) of the URL bar's input line,
+    /// matching the layout produced by <see cref="RenderHeader"/> followed by
+    /// <see cref="RenderUrlBar"/>. The URL bar input line is the second of three
+    /// box rows, after one leading blank line written by <see cref="RenderUrlBar"/>.
+    /// </summary>
+    /// <remarks>
+    /// Header line counts (must mirror <see cref="RenderHeader"/>):
+    /// <list type="bullet">
+    ///   <item>Large wordmark (terminalWidth &gt;= WordmarkWidth + 8): top border + blank + 6 wordmark + subtitle + blank + bottom border = 11.</item>
+    ///   <item>Narrow: top border + title + subtitle + blank + bottom border = 5.</item>
+    /// </list>
+    /// URL bar lines (must mirror <see cref="RenderUrlBar"/>): blank + top border + content + bottom border + blank.
+    /// The input line is therefore at headerLines + 2 (1 blank + 1 top border).
+    /// </remarks>
+    internal static int ComputeUrlBarInputRow(int terminalWidth)
+    {
+        // RenderHeader switches on the INNER width (terminalWidth - 2), so we
+        // must mirror that calculation here to avoid an off-by-two mismatch at
+        // the boundary (terminalWidth ∈ {95, 96}).
+        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
+        return headerLines + 2;
     }
 
     internal static string ExtractDomain(string url)
