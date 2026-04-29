@@ -274,7 +274,7 @@ internal class LauncherRenderer
         var selFg = p.SelectedItemFg.AnsiFg;
         var selBg = p.SelectedItemBg.AnsiBg;
 
-        // Accent bar column (1 char) — not highlighted
+        // Accent bar column (1 char) — not highlighted, has its own muted color
         if (showAccent)
         {
             sb.Append(Selection.AccentBar(p));
@@ -284,7 +284,8 @@ internal class LauncherRenderer
             sb.Append(' ');
         }
 
-        // Remaining width gets full highlight background on every line
+        // Every line of the selected cell gets sel-bg across the full contentWidth.
+        // contentWidth is the cell width minus the accent bar column.
         var contentWidth = cellWidth - 1;
 
         if (lineIdx == nameLineIdx)
@@ -313,9 +314,17 @@ internal class LauncherRenderer
             sb.Append($"{truncDomain}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncDomain.Length))}{Reset}");
         }
+        else if (showAccent)
+        {
+            // Blank line within the content block (e.g. line 3 of a 5-line cell) —
+            // fill full contentWidth with sel-bg so the highlight forms a
+            // continuous rectangle across the selected cell.
+            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
+        }
         else
         {
-            // Padding lines — no background fill, just empty space
+            // Top/bottom padding lines outside the accent range — no highlight,
+            // matching LinkTreeRenderer's behavior for outside-content-block lines.
             sb.Append(new string(' ', contentWidth));
         }
 
@@ -519,7 +528,9 @@ internal class LauncherRenderer
         var selBg = p.SelectedItemBg.AnsiBg;
         var sb = new System.Text.StringBuilder();
 
-        // Accent bar on lines 0 and 1
+        // Accent bar on lines 0 and 1 (badge+name and domain). Line 2 is a
+        // separator, so no accent bar there but the highlight bg still extends
+        // across the full contentWidth so the selection reads as one cell.
         if (lineIdx <= 1)
         {
             sb.Append(Selection.AccentBar(p));
@@ -548,8 +559,9 @@ internal class LauncherRenderer
         }
         else
         {
-            // Blank separator line
-            sb.Append(new string(' ', contentWidth));
+            // Blank separator line — fill with sel-bg so the highlight is a
+            // complete rectangle across the cell.
+            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
         return sb.ToString();
