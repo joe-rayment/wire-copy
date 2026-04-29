@@ -228,14 +228,15 @@ public class BookmarkServiceTests : TestDatabaseFixture
     }
 
     [Fact]
-    public async Task EnsureSeededAsync_DoesNotSeedWhenBookmarksExist()
+    public async Task EnsureSeededAsync_AddsMissingDefaults_AlongsideUserBookmarks()
     {
         await _sut.AddBookmarkAsync("Custom", "https://custom.com");
         await _sut.EnsureSeededAsync();
 
         var all = await _sut.GetAllBookmarksAsync();
-        all.Should().HaveCount(1); // Only the custom one
-        all[0].Name.Should().Be("Custom");
+        all.Should().Contain(b => b.Url == "https://custom.com", "user-added bookmark preserved");
+        all.Should().Contain(b => b.Url == "https://www.wired.com", "missing default added");
+        all.Where(b => b.Url == "https://custom.com").Should().HaveCount(1, "no duplicates of the user bookmark");
     }
 
     #endregion

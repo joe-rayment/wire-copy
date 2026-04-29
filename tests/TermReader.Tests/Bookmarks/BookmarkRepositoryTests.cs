@@ -140,8 +140,9 @@ public class BookmarkRepositoryTests : TestDatabaseFixture
     }
 
     [Fact]
-    public async Task SeedDefaultsAsync_NonEmptyTable_DoesNotSeed()
+    public async Task SeedDefaultsAsync_NonEmptyTable_AddsMissingDefaultsAdditively()
     {
+        // Existing bookmark uses an unrelated URL; every default is missing.
         await _sut.AddAsync(Bookmark.Create("Existing", "https://existing.com", 0));
         await DbContext.SaveChangesAsync();
 
@@ -149,7 +150,25 @@ public class BookmarkRepositoryTests : TestDatabaseFixture
         await DbContext.SaveChangesAsync();
 
         var all = await _sut.GetAllAsync();
-        all.Should().HaveCount(1);
+        all.Should().Contain(b => b.Url == "https://existing.com");
+        all.Should().Contain(b => b.Url == "https://www.wired.com");
+        all.Should().Contain(b => b.Url == "https://www.newyorker.com");
+        all.Count.Should().BeGreaterThan(1, "additive seed should add the missing defaults");
+    }
+
+    [Fact]
+    public async Task SeedDefaultsAsync_OneDefaultAlreadyPresent_AddsOnlyTheMissingOnes()
+    {
+        // Pre-seed one of the defaults; re-seed must not duplicate it.
+        await _sut.AddAsync(Bookmark.Create("Wired", "https://www.wired.com", 0));
+        await DbContext.SaveChangesAsync();
+
+        await _sut.SeedDefaultsAsync();
+        await DbContext.SaveChangesAsync();
+
+        var all = await _sut.GetAllAsync();
+        all.Where(b => b.Url == "https://www.wired.com").Should().HaveCount(1, "no duplicate insert");
+        all.Should().Contain(b => b.Url == "https://www.newyorker.com", "missing default added");
     }
 
     #endregion

@@ -60,28 +60,39 @@ public class BookmarkRepository : IBookmarkRepository
 
     public async Task SeedDefaultsAsync(CancellationToken cancellationToken = default)
     {
-        var any = await _context.Set<Bookmark>().AnyAsync(cancellationToken);
-        if (any)
-        {
-            return;
-        }
-
+        // Additive seed: add any default that isn't already present by URL.
+        // This way defaults added in later releases (e.g. Wired, The New Yorker)
+        // land for existing users instead of being skipped because the table
+        // wasn't empty at first launch.
         var defaults = new[]
         {
-            Bookmark.Create("Maclean's", "https://macleans.ca", 0),
-            Bookmark.Create("CBC News", "https://www.cbc.ca/news", 1),
-            Bookmark.Create("NYT Today's Paper", "https://www.nytimes.com/section/todayspaper", 2),
-            Bookmark.Create("The Verge", "https://www.theverge.com", 3),
-            Bookmark.Create("The Toronto Star", "https://www.thestar.com", 4),
-            Bookmark.Create("Techmeme", "https://www.techmeme.com", 5),
-            Bookmark.Create("Wall Street Journal", "https://www.wsj.com", 6),
-            Bookmark.Create("Wired", "https://www.wired.com", 7),
-            Bookmark.Create("The New Yorker", "https://www.newyorker.com", 8),
+            ("Maclean's", "https://macleans.ca"),
+            ("CBC News", "https://www.cbc.ca/news"),
+            ("NYT Today's Paper", "https://www.nytimes.com/section/todayspaper"),
+            ("The Verge", "https://www.theverge.com"),
+            ("The Toronto Star", "https://www.thestar.com"),
+            ("Techmeme", "https://www.techmeme.com"),
+            ("Wall Street Journal", "https://www.wsj.com"),
+            ("Wired", "https://www.wired.com"),
+            ("The New Yorker", "https://www.newyorker.com"),
         };
 
-        foreach (var bookmark in defaults)
+        var existingUrls = await _context.Set<Bookmark>()
+            .Select(b => b.Url)
+            .ToListAsync(cancellationToken);
+        var existingUrlSet = new HashSet<string>(existingUrls, StringComparer.OrdinalIgnoreCase);
+
+        var nextSortOrder = await GetNextSortOrderAsync(cancellationToken);
+
+        foreach (var (name, url) in defaults)
         {
-            _context.Set<Bookmark>().Add(bookmark);
+            if (existingUrlSet.Contains(url))
+            {
+                continue;
+            }
+
+            _context.Set<Bookmark>().Add(Bookmark.Create(name, url, nextSortOrder));
+            nextSortOrder++;
         }
     }
 }
