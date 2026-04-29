@@ -243,6 +243,57 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<StoredCookie>> GetCookiesForUrlAsync(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return Array.Empty<StoredCookie>();
+        }
+
+        if (_disposed)
+        {
+            return Array.Empty<StoredCookie>();
+        }
+
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed || _context == null)
+            {
+                _logger.LogDebug("No active browser context — cannot export cookies for {Url}", url);
+                return Array.Empty<StoredCookie>();
+            }
+
+            try
+            {
+                var playwrightCookies = await _context.CookiesAsync(new[] { url }).ConfigureAwait(false);
+                if (playwrightCookies.Count == 0)
+                {
+                    return Array.Empty<StoredCookie>();
+                }
+
+                return playwrightCookies
+                    .Select(c => new StoredCookie(
+                        c.Name,
+                        c.Value,
+                        c.Domain ?? string.Empty,
+                        c.Path ?? string.Empty,
+                        c.Expires > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires).UtcDateTime : null))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to export cookies for {Url} (non-fatal)", url);
+                return Array.Empty<StoredCookie>();
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public async Task CloseBackgroundPageAsync(IPage page)
     {
         try
