@@ -266,10 +266,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(result);
 
-        // Queue: 1=cache analysis (abandoned), 2=confirm, 3=progress (abandoned), 4=dismiss completion
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + completion dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -494,10 +493,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(result);
 
-        // Queue: 1=cache analysis (abandoned), 2=confirm, 3=progress (abandoned), 4=completion dismiss
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + completion dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -529,10 +527,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(failResult);
 
-        // Queue: 1=cache analysis (abandoned), 2=confirm, 3=progress (abandoned), 4=dismiss error
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -554,10 +551,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("TTS service unavailable"));
 
-        // Queue: 1=cache analysis (abandoned), 2=confirm, 3=progress (abandoned), 4=dismiss error
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -585,11 +581,10 @@ public class PodcastCommandHandlerTests
                 return PodcastResult.Failure("cancelled");
             });
 
-        // Queue: 1=cache analysis (abandoned), 2=confirm, 3=GoBack (cancel progress)
-        // GoBack wins the race because generation never completes
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   GoBack on progress screen (cancel progress).
+        // GoBack wins the race because generation never completes.
+        SetupGenerateInputQueue(
             Cmd(CommandType.GoBack));
 
         _inputHandler.PromptForInputAsync(
@@ -620,9 +615,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(PodcastResult.Failure("HTTP 401 Unauthorized"));
 
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -645,9 +640,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(PodcastResult.Failure("HTTP 403 Forbidden"));
 
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -669,9 +664,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(PodcastResult.Failure("TTS not configured"));
 
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -694,9 +689,9 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(PodcastResult.Failure("FFmpeg encoding failed"));
 
-        SetupInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink),
+        // After navigating to Generate + dismissing local-only warning:
+        //   progress (abandoned) + error dismiss
+        SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));
 
@@ -856,6 +851,44 @@ public class PodcastCommandHandlerTests
                 ct.Register(() => tcs.TrySetCanceled(ct));
                 return tcs.Task;
             });
+    }
+
+    /// <summary>
+    /// Prepends the keystrokes needed to navigate the row-based confirmation screen
+    /// from row 0 (TtsKey) to the Generate row, press Enter to start generation, and
+    /// confirm the local-only warning panel that appears when no GCS bucket is set.
+    /// </summary>
+    /// <remarks>
+    /// Layout (no GCS client wired in tests): TtsKey, GcsBucket, OutputFolder, Voice,
+    /// Model, Generate — so 5 MoveDowns reach Generate. ActivateLink on Generate
+    /// triggers ShowLocalOnlyWarningAsync, which a second ActivateLink dismisses by
+    /// choosing "GenerateLocally". The leading ActivateLink is consumed (and abandoned)
+    /// by the cache-analysis screen's pendingKeyTask before its synchronously-complete
+    /// AnalyzeCacheStatusAsync wins Task.WhenAny.
+    /// </remarks>
+    private void SetupGenerateInputQueue(params NavigationCommand[] postConfirmationCommands)
+    {
+        var preamble = new List<NavigationCommand>
+        {
+            // 1) Abandoned by cache-analysis screen (analysisTask wins WhenAny)
+            Cmd(CommandType.ActivateLink),
+
+            // 2) Navigate from TtsKey to Generate (5 rows down, no GcsKey row in tests)
+            Cmd(CommandType.MoveDown),
+            Cmd(CommandType.MoveDown),
+            Cmd(CommandType.MoveDown),
+            Cmd(CommandType.MoveDown),
+            Cmd(CommandType.MoveDown),
+
+            // 3) Enter on Generate row → opens LocalOnly warning (no GCS configured)
+            Cmd(CommandType.ActivateLink),
+
+            // 4) Enter on LocalOnly warning → returns GenerateLocally → start generation
+            Cmd(CommandType.ActivateLink),
+        };
+
+        preamble.AddRange(postConfirmationCommands);
+        SetupInputQueue([.. preamble]);
     }
 
     private static async Task<NavigationCommand> YieldThen(NavigationCommand cmd)
