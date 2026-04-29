@@ -423,13 +423,46 @@ internal class RenderHelpers
 
             var cursorFg = isCursorLine && cursorColor != null ? cursorColor.Value.AnsiFg : string.Empty;
             var cursorFgOff = isCursorLine && cursorColor != null ? "\x1b[0m" : string.Empty;
-            var underline = isCursorLine ? "\x1b[4m" : string.Empty;
-            var underlineOff = isCursorLine ? "\x1b[24m" : string.Empty;
 
-            // Column 0: paragraph indicator or original char
+            // SGR 58 sets underline color independent of foreground, so the highlight
+            // stripe stays one consistent color even when col 0 (paragraph indicator)
+            // uses a different fg. SGR 59 resets underline color. Terminals that don't
+            // support SGR 58 ignore it and fall back to fg-tinted underline.
+            string underline;
+            if (isCursorLine && cursorColor != null)
+            {
+                underline = $"\x1b[4m\x1b[58;5;{cursorColor.Value.AnsiCode}m";
+            }
+            else if (isCursorLine)
+            {
+                underline = "\x1b[4m";
+            }
+            else
+            {
+                underline = string.Empty;
+            }
+
+            string underlineOff;
+            if (isCursorLine && cursorColor != null)
+            {
+                underlineOff = "\x1b[24m\x1b[59m";
+            }
+            else if (isCursorLine)
+            {
+                underlineOff = "\x1b[24m";
+            }
+            else
+            {
+                underlineOff = string.Empty;
+            }
+
+            // Column 0: paragraph indicator or original char.
+            // When this is the cursor line, strip any embedded reset from the indicator
+            // so the underline carries through.
             if (paragraphAnsi != null)
             {
-                Console.Write($"{underline}{paragraphAnsi}{underlineOff}");
+                var indicator = isCursorLine ? paragraphAnsi.Replace("\x1b[0m", string.Empty) : paragraphAnsi;
+                Console.Write($"{underline}{indicator}{underlineOff}");
             }
             else
             {
@@ -441,7 +474,7 @@ internal class RenderHelpers
 
             if (isCursorLine)
             {
-                Console.Write($"{cursorFg}\x1b[4m");
+                Console.Write($"{cursorFg}{underline}");
             }
 
             if (!string.IsNullOrEmpty(searchQuery) && palette != null)
