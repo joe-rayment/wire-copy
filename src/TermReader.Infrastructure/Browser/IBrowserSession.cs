@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using Microsoft.Playwright;
+using TermReader.Application.Interfaces;
 using TermReader.Application.Interfaces.Browser;
 
 namespace TermReader.Infrastructure.Browser;
@@ -73,4 +74,14 @@ public interface IBrowserSession : IBrowserSessionControl
     /// Closes a background page previously created via CreateBackgroundPageAsync.
     /// </summary>
     Task CloseBackgroundPageAsync(IPage page);
+
+    /// <summary>
+    /// Exports cookies from the current Playwright browser context that match the
+    /// given URL. Used by the manual <c>:cookies import</c> path so users who
+    /// logged into a paywalled site via the foreground browser can copy session
+    /// cookies into the persistent <c>cookies.json</c> store.
+    /// </summary>
+    /// <param name="url">URL whose cookies should be exported (e.g. <c>https://nytimes.com/</c>).</param>
+    /// <returns>The cookies stored in the browser context for that URL, or an empty list when no context is active.</returns>
+    Task<IReadOnlyList<StoredCookie>> GetCookiesForUrlAsync(string url);
 }

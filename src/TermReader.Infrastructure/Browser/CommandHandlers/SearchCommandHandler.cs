@@ -261,6 +261,10 @@ internal static class SearchCommandHandler
                 await CredentialCommandHandler.HandleCredentialCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
                 return true;
 
+            case "cookies":
+                await CookiesCommandHandler.HandleCookiesCommand(ctx, parts.Length > 1 ? parts[1] : null, options, ct).ConfigureAwait(false);
+                return true;
+
             case "dump" or "dump-html":
                 await ViewCommandHandler.HandleDumpHtml(ctx, options, ct).ConfigureAwait(false);
                 return true;

@@ -223,6 +223,55 @@ public class CookieWiringTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public async Task BrowserSession_GetCookiesForUrlAsync_NoContext_ReturnsEmpty()
+    {
+        // Arrange — session never had a browser launched.
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(Array.Empty<StoredCookie>()));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+
+        try
+        {
+            // Act
+            var cookies = await session.GetCookiesForUrlAsync("https://nytimes.com/");
+
+            // Assert — gracefully returns empty rather than throwing.
+            cookies.Should().NotBeNull();
+            cookies.Should().BeEmpty();
+        }
+        finally
+        {
+            session.Dispose();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task BrowserSession_GetCookiesForUrlAsync_EmptyUrl_ReturnsEmpty()
+    {
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(Array.Empty<StoredCookie>()));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+
+        try
+        {
+            var cookies = await session.GetCookiesForUrlAsync(string.Empty);
+            cookies.Should().BeEmpty();
+        }
+        finally
+        {
+            session.Dispose();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void HttpCookieContainer_DomainWithLeadingDot_MatchesSubdomains()
     {
         // Arrange - cookies with leading dot should match subdomains
