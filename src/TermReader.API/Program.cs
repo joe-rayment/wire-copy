@@ -154,6 +154,12 @@ public class Program
                 var basePath = AppContext.BaseDirectory;
                 config.SetBasePath(basePath);
                 config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+
+                // Re-add environment variables AFTER the JSON file so env vars win.
+                // Host.CreateDefaultBuilder adds env vars before our ConfigureAppConfiguration
+                // callback runs, so without this the JSON file would override env vars
+                // (e.g. Browser__Headless=true would be ignored).
+                config.AddEnvironmentVariables();
             })
             .ConfigureServices((context, services) =>
             {
