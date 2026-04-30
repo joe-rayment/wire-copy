@@ -100,7 +100,7 @@ public class PodcastConfirmationEditableRowTests
                 Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
             .Returns("/tmp/my-podcasts");
 
-        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
             _ctx, _settingsStore, "/old/path", CancellationToken.None);
 
         result.Should().Be("/tmp/my-podcasts");
@@ -116,7 +116,7 @@ public class PodcastConfirmationEditableRowTests
                 Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
             .Returns(string.Empty);
 
-        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
             _ctx, _settingsStore, "/old/path", CancellationToken.None);
 
         result.Should().BeNull("blank input is a no-op");
@@ -136,7 +136,7 @@ public class PodcastConfirmationEditableRowTests
                 Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
             .Returns((string?)null);
 
-        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
             _ctx, _settingsStore, "/old/path", CancellationToken.None);
 
         result.Should().BeNull("Esc cancels and returns null");
@@ -155,7 +155,7 @@ public class PodcastConfirmationEditableRowTests
                 Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
             .Returns("reset");
 
-        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
             _ctx, _settingsStore, "/old/path", CancellationToken.None);
 
         result.Should().NotBeNull("reset must yield the default folder");
@@ -174,7 +174,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(NavCmd(CommandType.ActivateLink));
 
-        var result = await PodcastConfirmationScreens.PromptAndPickVoiceForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
             _ctx, _options, _settingsStore, "nova", CancellationToken.None);
 
         result.Should().Be("nova");
@@ -195,7 +195,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(_ => sequence.Dequeue());
 
-        var result = await PodcastConfirmationScreens.PromptAndPickVoiceForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
             _ctx, _options, _settingsStore, "nova", CancellationToken.None);
 
         result.Should().Be("onyx");
@@ -208,7 +208,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(NavCmd(CommandType.GoBack));
 
-        var result = await PodcastConfirmationScreens.PromptAndPickVoiceForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
             _ctx, _options, _settingsStore, "nova", CancellationToken.None);
 
         result.Should().BeNull();
@@ -226,7 +226,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(NavCmd(CommandType.ActivateLink));
 
-        var result = await PodcastConfirmationScreens.PromptAndPickModelForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickModelAsync(
             _ctx, _options, _settingsStore, "tts-1", CancellationToken.None);
 
         result.Should().Be("tts-1");
@@ -246,7 +246,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(_ => sequence.Dequeue());
 
-        var result = await PodcastConfirmationScreens.PromptAndPickModelForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickModelAsync(
             _ctx, _options, _settingsStore, "tts-1", CancellationToken.None);
 
         result.Should().Be("tts-1-hd");
@@ -259,7 +259,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(NavCmd(CommandType.GoBack));
 
-        var result = await PodcastConfirmationScreens.PromptAndPickModelForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickModelAsync(
             _ctx, _options, _settingsStore, "tts-1", CancellationToken.None);
 
         result.Should().BeNull();
@@ -285,7 +285,7 @@ public class PodcastConfirmationEditableRowTests
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(_ => sequence.Dequeue());
 
-        var result = await PodcastConfirmationScreens.PromptAndPickVoiceForTestsAsync(
+        var result = await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
             _ctx, _options, _settingsStore, "nova", CancellationToken.None);
 
         result.Should().Be("sage");

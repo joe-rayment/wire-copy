@@ -79,17 +79,6 @@ public class Program
             .WriteTo.File("logs/wirecopy-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateLogger();
 
-        // One-time migration: rename {LocalAppData}/TermReader -> {LocalAppData}/WireCopy
-        // if the legacy directory exists. Must run BEFORE the host is built so that
-        // every service that resolves a path under {LocalAppData}/WireCopy sees the
-        // migrated data on first launch.
-        // TODO: remove after one release once installs have migrated.
-        using (var migrationLoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(Log.Logger)))
-        {
-            var migratorLogger = migrationLoggerFactory.CreateLogger(nameof(LegacyAppDataMigrator));
-            LegacyAppDataMigrator.MigrateIfNeeded(migratorLogger);
-        }
-
         // Pass null when no URL provided to trigger the launcher home screen
         var url = string.IsNullOrWhiteSpace(options.Url) ? null : options.Url;
 

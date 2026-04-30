@@ -1396,59 +1396,19 @@ internal static class PodcastConfirmationScreens
         }
     }
 
+#pragma warning disable SA1202 // internal row-dispatch helpers grouped with their related private impls
     /// <summary>
     /// Prompts for an absolute output folder path. Persists the trimmed value via
     /// <see cref="IUserSettingsStore"/>. Returns the new path on success, or null
     /// when the user cancels (Esc / blank input).
     ///
+    /// Shared entry point used by both the Generate Podcast confirmation screen
+    /// and the unified <c>:config</c> Setup screen (workspace-fn1u).
+    ///
     /// The path is not validated for existence — <see cref="PodcastOrchestrator.GetOutputFilePath"/>
     /// creates the directory on demand. ~ is expanded by the orchestrator at runtime.
     /// </summary>
-    /// <summary>
-    /// Test-only entry point: invokes the output-folder prompt and persists the
-    /// trimmed value via <see cref="IUserSettingsStore"/>. Mirrors the production
-    /// dispatch on the OutputFolder confirmation row.
-    /// </summary>
-#pragma warning disable SA1202 // pre-existing test-only helpers; ordering being addressed by another bead
-
-    /// <summary>
-    /// Shared entry point for the output-folder prompt. Used by both the Generate
-    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen
-    /// (workspace-fn1u). Persists via <see cref="IUserSettingsStore"/>.
-    /// </summary>
-    internal static Task<string?> PromptAndSetOutputFolderForTestsAsync(
-        CommandContext ctx,
-        IUserSettingsStore settingsStore,
-        string currentValue,
-        CancellationToken ct) =>
-        PromptAndSetOutputFolderAsync(ctx, settingsStore, currentValue, ct);
-
-    /// <summary>
-    /// Shared entry point for the TTS voice picker. Used by both the Generate
-    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen.
-    /// </summary>
-    internal static Task<string?> PromptAndPickVoiceForTestsAsync(
-        CommandContext ctx,
-        RenderOptions options,
-        IUserSettingsStore settingsStore,
-        string currentValue,
-        CancellationToken ct) =>
-        PromptAndPickVoiceAsync(ctx, options, settingsStore, currentValue, ct);
-
-    /// <summary>
-    /// Shared entry point for the TTS model picker. Used by both the Generate
-    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen.
-    /// </summary>
-    internal static Task<string?> PromptAndPickModelForTestsAsync(
-        CommandContext ctx,
-        RenderOptions options,
-        IUserSettingsStore settingsStore,
-        string currentValue,
-        CancellationToken ct) =>
-        PromptAndPickModelAsync(ctx, options, settingsStore, currentValue, ct);
-#pragma warning restore SA1202
-
-    private static async Task<string?> PromptAndSetOutputFolderAsync(
+    internal static async Task<string?> PromptAndSetOutputFolderAsync(
         CommandContext ctx,
         IUserSettingsStore settingsStore,
         string currentValue,
@@ -1597,7 +1557,7 @@ internal static class PodcastConfirmationScreens
     /// selection via <see cref="IUserSettingsStore"/>. Returns the new value or null
     /// when the user cancels.
     /// </summary>
-    private static async Task<string?> PromptAndPickVoiceAsync(
+    internal static async Task<string?> PromptAndPickVoiceAsync(
         CommandContext ctx,
         RenderOptions options,
         IUserSettingsStore settingsStore,
@@ -1627,7 +1587,7 @@ internal static class PodcastConfirmationScreens
     /// <summary>
     /// Picks a TTS model and persists the selection via <see cref="IUserSettingsStore"/>.
     /// </summary>
-    private static async Task<string?> PromptAndPickModelAsync(
+    internal static async Task<string?> PromptAndPickModelAsync(
         CommandContext ctx,
         RenderOptions options,
         IUserSettingsStore settingsStore,
@@ -1653,4 +1613,5 @@ internal static class PodcastConfirmationScreens
 
         return picked;
     }
+#pragma warning restore SA1202
 }

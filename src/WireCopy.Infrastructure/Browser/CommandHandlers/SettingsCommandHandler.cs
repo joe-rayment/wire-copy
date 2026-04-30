@@ -357,7 +357,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyPodcastOutputFolder) ?? ResolveDefaultOutputFolder();
-                await PodcastConfirmationScreens.PromptAndSetOutputFolderForTestsAsync(
+                await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
                     ctx, store, current, ct).ConfigureAwait(false);
                 return;
             }
@@ -367,7 +367,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsVoice) ?? "nova";
-                await PodcastConfirmationScreens.PromptAndPickVoiceForTestsAsync(
+                await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
             }
@@ -377,7 +377,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsModel) ?? "tts-1";
-                await PodcastConfirmationScreens.PromptAndPickModelForTestsAsync(
+                await PodcastConfirmationScreens.PromptAndPickModelAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
             }

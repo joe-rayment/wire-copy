@@ -1,6 +1,6 @@
-# WireCopy Design System
+# Wire Copy Design System
 
-A better reading experience. **WireCopy** is a .NET 9 terminal-based web browser and reader, built for long-form reading without the noise of a normal browser. It runs entirely inside a terminal emulator (Ghostty preferred), uses Helix-style keybindings (`j/k/h/l/gg/G`), and can turn a reading list into an M4B audiobook via ElevenLabs TTS.
+A better reading experience. **Wire Copy** is a .NET 9 terminal-based web browser and reader, built for long-form reading without the noise of a normal browser. It runs entirely inside a terminal emulator (Ghostty preferred), uses Helix-style keybindings (`j/k/h/l/gg/G`), and can turn a reading list into an M4B audiobook via ElevenLabs TTS.
 
 This design system is the single source of truth for how the product looks, reads, and feels. It's a phosphor-green CRT aesthetic with **playful pink** accents — serious about reading, not serious about itself.
 
@@ -8,7 +8,7 @@ This design system is the single source of truth for how the product looks, read
 
 ## Sources
 
-Everything here is distilled from the WireCopy repo:
+Everything here is distilled from the Wire Copy repo:
 
 - Repository: `joe-rayment/wire-copy` (private, main branch)
 - `README.md` — product overview, features, keybindings
@@ -273,15 +273,15 @@ Phosphor-green CRT monochrome, warm pink highlights. Think: 1984 terminal that h
 1. **No emoji.** Terminals render them inconsistently; many mono fonts don't ship them.
 2. **No SVG.** The app doesn't have a renderer for raster or vector graphics.
 3. **No icon font.** Would add a webfont dependency; the terminal doesn't need it.
-4. **Unicode only.** If you need a new icon, find one in the above blocks (Geometric Shapes, Block Elements, Box Drawing, Miscellaneous Symbols, Braille Patterns). If it doesn't exist as Unicode, it doesn't exist in WireCopy.
+4. **Unicode only.** If you need a new icon, find one in the above blocks (Geometric Shapes, Block Elements, Box Drawing, Miscellaneous Symbols, Braille Patterns). If it doesn't exist as Unicode, it doesn't exist in Wire Copy.
 5. **Color is the icon's state.** A `●` in green is unread; a `●` in `--tr-muted` is disabled. The glyph doesn't change.
 
 ### Logo
 
-There is no raster logo. The brand mark is the wordmark `WireCopy` set in bright phosphor green, optionally framed by a rounded box:
+There is no raster logo. The brand mark is the wordmark `Wire Copy` set in bright phosphor green, optionally framed by a rounded box:
 
 ```
-╭─ WireCopy ─────────────────────────╮
+╭─ Wire Copy ────────────────────────╮
 │ A better reading experience          │
 ╰──────────────────────────────────────╯
 ```
