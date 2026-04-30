@@ -9,8 +9,8 @@ Browse any website from your terminal with keyboard-only navigation, save articl
 ## Quick Start
 
 ```bash
-git clone https://github.com/joe-rayment/newspaper_reader.git
-cd newspaper_reader
+git clone https://github.com/joe-rayment/wire-copy.git
+cd wire-copy
 dotnet build
 dotnet run --project src/TermReader.API
 ```
