@@ -5,26 +5,26 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
 # Copy solution and project files
-COPY ["TermReader.sln", "./"]
-COPY ["src/TermReader.Domain/TermReader.Domain.csproj", "src/TermReader.Domain/"]
-COPY ["src/TermReader.Application/TermReader.Application.csproj", "src/TermReader.Application/"]
-COPY ["src/TermReader.Persistence/TermReader.Persistence.csproj", "src/TermReader.Persistence/"]
-COPY ["src/TermReader.Infrastructure/TermReader.Infrastructure.csproj", "src/TermReader.Infrastructure/"]
-COPY ["src/TermReader.API/TermReader.API.csproj", "src/TermReader.API/"]
+COPY ["WireCopy.sln", "./"]
+COPY ["src/WireCopy.Domain/WireCopy.Domain.csproj", "src/WireCopy.Domain/"]
+COPY ["src/WireCopy.Application/WireCopy.Application.csproj", "src/WireCopy.Application/"]
+COPY ["src/WireCopy.Persistence/WireCopy.Persistence.csproj", "src/WireCopy.Persistence/"]
+COPY ["src/WireCopy.Infrastructure/WireCopy.Infrastructure.csproj", "src/WireCopy.Infrastructure/"]
+COPY ["src/WireCopy.API/WireCopy.API.csproj", "src/WireCopy.API/"]
 
 # Restore dependencies
-RUN dotnet restore "src/TermReader.API/TermReader.API.csproj"
+RUN dotnet restore "src/WireCopy.API/WireCopy.API.csproj"
 
 # Copy all source files
 COPY . .
 
 # Build the application
-WORKDIR "/src/src/TermReader.API"
-RUN dotnet build "TermReader.API.csproj" -c Release -o /app/build
+WORKDIR "/src/src/WireCopy.API"
+RUN dotnet build "WireCopy.API.csproj" -c Release -o /app/build
 
 # Publish stage
 FROM build AS publish
-RUN dotnet publish "TermReader.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "WireCopy.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage — use Debian Bookworm (default), where Chromium is a real package
 FROM mcr.microsoft.com/dotnet/runtime:9.0 AS final
@@ -76,4 +76,4 @@ VOLUME ["/app/output", "/app/logs"]
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DISPLAY=:99
 
-ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "dotnet", "TermReader.API.dll"]
+ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "dotnet", "WireCopy.API.dll"]

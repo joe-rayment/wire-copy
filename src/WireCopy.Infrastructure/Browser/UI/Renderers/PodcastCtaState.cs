@@ -1,0 +1,39 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+namespace WireCopy.Infrastructure.Browser.UI.Renderers;
+
+/// <summary>
+/// Visual state of the podcast call-to-action button in collection views.
+/// </summary>
+internal enum PodcastCtaState
+{
+    /// <summary>
+    /// Default state — collection has items and TTS is configured.
+    /// </summary>
+    Idle,
+
+    /// <summary>
+    /// Brief highlight flash when the user presses the podcast key.
+    /// </summary>
+    Pressed,
+
+    /// <summary>
+    /// Collection is empty — button is dimmed/inactive.
+    /// </summary>
+    Disabled,
+
+    /// <summary>
+    /// TTS API key is not configured — renders muted with "Setup required" subtitle.
+    /// </summary>
+    Unconfigured,
+
+    /// <summary>
+    /// CTA button is focused via j/k navigation — renders with selection highlight.
+    /// </summary>
+    Selected,
+
+    /// <summary>
+    /// Podcast generation is in progress — shows progress bar and percentage.
+    /// </summary>
+    Generating,
+}

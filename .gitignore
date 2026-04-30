@@ -94,7 +94,7 @@ secrets.json
 *.db-shm
 *.db-wal
 *.db-journal
-termreader.db*
+wirecopy.db*
 
 # Cookies and authentication
 cookies.json

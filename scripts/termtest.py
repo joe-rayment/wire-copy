@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Terminal UI test harness for TermReader using tmux.
+Terminal UI test harness for WireCopy using tmux.
 
 Launches the app inside a tmux session, sends keystrokes, captures screen
 output, and enables automated validation of interactive flows.
@@ -30,10 +30,10 @@ import sys
 import time
 
 DOTNET = os.environ.get("DOTNET_PATH", "/home/agent/.dotnet/dotnet")
-PROJECT = os.environ.get("TERMREADER_PROJECT", "src/TermReader.API")
+PROJECT = os.environ.get("WIRECOPY_PROJECT", "src/WireCopy.API")
 BUILT_DLL = os.environ.get(
-    "TERMREADER_DLL",
-    "src/TermReader.API/bin/Release/net9.0/TermReader.API.dll",
+    "WIRECOPY_DLL",
+    "src/WireCopy.API/bin/Release/net9.0/WireCopy.API.dll",
 )
 SESSION_NAME = "termtest"
 DEFAULT_WIDTH = 100
@@ -41,7 +41,7 @@ DEFAULT_HEIGHT = 35
 
 
 class TermTest:
-    """Context manager that runs TermReader in a tmux session."""
+    """Context manager that runs WireCopy in a tmux session."""
 
     def __init__(
         self,
@@ -256,7 +256,7 @@ class TermTest:
 # ---------------------------------------------------------------------------
 
 def smoke_test(url: str = "https://example.com"):
-    print(f"Starting TermReader with {url}...")
+    print(f"Starting WireCopy with {url}...")
 
     with TermTest(url=url) as t:
         try:

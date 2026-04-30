@@ -1,0 +1,103 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+namespace WireCopy.Application.DTOs.Browser;
+
+/// <summary>
+/// Options for rendering content to the terminal.
+/// </summary>
+public record RenderOptions
+{
+    /// <summary>
+    /// Width of the terminal window.
+    /// </summary>
+    public int TerminalWidth { get; init; } = 80;
+
+    /// <summary>
+    /// Height of the terminal window.
+    /// </summary>
+    public int TerminalHeight { get; init; } = 24;
+
+    /// <summary>
+    /// Maximum width for text content (for wrapping).
+    /// </summary>
+    public int MaxContentWidth { get; init; } = 80;
+
+    /// <summary>
+    /// Number of lines to reserve for status bar.
+    /// Matches actual status bar rendering: line 1 + line 2.
+    /// </summary>
+    public int StatusBarLines { get; init; } = 2;
+
+    /// <summary>
+    /// Number of lines to reserve for header.
+    /// Matches actual header rendering: title + thin rule.
+    /// </summary>
+    public int HeaderLines { get; init; } = 2;
+
+    /// <summary>
+    /// Whether the terminal supports 256-color mode.
+    /// Detected from COLORTERM environment variable.
+    /// </summary>
+    public bool Use256Colors { get; init; }
+
+    /// <summary>
+    /// Available height for content (excluding header and status bar).
+    /// </summary>
+    public int ContentHeight => TerminalHeight - HeaderLines - StatusBarLines;
+
+    /// <summary>
+    /// Set of normalized URLs currently in the page cache.
+    /// Used by renderers to show pre-load/cache indicators on link tree items.
+    /// </summary>
+    public IReadOnlySet<string>? CachedUrls { get; init; }
+
+    /// <summary>
+    /// Current pre-load progress for showing in the status bar.
+    /// </summary>
+    public PreloadProgress? CacheProgress { get; init; }
+
+    /// <summary>
+    /// Visual state of the podcast CTA button (0=Idle, 1=Pressed, 2=Disabled, 3=Unconfigured, 5=Generating).
+    /// Mapped to PodcastCtaState enum in the rendering layer.
+    /// </summary>
+    public int PodcastButtonState { get; init; }
+
+    /// <summary>
+    /// Progress fraction (0.0 to 1.0) for the podcast generation progress bar.
+    /// Only meaningful when <see cref="PodcastButtonState"/> is 5 (Generating).
+    /// </summary>
+    public double PodcastProgressFraction { get; init; }
+
+    /// <summary>
+    /// Number of articles in the active collection. Used by the podcast CTA
+    /// hero tier to display article count and estimated duration.
+    /// </summary>
+    public int PodcastArticleCount { get; init; }
+
+    /// <summary>
+    /// Memory cache usage percentage (0-100). Used by the status bar to show
+    /// a warning indicator when the cache is nearly full.
+    /// </summary>
+    public double CacheUsagePercent { get; init; }
+
+    /// <summary>
+    /// Current layout variant label for status bar display (e.g., "Grid 1/3").
+    /// Null when there is only one variant for the current mode.
+    /// </summary>
+    public string? LayoutVariantLabel { get; init; }
+
+    /// <summary>
+    /// Current layout variant name for the active view mode (e.g., "Cards", "DenseList", "Magazine").
+    /// Used by renderers to select the appropriate layout algorithm.
+    /// </summary>
+    public string? LayoutVariant { get; init; }
+
+    /// <summary>
+    /// Paywalled domains relevant to the current page where authentication cookies are
+    /// missing or expired. Surfaced by the status bar so the user knows pre-fetch is
+    /// silently doing nothing on those sites and can recover via <c>:cookies import</c>
+    /// (or <c>Shift+I</c>). Empty when cookies are present, when the current page is not
+    /// a paywalled domain, or when no domains are configured.
+    /// </summary>
+    public IReadOnlyList<string>? MissingCookieDomains { get; init; }
+}

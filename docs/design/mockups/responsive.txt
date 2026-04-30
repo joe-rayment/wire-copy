@@ -21,7 +21,7 @@ SMALL TERMINAL (60x16) — Launcher
 
 Single-column mode, compact 3-line cards, minimal status bar.
 
- [dim]╭─[green] TermReader [dim]──────────────────────────────────────────╮[/]
+ [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────╮[/]
  [dim]│ [med]6 bookmarks                                          [dim]│[/]
  [dim]╰────────────────────────────────────────────────────────╯[/]
        [dim]╭────────────────────────────────────╮[/]
@@ -91,7 +91,7 @@ WIDE TERMINAL (200+ cols) — Launcher
 Content is centered with a max-width constraint (~120 chars). Generous margins
 prevent the eye from traveling too far across the screen.
 
-                                        [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────────────────────────────────────╮[/]
+                                        [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────────────────────────────────────────────────────────╮[/]
                                         [dim]│ [med]6 bookmarks                                                                                        [dim]│[/]
                                         [dim]╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯[/]
 

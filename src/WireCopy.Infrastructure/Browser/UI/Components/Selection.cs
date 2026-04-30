@@ -1,0 +1,50 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+using WireCopy.Infrastructure.Browser.Themes;
+
+namespace WireCopy.Infrastructure.Browser.UI.Components;
+
+/// <summary>
+/// Shared selection highlight and accent bar components.
+/// </summary>
+internal static class Selection
+{
+    /// <summary>
+    /// The accent bar character (▌) shown on the left of selected items.
+    /// </summary>
+    public const char AccentBarChar = '\u258c';
+
+    private const string Reset = "\x1b[0m";
+
+    /// <summary>
+    /// Renders a left accent bar in muted green (the design system accent bar color).
+    /// </summary>
+    public static string AccentBar(ThemePalette p)
+    {
+        return $"{p.GetMutedFg().AnsiFg}{AccentBarChar}{Reset}";
+    }
+
+    /// <summary>
+    /// Renders a left accent bar in muted green on a selected row.
+    /// </summary>
+    public static string SelectedAccentBar(ThemePalette p)
+    {
+        return $"{p.GetMutedFg().AnsiFg}{AccentBarChar}{Reset}";
+    }
+
+    /// <summary>
+    /// Wraps text with selection background and foreground colors.
+    /// </summary>
+    public static string Highlight(ThemePalette p, string text)
+    {
+        return $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}{text}{Reset}";
+    }
+
+    /// <summary>
+    /// Wraps text with reverse video (swaps fg/bg).
+    /// </summary>
+    public static string ReverseVideo(string text)
+    {
+        return $"\x1b[7m{text}\x1b[27m{Reset}";
+    }
+}

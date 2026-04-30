@@ -1,4 +1,4 @@
-# Design Critique: TermReader Design System & Mockups
+# Design Critique: WireCopy Design System & Mockups
 
 Reviewed: 2026-03-18
 

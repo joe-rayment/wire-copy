@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test runner for TermReader
+# Test runner for WireCopy
 # Usage:
 #   ./scripts/test.sh                      # Run full suite (~90s)
 #   ./scripts/test.sh --filter "PageLoader" # Run specific tests
@@ -11,10 +11,10 @@
 set -uo pipefail
 
 DOTNET="${DOTNET:-dotnet}"
-PROJECT="tests/TermReader.Tests/TermReader.Tests.csproj"
+PROJECT="tests/WireCopy.Tests/WireCopy.Tests.csproj"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-RESULTS_DIR=$(mktemp -d /tmp/termreader-test-XXXXXX)
+RESULTS_DIR=$(mktemp -d /tmp/wirecopy-test-XXXXXX)
 
 cd "$ROOT_DIR"
 

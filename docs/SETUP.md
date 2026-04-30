@@ -10,7 +10,7 @@
   # Debian/Ubuntu
   sudo apt-get install ffmpeg
   ```
-- **Chromium** — Patchright will download its own browser the first time you run TermReader. On Linux, the host needs the usual Chromium dependencies (the [`Dockerfile`](../Dockerfile) lists them).
+- **Chromium** — Patchright will download its own browser the first time you run WireCopy. On Linux, the host needs the usual Chromium dependencies (the [`Dockerfile`](../Dockerfile) lists them).
 
 ## Build and run
 
@@ -19,7 +19,7 @@ git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
 dotnet restore
 dotnet build
-dotnet run --project src/TermReader.API
+dotnet run --project src/WireCopy.API
 ```
 
 The first run launches the bookmark grid. Press `?` from any screen for a help overlay.
@@ -28,17 +28,17 @@ The first run launches the bookmark grid. Press `?` from any screen for a help o
 
 ```bash
 # Default — open the launcher
-dotnet run --project src/TermReader.API
+dotnet run --project src/WireCopy.API
 
 # Open a specific URL directly
-dotnet run --project src/TermReader.API -- browse https://news.ycombinator.com
+dotnet run --project src/WireCopy.API -- browse https://news.ycombinator.com
 ```
 
 The single `browse` verb takes an optional URL argument. All other navigation happens inside the TUI.
 
 ## Credentials
 
-Two API keys unlock podcast generation. Both are optional — TermReader runs as a browser without them.
+Two API keys unlock podcast generation. Both are optional — WireCopy runs as a browser without them.
 
 | Setting              | Purpose                       |
 |----------------------|-------------------------------|
@@ -55,7 +55,7 @@ You can provide them in any of three ways. They're checked in this order — lat
    ```
 3. `dotnet user-secrets` — recommended for local development:
    ```bash
-   cd src/TermReader.API
+   cd src/WireCopy.API
    dotnet user-secrets init
    dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
    dotnet user-secrets set "Anthropic:ApiKey" "sk-ant-..."
