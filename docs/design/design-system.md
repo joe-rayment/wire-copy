@@ -1,4 +1,4 @@
-# TermReader Design System
+# WireCopy Design System
 
 Comprehensive specification for terminal UI implementation. All values are exact and
 implementable. This document is the single source of truth; when it conflicts with
@@ -394,7 +394,7 @@ background highlight.
 
 #### Focus vs Unfocused
 
-Currently TermReader is single-pane (no split panels), so there is no
+Currently WireCopy is single-pane (no split panels), so there is no
 unfocused-panel state. If panels are added in the future:
 - Focused panel: accent bar in AccentFg (ANSI 51), bright border
 - Unfocused panel: accent bar in SecondaryText (ANSI 34), dim border
@@ -864,7 +864,7 @@ Generating podcast...
 1. Selected bookmark name (white on dark green, bold)
 2. Bookmark names (PrimaryText, bold)
 3. URL bar placeholder text (when focused: white on dark green)
-4. "TermReader" header title (HeaderTitleFg)
+4. "WireCopy" header title (HeaderTitleFg)
 5. Badges `[1]`, `[c]` (SecondaryText)
 6. Domain subtitles (SecondaryText+Dim)
 7. URL bar placeholder (when unfocused: SecondaryText+Dim)
@@ -885,7 +885,7 @@ Generating podcast...
 
 #### Layout
 
-- Header: single-line title ("TermReader" in HeaderTitleFg, "{n} bookmarks" in SecondaryText)
+- Header: single-line title ("WireCopy" in HeaderTitleFg, "{n} bookmarks" in SecondaryText)
 - URL bar: centered rounded box, ~75% width
 - Grid: 2 columns (or 1 if narrow), 5-line cells (or 3-line if short)
 - Footer: horizontal rule + hint line
@@ -895,7 +895,7 @@ Generating podcast...
 | Element | Color |
 |---------|-------|
 | Header border | HeaderBorderFg |
-| Header title "TermReader" | HeaderTitleFg |
+| Header title "WireCopy" | HeaderTitleFg |
 | Header subtitle "{n} bookmarks" | SecondaryText |
 | URL bar border (unfocused) | HeaderBorderFg |
 | URL bar border (focused) | SelectedItemFg |
@@ -1511,7 +1511,7 @@ Two levels of emphasis:
 Reset:          \x1b[0m
 Bold:           \x1b[1m
 Dim:            \x1b[2m
-Italic:         \x1b[3m      (not widely used in TermReader)
+Italic:         \x1b[3m      (not widely used in WireCopy)
 Underline:      \x1b[4m      (not used)
 Reverse:        \x1b[7m      (available via Selection.ReverseVideo)
 FG 256-color:   \x1b[38;5;{n}m
@@ -1522,7 +1522,7 @@ Clear to EOL:   \x1b[K
 
 ## Appendix B: Unicode Character Reference
 
-All Unicode characters used in the TermReader UI:
+All Unicode characters used in the WireCopy UI:
 
 | Character | Unicode | Name | Usage |
 |-----------|---------|------|-------|
@@ -1570,23 +1570,23 @@ All Unicode characters used in the TermReader UI:
 All files that must be modified or created to implement this design system:
 
 **Modify:**
-- `/workspace/src/TermReader.Infrastructure/Browser/Themes/ThemePalette.cs` -- add new color role properties
-- `/workspace/src/TermReader.Infrastructure/Browser/Themes/BuiltInThemes.cs` -- update all 4 themes with Phosphor 2.0 palette values; add MutedFg
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/StatusBarRenderer.cs` -- layout variant badge, toast rendering support
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/LauncherRenderer.cs` -- layout variants
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/LinkTreeRenderer.cs` -- layout variants
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/ArticleRenderer.cs` -- reader width variants
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/CollectionRenderer.cs` -- compact variant
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Renderers/PodcastCtaRenderer.cs` -- eighth-block progress bar
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Components/Indicators.cs` -- new indicator characters
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/TerminalPageRenderer.cs` -- animation orchestration hooks
+- `/workspace/src/WireCopy.Infrastructure/Browser/Themes/ThemePalette.cs` -- add new color role properties
+- `/workspace/src/WireCopy.Infrastructure/Browser/Themes/BuiltInThemes.cs` -- update all 4 themes with Phosphor 2.0 palette values; add MutedFg
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/StatusBarRenderer.cs` -- layout variant badge, toast rendering support
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/LauncherRenderer.cs` -- layout variants
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/LinkTreeRenderer.cs` -- layout variants
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/ArticleRenderer.cs` -- reader width variants
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/CollectionRenderer.cs` -- compact variant
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Renderers/PodcastCtaRenderer.cs` -- eighth-block progress bar
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Components/Indicators.cs` -- new indicator characters
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/TerminalPageRenderer.cs` -- animation orchestration hooks
 
 **Create:**
-- `/workspace/src/TermReader.Application/Interfaces/Browser/ILayoutVariantProvider.cs` -- layout variant interface
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/LayoutVariantProvider.cs` -- implementation with UserSettingsStore persistence
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Components/Toast.cs` -- toast notification component
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Animations/SparkleAnimation.cs` -- sparkle effect
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Animations/DecryptAnimation.cs` -- title decrypt reveal
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Animations/ColorWaveAnimation.cs` -- status bar wave
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Animations/EighthBlockProgressBar.cs` -- smooth progress bar
-- `/workspace/src/TermReader.Infrastructure/Browser/UI/Animations/AnimationRunner.cs` -- shared animation loop with frame timing
+- `/workspace/src/WireCopy.Application/Interfaces/Browser/ILayoutVariantProvider.cs` -- layout variant interface
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/LayoutVariantProvider.cs` -- implementation with UserSettingsStore persistence
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Components/Toast.cs` -- toast notification component
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Animations/SparkleAnimation.cs` -- sparkle effect
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Animations/DecryptAnimation.cs` -- title decrypt reveal
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Animations/ColorWaveAnimation.cs` -- status bar wave
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Animations/EighthBlockProgressBar.cs` -- smooth progress bar
+- `/workspace/src/WireCopy.Infrastructure/Browser/UI/Animations/AnimationRunner.cs` -- shared animation loop with frame timing

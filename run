@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wrapper script to run TermReader with clean console output by default
+# Wrapper script to run WireCopy with clean console output by default
 # Use --verbose flag to see all browser console output
 
 # Check if --verbose is in the arguments
@@ -14,10 +14,10 @@ done
 # Run with or without filtering
 if [ "$verbose" = true ]; then
     # Verbose mode: show everything
-    dotnet run --project src/TermReader.API --configuration Release -- "$@"
+    dotnet run --project src/WireCopy.API --configuration Release -- "$@"
 else
     # Default mode: filter browser noise
-    dotnet run --project src/TermReader.API --configuration Release -- "$@" 2>&1 | \
+    dotnet run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
       grep -v "console.error:" | \
       grep -v "NS_ERROR_CONTENT_BLOCKED" | \
       grep -v "geckodriver" | \

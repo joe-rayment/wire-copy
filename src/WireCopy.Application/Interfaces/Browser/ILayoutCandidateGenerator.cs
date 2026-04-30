@@ -1,0 +1,46 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+using WireCopy.Domain.Entities.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
+
+namespace WireCopy.Application.Interfaces.Browser;
+
+/// <summary>
+/// Generates layout candidates (document-order, AI hierarchical, RSS) for a page.
+/// Each candidate includes a pre-built NavigationTree for instant preview rendering.
+/// </summary>
+public interface ILayoutCandidateGenerator
+{
+    /// <summary>
+    /// Generates 1-3 unique layout candidates for a page.
+    /// Document-order is always included (instant). AI and RSS are generated
+    /// in parallel if available. Duplicates are removed by structural signature.
+    /// </summary>
+    Task<List<LayoutCandidate>> GenerateCandidatesAsync(
+        List<LinkInfo> links,
+        string html,
+        string pageUrl,
+        byte[]? screenshot,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A single layout option with its pre-built tree for preview rendering.
+/// </summary>
+public sealed record LayoutCandidate
+{
+    /// <summary>
+    /// The hierarchy config that produced this layout (can be saved).
+    /// </summary>
+    public required SiteHierarchyConfig Config { get; init; }
+
+    /// <summary>
+    /// Human-readable summary (e.g., "AI · 5 sections" or "RSS · 47 articles").
+    /// </summary>
+    public required string Summary { get; init; }
+
+    /// <summary>
+    /// Pre-built navigation tree for instant preview rendering.
+    /// </summary>
+    public required NavigationTree PreviewTree { get; init; }
+}

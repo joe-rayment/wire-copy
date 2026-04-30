@@ -19,7 +19,7 @@ VARIANT A: 2-Column Grid (Default Layout)
 
 Dimensions: 78-char content width (80 - 2 margin), 24 lines total
 
- [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────╮[/]
+ [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────────────────────────╮[/]
  [dim]│ [med]6 bookmarks                                                              [dim]│[/]
  [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
 
@@ -87,7 +87,7 @@ When there are more bookmarks than fit on screen, scroll indicators appear:
 VARIANT A — Empty State
 ================================================================================
 
- [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────╮[/]
+ [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────────────────────────╮[/]
  [dim]│ [med]0 bookmarks                                                              [dim]│[/]
  [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
 
@@ -112,7 +112,7 @@ VARIANT B: Single-Column List (Compact)
 
 More items visible, less visual decoration. Each item is 2 lines (name + domain).
 
- [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────╮[/]
+ [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────────────────────────╮[/]
  [dim]│ [med]6 bookmarks                                                              [dim]│[/]
  [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
 
@@ -151,7 +151,7 @@ VARIANT C: 3-Column Compact Grid (Power User)
 
 Maximum density. Each cell is 3 lines (name + domain + separator). 3 columns.
 
- [dim]╭─[green] TermReader [dim]──────────────────────────────────────────────────────────────╮[/]
+ [dim]╭─[green] WireCopy [dim]──────────────────────────────────────────────────────────────╮[/]
  [dim]│ [med]9 bookmarks                                                              [dim]│[/]
  [dim]╰──────────────────────────────────────────────────────────────────────────────╯[/]
 

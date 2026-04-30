@@ -1,4 +1,4 @@
-# TermReader
+# WireCopy
 
 A .NET 9 terminal-based web browser with Helix-style keybindings, a distraction-free reader view, and an optional pipeline that turns saved articles into M4B audiobooks.
 
@@ -12,7 +12,7 @@ Browse any website from your terminal with keyboard-only navigation, save articl
 git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
 dotnet build
-dotnet run --project src/TermReader.API
+dotnet run --project src/WireCopy.API
 ```
 
 See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configuration.
@@ -32,7 +32,7 @@ See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configur
 
 ## Themes
 
-TermReader ships with four color themes, all built on ANSI 256 colors:
+WireCopy ships with four color themes, all built on ANSI 256 colors:
 
 | Theme | Description |
 |-------|-------------|
@@ -120,7 +120,7 @@ Generate narrated M4B files from your saved articles. Two API keys are required:
 - **Anthropic** — page-structure analysis for cleaner article extraction
 
 ```bash
-cd src/TermReader.API
+cd src/WireCopy.API
 dotnet user-secrets init
 dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
 dotnet user-secrets set "Anthropic:ApiKey" "sk-ant-..."
@@ -134,7 +134,7 @@ Both APIs enforce per-session budget limits configured in `appsettings.json` (`O
 
 ## Authentication for paywalled sites
 
-For sites requiring login, TermReader supports paste-once session cookies that are encrypted at rest with ASP.NET DataProtection. See [docs/cookie-encryption.md](docs/cookie-encryption.md) for the flow.
+For sites requiring login, WireCopy supports paste-once session cookies that are encrypted at rest with ASP.NET DataProtection. See [docs/cookie-encryption.md](docs/cookie-encryption.md) for the flow.
 
 ## Configuration
 
@@ -150,25 +150,25 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `Anthropic:MaxBudgetUsd` | Max spend per session | `0.10` |
 | `Browser:Headless` | Run browser headless | `false` |
 | `Browser:ImplicitWaitSeconds` | Page-element timeout | `30` |
-| `Podcast:Title` | Podcast feed title | `TermReader Podcast` |
+| `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
 
 ## Project Structure
 
 ```
 src/
-├── TermReader.Domain/          # Entities (Bookmarks, Browser, Collections, Credentials)
-├── TermReader.Application/     # Service interfaces and DTOs
-├── TermReader.Persistence/     # EF Core DbContext, repositories, UnitOfWork
-├── TermReader.Infrastructure/  # External integrations
+├── WireCopy.Domain/          # Entities (Bookmarks, Browser, Collections, Credentials)
+├── WireCopy.Application/     # Service interfaces and DTOs
+├── WireCopy.Persistence/     # EF Core DbContext, repositories, UnitOfWork
+├── WireCopy.Infrastructure/  # External integrations
 │   ├── Browser/                # Patchright automation, link extraction, reader view
 │   │   ├── UI/                 # Terminal renderer, input handler
 │   │   └── Cache/              # Page and content caches
 │   ├── Podcast/                # OpenAI TTS, FFmpeg, M4B chapter markers, GCS publishing
 │   └── Configuration/          # Options classes and validators
-└── TermReader.API/             # Console application entry point
+└── WireCopy.API/             # Console application entry point
 
 tests/
-└── TermReader.Tests/           # Unit and integration tests, organized by feature area
+└── WireCopy.Tests/           # Unit and integration tests, organized by feature area
 
 docs/                           # Setup, testing, architecture, cookie encryption, design
 ```
@@ -194,12 +194,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 ## Docker
 
 ```bash
-docker build -t termreader:latest .
+docker build -t wirecopy:latest .
 docker run --rm \
   -e OpenAiTts__ApiKey="sk-..." \
   -e Anthropic__ApiKey="sk-ant-..." \
   -v $(pwd)/output:/app/output \
-  termreader:latest
+  wirecopy:latest
 ```
 
 ## Design

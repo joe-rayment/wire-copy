@@ -1,6 +1,6 @@
-# Contributing to TermReader
+# Contributing to WireCopy
 
-Thanks for your interest. TermReader is a personal/educational project, but contributions are welcome.
+Thanks for your interest. WireCopy is a personal/educational project, but contributions are welcome.
 
 ## Getting started
 
@@ -39,7 +39,7 @@ Keep commits atomic — one logical change per commit.
 
 - Nullable reference types are enabled project-wide. Prefer real null checks over `!`.
 - Avoid sync-over-async (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()`); make the call chain async.
-- Use `ConfigureAwait(false)` in `TermReader.Application` and `TermReader.Infrastructure` library code.
+- Use `ConfigureAwait(false)` in `WireCopy.Application` and `WireCopy.Infrastructure` library code.
 - StyleCop and SonarAnalyzer rules are enforced in Release builds.
 
 ## Reporting issues

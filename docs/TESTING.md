@@ -20,10 +20,10 @@ dotnet test                                # Everything
 
 ## Layout
 
-Tests live under `tests/TermReader.Tests/` and mirror the source structure:
+Tests live under `tests/WireCopy.Tests/` and mirror the source structure:
 
 ```
-tests/TermReader.Tests/
+tests/WireCopy.Tests/
 ├── Bookmarks/
 ├── Browser/
 ├── Collections/
@@ -48,7 +48,7 @@ Tests are tagged with `[Trait("Category", "Unit")]` or `[Trait("Category", "Inte
 
 Tests must reflect real-world usage. Avoid mocking the very component that would actually fail in production — if your test passes only because the failing dependency is mocked away, the test gives false confidence.
 
-A real example from this project: `GcsStorageClient` initialization throws `InvalidOperationException` when GCP credentials are missing. The original tests mocked `ICloudStorageClient` entirely, so missing-credential crashes shipped to production undetected. The current tests in `tests/TermReader.Tests/Podcast/GcsStorageClientUnitTests.cs` exercise the real exception types instead.
+A real example from this project: `GcsStorageClient` initialization throws `InvalidOperationException` when GCP credentials are missing. The original tests mocked `ICloudStorageClient` entirely, so missing-credential crashes shipped to production undetected. The current tests in `tests/WireCopy.Tests/Podcast/GcsStorageClientUnitTests.cs` exercise the real exception types instead.
 
 Guidelines:
 
@@ -65,17 +65,17 @@ Run with coverage:
 dotnet test --collect:"XPlat Code Coverage"
 ```
 
-Reports land under `tests/TermReader.Tests/TestResults/<guid>/coverage.cobertura.xml`. Target is >80% on changed code; treat as a guide, not a quality gate.
+Reports land under `tests/WireCopy.Tests/TestResults/<guid>/coverage.cobertura.xml`. Target is >80% on changed code; treat as a guide, not a quality gate.
 
 ## Watch mode
 
 ```bash
-cd tests/TermReader.Tests
+cd tests/WireCopy.Tests
 dotnet watch test
 ```
 
 ## Troubleshooting
 
 - **Tests not discovered** — `dotnet clean && dotnet build && dotnet test`.
-- **Stale build artifacts** — `rm -rf tests/TermReader.Tests/{bin,obj}` then restore.
-- **Locked SQLite file from a prior run** — kill any leftover `dotnet` / `TermReader.API` processes; `TestDatabaseFixture` uses unique temp paths but a crashed run can leave handles open.
+- **Stale build artifacts** — `rm -rf tests/WireCopy.Tests/{bin,obj}` then restore.
+- **Locked SQLite file from a prior run** — kill any leftover `dotnet` / `WireCopy.API` processes; `TestDatabaseFixture` uses unique temp paths but a crashed run can leave handles open.

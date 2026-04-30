@@ -23,7 +23,7 @@ Out of scope:
 
 ## Handling secrets
 
-TermReader expects credentials via:
+WireCopy expects credentials via:
 
 - `dotnet user-secrets` (preferred for local development),
 - Environment variables (preferred for Docker / CI),

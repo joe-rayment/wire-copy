@@ -1,0 +1,13 @@
+# WireCopy wordmark — ASCII
+
+╭─ WireCopy ─────────────────────────╮
+│ A better reading experience          │
+╰──────────────────────────────────────╯
+
+Minimal variant:
+
+  WireCopy
+
+Monogram (single-cell):
+
+  ▌T

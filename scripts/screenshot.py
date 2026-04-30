@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screenshot utility for TermReader testing and validation.
+Screenshot utility for WireCopy testing and validation.
 
 Uses Chrome's DevTools Protocol (CDP) directly via websocket, with the same
 anti-detection measures as BrowserSession.cs (--disable-blink-features,
@@ -21,7 +21,7 @@ Usage:
     # Custom viewport size
     python3 scripts/screenshot.py https://example.com --width 1440 --height 900
 
-    # With cookies from TermReader's cookie store
+    # With cookies from WireCopy's cookie store
     python3 scripts/screenshot.py https://nytimes.com --cookies
 
     # Custom output path
@@ -61,10 +61,10 @@ except ImportError:
 
 SCREENSHOTS_DIR = Path(__file__).parent.parent / "screenshots"
 COOKIE_STORE_PATHS = [
-    Path.home() / ".local" / "share" / "TermReader" / "cookies.json",
-    Path(os.environ.get("LOCALAPPDATA", "")) / "TermReader" / "cookies.json",
+    Path.home() / ".local" / "share" / "WireCopy" / "cookies.json",
+    Path(os.environ.get("LOCALAPPDATA", "")) / "WireCopy" / "cookies.json",
     Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    / "TermReader"
+    / "WireCopy"
     / "cookies.json",
 ]
 
@@ -87,8 +87,8 @@ def sanitize_filename(url: str) -> str:
     return name[:100]
 
 
-def load_termreader_cookies(domain: str) -> list[dict]:
-    """Load cookies from TermReader's cookie store."""
+def load_wirecopy_cookies(domain: str) -> list[dict]:
+    """Load cookies from WireCopy's cookie store."""
     for cookie_path in COOKIE_STORE_PATHS:
         if cookie_path.exists():
             try:
@@ -412,7 +412,7 @@ def take_screenshot(
         # Inject cookies before navigation
         if use_cookies:
             domain = urlparse(url).netloc.replace("www.", "")
-            cookies = load_termreader_cookies(domain)
+            cookies = load_wirecopy_cookies(domain)
             if cookies:
                 browser.set_cookies(cookies)
 
@@ -456,7 +456,7 @@ def take_screenshot(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Take reference screenshots of websites for TermReader testing"
+        description="Take reference screenshots of websites for WireCopy testing"
     )
     parser.add_argument("urls", nargs="+", help="URLs to screenshot")
     parser.add_argument(
@@ -472,7 +472,7 @@ def main():
     parser.add_argument(
         "--cookies",
         action="store_true",
-        help="Inject cookies from TermReader's cookie store",
+        help="Inject cookies from WireCopy's cookie store",
     )
     parser.add_argument(
         "--wait-for", help="CSS selector to wait for before screenshotting"

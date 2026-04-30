@@ -1,6 +1,6 @@
-# TermReader Design Inspiration: Retro Terminal with Modern Delight
+# WireCopy Design Inspiration: Retro Terminal with Modern Delight
 
-Research compiled 2026-03-18. This document covers color palettes, animation techniques, UX patterns, and specific implementation ideas for making TermReader feel retro yet surprisingly modern.
+Research compiled 2026-03-18. This document covers color palettes, animation techniques, UX patterns, and specific implementation ideas for making WireCopy feel retro yet surprisingly modern.
 
 ---
 
@@ -12,7 +12,7 @@ Research compiled 2026-03-18. This document covers color palettes, animation tec
 4. [Animation & Visual Effects Techniques](#4-animation--visual-effects-techniques)
 5. [Unicode Character Toolkit](#5-unicode-character-toolkit)
 6. [UX Patterns for Guiding Users](#6-ux-patterns-for-guiding-users)
-7. [Concrete Ideas for TermReader](#7-concrete-ideas-for-termreader)
+7. [Concrete Ideas for WireCopy](#7-concrete-ideas-for-wirecopy)
 8. [Sources](#8-sources)
 
 ---
@@ -21,7 +21,7 @@ Research compiled 2026-03-18. This document covers color palettes, animation tec
 
 ### Existing Theme System
 
-TermReader uses 256-color ANSI codes via `ThemeColor(ConsoleColor, byte AnsiCode)`. The Phosphor theme currently has:
+WireCopy uses 256-color ANSI codes via `ThemeColor(ConsoleColor, byte AnsiCode)`. The Phosphor theme currently has:
 
 | Role | ANSI 256 | Approximate Hex | Description |
 |------|----------|-----------------|-------------|
@@ -86,31 +86,31 @@ White highlight:  ANSI 15  (#ffffff)  -- selected items, maximum emphasis
 ### lazygit
 - **What makes it work**: Panel-based layout with clear focus indicators. The selected panel gets a colored border; unselected panels get dim borders. Information hierarchy is crystal clear -- you always know where you are.
 - **Technique**: Bright border on focused panel, dim border on unfocused. Status bar shows context-sensitive key hints.
-- **Applicable to TermReader**: The focused-panel-bright-border pattern could highlight the active view (link tree vs. article vs. launcher).
+- **Applicable to WireCopy**: The focused-panel-bright-border pattern could highlight the active view (link tree vs. article vs. launcher).
 
 ### btop++
 - **What makes it work**: Dense information displayed beautifully through Unicode block characters for graphs. Uses braille characters (U+2800-U+28FF) for high-resolution sparkline graphs. Color gradients across graph bars (green -> yellow -> red for CPU usage).
 - **Technique**: Braille-pattern graphs, block-element bar charts, color gradient encoding of values.
-- **Applicable to TermReader**: Cache warmth or podcast generation progress could use braille-pattern progress visualization.
+- **Applicable to WireCopy**: Cache warmth or podcast generation progress could use braille-pattern progress visualization.
 
 ### k9s
 - **What makes it work**: Full skinning system with 256-color support. Real-time data updates without flicker. Resource-type-aware color coding.
 - **Technique**: Custom skins via YAML, color-coded resource states, breadcrumb navigation.
-- **Applicable to TermReader**: Breadcrumb-style navigation path in the status bar.
+- **Applicable to WireCopy**: Breadcrumb-style navigation path in the status bar.
 
 ### Charm (Bubble Tea / Lip Gloss ecosystem)
 - **What makes it work**: CSS-like declarative styling. Rounded borders (using Unicode ╭╮╰╯). Padding and margin create visual breathing room. Gradient borders using multiple colors blended across border characters.
 - **Technique**: Composable style objects with border, padding, margin, alignment. Automatic color downsampling for terminal compatibility. Border gradient support.
-- **Applicable to TermReader**: The concept of giving UI elements padding and breathing room, even in a terminal, is transformative. A panel with 1-character padding feels dramatically more "designed" than edge-to-edge text.
+- **Applicable to WireCopy**: The concept of giving UI elements padding and breathing room, even in a terminal, is transformative. A panel with 1-character padding feels dramatically more "designed" than edge-to-edge text.
 
 ### Textual (Python TUI framework)
 - **What makes it work**: Toast notifications that slide in from the edge. CSS-like styling with transitions and animations. Widget focus system with visible focus rings.
 - **Technique**: Toast overlays, focus ring animations, smooth transitions.
-- **Applicable to TermReader**: Toast-style notifications for events like "Cache warmed for 12 pages" or "Podcast ready."
+- **Applicable to WireCopy**: Toast-style notifications for events like "Cache warmed for 12 pages" or "Podcast ready."
 
 ### Yazi (file manager)
 - **What makes it work**: Image previews in terminal (via Sixel/Kitty protocol). Smooth scrolling. Minimalist but information-dense layout.
-- **Applicable to TermReader**: The discipline of showing just enough information, with clear hierarchy.
+- **Applicable to WireCopy**: The discipline of showing just enough information, with clear hierarchy.
 
 ---
 
@@ -324,7 +324,7 @@ Example toast:
 
 ---
 
-## 7. Concrete Ideas for TermReader
+## 7. Concrete Ideas for WireCopy
 
 ### 7.1 "Podcast Complete" Celebration (The Showstopper)
 
