@@ -15,8 +15,8 @@
 ## Build and run
 
 ```bash
-git clone https://github.com/joe-rayment/newspaper_reader.git
-cd newspaper_reader
+git clone https://github.com/joe-rayment/wire-copy.git
+cd wire-copy
 dotnet restore
 dotnet build
 dotnet run --project src/TermReader.API

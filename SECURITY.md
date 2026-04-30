@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-If you discover a security issue, please **do not** open a public GitHub issue. Instead, report it privately via GitHub's [private vulnerability reporting](https://github.com/joe-rayment/newspaper_reader/security/advisories/new).
+If you discover a security issue, please **do not** open a public GitHub issue. Instead, report it privately via GitHub's [private vulnerability reporting](https://github.com/joe-rayment/wire-copy/security/advisories/new).
 
 You should expect an initial response within a few days. Once a fix is available, we'll coordinate disclosure.
 
