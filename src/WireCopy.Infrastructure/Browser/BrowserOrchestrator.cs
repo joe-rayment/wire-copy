@@ -199,51 +199,63 @@ public partial class BrowserOrchestrator : IBrowserService
     {
         var context = _navigationService.CurrentContext;
 
-        switch (mode)
+        // workspace-1f5a: compose the entire frame into a single buffer and
+        // emit it via one Console.Out.Write so OS pipe-buffer flushes can't
+        // split an SGR escape sequence mid-write (which was dropping the
+        // cursor highlight on the user's terminal under rapid keystrokes).
+        _renderer.BeginFrame();
+        try
         {
-            case ViewMode.Hierarchical:
-                _renderer.RenderHierarchical(page, context, options);
-                break;
+            switch (mode)
+            {
+                case ViewMode.Hierarchical:
+                    _renderer.RenderHierarchical(page, context, options);
+                    break;
 
-            case ViewMode.Readable:
-                _lineCacheManager.EnsureLineCache(options);
-                if (_renderer is UI.TerminalPageRenderer tpr)
-                {
-                    tpr.SetParagraphSpans(_lineCacheManager.ParagraphSpans);
-                }
+                case ViewMode.Readable:
+                    _lineCacheManager.EnsureLineCache(options);
+                    if (_renderer is UI.TerminalPageRenderer tpr)
+                    {
+                        tpr.SetParagraphSpans(_lineCacheManager.ParagraphSpans);
+                    }
 
-                _renderer.RenderReadable(page, context, options, _lineCacheManager.CachedLines?.ToList());
-                break;
+                    _renderer.RenderReadable(page, context, options, _lineCacheManager.CachedLines?.ToList());
+                    break;
 
-            case ViewMode.CollectionList:
-                _renderer.RenderCollectionList(
-                    _commandContext.Collections?.ToList() ?? new List<Collection>(),
-                    _navigationService.CollectionSelectedIndex,
-                    _commandContext.DefaultCollectionId,
-                    _navigationService.CollectionListScrollOffset,
-                    options);
-                break;
-
-            case ViewMode.CollectionItems:
-                var activeCollection = _navigationService.ActiveCollection;
-                if (activeCollection != null)
-                {
-                    _renderer.RenderCollectionItems(
-                        activeCollection,
-                        _navigationService.CollectionItemSelectedIndex,
-                        _navigationService.CollectionItemScrollOffset,
+                case ViewMode.CollectionList:
+                    _renderer.RenderCollectionList(
+                        _commandContext.Collections?.ToList() ?? new List<Collection>(),
+                        _navigationService.CollectionSelectedIndex,
+                        _commandContext.DefaultCollectionId,
+                        _navigationService.CollectionListScrollOffset,
                         options);
-                }
+                    break;
 
-                break;
+                case ViewMode.CollectionItems:
+                    var activeCollection = _navigationService.ActiveCollection;
+                    if (activeCollection != null)
+                    {
+                        _renderer.RenderCollectionItems(
+                            activeCollection,
+                            _navigationService.CollectionItemSelectedIndex,
+                            _navigationService.CollectionItemScrollOffset,
+                            options);
+                    }
 
-            case ViewMode.Launcher:
-                _renderer.RenderLauncher(
-                    _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
-                    _navigationService.LauncherSelectedIndex,
-                    _navigationService.LauncherScrollOffset,
-                    options);
-                break;
+                    break;
+
+                case ViewMode.Launcher:
+                    _renderer.RenderLauncher(
+                        _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                        _navigationService.LauncherSelectedIndex,
+                        _navigationService.LauncherScrollOffset,
+                        options);
+                    break;
+            }
+        }
+        finally
+        {
+            _renderer.EndFrame();
         }
 
         return Task.CompletedTask;

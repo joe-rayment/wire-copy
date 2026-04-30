@@ -107,4 +107,19 @@ public interface IPageRenderer
     /// Clears the terminal screen.
     /// </summary>
     void Clear();
+
+    /// <summary>
+    /// Starts a buffered render frame. All Write/SetCursorPosition calls until
+    /// EndFrame is invoked are accumulated into a single buffer and emitted as
+    /// one atomic write — preventing OS pipe-buffer flushes from splitting an
+    /// SGR escape sequence mid-write (workspace-1f5a).
+    /// Implementations MAY no-op if they don't buffer.
+    /// </summary>
+    void BeginFrame();
+
+    /// <summary>
+    /// Emits the buffered frame as a single atomic write. Safe to call when
+    /// BeginFrame was not invoked (no-op).
+    /// </summary>
+    void EndFrame();
 }
