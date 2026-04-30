@@ -32,8 +32,6 @@ public class LinkTreeRendererBurstTests
     private const string AccentBar = "▌"; // ▌
 
     [Theory]
-    [InlineData("DenseList")]
-    [InlineData("Magazine")]
     [InlineData("Cards")]
     public void RenderLinkTree_SustainedSelectionAdvance_AlwaysEmitsCursorHighlight(string layoutVariant)
     {
@@ -63,9 +61,9 @@ public class LinkTreeRendererBurstTests
             var visibleNodes = tree.GetVisibleNodes().Where(n => !n.IsGroupHeader).ToList();
 
             // Limit selection cycling to nodes that fit in the visible viewport.
-            // Cards layout with 35 maxLines and cellHeight=5 fits ~7 rows × 2 cols = 14 cards.
-            // DenseList/Magazine fit more, but 10 is a safe lower bound that exercises the
-            // burst pattern without the test sliding selection offscreen.
+            // Cards layout with 35 maxLines and cellHeight=5 fits ~7 rows × 2 cols = 14 cards;
+            // 10 is a safe lower bound that exercises the burst pattern without sliding
+            // selection offscreen.
             var visibleCount = Math.Min(10, visibleNodes.Count);
 
             for (var frame = 0; frame < 20; frame++)
@@ -126,79 +124,4 @@ public class LinkTreeRendererBurstTests
         }
     }
 
-    [Theory]
-    [InlineData("DenseList")]
-    [InlineData("Magazine")]
-    public void RenderLinkTree_RapidScrollOffsetAdvance_AlwaysEmitsCursorHighlight(string layoutVariant)
-    {
-        const int totalLinks = 60;
-        var linkMap = new Dictionary<LinkType, List<LinkInfo>>
-        {
-            [LinkType.Content] = Enumerable.Range(0, totalLinks)
-                .Select(i => new LinkInfo
-                {
-                    Url = $"https://example.com/{i}",
-                    DisplayText = $"Story {i} - a long-ish headline that will be truncated on narrow widths",
-                    Type = LinkType.Content,
-                    ImportanceScore = 70,
-                })
-                .ToList(),
-        };
-        var tree = NavigationTree.BuildWithGroups(linkMap);
-
-        var themeProvider = Substitute.For<IThemeProvider>();
-        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
-
-        var originalOut = Console.Out;
-        var missingFrames = new List<int>();
-        try
-        {
-            tree.EnsureSelection();
-            var visibleNodes = tree.GetVisibleNodes().Where(n => !n.IsGroupHeader).ToList();
-
-            for (var frame = 0; frame < 25; frame++)
-            {
-                if (visibleNodes.Count > 0)
-                {
-                    // Selection follows scroll: keep selected row near the top of the visible window.
-                    var targetIdx = Math.Min(visibleNodes.Count - 1, frame);
-                    tree.SelectNodeById(visibleNodes[targetIdx].Id);
-                }
-
-                tree.EnsureSelection();
-
-                var helpers = new RenderHelpers { TerminalHeight = 40 };
-                var renderer = new LinkTreeRenderer(helpers, themeProvider);
-                var options = new RenderOptions
-                {
-                    TerminalWidth = 120,
-                    TerminalHeight = 40,
-                    MaxContentWidth = 116,
-                    LayoutVariant = layoutVariant,
-                };
-                // Scroll offset advances with frame so the selected row stays in view.
-                var context = new NavigationContext { ScrollOffset = Math.Max(0, frame - 2) };
-
-                var sw = new StringWriter();
-                Console.SetOut(sw);
-                renderer.RenderLinkTree(tree, context, maxLines: 35, options);
-                Console.Out.Flush();
-
-                var output = sw.ToString();
-                var hasBar = output.Contains(AccentBar, StringComparison.Ordinal);
-                var hasSelBg = SelectionBgEscape.IsMatch(output);
-                if (!hasBar && !hasSelBg)
-                {
-                    missingFrames.Add(frame);
-                }
-            }
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-
-        missingFrames.Should().BeEmpty(
-            $"layout={layoutVariant} dropped highlight on frames: {string.Join(",", missingFrames)}");
-    }
 }

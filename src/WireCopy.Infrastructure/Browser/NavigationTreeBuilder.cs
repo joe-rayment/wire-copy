@@ -148,12 +148,18 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             }
         }
 
-        for (int i = 0; i < contentLinks.Count; i++)
+        // workspace-vwkt: drop unmatched content links rather than appending them to root.
+        // The legacy AiHierarchical path used to dump unmatched links at the bottom of the
+        // root node (under a vague "everything else" pile), which surfaced ad/junk links
+        // beneath an AI-curated tree. The new AiCurated strategy filters destructively and
+        // produces a cleaner tree; matching that semantics here keeps both paths consistent
+        // and aligns with the user-visible promise of an AI-curated layout.
+        var droppedUnmatched = contentLinks.Count - matchedLinks.Count;
+        if (droppedUnmatched > 0)
         {
-            if (!matchedLinks.Contains(i))
-            {
-                root.AddChild(contentLinks[i]);
-            }
+            _logger.LogInformation(
+                "Dropped {Count} unmatched content link(s) from AI hierarchy tree (workspace-vwkt)",
+                droppedUnmatched);
         }
 
         var nonContentGrouped = nonContentLinks.GroupBy(l => l.Type).ToDictionary(g => g.Key, g => g.ToList());

@@ -81,7 +81,7 @@ public class NavigationTreeBuilderHierarchyTests
         var tree = await _builder.BuildTreeAsync(links, config);
 
         var nodes = tree.GetAllNodes().ToList();
-        // Should have a section header "Main Articles" with 1 child, plus 1 unmatched link
+        // workspace-vwkt: only the matched link is kept; unmatched links are dropped.
         var sectionHeaders = nodes.Where(n => n.IsGroupHeader && n.Link.DisplayText == "Main Articles").ToList();
         sectionHeaders.Should().HaveCount(1);
         sectionHeaders[0].Children.Should().HaveCount(1);
@@ -139,8 +139,11 @@ public class NavigationTreeBuilderHierarchyTests
     }
 
     [Fact]
-    public async Task BuildTreeAsync_WithConfig_UnmatchedLinksUnderRoot()
+    public async Task BuildTreeAsync_WithConfig_UnmatchedLinksDropped()
     {
+        // workspace-vwkt: legacy AiHierarchical used to append unmatched content links
+        // at the root bottom. That allowed ad/junk links to leak into an AI-curated tree,
+        // so the new behavior drops unmatched content links to match AiCurated semantics.
         var links = new List<LinkInfo>
         {
             CreateContentLink(text: "Matched", parentSelector: "article > h3"),
@@ -158,9 +161,13 @@ public class NavigationTreeBuilderHierarchyTests
 
         var tree = await _builder.BuildTreeAsync(links, config);
 
-        // Root's direct children: section header "Top" + 2 unmatched links
-        tree.Root.Children.Should().HaveCount(3);
-        tree.Root.Children.Count(c => !c.IsGroupHeader).Should().Be(2);
+        // Root's direct children: only the "Top" section header — unmatched links are dropped.
+        tree.Root.Children.Should().HaveCount(1);
+        tree.Root.Children.Count(c => !c.IsGroupHeader).Should().Be(0);
+
+        var topHeader = tree.Root.Children.Single(c => c.IsGroupHeader && c.Link.DisplayText == "Top");
+        topHeader.Children.Should().HaveCount(1);
+        topHeader.Children[0].Link.DisplayText.Should().Be("Matched");
     }
 
     [Fact]

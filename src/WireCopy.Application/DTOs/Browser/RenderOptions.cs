@@ -87,8 +87,10 @@ public record RenderOptions
     public string? LayoutVariantLabel { get; init; }
 
     /// <summary>
-    /// Current layout variant name for the active view mode (e.g., "Cards", "DenseList", "Magazine").
-    /// Used by renderers to select the appropriate layout algorithm.
+    /// Current layout variant name for the active view mode (e.g., "Grid"/"List"/"Compact" for the launcher,
+    /// "Comfortable"/"FullWidth"/"Narrow" for the reader, "Standard"/"Compact" for collection items).
+    /// Used by renderers to select the appropriate layout algorithm. The hierarchical link tree no longer
+    /// has variants — there is a single layout (workspace-utaw).
     /// </summary>
     public string? LayoutVariant { get; init; }
 

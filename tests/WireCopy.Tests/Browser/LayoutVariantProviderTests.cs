@@ -28,7 +28,6 @@ public class LayoutVariantProviderTests
         var sut = new LayoutVariantProvider(_settingsStore);
 
         sut.GetCurrentVariant(ViewMode.Launcher).Should().Be("Grid");
-        sut.GetCurrentVariant(ViewMode.Hierarchical).Should().Be("Cards");
         sut.GetCurrentVariant(ViewMode.Readable).Should().Be("Comfortable");
         sut.GetCurrentVariant(ViewMode.CollectionItems).Should().Be("Standard");
         sut.GetCurrentVariant(ViewMode.CollectionList).Should().Be("Standard");
@@ -40,7 +39,7 @@ public class LayoutVariantProviderTests
         var sut = new LayoutVariantProvider(_settingsStore);
 
         sut.GetCurrentIndex(ViewMode.Launcher).Should().Be(0);
-        sut.GetCurrentIndex(ViewMode.Hierarchical).Should().Be(0);
+        sut.GetCurrentIndex(ViewMode.Readable).Should().Be(0);
     }
 
     [Fact]
@@ -49,7 +48,6 @@ public class LayoutVariantProviderTests
         var sut = new LayoutVariantProvider(_settingsStore);
 
         sut.GetTotalVariants(ViewMode.Launcher).Should().Be(3);
-        sut.GetTotalVariants(ViewMode.Hierarchical).Should().Be(3);
         sut.GetTotalVariants(ViewMode.Readable).Should().Be(3);
         sut.GetTotalVariants(ViewMode.CollectionItems).Should().Be(2);
         sut.GetTotalVariants(ViewMode.CollectionList).Should().Be(1);
@@ -62,9 +60,6 @@ public class LayoutVariantProviderTests
 
         sut.GetAvailableVariants(ViewMode.Launcher).Should().BeEquivalentTo(
             new[] { "Grid", "List", "Compact" }, opts => opts.WithStrictOrdering());
-
-        sut.GetAvailableVariants(ViewMode.Hierarchical).Should().BeEquivalentTo(
-            new[] { "Cards", "DenseList", "Magazine" }, opts => opts.WithStrictOrdering());
 
         sut.GetAvailableVariants(ViewMode.Readable).Should().BeEquivalentTo(
             new[] { "Comfortable", "FullWidth", "Narrow" }, opts => opts.WithStrictOrdering());
@@ -129,8 +124,8 @@ public class LayoutVariantProviderTests
 
         sut.CycleVariant(ViewMode.Launcher);
 
-        sut.GetCurrentVariant(ViewMode.Hierarchical).Should().Be("Cards");
-        sut.GetCurrentIndex(ViewMode.Hierarchical).Should().Be(0);
+        sut.GetCurrentVariant(ViewMode.Readable).Should().Be("Comfortable");
+        sut.GetCurrentIndex(ViewMode.Readable).Should().Be(0);
     }
 
     [Fact]
@@ -201,6 +196,6 @@ public class LayoutVariantProviderTests
         sut.GetCurrentVariant(ViewMode.Launcher).Should().Be("List");
         sut.GetCurrentVariant(ViewMode.Readable).Should().Be("Narrow");
         // Unset modes default to first
-        sut.GetCurrentVariant(ViewMode.Hierarchical).Should().Be("Cards");
+        sut.GetCurrentVariant(ViewMode.CollectionItems).Should().Be("Standard");
     }
 }

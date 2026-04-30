@@ -511,7 +511,7 @@ public partial class BrowserOrchestrator : IBrowserService
 
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
-        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.LayoutVariant);
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
         return layout.VisibleRows;
     }
 
@@ -995,10 +995,6 @@ public partial class BrowserOrchestrator : IBrowserService
 
                 case CommandType.ChooseLayout:
                     await StrategyChooserHandler.HandleOpenChooserAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
-                    break;
-
-                case CommandType.CycleLayoutVariant:
-                    await LayoutCommandHandler.HandleCycleLayoutVariant(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.DumpHtml:
