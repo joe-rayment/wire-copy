@@ -31,6 +31,115 @@ public class LinkTreeRendererBurstTests
     private static readonly Regex SelectionBgEscape = new(@"\x1b\[48;5;\d+m", RegexOptions.Compiled);
     private const string AccentBar = "▌"; // ▌
 
+    /// <summary>
+    /// workspace-1f5a: simulates the user's reported scenario — 25 rapid 'j'
+    /// keystrokes advancing the selection one row per frame — and asserts the
+    /// cursor highlight escape is present in EVERY captured frame across all
+    /// four built-in themes. With frame buffering enabled at the orchestrator
+    /// level, the cursor escape is composed atomically per frame so it cannot
+    /// be split mid-write by an OS pipe-buffer flush. This test asserts the
+    /// frame composition is deterministic; the orchestrator-level wrapping
+    /// guarantees the atomic emit.
+    /// </summary>
+    [Theory]
+    [InlineData(ThemeName.Phosphor)]
+    [InlineData(ThemeName.Amber)]
+    [InlineData(ThemeName.Dracula)]
+    [InlineData(ThemeName.Light)]
+    public void RenderLinkTree_RapidJBurst_AllThemesAlwaysContainCursorHighlight(ThemeName theme)
+    {
+        const int totalLinks = 30;
+        const int iterations = 25;
+        var linkMap = new Dictionary<LinkType, List<LinkInfo>>
+        {
+            [LinkType.Content] = Enumerable.Range(0, totalLinks)
+                .Select(i => new LinkInfo
+                {
+                    Url = $"https://example.com/article-{i}",
+                    DisplayText = $"Article {i} headline goes here",
+                    Type = LinkType.Content,
+                    ImportanceScore = 70,
+                })
+                .ToList(),
+        };
+        var tree = NavigationTree.BuildWithGroups(linkMap);
+
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(theme);
+
+        var capturedFrames = new List<string>();
+        var originalOut = Console.Out;
+        try
+        {
+            tree.EnsureSelection();
+            var visibleNodes = tree.GetVisibleNodes().Where(n => !n.IsGroupHeader).ToList();
+            var cycleCount = Math.Min(10, visibleNodes.Count);
+
+            for (var frame = 0; frame < iterations; frame++)
+            {
+                if (cycleCount > 0)
+                {
+                    var targetIdx = frame % cycleCount;
+                    tree.SelectNodeById(visibleNodes[targetIdx].Id);
+                }
+
+                tree.EnsureSelection();
+
+                // Use frame buffering so the captured Console.Out reflects the
+                // single-write path the orchestrator uses in production.
+                var helpers = new RenderHelpers { TerminalHeight = 40 };
+                helpers.BeginFrame();
+                var renderer = new LinkTreeRenderer(helpers, themeProvider);
+                var options = new RenderOptions
+                {
+                    TerminalWidth = 120,
+                    TerminalHeight = 40,
+                    MaxContentWidth = 116,
+                    LayoutVariant = "Cards",
+                };
+                var context = new NavigationContext { ScrollOffset = 0 };
+
+                var sw = new StringWriter();
+                Console.SetOut(sw);
+                renderer.RenderLinkTree(tree, context, maxLines: 35, options);
+                helpers.EndFrame();
+                Console.Out.Flush();
+
+                capturedFrames.Add(sw.ToString());
+            }
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        capturedFrames.Should().HaveCount(iterations);
+
+        var missing = new List<int>();
+        for (var i = 0; i < capturedFrames.Count; i++)
+        {
+            var f = capturedFrames[i];
+            var hasBar = f.Contains(AccentBar, StringComparison.Ordinal);
+            var hasSelBg = SelectionBgEscape.IsMatch(f);
+            var hasUnderlineColor = f.Contains("\x1b[58;5;", StringComparison.Ordinal);
+            if (!hasBar && !hasSelBg && !hasUnderlineColor)
+            {
+                missing.Add(i);
+            }
+        }
+
+        if (missing.Count > 0)
+        {
+            var firstMissing = missing[0];
+            var debug = new StringBuilder()
+                .AppendLine($"theme={theme} missing={missing.Count}/{capturedFrames.Count}")
+                .AppendLine($"first missing frame {firstMissing}:")
+                .AppendLine(capturedFrames[firstMissing].Replace("\x1b", "\\e", StringComparison.Ordinal))
+                .ToString();
+            missing.Should().BeEmpty(debug);
+        }
+    }
+
     [Theory]
     [InlineData("Cards")]
     public void RenderLinkTree_SustainedSelectionAdvance_AlwaysEmitsCursorHighlight(string layoutVariant)

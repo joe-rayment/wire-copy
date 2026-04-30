@@ -299,6 +299,17 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.Clear();
     }
 
+    /// <summary>
+    /// Starts buffering all subsequent helper writes into a single frame so the
+    /// orchestrator can emit it atomically (workspace-1f5a).
+    /// </summary>
+    public void BeginFrame() => _helpers.BeginFrame();
+
+    /// <summary>
+    /// Flushes the buffered frame as a single Console.Out.Write + Flush.
+    /// </summary>
+    public void EndFrame() => _helpers.EndFrame();
+
     internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
 
     /// <summary>

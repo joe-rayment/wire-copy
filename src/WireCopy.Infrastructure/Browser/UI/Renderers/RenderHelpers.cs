@@ -24,6 +24,18 @@ internal class RenderHelpers
     private static readonly object DebugFrameLock = new();
     private static long _debugFrameSeq;
 
+    /// <summary>
+    /// Frame buffer for atomic single-write rendering (workspace-1f5a).
+    /// When non-null, all Console.Write/SetCursorPosition calls are routed
+    /// through this StringBuilder so the entire frame emits as a single
+    /// Console.Out.Write at EndFrame. This prevents the OS pipe buffer from
+    /// flushing mid-escape and splitting an SGR sequence so the terminal
+    /// receives only part of it (which causes the cursor highlight to drop).
+    /// Opt-in via BeginFrame; null means legacy direct-write mode (used by
+    /// tests that capture Console.Out).
+    /// </summary>
+    private StringBuilder? _frameBuffer;
+
     private int _linesWritten;
     private int _terminalHeight;
 
@@ -222,11 +234,49 @@ internal class RenderHelpers
         return lines;
     }
 
+    /// <summary>
+    /// Starts a buffered render frame. All subsequent Write/SetCursorPosition
+    /// calls accumulate into a single StringBuilder until EndFrame is called,
+    /// at which point the entire frame is emitted via a single Console.Out.Write
+    /// followed by Console.Out.Flush. Atomic from the terminal's perspective —
+    /// escape sequences cannot be split mid-write by OS pipe buffer flushes
+    /// (workspace-1f5a).
+    /// </summary>
+    public void BeginFrame()
+    {
+        _frameBuffer = new StringBuilder(8192);
+        _linesWritten = 0;
+    }
+
+    /// <summary>
+    /// Emits the buffered frame as a single atomic write and clears buffering.
+    /// Safe to call when BeginFrame was not invoked (no-op).
+    /// </summary>
+    public void EndFrame()
+    {
+        if (_frameBuffer == null)
+        {
+            return;
+        }
+
+        try
+        {
+            Console.Out.Write(_frameBuffer.ToString());
+            Console.Out.Flush();
+        }
+        catch
+        {
+            // Swallow — terminal may be in a bad state mid-shutdown.
+        }
+
+        _frameBuffer = null;
+    }
+
     public void Clear()
     {
         try
         {
-            Console.SetCursorPosition(0, 0);
+            EmitCursorPos(0, 0);
             _linesWritten = 0;
         }
         catch
@@ -274,7 +324,7 @@ internal class RenderHelpers
                     sb.Append($"\x1b[{line + 1};1H\x1b[K");
                 }
 
-                Console.Write(sb.ToString());
+                EmitWrite(sb.ToString());
                 _linesWritten = targetLine;
             }
         }
@@ -303,7 +353,7 @@ internal class RenderHelpers
                 sb.Append($"\x1b[{line + 1};1H\x1b[K");
             }
 
-            Console.Write(sb.ToString());
+            EmitWrite(sb.ToString());
             _linesWritten = height;
         }
         catch
@@ -322,14 +372,14 @@ internal class RenderHelpers
             }
 
             // Clear full line first when using left margin (centered content)
-            Console.SetCursorPosition(0, _linesWritten);
-            Console.Write("\x1b[K");
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
             if (LeftMargin > 0)
             {
-                Console.SetCursorPosition(LeftMargin, _linesWritten);
+                EmitCursorPos(LeftMargin, _linesWritten);
             }
 
-            Console.Write(text);
+            EmitWrite(text);
             LogDebugFrame("WriteLine", _linesWritten, text);
             _linesWritten++;
         }
@@ -349,11 +399,11 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
-            Console.Write("\x1b[K");
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
             if (LeftMargin > 0)
             {
-                Console.SetCursorPosition(LeftMargin, _linesWritten);
+                EmitCursorPos(LeftMargin, _linesWritten);
             }
 
             WriteSearchHighlightedContent(text, searchQuery, palette);
@@ -376,15 +426,15 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
-            Console.Write("\x1b[K");
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
             if (LeftMargin > 0)
             {
-                Console.SetCursorPosition(LeftMargin, _linesWritten);
+                EmitCursorPos(LeftMargin, _linesWritten);
             }
 
             // Write the indicator prefix
-            Console.Write(indicatorAnsi);
+            EmitWrite(indicatorAnsi);
 
             // Strip leading space from content to maintain alignment since indicator takes its place
             var content = text.Length > 0 && text[0] == ' ' ? text.Substring(1) : text;
@@ -395,7 +445,7 @@ internal class RenderHelpers
             }
             else
             {
-                Console.Write(content);
+                EmitWrite(content);
             }
 
             LogDebugFrame("WriteLineWithIndicator", _linesWritten, indicatorAnsi + text);
@@ -429,11 +479,11 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
-            Console.Write("\x1b[K");
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
             if (LeftMargin > 0)
             {
-                Console.SetCursorPosition(LeftMargin, _linesWritten);
+                EmitCursorPos(LeftMargin, _linesWritten);
             }
 
             var cursorFg = isCursorLine && cursorColor != null ? cursorColor.Value.AnsiFg : string.Empty;
@@ -477,11 +527,11 @@ internal class RenderHelpers
             if (paragraphAnsi != null)
             {
                 var indicator = isCursorLine ? paragraphAnsi.Replace("\x1b[0m", string.Empty) : paragraphAnsi;
-                Console.Write($"{underline}{indicator}{underlineOff}");
+                EmitWrite($"{underline}{indicator}{underlineOff}");
             }
             else
             {
-                Console.Write($"{underline}{cursorFg}{(text.Length > 0 ? text[0] : ' ')}{cursorFgOff}{underlineOff}");
+                EmitWrite($"{underline}{cursorFg}{(text.Length > 0 ? text[0] : ' ')}{cursorFgOff}{underlineOff}");
             }
 
             // Remaining content (columns 1+)
@@ -489,7 +539,7 @@ internal class RenderHelpers
 
             if (isCursorLine)
             {
-                Console.Write($"{cursorFg}{underline}");
+                EmitWrite($"{cursorFg}{underline}");
             }
 
             if (!string.IsNullOrEmpty(searchQuery) && palette != null)
@@ -498,7 +548,7 @@ internal class RenderHelpers
             }
             else
             {
-                Console.Write(content);
+                EmitWrite(content);
             }
 
             // Extend underline to right edge of screen
@@ -508,13 +558,13 @@ internal class RenderHelpers
                 var remaining = terminalWidth - LeftMargin - textWidth;
                 if (remaining > 0)
                 {
-                    Console.Write(new string(' ', remaining));
+                    EmitWrite(new string(' ', remaining));
                 }
 
-                Console.Write("\x1b[24m\x1b[0m");
+                EmitWrite("\x1b[24m\x1b[0m");
             }
 
-            Console.Write("\x1b[K");
+            EmitWrite("\x1b[K");
             LogDebugFrame("WriteLineWithDualIndicator", _linesWritten, text);
             _linesWritten++;
         }
@@ -534,16 +584,16 @@ internal class RenderHelpers
                 return;
             }
 
-            Console.SetCursorPosition(0, _linesWritten);
-            Console.Write("\x1b[K");
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
             if (LeftMargin > 0)
             {
-                Console.SetCursorPosition(LeftMargin, _linesWritten);
+                EmitCursorPos(LeftMargin, _linesWritten);
             }
 
-            Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
+            EmitWrite($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
 
-            Console.Write("\x1b[K");
+            EmitWrite("\x1b[K");
             LogDebugFrame("WriteLineWithFocusHighlight", _linesWritten, text);
             _linesWritten++;
         }
@@ -679,7 +729,41 @@ internal class RenderHelpers
         return text[startIndex..];
     }
 
-    private static void WriteSearchHighlightedContent(string text, string searchQuery, ThemePalette palette)
+    /// <summary>
+    /// Writes a string either to the active frame buffer or directly to Console.
+    /// Centralised so every escape sequence flows through the same gate
+    /// (workspace-1f5a). When _frameBuffer is non-null, all output accumulates
+    /// in the buffer until EndFrame emits it as one atomic Console.Out.Write.
+    /// </summary>
+    private void EmitWrite(string s)
+    {
+        if (_frameBuffer != null)
+        {
+            _frameBuffer.Append(s);
+        }
+        else
+        {
+            Console.Write(s);
+        }
+    }
+
+    /// <summary>
+    /// Positions the cursor at (col,row). When buffering, emits the ANSI CUP
+    /// sequence into the frame buffer; otherwise calls Console.SetCursorPosition.
+    /// </summary>
+    private void EmitCursorPos(int col, int row)
+    {
+        if (_frameBuffer != null)
+        {
+            _frameBuffer.Append("\x1b[").Append(row + 1).Append(';').Append(col + 1).Append('H');
+        }
+        else
+        {
+            Console.SetCursorPosition(col, row);
+        }
+    }
+
+    private void WriteSearchHighlightedContent(string text, string searchQuery, ThemePalette palette)
     {
         var index = 0;
 
@@ -688,19 +772,19 @@ internal class RenderHelpers
             var matchPos = text.IndexOf(searchQuery, index, StringComparison.OrdinalIgnoreCase);
             if (matchPos < 0)
             {
-                Console.Write(text.Substring(index));
+                EmitWrite(text.Substring(index));
                 index = text.Length;
             }
             else
             {
                 if (matchPos > index)
                 {
-                    Console.Write(text.Substring(index, matchPos - index));
+                    EmitWrite(text.Substring(index, matchPos - index));
                 }
 
-                Console.Write($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
-                Console.Write(text.Substring(matchPos, searchQuery.Length));
-                Console.Write(AnsiCodes.Reset);
+                EmitWrite($"{palette.SearchHighlightBg.AnsiBg}{palette.SearchHighlightFg.AnsiFg}");
+                EmitWrite(text.Substring(matchPos, searchQuery.Length));
+                EmitWrite(AnsiCodes.Reset);
 
                 index = matchPos + searchQuery.Length;
             }
