@@ -1610,6 +1610,244 @@ public class PodcastOrchestratorTests : IDisposable
     }
 
     #endregion
+
+    #region Output Folder Resolution (workspace-urko)
+
+    /// <summary>
+    /// Builds a fresh PodcastOrchestrator with a substitute settings store so we can
+    /// exercise the runtime override path independently of the shared fixture.
+    /// </summary>
+    private (PodcastOrchestrator sut, IUserSettingsStore store) BuildOrchestratorWithSettingsStore(
+        PodcastConfiguration? podcastConfig = null)
+    {
+        var store = Substitute.For<IUserSettingsStore>();
+        var pageLoader = Substitute.For<IPageLoader>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+        var preloadService = Substitute.For<IPreloadService>();
+        var pageCache = Substitute.For<IPageCache>();
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsBrowserAvailable.Returns(true);
+        var articleCache = Substitute.For<IArticleContentCache>();
+
+        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
+        var pageAccessQueue = Substitute.For<IPageAccessQueue>();
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
+
+        var contentProvider = new ReadingListContentProvider(
+            pageLoader,
+            contentExtractor,
+            browserConfig,
+            preloadService,
+            pageCache,
+            browserSession,
+            pageAccessQueue,
+            articleCache,
+            NullLogger<ReadingListContentProvider>.Instance);
+
+        var ttsService = Substitute.For<ITtsService>();
+        ttsService.IsConfigured.Returns(true);
+        var audioCache = Substitute.For<ITtsAudioCache>();
+        var audioAssembler = Substitute.For<IAudioAssembler>();
+        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var publisher = Substitute.For<IPodcastPublisher>();
+
+        var pConfig = Options.Create(podcastConfig ?? new PodcastConfiguration
+        {
+            Title = "T",
+            Description = "D",
+            Author = "A",
+            Language = "en-us",
+            Category = "Tech",
+            // Leave OutputFolderPath null → falls back to LocalAppData default in ResolveOutputFolderPath.
+        });
+        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "x" });
+
+        var sut = new PodcastOrchestrator(
+            contentProvider,
+            ttsService,
+            audioCache,
+            audioAssembler,
+            publisher,
+            pConfig,
+            ttsConfig,
+            NullLogger<PodcastOrchestrator>.Instance,
+            store);
+
+        return (sut, store);
+    }
+
+    [Fact]
+    public void ResolveEffectiveOutputFolder_WithTildePrefix_ExpandsToHome()
+    {
+        var (sut, store) = BuildOrchestratorWithSettingsStore();
+        store.Get("PodcastOutputFolder").Returns("~/podcasts");
+
+        var path = sut.GetOutputFilePath("My Collection");
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        path.Should().StartWith(Path.Combine(home, "podcasts"),
+            "tilde prefix must expand to the user's home directory");
+
+        // Cleanup: GetOutputFilePath calls Directory.CreateDirectory(folder) so we may
+        // have created an empty {home}/podcasts directory. Best-effort delete.
+        try
+        {
+            var folder = Path.Combine(home, "podcasts");
+            if (Directory.Exists(folder) && !Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                Directory.Delete(folder);
+            }
+        }
+        catch
+        {
+            // Best effort.
+        }
+    }
+
+    [Fact]
+    public void ResolveEffectiveOutputFolder_WithAbsolutePath_ReturnsAsIs()
+    {
+        // Use a unique temp absolute path so the test is hermetic.
+        var abs = Path.Combine(Path.GetTempPath(), $"urko-abs-{Guid.NewGuid():N}");
+        try
+        {
+            var (sut, store) = BuildOrchestratorWithSettingsStore();
+            store.Get("PodcastOutputFolder").Returns(abs);
+
+            var path = sut.GetOutputFilePath("Coll");
+
+            path.Should().StartWith(abs, "absolute paths must be returned without tilde rewriting");
+            path.Should().EndWith("Coll.m4b");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(abs))
+                {
+                    Directory.Delete(abs, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+    }
+
+    [Fact]
+    public void ResolveEffectiveOutputFolder_WithRelativePath_ReturnsAsIs()
+    {
+        // The implementation does not normalize relative paths — it returns them
+        // verbatim (they're resolved against CWD by Path.Combine downstream).
+        // Use a unique tmp-relative name so cleanup is safe.
+        var rel = $"urko-rel-{Guid.NewGuid():N}";
+        try
+        {
+            var (sut, store) = BuildOrchestratorWithSettingsStore();
+            store.Get("PodcastOutputFolder").Returns(rel);
+
+            var path = sut.GetOutputFilePath("Coll");
+
+            // Path.Combine(rel, "Coll.m4b") — relative path is preserved.
+            path.Should().Be(Path.Combine(rel, "Coll.m4b"));
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(rel))
+                {
+                    Directory.Delete(rel, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+    }
+
+    [Fact]
+    public void ResolveEffectiveOutputFolder_NoSavedValue_FallsBackToConfig()
+    {
+        var configured = Path.Combine(Path.GetTempPath(), $"urko-cfg-{Guid.NewGuid():N}");
+        try
+        {
+            var podcastConfig = new PodcastConfiguration
+            {
+                Title = "T",
+                Description = "D",
+                Author = "A",
+                Language = "en-us",
+                Category = "Tech",
+                OutputFolderPath = configured,
+            };
+            var (sut, store) = BuildOrchestratorWithSettingsStore(podcastConfig);
+            store.Get("PodcastOutputFolder").Returns((string?)null);
+
+            var path = sut.GetOutputFilePath("Coll");
+
+            path.Should().Be(Path.Combine(configured, "Coll.m4b"),
+                "with no override, the bound PodcastConfiguration must win");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(configured))
+                {
+                    Directory.Delete(configured, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+    }
+
+    [Fact]
+    public void ResolveEffectiveOutputFolder_EmptySavedValue_FallsBackToConfig()
+    {
+        var configured = Path.Combine(Path.GetTempPath(), $"urko-cfg-empty-{Guid.NewGuid():N}");
+        try
+        {
+            var podcastConfig = new PodcastConfiguration
+            {
+                Title = "T",
+                Description = "D",
+                Author = "A",
+                Language = "en-us",
+                Category = "Tech",
+                OutputFolderPath = configured,
+            };
+            var (sut, store) = BuildOrchestratorWithSettingsStore(podcastConfig);
+            store.Get("PodcastOutputFolder").Returns(string.Empty);
+
+            var path = sut.GetOutputFilePath("Coll");
+
+            path.Should().Be(Path.Combine(configured, "Coll.m4b"),
+                "empty/whitespace overrides must be ignored (treated as unset)");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(configured))
+                {
+                    Directory.Delete(configured, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort.
+            }
+        }
+    }
+
+    #endregion
 }
 
 [Trait("Category", "Unit")]

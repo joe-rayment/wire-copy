@@ -28,6 +28,33 @@ internal static class PodcastConfirmationScreens
     private const string Bold = "\x1b[1m";
 
     /// <summary>
+    /// OpenAI TTS voice catalogue used by the picker. Matches the values mapped in
+    /// OpenAiTtsService.MapVoice and ordered roughly alphabetically.
+    /// </summary>
+    private static readonly string[] AvailableVoices =
+    {
+        "alloy",
+        "ash",
+        "ballad",
+        "coral",
+        "echo",
+        "fable",
+        "onyx",
+        "nova",
+        "sage",
+        "shimmer",
+    };
+
+    /// <summary>
+    /// OpenAI TTS models. The HD model produces higher quality audio at ~2x cost.
+    /// </summary>
+    private static readonly string[] AvailableModels =
+    {
+        "tts-1",
+        "tts-1-hd",
+    };
+
+    /// <summary>
     /// Selectable row identity for the confirmation screen. Used to track which row
     /// is highlighted and which action runs when the user presses Enter.
     /// </summary>
@@ -36,6 +63,9 @@ internal static class PodcastConfirmationScreens
         TtsKey,
         GcsKey,
         GcsBucket,
+        OutputFolder,
+        Voice,
+        Model,
         Generate,
     }
 
@@ -467,12 +497,48 @@ internal static class PodcastConfirmationScreens
         var isKeyConfigured = !string.IsNullOrWhiteSpace(keyPath);
         string? inlineError = null;
 
+        // Resolve the output / voice / model so the user can edit them in place.
+        // These rows pull their initial value from IUserSettingsStore (the canonical
+        // runtime override) and fall back to the bound configuration when unset.
+        string ResolveCurrentOutputFolder() =>
+            settingsStore.Get("PodcastOutputFolder")
+                ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "TermReader",
+                    "output");
+
+        string ResolveCurrentVoice() =>
+            settingsStore.Get("OpenAiTtsVoice") ?? GetDefaultVoiceFromOptions(ctx) ?? "nova";
+
+        string ResolveCurrentModel() =>
+            settingsStore.Get("OpenAiTtsModel") ?? GetDefaultModelFromOptions(ctx) ?? "tts-1";
+
+        var currentOutputFolder = ResolveCurrentOutputFolder();
+        var currentVoice = ResolveCurrentVoice();
+        var currentModel = ResolveCurrentModel();
+
         // Build the list of selectable rows in render order. The TtsKey row is
         // always present; GcsKey is present only when the GCS client is wired up.
-        // Default selection: first unconfigured row if any, else Generate.
+        // Output, Voice, and Model rows are always editable so the user can fix
+        // every config value directly from this screen (workspace-urko).
         ConfirmRow[] BuildRows() => gcsClient != null
-            ? [ConfirmRow.TtsKey, ConfirmRow.GcsKey, ConfirmRow.GcsBucket, ConfirmRow.Generate]
-            : [ConfirmRow.TtsKey, ConfirmRow.GcsBucket, ConfirmRow.Generate];
+            ? [
+                ConfirmRow.TtsKey,
+                ConfirmRow.GcsKey,
+                ConfirmRow.GcsBucket,
+                ConfirmRow.OutputFolder,
+                ConfirmRow.Voice,
+                ConfirmRow.Model,
+                ConfirmRow.Generate,
+            ]
+            : [
+                ConfirmRow.TtsKey,
+                ConfirmRow.GcsBucket,
+                ConfirmRow.OutputFolder,
+                ConfirmRow.Voice,
+                ConfirmRow.Model,
+                ConfirmRow.Generate,
+            ];
 
         var rows = BuildRows();
 
@@ -672,6 +738,40 @@ internal static class PodcastConfirmationScreens
                     "Set up",
                     helperText: "Optional — enables RSS feed for podcast apps");
             }
+
+            // --- Output / Voice / Model (selectable) ---
+            // Each row is editable in place so the user can fix every podcast config
+            // value without leaving the confirmation screen (workspace-urko).
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Podcast settings{Reset}");
+
+            var folderDisplay = TruncateMiddle(currentOutputFolder, Math.Max(20, width - 40));
+            RenderRow(
+                ConfirmRow.OutputFolder,
+                "●",
+                p.PromptFg.AnsiFg,
+                "Output folder",
+                folderDisplay,
+                p.PromptFg.AnsiFg,
+                "Change");
+
+            RenderRow(
+                ConfirmRow.Voice,
+                "●",
+                p.PromptFg.AnsiFg,
+                "TTS voice",
+                currentVoice,
+                p.PromptFg.AnsiFg,
+                "Change");
+
+            RenderRow(
+                ConfirmRow.Model,
+                "●",
+                p.PromptFg.AnsiFg,
+                "TTS model",
+                currentModel,
+                p.PromptFg.AnsiFg,
+                "Change");
 
             // --- AI Hierarchy ---
             helpers.WriteLine();
@@ -891,6 +991,42 @@ internal static class PodcastConfirmationScreens
                         x => feedUrl = x,
                         x => feedStatusNote = x,
                         ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (current == ConfirmRow.OutputFolder)
+                {
+                    var newFolder = await PromptAndSetOutputFolderAsync(
+                        ctx, settingsStore, currentOutputFolder, ct).ConfigureAwait(false);
+                    if (newFolder != null)
+                    {
+                        currentOutputFolder = newFolder;
+                    }
+
+                    continue;
+                }
+
+                if (current == ConfirmRow.Voice)
+                {
+                    var newVoice = await PromptAndPickVoiceAsync(
+                        ctx, options, settingsStore, currentVoice, ct).ConfigureAwait(false);
+                    if (newVoice != null)
+                    {
+                        currentVoice = newVoice;
+                    }
+
+                    continue;
+                }
+
+                if (current == ConfirmRow.Model)
+                {
+                    var newModel = await PromptAndPickModelAsync(
+                        ctx, options, settingsStore, currentModel, ct).ConfigureAwait(false);
+                    if (newModel != null)
+                    {
+                        currentModel = newModel;
+                    }
+
                     continue;
                 }
 
@@ -1284,5 +1420,289 @@ internal static class PodcastConfirmationScreens
         }
 
         return LocalOnlyDecision.Cancel;
+    }
+
+    /// <summary>
+    /// Resolves the default voice from <see cref="OpenAiTtsConfiguration"/>.
+    /// Returns null when the DI scope can't yield options (test harness).
+    /// </summary>
+    private static string? GetDefaultVoiceFromOptions(CommandContext ctx)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var opts = scope.ServiceProvider.GetService<IOptions<OpenAiTtsConfiguration>>();
+            return opts?.Value.Voice;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Failed to resolve default voice");
+            return null;
+        }
+    }
+
+    private static string? GetDefaultModelFromOptions(CommandContext ctx)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var opts = scope.ServiceProvider.GetService<IOptions<OpenAiTtsConfiguration>>();
+            return opts?.Value.Model;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Failed to resolve default model");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Prompts for an absolute output folder path. Persists the trimmed value via
+    /// <see cref="IUserSettingsStore"/>. Returns the new path on success, or null
+    /// when the user cancels (Esc / blank input).
+    ///
+    /// The path is not validated for existence — <see cref="PodcastOrchestrator.GetOutputFilePath"/>
+    /// creates the directory on demand. ~ is expanded by the orchestrator at runtime.
+    /// </summary>
+    /// <summary>
+    /// Test-only entry point: invokes the output-folder prompt and persists the
+    /// trimmed value via <see cref="IUserSettingsStore"/>. Mirrors the production
+    /// dispatch on the OutputFolder confirmation row.
+    /// </summary>
+#pragma warning disable SA1202 // pre-existing test-only helpers; ordering being addressed by another bead
+    internal static Task<string?> PromptAndSetOutputFolderForTestsAsync(
+        CommandContext ctx,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct) =>
+        PromptAndSetOutputFolderAsync(ctx, settingsStore, currentValue, ct);
+
+    /// <summary>
+    /// Test-only entry point: invokes the voice picker and persists the choice.
+    /// </summary>
+    internal static Task<string?> PromptAndPickVoiceForTestsAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct) =>
+        PromptAndPickVoiceAsync(ctx, options, settingsStore, currentValue, ct);
+
+    /// <summary>
+    /// Test-only entry point: invokes the model picker and persists the choice.
+    /// </summary>
+    internal static Task<string?> PromptAndPickModelForTestsAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct) =>
+        PromptAndPickModelAsync(ctx, options, settingsStore, currentValue, ct);
+#pragma warning restore SA1202
+
+    private static async Task<string?> PromptAndSetOutputFolderAsync(
+        CommandContext ctx,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct)
+    {
+        var input = await ctx.InputHandler.PromptForInputAsync(
+            $"Output folder [{currentValue}] (empty to keep, 'reset' to revert to default): ",
+            ct,
+            isSecret: false,
+            initialInput: currentValue).ConfigureAwait(false);
+
+        if (input == null || string.IsNullOrWhiteSpace(input))
+        {
+            return null;
+        }
+
+        var trimmed = input.Trim();
+
+        if (trimmed.Equals("reset", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                settingsStore.Remove("PodcastOutputFolder");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to clear output folder override");
+            }
+
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TermReader",
+                "output");
+        }
+
+        try
+        {
+            settingsStore.Set("PodcastOutputFolder", trimmed);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist output folder");
+        }
+
+        return trimmed;
+    }
+
+    /// <summary>
+    /// Renders a numbered list picker for the given values and returns the user's
+    /// choice. Esc returns null (no change). Numeric keys 1..N pick a value.
+    /// </summary>
+    private static async Task<string?> RunListPickerAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string title,
+        IReadOnlyList<string> values,
+        string currentValue,
+        CancellationToken ct)
+    {
+        var selectedIndex = Math.Max(0, values.ToList().FindIndex(v =>
+            string.Equals(v, currentValue, StringComparison.OrdinalIgnoreCase)));
+
+        while (!ct.IsCancellationRequested)
+        {
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            PodcastCommandHandler.RenderBox(helpers, p, title, width);
+            helpers.WriteLine();
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                var isSelected = i == selectedIndex;
+                var marker = isSelected ? "▌" : " ";
+                var indicatorColor = p.GetMutedFg().AnsiFg;
+                var current = string.Equals(values[i], currentValue, StringComparison.OrdinalIgnoreCase)
+                    ? $"  {p.SecondaryText.AnsiFg}(current){Reset}"
+                    : string.Empty;
+
+                if (isSelected)
+                {
+                    helpers.WriteLine(
+                        $"  {indicatorColor}{marker}{Reset} " +
+                        $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {i + 1,2}. {values[i]}{current}{Reset}");
+                }
+                else
+                {
+                    helpers.WriteLine(
+                        $"  {indicatorColor}{marker}{Reset} " +
+                        $"{p.PrimaryText.AnsiFg}{i + 1,2}. {values[i]}{Reset}{current}");
+                }
+            }
+
+            helpers.WriteLine();
+            helpers.WriteLine(
+                $"  {p.GetAccentFg().AnsiFg}↑↓{Reset}{p.GetDimFg().AnsiFg}:navigate   " +
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.GetDimFg().AnsiFg}:select   " +
+                $"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}");
+
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                return null;
+            }
+
+            if (command.Type == CommandType.MoveDown)
+            {
+                selectedIndex = (selectedIndex + 1) % values.Count;
+                continue;
+            }
+
+            if (command.Type == CommandType.MoveUp)
+            {
+                selectedIndex = (selectedIndex - 1 + values.Count) % values.Count;
+                continue;
+            }
+
+            if (command.Type == CommandType.ActivateLink)
+            {
+                return values[selectedIndex];
+            }
+
+            // Numeric shortcuts (1..9) are intentionally NOT bound: the terminal
+            // input handler accumulates digits as motion-count prefixes
+            // (10j, 5G, etc.), so they never surface as RawKeyChar. Up/Down +
+            // Enter is the only reliable selection path.
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Picks a TTS voice from <see cref="AvailableVoices"/> and persists the
+    /// selection via <see cref="IUserSettingsStore"/>. Returns the new value or null
+    /// when the user cancels.
+    /// </summary>
+    private static async Task<string?> PromptAndPickVoiceAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct)
+    {
+        var picked = await RunListPickerAsync(
+            ctx, options, "Select TTS voice", AvailableVoices, currentValue, ct).ConfigureAwait(false);
+
+        if (picked == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            settingsStore.Set("OpenAiTtsVoice", picked);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist TTS voice");
+        }
+
+        return picked;
+    }
+
+    /// <summary>
+    /// Picks a TTS model and persists the selection via <see cref="IUserSettingsStore"/>.
+    /// </summary>
+    private static async Task<string?> PromptAndPickModelAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IUserSettingsStore settingsStore,
+        string currentValue,
+        CancellationToken ct)
+    {
+        var picked = await RunListPickerAsync(
+            ctx, options, "Select TTS model", AvailableModels, currentValue, ct).ConfigureAwait(false);
+
+        if (picked == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            settingsStore.Set("OpenAiTtsModel", picked);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist TTS model");
+        }
+
+        return picked;
     }
 }

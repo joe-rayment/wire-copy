@@ -92,7 +92,7 @@ internal sealed class OpenAiTtsService : ITtsService
         var chunks = TextChunker.ChunkText(text, _config.MaxChunkSize);
         var audioClient = CreateAudioClient();
         var options = CreateSpeechOptions();
-        var voice = MapVoice(_config.Voice);
+        var voice = MapVoice(GetEffectiveVoice());
 
         var allAudioSegments = new List<byte[]>(chunks.Count);
         var totalCharsProcessed = 0;
@@ -175,7 +175,7 @@ internal sealed class OpenAiTtsService : ITtsService
         {
             var audioClient = CreateAudioClient();
             var options = CreateSpeechOptions();
-            var voice = MapVoice(_config.Voice);
+            var voice = MapVoice(GetEffectiveVoice());
 
             // Minimal TTS call (~4 chars, cost ~$0.00006) to validate the full pipeline.
             var result = await audioClient.GenerateSpeechAsync("test", voice, options, cancellationToken).ConfigureAwait(false);
@@ -352,8 +352,41 @@ internal sealed class OpenAiTtsService : ITtsService
             throw new InvalidOperationException("OpenAI TTS API key is not configured.");
         }
 
-        return new AudioClient(_config.Model, new ApiKeyCredential(apiKey));
+        return new AudioClient(GetEffectiveModel(), new ApiKeyCredential(apiKey));
     }
+
+#pragma warning disable SA1202 // ordering — internal test helpers placed near the private callees they wrap
+    /// <summary>
+    /// Resolves the effective TTS voice. Settings store wins over the bound config
+    /// so the user's runtime selection in the Generate Podcast confirmation screen
+    /// takes effect immediately without restart.
+    /// </summary>
+    internal string GetEffectiveVoice()
+    {
+        var saved = _settingsStore?.Get("OpenAiTtsVoice");
+        if (!string.IsNullOrWhiteSpace(saved))
+        {
+            return saved;
+        }
+
+        return _config.Voice;
+    }
+
+    /// <summary>
+    /// Resolves the effective TTS model (tts-1, tts-1-hd, etc.). Settings store wins
+    /// over the bound config so the user's runtime selection takes effect immediately.
+    /// </summary>
+    internal string GetEffectiveModel()
+    {
+        var saved = _settingsStore?.Get("OpenAiTtsModel");
+        if (!string.IsNullOrWhiteSpace(saved))
+        {
+            return saved;
+        }
+
+        return _config.Model;
+    }
+#pragma warning restore SA1202
 
     private SpeechGenerationOptions CreateSpeechOptions()
     {

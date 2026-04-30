@@ -29,6 +29,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     private readonly IPodcastPublisher _publisher;
     private readonly PodcastConfiguration _podcastConfig;
     private readonly OpenAiTtsConfiguration _ttsConfig;
+    private readonly IUserSettingsStore? _settingsStore;
     private readonly ILogger<PodcastOrchestrator> _logger;
 
     // Cache extracted articles from AnalyzeCacheStatusAsync so GeneratePodcastAsync
@@ -50,7 +51,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         IPodcastPublisher publisher,
         IOptions<PodcastConfiguration> podcastConfig,
         IOptions<OpenAiTtsConfiguration> ttsConfig,
-        ILogger<PodcastOrchestrator> logger)
+        ILogger<PodcastOrchestrator> logger,
+        IUserSettingsStore? settingsStore = null)
     {
         _contentProvider = contentProvider;
         _ttsService = ttsService;
@@ -59,6 +61,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         _publisher = publisher;
         _podcastConfig = podcastConfig.Value;
         _ttsConfig = ttsConfig.Value;
+        _settingsStore = settingsStore;
         _logger = logger;
     }
 
@@ -68,7 +71,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     /// </summary>
     public string GetOutputFilePath(string collectionName)
     {
-        var folder = _podcastConfig.ResolveOutputFolderPath();
+        var folder = ResolveEffectiveOutputFolder();
         Directory.CreateDirectory(folder);
         return Path.Combine(folder, $"{SanitizeFileName(collectionName)}.m4b");
     }
@@ -524,6 +527,17 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
 
+    private static string ExpandUserPath(string path)
+    {
+        if (path.StartsWith("~/", StringComparison.Ordinal) || path == "~")
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return path.Length == 1 ? home : Path.Combine(home, path[2..]);
+        }
+
+        return path;
+    }
+
     private static int CountWords(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -547,6 +561,23 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         }
 
         return wordCount;
+    }
+
+    /// <summary>
+    /// Resolves the user-overridden output folder (from <see cref="IUserSettingsStore"/>)
+    /// when set, otherwise falls back to <see cref="PodcastConfiguration.ResolveOutputFolderPath"/>.
+    /// Tilde paths (~/...) are expanded so the user can paste a friendly path
+    /// from the confirmation screen.
+    /// </summary>
+    private string ResolveEffectiveOutputFolder()
+    {
+        var saved = _settingsStore?.Get("PodcastOutputFolder");
+        if (!string.IsNullOrWhiteSpace(saved))
+        {
+            return ExpandUserPath(saved);
+        }
+
+        return _podcastConfig.ResolveOutputFolderPath();
     }
 
     private async Task<CacheAnalysis> AnalyzeCacheStatusCoreAsync(
