@@ -123,7 +123,6 @@ public enum CommandType
 
     // Layout
     ChooseLayout,
-    CycleLayoutVariant,
 
     // Debug/Utility
     DumpHtml,

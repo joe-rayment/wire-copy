@@ -28,37 +28,6 @@ internal static class LayoutCommandHandler
     ];
 
     /// <summary>
-    /// Cycles to the next layout variant for the current ViewMode and shows a toast.
-    /// </summary>
-    public static async Task HandleCycleLayoutVariant(
-        CommandContext ctx,
-        RenderOptions options,
-        CancellationToken ct)
-    {
-        var mode = ctx.NavigationService.CurrentContext.ViewMode;
-        var provider = ctx.LayoutVariantProvider;
-
-        if (provider.GetTotalVariants(mode) <= 1)
-        {
-            ctx.NavigationService.ShowToast(
-                ToastType.Info,
-                "Single layout",
-                $"Only one layout available for {mode}");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var newVariant = provider.CycleVariant(mode);
-        var index = provider.GetCurrentIndex(mode) + 1; // 1-based for display
-        var total = provider.GetTotalVariants(mode);
-
-        ctx.NavigationService.ShowToast(
-            ToastType.Info,
-            $"Layout: {newVariant} ({index}/{total})");
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// Opens the layout chooser. Shows an animated progress sequence while
     /// generating candidates (document-order instantly, AI and RSS in parallel),
     /// then enters preview mode.

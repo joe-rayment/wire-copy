@@ -15,7 +15,6 @@ internal sealed class LayoutVariantProvider : ILayoutVariantProvider
     private static readonly Dictionary<ViewMode, string[]> VariantsByMode = new()
     {
         [ViewMode.Launcher] = ["Grid", "List", "Compact"],
-        [ViewMode.Hierarchical] = ["Cards", "DenseList", "Magazine"],
         [ViewMode.Readable] = ["Comfortable", "FullWidth", "Narrow"],
         [ViewMode.CollectionItems] = ["Standard", "Compact"],
         [ViewMode.CollectionList] = ["Standard"],
