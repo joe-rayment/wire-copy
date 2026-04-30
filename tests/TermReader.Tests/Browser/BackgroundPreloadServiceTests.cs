@@ -2275,6 +2275,221 @@ public class BackgroundPreloadServiceTests : IDisposable
             "non-paywalled HTTP failures should not push the domain to the browser path");
     }
 
+    #region Cookie Staleness UX (workspace-siu3)
+
+    [Fact]
+    public void BuildQueue_PaywalledDomainNoCookies_LogsOnceFirstSkip()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var capturingLogger = new CapturingLogger<BackgroundPreloadService>();
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            capturingLogger,
+            browserConfig: browserConfig);
+
+        var nodes = CreateContentNodes(
+            "https://www.nytimes.com/2026/01/article1",
+            "https://www.nytimes.com/2026/01/article2",
+            "https://www.nytimes.com/2026/01/article3");
+
+        // First BuildQueue: should emit ONE Information log line for the domain
+        service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        var firstSkipEntries = capturingLogger.Entries
+            .Where(e => e.Level == LogLevel.Information &&
+                        e.Message.Contains("Paywalled article skipped: no auth cookies for nytimes.com"))
+            .ToList();
+
+        firstSkipEntries.Should().HaveCount(1,
+            "paywalled-domain skip should log exactly once even when multiple URLs are excluded");
+        firstSkipEntries[0].Message.Should().Contain("Run :cookies import");
+
+        // Subsequent BuildQueue calls: should NOT emit additional log lines
+        service.BuildQueue(1, nodes, "https://www.nytimes.com");
+        service.BuildQueue(2, nodes, "https://www.nytimes.com");
+
+        var allSkipEntries = capturingLogger.Entries
+            .Where(e => e.Level == LogLevel.Information &&
+                        e.Message.Contains("Paywalled article skipped: no auth cookies for nytimes.com"))
+            .ToList();
+
+        allSkipEntries.Should().HaveCount(1,
+            "skip-line throttle must hold across repeated BuildQueue calls in the same session");
+    }
+
+    [Fact]
+    public void BuildCollectionQueue_PaywalledDomainNoCookies_LogsOnceFirstSkip()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["wsj.com", "nytimes.com"] };
+        var capturingLogger = new CapturingLogger<BackgroundPreloadService>();
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            capturingLogger,
+            browserConfig: browserConfig);
+
+        var urls = new List<string>
+        {
+            "https://www.nytimes.com/2026/01/a1",
+            "https://www.nytimes.com/2026/01/a2",
+            "https://www.wsj.com/articles/a3",
+            "https://example.com/a4",
+        };
+
+        service.BuildCollectionQueue(0, urls);
+
+        var skipEntries = capturingLogger.Entries
+            .Where(e => e.Level == LogLevel.Information &&
+                        e.Message.Contains("Paywalled article skipped: no auth cookies for"))
+            .ToList();
+
+        skipEntries.Should().HaveCount(2,
+            "one log line per paywalled domain (nytimes.com and wsj.com), regardless of URL count");
+        skipEntries.Should().Contain(e => e.Message.Contains("nytimes.com"));
+        skipEntries.Should().Contain(e => e.Message.Contains("wsj.com"));
+    }
+
+    [Fact]
+    public void GetMissingPaywalledCookieDomains_PaywalledUrlNoCookies_ReturnsDomain()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var domains = service.GetMissingPaywalledCookieDomains("https://www.nytimes.com/2026/04/article");
+
+        domains.Should().ContainSingle().Which.Should().Be("nytimes.com",
+            "the configured paywalled domain should surface for the status bar badge");
+    }
+
+    [Fact]
+    public void GetMissingPaywalledCookieDomains_NonPaywalledUrl_ReturnsEmpty()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        var domains = service.GetMissingPaywalledCookieDomains("https://example.com/some-article");
+
+        domains.Should().BeEmpty("non-paywalled URLs should not surface a missing-cookie badge");
+    }
+
+    [Fact]
+    public void GetMissingPaywalledCookieDomains_NullUrl_ReturnsEmpty()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig);
+
+        service.GetMissingPaywalledCookieDomains(null).Should().BeEmpty();
+        service.GetMissingPaywalledCookieDomains(string.Empty).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetMissingPaywalledCookieDomains_PaywalledUrlWithCookies_ReturnsEmpty()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserConfig: browserConfig,
+            cookieManager: cookieManager);
+
+        // Activate cookies
+        var refreshMethod = typeof(BackgroundPreloadService)
+            .GetMethod("RefreshPaywalledCookieState", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        refreshMethod.Invoke(service, null);
+
+        var domains = service.GetMissingPaywalledCookieDomains("https://www.nytimes.com/2026/04/article");
+
+        domains.Should().BeEmpty("when cookies are present, the badge should not surface");
+    }
+
+    /// <summary>
+    /// Cross-test: the bidirectional contract — when a paywalled URL is encountered
+    /// without cookies, BOTH the log line fires AND the missing-cookie domain becomes
+    /// queryable for the status bar.
+    /// </summary>
+    [Fact]
+    public void Bidirectional_PaywalledNoCookies_BadgeAndLogBothFire()
+    {
+        var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
+        var capturingLogger = new CapturingLogger<BackgroundPreloadService>();
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            capturingLogger,
+            browserConfig: browserConfig);
+
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/04/article");
+        service.BuildQueue(0, nodes, "https://www.nytimes.com");
+
+        // Log line should fire
+        capturingLogger.Entries
+            .Should().Contain(e => e.Level == LogLevel.Information &&
+                                   e.Message.Contains("Paywalled article skipped: no auth cookies for nytimes.com"));
+
+        // Badge data should be available
+        service.GetMissingPaywalledCookieDomains("https://www.nytimes.com/2026/04/article")
+            .Should().ContainSingle().Which.Should().Be("nytimes.com");
+    }
+
+    /// <summary>
+    /// Captures all log entries emitted during the test. Used to verify the
+    /// "one log line per domain per session" throttle in BackgroundPreloadService.
+    /// </summary>
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (Entries)
+            {
+                Entries.Add((logLevel, formatter(state, exception)));
+            }
+        }
+    }
+
+    #endregion
+
     private sealed class StubHttpHandler : HttpMessageHandler
     {
         private readonly string _responseHtml;

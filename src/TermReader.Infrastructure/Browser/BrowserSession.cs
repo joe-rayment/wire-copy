@@ -21,10 +21,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
     private readonly string _userDataDir;
+    private readonly string _preloadUserDataDir;
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly SemaphoreSlim _preloadLock = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
+    private IBrowserContext? _preloadContext;
     private bool _pageIsHeadless;
     private bool _disposed;
     private bool _browsersInstalled;
@@ -42,6 +45,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TermReader",
             "browser-profile");
+        _preloadUserDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TermReader",
+            "preload-profile");
     }
 
     /// <inheritdoc />
@@ -218,27 +225,87 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return null;
         }
 
-        await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_context == null)
+            var ctx = await EnsurePreloadContextAsync().ConfigureAwait(false);
+            if (ctx == null)
             {
-                _logger.LogDebug("No active browser context for background page");
                 return null;
             }
 
-            var page = await _context.NewPageAsync().ConfigureAwait(false);
-            _logger.LogDebug("Created background page (total pages: {Count})", _context.Pages.Count);
+            var page = await ctx.NewPageAsync().ConfigureAwait(false);
+            _logger.LogDebug(
+                "Created background page in preload context (total pages: {Count})",
+                ctx.Pages.Count);
             return page;
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to create background page");
+            _logger.LogDebug(ex, "Failed to create background page in preload context");
             return null;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> SyncCookiesToPreloadContextAsync(IReadOnlyList<StoredCookie> cookies)
+    {
+        if (_disposed || cookies == null || cookies.Count == 0)
+        {
+            return 0;
+        }
+
+        await _preloadLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Deliberately do NOT launch the preload context just to push cookies.
+            // If preload hasn't started yet, the cookies will be picked up at
+            // launch via InjectStoredCookiesAsync (which reads cookies.json).
+            if (_preloadContext == null)
+            {
+                _logger.LogDebug(
+                    "Preload context not yet launched — cookie sync deferred (will load from cookies.json on launch)");
+                return 0;
+            }
+
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var pwCookies = cookies
+                .Select(c => new Cookie
+                {
+                    Name = c.Name,
+                    Value = c.Value,
+                    Domain = c.Domain,
+                    Path = c.Path,
+                    Expires = c.Expiry.HasValue
+                        ? new DateTimeOffset(c.Expiry.Value).ToUnixTimeSeconds()
+                        : -1,
+                })
+                .Where(c => c.Expires < 0 || c.Expires > now)
+                .ToList();
+
+            if (pwCookies.Count == 0)
+            {
+                return 0;
+            }
+
+            try
+            {
+                await _preloadContext.AddCookiesAsync(pwCookies).ConfigureAwait(false);
+                _logger.LogDebug(
+                    "Synced {Count} cookies into preload context",
+                    pwCookies.Count);
+                return pwCookies.Count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to sync cookies into preload context (non-fatal — will reload on next preload launch)");
+                return 0;
+            }
         }
         finally
         {
-            _lock.Release();
+            _preloadLock.Release();
         }
     }
 
@@ -363,6 +430,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _lock.Dispose();
+            _preloadLock.Dispose();
         }
     }
 
@@ -589,6 +657,16 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     private async Task InjectStoredCookiesAsync()
     {
+        await InjectStoredCookiesIntoAsync(_context, "foreground").ConfigureAwait(false);
+    }
+
+    private async Task InjectStoredCookiesIntoAsync(IBrowserContext? context, string label)
+    {
+        if (context == null)
+        {
+            return;
+        }
+
         try
         {
             var cookies = await _cookieManager.LoadCookiesAsync().ConfigureAwait(false);
@@ -612,12 +690,154 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 .Where(c => c.Expires < 0 || c.Expires > now)
                 .ToList();
 
-            await _context!.AddCookiesAsync(pwCookies).ConfigureAwait(false);
-            _logger.LogDebug("Injected {Count} stored cookies into Playwright context", pwCookies.Count);
+            await context.AddCookiesAsync(pwCookies).ConfigureAwait(false);
+            _logger.LogDebug(
+                "Injected {Count} stored cookies into Playwright {Label} context",
+                pwCookies.Count,
+                label);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to inject stored cookies into Playwright context (non-fatal)");
+            _logger.LogDebug(
+                ex,
+                "Failed to inject stored cookies into Playwright {Label} context (non-fatal)",
+                label);
+        }
+    }
+
+    /// <summary>
+    /// Lazily launches a SECOND, always-headless Playwright persistent context
+    /// at <c>{LocalAppData}/TermReader/preload-profile</c>. This context is
+    /// used exclusively for background pre-fetching so the user's foreground
+    /// browser window and tab strip are never touched by preload activity.
+    /// </summary>
+    private async Task<IBrowserContext?> EnsurePreloadContextAsync()
+    {
+        if (_disposed)
+        {
+            return null;
+        }
+
+        if (_preloadContext != null)
+        {
+            return _preloadContext;
+        }
+
+        await _preloadLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed)
+            {
+                return null;
+            }
+
+            if (_preloadContext != null)
+            {
+                return _preloadContext;
+            }
+
+            // Reuse the already-launched Playwright instance from the foreground
+            // context so we don't spin up a second node.js process. Falls back to
+            // creating one if the foreground hasn't launched yet (e.g., a preload
+            // is requested before the user opens any page).
+            if (_playwright == null)
+            {
+                _logger.LogDebug(
+                    "Preload context: launching standalone Playwright instance "
+                    + "(foreground context not yet active)");
+                var createTask = Playwright.CreateAsync();
+                if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)
+                {
+                    _logger.LogWarning("Preload Playwright.CreateAsync timed out");
+                    return null;
+                }
+
+                _playwright = await createTask.ConfigureAwait(false);
+            }
+
+            Directory.CreateDirectory(_preloadUserDataDir);
+
+            var args = new List<string>
+            {
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+            };
+            if (OperatingSystem.IsLinux())
+            {
+                args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
+            }
+
+            try
+            {
+                var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(
+                    _preloadUserDataDir,
+                    new BrowserTypeLaunchPersistentContextOptions
+                    {
+                        Headless = true,
+                        Args = args.ToArray(),
+                        Timeout = 30000,
+                        UserAgent = _browserConfig.UserAgent,
+                        ViewportSize = new ViewportSize { Width = 1400, Height = 900 },
+                        IgnoreHTTPSErrors = true,
+                    });
+
+                if (await Task.WhenAny(launchTask, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(false) != launchTask)
+                {
+                    _logger.LogWarning("Preload context launch timed out");
+                    return null;
+                }
+
+                _preloadContext = await launchTask.ConfigureAwait(false);
+
+                await _preloadContext.AddInitScriptAsync(@"
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    if (!window.chrome) window.chrome = {};
+                    if (!window.chrome.runtime) window.chrome.runtime = {};
+                    const originalQuery = window.navigator.permissions?.query;
+                    if (originalQuery) {
+                        window.navigator.permissions.query = (parameters) =>
+                            parameters.name === 'notifications'
+                                ? Promise.resolve({ state: Notification.permission })
+                                : originalQuery(parameters);
+                    }
+                    if (navigator.plugins.length === 0) {
+                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    }
+                    if (!navigator.languages || navigator.languages.length === 0) {
+                        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    }
+                ").ConfigureAwait(false);
+
+                await InjectStoredCookiesIntoAsync(_preloadContext, "preload").ConfigureAwait(false);
+
+                _logger.LogInformation(
+                    "Preload context launched (headless, profile={Profile})",
+                    _preloadUserDataDir);
+                return _preloadContext;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to launch preload context");
+                if (_preloadContext != null)
+                {
+                    try
+                    {
+                        await _preloadContext.CloseAsync().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // best-effort cleanup
+                    }
+
+                    _preloadContext = null;
+                }
+
+                return null;
+            }
+        }
+        finally
+        {
+            _preloadLock.Release();
         }
     }
 
@@ -649,6 +869,23 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _context = null;
+        }
+
+        // Tear down the preload context too — it shares the Playwright handle
+        // and must be closed before _playwright.Dispose() to avoid leaking the
+        // Chromium child process.
+        if (_preloadContext != null)
+        {
+            try
+            {
+                await _preloadContext.CloseAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error closing Playwright preload context during cleanup");
+            }
+
+            _preloadContext = null;
         }
 
         if (_playwright != null)

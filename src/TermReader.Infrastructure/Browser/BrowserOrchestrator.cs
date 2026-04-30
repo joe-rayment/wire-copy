@@ -802,7 +802,7 @@ public partial class BrowserOrchestrator : IBrowserService
                         await LayoutCommandHandler.HandleCycleLeft(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.ActivateLink:
-                        await LayoutCommandHandler.HandleApplyAndSave(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                        await StrategyChooserHandler.HandleApplyAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.GoBack:
                         await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken).ConfigureAwait(false);
@@ -982,7 +982,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     break;
 
                 case CommandType.ChooseLayout:
-                    await LayoutCommandHandler.HandleChooseLayout(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                    await StrategyChooserHandler.HandleOpenChooserAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.CycleLayoutVariant:

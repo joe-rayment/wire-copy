@@ -64,9 +64,15 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<byte[]?> CaptureScreenshotAsync();
 
     /// <summary>
-    /// Creates a new background page (tab) in the existing browser context.
-    /// The page shares cookies and session with the main page.
-    /// Returns null if no browser context is active.
+    /// Creates a new background page (tab) in the dedicated headless preload
+    /// context — a SECOND, completely isolated Playwright persistent context
+    /// that lives alongside the foreground browser. The preload context is
+    /// always headless, has its own user-data directory, and never shares a
+    /// window or tab strip with the user-facing browser. It is launched
+    /// lazily on the first call. Cookies are seeded from <c>cookies.json</c>
+    /// at launch and can be refreshed mid-session via
+    /// <see cref="SyncCookiesToPreloadContextAsync"/>.
+    /// Returns null if launching the preload context fails.
     /// </summary>
     Task<IPage?> CreateBackgroundPageAsync();
 
@@ -84,4 +90,14 @@ public interface IBrowserSession : IBrowserSessionControl
     /// <param name="url">URL whose cookies should be exported (e.g. <c>https://nytimes.com/</c>).</param>
     /// <returns>The cookies stored in the browser context for that URL, or an empty list when no context is active.</returns>
     Task<IReadOnlyList<StoredCookie>> GetCookiesForUrlAsync(string url);
+
+    /// <summary>
+    /// Pushes the supplied cookies into the headless preload context (if it has
+    /// been launched) so that background pre-fetches authenticate against
+    /// paywalled domains immediately after <c>:cookies import</c> — without
+    /// requiring an app restart.
+    /// </summary>
+    /// <param name="cookies">Cookies captured from the foreground context.</param>
+    /// <returns>The number of cookies actually pushed; zero when no preload context exists yet.</returns>
+    Task<int> SyncCookiesToPreloadContextAsync(IReadOnlyList<StoredCookie> cookies);
 }

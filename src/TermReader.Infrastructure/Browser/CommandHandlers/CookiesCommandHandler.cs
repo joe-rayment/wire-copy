@@ -210,6 +210,20 @@ internal static class CookiesCommandHandler
                 ctx.Logger.LogWarning(ex, "Cookie save succeeded but HTTP refresher failed");
             }
 
+            // Sync the captured cookies into the headless preload context so
+            // pre-fetches authenticate against paywalled domains immediately —
+            // no app restart required. If the preload context hasn't launched
+            // yet the call is a no-op (the cookies will be loaded from
+            // cookies.json the first time the preload context spins up).
+            try
+            {
+                await browserSession.SyncCookiesToPreloadContextAsync(toSave).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Cookie save succeeded but preload-context sync failed");
+            }
+
             var authCount = CountLikelyAuthCookies(toSave);
             var domainList = string.Join(", ", domainsWithCookies);
             var msg = $"Imported {toSave.Count} cookies ({authCount} auth) from browser session for {domainsWithCookies.Count} domain(s): {domainList}";

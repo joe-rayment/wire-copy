@@ -49,6 +49,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private readonly ConcurrentDictionary<string, bool> _needsJsDomains = new();
     private readonly ConcurrentDictionary<string, DateTime> _lastRequestByDomain = new();
     private readonly ConcurrentDictionary<string, string> _articleCachedUrls = new();
+
+    /// <summary>
+    /// Domains for which a "no auth cookies" skip has already been logged in this
+    /// session. Each entry caps logging to one line per domain, preventing the
+    /// preloader from spamming the log on every URL on a paywalled section page.
+    /// </summary>
+    private readonly HashSet<string> _loggedSkippedDomains = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _loggedSkippedLock = new();
     private readonly SemaphoreSlim _queueSignal = new(0, 1);
     private readonly object _queueLock = new();
     private readonly Timer _debounceTimer;
@@ -360,6 +368,28 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return origin != null && _needsJsDomains.ContainsKey(origin);
     }
 
+    /// <inheritdoc />
+    public IReadOnlyList<string> GetMissingPaywalledCookieDomains(string? currentPageUrl)
+    {
+        if (string.IsNullOrEmpty(currentPageUrl))
+        {
+            return Array.Empty<string>();
+        }
+
+        if (_hasPaywalledCookies)
+        {
+            return Array.Empty<string>();
+        }
+
+        var domain = ExtractPaywalledDomainFromUrl(currentPageUrl);
+        if (string.IsNullOrEmpty(domain))
+        {
+            return Array.Empty<string>();
+        }
+
+        return new[] { domain };
+    }
+
     internal static bool IsBotDetectionResponse(string html)
     {
         var indicators = new[]
@@ -460,6 +490,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 else
                 {
                     paywalledCount++;
+                    LogPaywalledSkipOnce(url);
                 }
 
                 continue;
@@ -531,6 +562,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             {
                 if (!_hasPaywalledCookies)
                 {
+                    LogPaywalledSkipOnce(url);
                     continue;
                 }
 
@@ -725,6 +757,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 {
                     _needsJsDomains.TryRemove(origin, out _);
                 }
+
+                // Clear the per-session log throttle so a future cookie expiry will
+                // surface a fresh "no auth cookies" log line per domain.
+                lock (_loggedSkippedLock)
+                {
+                    _loggedSkippedDomains.Clear();
+                }
             }
         }
         catch (Exception ex)
@@ -735,6 +774,58 @@ internal sealed class BackgroundPreloadService : IPreloadService
     }
 
     private bool IsPaywalledDomain(string url) => _browserConfig.IsPaywalledDomain(url);
+
+    /// <summary>
+    /// Logs a single "paywalled article skipped: no auth cookies" line per domain
+    /// per session. The throttle clears when cookies become available so the next
+    /// expiry will surface a fresh log line.
+    /// </summary>
+    private void LogPaywalledSkipOnce(string url)
+    {
+        var domain = ExtractPaywalledDomainFromUrl(url);
+        if (string.IsNullOrEmpty(domain))
+        {
+            return;
+        }
+
+        lock (_loggedSkippedLock)
+        {
+            if (!_loggedSkippedDomains.Add(domain))
+            {
+                return;
+            }
+        }
+
+        _logger.LogInformation(
+            "Paywalled article skipped: no auth cookies for {Domain}. Run :cookies import",
+            domain);
+    }
+
+    /// <summary>
+    /// Returns the configured paywalled domain that matches the given URL's host
+    /// (e.g., "www.nytimes.com" -> "nytimes.com"). Returns empty when the URL is
+    /// not on a configured paywalled domain.
+    /// </summary>
+    private string ExtractPaywalledDomainFromUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var host = new Uri(url).Host;
+            return _browserConfig.PaywalledDomains.FirstOrDefault(d =>
+                host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
+                host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+        }
+        catch
+        {
+            // Malformed URL — no domain to extract
+            return string.Empty;
+        }
+    }
 
     private void TryAddEligibleUrl(
         string url,

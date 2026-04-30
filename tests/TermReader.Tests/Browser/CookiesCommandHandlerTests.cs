@@ -208,6 +208,73 @@ public class CookiesCommandHandlerTests
     }
 
     [Fact]
+    public async Task Import_AlsoSyncsToPreloadContext()
+    {
+        // workspace-8t9k Phase 2: imports must populate the headless preload
+        // context so it authenticates against paywalled domains immediately,
+        // not just at next launch.
+        _browserSession.HasBrowserContext.Returns(true);
+
+        var nytCookies = new List<StoredCookie>
+        {
+            new("nyt-s", "value1", ".nytimes.com", "/", DateTime.UtcNow.AddDays(30)),
+            new("nyt-a", "value2", ".nytimes.com", "/", DateTime.UtcNow.AddDays(30)),
+        };
+
+        _browserSession.GetCookiesForUrlAsync("https://nytimes.com/")
+            .Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(nytCookies));
+        _browserSession.GetCookiesForUrlAsync("https://wsj.com/")
+            .Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(Array.Empty<StoredCookie>()));
+        _cookieManager.SaveCookiesAsync(Arg.Any<IReadOnlyList<StoredCookie>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        _httpRefresher.RefreshAsync().Returns(Task.CompletedTask);
+        _browserSession.SyncCookiesToPreloadContextAsync(Arg.Any<IReadOnlyList<StoredCookie>>())
+            .Returns(Task.FromResult(2));
+
+        IReadOnlyList<StoredCookie>? syncedToPreload = null;
+        _browserSession
+            .When(s => s.SyncCookiesToPreloadContextAsync(Arg.Any<IReadOnlyList<StoredCookie>>()))
+            .Do(call => syncedToPreload = call.Arg<IReadOnlyList<StoredCookie>>());
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "cookies import", _options, CancellationToken.None);
+
+        await _browserSession.Received(1)
+            .SyncCookiesToPreloadContextAsync(Arg.Any<IReadOnlyList<StoredCookie>>());
+        syncedToPreload.Should().NotBeNull();
+        syncedToPreload!.Select(c => c.Name).Should().Contain(new[] { "nyt-s", "nyt-a" });
+    }
+
+    [Fact]
+    public async Task Import_PreloadSyncFailure_StillSucceedsAndShowsImportMessage()
+    {
+        // Preload sync errors must not surface as user-facing failures —
+        // the cookies are already saved to disk and HTTP CookieContainer.
+        _browserSession.HasBrowserContext.Returns(true);
+
+        var nytCookies = new List<StoredCookie>
+        {
+            new("nyt-s", "value1", ".nytimes.com", "/", DateTime.UtcNow.AddDays(30)),
+        };
+
+        _browserSession.GetCookiesForUrlAsync("https://nytimes.com/")
+            .Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(nytCookies));
+        _browserSession.GetCookiesForUrlAsync("https://wsj.com/")
+            .Returns(Task.FromResult<IReadOnlyList<StoredCookie>>(Array.Empty<StoredCookie>()));
+        _cookieManager.SaveCookiesAsync(Arg.Any<IReadOnlyList<StoredCookie>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        _httpRefresher.RefreshAsync().Returns(Task.CompletedTask);
+        _browserSession.SyncCookiesToPreloadContextAsync(Arg.Any<IReadOnlyList<StoredCookie>>())
+            .Returns<Task<int>>(_ => throw new InvalidOperationException("preload context offline"));
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "cookies import", _options, CancellationToken.None);
+
+        var msg = _navigationService.CurrentContext.StatusMessage!;
+        msg.Should().Contain("Imported 1 cookies");
+    }
+
+    [Fact]
     public async Task Import_NoCookiesInBrowser_TellsUserToLogIn()
     {
         _browserSession.HasBrowserContext.Returns(true);

@@ -91,4 +91,13 @@ public record RenderOptions
     /// Used by renderers to select the appropriate layout algorithm.
     /// </summary>
     public string? LayoutVariant { get; init; }
+
+    /// <summary>
+    /// Paywalled domains relevant to the current page where authentication cookies are
+    /// missing or expired. Surfaced by the status bar so the user knows pre-fetch is
+    /// silently doing nothing on those sites and can recover via <c>:cookies import</c>
+    /// (or <c>Shift+I</c>). Empty when cookies are present, when the current page is not
+    /// a paywalled domain, or when no domains are configured.
+    /// </summary>
+    public IReadOnlyList<string>? MissingCookieDomains { get; init; }
 }

@@ -16,7 +16,8 @@ namespace TermReader.Infrastructure.Browser;
 
 /// <summary>
 /// Analyzes page screenshots using Anthropic's Claude to determine
-/// the visual hierarchy of links on a webpage.
+/// the visual hierarchy of links on a webpage and to curate ad-free
+/// story lists for the AI Curated scraping strategy.
 /// </summary>
 public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
 {
@@ -83,7 +84,6 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
             links.Count,
             screenshot.Length);
 
-        // Try up to 2 times (initial + 1 retry for malformed JSON)
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try
@@ -114,8 +114,54 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
             }
         }
 
-        // Should not reach here, but fallback to a clear error
         throw new InvalidOperationException("Failed to parse AI hierarchy response after retries");
+    }
+
+    /// <inheritdoc />
+    public async Task<AiCuratedResult> AnalyzeCuratedAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var apiKey = GetApiKey()
+            ?? throw new InvalidOperationException(
+                "Anthropic API key not configured. Use :set anthropic-key to configure.");
+
+        var contentLinks = links
+            .Where(l => l.Type == LinkType.Content)
+            .ToList();
+
+        var prompt = BuildCuratedPrompt(contentLinks, pageUrl);
+        var screenshotBase64 = screenshot is { Length: > 0 }
+            ? Convert.ToBase64String(screenshot)
+            : null;
+
+        _logger.LogInformation(
+            "AI curated analysis for {Url} ({Count} content links, screenshot={HasShot})",
+            pageUrl,
+            contentLinks.Count,
+            screenshotBase64 != null);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var responseText = await CallAnthropicApiAsync(
+                    apiKey, screenshotBase64, prompt, cancellationToken).ConfigureAwait(false);
+
+                return ParseCuratedResponse(responseText, contentLinks);
+            }
+            catch (JsonException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(ex, "Malformed JSON in AI curated response, retrying");
+                var sb = new StringBuilder(prompt);
+                sb.Append("\n\nIMPORTANT: respond with ONLY the JSON object — no fences, no commentary.");
+                prompt = sb.ToString();
+            }
+        }
+
+        throw new InvalidOperationException("Failed to parse AI curated response after retries");
     }
 
     private static string BuildPrompt(List<LinkInfo> links, string pageUrl)
@@ -167,12 +213,154 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// AI Curated prompt: ask the model to (1) drop ads/promos and
+    /// (2) rank remaining stories by editorial prominence.
+    /// </summary>
+    private static string BuildCuratedPrompt(List<LinkInfo> contentLinks, string pageUrl)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are curating a webpage's links for a terminal-based news reader.");
+        sb.AppendLine();
+        sb.AppendLine($"Page URL: {pageUrl}");
+        sb.AppendLine();
+        sb.AppendLine("Content links extracted from the page (numbered for reference):");
+        sb.AppendLine();
+        for (int i = 0; i < contentLinks.Count; i++)
+        {
+            var link = contentLinks[i];
+            sb.AppendLine($"[{i}] \"{link.DisplayText}\" -> {link.Url}");
+            if (!string.IsNullOrEmpty(link.ParentSelector))
+            {
+                sb.AppendLine($"    parent: {link.ParentSelector}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Do TWO things:");
+        sb.AppendLine();
+        sb.AppendLine("1. EXCLUDE: identify links that are ads, sponsored content, promos,");
+        sb.AppendLine("   newsletter sign-ups, login prompts, navigation/utility links, or any");
+        sb.AppendLine("   non-editorial entry. Return their numeric indices in `excluded`.");
+        sb.AppendLine("   Be aggressive — if it's not a story, it goes here.");
+        sb.AppendLine();
+        sb.AppendLine("2. RANK: of the REMAINING links (the actual stories), order them by");
+        sb.AppendLine("   editorial prominence on the page. Lead/hero items first, then main");
+        sb.AppendLine("   feed, then secondary, then sidebar. Return indices in `stories`.");
+        sb.AppendLine();
+        sb.AppendLine("3. (optional) propose named SECTIONS that group the stories. Skip if not useful.");
+        sb.AppendLine();
+        sb.AppendLine("Respond with ONLY this JSON object (no fences, no commentary):");
+        sb.AppendLine("{");
+        sb.AppendLine("  \"excluded\": [3, 7, 12],");
+        sb.AppendLine("  \"stories\": [1, 0, 2, 5, 4],");
+        sb.AppendLine("  \"sections\": [");
+        sb.AppendLine("    {\"name\": \"Lead\", \"story_indices\": [1, 0], \"start_collapsed\": false},");
+        sb.AppendLine("    {\"name\": \"Opinion\", \"story_indices\": [9, 10], \"start_collapsed\": true}");
+        sb.AppendLine("  ]");
+        sb.AppendLine("}");
+        sb.AppendLine();
+        sb.AppendLine("If you cannot identify sections, return `\"sections\": []`.");
+        sb.AppendLine("Every numeric index MUST be a valid index from the list above.");
+        sb.AppendLine("`excluded` and `stories` together MUST cover every index exactly once.");
+
+        return sb.ToString();
+    }
+
+    private static AiCuratedResult ParseCuratedResponse(string responseText, List<LinkInfo> contentLinks)
+    {
+        var jsonText = responseText.Trim();
+        if (jsonText.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstNewline = jsonText.IndexOf('\n');
+            if (firstNewline >= 0)
+            {
+                jsonText = jsonText[(firstNewline + 1)..];
+            }
+
+            if (jsonText.EndsWith("```", StringComparison.Ordinal))
+            {
+                jsonText = jsonText[..^3].TrimEnd();
+            }
+        }
+
+        var parsed = JsonSerializer.Deserialize<AiCuratedResponse>(jsonText, ParseOptions)
+            ?? throw new JsonException("Failed to deserialize AI curated response");
+
+        string KeyAt(int idx) =>
+            idx >= 0 && idx < contentLinks.Count
+                ? AiCuratedResult.KeyFor(contentLinks[idx].Url)
+                : string.Empty;
+
+        var excludedKeys = (parsed.Excluded ?? new List<int>())
+            .Select(KeyAt)
+            .Where(k => k.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var storyKeys = (parsed.Stories ?? new List<int>())
+            .Select(KeyAt)
+            .Where(k => k.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var sectionsOut = new List<AiCuratedSection>();
+        if (parsed.Sections != null)
+        {
+            foreach (var s in parsed.Sections)
+            {
+                var sectionKeys = (s.StoryIndices ?? new List<int>())
+                    .Select(KeyAt)
+                    .Where(k => k.Length > 0)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                if (sectionKeys.Count == 0)
+                {
+                    continue;
+                }
+
+                sectionsOut.Add(new AiCuratedSection
+                {
+                    Name = string.IsNullOrWhiteSpace(s.Name) ? "Stories" : s.Name!,
+                    StoryLinkKeys = sectionKeys,
+                    StartCollapsed = s.StartCollapsed,
+                });
+            }
+        }
+
+        return new AiCuratedResult
+        {
+            ExcludedLinkKeys = excludedKeys,
+            StoryOrderLinkKeys = storyKeys,
+            Sections = sectionsOut,
+            AnalyzedAt = DateTime.UtcNow,
+        };
+    }
+
     private async Task<string> CallAnthropicApiAsync(
         string apiKey,
-        string screenshotBase64,
+        string? screenshotBase64,
         string prompt,
         CancellationToken cancellationToken)
     {
+        var content = new List<object>();
+        if (!string.IsNullOrEmpty(screenshotBase64))
+        {
+            content.Add(new
+            {
+                type = "image",
+                source = new
+                {
+                    type = "base64",
+                    media_type = "image/png",
+                    data = screenshotBase64,
+                },
+            });
+        }
+
+        content.Add(new { type = "text", text = prompt });
+
         var requestBody = new
         {
             model = _config.Model,
@@ -182,24 +370,7 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
                 new
                 {
                     role = "user",
-                    content = new object[]
-                    {
-                        new
-                        {
-                            type = "image",
-                            source = new
-                            {
-                                type = "base64",
-                                media_type = "image/png",
-                                data = screenshotBase64,
-                            },
-                        },
-                        new
-                        {
-                            type = "text",
-                            text = prompt,
-                        },
-                    },
+                    content = content.ToArray(),
                 },
             },
         };
@@ -223,7 +394,6 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
                 $"Anthropic API returned {response.StatusCode}: {responseBody}");
         }
 
-        // Parse the Messages API response to extract the text content
         using var doc = JsonDocument.Parse(responseBody);
         var contentArray = doc.RootElement.GetProperty("content");
 
@@ -240,7 +410,6 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
 
     private string? GetApiKey()
     {
-        // UserSettingsStore takes precedence (runtime override)
         var storedKey = _settingsStore.Get("AnthropicApiKey");
         if (!string.IsNullOrWhiteSpace(storedKey))
         {
@@ -252,9 +421,8 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
 
     private SiteHierarchyConfig ParseResponse(string responseText, string domain, string pageUrl)
     {
-        // Strip markdown code fences if present
         var jsonText = responseText.Trim();
-        if (jsonText.StartsWith("```"))
+        if (jsonText.StartsWith("```", StringComparison.Ordinal))
         {
             var firstNewline = jsonText.IndexOf('\n');
             if (firstNewline >= 0)
@@ -262,7 +430,7 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
                 jsonText = jsonText[(firstNewline + 1)..];
             }
 
-            if (jsonText.EndsWith("```"))
+            if (jsonText.EndsWith("```", StringComparison.Ordinal))
             {
                 jsonText = jsonText[..^3].TrimEnd();
             }
@@ -282,7 +450,6 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
             })
             .ToList();
 
-        // Build a URL pattern: escape the domain for regex, use path pattern
         var uri = new Uri(pageUrl);
         var escapedDomain = Regex.Escape(uri.Host);
         var pathPattern = uri.AbsolutePath == "/"
@@ -323,6 +490,46 @@ public class AnthropicHierarchyAnalyzer : IHierarchyAnalyzer
         public List<string>? UrlPatterns { get; set; }
 
         [JsonPropertyName("startCollapsed")]
+        public bool StartCollapsed { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "SonarAnalyzer.CSharp",
+        "S3459:Unassigned members should be removed",
+        Justification = "Properties are assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "SonarAnalyzer.CSharp",
+        "S1144:Unused private types or members should be removed",
+        Justification = "Properties read by deserialization")]
+    private sealed class AiCuratedResponse
+    {
+        [JsonPropertyName("excluded")]
+        public List<int>? Excluded { get; set; }
+
+        [JsonPropertyName("stories")]
+        public List<int>? Stories { get; set; }
+
+        [JsonPropertyName("sections")]
+        public List<AiCuratedSectionResponse>? Sections { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "SonarAnalyzer.CSharp",
+        "S3459:Unassigned members should be removed",
+        Justification = "Properties are assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "SonarAnalyzer.CSharp",
+        "S1144:Unused private types or members should be removed",
+        Justification = "Properties read by deserialization")]
+    private sealed class AiCuratedSectionResponse
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("story_indices")]
+        public List<int>? StoryIndices { get; set; }
+
+        [JsonPropertyName("start_collapsed")]
         public bool StartCollapsed { get; set; }
     }
 }

@@ -36,7 +36,8 @@ internal class StatusBarRenderer
         int readerTotalLines = 0,
         int readerContentWidth = 0,
         int readerViewportHeight = 0,
-        string? layoutVariantLabel = null)
+        string? layoutVariantLabel = null,
+        IReadOnlyList<string>? missingCookieDomains = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
@@ -52,7 +53,7 @@ internal class StatusBarRenderer
         var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
         var leftWidth = RenderHelpers.GetDisplayWidth(left);
 
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel);
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
         // Responsive help hint: show preview controls or standard help
@@ -331,9 +332,22 @@ internal class StatusBarRenderer
         ThemePalette p,
         PreloadProgress? cacheProgress,
         double cacheUsagePercent,
-        string? layoutVariantLabel = null)
+        string? layoutVariantLabel = null,
+        IReadOnlyList<string>? missingCookieDomains = null)
     {
         var parts = new List<string>();
+
+        // Missing-cookie badge for paywalled domains. Surfaces silently failing
+        // pre-fetch so the user knows to recover via :cookies import (or Shift+I).
+        // Format: "🍪✗ nytimes.com Shift+I:login" — single-line, unobtrusive.
+        if (missingCookieDomains is { Count: > 0 })
+        {
+            var domainList = string.Join(",", missingCookieDomains);
+            parts.Add(
+                $"{p.PromptFg.AnsiFg}\U0001F36A✗{Reset} " +
+                $"{p.SecondaryText.AnsiFg}{domainList}{Reset} " +
+                $"{p.GetAccentFg().AnsiFg}Shift+I{Reset}{p.GetDimFg().AnsiFg}:login{Reset}");
+        }
 
         // Search info
         if (!string.IsNullOrEmpty(context.SearchQuery))
