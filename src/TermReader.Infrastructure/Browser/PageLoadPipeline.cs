@@ -363,7 +363,20 @@ public class PageLoadPipeline
         // Try saved hierarchy config, then fall back to document-order
         NavigationTree tree;
         var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl).ConfigureAwait(false);
-        if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
+
+        if (hierarchyConfig != null
+            && (hierarchyConfig.Kind == LayoutKind.AiCurated
+                || string.Equals(hierarchyConfig.Strategy, "AiCurated", StringComparison.Ordinal))
+            && hierarchyConfig.AiResult != null)
+        {
+            // Saved AI-Curated strategy with cached result: filter ads, reorder by AI ranks.
+            tree = await _treeBuilder.BuildFromAiResultAsync(
+                links, hierarchyConfig.AiResult, cancellationToken).ConfigureAwait(false);
+            _navigationService.SetAiHierarchy(true);
+            _navigationService.SetStatusMessage(
+                $"AI curated · {hierarchyConfig.AiResult.StoryOrderLinkKeys.Count} stories");
+        }
+        else if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
             && !string.IsNullOrEmpty(hierarchyConfig.RssFeedUrl))
         {
             // Saved RSS layout: fetch feed and build tree from feed items
@@ -477,7 +490,15 @@ public class PageLoadPipeline
         var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
 
         NavigationTree tree;
-        if (cache.HierarchyConfig != null)
+        if (cache.HierarchyConfig != null
+            && (cache.HierarchyConfig.Kind == LayoutKind.AiCurated
+                || string.Equals(cache.HierarchyConfig.Strategy, "AiCurated", StringComparison.Ordinal))
+            && cache.HierarchyConfig.AiResult != null)
+        {
+            tree = await _treeBuilder.BuildFromAiResultAsync(cache.Links, cache.HierarchyConfig.AiResult).ConfigureAwait(false);
+            _navigationService.SetAiHierarchy(true);
+        }
+        else if (cache.HierarchyConfig != null)
         {
             tree = await _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);

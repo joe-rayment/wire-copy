@@ -12,6 +12,18 @@ namespace TermReader.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class RenderHelpers
 {
+    /// <summary>
+    /// Diagnostic hook for workspace-1f5a (cursor highlight drops under rapid input).
+    /// When the TERMREADER_DEBUG_RENDER_FRAMES env var is set to a path, every line
+    /// emitted via WriteLine* is appended to that file with frame metadata so frames
+    /// can be diffed offline by the user on their own terminal.
+    /// </summary>
+    private static readonly string? DebugFramePath =
+        Environment.GetEnvironmentVariable("TERMREADER_DEBUG_RENDER_FRAMES");
+
+    private static readonly object DebugFrameLock = new();
+    private static long _debugFrameSeq;
+
     private int _linesWritten;
     private int _terminalHeight;
 
@@ -318,6 +330,7 @@ internal class RenderHelpers
             }
 
             Console.Write(text);
+            LogDebugFrame("WriteLine", _linesWritten, text);
             _linesWritten++;
         }
         catch
@@ -344,6 +357,7 @@ internal class RenderHelpers
             }
 
             WriteSearchHighlightedContent(text, searchQuery, palette);
+            LogDebugFrame("WriteLineWithHighlight", _linesWritten, text);
             _linesWritten++;
         }
         catch
@@ -384,6 +398,7 @@ internal class RenderHelpers
                 Console.Write(content);
             }
 
+            LogDebugFrame("WriteLineWithIndicator", _linesWritten, indicatorAnsi + text);
             _linesWritten++;
         }
         catch
@@ -500,6 +515,7 @@ internal class RenderHelpers
             }
 
             Console.Write("\x1b[K");
+            LogDebugFrame("WriteLineWithDualIndicator", _linesWritten, text);
             _linesWritten++;
         }
         catch
@@ -528,6 +544,7 @@ internal class RenderHelpers
             Console.Write($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
 
             Console.Write("\x1b[K");
+            LogDebugFrame("WriteLineWithFocusHighlight", _linesWritten, text);
             _linesWritten++;
         }
         catch
@@ -535,6 +552,57 @@ internal class RenderHelpers
             Console.WriteLine(text);
             _linesWritten++;
         }
+    }
+
+    /// <summary>
+    /// Logs a rendered line to the debug frame file when TERMREADER_DEBUG_RENDER_FRAMES is set.
+    /// Diagnostic for workspace-1f5a — captures the exact escape sequence emitted for each
+    /// frame so frame N (good) vs frame N+1 (broken) can be diffed offline.
+    /// </summary>
+    private static void LogDebugFrame(string source, int line, string text)
+    {
+        if (DebugFramePath == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var seq = System.Threading.Interlocked.Increment(ref _debugFrameSeq);
+            var ts = DateTime.UtcNow.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
+            var hex = EscapeNonPrintable(text);
+            var entry = $"{seq:D8} {ts} {source} L{line:D3} len={text.Length} {hex}\n";
+            lock (DebugFrameLock)
+            {
+                File.AppendAllText(DebugFramePath, entry);
+            }
+        }
+        catch
+        {
+            // Swallow — diagnostic must never break the renderer.
+        }
+    }
+
+    private static string EscapeNonPrintable(string text)
+    {
+        var sb = new StringBuilder(text.Length + 16);
+        foreach (var c in text)
+        {
+            if (c == '\x1b')
+            {
+                sb.Append("\\e");
+            }
+            else if (c < 0x20 || c == 0x7f)
+            {
+                sb.Append('\\').Append('x').Append(((int)c).ToString("X2", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static int GetDisplayWidthCore(ReadOnlySpan<char> span)

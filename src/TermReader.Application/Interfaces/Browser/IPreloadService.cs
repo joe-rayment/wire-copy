@@ -100,4 +100,19 @@ public interface IPreloadService : IDisposable
     /// (browser-based loading) for content extraction.
     /// </summary>
     bool IsDomainNeedsJs(string url);
+
+    /// <summary>
+    /// Returns the configured paywalled domains relevant to a given URL where the
+    /// pre-loader currently has no usable authentication cookies (missing or expired).
+    /// The status bar uses this to surface a visible "cookies missing" badge so the
+    /// user knows pre-fetch is silently doing nothing, and can recover via
+    /// <c>:cookies import</c>.
+    /// </summary>
+    /// <param name="currentPageUrl">URL of the page the user is currently on. May be null/empty.</param>
+    /// <returns>
+    /// Paywalled domains for which cookies are missing. Returns an empty list when
+    /// cookies are present, the URL is not on a paywalled domain, or no paywalled
+    /// domains are configured.
+    /// </returns>
+    IReadOnlyList<string> GetMissingPaywalledCookieDomains(string? currentPageUrl);
 }

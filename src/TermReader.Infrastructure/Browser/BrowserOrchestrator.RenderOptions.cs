@@ -44,6 +44,8 @@ public partial class BrowserOrchestrator
             CacheUsagePercent = GetCacheUsagePercent(),
             LayoutVariantLabel = GetLayoutVariantLabel(),
             LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
+            MissingCookieDomains = _preloadService.GetMissingPaywalledCookieDomains(
+                _navigationService.CurrentContext.CurrentPage?.Url),
         };
     }
 

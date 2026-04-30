@@ -162,6 +162,91 @@ public class BrowserSessionDisposedTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public async Task SyncCookiesToPreloadContextAsync_PreloadNotLaunched_ReturnsZero()
+    {
+        // workspace-8t9k Phase 2: when the preload context has not yet been
+        // launched (no preload has run), the sync method must be a graceful
+        // no-op — the cookies will be picked up from cookies.json on the next
+        // launch via InjectStoredCookiesAsync.
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>([]));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+
+        // Act — preload context is lazy, never launched in this test
+        var pushed = await session.SyncCookiesToPreloadContextAsync(new[]
+        {
+            new StoredCookie("nyt-s", "abc", ".nytimes.com", "/", DateTime.UtcNow.AddDays(30)),
+        });
+
+        // Assert
+        pushed.Should().Be(0, "preload context is lazy — sync must not launch it just to push");
+
+        await session.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task SyncCookiesToPreloadContextAsync_EmptyList_ReturnsZero()
+    {
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>([]));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+
+        var pushed = await session.SyncCookiesToPreloadContextAsync(Array.Empty<StoredCookie>());
+
+        pushed.Should().Be(0);
+
+        await session.DisposeAsync();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task SyncCookiesToPreloadContextAsync_AfterDispose_ReturnsZero()
+    {
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>([]));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+        await session.DisposeAsync();
+
+        var pushed = await session.SyncCookiesToPreloadContextAsync(new[]
+        {
+            new StoredCookie("nyt-s", "abc", ".nytimes.com", "/", DateTime.UtcNow.AddDays(30)),
+        });
+
+        pushed.Should().Be(0, "disposed session must not attempt cookie sync");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task CreateBackgroundPageAsync_AfterDispose_ReturnsNull()
+    {
+        // workspace-8t9k Phase 2: background pages live in the preload context.
+        // After disposal, requests for a background page must return null
+        // without attempting to launch a new context.
+        var logger = Substitute.For<ILogger<BrowserSession>>();
+        var config = Options.Create(new BrowserConfiguration());
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Task.FromResult<IReadOnlyList<StoredCookie>>([]));
+
+        var session = new BrowserSession(config, logger, cookieManager);
+        await session.DisposeAsync();
+
+        var page = await session.CreateBackgroundPageAsync();
+
+        page.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void WarmUpAsync_AfterDispose_ThrowsObjectDisposedException()
     {
         // Arrange - WarmUpAsync calls GetOrCreatePageAsync internally

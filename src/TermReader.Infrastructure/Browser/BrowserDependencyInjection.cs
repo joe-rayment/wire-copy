@@ -147,6 +147,12 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
         services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();
 
+        // Scraping strategies (per-domain WHICH-links chooser).
+        services.AddSingleton<IScrapingStrategy, ScrapingStrategies.DocumentOrderStrategy>();
+        services.AddSingleton<IScrapingStrategy, ScrapingStrategies.AiCuratedStrategy>();
+        services.AddSingleton<IScrapingStrategy, ScrapingStrategies.RssFeedStrategy>();
+        services.AddSingleton<IScrapingStrategyRegistry, ScrapingStrategies.ScrapingStrategyRegistry>();
+
         // Register layout variant provider (cycles visual layout variants per ViewMode)
         services.AddSingleton<ILayoutVariantProvider>(sp =>
         {

@@ -29,4 +29,10 @@ public class AnthropicConfiguration
     /// Gets the maximum budget in USD per analysis request. Prevents runaway costs.
     /// </summary>
     public decimal MaxBudgetUsd { get; init; } = 0.10m;
+
+    /// <summary>
+    /// TTL (days) for cached AI Curated results. After this age the analyzer
+    /// re-runs on the next visit so layouts adapt to site changes.
+    /// </summary>
+    public int AiCuratedCacheDays { get; init; } = 30;
 }
