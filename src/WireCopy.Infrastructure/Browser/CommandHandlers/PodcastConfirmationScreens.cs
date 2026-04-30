@@ -80,20 +80,9 @@ internal static class PodcastConfirmationScreens
     }
 
     /// <summary>
-    /// Pure helper that renders one selectable confirmation row with a stable column
-    /// layout regardless of selection state.
-    ///
-    /// Layout (visible columns, ANSI escapes excluded):
-    ///   col 0..1  : 2-space outer margin
-    ///   col 2     : selection-indicator gutter (▌ when selected, blank otherwise)
-    ///   col 3     : single space separator
-    ///   col 4     : status icon
-    ///   col 5     : single space
-    ///   col 6...  : label (padded to <paramref name="labelCol"/>), value, then right-aligned action
-    ///
-    /// The selection indicator lives in a fixed-width gutter so the label/value
-    /// text never shifts horizontally between selected and unselected rows. The
-    /// optional sub-line is indented to col 6 so it visually attaches to the row.
+    /// Builds one selectable confirmation row. Delegates to the shared
+    /// <see cref="SettingsRowRenderer"/> so the Generate Podcast screen and the
+    /// unified <c>:config</c> Setup screen share row code (workspace-fn1u).
     /// </summary>
     /// <returns>(mainLine, subLine) — subLine is null when neither warning nor helper text was provided.</returns>
     internal static (string MainLine, string? SubLine) BuildConfirmationRow(
@@ -109,76 +98,27 @@ internal static class PodcastConfirmationScreens
         string actionLabel,
         string? warningText = null,
         string? helperText = null,
-        int labelCol = 24)
-    {
-        var indicatorChar = isSelected ? "▌" : " ";
-        var indicatorColor = isWarning ? palette.GetWarningFg().AnsiFg : palette.GetMutedFg().AnsiFg;
-        var indicatorCell = $"{indicatorColor}{indicatorChar}{Reset}";
-
-        var paddedLabel = label.Length < labelCol ? label + new string(' ', labelCol - label.Length) : label;
-
-        // When the row is in a warning state, override the label/value colors
-        // so the whole row visually owns its error state.
-        var effectiveStatusColor = isWarning ? palette.GetWarningFg().AnsiFg : statusColor;
-        var effectiveLabelColor = isWarning ? palette.GetWarningFg().AnsiFg : palette.PrimaryText.AnsiFg;
-        var effectiveValueColor = isWarning ? palette.GetWarningFg().AnsiFg : valueColor;
-
-        var actionBtn = $"{palette.GetAccentFg().AnsiFg}[Enter]{Reset} {palette.PrimaryText.AnsiFg}{actionLabel}{Reset}";
-
-        // Visible-character widths (used to right-align the action button)
-        const int marginLen = 2;     // "  "
-        const int gutterLen = 1;     // ▌ or space
-        const int gapLen = 1;        // space between gutter and content
-        var contentPlainLen = 1 /*statusIcon*/ + 1 /*space*/ + paddedLabel.Length + value.Length;
-        var actionPlainLen = "[Enter] ".Length + actionLabel.Length;
-        var totalPlainLen = marginLen + gutterLen + gapLen + contentPlainLen + actionPlainLen;
-        var pad = Math.Max(2, width - totalPlainLen);
-
-        var content = $"{effectiveStatusColor}{statusIcon}{Reset} " +
-                      $"{effectiveLabelColor}{paddedLabel}{Reset}" +
-                      $"{effectiveValueColor}{value}{Reset}";
-
-        string mainLine;
-        if (isSelected)
-        {
-            // Highlight the content area only — the outer margin and indicator gutter
-            // stay outside the highlight so the gutter remains visible and the content
-            // does not horizontally shift.
-            mainLine = $"  {indicatorCell} " +
-                       $"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{content}{new string(' ', pad)}{actionBtn}{Reset}";
-        }
-        else
-        {
-            mainLine = $"  {indicatorCell} {content}{new string(' ', pad)}{actionBtn}";
-        }
-
-        string? subLine = null;
-        const string subIndent = "      "; // 2 margin + 1 gutter + 1 gap + 2 (icon+space) = 6
-        if (warningText != null)
-        {
-            subLine = $"{subIndent}{palette.GetWarningFg().AnsiFg}{warningText}{Reset}";
-        }
-        else if (helperText != null)
-        {
-            subLine = $"{subIndent}{palette.SecondaryText.AnsiFg}{helperText}{Reset}";
-        }
-
-        return (mainLine, subLine);
-    }
+        int labelCol = 24) =>
+        SettingsRowRenderer.Build(
+            palette,
+            width,
+            isSelected,
+            isWarning,
+            statusIcon,
+            statusColor,
+            label,
+            value,
+            valueColor,
+            actionLabel,
+            warningText,
+            helperText,
+            labelCol);
 
     /// <summary>
     /// Strips CSI ANSI escape sequences so callers can compute visible column
-    /// positions (e.g. for layout assertions in tests).
+    /// positions. Forwarded to <see cref="SettingsRowRenderer.StripAnsi(string)"/>.
     /// </summary>
-    internal static string StripAnsi(string s)
-    {
-        if (string.IsNullOrEmpty(s))
-        {
-            return s;
-        }
-
-        return System.Text.RegularExpressions.Regex.Replace(s, "\x1b\\[[0-9;]*[A-Za-z]", string.Empty);
-    }
+    internal static string StripAnsi(string s) => SettingsRowRenderer.StripAnsi(s);
 
     /// <summary>
     /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
@@ -1470,6 +1410,12 @@ internal static class PodcastConfirmationScreens
     /// dispatch on the OutputFolder confirmation row.
     /// </summary>
 #pragma warning disable SA1202 // pre-existing test-only helpers; ordering being addressed by another bead
+
+    /// <summary>
+    /// Shared entry point for the output-folder prompt. Used by both the Generate
+    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen
+    /// (workspace-fn1u). Persists via <see cref="IUserSettingsStore"/>.
+    /// </summary>
     internal static Task<string?> PromptAndSetOutputFolderForTestsAsync(
         CommandContext ctx,
         IUserSettingsStore settingsStore,
@@ -1478,7 +1424,8 @@ internal static class PodcastConfirmationScreens
         PromptAndSetOutputFolderAsync(ctx, settingsStore, currentValue, ct);
 
     /// <summary>
-    /// Test-only entry point: invokes the voice picker and persists the choice.
+    /// Shared entry point for the TTS voice picker. Used by both the Generate
+    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen.
     /// </summary>
     internal static Task<string?> PromptAndPickVoiceForTestsAsync(
         CommandContext ctx,
@@ -1489,7 +1436,8 @@ internal static class PodcastConfirmationScreens
         PromptAndPickVoiceAsync(ctx, options, settingsStore, currentValue, ct);
 
     /// <summary>
-    /// Test-only entry point: invokes the model picker and persists the choice.
+    /// Shared entry point for the TTS model picker. Used by both the Generate
+    /// Podcast confirmation screen and the unified <c>:config</c> Setup screen.
     /// </summary>
     internal static Task<string?> PromptAndPickModelForTestsAsync(
         CommandContext ctx,

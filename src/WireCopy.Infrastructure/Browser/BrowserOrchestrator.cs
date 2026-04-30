@@ -298,6 +298,18 @@ public partial class BrowserOrchestrator : IBrowserService
                 // Explicit URL provided → load directly (existing behavior)
                 await NavigateToAsync(initialUrl, options, cancellationToken).ConfigureAwait(false);
             }
+            else if (IsFirstRun())
+            {
+                // First launch with zero credentials configured → land on the
+                // unified Setup screen with a one-time welcome banner so a fresh
+                // user has somewhere to configure everything (workspace-fn1u).
+                // Esc returns to the launcher; the screen is skippable.
+                _navigationService.EnterLauncher();
+                await CommandHandlers.SettingsCommandHandler.HandleConfigScreen(
+                    _commandContext, options, cancellationToken, showWelcomeBanner: true)
+                    .ConfigureAwait(false);
+                await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
+            }
             else
             {
                 // No URL → show launcher home screen
@@ -1289,6 +1301,28 @@ public partial class BrowserOrchestrator : IBrowserService
             var idealOffset = gridRow - contentHeight + 2;
             var maxOffset = Math.Max(0, gridRows.Count - contentHeight);
             _navigationService.SetScrollOffset(Math.Min(idealOffset, maxOffset));
+        }
+    }
+
+    /// <summary>
+    /// Returns true on first launch — when none of the four primary credentials
+    /// have been persisted via <see cref="Application.Interfaces.IUserSettingsStore"/>.
+    /// Drives the auto-landing on the unified Setup screen (workspace-fn1u).
+    /// Resolves the settings store inside a scope so a fresh probe always reads
+    /// the latest persisted state.
+    /// </summary>
+    private bool IsFirstRun()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<Application.Interfaces.IUserSettingsStore>();
+            return CommandHandlers.SettingsCommandHandler.IsFirstRun(settingsStore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "First-run detection failed; treating as not-first-run");
+            return false;
         }
     }
 
