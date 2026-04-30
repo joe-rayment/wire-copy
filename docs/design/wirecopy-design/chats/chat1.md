@@ -514,7 +514,7 @@ _[tool: update_todos]_
 
 _[tool: fork_verifier_agent]_
 
-The WireCopy design system is complete.
+The Wire Copy design system is complete.
 
 **Caveats:**
 - **Font substitution flagged:** JetBrains Mono (Google Fonts) used as a web-safe stand-in for Ghostty's actual rendering font. Drop your preferred `.ttf`/`.woff2` into `fonts/` and I'll wire it up.
@@ -849,7 +849,7 @@ Here's how I'd handle each major element. Want me to build it?
 
 | Element | Current (impossible) | Real terminal solution |
 |---|---|---|
-| Launcher hero | — | Big ASCII-art "WireCopy" wordmark (5–7 rows tall, color-cycled), framed in `╭═╮` double-rule with empty rows above/below |
+| Launcher hero | — | Big ASCII-art "Wire Copy" wordmark (5–7 rows tall, color-cycled), framed in `╭═╮` double-rule with empty rows above/below |
 | Reading-position | rgba opacity | One paragraph bg = ANSI 22 dim; line bg = ANSI 28 brighter, plus `▌` accent column |
 | Podcast CTA | box-shadow glow | `╭═══╮` double-rule frame, color-cycle border between pink shades each tick, marching `▶▶▶` chevrons |
 | Modals | CSS rounded box | `╭─╮ │ ╰─╯` thin-rule, content centered with explicit space padding |
@@ -862,11 +862,11 @@ Here's how I'd handle each major element. Want me to build it?
 
 1. Add a **"Terminal reality check"** section to the design system README that explicitly lists what's impossible, so future contributors don't suggest CSS-only effects.
 2. Rebuild every flagged card with **ANSI-color-only fills, box-drawing chrome, and ASCII art for hero moments.**
-3. For the launcher: design an ASCII-art `WireCopy` wordmark and ship it as the brand mark. Also gives us a memorable splash screen.
+3. For the launcher: design an ASCII-art `Wire Copy` wordmark and ship it as the brand mark. Also gives us a memorable splash screen.
 
 Two questions before I start:
 
-1. **For the launcher hero — do you want a typographic ASCII-art wordmark (block letters spelling "WireCopy"), a graphic ASCII mark (an icon-like glyph composition), or a hybrid (small mark + wordmark)?** I lean hybrid; want to see options?
+1. **For the launcher hero — do you want a typographic ASCII-art wordmark (block letters spelling "Wire Copy"), a graphic ASCII mark (an icon-like glyph composition), or a hybrid (small mark + wordmark)?** I lean hybrid; want to see options?
 2. **Are you OK with me dropping the "pulsing border" / glow effects entirely, and replacing them with palette-cycle animations on the border glyphs themselves?** Color-cycling 4–6 frames at ~150ms is genuinely terminal-native and reads as "alive" without faking shadows.
 
 ## User
@@ -990,7 +990,7 @@ Done. Summary of what's now terminal-honest:
 
 **Modals** — All four (loading, error, confirm, help) drawn in `┌─┐` thin / `╔═╗` double rules. No CSS borders or radii. Rule weight is now semantic: thin = transient, double = system surface. Spinner is a braille glyph; key hints are cyan against muted-green meta.
 
-**Brand logo** — Replaced the 42px CSS wordmark with a 6-row ASCII-art "WireCopy" mark using `█` and `╗╔╝╚` corner glyphs, plus a single-row compact lockup with cursor `_█`, plus a `╭═╮` boxed lockup, plus `[T]` favicon-mark.
+**Brand logo** — Replaced the 42px CSS wordmark with a 6-row ASCII-art "Wire Copy" mark using `█` and `╗╔╝╚` corner glyphs, plus a single-row compact lockup with cursor `_█`, plus a `╭═╮` boxed lockup, plus `[T]` favicon-mark.
 
 **Cards · states** (already fixed) — Selected state is one solid `#005f00` block, no per-row gaps, accent column drawn with `▌` glyphs.
 

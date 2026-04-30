@@ -1,12 +1,12 @@
-# WireCopy wordmark — ASCII
+# Wire Copy wordmark — ASCII
 
-╭─ WireCopy ─────────────────────────╮
+╭─ Wire Copy ────────────────────────╮
 │ A better reading experience          │
 ╰──────────────────────────────────────╯
 
 Minimal variant:
 
-  WireCopy
+  Wire Copy
 
 Monogram (single-cell):
 

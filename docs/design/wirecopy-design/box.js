@@ -1,4 +1,4 @@
-/* WireCopy · box-drawing helper
+/* Wire Copy · box-drawing helper
  *
  * Renders cell-perfect Unicode boxes inside a <pre> by:
  *   - Building horizontal rules programmatically (no hand-typed strings)

@@ -1,6 +1,6 @@
-# WireCopy UI Kit — Terminal
+# Wire Copy UI Kit — Terminal
 
-Pixel-faithful recreation of the WireCopy TUI as React/JSX components rendered inside a web `terminal frame`. Phosphor theme only.
+Pixel-faithful recreation of the Wire Copy TUI as React/JSX components rendered inside a web `terminal frame`. Phosphor theme only.
 
 ## Files
 

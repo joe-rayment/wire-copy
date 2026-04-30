@@ -1,6 +1,6 @@
 ---
 name: wirecopy-design
-description: Use this skill to generate well-branded interfaces and assets for WireCopy, either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
+description: Use this skill to generate well-branded interfaces and assets for Wire Copy, either for production or throwaway prototypes/mocks/etc. Contains essential design guidelines, colors, type, fonts, assets, and UI kit components for prototyping.
 user-invocable: true
 ---
 

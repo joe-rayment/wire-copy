@@ -1,4 +1,4 @@
-# Unicode Icon Glossary (WireCopy)
+# Unicode Icon Glossary (Wire Copy)
 
 All icons are Unicode glyphs. No emoji, no SVG, no icon font.
 

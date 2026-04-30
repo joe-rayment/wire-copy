@@ -20,18 +20,18 @@ internal class LauncherRenderer
 
     private const int WordmarkWidth = 87;
 
-    // 6-row ASCII-art wordmark from wirecopy-design-system/dist/preview/brand-logo.html.
+    // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
     // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
     // inner rows (3,4) in CelebrationFg (#ff5fd7 ANSI 206) for vertical stripe.
     // Width: 87 columns. Falls back to single-line title when terminal is narrower.
     private static readonly string[] Wordmark =
     [
-        " ████████╗███████╗██████╗ ███╗   ███╗  ██████╗ ███████╗ █████╗ ██████╗ ███████╗██████╗ ",
-        " ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║  ██╔══██╗██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗",
-        "    ██║   █████╗  ██████╔╝██╔████╔██║  ██████╔╝█████╗  ███████║██║  ██║█████╗  ██████╔╝",
-        "    ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║  ██╔══██╗██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗",
-        "    ██║   ███████╗██║  ██║██║ ╚═╝ ██║  ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║",
-        "    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝",
+        "      ██╗    ██╗ ██╗ ██████╗  ███████╗      ██████╗  ██████╗  ██████╗  ██╗   ██╗       ",
+        "      ██║    ██║ ██║ ██╔══██╗ ██╔════╝     ██╔════╝ ██╔═══██╗ ██╔══██╗ ╚██╗ ██╔╝       ",
+        "      ██║ █╗ ██║ ██║ ██████╔╝ █████╗       ██║      ██║   ██║ ██████╔╝  ╚████╔╝        ",
+        "      ██║███╗██║ ██║ ██╔══██╗ ██╔══╝       ██║      ██║   ██║ ██╔═══╝    ╚██╔╝         ",
+        "      ╚███╔███╔╝ ██║ ██║  ██║ ███████╗     ╚██████╗ ╚██████╔╝ ██║         ██║          ",
+        "       ╚══╝╚══╝  ╚═╝ ╚═╝  ╚═╝ ╚══════╝      ╚═════╝  ╚═════╝  ╚═╝         ╚═╝          ",
     ];
 
     // Rows 3 and 4 (zero-indexed 2 and 3) use the darker pink (CelebrationFg) for vertical stripe.
