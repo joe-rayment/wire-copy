@@ -1216,11 +1216,36 @@ internal sealed class BackgroundPreloadService : IPreloadService
                 return;
             }
 
+            // Re-minimize before every preload navigation as well — creating a
+            // new tab raises the window, and even if the page is reused
+            // a stray prior interaction may have brought it to the front.
+            try
+            {
+                await _browserSession.MinimizeWindowAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to minimize before preload navigation (non-fatal)");
+            }
+
             await _backgroundPage.GotoAsync(url, new PageGotoOptions
             {
                 Timeout = 15000,
                 WaitUntil = WaitUntilState.DOMContentLoaded,
             }).ConfigureAwait(false);
+
+            // Pre-fetch must be quiet (workspace-8rqh): Chromium raises the
+            // window on navigation, even for a background tab in the persistent
+            // context. Re-minimize after every navigation so the user's
+            // foreground browser doesn't pop up during preload.
+            try
+            {
+                await _browserSession.MinimizeWindowAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to minimize after preload navigation (non-fatal)");
+            }
 
             // Wait for JS content to render (article paragraphs or sufficient DOM size)
             try
