@@ -23,10 +23,13 @@ public class LauncherNavigationState
     /// <summary>
     /// Gets or sets the selected index on the launcher grid.
     /// </summary>
+    /// <remarks>
+    /// Sentinel values: -2 = setup-hint row, -1 = URL bar, 0+ = grid item.
+    /// </remarks>
     public int SelectedIndex
     {
         get => _launcherSelectedIndex;
-        set => _launcherSelectedIndex = Math.Max(-1, value);
+        set => _launcherSelectedIndex = Math.Max(-2, value);
     }
 
     /// <summary>

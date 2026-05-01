@@ -310,22 +310,21 @@ public partial class BrowserOrchestrator : IBrowserService
                 // Explicit URL provided → load directly (existing behavior)
                 await NavigateToAsync(initialUrl, options, cancellationToken).ConfigureAwait(false);
             }
-            else if (IsFirstRun())
-            {
-                // First launch with zero credentials configured → land on the
-                // unified Setup screen with a one-time welcome banner so a fresh
-                // user has somewhere to configure everything (workspace-fn1u).
-                // Esc returns to the launcher; the screen is skippable.
-                _navigationService.EnterLauncher();
-                await CommandHandlers.SettingsCommandHandler.HandleConfigScreen(
-                    _commandContext, options, cancellationToken, showWelcomeBanner: true)
-                    .ConfigureAwait(false);
-                await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
-            }
             else
             {
-                // No URL → show launcher home screen
+                // No URL → show launcher home screen. First-run users land here
+                // too: reading flows work without API keys, and the launcher
+                // surfaces a focusable "set up API keys" hint above the
+                // bookmark grid (workspace-fth0). The hint is auto-focused on
+                // first run so Enter still gets the user into Setup with one
+                // keystroke if that's what they want.
                 await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
+                if (IsFirstRun())
+                {
+                    _navigationService.LauncherSelectedIndex = UI.Renderers.LauncherRenderer.SetupHintSelectedIndex;
+                    options = GetCurrentRenderOptions();
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             // Non-interactive mode: page rendered, exit cleanly (no TTY)
