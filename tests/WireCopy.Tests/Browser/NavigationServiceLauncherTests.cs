@@ -69,10 +69,27 @@ public class NavigationServiceLauncherTests
     #region LauncherSelectedIndex
 
     [Fact]
-    public void LauncherSelectedIndex_ClampedToMinusOne()
+    public void LauncherSelectedIndex_ClampedToMinusTwo()
     {
-        // -1 is valid (URL bar), but lower values clamp to -1
+        // Sentinels: -2 = setup-hint row, -1 = URL bar, 0+ = grid item.
+        // Values below -2 clamp to -2 (workspace-fth0).
         _sut.LauncherSelectedIndex = -5;
+
+        _sut.LauncherSelectedIndex.Should().Be(-2);
+    }
+
+    [Fact]
+    public void LauncherSelectedIndex_AcceptsSetupHintSentinel()
+    {
+        _sut.LauncherSelectedIndex = -2;
+
+        _sut.LauncherSelectedIndex.Should().Be(-2);
+    }
+
+    [Fact]
+    public void LauncherSelectedIndex_AcceptsUrlBarSentinel()
+    {
+        _sut.LauncherSelectedIndex = -1;
 
         _sut.LauncherSelectedIndex.Should().Be(-1);
     }

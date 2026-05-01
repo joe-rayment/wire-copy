@@ -19,6 +19,14 @@ internal static class LauncherCommandHandler
     {
         var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
 
+        // Setup hint may have just hidden (e.g. after configuring a credential).
+        // Normalize a stale -2 selection back to -1 so we never render with an
+        // invisible selection target.
+        if (!options.ShowSetupHint && ctx.NavigationService.LauncherSelectedIndex == LauncherRenderer.SetupHintSelectedIndex)
+        {
+            ctx.NavigationService.LauncherSelectedIndex = -1;
+        }
+
         // When URL bar is selected, intercept printable keys to start typing immediately
         if (ctx.NavigationService.LauncherSelectedIndex == -1)
         {
@@ -52,14 +60,20 @@ internal static class LauncherCommandHandler
             case CommandType.MoveDown:
             {
                 var cols = GetLayoutColumns(options);
-                if (ctx.NavigationService.LauncherSelectedIndex == -1)
+                var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
+                if (currentIdx == LauncherRenderer.SetupHintSelectedIndex)
+                {
+                    // Setup hint → URL bar
+                    ctx.NavigationService.LauncherSelectedIndex = -1;
+                }
+                else if (currentIdx == -1)
                 {
                     // From URL bar → first bookmark
                     ctx.NavigationService.LauncherSelectedIndex = 0;
                 }
                 else
                 {
-                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1, cols);
+                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 1, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 }
 
@@ -72,12 +86,24 @@ internal static class LauncherCommandHandler
             {
                 var cols = GetLayoutColumns(options);
                 var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
-                if (currentIdx <= 0 && currentIdx != -1)
+                if (currentIdx == LauncherRenderer.SetupHintSelectedIndex)
+                {
+                    // Already at the top — no-op.
+                }
+                else if (currentIdx == -1)
+                {
+                    // From URL bar → setup hint (if visible), else stay.
+                    if (options.ShowSetupHint)
+                    {
+                        ctx.NavigationService.LauncherSelectedIndex = LauncherRenderer.SetupHintSelectedIndex;
+                    }
+                }
+                else if (currentIdx <= 0)
                 {
                     // From top row → URL bar
                     ctx.NavigationService.LauncherSelectedIndex = -1;
                 }
-                else if (currentIdx != -1)
+                else
                 {
                     var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
@@ -109,7 +135,18 @@ internal static class LauncherCommandHandler
             case CommandType.ActivateLink:
             {
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
-                if (idx == -1)
+                if (idx == LauncherRenderer.SetupHintSelectedIndex)
+                {
+                    // Setup hint selected — open the unified Setup screen with
+                    // the welcome banner. Esc returns to launcher.
+                    await SettingsCommandHandler.HandleConfigScreen(
+                        ctx, options, ct, showWelcomeBanner: true).ConfigureAwait(false);
+
+                    // After Setup closes, re-render the launcher. ShowSetupHint
+                    // may have flipped to false if the user configured anything.
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                }
+                else if (idx == -1)
                 {
                     // URL bar selected — activate URL input
                     await HandleGoToUrl(ctx, options, ct).ConfigureAwait(false);
@@ -262,7 +299,9 @@ internal static class LauncherCommandHandler
             }
 
             case CommandType.GoToTop:
-                ctx.NavigationService.LauncherSelectedIndex = 0;
+                ctx.NavigationService.LauncherSelectedIndex = options.ShowSetupHint
+                    ? LauncherRenderer.SetupHintSelectedIndex
+                    : 0;
                 ctx.NavigationService.LauncherScrollOffset = 0;
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
@@ -481,7 +520,8 @@ internal static class LauncherCommandHandler
     {
         var selectedIndex = ctx.NavigationService.LauncherSelectedIndex;
 
-        // URL-bar focus → snap to top so the URL bar is in the viewport.
+        // URL-bar / setup-hint focus → snap to top so the focused chrome is in
+        // the viewport. Both -1 and -2 sentinels qualify.
         if (selectedIndex < 0)
         {
             ctx.NavigationService.LauncherScrollOffset = 0;
@@ -496,7 +536,7 @@ internal static class LauncherCommandHandler
         }
 
         var layout = ComputeVariantLayout(options);
-        var headerPlusUrlBarLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(options.TerminalWidth);
+        var headerPlusUrlBarLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(options.TerminalWidth, options.ShowSetupHint);
         var viewportHeight = LauncherRenderer.ComputeViewportHeight(options.TerminalHeight);
 
         // Page-line index of the top and bottom of the cell containing the selection.
@@ -523,7 +563,8 @@ internal static class LauncherCommandHandler
         return LauncherRenderer.ComputeLayout(
             options.TerminalWidth,
             options.TerminalHeight,
-            options.LayoutVariant ?? "Grid");
+            options.LayoutVariant ?? "Grid",
+            options.ShowSetupHint);
     }
 
     private static int GetLayoutColumns(RenderOptions options)

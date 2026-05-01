@@ -102,4 +102,12 @@ public record RenderOptions
     /// a paywalled domain, or when no domains are configured.
     /// </summary>
     public IReadOnlyList<string>? MissingCookieDomains { get; init; }
+
+    /// <summary>
+    /// When true the launcher renders a "set up API keys" hint row above the
+    /// bookmark grid and exposes it as a focusable element (selectedIndex = -2).
+    /// Driven by <c>SettingsCommandHandler.IsFirstRun</c>: visible while none of
+    /// the four primary credentials have been configured.
+    /// </summary>
+    public bool ShowSetupHint { get; init; }
 }

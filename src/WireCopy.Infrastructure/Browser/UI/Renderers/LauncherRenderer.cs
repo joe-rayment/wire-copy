@@ -14,11 +14,22 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LauncherRenderer
 {
+    /// <summary>
+    /// Sentinel selectedIndex value for the launcher's "set up API keys" hint
+    /// row. Visible only when <see cref="RenderOptions.ShowSetupHint"/> is true.
+    /// </summary>
+    internal const int SetupHintSelectedIndex = -2;
+
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
     private const int WordmarkWidth = 87;
+
+    // Setup hint banner: blank + content + blank = 3 lines. Shown above the
+    // bookmark grid when ShowSetupHint is true (first run with no credentials
+    // configured). Selectable as launcher index -2.
+    private const int SetupHintLines = 3;
 
     // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
     // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
@@ -102,7 +113,12 @@ internal class LauncherRenderer
     /// </summary>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight)
     {
-        return ComputeLayout(terminalWidth, terminalHeight, "Grid");
+        return ComputeLayout(terminalWidth, terminalHeight, "Grid", showSetupHint: false);
+    }
+
+    internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
+    {
+        return ComputeLayout(terminalWidth, terminalHeight, variant, showSetupHint: false);
     }
 
     /// <summary>
@@ -115,7 +131,7 @@ internal class LauncherRenderer
     /// wordmark and URL bar collapse upward as the user scrolls into the
     /// bookmark list. See <see cref="ComputeViewportHeight"/>.
     /// </remarks>
-    internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant)
+    internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant, bool showSetupHint)
     {
         // Large wordmark: border + pad + 6 art rows + subtitle + pad + border = 11
         // Narrow: border + title + subtitle + pad + border = 5
@@ -126,9 +142,10 @@ internal class LauncherRenderer
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
+        var setupHintLines = showSetupHint ? SetupHintLines : 0;
 
         var width = Math.Max(1, terminalWidth - 2);
-        var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
+        var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - setupHintLines - footerLines);
 
         int columns;
         int cellHeight;
@@ -170,7 +187,7 @@ internal class LauncherRenderer
             CellHeight: cellHeight,
             VisibleRows: visibleRows,
             CellWidth: cellWidth,
-            HeaderLines: headerLines + urlBarLines,
+            HeaderLines: headerLines + urlBarLines + setupHintLines,
             FooterLines: footerLines);
     }
 
@@ -180,12 +197,18 @@ internal class LauncherRenderer
     /// </summary>
     internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth)
     {
+        return ComputeHeaderPlusUrlBarLines(terminalWidth, showSetupHint: false);
+    }
+
+    internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth, bool showSetupHint)
+    {
         // Mirror the BuildHeaderLines threshold: when inner width
         // (terminalWidth - 2) is at least WordmarkWidth + 8, the large 11-line
         // wordmark variant is shown; otherwise the 5-line narrow header.
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
-        return headerLines + urlBarLines;
+        var setupHintLines = showSetupHint ? SetupHintLines : 0;
+        return headerLines + urlBarLines + setupHintLines;
     }
 
     /// <summary>
@@ -710,6 +733,41 @@ internal class LauncherRenderer
     }
 
     /// <summary>
+    /// Builds the "set up API keys" hint banner as 3 lines (blank + content +
+    /// blank). Visual: cyan accent text centered, prefixed with an arrow.
+    /// Highlighted styling when <paramref name="isSelected"/>.
+    /// </summary>
+    private static List<string> BuildSetupHintLines(int width, bool isSelected, ThemePalette p)
+    {
+        const string label = "→ Set up API keys to enable AI features";
+        const string hint = "(Enter)";
+        var combined = $"{label}  {hint}";
+        var visibleLen = combined.Length;
+        var leftPad = Math.Max(0, (width - visibleLen) / 2);
+        var rightPad = Math.Max(0, width - leftPad - visibleLen);
+
+        var accent = p.GetAccentFg().AnsiFg;
+        var muted = p.SecondaryText.AnsiFg;
+        string content;
+        if (isSelected)
+        {
+            // Inverse-style highlight: accent bg + dark fg via Bold + accent fg.
+            content = $"{new string(' ', leftPad)}{accent}{Bold}{label}{Reset}{accent}  {hint}{Reset}{new string(' ', rightPad)}";
+        }
+        else
+        {
+            content = $"{new string(' ', leftPad)}{accent}{label}{Reset}  {muted}{hint}{Reset}{new string(' ', rightPad)}";
+        }
+
+        return new List<string>
+        {
+            string.Empty,
+            content,
+            string.Empty,
+        };
+    }
+
+    /// <summary>
     /// Builds the URL bar as a list of lines: blank, top border, content,
     /// bottom border, blank (5 lines total).
     /// </summary>
@@ -886,7 +944,8 @@ internal class LauncherRenderer
         string variant)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, variant);
+        var showSetupHint = options.ShowSetupHint;
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, variant, showSetupHint);
         var viewportHeight = ComputeViewportHeight(options.TerminalHeight);
 
         // Empty bookmarks: use the empty-state screen with the header pinned
@@ -903,6 +962,14 @@ internal class LauncherRenderer
                 _helpers.WriteLine(urlBarLine);
             }
 
+            if (showSetupHint)
+            {
+                foreach (var hintLine in BuildSetupHintLines(layout.Width, selectedIndex == SetupHintSelectedIndex, p))
+                {
+                    _helpers.WriteLine(hintLine);
+                }
+            }
+
             RenderEmptyState(layout.Width, options.TerminalHeight, p);
             return;
         }
@@ -910,10 +977,16 @@ internal class LauncherRenderer
         // Build the full virtual content stream:
         //   [0 .. headerLines)              wordmark / title
         //   [headerLines .. +5)             URL bar
-        //   [headerLines + 5 .. end)        bookmark rows
+        //   [headerLines + 5 .. +3)         setup hint (when showSetupHint)
+        //   [headerLines + 5 + hint .. end) bookmark rows
         var content = new List<string>();
         content.AddRange(BuildHeaderLines(layout.Width, p));
         content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));
+        if (showSetupHint)
+        {
+            content.AddRange(BuildSetupHintLines(layout.Width, selectedIndex == SetupHintSelectedIndex, p));
+        }
+
         content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p));
 
         // Clamp scrollOffset so we don't scroll past the end of content.
