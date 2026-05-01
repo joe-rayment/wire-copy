@@ -108,6 +108,37 @@ internal static class StrategyChooserHandler
                 if (!availability.IsAvailable)
                 {
                     unavailable.Add((strategy.DisplayName, availability.ReasonWhenUnavailable));
+
+                    // workspace-33jw: surface unavailable strategies in the chooser as
+                    // disabled rows so the user can DISCOVER them. Previously we silently
+                    // dropped them, leaving e.g. AI Curated invisible to anyone without
+                    // an Anthropic key. Cycling onto an unavailable row reverts the
+                    // preview to the page's existing tree (so the screen doesn't go
+                    // blank); applying it shows a hint rather than saving.
+                    var currentTreeForStub = page.LinkTree;
+                    if (currentTreeForStub != null)
+                    {
+                        var disabledStub = new SiteHierarchyConfig
+                        {
+                            Domain = ExtractDomain(page.Url),
+                            UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
+                            Sections = new List<HierarchySection>(),
+                            CreatedAt = DateTime.UtcNow,
+                            ModelVersion = "unavailable",
+                            Kind = LayoutKind.DocumentOrder,
+                            Version = 2,
+                            Strategy = strategy.Id,
+                        };
+                        candidates.Add(new LayoutCandidate
+                        {
+                            Config = disabledStub,
+                            Summary = $"✗ {strategy.DisplayName} · {availability.ReasonWhenUnavailable ?? "unavailable"}",
+                            PreviewTree = currentTreeForStub,
+                            IsUnavailable = true,
+                            UnavailableReason = availability.ReasonWhenUnavailable,
+                        });
+                    }
+
                     continue;
                 }
 
@@ -208,6 +239,17 @@ internal static class StrategyChooserHandler
         var selected = ctx.NavigationService.ApplyPreview();
         if (selected == null)
         {
+            return;
+        }
+
+        // workspace-33jw: refuse to save unavailable strategies. The user pressed
+        // Enter on a disabled row (e.g., AI Curated without an API key) — show a
+        // hint instead of mutating the saved config.
+        if (selected.IsUnavailable)
+        {
+            var hint = selected.UnavailableReason ?? "strategy unavailable";
+            ctx.NavigationService.SetStatusMessage($"Cannot apply · {hint}");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 

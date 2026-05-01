@@ -40,7 +40,24 @@ public sealed record LayoutCandidate
     public required string Summary { get; init; }
 
     /// <summary>
-    /// Pre-built navigation tree for instant preview rendering.
+    /// Pre-built navigation tree for instant preview rendering. For unavailable
+    /// strategies (workspace-33jw), this is the page's current tree so cycling
+    /// to the row shows the existing layout rather than a blank screen.
     /// </summary>
     public required NavigationTree PreviewTree { get; init; }
+
+    /// <summary>
+    /// True when this row represents a strategy the user cannot currently apply
+    /// (e.g., AI Curated without an Anthropic API key). Surfaced so the chooser
+    /// can render the row as disabled and refuse to save it. workspace-33jw.
+    /// </summary>
+    public bool IsUnavailable { get; init; }
+
+    /// <summary>
+    /// Human-readable reason this strategy is unavailable, surfaced in the
+    /// chooser status bar so the user knows what to do (e.g., "No Anthropic
+    /// API key — use :set anthropic-key"). Null when <see cref="IsUnavailable"/>
+    /// is false. workspace-33jw.
+    /// </summary>
+    public string? UnavailableReason { get; init; }
 }

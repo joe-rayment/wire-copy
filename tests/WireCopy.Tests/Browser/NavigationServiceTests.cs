@@ -3,6 +3,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
@@ -390,5 +391,68 @@ public class NavigationServiceTests
         _sut.ClearHistory();
 
         _sut.IsSpeedReadActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void EnterPreviewMode_WithUnavailableCandidate_StillEntersPreview()
+    {
+        // workspace-33jw: unavailable strategies appear as cyclable rows in the
+        // chooser so users can DISCOVER them. Cycling onto an unavailable row uses
+        // the page's existing tree as the preview (so the screen doesn't blank).
+        var page = CreateTestPage();
+        _sut.NavigateTo(page);
+        var stubTree = NavigationTree.Build(new List<LinkInfo>
+        {
+            new()
+            {
+                Url = "https://example.com/a",
+                DisplayText = "A",
+                Type = LinkType.External,
+                ImportanceScore = 50,
+            },
+        });
+        page.SetLinkTree(stubTree);
+
+        var availableConfig = new SiteHierarchyConfig
+        {
+            Domain = "example.com",
+            UrlPattern = "^https?://example\\.com/?",
+            Sections = new List<HierarchySection>(),
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "doc",
+            Kind = LayoutKind.DocumentOrder,
+        };
+        var unavailableConfig = availableConfig with { Strategy = "AiCurated", ModelVersion = "unavailable" };
+
+        _sut.EnterPreviewMode(new List<LayoutCandidate>
+        {
+            new()
+            {
+                Config = availableConfig,
+                Summary = "Document order · 1 link",
+                PreviewTree = stubTree,
+            },
+            new()
+            {
+                Config = unavailableConfig,
+                Summary = "✗ AI Curated · No Anthropic API key",
+                PreviewTree = stubTree,
+                IsUnavailable = true,
+                UnavailableReason = "No Anthropic API key",
+            },
+        });
+
+        _sut.IsInPreviewMode.Should().BeTrue();
+        _sut.GetCurrentPreviewLabel().Should().Contain("Document order");
+
+        _sut.CyclePreview(1);
+        _sut.GetCurrentPreviewLabel().Should().Contain("✗ AI Curated");
+
+        var applied = _sut.ApplyPreview();
+        applied.Should().NotBeNull();
+        applied!.IsUnavailable.Should().BeTrue();
+        applied.UnavailableReason.Should().Be("No Anthropic API key");
+        // Caller (StrategyChooserHandler.HandleApplyAsync) refuses to save when
+        // IsUnavailable is true and surfaces the reason as a status message.
     }
 }
