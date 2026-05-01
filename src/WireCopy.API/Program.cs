@@ -59,6 +59,15 @@ public class Program
 
     private static async Task<int> RunBrowseAsync(BrowseOptions options)
     {
+        // workspace-nk8a: silence Playwright's polite "BEWARE: your OS is not officially
+        // supported" log line that the bundled Node driver writes via console.log on
+        // unsupported platforms (ARM64 Linux, etc). The TUI uses absolute cursor
+        // positioning, so any unsolicited stdout from the driver corrupts the frame.
+        // The Node driver's logPolitely() suppresses output when npm_config_loglevel
+        // is silent/error/warn — no functional effect on real Playwright errors,
+        // which surface via exceptions.
+        Environment.SetEnvironmentVariable("npm_config_loglevel", "silent");
+
         // Validate browse options
         var validationErrors = options.Validate();
         if (validationErrors.Any())
@@ -98,8 +107,10 @@ public class Program
                 await dbContext.InitializeDatabaseAsync();
             }
 
-            // Eagerly warm up the browser session in the background so the first
-            // browser-fallback page load avoids the cold-start penalty.
+            // workspace-nk8a: warm up the browser SYNCHRONOUSLY before the TUI takes
+            // over, so any first-run chromium download (~270 MB) and Playwright Node
+            // driver chatter happens in normal console mode rather than corrupting the
+            // TUI's absolute cursor positioning. Subsequent runs are fast (cached).
             // Skip warmup in headed mode to avoid a visible Chrome window appearing
             // before the user navigates anywhere.
             var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
@@ -107,17 +118,15 @@ public class Program
             if (browserConfig.Headless && browserSession.IsBrowserAvailable)
             {
                 var session = host.Services.GetRequiredService<IBrowserSessionControl>();
-                _ = Task.Run(async () =>
+                Console.WriteLine("Preparing browser…");
+                try
                 {
-                    try
-                    {
-                        await session.WarmUpAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "Browser warmup failed (non-fatal)");
-                    }
-                });
+                    await session.WarmUpAsync();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Browser warmup failed (non-fatal)");
+                }
             }
 
             var browser = host.Services.GetRequiredService<IBrowserService>();
