@@ -24,6 +24,135 @@ public class FormFieldTests
         config.Validate.Should().BeNull();
         config.MaxLength.Should().Be(256);
         config.InitialValue.Should().BeNull();
+        config.OnExtraKey.Should().BeNull();
+    }
+
+    [Fact]
+    public void FormFieldConfig_OnExtraKey_RoundTripsDelegate()
+    {
+        Func<char, bool> hook = c => c == '?';
+
+        var config = new FormFieldConfig
+        {
+            Label = "Bucket",
+            OnExtraKey = hook,
+        };
+
+        config.OnExtraKey.Should().BeSameAs(hook);
+        config.OnExtraKey!('?').Should().BeTrue();
+        config.OnExtraKey!('a').Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PromptAsync_WithOnExtraKey_PassesInterceptorToInputHandler()
+    {
+        // Verify FormField.PromptAsync forwards a non-null interceptKey to the
+        // input handler when OnExtraKey is configured. Driving the printable-
+        // char branch end-to-end requires a real terminal (TerminalInputHandler
+        // owns stdin via a background thread), so we assert the contract at the
+        // FormField boundary.
+        Func<char, bool>? receivedInterceptor = null;
+        var inputHandler = Substitute.For<IInputHandler>();
+        inputHandler.PromptForInputAsync(
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<bool>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<string?>(),
+            Arg.Any<Func<char, bool>?>())
+            .Returns(call =>
+            {
+                receivedInterceptor = call.ArgAt<Func<char, bool>?>(6);
+                return Task.FromResult<string?>("bucket-name");
+            });
+
+        var helpCalls = new List<char>();
+        var field = new FormFieldConfig
+        {
+            Label = "Bucket",
+            OnExtraKey = c =>
+            {
+                helpCalls.Add(c);
+                return c == '?';
+            },
+        };
+        var palette = BuiltInThemes.Get(Domain.Enums.Browser.ThemeName.Phosphor);
+
+        try
+        {
+            var result = await FormField.PromptAsync(
+                inputHandler, field, palette, 0, 50, CancellationToken.None);
+            result.Should().Be("bucket-name");
+        }
+        catch (IOException)
+        {
+            // Expected in CI — Console.SetCursorPosition fails without a terminal.
+        }
+
+        receivedInterceptor.Should().NotBeNull(
+            "FormField must forward a non-null interceptor when OnExtraKey is set");
+
+        // Drive the wrapped interceptor and verify it dispatches to OnExtraKey.
+        // The wrapper also re-renders chrome on a 'true' return — that touches
+        // Console which throws in CI; swallow it.
+        try
+        {
+            var handled = receivedInterceptor!('?');
+            handled.Should().BeTrue();
+        }
+        catch (IOException)
+        {
+            // chrome re-render can fail in CI — the OnExtraKey call still fired
+        }
+
+        try
+        {
+            var handled = receivedInterceptor!('a');
+            handled.Should().BeFalse("OnExtraKey returned false so the wrapper should also return false");
+        }
+        catch (IOException)
+        {
+            // ignore — chrome re-render only runs on handled==true
+        }
+
+        helpCalls.Should().Contain('?');
+        helpCalls.Should().Contain('a');
+    }
+
+    [Fact]
+    public async Task PromptAsync_WithoutOnExtraKey_PassesNullInterceptor()
+    {
+        Func<char, bool>? receivedInterceptor = null;
+        var inputHandler = Substitute.For<IInputHandler>();
+        inputHandler.PromptForInputAsync(
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<bool>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<string?>(),
+            Arg.Any<Func<char, bool>?>())
+            .Returns(call =>
+            {
+                receivedInterceptor = call.ArgAt<Func<char, bool>?>(6);
+                return Task.FromResult<string?>("value");
+            });
+
+        var field = new FormFieldConfig { Label = "Field" };
+        var palette = BuiltInThemes.Get(Domain.Enums.Browser.ThemeName.Phosphor);
+
+        try
+        {
+            await FormField.PromptAsync(inputHandler, field, palette, 0, 50, CancellationToken.None);
+        }
+        catch (IOException)
+        {
+            // Expected in CI
+        }
+
+        receivedInterceptor.Should().BeNull(
+            "FormField must not invent an interceptor when the caller didn't supply one");
     }
 
     [Fact]
