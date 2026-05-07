@@ -20,6 +20,15 @@ internal class LauncherRenderer
 
     private const int WordmarkWidth = 87;
 
+    // Grid (boxed) cell layout (workspace-wxht):
+    //   line 0: top border    ╭───╮
+    //   line 1: title          │ NAME            [N] │
+    //   line 2: url            │ domain.example      │
+    //   line 3: bottom border  ╰───╯
+    //   line 4: blank          (inter-row gutter)
+    private const int GridCellBoxHeight = 4;
+    private const int GridRowStride = GridCellBoxHeight + 1;
+
     // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
     // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
     // inner rows (3,4) in CelebrationFg (#ff5fd7 ANSI 206) for vertical stripe.
@@ -159,10 +168,14 @@ internal class LauncherRenderer
             default: // Grid
             {
                 const int columnThreshold = 40;
-                const int standardCellHeight = 5;
-                const int compactCellHeight = 3;
                 columns = width >= columnThreshold ? 2 : 1;
-                cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+
+                // Boxed grid cell: 4 visible box lines (top border + title + url
+                // + bottom border) plus 1 trailing blank line for the
+                // inter-row vertical gutter (workspace-wxht). The scroll math
+                // and viewport sizing treat the whole 5-line block as the
+                // logical row height so a row never partially scrolls in.
+                cellHeight = GridRowStride;
                 break;
             }
         }
@@ -258,12 +271,17 @@ internal class LauncherRenderer
         }
     }
 
-    private static string BuildCellLine(
+    /// <summary>
+    /// Builds one line of a boxed grid cell (workspace-wxht).
+    /// Cell layout (4 lines): top border, title (name + right-aligned [N] badge),
+    /// url, bottom border. The trailing inter-row gutter is rendered by the
+    /// row-level builder, not this helper.
+    /// </summary>
+    private static string BuildBoxedGridCell(
         List<Bookmark> bookmarks,
         int itemIdx,
         int selectedIndex,
         int cellWidth,
-        int cellHeight,
         int lineIdx,
         ThemePalette p)
     {
@@ -291,6 +309,9 @@ internal class LauncherRenderer
             domain = ExtractDomain(bookmark.Url);
         }
 
+        // Digit badge `[N]` for 1..9, `[c]` for the trailing Reading List tile.
+        // Items past the 9th render no badge — same contract as the pre-redesign
+        // launcher, since we only honour `JumpToIndex` for digits 1-9.
         string badge;
         if (isCollections)
         {
@@ -305,154 +326,76 @@ internal class LauncherRenderer
             badge = string.Empty;
         }
 
-        // For 5-line cells: 0=pad, 1=name, 2=domain, 3=accent, 4=pad
-        // For 3-line cells: 0=name, 1=domain, 2=blank
-        var nameLineIdx = cellHeight == 5 ? 1 : 0;
-        var domainLineIdx = nameLineIdx + 1;
-        var accentEndIdx = nameLineIdx + 2;
+        // Borders: dim grey by default; brighten to PrimaryText when selected.
+        // No accent / theme tint either way (per workspace-wxht: "no colour").
+        // The dim attribute on the unselected border keeps it visually quieter
+        // than the selected border without changing hue.
+        var borderColor = isSelected
+            ? $"{p.PrimaryText.AnsiFg}"
+            : $"{p.SecondaryText.AnsiFg}{Dim}";
+        var titleSegment = $"{Bold}{p.PrimaryText.AnsiFg}";
+        var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
+        var domainColor = p.SecondaryText.AnsiFg;
 
-        const int indent = 6;
-        var textWidth = Math.Max(1, cellWidth - indent - 1);
-        var showAccent = lineIdx >= nameLineIdx && lineIdx <= accentEndIdx;
+        // Inner content width = cellWidth - 2 borders - 2 single-cell pads.
+        var inner = Math.Max(1, cellWidth - 4);
 
-        if (isSelected)
+        switch (lineIdx)
         {
-            return BuildSelectedLine(
-                lineIdx,
-                nameLineIdx,
-                domainLineIdx,
-                showAccent,
-                name,
-                domain,
-                badge,
-                indent,
-                textWidth,
-                cellWidth,
-                p);
-        }
+            case 0:
+                // ╭───────────╮
+                return $"{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}";
 
-        return BuildNormalLine(
-            lineIdx,
-            nameLineIdx,
-            domainLineIdx,
-            name,
-            domain,
-            badge,
-            indent,
-            textWidth,
-            cellWidth,
-            p);
-    }
-
-    private static string BuildSelectedLine(
-        int lineIdx,
-        int nameLineIdx,
-        int domainLineIdx,
-        bool showAccent,
-        string name,
-        string domain,
-        string badge,
-        int indent,
-        int textWidth,
-        int cellWidth,
-        ThemePalette p)
-    {
-        var sb = new System.Text.StringBuilder();
-        var selFg = p.SelectedItemFg.AnsiFg;
-        var selBg = p.SelectedItemBg.AnsiBg;
-
-        // Accent bar column (1 char) — not highlighted, has its own muted color
-        if (showAccent)
-        {
-            sb.Append(Selection.AccentBar(p));
-        }
-        else
-        {
-            sb.Append(' ');
-        }
-
-        // Every line of the selected cell gets sel-bg across the full contentWidth.
-        // contentWidth is the cell width minus the accent bar column.
-        var contentWidth = cellWidth - 1;
-
-        if (lineIdx == nameLineIdx)
-        {
-            var truncName = RenderHelpers.TruncateText(name, textWidth);
-
-            if (badge.Length > 0)
+            case 1:
             {
-                var badgePad = indent - badge.Length - 2;
-                sb.Append($"{selBg} {selFg}{badge}");
-                sb.Append($"{new string(' ', Math.Max(0, badgePad))}");
-                sb.Append($"{Bold}{selFg}{selBg}{truncName}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncName.Length))}{Reset}");
-            }
-            else
-            {
-                sb.Append($"{selBg}{selFg}{new string(' ', indent - 1)}");
-                sb.Append($"{Bold}{selFg}{selBg}{truncName}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncName.Length))}{Reset}");
-            }
-        }
-        else if (lineIdx == domainLineIdx)
-        {
-            var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-            sb.Append($"{selBg}{p.SecondaryText.AnsiFg}{new string(' ', indent - 1)}");
-            sb.Append($"{truncDomain}");
-            sb.Append($"{new string(' ', Math.Max(0, contentWidth - indent + 1 - truncDomain.Length))}{Reset}");
-        }
-        else if (showAccent)
-        {
-            // Blank line within the content block (e.g. line 3 of a 5-line cell) —
-            // fill full contentWidth with sel-bg so the highlight forms a
-            // continuous rectangle across the selected cell.
-            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
-        }
-        else
-        {
-            // Top/bottom padding lines outside the accent range — no highlight,
-            // matching LinkTreeRenderer's behavior for outside-content-block lines.
-            sb.Append(new string(' ', contentWidth));
-        }
+                // │ NAME .................. [N] │  (badge right-aligned)
+                // Reserve 5 cells for the badge zone (" [N]") so the title never
+                // collides with it. Items without a badge get the full inner width.
+                var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0; // 1-cell pre-pad
+                var titleMax = Math.Max(1, inner - badgeZone);
+                var truncName = RenderHelpers.TruncateText(name, titleMax);
+                var nameDisplayLen = truncName.Length;
+                var gap = Math.Max(0, inner - nameDisplayLen - badgeZone);
 
-        return sb.ToString();
-    }
+                var renderedTitle = $"{titleSegment}{truncName}{Reset}";
 
-    private static string BuildNormalLine(
-        int lineIdx,
-        int nameLineIdx,
-        int domainLineIdx,
-        string name,
-        string domain,
-        string badge,
-        int indent,
-        int textWidth,
-        int cellWidth,
-        ThemePalette p)
-    {
-        if (lineIdx == nameLineIdx)
-        {
-            var truncName = RenderHelpers.TruncateText(name, textWidth);
-            var pad = Math.Max(0, cellWidth - indent - truncName.Length);
+                if (badge.Length > 0)
+                {
+                    return $"{borderColor}│{Reset} " +
+                           $"{renderedTitle}" +
+                           $"{new string(' ', gap)}" +
+                           $"{badgeColor}{badge}{Reset}" +
+                           $" {borderColor}│{Reset}";
+                }
 
-            if (badge.Length > 0)
-            {
-                var badgePad = indent - badge.Length - 1;
-                return $" {p.GetAccentFg().AnsiFg}{badge}{Reset}{new string(' ', badgePad)}" +
-                       $"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}{new string(' ', pad)}";
+                // No badge — pad the full width.
+                var padNoBadge = Math.Max(0, inner - nameDisplayLen);
+                return $"{borderColor}│{Reset} " +
+                       $"{renderedTitle}" +
+                       $"{new string(' ', padNoBadge)}" +
+                       $" {borderColor}│{Reset}";
             }
 
-            return $"{new string(' ', indent)}{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}{new string(' ', pad)}";
-        }
+            case 2:
+            {
+                // │ domain.example                │
+                var truncDomain = RenderHelpers.TruncateText(domain, inner);
+                var pad = Math.Max(0, inner - truncDomain.Length);
+                return $"{borderColor}│{Reset} " +
+                       $"{domainColor}{truncDomain}{Reset}" +
+                       $"{new string(' ', pad)}" +
+                       $" {borderColor}│{Reset}";
+            }
 
-        if (lineIdx == domainLineIdx)
-        {
-            var truncDomain = RenderHelpers.TruncateText(domain, textWidth);
-            var pad = Math.Max(0, cellWidth - indent - truncDomain.Length);
-            return $"{new string(' ', indent)}{p.SecondaryText.AnsiFg}{truncDomain}{Reset}{new string(' ', pad)}";
-        }
+            case 3:
+                // ╰───────────╯
+                return $"{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}";
 
-        return new string(' ', cellWidth);
+            default:
+                // Defensive — caller renders the inter-row gap blank line itself,
+                // not via this helper. Anything else is a blank cell-width fill.
+                return new string(' ', cellWidth);
+        }
     }
 
     /// <summary>
@@ -503,6 +446,8 @@ internal class LauncherRenderer
             badge = "   ";
         }
 
+        // Right-align badge for parity with Grid (workspace-wxht).
+        // Layout: `▌ NAME .................. domain  [N] `
         const int badgeWidth = 3;
         const int gapMin = 2;
         var domainMaxWidth = Math.Min(domain.Length, (width - badgeWidth - gapMin - 3) / 3);
@@ -510,6 +455,7 @@ internal class LauncherRenderer
         var nameMaxWidth = Math.Max(1, width - badgeWidth - 2 - gapMin - truncDomain.Length - 1);
         var truncName = RenderHelpers.TruncateText(name, nameMaxWidth);
         var gap = Math.Max(0, width - 2 - badgeWidth - truncName.Length - truncDomain.Length - 1);
+        var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
 
         if (isSelected)
         {
@@ -517,20 +463,21 @@ internal class LauncherRenderer
             var selBg = p.SelectedItemBg.AnsiBg;
             var sb = new System.Text.StringBuilder();
             sb.Append(Selection.AccentBar(p));
-            sb.Append($"{selBg}{selFg}{badge} ");
-            sb.Append($"{Bold}{selFg}{selBg}{truncName}{Reset}");
+            sb.Append($"{selBg}{Bold}{selFg}{truncName}{Reset}");
             sb.Append($"{selBg}{new string(' ', gap)}");
-            sb.Append($"{p.SecondaryText.AnsiFg}{selBg}{truncDomain}");
-            sb.Append($" {Reset}");
+            sb.Append($"{p.SecondaryText.AnsiFg}{selBg}{truncDomain}{Reset}");
+            sb.Append($"{selBg}  ");
+            sb.Append($"{badgeColor}{badge}{Reset}");
+            sb.Append($"{selBg} {Reset}");
             return sb.ToString();
         }
 
         var sb2 = new System.Text.StringBuilder();
-        sb2.Append($" {p.GetAccentFg().AnsiFg}{badge}{Reset} ");
+        sb2.Append(' ');
         sb2.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
         sb2.Append(new string(' ', gap));
-        sb2.Append($"{p.SecondaryText.AnsiFg}{truncDomain}{Reset}");
-        sb2.Append(' ');
+        sb2.Append($"{p.SecondaryText.AnsiFg}{truncDomain}{Reset}  ");
+        sb2.Append($"{badgeColor}{badge}{Reset} ");
         return sb2.ToString();
     }
 
@@ -617,13 +564,21 @@ internal class LauncherRenderer
         }
 
         var contentWidth = cellWidth - 1;
+        var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
 
         if (lineIdx == 0)
         {
-            var combined = badge.Length > 0 ? $"{badge} {name}" : name;
-            var truncCombined = RenderHelpers.TruncateText(combined, textWidth);
-            sb.Append($"{selBg}{selFg}{Bold}{truncCombined}{Reset}");
-            sb.Append($"{selBg}{new string(' ', Math.Max(0, contentWidth - truncCombined.Length))}{Reset}");
+            // Right-align badge (workspace-wxht).
+            var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0;
+            var nameMax = Math.Max(1, textWidth - badgeZone);
+            var truncName = RenderHelpers.TruncateText(name, nameMax);
+            var pad = Math.Max(0, contentWidth - truncName.Length - badgeZone);
+            sb.Append($"{selBg}{Bold}{selFg}{truncName}{Reset}");
+            sb.Append($"{selBg}{new string(' ', pad)}{Reset}");
+            if (badge.Length > 0)
+            {
+                sb.Append($"{selBg}{badgeColor}{badge}{Reset}{selBg} {Reset}");
+            }
         }
         else if (lineIdx == 1)
         {
@@ -651,16 +606,21 @@ internal class LauncherRenderer
     {
         if (lineIdx == 0)
         {
-            var combined = badge.Length > 0
-                ? $"{p.GetAccentFg().AnsiFg}{badge}{Reset} {Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, Math.Max(1, textWidth - badge.Length - 1))}{Reset}"
-                : $"{Bold}{p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(name, textWidth)}{Reset}";
+            // Right-align badge for parity with Grid (workspace-wxht).
+            var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0;
+            var nameMax = Math.Max(1, textWidth - badgeZone);
+            var truncName = RenderHelpers.TruncateText(name, nameMax);
+            var nameLen = truncName.Length;
+            var pad = Math.Max(0, cellWidth - indent - nameLen - badgeZone);
+            var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
+            var titleSegment = $"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}";
 
-            var combinedPlain = badge.Length > 0
-                ? $"{badge} {RenderHelpers.TruncateText(name, Math.Max(1, textWidth - badge.Length - 1))}"
-                : RenderHelpers.TruncateText(name, textWidth);
+            if (badge.Length > 0)
+            {
+                return $" {titleSegment}{new string(' ', pad)}{badgeColor}{badge}{Reset} ";
+            }
 
-            var pad = Math.Max(0, cellWidth - indent - combinedPlain.Length);
-            return $" {combined}{new string(' ', pad)}";
+            return $" {titleSegment}{new string(' ', pad)} ";
         }
 
         if (lineIdx == 1)
@@ -852,30 +812,40 @@ internal class LauncherRenderer
         int totalItems,
         ThemePalette p)
     {
+        // The Grid path uses a 5-line stride per row (workspace-wxht):
+        //   line 0..3 — boxed cell content
+        //   line 4    — blank inter-row gutter
+        // Adjacent boxes are separated by a single space gutter (their
+        // borders form the visual separator); the explicit `│` divider
+        // from the previous design is intentionally omitted.
+        if (line >= GridCellBoxHeight)
+        {
+            return new string(' ', layout.Width);
+        }
+
         var sb = new System.Text.StringBuilder();
         var leftIdx = row * layout.Columns;
-        sb.Append(BuildCellLine(
+        sb.Append(BuildBoxedGridCell(
             bookmarks,
             leftIdx,
             selectedIndex,
             layout.CellWidth,
-            layout.CellHeight,
             line,
             p));
 
         if (layout.Columns == 2)
         {
-            sb.Append($"{p.SecondaryText.AnsiFg}│{Reset}");
+            // 1-cell horizontal gutter between adjacent boxes.
+            sb.Append(' ');
             var rightIdx = leftIdx + 1;
             var rightWidth = layout.Width - layout.CellWidth - 1;
             if (rightIdx < totalItems)
             {
-                sb.Append(BuildCellLine(
+                sb.Append(BuildBoxedGridCell(
                     bookmarks,
                     rightIdx,
                     selectedIndex,
                     rightWidth,
-                    layout.CellHeight,
                     line,
                     p));
             }
