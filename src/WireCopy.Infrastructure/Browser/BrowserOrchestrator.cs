@@ -313,18 +313,11 @@ public partial class BrowserOrchestrator : IBrowserService
             else
             {
                 // No URL → show launcher home screen. First-run users land here
-                // too: reading flows work without API keys, and the launcher
-                // surfaces a focusable "set up API keys" hint above the
-                // bookmark grid (workspace-fth0). The hint is auto-focused on
-                // first run so Enter still gets the user into Setup with one
-                // keystroke if that's what they want.
+                // too: reading flows work without API keys, and the launcher's
+                // header card surfaces a non-focusable "press S" Setup hint
+                // (workspace-ayt8). Default focus stays on the URL bar so
+                // Enter submits a URL and S opens Setup.
                 await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
-                if (IsFirstRun())
-                {
-                    _navigationService.LauncherSelectedIndex = UI.Renderers.LauncherRenderer.SetupHintSelectedIndex;
-                    options = GetCurrentRenderOptions();
-                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
-                }
             }
 
             // Non-interactive mode: page rendered, exit cleanly (no TTY)

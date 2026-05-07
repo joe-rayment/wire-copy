@@ -69,21 +69,14 @@ public class NavigationServiceLauncherTests
     #region LauncherSelectedIndex
 
     [Fact]
-    public void LauncherSelectedIndex_ClampedToMinusTwo()
+    public void LauncherSelectedIndex_ClampedToMinusOne()
     {
-        // Sentinels: -2 = setup-hint row, -1 = URL bar, 0+ = grid item.
-        // Values below -2 clamp to -2 (workspace-fth0).
+        // Sentinels: -1 = URL bar, 0+ = grid item.
+        // Values below -1 clamp to -1 (workspace-ayt8 — setup hint is chrome,
+        // not a focusable element, so there is no -2 sentinel).
         _sut.LauncherSelectedIndex = -5;
 
-        _sut.LauncherSelectedIndex.Should().Be(-2);
-    }
-
-    [Fact]
-    public void LauncherSelectedIndex_AcceptsSetupHintSentinel()
-    {
-        _sut.LauncherSelectedIndex = -2;
-
-        _sut.LauncherSelectedIndex.Should().Be(-2);
+        _sut.LauncherSelectedIndex.Should().Be(-1);
     }
 
     [Fact]

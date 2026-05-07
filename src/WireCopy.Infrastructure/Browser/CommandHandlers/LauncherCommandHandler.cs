@@ -19,12 +19,16 @@ internal static class LauncherCommandHandler
     {
         var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
 
-        // Setup hint may have just hidden (e.g. after configuring a credential).
-        // Normalize a stale -2 selection back to -1 so we never render with an
-        // invisible selection target.
-        if (!options.ShowSetupHint && ctx.NavigationService.LauncherSelectedIndex == LauncherRenderer.SetupHintSelectedIndex)
+        // Setup hint hotkey: capital 'S' opens the unified Setup screen when
+        // the hint is visible (workspace-ayt8). Intercepted before the URL-bar
+        // typing fall-through below so the keystroke doesn't get typed into
+        // the URL field. No-op when the hint is hidden (configured users).
+        if (options.ShowSetupHint && command.RawKeyChar == 'S')
         {
-            ctx.NavigationService.LauncherSelectedIndex = -1;
+            await SettingsCommandHandler.HandleConfigScreen(
+                ctx, options, ct, showWelcomeBanner: true).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return true;
         }
 
         // When URL bar is selected, intercept printable keys to start typing immediately
@@ -60,20 +64,14 @@ internal static class LauncherCommandHandler
             case CommandType.MoveDown:
             {
                 var cols = GetLayoutColumns(options);
-                var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
-                if (currentIdx == LauncherRenderer.SetupHintSelectedIndex)
-                {
-                    // Setup hint → URL bar
-                    ctx.NavigationService.LauncherSelectedIndex = -1;
-                }
-                else if (currentIdx == -1)
+                if (ctx.NavigationService.LauncherSelectedIndex == -1)
                 {
                     // From URL bar → first bookmark
                     ctx.NavigationService.LauncherSelectedIndex = 0;
                 }
                 else
                 {
-                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 1, cols);
+                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
                 }
 
@@ -86,24 +84,12 @@ internal static class LauncherCommandHandler
             {
                 var cols = GetLayoutColumns(options);
                 var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
-                if (currentIdx == LauncherRenderer.SetupHintSelectedIndex)
-                {
-                    // Already at the top — no-op.
-                }
-                else if (currentIdx == -1)
-                {
-                    // From URL bar → setup hint (if visible), else stay.
-                    if (options.ShowSetupHint)
-                    {
-                        ctx.NavigationService.LauncherSelectedIndex = LauncherRenderer.SetupHintSelectedIndex;
-                    }
-                }
-                else if (currentIdx <= 0)
+                if (currentIdx <= 0 && currentIdx != -1)
                 {
                     // From top row → URL bar
                     ctx.NavigationService.LauncherSelectedIndex = -1;
                 }
-                else
+                else if (currentIdx != -1)
                 {
                     var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0, cols);
                     ctx.NavigationService.LauncherSelectedIndex = newIndex;
@@ -135,18 +121,7 @@ internal static class LauncherCommandHandler
             case CommandType.ActivateLink:
             {
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
-                if (idx == LauncherRenderer.SetupHintSelectedIndex)
-                {
-                    // Setup hint selected — open the unified Setup screen with
-                    // the welcome banner. Esc returns to launcher.
-                    await SettingsCommandHandler.HandleConfigScreen(
-                        ctx, options, ct, showWelcomeBanner: true).ConfigureAwait(false);
-
-                    // After Setup closes, re-render the launcher. ShowSetupHint
-                    // may have flipped to false if the user configured anything.
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                }
-                else if (idx == -1)
+                if (idx == -1)
                 {
                     // URL bar selected — activate URL input
                     await HandleGoToUrl(ctx, options, ct).ConfigureAwait(false);
@@ -299,9 +274,7 @@ internal static class LauncherCommandHandler
             }
 
             case CommandType.GoToTop:
-                ctx.NavigationService.LauncherSelectedIndex = options.ShowSetupHint
-                    ? LauncherRenderer.SetupHintSelectedIndex
-                    : 0;
+                ctx.NavigationService.LauncherSelectedIndex = 0;
                 ctx.NavigationService.LauncherScrollOffset = 0;
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
@@ -520,8 +493,7 @@ internal static class LauncherCommandHandler
     {
         var selectedIndex = ctx.NavigationService.LauncherSelectedIndex;
 
-        // URL-bar / setup-hint focus → snap to top so the focused chrome is in
-        // the viewport. Both -1 and -2 sentinels qualify.
+        // URL-bar focus → snap to top so the URL bar is in the viewport.
         if (selectedIndex < 0)
         {
             ctx.NavigationService.LauncherScrollOffset = 0;

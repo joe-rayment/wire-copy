@@ -12,73 +12,83 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 /// <summary>
-/// Regression tests for workspace-fth0: when no API credentials are configured,
-/// the launcher must surface a focusable "set up API keys" hint row above the
-/// bookmark grid (instead of forcing the user into the Setup screen).
+/// Regression tests for workspace-ayt8: when no API credentials are configured,
+/// the launcher renders a non-focusable "Set up API keys · press S" hint
+/// inside the wordmark/header box (replacing the trailing blank line). The
+/// `S` keystroke opens the unified Setup screen. The hint must NOT add rows
+/// to the header card and must NOT be reachable via the launcher's selection
+/// model — it is chrome, not a grid item.
 /// </summary>
 [Trait("Category", "Unit")]
 [Collection("ConsoleOutput")]
 public class LauncherSetupHintTests
 {
     [Fact]
-    public void ComputeHeaderPlusUrlBarLines_WithSetupHint_AddsThreeLines()
+    public void ComputeHeaderPlusUrlBarLines_IdenticalRegardlessOfSetupHint()
     {
         var without = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: false);
         var with = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: true);
 
-        with.Should().Be(without + 3,
-            "the setup hint banner is rendered as 3 lines (blank + content + blank)");
+        with.Should().Be(without,
+            "the setup hint lives inside the header card and adds zero rows; " +
+            "all callers (scroll math, URL-bar row) must see the same offsets " +
+            "regardless of first-run state");
     }
 
     [Fact]
-    public void ComputeLayout_WithSetupHint_ReservesThreeExtraHeaderLines()
+    public void ComputeLayout_IdenticalHeaderLinesRegardlessOfSetupHint()
     {
         var without = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: false);
         var with = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: true);
 
-        // HeaderLines is the line offset (in the virtual content stream) where
-        // the bookmark grid begins. The setup hint occupies 3 lines between the
-        // URL bar and the grid, so HeaderLines must grow by exactly 3.
-        with.HeaderLines.Should().Be(without.HeaderLines + 3);
+        with.HeaderLines.Should().Be(without.HeaderLines,
+            "header card height is constant — the setup hint replaces a blank line, " +
+            "not an additional row");
+        with.VisibleRows.Should().Be(without.VisibleRows);
     }
 
     [Fact]
-    public void SetupHintSelectedIndex_IsMinusTwo()
+    public void RenderLauncher_WithSetupHint_IncludesHintInsideHeaderBox()
     {
-        // Sentinel contract: -2 is the setup-hint slot, distinct from -1 (URL bar).
-        LauncherRenderer.SetupHintSelectedIndex.Should().Be(-2);
-    }
-
-    [Fact]
-    public void RenderLauncher_WithSetupHint_IncludesHintLine()
-    {
-        var screen = RenderLauncherScreen(showSetupHint: true, selectedIndex: 0);
+        var screen = RenderLauncherScreen(showSetupHint: true);
 
         screen.Should().Contain("Set up API keys",
-            "the setup hint banner must be rendered when ShowSetupHint=true");
+            "the setup hint must be rendered when ShowSetupHint=true");
+        screen.Should().Contain("press S",
+            "the hint must advertise the dedicated keybinding");
+
+        // Hint should appear before the URL bar in the rendered output —
+        // i.e. inside the header box, not as a separate band below the URL bar.
+        var hintIdx = screen.IndexOf("Set up API keys", System.StringComparison.Ordinal);
+        var urlBarIdx = screen.IndexOf("Go to URL", System.StringComparison.Ordinal);
+        urlBarIdx.Should().BeGreaterThan(0, "URL bar must render");
+        hintIdx.Should().BeLessThan(urlBarIdx,
+            "hint must render inside the header card, above the URL bar");
     }
 
     [Fact]
     public void RenderLauncher_WithoutSetupHint_OmitsHintLine()
     {
-        var screen = RenderLauncherScreen(showSetupHint: false, selectedIndex: 0);
+        var screen = RenderLauncherScreen(showSetupHint: false);
 
         screen.Should().NotContain("Set up API keys",
-            "the setup hint banner must NOT be rendered for configured users");
+            "configured users must not see the hint anywhere");
+        screen.Should().NotContain("press S",
+            "configured users must not see the dedicated-keybinding affordance");
     }
 
     [Fact]
-    public void RenderLauncher_WithEmptyBookmarks_AndSetupHint_IncludesHintLine()
+    public void RenderLauncher_WithEmptyBookmarks_AndSetupHint_IncludesHintInHeader()
     {
-        // Empty-state path is separate from the grid path; both must honour the flag.
-        var screen = RenderLauncherScreen(showSetupHint: true, selectedIndex: -2, bookmarks: new List<Bookmark>());
+        // Empty-state path is separate from the populated grid path; both must
+        // honour the flag now that the hint is baked into BuildHeaderLines.
+        var screen = RenderLauncherScreen(showSetupHint: true, bookmarks: new List<Bookmark>());
 
         screen.Should().Contain("Set up API keys");
     }
 
     private static string RenderLauncherScreen(
         bool showSetupHint,
-        int selectedIndex,
         List<Bookmark>? bookmarks = null)
     {
         var themeProvider = Substitute.For<IThemeProvider>();
@@ -104,7 +114,8 @@ public class LauncherSetupHintTests
         Console.SetOut(sw);
         try
         {
-            renderer.RenderLauncher(sample, selectedIndex, scrollOffset: 0, options);
+            // selectedIndex doesn't affect the hint anymore — it's chrome, not focusable.
+            renderer.RenderLauncher(sample, selectedIndex: 0, scrollOffset: 0, options);
         }
         finally
         {

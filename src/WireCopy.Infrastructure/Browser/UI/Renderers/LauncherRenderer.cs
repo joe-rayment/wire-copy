@@ -14,22 +14,11 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LauncherRenderer
 {
-    /// <summary>
-    /// Sentinel selectedIndex value for the launcher's "set up API keys" hint
-    /// row. Visible only when <see cref="RenderOptions.ShowSetupHint"/> is true.
-    /// </summary>
-    internal const int SetupHintSelectedIndex = -2;
-
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
     private const int WordmarkWidth = 87;
-
-    // Setup hint banner: blank + content + blank = 3 lines. Shown above the
-    // bookmark grid when ShowSetupHint is true (first run with no credentials
-    // configured). Selectable as launcher index -2.
-    private const int SetupHintLines = 3;
 
     // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
     // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
@@ -139,13 +128,15 @@ internal class LauncherRenderer
         // Note: the inner-width threshold (terminalWidth - 2) >= WordmarkWidth + 8
         // mirrors the rendering switch in BuildHeaderLines and avoids an
         // off-by-two mismatch at the boundary (terminalWidth ∈ {95, 96}).
+        // showSetupHint affects only header *content* (the trailing blank inside
+        // the box becomes a hint line) — total header line count is unchanged.
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
         const int footerLines = 2;
-        var setupHintLines = showSetupHint ? SetupHintLines : 0;
+        _ = showSetupHint;
 
         var width = Math.Max(1, terminalWidth - 2);
-        var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - setupHintLines - footerLines);
+        var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
 
         int columns;
         int cellHeight;
@@ -187,7 +178,7 @@ internal class LauncherRenderer
             CellHeight: cellHeight,
             VisibleRows: visibleRows,
             CellWidth: cellWidth,
-            HeaderLines: headerLines + urlBarLines + setupHintLines,
+            HeaderLines: headerLines + urlBarLines,
             FooterLines: footerLines);
     }
 
@@ -200,15 +191,22 @@ internal class LauncherRenderer
         return ComputeHeaderPlusUrlBarLines(terminalWidth, showSetupHint: false);
     }
 
+    /// <summary>
+    /// Returns the line offset (in the virtual content stream) of the first
+    /// bookmark row. Setup hint no longer adds rows of its own — it lives
+    /// inside the header card (workspace-ayt8) — so the result is identical
+    /// for both flag values. The overload is kept for source compatibility.
+    /// </summary>
     internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth, bool showSetupHint)
     {
         // Mirror the BuildHeaderLines threshold: when inner width
         // (terminalWidth - 2) is at least WordmarkWidth + 8, the large 11-line
         // wordmark variant is shown; otherwise the 5-line narrow header.
+        // showSetupHint affects only header *content*, not its line count.
+        _ = showSetupHint;
         var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
         const int urlBarLines = 5;
-        var setupHintLines = showSetupHint ? SetupHintLines : 0;
-        return headerLines + urlBarLines + setupHintLines;
+        return headerLines + urlBarLines;
     }
 
     /// <summary>
@@ -683,8 +681,11 @@ internal class LauncherRenderer
     /// <summary>
     /// Builds the wordmark / narrow-title header as a list of lines suitable
     /// for inclusion in the launcher's virtual content stream.
+    /// When <paramref name="showSetupHint"/> is true, the trailing blank line
+    /// inside the box is replaced with a centred "Set up API keys" hint in the
+    /// accent colour (workspace-ayt8). Net header height is unchanged.
     /// </summary>
-    private static List<string> BuildHeaderLines(int width, ThemePalette p)
+    private static List<string> BuildHeaderLines(int width, ThemePalette p, bool showSetupHint)
     {
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
@@ -709,6 +710,35 @@ internal class LauncherRenderer
         string BlankBoxLine() =>
             $"{margin} {borderColor}│{Reset}{new string(' ', boxOuter)}{borderColor}│{Reset}";
 
+        string SetupHintBoxLine()
+        {
+            const string fullLabel = "→ Set up API keys to enable AI features";
+            const string suffix = " · press S";
+            var accent = p.GetAccentFg().AnsiFg;
+            var muted = p.SecondaryText.AnsiFg;
+
+            // Inner content width (between the box pipes plus a one-cell pad on each side).
+            var inner = Math.Max(0, boxOuter - 2);
+
+            // Truncation order: drop suffix first, then truncate the label.
+            var label = fullLabel;
+            var includeSuffix = suffix.Length + label.Length <= inner;
+            if (!includeSuffix && label.Length > inner)
+            {
+                label = label[..Math.Max(0, inner)];
+            }
+
+            var visible = includeSuffix ? label.Length + suffix.Length : label.Length;
+            var leftPad = Math.Max(0, (inner - visible) / 2);
+            var rightPad = Math.Max(0, inner - leftPad - visible);
+
+            var rendered = includeSuffix
+                ? $"{new string(' ', leftPad)}{accent}{label}{Reset}{muted}{suffix}{Reset}{new string(' ', rightPad)}"
+                : $"{new string(' ', leftPad)}{accent}{label}{Reset}{new string(' ', rightPad)}";
+
+            return $"{margin} {borderColor}│{Reset} {rendered} {borderColor}│{Reset}";
+        }
+
         lines.Add($"{margin} {borderColor}╭{new string('─', boxOuter)}╮{Reset}");
 
         if (useLargeWordmark)
@@ -726,45 +756,13 @@ internal class LauncherRenderer
         }
 
         lines.Add(BoxLine($" {p.SecondaryText.AnsiFg}{subtitle}{Reset}", subtitle.Length + 1));
-        lines.Add(BlankBoxLine());
+
+        // Trailing blank-before-bottom-border becomes the setup hint when first-run.
+        // Net header height (11 large / 5 narrow) is unchanged.
+        lines.Add(showSetupHint ? SetupHintBoxLine() : BlankBoxLine());
         lines.Add($"{margin} {borderColor}╰{new string('─', boxOuter)}╯{Reset}");
 
         return lines;
-    }
-
-    /// <summary>
-    /// Builds the "set up API keys" hint banner as 3 lines (blank + content +
-    /// blank). Visual: cyan accent text centered, prefixed with an arrow.
-    /// Highlighted styling when <paramref name="isSelected"/>.
-    /// </summary>
-    private static List<string> BuildSetupHintLines(int width, bool isSelected, ThemePalette p)
-    {
-        const string label = "→ Set up API keys to enable AI features";
-        const string hint = "(Enter)";
-        var combined = $"{label}  {hint}";
-        var visibleLen = combined.Length;
-        var leftPad = Math.Max(0, (width - visibleLen) / 2);
-        var rightPad = Math.Max(0, width - leftPad - visibleLen);
-
-        var accent = p.GetAccentFg().AnsiFg;
-        var muted = p.SecondaryText.AnsiFg;
-        string content;
-        if (isSelected)
-        {
-            // Inverse-style highlight: accent bg + dark fg via Bold + accent fg.
-            content = $"{new string(' ', leftPad)}{accent}{Bold}{label}{Reset}{accent}  {hint}{Reset}{new string(' ', rightPad)}";
-        }
-        else
-        {
-            content = $"{new string(' ', leftPad)}{accent}{label}{Reset}  {muted}{hint}{Reset}{new string(' ', rightPad)}";
-        }
-
-        return new List<string>
-        {
-            string.Empty,
-            content,
-            string.Empty,
-        };
     }
 
     /// <summary>
@@ -952,7 +950,7 @@ internal class LauncherRenderer
         // at the top — there are no bookmarks to scroll past.
         if (bookmarks.Count == 0)
         {
-            foreach (var headerLine in BuildHeaderLines(layout.Width, p))
+            foreach (var headerLine in BuildHeaderLines(layout.Width, p, showSetupHint))
             {
                 _helpers.WriteLine(headerLine);
             }
@@ -962,31 +960,17 @@ internal class LauncherRenderer
                 _helpers.WriteLine(urlBarLine);
             }
 
-            if (showSetupHint)
-            {
-                foreach (var hintLine in BuildSetupHintLines(layout.Width, selectedIndex == SetupHintSelectedIndex, p))
-                {
-                    _helpers.WriteLine(hintLine);
-                }
-            }
-
             RenderEmptyState(layout.Width, options.TerminalHeight, p);
             return;
         }
 
         // Build the full virtual content stream:
-        //   [0 .. headerLines)              wordmark / title
+        //   [0 .. headerLines)              wordmark / title (setup hint inside header card when ShowSetupHint)
         //   [headerLines .. +5)             URL bar
-        //   [headerLines + 5 .. +3)         setup hint (when showSetupHint)
-        //   [headerLines + 5 + hint .. end) bookmark rows
+        //   [headerLines + 5 .. end)        bookmark rows
         var content = new List<string>();
-        content.AddRange(BuildHeaderLines(layout.Width, p));
+        content.AddRange(BuildHeaderLines(layout.Width, p, showSetupHint));
         content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));
-        if (showSetupHint)
-        {
-            content.AddRange(BuildSetupHintLines(layout.Width, selectedIndex == SetupHintSelectedIndex, p));
-        }
-
         content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p));
 
         // Clamp scrollOffset so we don't scroll past the end of content.
@@ -1012,7 +996,7 @@ internal class LauncherRenderer
         Justification = "Invoked by reflection from LauncherUrlBarRowTests.")]
     private void RenderHeader(int width, ThemePalette p)
     {
-        foreach (var line in BuildHeaderLines(width, p))
+        foreach (var line in BuildHeaderLines(width, p, showSetupHint: false))
         {
             _helpers.WriteLine(line);
         }
