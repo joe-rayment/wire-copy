@@ -30,22 +30,33 @@ public partial class BrowserOrchestrator
         var use256 = string.Equals(colorTerm, "truecolor", StringComparison.OrdinalIgnoreCase)
                   || string.Equals(colorTerm, "24bit", StringComparison.OrdinalIgnoreCase)
                   || !string.IsNullOrEmpty(colorTerm);
+
+        // Launcher chrome is rendered by LauncherRenderer (header + URL bar +
+        // bookmark grid + footer) and does NOT consume cache/podcast/paywall
+        // /layout-label fields. Computing them here is wasted work — and
+        // GetMergedCachedUrls + GetMissingPaywalledCookieDomains are
+        // genuinely expensive (set unions, async-cached lookups). Short-circuit
+        // when on the launcher so those fields stay null/empty/zero.
+        var isLauncher = _navigationService.CurrentContext.ViewMode == ViewMode.Launcher;
+
         return new RenderOptions
         {
             TerminalWidth = width,
             TerminalHeight = height,
             MaxContentWidth = ComputeContentWidth(width),
             Use256Colors = use256,
-            CachedUrls = GetMergedCachedUrls(),
-            CacheProgress = _preloadService.GetProgress(),
-            PodcastButtonState = GetPodcastButtonState(),
-            PodcastProgressFraction = _commandContext.PodcastGenerationProgress,
-            PodcastArticleCount = GetPodcastArticleCount(),
-            CacheUsagePercent = GetCacheUsagePercent(),
-            LayoutVariantLabel = GetLayoutVariantLabel(),
+            CachedUrls = isLauncher ? null : GetMergedCachedUrls(),
+            CacheProgress = isLauncher ? null : _preloadService.GetProgress(),
+            PodcastButtonState = isLauncher ? 0 : GetPodcastButtonState(),
+            PodcastProgressFraction = isLauncher ? 0 : _commandContext.PodcastGenerationProgress,
+            PodcastArticleCount = isLauncher ? 0 : GetPodcastArticleCount(),
+            CacheUsagePercent = isLauncher ? 0 : GetCacheUsagePercent(),
+            LayoutVariantLabel = isLauncher ? null : GetLayoutVariantLabel(),
             LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
-            MissingCookieDomains = _preloadService.GetMissingPaywalledCookieDomains(
-                _navigationService.CurrentContext.CurrentPage?.Url),
+            MissingCookieDomains = isLauncher
+                ? null
+                : _preloadService.GetMissingPaywalledCookieDomains(
+                    _navigationService.CurrentContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
         };
     }
