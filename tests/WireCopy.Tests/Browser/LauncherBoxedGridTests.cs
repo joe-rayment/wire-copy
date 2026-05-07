@@ -65,11 +65,15 @@ public class LauncherBoxedGridTests
 
         // Title ends with a `[N]` token followed by a single padding space and
         // the right border. Strip ANSI then look for that signature.
+        // Slot layout (workspace-ul5z): bookmark[0] at slot 0 → [1],
+        // Reading List at slot 1 → [2], bookmark[1] at slot 2 → [3].
         var stripped = StripAnsi(raw);
         stripped.Should().Contain("[1] │",
             "digit badge [1] must be right-aligned next to the right box border");
         stripped.Should().Contain("[2] │",
             "digit badge [2] must be right-aligned next to the right box border");
+        stripped.Should().Contain("[3] │",
+            "digit badge [3] must be right-aligned next to the right box border");
     }
 
     [Fact]
@@ -266,23 +270,10 @@ public class LauncherJumpToIndexTests
     }
 
     [Fact]
-    public async Task JumpToIndex_Digit3_With3Bookmarks_SelectsThirdBookmark()
-    {
-        _ctx.Bookmarks = CreateBookmarks(3);
-        _navigationService.LauncherSelectedIndex = 0;
-
-        await LauncherCommandHandler.Handle(
-            _ctx,
-            new NavigationCommand { Type = CommandType.JumpToIndex, Count = 3, RawKeyChar = '3' },
-            _options,
-            CancellationToken.None);
-
-        _navigationService.LauncherSelectedIndex.Should().Be(2);
-    }
-
-    [Fact]
     public async Task JumpToIndex_Digit5_With3Bookmarks_IsNoOp()
     {
+        // Total slots with 3 bookmarks = 4 (Reading List + 3 bookmarks).
+        // Digit 5 → virtual 4 is out of range.
         _ctx.Bookmarks = CreateBookmarks(3);
         _navigationService.LauncherSelectedIndex = 1;
         _renderCalled = false;
@@ -300,12 +291,46 @@ public class LauncherJumpToIndexTests
     }
 
     [Fact]
-    public async Task JumpToIndex_DoesNotJumpToReadingListTile()
+    public async Task JumpToIndex_Digit2_With3Bookmarks_SelectsReadingListSlot()
     {
-        // Reading List is the trailing tile (index == bookmarks.Count). Even
-        // for a 9-bookmark list (digits 1-9 cover all bookmarks), the digit
-        // badges only address real bookmarks; the Reading List is reached via
-        // the dedicated `c` keybinding.
+        // Reading List sits at virtual index 1 (workspace-ul5z) so digit `2`
+        // (digit-1 → virtual 1) addresses it directly.
+        _ctx.Bookmarks = CreateBookmarks(3);
+        _navigationService.LauncherSelectedIndex = 0;
+
+        await LauncherCommandHandler.Handle(
+            _ctx,
+            new NavigationCommand { Type = CommandType.JumpToIndex, Count = 2, RawKeyChar = '2' },
+            _options,
+            CancellationToken.None);
+
+        _navigationService.LauncherSelectedIndex.Should().Be(1,
+            "digit 2 must jump to the reserved Reading List slot at virtual index 1");
+    }
+
+    [Fact]
+    public async Task JumpToIndex_Digit3_With3Bookmarks_SelectsBookmarkOne()
+    {
+        // With Reading List at slot 1, bookmark[1] now lives at slot 2, so
+        // digit `3` (count - 1 = 2) addresses it.
+        _ctx.Bookmarks = CreateBookmarks(3);
+        _navigationService.LauncherSelectedIndex = 0;
+
+        await LauncherCommandHandler.Handle(
+            _ctx,
+            new NavigationCommand { Type = CommandType.JumpToIndex, Count = 3, RawKeyChar = '3' },
+            _options,
+            CancellationToken.None);
+
+        _navigationService.LauncherSelectedIndex.Should().Be(2,
+            "digit 3 must jump to bookmark[1] (slot 2) under the Reading-List-at-slot-1 layout");
+    }
+
+    [Fact]
+    public async Task JumpToIndex_Digit4_With3Bookmarks_SelectsLastBookmark()
+    {
+        // Total slots with 3 bookmarks = 4 (3 bookmarks + Reading List).
+        // Digit 4 → virtual 3 → bookmark[2] (last bookmark).
         _ctx.Bookmarks = CreateBookmarks(3);
         _navigationService.LauncherSelectedIndex = 0;
 
@@ -315,7 +340,6 @@ public class LauncherJumpToIndexTests
             _options,
             CancellationToken.None);
 
-        _navigationService.LauncherSelectedIndex.Should().Be(0,
-            "digit 4 with 3 bookmarks must not select the Reading List tile (index 3)");
+        _navigationService.LauncherSelectedIndex.Should().Be(3);
     }
 }
