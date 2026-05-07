@@ -10,7 +10,7 @@ namespace WireCopy.Application.Interfaces.Browser;
 /// Three strategies ship today:
 /// <list type="bullet">
 ///   <item>Document Order (always available)</item>
-///   <item>AI Curated (requires Anthropic API key)</item>
+///   <item>AI Curated (requires OpenAI API key)</item>
 ///   <item>RSS Feed (requires a discoverable feed)</item>
 /// </list>
 /// Visual cell rendering is fixed; strategies do NOT change cell style.
@@ -90,7 +90,7 @@ public sealed record ScrapingStrategyAvailability
 
     /// <summary>
     /// When unavailable, a short user-facing reason
-    /// ("No Anthropic API key", "No RSS feed found").
+    /// ("No OpenAI API key", "No RSS feed found").
     /// </summary>
     public string? ReasonWhenUnavailable { get; init; }
 

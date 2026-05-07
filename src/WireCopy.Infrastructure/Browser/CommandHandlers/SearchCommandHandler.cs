@@ -431,7 +431,7 @@ internal static class SearchCommandHandler
 
             if (analyzer == null || !analyzer.IsConfigured)
             {
-                ctx.NavigationService.SetStatusMessage("Anthropic API key not configured. Use :set anthropic-key first.");
+                ctx.NavigationService.SetStatusMessage("OpenAI API key not configured. Press S to open Setup.");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }

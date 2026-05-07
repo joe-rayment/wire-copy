@@ -112,7 +112,7 @@ internal static class StrategyChooserHandler
                     // workspace-33jw: surface unavailable strategies in the chooser as
                     // disabled rows so the user can DISCOVER them. Previously we silently
                     // dropped them, leaving e.g. AI Curated invisible to anyone without
-                    // an Anthropic key. Cycling onto an unavailable row reverts the
+                    // an OpenAI key. Cycling onto an unavailable row reverts the
                     // preview to the page's existing tree (so the screen doesn't go
                     // blank); applying it shows a hint rather than saving.
                     var currentTreeForStub = page.LinkTree;

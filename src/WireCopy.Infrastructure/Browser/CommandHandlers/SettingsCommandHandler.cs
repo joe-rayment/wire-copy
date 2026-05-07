@@ -22,8 +22,9 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 ///
 /// The unified Setup screen (workspace-fn1u) extends <see cref="HandleConfigScreen"/>
 /// with row-based selection covering every credential and every preference:
-/// Anthropic API key (reading / link-list), OpenAI TTS API key, GCS service-account
-/// key, GCS bucket, podcast output folder, voice, model, and the auto-purge window.
+/// OpenAI API key (used for both TTS and AI Curated layout — workspace-65sw),
+/// GCS service-account key, GCS bucket, podcast output folder, voice, model,
+/// and the auto-purge window.
 ///
 /// Both this screen and <see cref="PodcastConfirmationScreens"/> share the row
 /// renderer (<see cref="SettingsRowRenderer"/>) and the same Enter handlers so
@@ -37,7 +38,6 @@ internal static class SettingsCommandHandler
     /// step.
     /// </summary>
     internal const string KeyOpenAiApiKey = "OpenAiApiKey";
-    internal const string KeyAnthropicApiKey = "AnthropicApiKey";
     internal const string KeyGcsBucketName = "GcsBucketName";
     internal const string KeyGcsServiceAccountKeyPath = "GcsServiceAccountKeyPath";
 
@@ -59,7 +59,6 @@ internal static class SettingsCommandHandler
     /// </summary>
     internal enum SetupRow
     {
-        AnthropicKey,
         OpenAiKey,
         GcsKey,
         GcsBucket,
@@ -71,22 +70,23 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// First-run detection: returns true when none of the four primary credentials
-    /// have been configured. Drives the welcome banner shown on the first time
-    /// the user opens Setup.
+    /// First-run detection: returns true when none of the three primary
+    /// credentials have been configured. workspace-65sw collapsed the
+    /// previous Anthropic-key requirement into the OpenAI key (one credential
+    /// now powers both TTS and AI Curated layout), so the predicate covers
+    /// OpenAI key + GCS bucket + GCS service-account key.
     /// </summary>
     internal static bool IsFirstRun(IUserSettingsStore settingsStore)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
 
         return string.IsNullOrWhiteSpace(settingsStore.Get(KeyOpenAiApiKey))
-            && string.IsNullOrWhiteSpace(settingsStore.Get(KeyAnthropicApiKey))
             && string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsBucketName))
             && string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
     }
 
     /// <summary>
-    /// Returns true when at least one of the four primary credentials is still
+    /// Returns true when at least one of the three primary credentials is still
     /// unconfigured. Drives the launcher's "press S" Setup hint inside the
     /// header card (workspace-9qzh) — partial-setup users still need a path
     /// into Setup. Distinct from <see cref="IsFirstRun"/>, which is the
@@ -97,7 +97,6 @@ internal static class SettingsCommandHandler
         ArgumentNullException.ThrowIfNull(settingsStore);
 
         return string.IsNullOrWhiteSpace(settingsStore.Get(KeyOpenAiApiKey))
-            || string.IsNullOrWhiteSpace(settingsStore.Get(KeyAnthropicApiKey))
             || string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsBucketName))
             || string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
     }
@@ -118,7 +117,6 @@ internal static class SettingsCommandHandler
     {
         var rows = new[]
         {
-            SetupRow.AnthropicKey,
             SetupRow.OpenAiKey,
             SetupRow.GcsKey,
             SetupRow.GcsBucket,
@@ -160,8 +158,6 @@ internal static class SettingsCommandHandler
             }
 
             // Resolve current values
-            var hasAnthropic = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyAnthropicApiKey));
-            var anthropicModel = ResolveAnthropicModel(scope);
             var hasOpenAi = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyOpenAiApiKey));
             var hasGcsKey = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
             var gcsKeyDisplay = hasGcsKey ? ResolveGcsKeyDisplay(settingsStore, ctx.Logger) : null;
@@ -175,26 +171,8 @@ internal static class SettingsCommandHandler
                                ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
             var purgeHours = ResolvePurgeHours(scope, settingsStore);
 
-            // ---- Reading / link-list ----
-            helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Reading / link-list{Reset}");
-            RenderRow(
-                helpers,
-                palette,
-                width,
-                rows,
-                selectedIndex,
-                SetupRow.AnthropicKey,
-                hasAnthropic ? "●" : "○",
-                hasAnthropic ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
-                "Anthropic API key",
-                hasAnthropic ? "configured" : "not set",
-                hasAnthropic ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
-                hasAnthropic ? "Change" : "Set up",
-                helperText: $"Model: {anthropicModel}");
-
-            // ---- Podcast credentials ----
-            helpers.WriteLine();
-            helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Podcast — credentials{Reset}");
+            // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
+            helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Credentials{Reset}");
             RenderRow(
                 helpers,
                 palette,
@@ -204,10 +182,11 @@ internal static class SettingsCommandHandler
                 SetupRow.OpenAiKey,
                 hasOpenAi ? "●" : "○",
                 hasOpenAi ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
-                "OpenAI TTS API key",
+                "OpenAI API key",
                 hasOpenAi ? "configured" : "not set",
                 hasOpenAi ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
-                hasOpenAi ? "Change" : "Set up");
+                hasOpenAi ? "Change" : "Set up",
+                helperText: "Used for TTS audio and AI Curated link layout");
 
             RenderRow(
                 helpers,
@@ -387,9 +366,6 @@ internal static class SettingsCommandHandler
     {
         switch (row)
         {
-            case SetupRow.AnthropicKey:
-                await HandleSetAnthropicKey(ctx, options, ct).ConfigureAwait(false);
-                return;
             case SetupRow.OpenAiKey:
                 await HandleSetApiKey(ctx, options, ct).ConfigureAwait(false);
                 return;
@@ -485,19 +461,6 @@ internal static class SettingsCommandHandler
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WireCopy",
             "output");
-
-    private static string ResolveAnthropicModel(IServiceScope scope)
-    {
-        try
-        {
-            var opts = scope.ServiceProvider.GetService<IOptions<AnthropicConfiguration>>();
-            return opts?.Value.Model ?? "claude-haiku-4-5-20251001";
-        }
-        catch
-        {
-            return "claude-haiku-4-5-20251001";
-        }
-    }
 
     /// <summary>
     /// Returns a status-row label for the configured service-account key —
@@ -643,12 +606,8 @@ internal static class SettingsCommandHandler
                 await HandleSetKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
-            case "anthropic-key":
-                await HandleSetAnthropicKey(ctx, options, ct).ConfigureAwait(false);
-                break;
-
             default:
-                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key | :set anthropic-key");
+                ctx.NavigationService.SetStatusMessage("Usage: :set apikey | :set bucket | :set key");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
         }
@@ -670,10 +629,6 @@ internal static class SettingsCommandHandler
 
             case "key":
                 await HandleClearKey(ctx, options, ct).ConfigureAwait(false);
-                break;
-
-            case "anthropic-key":
-                await HandleClearAnthropicKey(ctx, options, ct).ConfigureAwait(false);
                 break;
 
             default:
@@ -1217,61 +1172,6 @@ internal static class SettingsCommandHandler
         }
     }
 
-    private static async Task HandleSetAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
-    {
-        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        var field = new FormFieldConfig
-        {
-            Label = "Anthropic API Key",
-            Placeholder = "sk-ant-...",
-            HelpText = "Get a key at console.anthropic.com",
-            IsSecret = true,
-            Validate = v =>
-            {
-                if (string.IsNullOrWhiteSpace(v))
-                {
-                    return "Key cannot be empty";
-                }
-
-                var trimmed = v.Trim();
-                if (!trimmed.StartsWith("sk-ant-", StringComparison.Ordinal) &&
-                    !trimmed.StartsWith("sk-", StringComparison.Ordinal))
-                {
-                    return "Must start with sk-ant- or sk-";
-                }
-
-                return null;
-            },
-        };
-
-        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-        var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
-
-        if (apiKey == null)
-        {
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var trimmedKey = apiKey.Trim();
-
-        try
-        {
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-            settingsStore.Set(KeyAnthropicApiKey, trimmedKey, encrypt: true);
-            ctx.NavigationService.SetStatusMessage("Anthropic API key saved");
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.LogWarning(ex, "Failed to persist Anthropic API key");
-            ctx.NavigationService.SetStatusMessage("Failed to save Anthropic API key");
-        }
-
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-    }
-
     /// <summary>
     /// GCS service-account key entry. Accepts either:
     /// • Pasted JSON content (the contents of the downloaded key file).
@@ -1660,24 +1560,6 @@ internal static class SettingsCommandHandler
         {
             ctx.Logger.LogWarning(ex, "Failed to remove bucket name");
             ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
-        }
-
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-    }
-
-    private static async Task HandleClearAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
-    {
-        try
-        {
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-            settingsStore.Remove(KeyAnthropicApiKey);
-            ctx.NavigationService.SetStatusMessage("Anthropic API key cleared");
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.LogWarning(ex, "Failed to remove Anthropic API key");
-            ctx.NavigationService.SetStatusMessage("Failed to clear Anthropic API key");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
