@@ -94,24 +94,23 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Renders the launcher-specific footer with kbd-style keyboard hints.
+    /// The primary action key (`Enter`) is rendered in the accent colour;
+    /// secondary keys (`o`, `a`, `d`, `?`) render in the muted secondary tone
+    /// so the eye lands on Enter first. Version is no longer shown here —
+    /// it lives under the tagline in the header card (workspace-m8x2).
     /// </summary>
     public void RenderFooter(int width)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        var hints = FormatKbdHint("Enter", "open", p) + "  " +
-                    FormatKbdHint("o", "go to url", p) + "  " +
-                    FormatKbdHint("a", "add", p) + "  " +
-                    FormatKbdHint("d", "delete", p) + "  " +
-                    FormatKbdHint("?", "help", p);
+        var hints = FormatPrimaryKbdHint("Enter", "open", p) + "  " +
+                    FormatMutedKbdHint("o", "go to url", p) + "  " +
+                    FormatMutedKbdHint("a", "add", p) + "  " +
+                    FormatMutedKbdHint("d", "delete", p) + "  " +
+                    FormatMutedKbdHint("?", "help", p);
 
-        var version = $"{p.GetMutedFg().AnsiFg}{Dim}v1.0{Reset}";
-        var versionTextLen = "v1.0".Length;
-
-        // [Enter] open  [o] go to url  [a] add  [d] delete  [?] help
-        var hintsTextLen = "[Enter] open  [o] go to url  [a] add  [d] delete  [?] help".Length;
-        var versionPad = Math.Max(1, width - 1 - hintsTextLen - versionTextLen);
-        _helpers.WriteLine($" {hints}{new string(' ', versionPad)}{version}");
+        _ = width;
+        _helpers.WriteLine($" {hints}");
     }
 
     /// <summary>
@@ -654,9 +653,38 @@ internal class LauncherRenderer
         return new string(' ', cellWidth);
     }
 
-    private static string FormatKbdHint(string key, string action, ThemePalette p)
+    /// <summary>
+    /// Resolves the launcher version string for the tagline (workspace-m8x2).
+    /// Returns the major.minor pair of the assembly version (e.g. "1.0") so
+    /// the surface stays tidy; falls back to "1.0" if no version attribute is
+    /// present on the renderer assembly.
+    /// </summary>
+    private static string ResolveLauncherVersion()
     {
-        return $"{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}{key}{Reset}{p.SecondaryText.AnsiFg}]{Reset} {p.SecondaryText.AnsiFg}{action}{Reset}";
+        var asm = typeof(LauncherRenderer).Assembly;
+        return asm.GetName().Version?.ToString(2) ?? "1.0";
+    }
+
+    /// <summary>
+    /// Renders a primary action's `[key]` glyph in the accent colour so the
+    /// eye lands on it first; the action label keeps the muted secondary tone.
+    /// Used for `[Enter]` (workspace-m8x2).
+    /// </summary>
+    private static string FormatPrimaryKbdHint(string key, string action, ThemePalette p)
+    {
+        var accent = p.GetAccentFg().AnsiFg;
+        return $"{accent}[{key}]{Reset} {p.SecondaryText.AnsiFg}{action}{Reset}";
+    }
+
+    /// <summary>
+    /// Renders a non-primary action's `[key]` glyph in muted dim so the
+    /// primary key glyph stands out (workspace-m8x2). Action label
+    /// matches the existing dim tone.
+    /// </summary>
+    private static string FormatMutedKbdHint(string key, string action, ThemePalette p)
+    {
+        var muted = p.SecondaryText.AnsiFg;
+        return $"{muted}{Dim}[{key}]{Reset} {muted}{action}{Reset}";
     }
 
     /// <summary>
@@ -741,10 +769,16 @@ internal class LauncherRenderer
         // Align tagline's left edge with the W glyph above (workspace-usr3).
         // Large wordmark[0] starts with 6 spaces before "██╗" (the W); the
         // narrow fallback "Wire Copy" is rendered with a single space pad.
+        // Append `  ·  v{version}` in muted dim so the tagline remains the
+        // focal point and the version metadata sits with identity, not next
+        // to the keybindings (workspace-m8x2).
         var taglinePad = useLargeWordmark ? "      " : " ";
+        var version = ResolveLauncherVersion();
+        var versionSuffix = $"  ·  v{version}";
+        var versionStyled = $"{p.GetDimFg().AnsiFg}{Dim}{versionSuffix}{Reset}";
         lines.Add(BoxLine(
-            $"{taglinePad}{p.SecondaryText.AnsiFg}{subtitle}{Reset}",
-            subtitle.Length + taglinePad.Length));
+            $"{taglinePad}{p.SecondaryText.AnsiFg}{subtitle}{Reset}{versionStyled}",
+            subtitle.Length + taglinePad.Length + versionSuffix.Length));
 
         // Trailing blank-before-bottom-border becomes the setup hint when first-run.
         // Net header height (11 large / 5 narrow) is unchanged.

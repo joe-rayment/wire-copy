@@ -31,9 +31,15 @@ public class ScreenRenderingSnapshotTests
     public static IEnumerable<object[]> AllThemes =>
         Enum.GetValues<ThemeName>().Select(t => new object[] { t });
 
+    // ViewMode.Launcher is intentionally excluded: the launcher view does NOT
+    // render the shared StatusBar (it uses LauncherRenderer.RenderFooter
+    // instead). The StatusBar's launcher arms now throw (workspace-m8x2) so
+    // tests that exercise RenderStatusBar across all view modes must not
+    // include Launcher.
     public static IEnumerable<object[]> AllThemesAndViewModes =>
         from theme in Enum.GetValues<ThemeName>()
         from mode in Enum.GetValues<ViewMode>()
+        where mode != ViewMode.Launcher
         select new object[] { theme, mode };
 
     public static IEnumerable<object[]> AllThemesAndWidths =>
@@ -242,15 +248,18 @@ public class ScreenRenderingSnapshotTests
 
     [Theory]
     [MemberData(nameof(AllThemes))]
-    public void StatusBar_Launcher_AdaptiveHintsContainExpectedKeys(ThemeName theme)
+    public void StatusBar_Launcher_AdaptiveHintsThrowBecauseStatusBarIsNotRenderedForLauncher(ThemeName theme)
     {
+        // workspace-m8x2: the launcher view never invokes StatusBarRenderer —
+        // it uses LauncherRenderer.RenderFooter instead. The launcher arm of
+        // GetHintTiers is therefore a sentinel that throws to prevent any
+        // future accidental wiring from resurrecting the chrome leak.
         var p = BuiltInThemes.Get(theme);
-        var hints = StatusBarRenderer.GetAdaptiveHints(ViewMode.Launcher, p, 120);
 
-        hints.Should().Contain("Enter",
-            $"Launcher hints should include Enter for {theme}");
-        hints.Should().Contain("go to url",
-            $"Launcher hints should include go to url for {theme}");
+        var act = () => StatusBarRenderer.GetAdaptiveHints(ViewMode.Launcher, p, 120);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*launcher*");
     }
 
     #endregion
@@ -779,8 +788,15 @@ public class ScreenRenderingSnapshotTests
     {
         var p = BuiltInThemes.Get(theme);
 
+        // ViewMode.Launcher is excluded — the launcher view does NOT render
+        // the shared StatusBar, and GetHintTiers throws for it (workspace-m8x2).
         foreach (var mode in Enum.GetValues<ViewMode>())
         {
+            if (mode == ViewMode.Launcher)
+            {
+                continue;
+            }
+
             var hints = StatusBarRenderer.GetAdaptiveHints(mode, p, 120);
 
             hints.Should().NotBeNullOrWhiteSpace(

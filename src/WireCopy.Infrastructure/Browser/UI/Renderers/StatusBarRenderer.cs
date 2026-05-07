@@ -119,6 +119,12 @@ internal class StatusBarRenderer
 
     internal static string GetModeLabel(ViewMode mode)
     {
+        // NOTE: ViewMode.Launcher is intentionally retained here even though
+        // the StatusBar is not rendered for the launcher (workspace-m8x2).
+        // This helper is also called by KeybindingPopup.Render to title the
+        // help popup, which the launcher DOES open. The status-bar-internal
+        // helpers (GetShortModeLabel, GetHintTiers) drop the launcher arm
+        // because they are only reached from RenderStatusBar / GetAdaptiveHints.
         return mode switch
         {
             ViewMode.Hierarchical => "LinkView",
@@ -280,7 +286,7 @@ internal class StatusBarRenderer
             ViewMode.Readable => "ReaderView",
             ViewMode.CollectionList => "Collections",
             ViewMode.CollectionItems => "ReadingList",
-            ViewMode.Launcher => "Launcher",
+            ViewMode.Launcher => throw new InvalidOperationException("StatusBar is not rendered for the launcher"),
             _ => "Browser"
         };
     }
@@ -504,12 +510,7 @@ internal class StatusBarRenderer
                 [("Enter", "open"), ("b", "back"), ("?", "help")],
                 [("?", "help")],
             ],
-            ViewMode.Launcher =>
-            [
-                [("Enter", "open"), ("o", "go to url"), ("a", "add"), ("d", "delete"), ("?", "help")],
-                [("Enter", "open"), ("o", "go to url"), ("?", "help")],
-                [("?", "help")],
-            ],
+            ViewMode.Launcher => throw new InvalidOperationException("StatusBar is not rendered for the launcher"),
             _ =>
             [
                 [("q", "quit")],
