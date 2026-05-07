@@ -86,6 +86,7 @@ internal static class KeybindingPopup
                 ("J / K", "reorder bookmarks"),
                 (":rename", "rename bookmark"),
                 ("c", "reading list"),
+                ("S", "Setup / settings"),
                 ("Ctrl+p", "cycle theme"),
                 ("q", "quit"),
             ],

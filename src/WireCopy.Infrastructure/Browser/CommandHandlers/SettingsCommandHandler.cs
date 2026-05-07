@@ -69,8 +69,8 @@ internal static class SettingsCommandHandler
 
     /// <summary>
     /// First-run detection: returns true when none of the four primary credentials
-    /// have been configured. Drives the auto-launch of the Setup screen on first
-    /// app start.
+    /// have been configured. Drives the welcome banner shown on the first time
+    /// the user opens Setup.
     /// </summary>
     internal static bool IsFirstRun(IUserSettingsStore settingsStore)
     {
@@ -80,6 +80,23 @@ internal static class SettingsCommandHandler
             && string.IsNullOrWhiteSpace(settingsStore.Get(KeyAnthropicApiKey))
             && string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsBucketName))
             && string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
+    }
+
+    /// <summary>
+    /// Returns true when at least one of the four primary credentials is still
+    /// unconfigured. Drives the launcher's "press S" Setup hint inside the
+    /// header card (workspace-9qzh) — partial-setup users still need a path
+    /// into Setup. Distinct from <see cref="IsFirstRun"/>, which is the
+    /// stricter "no credential at all" predicate used for the welcome banner.
+    /// </summary>
+    internal static bool HasIncompleteSetup(IUserSettingsStore settingsStore)
+    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
+
+        return string.IsNullOrWhiteSpace(settingsStore.Get(KeyOpenAiApiKey))
+            || string.IsNullOrWhiteSpace(settingsStore.Get(KeyAnthropicApiKey))
+            || string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsBucketName))
+            || string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
     }
 
     /// <summary>

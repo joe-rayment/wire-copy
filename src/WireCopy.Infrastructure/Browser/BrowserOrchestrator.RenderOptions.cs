@@ -46,7 +46,7 @@ public partial class BrowserOrchestrator
             LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
             MissingCookieDomains = _preloadService.GetMissingPaywalledCookieDomains(
                 _navigationService.CurrentContext.CurrentPage?.Url),
-            ShowSetupHint = IsFirstRun(),
+            ShowSetupHint = HasIncompleteSetup(),
         };
     }
 

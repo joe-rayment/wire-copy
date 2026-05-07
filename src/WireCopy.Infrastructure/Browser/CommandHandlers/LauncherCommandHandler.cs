@@ -19,14 +19,29 @@ internal static class LauncherCommandHandler
     {
         var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
 
-        // Setup hint hotkey: capital 'S' opens the unified Setup screen when
-        // the hint is visible (workspace-ayt8). Intercepted before the URL-bar
-        // typing fall-through below so the keystroke doesn't get typed into
-        // the URL field. No-op when the hint is hidden (configured users).
-        if (options.ShowSetupHint && command.RawKeyChar == 'S')
+        // Setup hotkey: capital 'S' opens the unified Setup screen from the
+        // launcher (workspace-ayt8 + workspace-9qzh). Always active — the
+        // launcher is the only place this fires, and fully-configured users
+        // still need a way into Settings (the `?` help overlay also lists
+        // this binding). Intercepted before the URL-bar typing fall-through
+        // below so the keystroke doesn't get typed into the URL field.
+        // The welcome banner one-shot is gated on first-run inside the
+        // settings handler call.
+        if (command.RawKeyChar == 'S')
         {
+            // Welcome banner is for genuine first-run (no credential set yet).
+            // Once the user has any credential configured, S still opens
+            // Setup but without the orientation banner — they already know
+            // what Setup is.
+            bool firstRun;
+            using (var scope = ctx.ScopeFactory.CreateScope())
+            {
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                firstRun = SettingsCommandHandler.IsFirstRun(settingsStore);
+            }
+
             await SettingsCommandHandler.HandleConfigScreen(
-                ctx, options, ct, showWelcomeBanner: true).ConfigureAwait(false);
+                ctx, options, ct, showWelcomeBanner: firstRun).ConfigureAwait(false);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return true;
         }
