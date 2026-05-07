@@ -690,7 +690,7 @@ internal class LauncherRenderer
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
         var titleColorDark = p.GetCelebrationFg().AnsiFg; // dark pink  (#ff5fd7 ANSI 206)
-        var subtitle = "a better reading experience";
+        var subtitle = "All copy, no clutter.";
         var useLargeWordmark = width >= WordmarkWidth + 8;
 
         var boxOuter = useLargeWordmark

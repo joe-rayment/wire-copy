@@ -64,7 +64,7 @@ public class GcsStorageClientUnitTests : IDisposable
         var result = GcsStorageClient.ValidateKeyFile(path);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("not valid JSON");
+        result.ErrorMessage.Should().Contain("doesn't look like JSON");
     }
 
     [Fact]
@@ -75,13 +75,14 @@ public class GcsStorageClientUnitTests : IDisposable
         {
             type = "service_account",
             project_id = "test-project",
+
             // Missing: client_email, private_key
         }));
 
         var result = GcsStorageClient.ValidateKeyFile(path);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing");
+        result.ErrorMessage.Should().Contain("Missing field");
     }
 
     [Fact]
@@ -99,7 +100,8 @@ public class GcsStorageClientUnitTests : IDisposable
         var result = GcsStorageClient.ValidateKeyFile(path);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("service_account");
+        result.ErrorMessage.Should().Contain("authorized_user");
+        result.ErrorMessage.Should().Contain("service account");
     }
 
     [Fact]
@@ -137,7 +139,7 @@ public class GcsStorageClientUnitTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent("{not json}}}");
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("not valid JSON");
+        result.ErrorMessage.Should().Contain("doesn't look like JSON");
     }
 
     [Fact]
@@ -146,29 +148,53 @@ public class GcsStorageClientUnitTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent("{}");
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing");
+        // Empty object lacks `type` first → reported as missing-field per
+        // workspace-x7lf's user-friendly error ordering.
+        result.ErrorMessage.Should().Contain("Missing field");
     }
 
     [Fact]
     public void ValidateKeyContent_NullFieldValues_ReturnsInvalid()
     {
-        var json = """{"type": null, "project_id": "p", "client_email": "e", "private_key": "k"}""";
+        var json = """{"type": null, "project_id": "p", "client_email": "e", "private_key": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n"}""";
 
         var result = GcsStorageClient.ValidateKeyContent(json);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing 'type'");
+        // null `type` is treated as missing rather than wrong-type.
+        result.ErrorMessage.Should().Contain("Missing field: type");
     }
 
     [Fact]
     public void ValidateKeyContent_WhitespaceFieldValues_ReturnsInvalid()
     {
-        var json = """{"type": "service_account", "project_id": "  ", "client_email": "e", "private_key": "k"}""";
+        var json = """{"type": "service_account", "project_id": "  ", "client_email": "e", "private_key": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n"}""";
 
         var result = GcsStorageClient.ValidateKeyContent(json);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing 'project_id'");
+        result.ErrorMessage.Should().Contain("Missing field: project_id");
+    }
+
+    [Fact]
+    public void ValidateKeyContent_EmptyInput_ReturnsNothingPasted()
+    {
+        var result = GcsStorageClient.ValidateKeyContent(string.Empty);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Nothing pasted");
+    }
+
+    [Fact]
+    public void ValidateKeyContent_MalformedPrivateKey_ReturnsInvalid()
+    {
+        // No PEM markers — common terminal-mangle failure mode.
+        var json = """{"type": "service_account", "project_id": "p", "client_email": "e", "private_key": "abcdef"}""";
+
+        var result = GcsStorageClient.ValidateKeyContent(json);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("private_key looks malformed");
     }
 
     [Fact]
@@ -185,6 +211,97 @@ public class GcsStorageClientUnitTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent(json);
 
         result.IsValid.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region ExtractKeyMetadata + MaskServiceAccountEmail — display helpers (workspace-x7lf)
+
+    [Fact]
+    public void ExtractKeyMetadata_ValidJson_ReturnsEmailAndProject()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "service_account",
+            project_id = "my-proj-1234",
+            client_email = "wirecopy-svc@my-proj-1234.iam.gserviceaccount.com",
+            private_key = "x",
+        });
+
+        var (email, project) = GcsStorageClient.ExtractKeyMetadata(json);
+
+        email.Should().Be("wirecopy-svc@my-proj-1234.iam.gserviceaccount.com");
+        project.Should().Be("my-proj-1234");
+    }
+
+    [Fact]
+    public void ExtractKeyMetadata_MalformedJson_ReturnsNullPair()
+    {
+        var (email, project) = GcsStorageClient.ExtractKeyMetadata("{not json");
+
+        email.Should().BeNull();
+        project.Should().BeNull();
+    }
+
+    [Fact]
+    public void ExtractKeyMetadata_EmptyString_ReturnsNullPair()
+    {
+        var (email, project) = GcsStorageClient.ExtractKeyMetadata(string.Empty);
+
+        email.Should().BeNull();
+        project.Should().BeNull();
+    }
+
+    [Fact]
+    public void ExtractKeyMetadata_MissingFields_ReturnsAvailableValues()
+    {
+        var json = """{"client_email": "foo@bar.com"}""";
+
+        var (email, project) = GcsStorageClient.ExtractKeyMetadata(json);
+
+        email.Should().Be("foo@bar.com");
+        project.Should().BeNull();
+    }
+
+    [Fact]
+    public void MaskServiceAccountEmail_NormalEmail_KeepsLocalPrefixAndProject()
+    {
+        var masked = GcsStorageClient.MaskServiceAccountEmail(
+            "wirecopy-svc@my-proj-1234.iam.gserviceaccount.com");
+
+        masked.Should().Be("wireco…@my-proj-1234");
+    }
+
+    [Fact]
+    public void MaskServiceAccountEmail_ShortLocalPart_NoEllipsis()
+    {
+        // 6-char local part — exactly the threshold; not truncated.
+        var masked = GcsStorageClient.MaskServiceAccountEmail(
+            "abcdef@my-proj.iam.gserviceaccount.com");
+
+        masked.Should().Be("abcdef@my-proj");
+    }
+
+    [Fact]
+    public void MaskServiceAccountEmail_NoAtSign_ReturnedUnchanged()
+    {
+        var masked = GcsStorageClient.MaskServiceAccountEmail("no-at-sign-here");
+
+        masked.Should().Be("no-at-sign-here");
+    }
+
+    [Fact]
+    public void MaskServiceAccountEmail_DomainWithoutDot_KeepsFullDomain()
+    {
+        var masked = GcsStorageClient.MaskServiceAccountEmail("svc-foo@localhost");
+
+        masked.Should().Be("svc-fo…@localhost");
+    }
+
+    [Fact]
+    public void MaskServiceAccountEmail_EmptyInput_ReturnsEmpty()
+    {
+        GcsStorageClient.MaskServiceAccountEmail(string.Empty).Should().BeEmpty();
     }
 
     #endregion
