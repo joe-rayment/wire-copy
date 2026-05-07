@@ -1156,9 +1156,7 @@ public class LinkExtractor : ILinkExtractor
         var heading = anchor.SelectSingleNode(".//h1|.//h2|.//h3|.//h4|.//h5|.//h6");
         if (heading != null)
         {
-            var headingText = heading.InnerText?.Trim() ?? string.Empty;
-            headingText = System.Text.RegularExpressions.Regex.Replace(headingText, @"\s+", " ").Trim();
-            headingText = HtmlEntity.DeEntitize(headingText);
+            var headingText = TextNormalizer.NormalizeDisplayText(heading.InnerText);
             if (!string.IsNullOrWhiteSpace(headingText))
             {
                 return (headingText, false);
@@ -1166,13 +1164,7 @@ public class LinkExtractor : ILinkExtractor
         }
 
         // First try to get direct text content (visible on the page)
-        var text = anchor.InnerText?.Trim() ?? string.Empty;
-
-        // Clean up whitespace
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
-
-        // Decode HTML entities (e.g., &amp; → &, &nbsp; → space)
-        text = HtmlEntity.DeEntitize(text);
+        var text = TextNormalizer.NormalizeDisplayText(anchor.InnerText);
 
         // If we have actual visible text content, use it
         if (!string.IsNullOrWhiteSpace(text))
@@ -1186,8 +1178,7 @@ public class LinkExtractor : ILinkExtractor
         var img = anchor.SelectSingleNode(".//img[@alt]");
         if (img != null)
         {
-            text = img.GetAttributeValue("alt", string.Empty);
-            text = HtmlEntity.DeEntitize(text);
+            text = TextNormalizer.NormalizeDisplayText(img.GetAttributeValue("alt", string.Empty));
             if (!string.IsNullOrWhiteSpace(text))
             {
                 return (text, true);

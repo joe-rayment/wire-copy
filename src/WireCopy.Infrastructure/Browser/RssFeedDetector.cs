@@ -255,7 +255,7 @@ public class RssFeedDetector : IRssFeedDetector
                     continue;
                 }
 
-                var displayText = synItem.Title?.Text ?? link;
+                var displayText = TextNormalizer.NormalizeDisplayText(synItem.Title?.Text ?? link);
                 if (string.IsNullOrWhiteSpace(displayText))
                 {
                     continue;
