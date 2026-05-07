@@ -39,7 +39,11 @@ public partial class GcsConfiguration
     public string BucketLocation { get; init; } = "US";
 
     /// <summary>
-    /// Validates a bucket name against GCS naming rules.
+    /// Validates a bucket name against GCS naming rules. First-pass lexical
+    /// check only — does not catch every GCP rule (e.g. ".." substrings or the
+    /// reserved <c>goog</c> prefix). Callers that surface user-facing errors
+    /// should layer those extra checks on top (see the bucket Setup row in
+    /// SettingsCommandHandler — workspace-dwgl).
     /// </summary>
     /// <returns>True if the name is valid, false otherwise.</returns>
     public static bool IsValidBucketName(string? name)
@@ -52,6 +56,9 @@ public partial class GcsConfiguration
         return BucketNamePattern().IsMatch(name);
     }
 
-    [GeneratedRegex(@"^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$")]
+    // Underscore intentionally excluded from the middle char class —
+    // GCP rejects bucket names containing `_` at runtime even though
+    // older docs implied otherwise (workspace-dwgl).
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
     private static partial Regex BucketNamePattern();
 }

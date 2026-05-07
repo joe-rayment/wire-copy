@@ -329,8 +329,22 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         return $"https://storage.googleapis.com/{_config.BucketName}/{objectName}";
     }
 
+    public Task<CloudStorageValidationResult> ValidateConnectionAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default) =>
+        ValidateConnectionAsync(bucketName, _config.CreateBucketIfNotExists, cancellationToken);
+
+    /// <summary>
+    /// Validates connection with an explicit override for the auto-create
+    /// behaviour. When <paramref name="allowCreate"/> is false the probe
+    /// reports <see cref="CloudStorageValidationErrorType.BucketNotFound"/>
+    /// instead of silently creating the bucket — used by Setup's
+    /// probe-then-confirm flow (workspace-dwgl) so creation is always an
+    /// explicit user choice.
+    /// </summary>
     public async Task<CloudStorageValidationResult> ValidateConnectionAsync(
         string bucketName,
+        bool allowCreate,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(bucketName);
@@ -374,7 +388,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             }
             catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.NotFound)
             {
-                if (_config.CreateBucketIfNotExists)
+                if (allowCreate)
                 {
                     if (string.IsNullOrWhiteSpace(_config.ProjectId))
                     {
@@ -471,6 +485,74 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             return CloudStorageValidationResult.Invalid(
                 CloudStorageValidationErrorType.NetworkError,
                 $"Validation failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Explicitly creates a bucket with the project's configured location,
+    /// Standard storage class, and Uniform Bucket-Level Access enabled. Used
+    /// by the Setup screen's "Create it for us" flow (workspace-dwgl) which
+    /// runs the probe first and only invokes creation on explicit confirm.
+    /// </summary>
+    public async Task CreateBucketAsync(
+        string bucketName,
+        string location,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bucketName);
+        ArgumentNullException.ThrowIfNull(location);
+
+        if (string.IsNullOrWhiteSpace(_config.ProjectId))
+        {
+            throw new InvalidOperationException(
+                "GCP Project ID is required to create buckets. Set 'Gcs:ProjectId' in configuration.");
+        }
+
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+
+        await client.CreateBucketAsync(
+            _config.ProjectId,
+            new Google.Apis.Storage.v1.Data.Bucket
+            {
+                Name = bucketName,
+                Location = location,
+                StorageClass = "STANDARD",
+                IamConfiguration = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData
+                {
+                    UniformBucketLevelAccess = new Google.Apis.Storage.v1.Data.Bucket.IamConfigurationData.UniformBucketLevelAccessData
+                    {
+                        Enabled = true,
+                    },
+                },
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation("Created bucket {Bucket} in {Location}", bucketName, location);
+        _ensuredBucketName = bucketName;
+    }
+
+    /// <summary>
+    /// Best-effort lookup of bucket display metadata (location and the
+    /// project ID configured for this client). Returns nulls when the bucket
+    /// can't be read; the Setup success panel uses this purely for echo so
+    /// missing data is non-fatal.
+    /// </summary>
+    public async Task<(string? Location, string? ProjectId)> GetBucketInfoAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bucketName);
+
+        try
+        {
+            var client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+            var bucket = await client.GetBucketAsync(bucketName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return (bucket.Location, _config.ProjectId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "GetBucketInfoAsync failed for {Bucket}", bucketName);
+            return (null, _config.ProjectId);
         }
     }
 

@@ -39,9 +39,15 @@ internal static class PodcastGcsWizard
 
         var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
 
-        // Phase 1: Validate GCS connection with spinner
+        // Phase 1: Probe GCS bucket with spinner. We deliberately route through
+        // GcsBucketProbe (workspace-dwgl) so probe + create are explicit, and
+        // re-create on NotFound below to preserve the wizard's previous
+        // auto-bootstrap behaviour for first-run users.
+        var gcsClient = cloudStorage as GcsStorageClient;
         using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var validationTask = cloudStorage.ValidateConnectionAsync(bucketName, validationCts.Token);
+        var validationTask = gcsClient != null
+            ? GcsBucketProbe.ProbeAsync(gcsClient, bucketName, validationCts.Token)
+            : cloudStorage.ValidateConnectionAsync(bucketName, validationCts.Token);
 
         var spinnerFrame = 0;
         Task<NavigationCommand>? pendingKeyTask = null;
@@ -109,6 +115,29 @@ internal static class PodcastGcsWizard
             ctx.Logger.LogWarning(ex, "GCS bucket validation failed unexpectedly");
             Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
             return (false, null, false, $"Bucket validation failed: {ex.Message}");
+        }
+
+        // Preserve the wizard's prior behaviour: when the probe says NotFound
+        // and the configuration permits auto-create, create the bucket then
+        // re-probe to validate write access (workspace-dwgl refactor).
+        if (!validationResult.IsValid
+            && validationResult.ErrorType == CloudStorageValidationErrorType.BucketNotFound
+            && gcsConfig.CreateBucketIfNotExists
+            && gcsClient != null)
+        {
+            try
+            {
+                Console.Write(
+                    $"\r      {p.SecondaryText.AnsiFg}{PodcastCommandHandler.SpinnerFrames[0]} creating bucket {bucketName}...{Reset}    ");
+                await GcsBucketProbe.CreateAsync(gcsClient, bucketName, gcsConfig, ct).ConfigureAwait(false);
+                validationResult = await GcsBucketProbe.ProbeAsync(gcsClient, bucketName, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "GCS bucket creation failed for {Bucket}", bucketName);
+                Console.Write($"\r{new string(' ', Math.Max(20, options.TerminalWidth))}\r");
+                return (false, null, false, $"Bucket creation failed: {ex.Message}");
+            }
         }
 
         if (!validationResult.IsValid)
