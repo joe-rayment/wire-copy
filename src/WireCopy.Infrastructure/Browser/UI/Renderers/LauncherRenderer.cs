@@ -666,7 +666,9 @@ internal class LauncherRenderer
     /// inside the box is replaced with a centred "Set up API keys" hint in the
     /// accent colour (workspace-ayt8). Net header height is unchanged.
     /// </summary>
-    private static List<string> BuildHeaderLines(int width, ThemePalette p, bool showSetupHint)
+#pragma warning disable SA1202 // exposed internal for LauncherTaglineAlignmentTests; private siblings precede.
+    internal static List<string> BuildHeaderLines(int width, ThemePalette p, bool showSetupHint)
+#pragma warning restore SA1202
     {
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
@@ -736,7 +738,13 @@ internal class LauncherRenderer
             lines.Add(BoxLine($" {titleColor}{Bold}{"Wire Copy"}{Reset}", "Wire Copy".Length + 1));
         }
 
-        lines.Add(BoxLine($" {p.SecondaryText.AnsiFg}{subtitle}{Reset}", subtitle.Length + 1));
+        // Align tagline's left edge with the W glyph above (workspace-usr3).
+        // Large wordmark[0] starts with 6 spaces before "██╗" (the W); the
+        // narrow fallback "Wire Copy" is rendered with a single space pad.
+        var taglinePad = useLargeWordmark ? "      " : " ";
+        lines.Add(BoxLine(
+            $"{taglinePad}{p.SecondaryText.AnsiFg}{subtitle}{Reset}",
+            subtitle.Length + taglinePad.Length));
 
         // Trailing blank-before-bottom-border becomes the setup hint when first-run.
         // Net header height (11 large / 5 narrow) is unchanged.
