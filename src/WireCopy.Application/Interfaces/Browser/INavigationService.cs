@@ -93,4 +93,12 @@ public interface INavigationService
     /// Adjusts the speed reading WPM by the given delta.
     /// </summary>
     void AdjustSpeedReadWpm(int delta);
+
+    /// <summary>
+    /// Whether the launcher (home screen) is currently the active view.
+    /// Used by the input handler to switch the meaning of digit 1-9
+    /// keypresses from numeric-prefix accumulation to direct
+    /// jump-to-bookmark selection.
+    /// </summary>
+    bool InLauncherMode { get; }
 }

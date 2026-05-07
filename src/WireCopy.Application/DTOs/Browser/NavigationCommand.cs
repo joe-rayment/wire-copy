@@ -140,4 +140,7 @@ public enum CommandType
 
     // Animation
     AnimationTick,
+
+    // Launcher: jump to a 1-9 index. Carries Count = digit (1..9).
+    JumpToIndex,
 }

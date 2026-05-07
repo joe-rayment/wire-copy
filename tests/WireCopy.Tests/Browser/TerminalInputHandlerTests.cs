@@ -23,8 +23,9 @@ public class TerminalInputHandlerTests
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
         var resizeDetector = Substitute.For<IResizeDetector>();
+        var navigationService = Substitute.For<INavigationService>();
         var logger = Substitute.For<ILogger<TerminalInputHandler>>();
-        _sut = new TerminalInputHandler(themeProvider, resizeDetector, logger);
+        _sut = new TerminalInputHandler(themeProvider, resizeDetector, navigationService, logger);
     }
 
     #region Regular key mappings

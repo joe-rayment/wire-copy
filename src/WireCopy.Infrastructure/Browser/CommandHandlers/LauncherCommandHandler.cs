@@ -303,6 +303,24 @@ internal static class LauncherCommandHandler
             case CommandType.Undo:
                 await UndoCommandHandler.HandleUndo(ctx, options, ct).ConfigureAwait(false);
                 break;
+
+            case CommandType.JumpToIndex:
+            {
+                // Digit 1-9 jump (workspace-wxht). Count carries the digit (1-based).
+                // Only real bookmarks are reachable; the trailing Reading List
+                // tile keeps its dedicated `c` keybinding. Out-of-range digits
+                // are no-ops so the badge advertisement stays honest.
+                var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
+                var target = command.Count - 1;
+                if (target >= 0 && target < bookmarkCount)
+                {
+                    ctx.NavigationService.LauncherSelectedIndex = target;
+                    AdjustLauncherScroll(ctx, options);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                }
+
+                break;
+            }
         }
 
         return true;

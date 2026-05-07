@@ -17,6 +17,7 @@ public class TerminalInputHandler : IInputHandler
 {
     private readonly IThemeProvider _themeProvider;
     private readonly IResizeDetector _resizeDetector;
+    private readonly INavigationService _navigationService;
     private readonly ILogger<TerminalInputHandler> _logger;
     private readonly Channel<ConsoleKeyInfo> _keyChannel = Channel.CreateUnbounded<ConsoleKeyInfo>();
     private readonly TerminalAnimationController _animationController;
@@ -27,10 +28,11 @@ public class TerminalInputHandler : IInputHandler
     private Task<bool>? _pendingResizeTask;
     private Task? _pendingAnimationTick;
 
-    public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, ILogger<TerminalInputHandler> logger)
+    public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, INavigationService navigationService, ILogger<TerminalInputHandler> logger)
     {
         _themeProvider = themeProvider;
         _resizeDetector = resizeDetector;
+        _navigationService = navigationService;
         _logger = logger;
         _animationController = new TerminalAnimationController();
         IsInteractive = !Console.IsInputRedirected;
@@ -424,6 +426,22 @@ public class TerminalInputHandler : IInputHandler
             if (_waitingForSecondKey)
             {
                 _waitingForSecondKey = false;
+            }
+
+            // In launcher view, digits 1-9 jump-select the corresponding bookmark
+            // (workspace-wxht). The badges advertise this binding; honour it
+            // without entering the count-prefix accumulator. The numeric-prefix
+            // path below remains active for Hierarchical/Reader views, where
+            // count-prefixed motions like 5j / 10G are useful.
+            if (keyInfo.KeyChar >= '1' && keyInfo.KeyChar <= '9' && !_waitingForSecondKey
+                && _navigationService.InLauncherMode && _numericPrefix == 0)
+            {
+                return new NavigationCommand
+                {
+                    Type = CommandType.JumpToIndex,
+                    Count = keyInfo.KeyChar - '0',
+                    RawKeyChar = keyInfo.KeyChar,
+                };
             }
 
             // Accumulate numeric prefix for count-prefixed motions (e.g., 10j, 5G)
