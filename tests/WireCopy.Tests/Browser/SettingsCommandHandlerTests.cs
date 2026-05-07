@@ -158,6 +158,56 @@ public class SettingsCommandHandlerTests
 
     #endregion
 
+    #region Incomplete-setup detection (workspace-9qzh)
+
+    [Fact]
+    public void HasIncompleteSetup_AllSettingsEmpty_ReturnsTrue()
+    {
+        var store = Substitute.For<IUserSettingsStore>();
+        store.Get(Arg.Any<string>()).Returns((string?)null);
+
+        SettingsCommandHandler.HasIncompleteSetup(store).Should().BeTrue(
+            "zero credentials → setup hint must show");
+    }
+
+    [Fact]
+    public void HasIncompleteSetup_OnlyOneCredentialSet_ReturnsTrue()
+    {
+        // Partial-setup case from the user's bug: OpenAI key configured but
+        // GCS still missing. The launcher hint must remain visible to point
+        // them at Setup.
+        var store = Substitute.For<IUserSettingsStore>();
+        store.Get(SettingsCommandHandler.KeyOpenAiApiKey).Returns("sk-abc");
+
+        SettingsCommandHandler.HasIncompleteSetup(store).Should().BeTrue(
+            "any unset credential keeps the hint visible");
+    }
+
+    [Fact]
+    public void HasIncompleteSetup_AllFourCredentialsSet_ReturnsFalse()
+    {
+        var store = Substitute.For<IUserSettingsStore>();
+        store.Get(SettingsCommandHandler.KeyOpenAiApiKey).Returns("sk-abc");
+        store.Get(SettingsCommandHandler.KeyAnthropicApiKey).Returns("sk-ant-abc");
+        store.Get(SettingsCommandHandler.KeyGcsBucketName).Returns("my-bucket");
+        store.Get(SettingsCommandHandler.KeyGcsServiceAccountKeyPath).Returns("/tmp/key.json");
+
+        SettingsCommandHandler.HasIncompleteSetup(store).Should().BeFalse(
+            "fully configured users see no hint; S still works to open Setup via the keybinding");
+    }
+
+    [Fact]
+    public void HasIncompleteSetup_WhitespaceValuesTreatedAsEmpty()
+    {
+        var store = Substitute.For<IUserSettingsStore>();
+        store.Get(Arg.Any<string>()).Returns("   ");
+
+        SettingsCommandHandler.HasIncompleteSetup(store).Should().BeTrue(
+            "whitespace-only values must not count as configured");
+    }
+
+    #endregion
+
     #region Row dispatch
 
     [Fact]

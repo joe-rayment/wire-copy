@@ -1305,23 +1305,22 @@ public partial class BrowserOrchestrator : IBrowserService
     }
 
     /// <summary>
-    /// Returns true on first launch — when none of the four primary credentials
-    /// have been persisted via <see cref="Application.Interfaces.IUserSettingsStore"/>.
-    /// Drives the auto-landing on the unified Setup screen (workspace-fn1u).
-    /// Resolves the settings store inside a scope so a fresh probe always reads
-    /// the latest persisted state.
+    /// Returns true when at least one of the four primary credentials is still
+    /// unconfigured (workspace-9qzh). Drives the launcher's Setup hint
+    /// visibility AND the `S`-key intercept's gating, so partial-setup users
+    /// can still discover and reach Setup.
     /// </summary>
-    private bool IsFirstRun()
+    private bool HasIncompleteSetup()
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var settingsStore = scope.ServiceProvider.GetRequiredService<Application.Interfaces.IUserSettingsStore>();
-            return CommandHandlers.SettingsCommandHandler.IsFirstRun(settingsStore);
+            return CommandHandlers.SettingsCommandHandler.HasIncompleteSetup(settingsStore);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "First-run detection failed; treating as not-first-run");
+            _logger.LogDebug(ex, "Incomplete-setup detection failed; treating as fully configured");
             return false;
         }
     }
