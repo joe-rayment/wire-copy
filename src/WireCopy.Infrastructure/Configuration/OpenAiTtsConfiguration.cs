@@ -16,15 +16,26 @@ public class OpenAiTtsConfiguration
     public string? ApiKey { get; init; }
 
     /// <summary>
-    /// Gets the TTS model to use. Default: tts-1.
+    /// Gets the TTS model to use. Default: gpt-4o-mini-tts (the only model that
+    /// honours <see cref="Instructions"/>). The legacy tts-1 / tts-1-hd families
+    /// remain valid model identifiers but ignore the instructions field.
     /// </summary>
-    public string Model { get; init; } = "tts-1";
+    public string Model { get; init; } = "gpt-4o-mini-tts";
 
     /// <summary>
     /// Gets the voice for audio generation.
     /// Valid values: alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer.
     /// </summary>
-    public string Voice { get; init; } = "nova";
+    public string Voice { get; init; } = "coral";
+
+    /// <summary>
+    /// Gets the optional style instruction string forwarded to OpenAI as the
+    /// <c>instructions</c> field on /v1/audio/speech. Only the
+    /// <c>gpt-4o-mini-tts</c> family acts on this — older <c>tts-1</c> /
+    /// <c>tts-1-hd</c> models silently ignore it. Null/empty means no
+    /// <c>instructions</c> field is sent.
+    /// </summary>
+    public string? Instructions { get; init; } = "Speak like a playful but knowing news anchor";
 
     /// <summary>
     /// Gets the playback speed multiplier. Range: 0.25 to 4.0.

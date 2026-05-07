@@ -48,6 +48,7 @@ internal static class SettingsCommandHandler
     internal const string KeyPodcastOutputFolder = "PodcastOutputFolder";
     internal const string KeyOpenAiTtsVoice = "OpenAiTtsVoice";
     internal const string KeyOpenAiTtsModel = "OpenAiTtsModel";
+    internal const string KeyOpenAiTtsInstructions = "OpenAiTtsInstructions";
     internal const string KeyOutputRetentionHours = "PodcastOutputRetentionHours";
 
     private const string Reset = "\x1b[0m";
@@ -65,6 +66,7 @@ internal static class SettingsCommandHandler
         OutputFolder,
         Voice,
         Model,
+        TtsInstructions,
         AutoPurgeHours,
     }
 
@@ -123,6 +125,7 @@ internal static class SettingsCommandHandler
             SetupRow.OutputFolder,
             SetupRow.Voice,
             SetupRow.Model,
+            SetupRow.TtsInstructions,
             SetupRow.AutoPurgeHours,
         };
         var selectedIndex = 0;
@@ -166,8 +169,10 @@ internal static class SettingsCommandHandler
             var hasBucket = !string.IsNullOrWhiteSpace(bucketName);
             var outputFolder = settingsStore.Get(KeyPodcastOutputFolder)
                                ?? ResolveDefaultOutputFolder();
-            var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? "nova";
-            var model = settingsStore.Get(KeyOpenAiTtsModel) ?? "tts-1";
+            var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
+            var model = settingsStore.Get(KeyOpenAiTtsModel) ?? ResolveTtsDefault(scope, c => c.Model, "gpt-4o-mini-tts");
+            var instructions = settingsStore.Get(KeyOpenAiTtsInstructions)
+                               ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
             var purgeHours = ResolvePurgeHours(scope, settingsStore);
 
             // ---- Reading / link-list ----
@@ -277,6 +282,24 @@ internal static class SettingsCommandHandler
                 model,
                 palette.PromptFg.AnsiFg,
                 "Change");
+
+            var instructionsValue = string.IsNullOrWhiteSpace(instructions)
+                ? "(none)"
+                : TruncateMiddle(instructions, Math.Max(20, width - 40));
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.TtsInstructions,
+                string.IsNullOrWhiteSpace(instructions) ? "○" : "●",
+                string.IsNullOrWhiteSpace(instructions) ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                "TTS instructions",
+                instructionsValue,
+                palette.PromptFg.AnsiFg,
+                "Change",
+                helperText: "Style hint sent with each request (gpt-4o-mini-tts only)");
 
             RenderRow(
                 helpers,
@@ -390,7 +413,8 @@ internal static class SettingsCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-                var current = store.Get(KeyOpenAiTtsVoice) ?? "nova";
+                var current = store.Get(KeyOpenAiTtsVoice)
+                              ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
                 await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
@@ -400,11 +424,16 @@ internal static class SettingsCommandHandler
             {
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-                var current = store.Get(KeyOpenAiTtsModel) ?? "tts-1";
+                var current = store.Get(KeyOpenAiTtsModel)
+                              ?? ResolveTtsDefault(scope, c => c.Model, "gpt-4o-mini-tts");
                 await PodcastConfirmationScreens.PromptAndPickModelAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
             }
+
+            case SetupRow.TtsInstructions:
+                await HandleSetTtsInstructions(ctx, options, ct).ConfigureAwait(false);
+                return;
 
             case SetupRow.AutoPurgeHours:
                 await HandleSetAutoPurgeHours(ctx, options, ct).ConfigureAwait(false);
@@ -528,6 +557,30 @@ internal static class SettingsCommandHandler
             // Don't let display issues hide the row — show the filename.
             logger?.LogDebug(ex, "Couldn't read key file at {Path} for status display", keyPath);
             return Path.GetFileName(keyPath);
+        }
+    }
+
+    /// <summary>
+    /// Resolves a TTS configuration default from the bound
+    /// <see cref="OpenAiTtsConfiguration"/> when the settings store has no
+    /// override. Falls back to the supplied literal when no options are
+    /// registered (defensive: keeps the Setup screen renderable in the unit
+    /// tests' bare DI container).
+    /// </summary>
+    private static string ResolveTtsDefault(
+        IServiceScope scope,
+        Func<OpenAiTtsConfiguration, string> selector,
+        string fallback)
+    {
+        try
+        {
+            var opts = scope.ServiceProvider.GetService<IOptions<OpenAiTtsConfiguration>>();
+            var value = opts is null ? null : selector(opts.Value);
+            return string.IsNullOrEmpty(value) ? fallback : value;
+        }
+        catch
+        {
+            return fallback;
         }
     }
 
@@ -1431,6 +1484,77 @@ internal static class SettingsCommandHandler
         }
 
         return s.Trim();
+    }
+
+    /// <summary>
+    /// Prompts for the TTS instruction string and persists it to the settings
+    /// store under <see cref="KeyOpenAiTtsInstructions"/>. Empty input keeps
+    /// the existing value (use "reset" / "clear" to fall back to the bound
+    /// configuration default; the literal "none" persists an empty override
+    /// so no <c>instructions</c> field is sent on requests).
+    /// </summary>
+    private static async Task HandleSetTtsInstructions(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var current = settingsStore.Get(KeyOpenAiTtsInstructions)
+                      ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
+
+        var prompt = string.IsNullOrEmpty(current)
+            ? "TTS instructions (Enter blank to keep, 'reset' to revert): "
+            : $"TTS instructions [{TruncateMiddle(current, 40)}] (blank=keep, 'reset'=revert, 'none'=disable): ";
+
+        var input = await ctx.InputHandler.PromptForInputAsync(
+            prompt, ct, isSecret: false, initialInput: current).ConfigureAwait(false);
+
+        if (input == null || string.IsNullOrWhiteSpace(input))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+
+        if (trimmed.Equals("reset", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("default", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                settingsStore.Remove(KeyOpenAiTtsInstructions);
+                ctx.NavigationService.SetStatusMessage("TTS instructions reset to default");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to clear TTS instructions override");
+                ctx.NavigationService.SetStatusMessage("Failed to reset TTS instructions");
+            }
+
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // "none" persists an empty string so the request omits instructions —
+        // distinct from "reset" which falls back to the bound default.
+        var toPersist = trimmed.Equals("none", StringComparison.OrdinalIgnoreCase) ? string.Empty : trimmed;
+
+        try
+        {
+            settingsStore.Set(KeyOpenAiTtsInstructions, toPersist);
+            ctx.NavigationService.SetStatusMessage(
+                string.IsNullOrEmpty(toPersist)
+                    ? "TTS instructions disabled"
+                    : "TTS instructions saved");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist TTS instructions");
+            ctx.NavigationService.SetStatusMessage("Failed to save TTS instructions");
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>

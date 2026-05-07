@@ -307,9 +307,18 @@ public class FileSystemTtsAudioCacheTests : IDisposable
         var text = "persistent article text";
         await _cache.PutAsync(text, "https://example.com", "Title", new byte[] { 1, 2, 3 });
 
-        // Create new instance with same base path
+        // Create new instance with same base path AND the same TTS config —
+        // the cache key depends on Voice/Model/Speed/OutputFormat, so a
+        // bare-defaults OpenAiTtsConfiguration would miss the entry written
+        // above (workspace-clsl moved the defaults to gpt-4o-mini-tts/coral).
         var cacheConfig = Options.Create(new TtsAudioCacheConfiguration { BasePath = _tempDir });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration());
+        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
+        {
+            Voice = "nova",
+            Model = "tts-1",
+            Speed = 1.0f,
+            OutputFormat = "aac",
+        });
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
         var newCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
 

@@ -1,6 +1,9 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.ClientModel;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using FFMpegCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,6 +23,13 @@ internal sealed class OpenAiTtsService : ITtsService
     private const decimal CostPerMillionChars = 15.00m;
     private const double WordsPerMinute = 150.0;
     private const double AverageCharsPerWord = 5.0;
+
+    /// <summary>
+    /// Endpoint used by the raw-HTTP fallback. The bound OpenAI SDK already
+    /// targets the same host; we duplicate the URL here only for the
+    /// instructions code path. Drop alongside the SDK upgrade.
+    /// </summary>
+    private const string SpeechEndpoint = "https://api.openai.com/v1/audio/speech";
 
     private readonly OpenAiTtsConfiguration _config;
     private readonly IUserSettingsStore? _settingsStore;
@@ -90,9 +100,23 @@ internal sealed class OpenAiTtsService : ITtsService
             estimate.Summary);
 
         var chunks = TextChunker.ChunkText(text, _config.MaxChunkSize);
-        var audioClient = CreateAudioClient();
-        var options = CreateSpeechOptions();
-        var voice = MapVoice(GetEffectiveVoice());
+        var instructions = GetEffectiveInstructions();
+        var effectiveModel = GetEffectiveModel();
+        var effectiveVoice = GetEffectiveVoice();
+
+        // SDK 2.9.1 does not expose SpeechGenerationOptions.Instructions, so when
+        // the user has a non-empty instruction string we route through the raw
+        // HTTP path. Without instructions we keep the SDK path for parity with
+        // existing behaviour (auth/retry semantics, etc.).
+        AudioClient? audioClient = null;
+        SpeechGenerationOptions? options = null;
+        GeneratedSpeechVoice voice = default;
+        if (string.IsNullOrWhiteSpace(instructions))
+        {
+            audioClient = CreateAudioClient();
+            options = CreateSpeechOptions();
+            voice = MapVoice(effectiveVoice);
+        }
 
         var allAudioSegments = new List<byte[]>(chunks.Count);
         var totalCharsProcessed = 0;
@@ -109,8 +133,17 @@ internal sealed class OpenAiTtsService : ITtsService
                 chunks.Count,
                 chunk.Length);
 
-            var chunkResult = await GenerateChunkWithRetryAsync(
-                audioClient, chunk, voice, options, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
+            ChunkGenerationResult chunkResult;
+            if (string.IsNullOrWhiteSpace(instructions))
+            {
+                chunkResult = await GenerateChunkWithRetryAsync(
+                    audioClient!, chunk, voice, options!, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                chunkResult = await GenerateChunkViaHttpWithRetryAsync(
+                    chunk, effectiveModel, effectiveVoice, instructions, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
+            }
 
             if (!chunkResult.Success || chunkResult.AudioData is null)
             {
@@ -355,6 +388,152 @@ internal sealed class OpenAiTtsService : ITtsService
         return new AudioClient(GetEffectiveModel(), new ApiKeyCredential(apiKey));
     }
 
+    /// <summary>
+    /// Raw-HTTP fallback for the <c>instructions</c> field. The bound OpenAI SDK
+    /// (2.9.1) does not expose <c>SpeechGenerationOptions.Instructions</c>, so
+    /// when the user has a non-empty instruction string we POST to
+    /// <c>/v1/audio/speech</c> directly. Mirrors the SDK retry / status-code
+    /// semantics in <see cref="GenerateChunkWithRetryAsync"/>.
+    ///
+    /// Drop this once we upgrade to an OpenAI SDK that exposes Instructions —
+    /// tracked in the bead's follow-up. The method intentionally builds and
+    /// disposes its own <see cref="HttpClient"/> per chunk; the chunk loop is
+    /// already inherently serial and rate-limited via
+    /// <see cref="OpenAiTtsConfiguration.InterChunkDelayMs"/>, so the cost is
+    /// negligible against the request-side latency.
+    /// </summary>
+    private async Task<ChunkGenerationResult> GenerateChunkViaHttpWithRetryAsync(
+        string chunk,
+        string model,
+        string voice,
+        string instructions,
+        int chunkNumber,
+        int totalChunks,
+        CancellationToken cancellationToken)
+    {
+        var apiKey = GetEffectiveApiKey();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return ChunkGenerationResult.Fail("OpenAI TTS API key is not configured.");
+        }
+
+        for (var attempt = 0; attempt <= _config.MaxRetries; attempt++)
+        {
+            try
+            {
+                var bytes = await PostSpeechRequestAsync(
+                    apiKey, model, voice, chunk, instructions, cancellationToken).ConfigureAwait(false);
+                return ChunkGenerationResult.Ok(bytes);
+            }
+            catch (HttpRequestException ex) when (ShouldRetryHttp(ex.StatusCode))
+            {
+                if (attempt == _config.MaxRetries)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Chunk {ChunkNumber}/{TotalChunks} failed after {Attempts} attempts (HTTP {Status})",
+                        chunkNumber,
+                        totalChunks,
+                        attempt + 1,
+                        (int?)ex.StatusCode);
+                    var kind = ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests ? "rate limited" : "server error";
+                    return ChunkGenerationResult.Fail(
+                        $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries ({kind}).");
+                }
+
+                var delayMs = _config.RetryBaseDelayMs * (int)Math.Pow(2, attempt);
+                _logger.LogWarning(
+                    "Chunk {ChunkNumber}/{TotalChunks} attempt {Attempt} failed (HTTP {Status}), retrying in {DelayMs}ms",
+                    chunkNumber,
+                    totalChunks,
+                    attempt + 1,
+                    (int?)ex.StatusCode,
+                    delayMs);
+
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogError(
+                    ex,
+                    "Chunk {ChunkNumber}/{TotalChunks} failed with auth error (HTTP {Status})",
+                    chunkNumber,
+                    totalChunks,
+                    (int?)ex.StatusCode);
+                return ChunkGenerationResult.Fail(
+                    $"Authentication failed for chunk {chunkNumber}/{totalChunks} — check your API key.");
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                _logger.LogError(
+                    ex,
+                    "Chunk {ChunkNumber}/{TotalChunks} failed with bad request (HTTP 400)",
+                    chunkNumber,
+                    totalChunks);
+                return ChunkGenerationResult.Fail(
+                    $"Bad request for chunk {chunkNumber}/{totalChunks}: {ex.Message}");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(
+                    ex,
+                    "Chunk {ChunkNumber}/{TotalChunks} failed with unexpected error: {Message}",
+                    chunkNumber,
+                    totalChunks,
+                    ex.Message);
+                return ChunkGenerationResult.Fail(
+                    $"Unexpected error generating chunk {chunkNumber}/{totalChunks}: {ex.Message}");
+            }
+        }
+
+        return ChunkGenerationResult.Fail(
+            $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries.");
+    }
+
+#pragma warning disable SA1204 // static helper grouped with the instance method that calls it
+    private static bool ShouldRetryHttp(System.Net.HttpStatusCode? status) =>
+        status == System.Net.HttpStatusCode.TooManyRequests || (status.HasValue && (int)status.Value >= 500);
+#pragma warning restore SA1204
+
+    private async Task<byte[]> PostSpeechRequestAsync(
+        string apiKey,
+        string model,
+        string voice,
+        string input,
+        string instructions,
+        CancellationToken cancellationToken)
+    {
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["voice"] = voice,
+            ["input"] = input,
+            ["response_format"] = _config.OutputFormat,
+            ["speed"] = _config.Speed,
+            ["instructions"] = instructions,
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await http.PostAsync(
+            new Uri(SpeechEndpoint), content, cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                $"OpenAI TTS request failed (HTTP {(int)response.StatusCode}): {body}",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
 #pragma warning disable SA1202 // ordering — internal test helpers placed near the private callees they wrap
     /// <summary>
     /// Resolves the effective TTS voice. Settings store wins over the bound config
@@ -386,8 +565,36 @@ internal sealed class OpenAiTtsService : ITtsService
 
         return _config.Model;
     }
+
+    /// <summary>
+    /// Resolves the effective TTS style instructions. Settings store wins over the
+    /// bound config; null/empty resolves to null so callers can omit the
+    /// <c>instructions</c> field on the request entirely (sending an empty string
+    /// would still be interpreted by the API).
+    ///
+    /// Note: only the <c>gpt-4o-mini-tts</c> family acts on this — older
+    /// <c>tts-1</c> / <c>tts-1-hd</c> models silently ignore it. We let the user
+    /// configure it regardless and rely on the model field at request time.
+    /// </summary>
+    internal string? GetEffectiveInstructions()
+    {
+        var saved = _settingsStore?.Get("OpenAiTtsInstructions");
+        if (!string.IsNullOrWhiteSpace(saved))
+        {
+            return saved;
+        }
+
+        return string.IsNullOrWhiteSpace(_config.Instructions) ? null : _config.Instructions;
+    }
 #pragma warning restore SA1202
 
+    /// <summary>
+    /// Builds the SDK <see cref="SpeechGenerationOptions"/> used by the
+    /// non-instructions code path. Note: the bound OpenAI SDK (2.9.1) does not
+    /// expose an <c>Instructions</c> property, so the <c>instructions</c> field
+    /// is wired up in <see cref="GenerateChunkViaHttpWithRetryAsync"/> via the
+    /// raw HTTP fallback. Drop the fallback once the SDK is upgraded.
+    /// </summary>
     private SpeechGenerationOptions CreateSpeechOptions()
     {
         var options = new SpeechGenerationOptions
