@@ -56,6 +56,23 @@ internal static class FormField
             var inputRow = startRow + 2; // label=0, top border=1, input=2
             var inputCol = 2; // "│ " = 2 chars
 
+            // Wrap the field's optional OnExtraKey so that after the caller
+            // handles the keystroke (typically by drawing an overlay) we can
+            // restore the FormField chrome — TerminalInputHandler only
+            // re-renders the input row itself.
+            Func<char, bool>? interceptKey = field.OnExtraKey is null
+                ? null
+                : c =>
+                {
+                    var handled = field.OnExtraKey(c);
+                    if (handled)
+                    {
+                        RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage);
+                    }
+
+                    return handled;
+                };
+
             // Use the input handler to capture text
             var value = await input.PromptForInputAsync(
                 string.Empty,
@@ -63,7 +80,8 @@ internal static class FormField
                 isSecret: field.IsSecret,
                 row: inputRow,
                 col: inputCol,
-                initialInput: field.InitialValue).ConfigureAwait(false);
+                initialInput: field.InitialValue,
+                interceptKey: interceptKey).ConfigureAwait(false);
 
             if (value == null)
             {

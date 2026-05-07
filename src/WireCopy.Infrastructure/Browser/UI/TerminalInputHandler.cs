@@ -172,7 +172,7 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null)
+    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null, Func<char, bool>? interceptKey = null)
     {
         EnsureKeyReaderStarted();
 
@@ -286,9 +286,27 @@ public class TerminalInputHandler : IInputHandler
                     continue;
                 }
 
-                // Printable character — insert at cursor position
+                // Printable character — give the caller a chance to intercept
+                // (e.g. ? for a help overlay) before inserting into the buffer.
                 if (keyInfo.KeyChar >= 32)
                 {
+                    if (interceptKey != null && interceptKey(keyInfo.KeyChar))
+                    {
+                        // Caller consumed the key. The overlay may have moved the
+                        // cursor or written into the prompt row, so redraw the
+                        // prompt label, current input, and restore cursor before
+                        // continuing the input loop.
+                        Console.SetCursorPosition(targetCol, targetRow);
+                        var clearWidth2 = Math.Max(1, Console.WindowWidth - 1 - targetCol);
+                        Console.Write(new string(' ', clearWidth2));
+                        Console.SetCursorPosition(targetCol, targetRow);
+                        Console.Write(palette.PromptFg.AnsiFg);
+                        Console.Write(prompt);
+                        Console.Write("\x1b[0m");
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                        continue;
+                    }
+
                     input.Insert(cursorPos, keyInfo.KeyChar);
                     cursorPos++;
                     RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);

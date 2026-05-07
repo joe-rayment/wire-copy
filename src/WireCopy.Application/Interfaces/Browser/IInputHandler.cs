@@ -58,8 +58,20 @@ public interface IInputHandler
     /// <param name="prompt">Prompt character (e.g. ":" or "/").</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="isSecret">When true, echoes '*' instead of the actual character.</param>
+    /// <param name="row">Optional row position; defaults to bottom of terminal.</param>
+    /// <param name="col">Optional column position; defaults to 0.</param>
+    /// <param name="initialInput">Optional pre-filled text the loop starts with.</param>
+    /// <param name="interceptKey">
+    /// Optional callback invoked for each printable character before it is inserted
+    /// into the buffer. When the callback returns <c>true</c> the key is treated as
+    /// consumed: the prompt label, current input, and cursor are re-rendered and
+    /// the loop continues. When the callback returns <c>false</c> (or is <c>null</c>)
+    /// the key falls through to normal text insertion. Used by callers that want
+    /// to intercept hotkeys like <c>?</c> mid-input to render a help overlay
+    /// without leaving the input loop (workspace-dlq5).
+    /// </param>
     /// <returns>User-entered text, or null if cancelled (Escape).</returns>
-    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null);
+    Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null, Func<char, bool>? interceptKey = null);
 
     /// <summary>
     /// Discards any keystrokes currently buffered in the input channel.

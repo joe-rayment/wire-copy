@@ -701,9 +701,10 @@ internal static class SettingsCommandHandler
     /// (Verified / NotFound / AccessDenied).
     ///
     /// <para>
-    /// The "?" overlay help described in the bead spec is not yet implemented
-    /// — FormField has no extra-key hook today. Tracked as a follow-up; the
-    /// HelpText line still shows the essential guidance.
+    /// Workspace-dlq5 wired up the long-promised <c>?</c> overlay help via the
+    /// new <see cref="FormFieldConfig.OnExtraKey"/> hook — pressing <c>?</c>
+    /// while editing the bucket name renders a 12-line guidance panel below
+    /// the field; any key dismisses it.
     /// </para>
     /// </summary>
     private static async Task HandleSetBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -731,6 +732,11 @@ internal static class SettingsCommandHandler
         while (!ct.IsCancellationRequested)
         {
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            Console.Clear();
+            var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+            var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+            var helpRow = startRow + FormField.Height + 1;
+
             var field = new FormFieldConfig
             {
                 Label = "GCS Bucket Name",
@@ -740,11 +746,36 @@ internal static class SettingsCommandHandler
                 MaxLength = 63,
                 InitialValue = prefilledName,
                 Validate = ValidateBucketNameInput,
-            };
+                OnExtraKey = ch =>
+                {
+                    if (ch != '?')
+                    {
+                        return false;
+                    }
 
-            Console.Clear();
-            var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-            var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+                    // Modal overlay — render, block on a single key, then clear.
+                    // The interceptor is invoked synchronously from inside the
+                    // input loop; we sync-wait the key channel via GetResult so
+                    // the loop doesn't advance until the user dismisses the
+                    // overlay. FormField re-renders its own chrome after we
+                    // return true, which restores the field above the help
+                    // region; we still clear the help-text rows below to wipe
+                    // the overlay.
+                    RenderBucketHelpOverlay(palette, helpRow);
+                    try
+                    {
+                        _ = ctx.InputHandler.WaitForInputAsync(ct).GetAwaiter().GetResult();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Cancellation — treat as dismiss; the outer loop will
+                        // notice ct on its next iteration.
+                    }
+
+                    ClearBucketHelpOverlay(helpRow);
+                    return true;
+                },
+            };
 
             var entered = await FormField.PromptAsync(
                 ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
@@ -1142,6 +1173,78 @@ internal static class SettingsCommandHandler
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Renders the verbose 12-line GCS bucket help panel below the FormField.
+    /// Triggered by pressing <c>?</c> while editing the bucket name; dismissed
+    /// by any keypress in the surrounding interceptor (workspace-dlq5,
+    /// originally spec'd in workspace-dwgl).
+    /// </summary>
+    private static void RenderBucketHelpOverlay(ThemePalette palette, int startRow)
+    {
+        // Clear the region first so re-renders don't overlap previous output.
+        ClearBucketHelpOverlay(startRow);
+
+        string[] lines =
+        [
+            $"{palette.HeaderTitleFg.AnsiFg}GCS bucket name — help{Reset}",
+            string.Empty,
+            $"{palette.PrimaryText.AnsiFg}Where to find it:{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  Google Cloud Console → Cloud Storage → Buckets.{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  Copy the value in the \"Name\" column (NOT the URL).{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  If it starts with gs://, that's fine — we'll strip it.{Reset}",
+            string.Empty,
+            $"{palette.PrimaryText.AnsiFg}Don't have one yet?{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  Leave the field with a name you want and press Enter.{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  We'll create it for you in your configured project.{Reset}",
+            string.Empty,
+            $"{palette.PrimaryText.AnsiFg}Permissions on this bucket:{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  Storage Object Admin on the bucket — or, least-privilege,{Reset}",
+            $"{palette.SecondaryText.AnsiFg}  Object Creator + Object Viewer for the service account.{Reset}",
+            string.Empty,
+            $"{palette.SecondaryText.AnsiFg}Naming: lowercase a-z, 0-9, hyphens. 3-63 chars. Globally unique.{Reset}",
+            string.Empty,
+            $"{palette.GetDimFg().AnsiFg}Press any key to return.{Reset}",
+        ];
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            try
+            {
+                Console.SetCursorPosition(2, startRow + i);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                break;
+            }
+
+            Console.Write(lines[i]);
+        }
+    }
+
+    /// <summary>
+    /// Erases the rows occupied by <see cref="RenderBucketHelpOverlay"/>. Sized
+    /// generously so trailing blank lines + the dismissal hint are wiped on
+    /// dismiss.
+    /// </summary>
+    private static void ClearBucketHelpOverlay(int startRow)
+    {
+        const int OverlayRows = 20;
+        var width = Math.Max(20, Console.WindowWidth - 1);
+        for (var i = 0; i < OverlayRows; i++)
+        {
+            try
+            {
+                Console.SetCursorPosition(0, startRow + i);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                break;
+            }
+
+            Console.Write(new string(' ', width));
+        }
     }
 
     private static void ClearPanelRegion(int startRow)
