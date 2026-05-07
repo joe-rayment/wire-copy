@@ -271,4 +271,123 @@ public class OpenAiTtsServiceUnitTests
     }
 
     #endregion
+
+    #region GetEffectiveInstructions (workspace-clsl)
+
+    [Fact]
+    public void Defaults_TargetGpt4oMiniTtsCoralWithPlayfulInstructions()
+    {
+        // The bead's headline change: a fresh OpenAiTtsConfiguration must
+        // ship the gpt-4o-mini-tts model + Coral voice + the playful-news-anchor
+        // instructions. Existing users with overrides still get their values
+        // back (covered by GetEffective* tests below).
+        var defaults = new OpenAiTtsConfiguration();
+
+        defaults.Model.Should().Be("gpt-4o-mini-tts");
+        defaults.Voice.Should().Be("coral");
+        defaults.Instructions.Should().Be("Speak like a playful but knowing news anchor");
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_SettingsStoreHasValue_ReturnsStoredValue()
+    {
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            Instructions = "Default instructions",
+        });
+        var settingsStore = Substitute.For<IUserSettingsStore>();
+        settingsStore.Get("OpenAiTtsInstructions").Returns("Override instructions");
+
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
+
+        sut.GetEffectiveInstructions().Should().Be("Override instructions",
+            "settings store must override the bound config so confirmation-screen edits are honored at runtime");
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_SettingsStoreEmpty_FallsBackToConfig()
+    {
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            Instructions = "From config",
+        });
+        var settingsStore = Substitute.For<IUserSettingsStore>();
+        settingsStore.Get("OpenAiTtsInstructions").Returns((string?)null);
+
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
+
+        sut.GetEffectiveInstructions().Should().Be("From config");
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_SettingsStoreWhitespace_FallsBackToConfig()
+    {
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            Instructions = "From config",
+        });
+        var settingsStore = Substitute.For<IUserSettingsStore>();
+        settingsStore.Get("OpenAiTtsInstructions").Returns("   ");
+
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
+
+        sut.GetEffectiveInstructions().Should().Be("From config",
+            "whitespace overrides must be treated as unset so 'reset' works");
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_NoSettingsStore_FallsBackToConfig()
+    {
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            Instructions = "From config",
+        });
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
+
+        sut.GetEffectiveInstructions().Should().Be("From config");
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_ConfigNull_ReturnsNull()
+    {
+        // Null/empty config + no override → null. The chunk loop uses this to
+        // skip the raw-HTTP fallback and go through the SDK path; the request
+        // shape must not include an empty `instructions` field.
+        var config = Options.Create(new OpenAiTtsConfiguration { Instructions = null });
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
+
+        sut.GetEffectiveInstructions().Should().BeNull();
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_ConfigEmpty_ReturnsNull()
+    {
+        // Empty string in config means "no instructions" — must collapse to
+        // null so callers omit the field entirely.
+        var config = Options.Create(new OpenAiTtsConfiguration { Instructions = string.Empty });
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
+
+        sut.GetEffectiveInstructions().Should().BeNull();
+    }
+
+    [Fact]
+    public void GetEffectiveInstructions_SettingsStoreEmptyString_StillReturnsConfig()
+    {
+        // An empty-string override (e.g. user typed "none" → handler stored "")
+        // counts as unset for the purposes of this resolver. The Setup screen
+        // surfaces "(none)" labelling separately; what matters here is that
+        // GetEffectiveInstructions() falls through to the bound config.
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            Instructions = "From config",
+        });
+        var settingsStore = Substitute.For<IUserSettingsStore>();
+        settingsStore.Get("OpenAiTtsInstructions").Returns(string.Empty);
+
+        var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
+
+        sut.GetEffectiveInstructions().Should().Be("From config");
+    }
+
+    #endregion
 }

@@ -260,6 +260,63 @@ public class SettingsCommandHandlerTests
     }
 
     [Fact]
+    public async Task DispatchRow_TtsInstructions_PromptsAndPersists()
+    {
+        // TtsInstructions row dispatch should drive PromptForInputAsync and
+        // persist via the canonical "OpenAiTtsInstructions" settings key.
+        _inputHandler
+            .PromptForInputAsync(
+                Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns("Speak softly");
+
+        await SettingsCommandHandler.DispatchRowAsync(
+            _ctx, _options, SettingsCommandHandler.SetupRow.TtsInstructions, CancellationToken.None);
+
+        _settingsStore.Received(1).Set(
+            SettingsCommandHandler.KeyOpenAiTtsInstructions,
+            "Speak softly",
+            Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task DispatchRow_TtsInstructions_ResetClearsOverride()
+    {
+        // "reset" reverts to the bound config default.
+        _inputHandler
+            .PromptForInputAsync(
+                Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns("reset");
+
+        await SettingsCommandHandler.DispatchRowAsync(
+            _ctx, _options, SettingsCommandHandler.SetupRow.TtsInstructions, CancellationToken.None);
+
+        _settingsStore.Received(1).Remove(SettingsCommandHandler.KeyOpenAiTtsInstructions);
+    }
+
+    [Fact]
+    public async Task DispatchRow_TtsInstructions_NonePersistsEmptyString()
+    {
+        // "none" persists an empty override — distinct from "reset" — so the
+        // request omits the instructions field entirely until the user picks
+        // a new value.
+        _inputHandler
+            .PromptForInputAsync(
+                Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns("none");
+
+        await SettingsCommandHandler.DispatchRowAsync(
+            _ctx, _options, SettingsCommandHandler.SetupRow.TtsInstructions, CancellationToken.None);
+
+        _settingsStore.Received(1).Set(
+            SettingsCommandHandler.KeyOpenAiTtsInstructions,
+            string.Empty,
+            Arg.Any<bool>());
+    }
+
+    [Fact]
     public async Task DispatchRow_AutoPurgeHours_PersistsParsedValue()
     {
         _inputHandler
