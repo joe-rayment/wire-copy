@@ -131,75 +131,13 @@ public class SetCommandTests
     // so the mocks were never reached and the tests hung indefinitely in CI.
     // To properly test :set apikey, FormField needs to accept an IInputHandler dependency.
 
-    #region :set bucket
-
-    [Fact]
-    public async Task SetBucket_ValidName_PersistsAndUpdatesConfig()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(Task.FromResult<string?>("my-podcast-bucket"));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set bucket", _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Set("GcsBucketName", "my-podcast-bucket");
-        _gcsConfig.BucketName.Should().Be("my-podcast-bucket");
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("my-podcast-bucket");
-    }
-
-    [Fact]
-    public async Task SetBucket_InvalidName_ShowsError()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(Task.FromResult<string?>("AB"));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set bucket", _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Invalid");
-    }
-
-    [Fact]
-    public async Task SetBucket_EmptyInput_DoesNothing()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(Task.FromResult<string?>(""));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set bucket", _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
-        _gcsConfig.BucketName.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task SetBucket_NameWithUpperCase_IsRejected()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(Task.FromResult<string?>("My-Bucket"));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set bucket", _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>());
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Invalid");
-    }
-
-    [Fact]
-    public async Task SetBucket_WhitespaceName_IsTrimmedBeforeValidation()
-    {
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>())
-            .Returns(Task.FromResult<string?>("  valid-bucket  "));
-
-        await SearchCommandHandler.HandleCommandLineInput(
-            _ctx, "set bucket", _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Set("GcsBucketName", "valid-bucket");
-        _gcsConfig.BucketName.Should().Be("valid-bucket");
-    }
-
-    #endregion
+    // NOTE: :set bucket tests were removed in workspace-dwgl. The bucket flow
+    // now uses an inline FormField (which calls Console.ReadKey directly and
+    // can't be mocked here) and runs a real GCP probe before persisting. The
+    // FormField validator is covered by
+    // WireCopy.Tests.Configuration.GcsBucketNameValidationTests; the probe
+    // wrapper by WireCopy.Tests.Podcast.GcsBucketProbeTests; live behaviour
+    // is exercised via scripts/termtest.py.
 
     #region :clear apikey
 

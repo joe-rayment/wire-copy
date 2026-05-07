@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
@@ -411,7 +412,7 @@ internal static class SettingsCommandHandler
         }
     }
 
-#pragma warning disable SA1202 // private helpers grouped near their callers for readability
+#pragma warning disable SA1201, SA1202 // helpers grouped near their callers for readability
     private static void RenderRow(
         RenderHelpers helpers,
         ThemePalette palette,
@@ -685,37 +686,393 @@ internal static class SettingsCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// GCS bucket Setup row (workspace-dwgl). Uses the same inline FormField
+    /// component as the API-key rows, hard-blocks on missing service account,
+    /// and runs a real GCP probe on submit with three terminal states
+    /// (Verified / NotFound / AccessDenied).
+    ///
+    /// <para>
+    /// The "?" overlay help described in the bead spec is not yet implemented
+    /// — FormField has no extra-key hook today. Tracked as a follow-up; the
+    /// HelpText line still shows the essential guidance.
+    /// </para>
+    /// </summary>
     private static async Task HandleSetBucket(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var bucketName = await ctx.InputHandler.PromptForInputAsync(
-            "GCS bucket name: ", ct).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(bucketName))
+        // --- Prerequisite gate: service account must be set first ---
+        using (var gateScope = ctx.ScopeFactory.CreateScope())
         {
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
+            var gateStore = gateScope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            if (string.IsNullOrWhiteSpace(gateStore.Get(KeyGcsServiceAccountKeyPath)))
+            {
+                var gateChoice = await ShowPrerequisiteGateAsync(ctx, ct).ConfigureAwait(false);
+                if (gateChoice == 'a')
+                {
+                    await HandleSetKey(ctx, options, ct).ConfigureAwait(false);
+                }
+
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
         }
 
-        var trimmed = bucketName.Trim();
+        // --- FormField + probe loop (allows "Edit name" to reopen with the previous value) ---
+        string? prefilledName = null;
 
-        if (!GcsConfiguration.IsValidBucketName(trimmed))
+        while (!ct.IsCancellationRequested)
         {
-            ctx.NavigationService.SetStatusMessage(
-                $"Invalid: \"{trimmed}\" — must be 3–63 chars, lowercase a–z/0–9/hyphens/dots");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
+            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var field = new FormFieldConfig
+            {
+                Label = "GCS Bucket Name",
+                Placeholder = "wirecopy-podcasts-acme",
+                HelpText = "Lowercase letters, digits, hyphens. 3-63 chars. Press ? for help.",
+                IsSecret = false,
+                MaxLength = 63,
+                InitialValue = prefilledName,
+                Validate = ValidateBucketNameInput,
+            };
+
+            Console.Clear();
+            var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+            var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+
+            var entered = await FormField.PromptAsync(
+                ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+
+            if (entered == null)
+            {
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            // Strip the optional gs:// prefix mirrored from the validator.
+            var name = NormalizeBucketName(entered);
+
+            // --- Probe loop: probe → render state panel → (maybe) loop on Retry ---
+            var probeRow = startRow + FormField.Height + 1;
+            var probeOutcome = await ProbeAndHandleAsync(ctx, name, palette, probeRow, ct).ConfigureAwait(false);
+
+            switch (probeOutcome.Action)
+            {
+                case ProbeFollowUp.Done:
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    return;
+
+                case ProbeFollowUp.EditName:
+                    prefilledName = name;
+                    continue;
+
+                case ProbeFollowUp.Cancel:
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    return;
+            }
         }
 
-        try
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Prerequisite-gate panel for <see cref="HandleSetBucket"/>. Returns the
+    /// lowercase character chosen by the user ('a' to set the service account)
+    /// or null when they backed out.
+    /// </summary>
+    private static async Task<char?> ShowPrerequisiteGateAsync(CommandContext ctx, CancellationToken ct)
+    {
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        Console.Clear();
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 2);
+        BucketProbePanel.RenderPrerequisiteGate(palette, startRow);
+        return await BucketProbePanel.WaitForChoiceAsync(ctx.InputHandler, new[] { 'a' }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// FormField validator for the GCS bucket name. Strips an optional
+    /// <c>gs://</c> prefix silently and rejects underscores, the
+    /// <c>goog</c> prefix, and <c>..</c> substrings on top of the
+    /// <see cref="GcsConfiguration.IsValidBucketName"/> regex check.
+    /// </summary>
+    internal static string? ValidateBucketNameInput(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "Bucket name cannot be empty";
+        }
+
+        var s = raw.Trim();
+        if (s.StartsWith("gs://", StringComparison.Ordinal))
+        {
+            s = s[5..];
+        }
+
+        if (s.Length < 3)
+        {
+            return "Too short — bucket names must be 3-63 chars";
+        }
+
+        if (s.Length > 63)
+        {
+            return "Too long — bucket names must be 3-63 chars";
+        }
+
+        if (!GcsConfiguration.IsValidBucketName(s)
+            || s.Contains("..", StringComparison.Ordinal)
+            || s.StartsWith("goog", StringComparison.Ordinal))
+        {
+            return "Use only lowercase a-z, 0-9, hyphens, dots (no underscores, no caps)";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Strip optional <c>gs://</c> prefix and trim whitespace so callers see
+    /// the bare bucket name.
+    /// </summary>
+    internal static string NormalizeBucketName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return string.Empty;
+        }
+
+        var s = raw.Trim();
+        if (s.StartsWith("gs://", StringComparison.Ordinal))
+        {
+            s = s[5..];
+        }
+
+        return s;
+    }
+
+    private enum ProbeFollowUp
+    {
+        Done,
+        EditName,
+        Cancel,
+    }
+
+    private readonly record struct ProbeOutcome(ProbeFollowUp Action);
+
+    private static async Task<ProbeOutcome> ProbeAndHandleAsync(
+        CommandContext ctx,
+        string bucketName,
+        ThemePalette palette,
+        int panelRow,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
         {
             using var scope = ctx.ScopeFactory.CreateScope();
-            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-            settingsStore.Set(KeyGcsBucketName, trimmed);
-
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
             var gcsConfig = scope.ServiceProvider.GetRequiredService<IOptions<GcsConfiguration>>().Value;
-            gcsConfig.BucketName = trimmed;
 
-            ctx.NavigationService.SetStatusMessage($"Bucket set to \"{trimmed}\"");
+            if (cloudStorage is not GcsStorageClient gcsClient)
+            {
+                // Non-GCS backend — fall back to lexical-only persist.
+                await PersistBucketAsync(ctx, scope, gcsConfig, bucketName).ConfigureAwait(false);
+                return new ProbeOutcome(ProbeFollowUp.Done);
+            }
+
+            ClearPanelRegion(panelRow);
+            CloudStorageValidationResult result;
+            try
+            {
+                result = await BucketProbePanel.RunWithSpinnerAsync(
+                    palette,
+                    $"Verifying bucket \"{bucketName}\"…",
+                    panelRow,
+                    inner => GcsBucketProbe.ProbeAsync(gcsClient, bucketName, inner),
+                    ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return new ProbeOutcome(ProbeFollowUp.Cancel);
+            }
+
+            ClearPanelRegion(panelRow);
+
+            if (result.IsValid)
+            {
+                var (loc, proj) = await gcsClient.GetBucketInfoAsync(bucketName, ct).ConfigureAwait(false);
+                BucketProbePanel.RenderSuccess(
+                    palette,
+                    panelRow,
+                    bucketName,
+                    proj ?? gcsConfig.ProjectId ?? "(not configured)",
+                    loc ?? "(unknown)");
+
+                await PersistBucketAsync(ctx, scope, gcsConfig, bucketName).ConfigureAwait(false);
+
+                // Per spec — success panel dismisses on Enter or Esc. The helper
+                // already short-circuits Enter (ActivateLink) but we surface
+                // '\n' explicitly in validKeys to document intent and guard
+                // against future helper changes.
+                await BucketProbePanel.WaitForChoiceAsync(ctx.InputHandler, new[] { '\n' }, ct).ConfigureAwait(false);
+                return new ProbeOutcome(ProbeFollowUp.Done);
+            }
+
+            switch (result.ErrorType)
+            {
+                case CloudStorageValidationErrorType.BucketNotFound:
+                {
+                    var nextAction = await HandleNotFoundAsync(
+                        ctx, scope, gcsClient, gcsConfig, bucketName, palette, panelRow, ct).ConfigureAwait(false);
+                    if (nextAction == ProbeFollowUp.Done || nextAction == ProbeFollowUp.Cancel)
+                    {
+                        return new ProbeOutcome(nextAction);
+                    }
+
+                    // EditName → fall back to outer FormField
+                    return new ProbeOutcome(ProbeFollowUp.EditName);
+                }
+
+                case CloudStorageValidationErrorType.AccessDenied:
+                {
+                    var serviceAccountEmail = await ResolveServiceAccountEmailAsync(scope).ConfigureAwait(false);
+                    BucketProbePanel.RenderAccessDenied(palette, panelRow, bucketName, serviceAccountEmail);
+
+                    var ch = await BucketProbePanel.WaitForChoiceAsync(
+                        ctx.InputHandler, new[] { 'r', 'e' }, ct).ConfigureAwait(false);
+                    if (ch == 'r')
+                    {
+                        continue;
+                    }
+
+                    return new ProbeOutcome(ch == 'e' ? ProbeFollowUp.EditName : ProbeFollowUp.Cancel);
+                }
+
+                default:
+                {
+                    BucketProbePanel.RenderGenericError(
+                        palette,
+                        panelRow,
+                        result.ErrorMessage ?? "Validation failed",
+                        InterpretError(result.ErrorType));
+
+                    var ch = await BucketProbePanel.WaitForChoiceAsync(
+                        ctx.InputHandler, new[] { 'r', 'e' }, ct).ConfigureAwait(false);
+                    if (ch == 'r')
+                    {
+                        continue;
+                    }
+
+                    return new ProbeOutcome(ch == 'e' ? ProbeFollowUp.EditName : ProbeFollowUp.Cancel);
+                }
+            }
+        }
+
+        return new ProbeOutcome(ProbeFollowUp.Cancel);
+    }
+
+    private static async Task<ProbeFollowUp> HandleNotFoundAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        GcsStorageClient gcsClient,
+        GcsConfiguration gcsConfig,
+        string bucketName,
+        ThemePalette palette,
+        int panelRow,
+        CancellationToken ct)
+    {
+        BucketProbePanel.RenderNotFound(
+            palette, panelRow, bucketName, gcsConfig.ProjectId ?? "(not configured)");
+
+        var pick = await BucketProbePanel.WaitForChoiceAsync(
+            ctx.InputHandler, new[] { 'c', 'e' }, ct).ConfigureAwait(false);
+        if (pick == 'e')
+        {
+            return ProbeFollowUp.EditName;
+        }
+
+        if (pick != 'c')
+        {
+            return ProbeFollowUp.Cancel;
+        }
+
+        // Confirm screen
+        ClearPanelRegion(panelRow);
+        BucketProbePanel.RenderCreateConfirm(
+            palette, panelRow, bucketName, gcsConfig.ProjectId ?? "(not configured)", gcsConfig.BucketLocation);
+
+        var confirm = await BucketProbePanel.WaitForChoiceAsync(
+            ctx.InputHandler, new[] { 'y', 'n' }, ct).ConfigureAwait(false);
+        if (confirm != 'y')
+        {
+            return ProbeFollowUp.Cancel;
+        }
+
+        ClearPanelRegion(panelRow);
+        try
+        {
+            await BucketProbePanel.RunWithSpinnerAsync(
+                palette,
+                $"Creating bucket \"{bucketName}\"…",
+                panelRow,
+                async inner =>
+                {
+                    await GcsBucketProbe.CreateAsync(gcsClient, bucketName, gcsConfig, inner).ConfigureAwait(false);
+                    return true;
+                },
+                ct).ConfigureAwait(false);
+        }
+        catch (Google.GoogleApiException createEx)
+        {
+            ClearPanelRegion(panelRow);
+
+            // Per spec — create-failure offers only [E] Edit name · [Esc]
+            // Cancel. No [R] retry: the same name will fail identically (e.g.
+            // global-uniqueness conflict, IAM denial, quota).
+            BucketProbePanel.RenderGenericError(
+                palette, panelRow, createEx.Message, InterpretCreateError(createEx), allowRetry: false);
+
+            var followUp = await BucketProbePanel.WaitForChoiceAsync(
+                ctx.InputHandler, new[] { 'e' }, ct).ConfigureAwait(false);
+            return followUp == 'e' ? ProbeFollowUp.EditName : ProbeFollowUp.Cancel;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Bucket creation failed for {Bucket}", bucketName);
+            ClearPanelRegion(panelRow);
+
+            // Same reasoning as the GoogleApiException branch — no [R] on
+            // create-failure; only [E] / [Esc].
+            BucketProbePanel.RenderGenericError(palette, panelRow, ex.Message, null, allowRetry: false);
+            var followUp = await BucketProbePanel.WaitForChoiceAsync(
+                ctx.InputHandler, new[] { 'e' }, ct).ConfigureAwait(false);
+            return followUp == 'e' ? ProbeFollowUp.EditName : ProbeFollowUp.Cancel;
+        }
+
+        // Created — render success and persist.
+        ClearPanelRegion(panelRow);
+        var (loc, proj) = await gcsClient.GetBucketInfoAsync(bucketName, ct).ConfigureAwait(false);
+        BucketProbePanel.RenderSuccess(
+            palette,
+            panelRow,
+            bucketName,
+            proj ?? gcsConfig.ProjectId ?? "(not configured)",
+            loc ?? gcsConfig.BucketLocation);
+        await PersistBucketAsync(ctx, scope, gcsConfig, bucketName).ConfigureAwait(false);
+
+        // Per spec — success panel dismisses on Enter or Esc. Surface '\n'
+        // explicitly so the helper's empty-validKeys path isn't relied upon.
+        await BucketProbePanel.WaitForChoiceAsync(ctx.InputHandler, new[] { '\n' }, ct).ConfigureAwait(false);
+        return ProbeFollowUp.Done;
+    }
+
+    private static Task PersistBucketAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        GcsConfiguration gcsConfig,
+        string bucketName)
+    {
+        try
+        {
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            settingsStore.Set(KeyGcsBucketName, bucketName);
+            gcsConfig.BucketName = bucketName;
+            ctx.NavigationService.SetStatusMessage($"Bucket set to \"{bucketName}\"");
         }
         catch (Exception ex)
         {
@@ -723,7 +1080,88 @@ internal static class SettingsCommandHandler
             ctx.NavigationService.SetStatusMessage("Failed to save bucket name");
         }
 
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        return Task.CompletedTask;
+    }
+
+    private static async Task<string> ResolveServiceAccountEmailAsync(IServiceScope scope)
+    {
+        try
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            var keyPath = store.Get(KeyGcsServiceAccountKeyPath);
+            if (!string.IsNullOrWhiteSpace(keyPath) && File.Exists(keyPath))
+            {
+                var json = await File.ReadAllTextAsync(keyPath).ConfigureAwait(false);
+                var (email, _) = GcsStorageClient.ExtractKeyMetadata(json);
+                if (!string.IsNullOrWhiteSpace(email))
+                {
+                    return email;
+                }
+            }
+
+            return store.Get(KeyGcsServiceAccountDisplay) ?? "(unknown)";
+        }
+        catch
+        {
+            return "(unknown)";
+        }
+    }
+
+    private static string? InterpretError(CloudStorageValidationErrorType? errorType) => errorType switch
+    {
+        CloudStorageValidationErrorType.Timeout => "Network looks slow — check connectivity and retry.",
+        CloudStorageValidationErrorType.NetworkError => "Network error — check connectivity and retry.",
+        CloudStorageValidationErrorType.CredentialsInvalid => "Service account credentials may be invalid; re-check the key file.",
+        CloudStorageValidationErrorType.BucketCreationFailed => "Bucket creation failed — see message above.",
+        _ => null,
+    };
+
+    private static string? InterpretCreateError(Google.GoogleApiException ex)
+    {
+        if (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            return "That name is taken globally — names are unique across all of GCS";
+        }
+
+        if (ex.HttpStatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return "The service account lacks Storage Admin on this project — grant it and retry.";
+        }
+
+        if (ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Project quota exceeded";
+        }
+
+        return null;
+    }
+
+    private static void ClearPanelRegion(int startRow)
+    {
+        var height = Math.Max(0, Console.WindowHeight - startRow - 1);
+        for (var i = 0; i < height; i++)
+        {
+            try
+            {
+                Console.SetCursorPosition(0, startRow + i);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                break;
+            }
+
+            var width = Math.Max(20, Console.WindowWidth - 1);
+            Console.Write(new string(' ', width));
+        }
+
+        try
+        {
+            Console.SetCursorPosition(0, startRow);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // ignore
+        }
     }
 
     private static async Task HandleSetAnthropicKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -1148,5 +1586,5 @@ internal static class SettingsCommandHandler
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
-#pragma warning restore SA1202
+#pragma warning restore SA1201, SA1202
 }
