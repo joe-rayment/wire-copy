@@ -89,7 +89,7 @@ public class GcsCredentialSmokeTests : IDisposable
         var result = GcsStorageClient.ValidateKeyFile(tempFile);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("not valid JSON");
+        result.ErrorMessage.Should().Contain("doesn't look like JSON");
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class GcsCredentialSmokeTests : IDisposable
         var result = GcsStorageClient.ValidateKeyFile(tempFile);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing");
+        result.ErrorMessage.Should().Contain("Missing field");
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public class GcsCredentialSmokeTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent("This is not JSON");
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("not valid JSON");
+        result.ErrorMessage.Should().Contain("doesn't look like JSON");
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class GcsCredentialSmokeTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent("""{"some_field": "value"}""");
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("missing");
+        result.ErrorMessage.Should().Contain("Missing field");
     }
 
     [Fact]
@@ -161,7 +161,8 @@ public class GcsCredentialSmokeTests : IDisposable
         var result = GcsStorageClient.ValidateKeyContent(json);
 
         result.IsValid.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("service_account");
+        result.ErrorMessage.Should().Contain("authorized_user");
+        result.ErrorMessage.Should().Contain("service account");
     }
 
     [Fact]

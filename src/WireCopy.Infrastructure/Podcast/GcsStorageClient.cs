@@ -51,7 +51,8 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 
         if (!File.Exists(path))
         {
-            return ServiceAccountKeyValidationResult.Invalid($"File not found: {path}");
+            return ServiceAccountKeyValidationResult.Invalid(
+                $"File not found at {path}. If you meant to paste the JSON contents, paste them directly — you don't need a path.");
         }
 
         string json;
@@ -61,7 +62,27 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         }
         catch (Exception ex)
         {
-            return ServiceAccountKeyValidationResult.Invalid($"Cannot read file: {ex.Message}");
+            return ServiceAccountKeyValidationResult.Invalid($"Couldn't read {path}: {ex.Message}");
+        }
+
+        // Defer to the content validator — same error messages, single source of truth.
+        return ValidateKeyContent(json);
+    }
+
+    /// <summary>
+    /// Validates JSON content as a service account key without requiring a file
+    /// on disk. Error messages are written for end-users (workspace-x7lf) — they
+    /// describe the next concrete action the user should take rather than
+    /// surfacing parser internals.
+    /// </summary>
+    public static ServiceAccountKeyValidationResult ValidateKeyContent(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return ServiceAccountKeyValidationResult.Invalid(
+                "Nothing pasted. Copy the JSON file's contents and try again — Ctrl+V then Enter.");
         }
 
         JsonDocument doc;
@@ -71,12 +92,36 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         }
         catch (JsonException)
         {
-            return ServiceAccountKeyValidationResult.Invalid("File is not valid JSON");
+            return ServiceAccountKeyValidationResult.Invalid(
+                "That doesn't look like JSON. Paste the full file contents including the opening { and closing }.");
         }
 
         using (doc)
         {
             var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return ServiceAccountKeyValidationResult.Invalid(
+                    "That doesn't look like JSON. Paste the full file contents including the opening { and closing }.");
+            }
+
+            // Check `type` first so we can give the most specific error
+            // (wrong-credential-type vs. missing-fields). Only fire the
+            // wrong-type message when `type` is a present, non-empty string
+            // that names some other credential — null/missing/empty falls
+            // through to the missing-field path below for a clearer error.
+            if (root.TryGetProperty("type", out var typeProp)
+                && typeProp.ValueKind == JsonValueKind.String)
+            {
+                var actualType = typeProp.GetString();
+                if (!string.IsNullOrWhiteSpace(actualType)
+                    && !string.Equals(actualType, "service_account", StringComparison.Ordinal))
+                {
+                    return ServiceAccountKeyValidationResult.Invalid(
+                        $"This looks like a {actualType} credential, not a service account. " +
+                        "In the Keys tab of a service account, click Add Key → Create new key → JSON.");
+                }
+            }
 
             foreach (var field in RequiredKeyFileFields)
             {
@@ -84,16 +129,24 @@ internal sealed class GcsStorageClient : ICloudStorageClient
                     || prop.ValueKind == JsonValueKind.Null
                     || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
                 {
-                    return ServiceAccountKeyValidationResult.Invalid(
-                        $"Invalid service account key file: missing '{field}'");
+                    return ServiceAccountKeyValidationResult.Invalid(MissingFieldMessage(field));
                 }
             }
 
-            if (root.TryGetProperty("type", out var typeProp)
-                && typeProp.GetString() != "service_account")
+            // Soft sanity check on the private key — catches terminals that
+            // mangled multi-line input. Accept any PEM marker (PKCS8, PKCS1,
+            // EC); the runtime credential loader will surface a more specific
+            // error if the key body is corrupt.
+            if (root.TryGetProperty("private_key", out var pkProp)
+                && pkProp.ValueKind == JsonValueKind.String)
             {
-                return ServiceAccountKeyValidationResult.Invalid(
-                    $"Invalid key file: 'type' must be 'service_account', got '{typeProp.GetString()}'");
+                var pk = pkProp.GetString() ?? string.Empty;
+                if (!pk.Contains("-----BEGIN", StringComparison.Ordinal)
+                    || !pk.Contains("PRIVATE KEY", StringComparison.Ordinal))
+                {
+                    return ServiceAccountKeyValidationResult.Invalid(
+                        "private_key looks malformed. Did your terminal mangle line breaks? Try pasting again; we handle multi-line input.");
+                }
             }
         }
 
@@ -101,51 +154,72 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     }
 
     /// <summary>
-    /// Validates JSON content as a service account key without requiring a file on disk.
-    /// On JSON parse failure, the returned error message includes the parser's
-    /// specific complaint (line/position) so the user can see what went wrong.
+    /// Extracts the service-account email and project ID from a JSON key blob
+    /// for display in the Setup screen status row (workspace-x7lf). Returns
+    /// (null, null) if the JSON is malformed; callers should treat that as
+    /// "configured but display unavailable" and not fail.
     /// </summary>
-    public static ServiceAccountKeyValidationResult ValidateKeyContent(string json)
+    public static (string? ClientEmail, string? ProjectId) ExtractKeyMetadata(string json)
     {
-        ArgumentNullException.ThrowIfNull(json);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return (null, null);
+        }
 
-        JsonDocument doc;
         try
         {
-            doc = JsonDocument.Parse(json);
-        }
-        catch (JsonException ex)
-        {
-            // Surface the parser's specific message (e.g. "expected '}' at line 4 pos 12")
-            // so the user can fix the actual problem instead of guessing.
-            var detail = string.IsNullOrWhiteSpace(ex.Message) ? "Input is not valid JSON" : ex.Message;
-            return ServiceAccountKeyValidationResult.Invalid($"Input is not valid JSON: {detail}");
-        }
-
-        using (doc)
-        {
+            using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-
-            foreach (var field in RequiredKeyFileFields)
+            string? email = null;
+            string? project = null;
+            if (root.TryGetProperty("client_email", out var emailProp) && emailProp.ValueKind == JsonValueKind.String)
             {
-                if (!root.TryGetProperty(field, out var prop)
-                    || prop.ValueKind == JsonValueKind.Null
-                    || (prop.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(prop.GetString())))
-                {
-                    return ServiceAccountKeyValidationResult.Invalid(
-                        $"Invalid service account key: missing '{field}'");
-                }
+                email = emailProp.GetString();
             }
 
-            if (root.TryGetProperty("type", out var typeProp)
-                && typeProp.GetString() != "service_account")
+            if (root.TryGetProperty("project_id", out var projectProp) && projectProp.ValueKind == JsonValueKind.String)
             {
-                return ServiceAccountKeyValidationResult.Invalid(
-                    $"Invalid key: 'type' must be 'service_account', got '{typeProp.GetString()}'");
+                project = projectProp.GetString();
             }
+
+            return (email, project);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// Masks a service-account email for status display. Keeps the first 6
+    /// characters of the local part and the project segment of the domain.
+    /// e.g. <c>svc-wirecopy@my-proj-1234.iam.gserviceaccount.com</c>
+    /// → <c>svc-wi…@my-proj-1234</c>. Returns the original string unchanged
+    /// if it doesn't look like an email.
+    /// </summary>
+    public static string MaskServiceAccountEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return string.Empty;
         }
 
-        return ServiceAccountKeyValidationResult.Valid();
+        var atIdx = email.IndexOf('@', StringComparison.Ordinal);
+        if (atIdx <= 0)
+        {
+            return email;
+        }
+
+        var local = email[..atIdx];
+        var domain = email[(atIdx + 1)..];
+        var maskedLocal = local.Length <= 6 ? local : local[..6] + "…";
+
+        // Domain is typically `<project>.iam.gserviceaccount.com` — keep just
+        // the project so the row stays short.
+        var dotIdx = domain.IndexOf('.', StringComparison.Ordinal);
+        var maskedDomain = dotIdx > 0 ? domain[..dotIdx] : domain;
+
+        return $"{maskedLocal}@{maskedDomain}";
     }
 
     public async Task<string> UploadAsync(
@@ -606,4 +680,20 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             _initLock.Release();
         }
     }
+
+#pragma warning disable SA1204 // private helper for ValidateKeyContent kept at end of file for readability.
+    /// <summary>
+    /// Per-field "missing field" error messages — workspace-x7lf spec gave each
+    /// required field its own guidance because the right next action differs
+    /// (re-copy vs. re-export from Cloud Console).
+    /// </summary>
+    private static string MissingFieldMessage(string field) => field switch
+    {
+        "type" => "Missing field: type. Re-copy the JSON file from Cloud Console; the file looks truncated.",
+        "client_email" => "Missing field: client_email. The JSON looks truncated — re-copy the whole file.",
+        "private_key" => "Missing field: private_key. Make sure you copied from the first { to the last } of the file.",
+        "project_id" => "Missing field: project_id. Re-export the key from Cloud Console.",
+        _ => $"Missing field: {field}. Re-copy the JSON file — it looks truncated.",
+    };
+#pragma warning restore SA1204
 }

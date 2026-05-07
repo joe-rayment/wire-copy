@@ -39,6 +39,11 @@ internal static class SettingsCommandHandler
     internal const string KeyAnthropicApiKey = "AnthropicApiKey";
     internal const string KeyGcsBucketName = "GcsBucketName";
     internal const string KeyGcsServiceAccountKeyPath = "GcsServiceAccountKeyPath";
+
+    // Display-only cache. Written when the user saves a key; read on every
+    // Setup-screen render. Avoids a synchronous File.ReadAllText hit per
+    // render. Not encrypted — already-masked text, no secret material.
+    internal const string KeyGcsServiceAccountDisplay = "GcsServiceAccountDisplay";
     internal const string KeyPodcastOutputFolder = "PodcastOutputFolder";
     internal const string KeyOpenAiTtsVoice = "OpenAiTtsVoice";
     internal const string KeyOpenAiTtsModel = "OpenAiTtsModel";
@@ -138,6 +143,7 @@ internal static class SettingsCommandHandler
             var anthropicModel = ResolveAnthropicModel(scope);
             var hasOpenAi = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyOpenAiApiKey));
             var hasGcsKey = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyGcsServiceAccountKeyPath));
+            var gcsKeyDisplay = hasGcsKey ? ResolveGcsKeyDisplay(settingsStore, ctx.Logger) : null;
             var bucketName = settingsStore.Get(KeyGcsBucketName);
             var hasBucket = !string.IsNullOrWhiteSpace(bucketName);
             var outputFolder = settingsStore.Get(KeyPodcastOutputFolder)
@@ -190,7 +196,7 @@ internal static class SettingsCommandHandler
                 hasGcsKey ? "●" : "○",
                 hasGcsKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 "GCS service account",
-                hasGcsKey ? "configured" : "not set",
+                hasGcsKey ? (gcsKeyDisplay ?? "configured") : "not set",
                 hasGcsKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 hasGcsKey ? "Change" : "Set up");
 
@@ -446,6 +452,67 @@ internal static class SettingsCommandHandler
         }
     }
 
+    /// <summary>
+    /// Returns a status-row label for the configured service-account key —
+    /// the masked client_email when we have it cached, the bare filename
+    /// otherwise. The cache is written by <see cref="HandleSetKey"/> at save
+    /// time so we don't pay a synchronous file read on every Setup render
+    /// (workspace-x7lf QA fix). Logs when falling back so silent failures
+    /// don't hide.
+    /// </summary>
+    private static string? ResolveGcsKeyDisplay(IUserSettingsStore store, ILogger? logger = null)
+    {
+        var keyPath = store.Get(KeyGcsServiceAccountKeyPath);
+        if (string.IsNullOrWhiteSpace(keyPath))
+        {
+            return null;
+        }
+
+        var cached = store.Get(KeyGcsServiceAccountDisplay);
+        if (!string.IsNullOrWhiteSpace(cached))
+        {
+            return cached;
+        }
+
+        // No cache (e.g. legacy install that pre-dates the cache). Best-effort
+        // read of the key file once, then populate the cache so future renders
+        // hit the fast path. Failures are logged at debug — we still need to
+        // render *something* in the row.
+        try
+        {
+            if (!File.Exists(keyPath))
+            {
+                logger?.LogDebug("Service account key file not at {Path}; falling back to filename for status row", keyPath);
+                return Path.GetFileName(keyPath);
+            }
+
+            var json = File.ReadAllText(keyPath);
+            var (email, _) = GcsStorageClient.ExtractKeyMetadata(json);
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                return Path.GetFileName(keyPath);
+            }
+
+            var masked = GcsStorageClient.MaskServiceAccountEmail(email);
+            try
+            {
+                store.Set(KeyGcsServiceAccountDisplay, masked);
+            }
+            catch (Exception cacheEx)
+            {
+                logger?.LogDebug(cacheEx, "Failed to populate service account display cache");
+            }
+
+            return masked;
+        }
+        catch (Exception ex)
+        {
+            // Don't let display issues hide the row — show the filename.
+            logger?.LogDebug(ex, "Couldn't read key file at {Path} for status display", keyPath);
+            return Path.GetFileName(keyPath);
+        }
+    }
+
     private static int ResolvePurgeHours(IServiceScope scope, IUserSettingsStore store)
     {
         var saved = store.Get(KeyOutputRetentionHours);
@@ -697,24 +764,120 @@ internal static class SettingsCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// GCS service-account key entry. Accepts either:
+    /// • Pasted JSON content (the contents of the downloaded key file).
+    /// • A path to the JSON file on disk (legacy — supported for users who
+    ///   already have a path workflow).
+    ///
+    /// Detection is by leading character: a `{` means JSON, anything else is
+    /// treated as a path. Paths support `~/` expansion. Workspace-x7lf rewrote
+    /// this to fix the bug where pasted JSON triggered "File not found" — the
+    /// old validator only ran File.Exists.
+    /// </summary>
     private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var field = new FormFieldConfig
         {
             Label = "GCS Service Account Key",
-            Placeholder = "File path (e.g. ~/keys/service-account.json)",
-            HelpText = "Download from console.cloud.google.com → IAM → Service Accounts",
+            Placeholder = "Paste JSON content (or a file path)",
+            HelpText = "Cloud Console → IAM & Admin → Service Accounts → Keys → Add Key → Create new key → JSON. Open and paste.",
+            MaxLength = 8192, // service-account JSON keys are ~2-3 KB; allow headroom.
             Validate = v =>
             {
-                if (string.IsNullOrWhiteSpace(v))
+                var sanitized = SanitizeKeyInput(v);
+                if (string.IsNullOrEmpty(sanitized))
                 {
-                    return "Path cannot be empty";
+                    return "Nothing pasted. Copy the JSON file's contents and try again.";
                 }
 
-                var path = v.Trim();
+                // JSON content — validate locally without touching disk.
+                // Detection: leading `{` is the obvious case. Non-`{` input
+                // that contains whitespace can't be a path (paths don't have
+                // embedded newlines / spaces in any sensible workflow), so
+                // route those through the JSON validator too — that gives
+                // the user a "doesn't look like JSON" error instead of a
+                // confusing "File not found at /workspace/not valid json".
+                if (sanitized.StartsWith('{') || ContainsWhitespace(sanitized))
+                {
+                    var jsonResult = GcsStorageClient.ValidateKeyContent(sanitized);
+                    return jsonResult.IsValid ? null : jsonResult.ErrorMessage;
+                }
 
-                // Expand ~ to home directory
+                // Otherwise treat as a path. Expand ~/ first.
+                var path = sanitized;
+                if (path.StartsWith('~'))
+                {
+                    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    path = Path.Combine(home, path[1..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                }
+
+                try
+                {
+                    path = Path.GetFullPath(path);
+                }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                {
+                    return "That looks like neither JSON nor a usable file path. Paste the JSON contents (starting with {) or a path to the file.";
+                }
+
+                var fileResult = GcsStorageClient.ValidateKeyFile(path);
+                return fileResult.IsValid ? null : fileResult.ErrorMessage;
+            },
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+
+        if (input == null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var sanitizedInput = SanitizeKeyInput(input);
+        if (string.IsNullOrEmpty(sanitizedInput))
+        {
+            // Validator should have caught this, but guard against an
+            // out-of-band empty submission.
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+
+            if (cloudStorage is not GcsStorageClient gcsClient)
+            {
+                // Non-GCS storage backend — fall back to raw settings persist
+                // and let the runtime code path surface any errors.
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                settingsStore.Set(KeyGcsServiceAccountKeyPath, sanitizedInput, encrypt: true);
+                ctx.NavigationService.SetStatusMessage("Service account saved");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            ServiceAccountKeyValidationResult result;
+            string? maskedEmail = null;
+            string? extractedJson = null;
+
+            // Mirror the validator's detection — see Validate above.
+            if (sanitizedInput.StartsWith('{') || ContainsWhitespace(sanitizedInput))
+            {
+                result = gcsClient.SetServiceAccountKeyContent(sanitizedInput);
+                if (result.IsValid)
+                {
+                    extractedJson = sanitizedInput;
+                }
+            }
+            else
+            {
+                var path = sanitizedInput;
                 if (path.StartsWith('~'))
                 {
                     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -722,65 +885,97 @@ internal static class SettingsCommandHandler
                 }
 
                 path = Path.GetFullPath(path);
-
-                var result = GcsStorageClient.ValidateKeyFile(path);
-                return result.IsValid ? null : (result.ErrorMessage ?? "Invalid key file");
-            },
-        };
-
-        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-        var keyPath = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
-
-        if (keyPath == null)
-        {
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var trimmed = keyPath.Trim();
-
-        // Expand ~ to home directory
-        if (trimmed.StartsWith('~'))
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            trimmed = Path.Combine(home, trimmed[1..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        }
-
-        trimmed = Path.GetFullPath(trimmed);
-
-        try
-        {
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
-
-            if (cloudStorage is GcsStorageClient gcsClient)
-            {
-                var result = gcsClient.SetServiceAccountKeyPath(trimmed);
+                result = gcsClient.SetServiceAccountKeyPath(path);
                 if (result.IsValid)
                 {
-                    ctx.NavigationService.SetStatusMessage("Service account key saved");
+                    try
+                    {
+                        extractedJson = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        ctx.Logger.LogDebug(ex, "Couldn't read key file for status display");
+                    }
+                }
+            }
+
+            if (result.IsValid)
+            {
+                if (!string.IsNullOrEmpty(extractedJson))
+                {
+                    var (email, _) = GcsStorageClient.ExtractKeyMetadata(extractedJson);
+                    if (!string.IsNullOrWhiteSpace(email))
+                    {
+                        maskedEmail = GcsStorageClient.MaskServiceAccountEmail(email);
+                    }
+                }
+
+                // Cache the masked label for the Setup row so we don't have to
+                // re-read the key file on every Setup render (workspace-x7lf
+                // QA fix #6).
+                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+                if (string.IsNullOrEmpty(maskedEmail))
+                {
+                    settingsStore.Remove(KeyGcsServiceAccountDisplay);
                 }
                 else
                 {
-                    ctx.NavigationService.SetStatusMessage(result.ErrorMessage ?? "Failed to set key");
+                    settingsStore.Set(KeyGcsServiceAccountDisplay, maskedEmail);
                 }
+
+                ctx.NavigationService.SetStatusMessage(
+                    string.IsNullOrEmpty(maskedEmail)
+                        ? "Service account saved"
+                        : $"Service account saved · {maskedEmail}");
             }
             else
             {
-                // Fallback: store directly in settings
-                var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-                settingsStore.Set(KeyGcsServiceAccountKeyPath, trimmed, encrypt: true);
-                ctx.NavigationService.SetStatusMessage("Service account key path saved");
+                ctx.NavigationService.SetStatusMessage(result.ErrorMessage ?? "Failed to save service account key");
             }
         }
         catch (Exception ex)
         {
-            ctx.Logger.LogWarning(ex, "Failed to persist service account key path");
-            ctx.NavigationService.SetStatusMessage("Failed to save key path");
+            ctx.Logger.LogWarning(ex, "Failed to persist service account key");
+            ctx.NavigationService.SetStatusMessage("Failed to save service account key");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// True when the input contains an internal whitespace character (space,
+    /// tab, newline). Used to disambiguate paste-of-not-JSON from a file
+    /// path: real paths don't contain whitespace.
+    /// </summary>
+    private static bool ContainsWhitespace(string s) => s.Any(char.IsWhiteSpace);
+
+    /// <summary>
+    /// Strips bracketed-paste markers (`\x1b[200~`/`\x1b[201~`) and trims
+    /// surrounding whitespace from a key entry. Mirrors the wizard's
+    /// <c>SanitizeKeyInput</c> behaviour so both entry points handle terminal
+    /// quirks identically.
+    /// </summary>
+    private static string SanitizeKeyInput(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return string.Empty;
+        }
+
+        // Defensive — TerminalInputHandler usually consumes these, but if a
+        // paste lands here untrimmed (e.g. from the command line), strip them.
+        var s = raw;
+        if (s.Contains("\x1b[200~", StringComparison.Ordinal))
+        {
+            s = s.Replace("\x1b[200~", string.Empty, StringComparison.Ordinal);
+        }
+
+        if (s.Contains("\x1b[201~", StringComparison.Ordinal))
+        {
+            s = s.Replace("\x1b[201~", string.Empty, StringComparison.Ordinal);
+        }
+
+        return s.Trim();
     }
 
     /// <summary>

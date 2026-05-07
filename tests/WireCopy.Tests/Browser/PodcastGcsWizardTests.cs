@@ -185,21 +185,19 @@ public class PodcastGcsWizardTests : IDisposable
     }
 
     [Fact]
-    public async Task ValidateAndSaveKeyAsync_InvalidJson_ReturnsSpecificParserError()
+    public async Task ValidateAndSaveKeyAsync_InvalidJson_ReturnsHumanFriendlyMessage()
     {
         var (gcsClient, _) = CreateGcsClient();
-        // Truncated JSON — parser should report what it expected.
+        // Truncated JSON — validator returns a user-facing message that tells
+        // the user what to do next, not the parser's internal complaint
+        // (workspace-x7lf — message redesign).
         var broken = "{ \"type\": \"service_account\", \"project_id\": ";
 
         var (saved, error) = await PodcastGcsWizard.ValidateAndSaveKeyAsync(broken, gcsClient);
 
         saved.Should().BeFalse();
         error.Should().NotBeNull();
-        // The error must reference the JSON parse failure with detail, not the
-        // generic "Input is not valid JSON" alone — that's what kept users guessing.
-        error.Should().Contain("not valid JSON");
-        error!.Length.Should().BeGreaterThan("Input is not valid JSON".Length,
-            "the parser's specific complaint must be appended to the generic message");
+        error.Should().Contain("doesn't look like JSON");
     }
 
     [Fact]
