@@ -291,7 +291,8 @@ internal class LauncherRenderer
         int selectedIndex,
         int cellWidth,
         int lineIdx,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         var totalItems = bookmarks.Count + 1;
         if (itemIdx >= totalItems)
@@ -313,14 +314,7 @@ internal class LauncherRenderer
         if (isReadingList)
         {
             name = "READING LIST";
-
-            // Subtitle: spec calls for "{N} saved articles" / "nothing saved
-            // yet…" copy, but reading the count requires plumbing
-            // ICollectionService through to the renderer (currently it has no
-            // service references, only theme + render helpers). Per spec,
-            // fall back to the static "reading list" subtitle and file a
-            // follow-up bead for the count plumbing.
-            domain = "reading list";
+            domain = ReadingListSubtitle(readingListCount);
         }
         else
         {
@@ -430,7 +424,8 @@ internal class LauncherRenderer
         int itemIdx,
         int selectedIndex,
         int width,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         var totalItems = bookmarks.Count + 1;
         if (itemIdx >= totalItems)
@@ -448,7 +443,7 @@ internal class LauncherRenderer
         if (isReadingList)
         {
             name = "★ READING LIST";
-            domain = "reading list";
+            domain = ReadingListSubtitle(readingListCount);
         }
         else
         {
@@ -512,7 +507,8 @@ internal class LauncherRenderer
         int selectedIndex,
         int cellWidth,
         int lineIdx,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         var totalItems = bookmarks.Count + 1;
         if (itemIdx >= totalItems)
@@ -530,7 +526,7 @@ internal class LauncherRenderer
         if (isReadingList)
         {
             name = "★LIST";
-            domain = "reading list";
+            domain = ReadingListSubtitle(readingListCount);
         }
         else
         {
@@ -831,7 +827,8 @@ internal class LauncherRenderer
         int selectedIndex,
         LauncherLayout layout,
         string variant,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         var totalItems = bookmarks.Count + 1;
         var lines = new List<string>();
@@ -840,7 +837,7 @@ internal class LauncherRenderer
         {
             for (var row = 0; row < totalItems; row++)
             {
-                lines.Add(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p));
+                lines.Add(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p, readingListCount));
             }
 
             return lines;
@@ -854,16 +851,32 @@ internal class LauncherRenderer
             {
                 if (variant == "Compact")
                 {
-                    lines.Add(BuildCompactRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p));
+                    lines.Add(BuildCompactRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount));
                 }
                 else
                 {
-                    lines.Add(BuildGridRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p));
+                    lines.Add(BuildGridRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount));
                 }
             }
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// Subtitle text for the launcher's Reading List tile (workspace-fbcn).
+    /// Shows "{N} saved articles" (singular when 1) when populated; falls back
+    /// to the empty-state copy when zero or count unknown (count is only
+    /// populated on launcher view via <see cref="RenderOptions.ReadingListItemCount"/>).
+    /// </summary>
+    private static string ReadingListSubtitle(int? count)
+    {
+        if (count is null or 0)
+        {
+            return "nothing saved yet — press c on any link to add";
+        }
+
+        return count == 1 ? "1 saved article" : $"{count} saved articles";
     }
 
     private static string BuildGridRowLine(
@@ -873,7 +886,8 @@ internal class LauncherRenderer
         int row,
         int line,
         int totalItems,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         // The Grid path uses a 5-line stride per row (workspace-wxht):
         //   line 0..3 — boxed cell content
@@ -894,7 +908,8 @@ internal class LauncherRenderer
             selectedIndex,
             layout.CellWidth,
             line,
-            p));
+            p,
+            readingListCount));
 
         if (layout.Columns == 2)
         {
@@ -910,7 +925,8 @@ internal class LauncherRenderer
                     selectedIndex,
                     rightWidth,
                     line,
-                    p));
+                    p,
+                    readingListCount));
             }
             else
             {
@@ -928,7 +944,8 @@ internal class LauncherRenderer
         int row,
         int line,
         int totalItems,
-        ThemePalette p)
+        ThemePalette p,
+        int? readingListCount = null)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -948,7 +965,7 @@ internal class LauncherRenderer
             if (itemIdx < totalItems)
             {
                 sb.Append(BuildCompactCellLine(
-                    bookmarks, itemIdx, selectedIndex, cellW, line, p));
+                    bookmarks, itemIdx, selectedIndex, cellW, line, p, readingListCount));
             }
             else
             {
@@ -1004,7 +1021,7 @@ internal class LauncherRenderer
         var content = new List<string>();
         content.AddRange(BuildHeaderLines(layout.Width, p, showSetupHint));
         content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));
-        content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p));
+        content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p, options.ReadingListItemCount));
 
         // Clamp scrollOffset so we don't scroll past the end of content.
         var maxScroll = Math.Max(0, content.Count - viewportHeight);

@@ -110,4 +110,12 @@ public record RenderOptions
     /// the four primary credentials have been configured.
     /// </summary>
     public bool ShowSetupHint { get; init; }
+
+    /// <summary>
+    /// Number of items currently saved to the Reading List collection. Surfaced
+    /// to the launcher's Reading List tile (workspace-fbcn) so its subtitle can
+    /// read "{N} saved articles" when populated, or the empty-state copy when
+    /// zero. Populated only on launcher view; null elsewhere.
+    /// </summary>
+    public int? ReadingListItemCount { get; init; }
 }
