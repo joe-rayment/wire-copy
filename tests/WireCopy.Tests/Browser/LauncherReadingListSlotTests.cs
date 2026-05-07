@@ -101,6 +101,37 @@ public class LauncherReadingListSlotTests
             "bookmark[2] must render at slot 3 with badge [4]");
     }
 
+    [Fact]
+    public void Grid_ReadingListSubtitle_PopulatedCount_ShowsSavedArticles()
+    {
+        // workspace-fbcn: when ReadingListItemCount > 0 the subtitle reads
+        // "{N} saved articles" (singular form for 1).
+        var stripped = StripAnsi(RenderLauncherCapture(
+            CreateBookmarks(2), selectedIndex: -1, readingListCount: 12));
+
+        stripped.Should().Contain("12 saved articles");
+        stripped.Should().NotContain("nothing saved yet");
+    }
+
+    [Fact]
+    public void Grid_ReadingListSubtitle_SingleItem_UsesSingular()
+    {
+        var stripped = StripAnsi(RenderLauncherCapture(
+            CreateBookmarks(2), selectedIndex: -1, readingListCount: 1));
+
+        stripped.Should().Contain("1 saved article");
+        stripped.Should().NotContain("1 saved articles");
+    }
+
+    [Fact]
+    public void Grid_ReadingListSubtitle_EmptyOrNull_ShowsEmptyStateCopy()
+    {
+        var stripped = StripAnsi(RenderLauncherCapture(
+            CreateBookmarks(2), selectedIndex: -1, readingListCount: 0));
+
+        stripped.Should().Contain("nothing saved yet");
+    }
+
     private static List<Bookmark> CreateBookmarks(int count)
     {
         var list = new List<Bookmark>();
@@ -116,7 +147,8 @@ public class LauncherReadingListSlotTests
         List<Bookmark> bookmarks,
         int selectedIndex,
         int scrollOffset = 0,
-        string variant = "Grid")
+        string variant = "Grid",
+        int? readingListCount = null)
     {
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
@@ -129,6 +161,7 @@ public class LauncherReadingListSlotTests
             TerminalWidth = LargeTerminalWidth,
             TerminalHeight = TerminalHeight,
             LayoutVariant = variant,
+            ReadingListItemCount = readingListCount,
         };
 
         var originalOut = Console.Out;

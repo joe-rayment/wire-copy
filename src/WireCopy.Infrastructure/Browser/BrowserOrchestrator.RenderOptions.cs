@@ -58,7 +58,31 @@ public partial class BrowserOrchestrator
                 : _preloadService.GetMissingPaywalledCookieDomains(
                     _navigationService.CurrentContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
+            ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
         };
+    }
+
+    /// <summary>
+    /// Returns the saved-item count for the Reading List collection, used by
+    /// the launcher tile's subtitle (workspace-fbcn). Sync wait over SQLite is
+    /// fine here — single indexed read on a local file, sub-millisecond. On
+    /// failure (DB unavailable etc.) returns 0 so the empty-state copy renders
+    /// rather than letting the launcher fail to render.
+    /// </summary>
+    private int GetReadingListItemCount()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var collections = scope.ServiceProvider.GetRequiredService<ICollectionService>();
+            var readingList = collections.GetReadingListAsync().GetAwaiter().GetResult();
+            return readingList.Items.Count;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read Reading List item count for launcher subtitle");
+            return 0;
+        }
     }
 
     private int ComputeContentWidth(int terminalWidth)
