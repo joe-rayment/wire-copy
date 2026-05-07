@@ -136,19 +136,25 @@ internal static class LauncherCommandHandler
             case CommandType.ActivateLink:
             {
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
+                var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
                 if (idx == -1)
                 {
                     // URL bar selected — activate URL input
                     await HandleGoToUrl(ctx, options, ct).ConfigureAwait(false);
                 }
-                else if (idx == (ctx.Bookmarks?.Count ?? 0))
+                else if (IsReadingListSlot(idx, bookmarkCount))
                 {
+                    // Reading List sits at virtual index 1 (workspace-ul5z).
                     await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 }
-                else if (ctx.Bookmarks != null && idx < ctx.Bookmarks.Count)
+                else if (ctx.Bookmarks != null)
                 {
-                    var bookmark = ctx.Bookmarks[idx];
-                    await ctx.NavigateToAsync(bookmark.Url, options, ct).ConfigureAwait(false);
+                    var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                    if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
+                    {
+                        var bookmark = ctx.Bookmarks[bookmarkIdx];
+                        await ctx.NavigateToAsync(bookmark.Url, options, ct).ConfigureAwait(false);
+                    }
                 }
 
                 break;
@@ -164,34 +170,45 @@ internal static class LauncherCommandHandler
                 await UndoCommandHandler.ClearOnAction(ctx, ct).ConfigureAwait(false);
 
                 var idx = ctx.NavigationService.LauncherSelectedIndex;
-                if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
+                var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
+
+                // Reading List slot is protected (workspace-ul5z): the user cannot
+                // delete it via `d` \u2014 they must clear it via the collection screen.
+                if (ctx.Bookmarks != null && idx >= 0 && !IsReadingListSlot(idx, bookmarkCount))
                 {
-                    var bookmark = ctx.Bookmarks[idx];
-
-                    // Store undo state before removing from in-memory list
-                    ctx.PendingUndo = new UndoState
+                    var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                    if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
                     {
-                        Kind = UndoActionKind.BookmarkRemoved,
-                        CreatedAtUtc = DateTime.UtcNow,
-                        ItemTitle = bookmark.Name,
-                        BookmarkId = bookmark.Id,
-                        BookmarkUrl = bookmark.Url,
-                        BookmarkName = bookmark.Name,
-                        OriginalIndex = idx,
-                    };
+                        var bookmark = ctx.Bookmarks[bookmarkIdx];
 
-                    // Remove from in-memory list only (not persisted yet)
-                    var mutableList = ctx.Bookmarks.ToList();
-                    mutableList.RemoveAt(idx);
-                    ctx.Bookmarks = mutableList;
+                        // Store undo state before removing from in-memory list.
+                        // OriginalIndex is the BOOKMARK index (not the virtual
+                        // launcher index) so undo can restore the bookmark to
+                        // the correct position regardless of slot ordering.
+                        ctx.PendingUndo = new UndoState
+                        {
+                            Kind = UndoActionKind.BookmarkRemoved,
+                            CreatedAtUtc = DateTime.UtcNow,
+                            ItemTitle = bookmark.Name,
+                            BookmarkId = bookmark.Id,
+                            BookmarkUrl = bookmark.Url,
+                            BookmarkName = bookmark.Name,
+                            OriginalIndex = bookmarkIdx,
+                        };
 
-                    var newTotal = mutableList.Count + 1; // +1 for Collections tile
-                    if (ctx.NavigationService.LauncherSelectedIndex >= newTotal)
-                    {
-                        ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
+                        // Remove from in-memory list only (not persisted yet)
+                        var mutableList = ctx.Bookmarks.ToList();
+                        mutableList.RemoveAt(bookmarkIdx);
+                        ctx.Bookmarks = mutableList;
+
+                        var newTotal = mutableList.Count + 1; // +1 for Reading List slot
+                        if (ctx.NavigationService.LauncherSelectedIndex >= newTotal)
+                        {
+                            ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
+                        }
+
+                        ctx.NavigationService.SetStatusMessage($"Removed \u00b7 z:undo", UndoState.UndoWindow);
                     }
-
-                    ctx.NavigationService.SetStatusMessage($"Removed \u00b7 z:undo", UndoState.UndoWindow);
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -306,13 +323,19 @@ internal static class LauncherCommandHandler
 
             case CommandType.JumpToIndex:
             {
-                // Digit 1-9 jump (workspace-wxht). Count carries the digit (1-based).
-                // Only real bookmarks are reachable; the trailing Reading List
-                // tile keeps its dedicated `c` keybinding. Out-of-range digits
-                // are no-ops so the badge advertisement stays honest.
+                // Digit 1-9 jump. Count carries the digit (1-based). With the
+                // Reading List slot reserved at virtual index 1 (workspace-ul5z),
+                // the digit-to-virtual mapping is 1:1 with the slot's badge:
+                //   digit 1 → virtual 0 (bookmark[0])
+                //   digit 2 → virtual 1 (Reading List)
+                //   digit 3 → virtual 2 (bookmark[1])
+                //   digit N → virtual N-1
+                // Out-of-range digits are no-ops so the badge advertisement
+                // stays honest.
                 var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
+                var totalSlots = bookmarkCount + 1; // +1 for Reading List slot
                 var target = command.Count - 1;
-                if (target >= 0 && target < bookmarkCount)
+                if (target >= 0 && target < totalSlots)
                 {
                     ctx.NavigationService.LauncherSelectedIndex = target;
                     AdjustLauncherScroll(ctx, options);
@@ -324,6 +347,41 @@ internal static class LauncherCommandHandler
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Returns true when the given virtual launcher index points at the
+    /// Reading List slot. The slot lives at virtual index 1 whenever the user
+    /// has at least one bookmark; with zero bookmarks the empty-state screen
+    /// renders instead, so the slot has no virtual index in that case.
+    /// (workspace-ul5z)
+    /// </summary>
+    internal static bool IsReadingListSlot(int virtualIdx, int bookmarkCount)
+    {
+        return bookmarkCount >= 1 && virtualIdx == 1;
+    }
+
+    /// <summary>
+    /// Translates a virtual launcher index into a bookmark-list index. With
+    /// the Reading List slot at virtual index 1, the mapping is:
+    ///   virtual 0 → bookmark 0
+    ///   virtual 1 → Reading List (no bookmark)
+    ///   virtual N (≥ 2) → bookmark N - 1
+    /// Returns -1 for the Reading List slot. Caller must guard. (workspace-ul5z)
+    /// </summary>
+    internal static int BookmarkIndexFromVirtual(int virtualIdx)
+    {
+        if (virtualIdx <= 0)
+        {
+            return virtualIdx; // 0 stays 0; negatives propagate (URL-bar sentinel etc.)
+        }
+
+        if (virtualIdx == 1)
+        {
+            return -1; // Reading List slot — no bookmark mapping
+        }
+
+        return virtualIdx - 1;
     }
 
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)

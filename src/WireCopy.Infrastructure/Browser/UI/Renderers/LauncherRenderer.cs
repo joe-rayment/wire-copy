@@ -18,6 +18,15 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
+    // Reading List secondary-accent background (workspace-ul5z).
+    // ANSI 23 (#005f5f, dark cyan teal) — chosen as a dimmed counterpart to
+    // AccentFg (ANSI 51 cyan) which the design system reserves for interactive
+    // accents. Reads as "secondary accent": present and identifiable, but
+    // visually quieter than the selected cell's brightened green border + bg.
+    // Source: docs/design-system.md (cyan accent role) — see workspace-ul5z.
+    private const string ReadingListBg = "\x1b[48;5;23m";
+    private const string ResetBg = "\x1b[49m";
+
     private const int WordmarkWidth = 87;
 
     // Grid (boxed) cell layout (workspace-wxht):
@@ -291,33 +300,43 @@ internal class LauncherRenderer
             return new string(' ', cellWidth);
         }
 
-        var isCollections = itemIdx == bookmarks.Count;
+        // Slot layout (workspace-ul5z): with bookmarks present, virtual
+        // index 1 is the Reading List; bookmarks shift one slot later.
+        //   virtual 0 → bookmark[0]
+        //   virtual 1 → Reading List (secondary-accent fill)
+        //   virtual N (≥ 2) → bookmark[N - 1]
+        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
         var isSelected = itemIdx == selectedIndex;
 
         string name;
         string domain;
 
-        if (isCollections)
+        if (isReadingList)
         {
             name = "READING LIST";
+
+            // Subtitle: spec calls for "{N} saved articles" / "nothing saved
+            // yet…" copy, but reading the count requires plumbing
+            // ICollectionService through to the renderer (currently it has no
+            // service references, only theme + render helpers). Per spec,
+            // fall back to the static "reading list" subtitle and file a
+            // follow-up bead for the count plumbing.
             domain = "reading list";
         }
         else
         {
-            var bookmark = bookmarks[itemIdx];
+            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
+            var bookmark = bookmarks[bookmarkIdx];
             name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
         }
 
-        // Digit badge `[N]` for 1..9, `[c]` for the trailing Reading List tile.
-        // Items past the 9th render no badge — same contract as the pre-redesign
-        // launcher, since we only honour `JumpToIndex` for digits 1-9.
+        // Digit badge `[N]` for slots 0..8 (digits 1-9). Reading List keeps a
+        // numeric badge consistent with its slot (`[2]`) so the digit-jump
+        // contract stays uniform across all addressable slots. Items past
+        // slot 8 render no badge — same contract as before.
         string badge;
-        if (isCollections)
-        {
-            badge = "[c]";
-        }
-        else if (itemIdx < 9)
+        if (itemIdx < 9)
         {
             badge = $"[{itemIdx + 1}]";
         }
@@ -327,15 +346,21 @@ internal class LauncherRenderer
         }
 
         // Borders: dim grey by default; brighten to PrimaryText when selected.
-        // No accent / theme tint either way (per workspace-wxht: "no colour").
-        // The dim attribute on the unselected border keeps it visually quieter
-        // than the selected border without changing hue.
+        // Reading List uses the same border style — the secondary-accent
+        // background fill is what differentiates it, not the border colour.
         var borderColor = isSelected
             ? $"{p.PrimaryText.AnsiFg}"
             : $"{p.SecondaryText.AnsiFg}{Dim}";
         var titleSegment = $"{Bold}{p.PrimaryText.AnsiFg}";
         var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
         var domainColor = p.SecondaryText.AnsiFg;
+
+        // Background fill for the Reading List cell. Applied across ALL four
+        // box rows so the whole tile shows the fill, not just inner content.
+        // Reset before any inter-cell content (the row builder is responsible
+        // for not letting the fill bleed into the gutter).
+        var bg = isReadingList ? ReadingListBg : string.Empty;
+        var bgReset = isReadingList ? ResetBg : string.Empty;
 
         // Inner content width = cellWidth - 2 borders - 2 single-cell pads.
         var inner = Math.Max(1, cellWidth - 4);
@@ -344,7 +369,7 @@ internal class LauncherRenderer
         {
             case 0:
                 // ╭───────────╮
-                return $"{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}";
+                return $"{bg}{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}{bgReset}";
 
             case 1:
             {
@@ -357,23 +382,23 @@ internal class LauncherRenderer
                 var nameDisplayLen = truncName.Length;
                 var gap = Math.Max(0, inner - nameDisplayLen - badgeZone);
 
-                var renderedTitle = $"{titleSegment}{truncName}{Reset}";
+                var renderedTitle = $"{bg}{titleSegment}{truncName}{Reset}{bg}";
 
                 if (badge.Length > 0)
                 {
-                    return $"{borderColor}│{Reset} " +
+                    return $"{bg}{borderColor}│{Reset}{bg} " +
                            $"{renderedTitle}" +
                            $"{new string(' ', gap)}" +
-                           $"{badgeColor}{badge}{Reset}" +
-                           $" {borderColor}│{Reset}";
+                           $"{badgeColor}{badge}{Reset}{bg}" +
+                           $" {borderColor}│{Reset}{bgReset}";
                 }
 
                 // No badge — pad the full width.
                 var padNoBadge = Math.Max(0, inner - nameDisplayLen);
-                return $"{borderColor}│{Reset} " +
+                return $"{bg}{borderColor}│{Reset}{bg} " +
                        $"{renderedTitle}" +
                        $"{new string(' ', padNoBadge)}" +
-                       $" {borderColor}│{Reset}";
+                       $" {borderColor}│{Reset}{bgReset}";
             }
 
             case 2:
@@ -381,15 +406,15 @@ internal class LauncherRenderer
                 // │ domain.example                │
                 var truncDomain = RenderHelpers.TruncateText(domain, inner);
                 var pad = Math.Max(0, inner - truncDomain.Length);
-                return $"{borderColor}│{Reset} " +
-                       $"{domainColor}{truncDomain}{Reset}" +
+                return $"{bg}{borderColor}│{Reset}{bg} " +
+                       $"{domainColor}{truncDomain}{Reset}{bg}" +
                        $"{new string(' ', pad)}" +
-                       $" {borderColor}│{Reset}";
+                       $" {borderColor}│{Reset}{bgReset}";
             }
 
             case 3:
                 // ╰───────────╯
-                return $"{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}";
+                return $"{bg}{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}{bgReset}";
 
             default:
                 // Defensive — caller renders the inter-row gap blank line itself,
@@ -414,30 +439,28 @@ internal class LauncherRenderer
             return new string(' ', width);
         }
 
-        var isCollections = itemIdx == bookmarks.Count;
+        // Slot layout (workspace-ul5z): Reading List sits at virtual index 1.
+        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
         var isSelected = itemIdx == selectedIndex;
 
         string name;
         string domain;
 
-        if (isCollections)
+        if (isReadingList)
         {
             name = "★ READING LIST";
             domain = "reading list";
         }
         else
         {
-            var bookmark = bookmarks[itemIdx];
+            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
+            var bookmark = bookmarks[bookmarkIdx];
             name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
         }
 
         string badge;
-        if (isCollections)
-        {
-            badge = "[c]";
-        }
-        else if (itemIdx < 9)
+        if (itemIdx < 9)
         {
             badge = $"[{itemIdx + 1}]";
         }
@@ -498,30 +521,28 @@ internal class LauncherRenderer
             return new string(' ', cellWidth);
         }
 
-        var isCollections = itemIdx == bookmarks.Count;
+        // Slot layout (workspace-ul5z): Reading List sits at virtual index 1.
+        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
         var isSelected = itemIdx == selectedIndex;
 
         string name;
         string domain;
 
-        if (isCollections)
+        if (isReadingList)
         {
             name = "★LIST";
             domain = "reading list";
         }
         else
         {
-            var bookmark = bookmarks[itemIdx];
+            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
+            var bookmark = bookmarks[bookmarkIdx];
             name = bookmark.Name.ToUpperInvariant();
             domain = ExtractDomain(bookmark.Url);
         }
 
         string badge;
-        if (isCollections)
-        {
-            badge = "[c]";
-        }
-        else if (itemIdx < 9)
+        if (itemIdx < 9)
         {
             badge = $"[{itemIdx + 1}]";
         }
