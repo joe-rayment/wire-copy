@@ -435,10 +435,10 @@ public class NavigationServiceTests
             new()
             {
                 Config = unavailableConfig,
-                Summary = "✗ AI Curated · No Anthropic API key",
+                Summary = "✗ AI Curated · No OpenAI API key",
                 PreviewTree = stubTree,
                 IsUnavailable = true,
-                UnavailableReason = "No Anthropic API key",
+                UnavailableReason = "No OpenAI API key",
             },
         });
 
@@ -451,7 +451,7 @@ public class NavigationServiceTests
         var applied = _sut.ApplyPreview();
         applied.Should().NotBeNull();
         applied!.IsUnavailable.Should().BeTrue();
-        applied.UnavailableReason.Should().Be("No Anthropic API key");
+        applied.UnavailableReason.Should().Be("No OpenAI API key");
         // Caller (StrategyChooserHandler.HandleApplyAsync) refuses to save when
         // IsUnavailable is true and surfaces the reason as a status message.
     }

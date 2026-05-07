@@ -80,7 +80,7 @@ public class HierarchyConfigStoreTests : IDisposable
                 },
             },
             CreatedAt = new DateTime(2026, 3, 17, 12, 0, 0, DateTimeKind.Utc),
-            ModelVersion = "claude-haiku-4-5-20251001",
+            ModelVersion = "gpt-5-mini",
         };
     }
 
@@ -105,7 +105,7 @@ public class HierarchyConfigStoreTests : IDisposable
         result.Sections.Should().HaveCount(2);
         result.Sections[0].Name.Should().Be("Top Stories");
         result.Sections[1].Name.Should().Be("Opinion");
-        result.ModelVersion.Should().Be("claude-haiku-4-5-20251001");
+        result.ModelVersion.Should().Be("gpt-5-mini");
     }
 
     [Fact]

@@ -37,13 +37,20 @@ public static class BrowserDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(BrowserConfiguration.SectionName).Bind(opts));
 
-        services.AddOptions<AnthropicConfiguration>()
+        services.AddOptions<OpenAiHierarchyConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
-                config.GetSection(AnthropicConfiguration.SectionName).Bind(opts));
+                config.GetSection(OpenAiHierarchyConfiguration.SectionName).Bind(opts));
+
+        // The hierarchy analyzer reuses the OpenAI TTS API key. Bind the
+        // section here too so the analyzer resolves cleanly even when
+        // AddPodcast() is not on the host (e.g. in tests).
+        services.AddOptions<OpenAiTtsConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(OpenAiTtsConfiguration.SectionName).Bind(opts));
 
         // Register configuration validators
         services.AddSingleton<IValidateOptions<BrowserConfiguration>, BrowserConfigurationValidator>();
-        services.AddSingleton<IValidateOptions<AnthropicConfiguration>, AnthropicConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<OpenAiHierarchyConfiguration>, OpenAiHierarchyConfigurationValidator>();
 
         // Register Data Protection for cookie encryption
         var dataProtectionPath = Path.Combine(
@@ -142,7 +149,7 @@ public static class BrowserDependencyInjection
         services.AddSingleton<ILinkExtractor, LinkExtractor>();
         services.AddSingleton<INavigationTreeBuilder, NavigationTreeBuilder>();
         services.AddSingleton<IHierarchyConfigStore, HierarchyConfigStore>();
-        services.AddSingleton<IHierarchyAnalyzer, AnthropicHierarchyAnalyzer>();
+        services.AddSingleton<IHierarchyAnalyzer, OpenAiHierarchyAnalyzer>();
         services.AddSingleton<IReadableContentExtractor, ReadableContentExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
         services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();

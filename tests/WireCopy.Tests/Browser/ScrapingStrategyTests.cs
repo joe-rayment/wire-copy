@@ -84,7 +84,7 @@ public class ScrapingStrategyTests
     public async Task AiCuratedStrategy_FiltersExcludedLinks()
     {
         var settingsStore = Substitute.For<IUserSettingsStore>();
-        settingsStore.Get("AnthropicApiKey").Returns("sk-ant-test-key");
+        settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
 
         var links = BuildTechmemeFixture();
         var excludedKeys = links.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
@@ -104,7 +104,7 @@ public class ScrapingStrategyTests
         var strategy = new AiCuratedStrategy(
             treeBuilder,
             analyzer,
-            Options.Create(new AnthropicConfiguration()),
+            Options.Create(new OpenAiHierarchyConfiguration()),
             Substitute.For<ILogger<AiCuratedStrategy>>());
 
         var ctx = new ScrapingStrategyContext
@@ -126,7 +126,7 @@ public class ScrapingStrategyTests
     public async Task AiCuratedStrategy_OrdersByPrompted()
     {
         var settingsStore = Substitute.For<IUserSettingsStore>();
-        settingsStore.Get("AnthropicApiKey").Returns("sk-ant-test-key");
+        settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
 
         var links = BuildTechmemeFixture();
 
@@ -148,7 +148,7 @@ public class ScrapingStrategyTests
         var strategy = new AiCuratedStrategy(
             treeBuilder,
             analyzer,
-            Options.Create(new AnthropicConfiguration()),
+            Options.Create(new OpenAiHierarchyConfiguration()),
             Substitute.For<ILogger<AiCuratedStrategy>>());
 
         var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
@@ -175,7 +175,7 @@ public class ScrapingStrategyTests
         var strategy = new AiCuratedStrategy(
             new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
             analyzer,
-            Options.Create(new AnthropicConfiguration()),
+            Options.Create(new OpenAiHierarchyConfiguration()),
             Substitute.For<ILogger<AiCuratedStrategy>>());
 
         var availability = await strategy.IsAvailableAsync(new ScrapingStrategyContext
@@ -375,7 +375,7 @@ public class ScrapingStrategyTests
         var strategy = new AiCuratedStrategy(
             new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
             analyzer,
-            Options.Create(new AnthropicConfiguration()),
+            Options.Create(new OpenAiHierarchyConfiguration()),
             Substitute.For<ILogger<AiCuratedStrategy>>());
 
         var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
@@ -427,7 +427,7 @@ public class ScrapingStrategyTests
         var strategy = new AiCuratedStrategy(
             new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
             analyzer,
-            Options.Create(new AnthropicConfiguration { AiCuratedCacheDays = 30 }),
+            Options.Create(new OpenAiHierarchyConfiguration { AiCuratedCacheDays = 30 }),
             Substitute.For<ILogger<AiCuratedStrategy>>());
 
         await strategy.BuildTreeAsync(new ScrapingStrategyContext

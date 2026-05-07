@@ -45,8 +45,8 @@ public class SettingsCommandHandlerTests
 
         var ttsOptions = Substitute.For<IOptions<OpenAiTtsConfiguration>>();
         ttsOptions.Value.Returns(new OpenAiTtsConfiguration());
-        var anthropicOptions = Substitute.For<IOptions<AnthropicConfiguration>>();
-        anthropicOptions.Value.Returns(new AnthropicConfiguration());
+        var hierarchyOptions = Substitute.For<IOptions<OpenAiHierarchyConfiguration>>();
+        hierarchyOptions.Value.Returns(new OpenAiHierarchyConfiguration());
         var podcastOptions = Substitute.For<IOptions<PodcastConfiguration>>();
         podcastOptions.Value.Returns(new PodcastConfiguration());
 
@@ -55,7 +55,7 @@ public class SettingsCommandHandlerTests
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<OpenAiTtsConfiguration>)).Returns(ttsOptions);
-        serviceProvider.GetService(typeof(IOptions<AnthropicConfiguration>)).Returns(anthropicOptions);
+        serviceProvider.GetService(typeof(IOptions<OpenAiHierarchyConfiguration>)).Returns(hierarchyOptions);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>)).Returns(podcastOptions);
         scope.ServiceProvider.Returns(serviceProvider);
         scopeFactory.CreateScope().Returns(scope);
@@ -107,16 +107,6 @@ public class SettingsCommandHandlerTests
 
         SettingsCommandHandler.IsFirstRun(store).Should().BeTrue(
             "fresh install with zero credentials must trigger the Setup landing");
-    }
-
-    [Fact]
-    public void IsFirstRun_AnthropicKeySet_ReturnsFalse()
-    {
-        var store = Substitute.For<IUserSettingsStore>();
-        store.Get(SettingsCommandHandler.KeyAnthropicApiKey).Returns("sk-ant-abc");
-
-        SettingsCommandHandler.IsFirstRun(store).Should().BeFalse(
-            "any persisted credential disqualifies first-run");
     }
 
     [Fact]
@@ -184,11 +174,13 @@ public class SettingsCommandHandlerTests
     }
 
     [Fact]
-    public void HasIncompleteSetup_AllFourCredentialsSet_ReturnsFalse()
+    public void HasIncompleteSetup_AllThreeCredentialsSet_ReturnsFalse()
     {
+        // workspace-65sw: AI Curated layout now uses the OpenAI key (one
+        // credential covers TTS + hierarchy), so the Anthropic-key requirement
+        // dropped out of the predicate.
         var store = Substitute.For<IUserSettingsStore>();
         store.Get(SettingsCommandHandler.KeyOpenAiApiKey).Returns("sk-abc");
-        store.Get(SettingsCommandHandler.KeyAnthropicApiKey).Returns("sk-ant-abc");
         store.Get(SettingsCommandHandler.KeyGcsBucketName).Returns("my-bucket");
         store.Get(SettingsCommandHandler.KeyGcsServiceAccountKeyPath).Returns("/tmp/key.json");
 

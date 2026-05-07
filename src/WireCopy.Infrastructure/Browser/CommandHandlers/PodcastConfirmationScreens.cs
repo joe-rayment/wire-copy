@@ -490,19 +490,20 @@ internal static class PodcastConfirmationScreens
         // focused state ambiguous on entry.
         var selectedIndex = 0;
 
-        // Resolve Anthropic services for AI Hierarchy status (optional — may not be registered)
-        bool isAnthropicConfigured = false;
+        // Resolve hierarchy-analyzer services for AI Hierarchy status (optional — may not be registered).
+        // workspace-65sw collapsed Anthropic into OpenAI — same key powers TTS and AI layout.
+        bool isAiHierarchyConfigured = false;
         int savedConfigCount = 0;
-        string anthropicModel = "claude-haiku-4-5-20251001";
+        string aiHierarchyModel = "gpt-5-mini";
         try
         {
             using var aiScope = ctx.ScopeFactory.CreateScope();
             var hierarchyAnalyzer = aiScope.ServiceProvider.GetService<IHierarchyAnalyzer>();
             var hierarchyConfigStore = aiScope.ServiceProvider.GetService<IHierarchyConfigStore>();
-            var anthropicConfigOpts = aiScope.ServiceProvider.GetService<IOptions<AnthropicConfiguration>>();
+            var hierarchyConfigOpts = aiScope.ServiceProvider.GetService<IOptions<OpenAiHierarchyConfiguration>>();
             if (hierarchyAnalyzer != null)
             {
-                isAnthropicConfigured = hierarchyAnalyzer.IsConfigured;
+                isAiHierarchyConfigured = hierarchyAnalyzer.IsConfigured;
             }
 
             if (hierarchyConfigStore != null)
@@ -510,14 +511,14 @@ internal static class PodcastConfirmationScreens
                 savedConfigCount = await hierarchyConfigStore.GetConfigCountAsync().ConfigureAwait(false);
             }
 
-            if (anthropicConfigOpts != null)
+            if (hierarchyConfigOpts != null)
             {
-                anthropicModel = anthropicConfigOpts.Value.Model;
+                aiHierarchyModel = hierarchyConfigOpts.Value.Model;
             }
         }
         catch (Exception ex)
         {
-            ctx.Logger.LogDebug(ex, "Failed to resolve Anthropic services for settings display");
+            ctx.Logger.LogDebug(ex, "Failed to resolve hierarchy-analyzer services for settings display");
         }
 
         while (!ct.IsCancellationRequested)
@@ -718,11 +719,11 @@ internal static class PodcastConfirmationScreens
             helpers.WriteLine();
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}AI Hierarchy{Reset}");
 
-            var aiKeyIndicator = isAnthropicConfigured
+            var aiKeyIndicator = isAiHierarchyConfigured
                 ? $"    {p.PromptFg.AnsiFg}●{Reset} API Key                {p.PromptFg.AnsiFg}configured{Reset}"
                 : $"    {p.SecondaryText.AnsiFg}○{Reset} API Key                {p.SecondaryText.AnsiFg}not set{Reset}";
             helpers.WriteLine(aiKeyIndicator);
-            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Model:{Reset}                  {p.PrimaryText.AnsiFg}{anthropicModel}{Reset}");
+            helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Model:{Reset}                  {p.PrimaryText.AnsiFg}{aiHierarchyModel}{Reset}");
             helpers.WriteLine($"    {p.SecondaryText.AnsiFg}Saved Configs:{Reset}          {p.PrimaryText.AnsiFg}{savedConfigCount}{Reset}");
 
             // --- Output ---

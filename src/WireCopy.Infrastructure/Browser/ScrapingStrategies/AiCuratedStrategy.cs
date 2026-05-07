@@ -9,10 +9,11 @@ using WireCopy.Infrastructure.Configuration;
 namespace WireCopy.Infrastructure.Browser.ScrapingStrategies;
 
 /// <summary>
-/// AI Curated scraping strategy. Sends the page links + screenshot to
-/// Anthropic and asks for an explicit excluded/stories split. Excluded
-/// links are deleted from the tree (not pushed down).
-/// Result is cached on <see cref="SiteHierarchyConfig.AiResult"/> with a TTL.
+/// AI Curated scraping strategy. Sends the page links + screenshot to OpenAI
+/// (workspace-65sw — previously Anthropic) and asks for an explicit
+/// excluded/stories split. Excluded links are deleted from the tree (not
+/// pushed down). Result is cached on <see cref="SiteHierarchyConfig.AiResult"/>
+/// with a TTL.
 /// </summary>
 public sealed class AiCuratedStrategy : IScrapingStrategy
 {
@@ -20,13 +21,13 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
 
     private readonly INavigationTreeBuilder _treeBuilder;
     private readonly IHierarchyAnalyzer _analyzer;
-    private readonly AnthropicConfiguration _config;
+    private readonly OpenAiHierarchyConfiguration _config;
     private readonly ILogger<AiCuratedStrategy> _logger;
 
     public AiCuratedStrategy(
         INavigationTreeBuilder treeBuilder,
         IHierarchyAnalyzer analyzer,
-        IOptions<AnthropicConfiguration> config,
+        IOptions<OpenAiHierarchyConfiguration> config,
         ILogger<AiCuratedStrategy> logger)
     {
         _treeBuilder = treeBuilder;
@@ -50,7 +51,7 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             return Task.FromResult(new ScrapingStrategyAvailability
             {
                 IsAvailable = false,
-                ReasonWhenUnavailable = "No Anthropic API key (use :set anthropic-key)",
+                ReasonWhenUnavailable = "No OpenAI API key (press S to open Setup)",
             });
         }
 
