@@ -348,6 +348,19 @@ internal static class SettingsCommandHandler
                 await DispatchRowAsync(ctx, options, rows[selectedIndex], ct).ConfigureAwait(false);
                 continue;
             }
+
+            // workspace-cgnt: 'v' on the GCS bucket or GCS service-account
+            // row re-runs the four-step verify probe ad-hoc, so users can
+            // sanity-check their existing setup at any time.
+            if (command.RawKeyChar == 'v'
+                && (rows[selectedIndex] == SetupRow.GcsBucket || rows[selectedIndex] == SetupRow.GcsKey)
+                && hasGcsKey
+                && hasBucket)
+            {
+                await RunVerifyFromSettingsAsync(ctx, settingsStore.Get(KeyGcsBucketName)!, ct)
+                    .ConfigureAwait(false);
+                continue;
+            }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -418,6 +431,52 @@ internal static class SettingsCommandHandler
     }
 
 #pragma warning disable SA1201, SA1202 // helpers grouped near their callers for readability
+
+    /// <summary>
+    /// Ad-hoc rerun entry point for the GCS four-step verify probe, bound
+    /// to <c>v</c> on the GCS bucket / service-account rows
+    /// (workspace-cgnt). Renders the verify panel inline and waits for a
+    /// keypress before returning so the user can read the result.
+    /// </summary>
+    private static async Task RunVerifyFromSettingsAsync(
+        CommandContext ctx,
+        string bucketName,
+        CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
+        if (cloudStorage is not GcsStorageClient gcsClient)
+        {
+            return;
+        }
+
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        Console.Clear();
+        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+        var headerNextRow = PodcastGcsWizard.RenderWizardStepHeader(
+            palette,
+            "GCS Verify",
+            0,
+            0,
+            $"Probing gs://{bucketName} (Auth → Upload → Read → Delete)",
+            fieldWidth);
+
+        var panelRow = headerNextRow + 1;
+        await PodcastGcsWizard.RunVerifyStepAsync(ctx, gcsClient, palette, bucketName, panelRow, ct)
+            .ConfigureAwait(false);
+
+        Console.SetCursorPosition(2, panelRow + 7);
+        Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return…{Reset}");
+        try
+        {
+            _ = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+    }
+
     private static void RenderRow(
         RenderHelpers helpers,
         ThemePalette palette,
@@ -735,13 +794,17 @@ internal static class SettingsCommandHandler
             Console.Clear();
             var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
             var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
-            var helpRow = startRow + FormField.Height + 1;
+
+            // workspace-cgnt: Subtitle adds one row to the rendered field,
+            // so help/probe panels are anchored at startRow + (Height + 1).
+            var helpRow = startRow + FormField.Height + 2;
 
             var field = new FormFieldConfig
             {
-                Label = "GCS Bucket Name",
+                Label = "Bucket name for your podcast feed (DNS-style, lowercase, e.g. joe-podcast-feed). Created if it doesn't exist.",
+                Subtitle = "DNS-style: lowercase a-z, 0-9, hyphens. 3-63 chars. We'll create it if it doesn't exist.",
                 Placeholder = "wirecopy-podcasts-acme",
-                HelpText = "Lowercase letters, digits, hyphens. 3-63 chars. Press ? for help.",
+                HelpText = "Press ? for help. Esc to cancel.",
                 IsSecret = false,
                 MaxLength = 63,
                 InitialValue = prefilledName,
@@ -777,6 +840,8 @@ internal static class SettingsCommandHandler
                 },
             };
 
+            var fieldHeight = FormField.HeightFor(field);
+
             var entered = await FormField.PromptAsync(
                 ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
@@ -790,7 +855,7 @@ internal static class SettingsCommandHandler
             var name = NormalizeBucketName(entered);
 
             // --- Probe loop: probe → render state panel → (maybe) loop on Retry ---
-            var probeRow = startRow + FormField.Height + 1;
+            var probeRow = startRow + fieldHeight + 1;
             var probeOutcome = await ProbeAndHandleAsync(ctx, name, palette, probeRow, ct).ConfigureAwait(false);
 
             switch (probeOutcome.Action)
@@ -943,6 +1008,25 @@ internal static class SettingsCommandHandler
                     loc ?? "(unknown)");
 
                 await PersistBucketAsync(ctx, scope, gcsConfig, bucketName).ConfigureAwait(false);
+
+                // workspace-cgnt: after the bucket-existence probe says
+                // "Verified", run the real four-step verify probe so we
+                // exercise upload+download+delete with the configured
+                // service account. The probe panel above remains visible
+                // for one beat, then we replace it with the verify rows.
+                ClearPanelRegion(panelRow);
+                var verifyResult = await PodcastGcsWizard.RunVerifyStepAsync(
+                    ctx, gcsClient, palette, bucketName, panelRow, ct).ConfigureAwait(false);
+
+                if (!verifyResult.Success)
+                {
+                    // Surface the failure-class message and let the user
+                    // press a key to acknowledge before returning to the
+                    // FormField (so they can edit the bucket / fix IAM).
+                    await BucketProbePanel.WaitForChoiceAsync(
+                        ctx.InputHandler, new[] { '\n', 'r', 'e' }, ct).ConfigureAwait(false);
+                    return new ProbeOutcome(ProbeFollowUp.EditName);
+                }
 
                 // Per spec — success panel dismisses on Enter or Esc. The helper
                 // already short-circuits Enter (ActivateLink) but we surface
@@ -1289,11 +1373,27 @@ internal static class SettingsCommandHandler
     private static async Task HandleSetKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // workspace-cgnt root cause: HandleSetKey never cleared the screen
+        // before rendering the FormField, so the underlying Settings rows
+        // bled through behind the input box. Mirror HandleSetBucket and
+        // call Console.Clear plus a wizard header.
+        Console.Clear();
+        var headerFieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+        PodcastGcsWizard.RenderWizardStepHeader(
+            palette,
+            "GCS Service Account",
+            0,
+            0,
+            "Paste your service account JSON below.",
+            headerFieldWidth);
+
         var field = new FormFieldConfig
         {
-            Label = "GCS Service Account Key",
+            Label = "Paste your GCP service account JSON here (the full file contents starting with { and ending with }).",
+            Subtitle = "Find or create one at console.cloud.google.com/iam-admin/serviceaccounts → your service account → Keys → Add Key → JSON.",
             Placeholder = "Paste JSON content (or a file path)",
-            HelpText = "Cloud Console → IAM & Admin → Service Accounts → Keys → Add Key → Create new key → JSON. Open and paste.",
+            HelpText = "JSON starts with { · paths support ~/ for your home dir.",
             MaxLength = 8192, // service-account JSON keys are ~2-3 KB; allow headroom.
             Validate = v =>
             {

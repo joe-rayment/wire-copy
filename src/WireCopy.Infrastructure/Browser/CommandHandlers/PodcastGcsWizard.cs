@@ -360,7 +360,8 @@ internal static class PodcastGcsWizard
 
             var keyField = new FormFieldConfig
             {
-                Label = "Service Account Key",
+                Label = "Paste your GCP service account JSON here (the full file contents starting with { and ending with }).",
+                Subtitle = "Find or create one at console.cloud.google.com/iam-admin/serviceaccounts → your service account → Keys → Add Key → JSON.",
                 Placeholder = "Paste JSON content here, or type a file path",
                 HelpText = "JSON starts with { · paths support ~/ for your home dir",
                 MaxLength = 8192,
@@ -387,7 +388,7 @@ internal static class PodcastGcsWizard
             // Show error below the field. Drain any stale keys from a partial paste
             // so the next iteration's prompt isn't pre-filled with leftover \r's
             // that would cascade through additional credential prompts.
-            Console.SetCursorPosition(2, row + FormField.Height);
+            Console.SetCursorPosition(2, row + FormField.HeightFor(keyField));
             Console.Write($"{p.ErrorFg.AnsiFg}✗ {error}{Reset}");
             await Task.Delay(2000, ct).ConfigureAwait(false);
             ctx.InputHandler.DrainBufferedInput();
@@ -427,7 +428,8 @@ internal static class PodcastGcsWizard
 
             var bucketField = new FormFieldConfig
             {
-                Label = "Bucket Name",
+                Label = "Bucket name for your podcast feed (DNS-style, lowercase, e.g. joe-podcast-feed). Created if it doesn't exist.",
+                Subtitle = "DNS-style: lowercase a-z, 0-9, hyphens. We'll create it if it doesn't exist.",
                 Placeholder = "my-podcast-feed",
                 HelpText = "Esc to skip (set later with :set bucket)",
                 Validate = v =>
@@ -452,7 +454,7 @@ internal static class PodcastGcsWizard
             var trimmedBucket = bucketInput.Trim();
 
             // Show spinner during async validation
-            var spinnerRow = row + FormField.Height;
+            var spinnerRow = row + FormField.HeightFor(bucketField);
             Console.SetCursorPosition(2, spinnerRow);
             Console.Write($"{p.GetAccentFg().AnsiFg}⡇ Validating bucket...{Reset}");
 
@@ -463,6 +465,23 @@ internal static class PodcastGcsWizard
             {
                 gcsConfig.BucketName = trimmedBucket;
                 settingsStore.Set("GcsBucketName", trimmedBucket);
+
+                // workspace-cgnt: run the four-step verify probe (Auth →
+                // Upload → Download+compare → Delete) before declaring
+                // success. The probe surfaces IAM / billing / region
+                // failures the GET-bucket-only check missed.
+                var verifyOutcome = await RunVerifyStepAsync(
+                    ctx, gcsClient, p, trimmedBucket, spinnerRow + 1, ct).ConfigureAwait(false);
+
+                if (!verifyOutcome.Success)
+                {
+                    // Halt and let the user fix and retry. The verify panel
+                    // already rendered the failure copy + remediation; we
+                    // wait for them to acknowledge before falling back to
+                    // the bucket field.
+                    await Task.Delay(2000, ct).ConfigureAwait(false);
+                    continue;
+                }
 
                 return new GcsWizardResult
                 {
@@ -480,6 +499,141 @@ internal static class PodcastGcsWizard
         }
 
         return new GcsWizardResult { KeySaved = true };
+    }
+
+    /// <summary>
+    /// Drives the live four-line verify panel by polling the verify result
+    /// in the background and updating each row as it completes. The panel
+    /// shows authoritative success/failure with timing and remediation
+    /// copy on failure (workspace-cgnt). Returns the underlying result so
+    /// the caller can branch on Success.
+    /// </summary>
+    internal static async Task<GcsVerifyCredentialsResult> RunVerifyStepAsync(
+        CommandContext ctx,
+        GcsStorageClient gcsClient,
+        ThemePalette p,
+        string bucketName,
+        int panelRow,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(gcsClient);
+        ArgumentNullException.ThrowIfNull(bucketName);
+
+        // Render an initial "all four steps queued" panel so the user sees
+        // what is about to happen.
+        var rows = new List<(GcsVerifyStep, bool?, TimeSpan?, string?)>();
+        BucketProbePanel.RenderVerifyStatus(p, panelRow, GcsVerifyStep.Auth, rows);
+
+        // Run the verify on a background task and tick the panel until done.
+        var verifyTask = gcsClient.VerifyCredentialsAsync(bucketName, ct);
+        var spinnerFrame = 0;
+        var currentStep = GcsVerifyStep.Auth;
+        var spinFrames = new[] { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+        while (!verifyTask.IsCompleted && !ct.IsCancellationRequested)
+        {
+            BucketProbePanel.RenderVerifyStatus(p, panelRow, currentStep, rows);
+            try
+            {
+                await Task.Delay(120, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            // Advance current-step heuristically — without a streaming API
+            // we step through each phase based on elapsed wall time. This
+            // is purely cosmetic; the result still carries the authoritative
+            // per-step timings.
+            spinnerFrame = (spinnerFrame + 1) % spinFrames.Length;
+            currentStep = currentStep switch
+            {
+                GcsVerifyStep.Auth => GcsVerifyStep.Upload,
+                GcsVerifyStep.Upload => GcsVerifyStep.Download,
+                GcsVerifyStep.Download => GcsVerifyStep.Delete,
+                _ => GcsVerifyStep.Delete,
+            };
+        }
+
+        GcsVerifyCredentialsResult result;
+        try
+        {
+            result = await verifyTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new GcsVerifyCredentialsResult
+            {
+                Success = false,
+                FailureClass = GcsVerifyFailureClass.Generic,
+                Message = "Verify cancelled",
+            };
+        }
+
+        // Build the post-run rows table from the result so each step shows
+        // its real timing and the failure (if any) is highlighted.
+        rows = BuildResultRows(result);
+        BucketProbePanel.RenderVerifyStatus(p, panelRow, GcsVerifyStep.None, rows);
+
+        if (!result.Success)
+        {
+            // Show remediation copy underneath the four-line panel.
+            var msgRow = panelRow + 5;
+            Console.SetCursorPosition(2, msgRow);
+            Console.Write($"{p.ErrorFg.AnsiFg}✗ {result.Message}{Reset}");
+            ctx.Logger.LogWarning(
+                "GCS verify failed at {Step} ({Class}): {Diag}",
+                result.FailedAt,
+                result.FailureClass,
+                result.Diagnostic);
+        }
+        else
+        {
+            var msgRow = panelRow + 5;
+            Console.SetCursorPosition(2, msgRow);
+            Console.Write($"{p.GetSuccessFg().AnsiFg}✓ {result.Message}{Reset}");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Translates a <see cref="GcsVerifyCredentialsResult"/> into the row
+    /// shape <see cref="BucketProbePanel.RenderVerifyStatus"/> expects.
+    /// Steps before the failure are marked Done=true; the failed step is
+    /// Done=false; steps after are left untouched (rendered as dim dots).
+    /// </summary>
+    internal static List<(GcsVerifyStep Step, bool? Done, TimeSpan? Elapsed, string? Note)> BuildResultRows(
+        GcsVerifyCredentialsResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var list = new List<(GcsVerifyStep, bool?, TimeSpan?, string?)>();
+        var stepDurations = new (GcsVerifyStep Step, TimeSpan Duration)[]
+        {
+            (GcsVerifyStep.Auth, result.AuthDuration),
+            (GcsVerifyStep.Upload, result.UploadDuration),
+            (GcsVerifyStep.Download, result.DownloadDuration),
+            (GcsVerifyStep.Delete, result.DeleteDuration),
+        };
+
+        foreach (var (step, dur) in stepDurations)
+        {
+            if (result.Success)
+            {
+                list.Add((step, true, dur, null));
+                continue;
+            }
+
+            if (step == result.FailedAt)
+            {
+                list.Add((step, false, dur, result.FailureClass.ToString()));
+                break;
+            }
+
+            list.Add((step, true, dur, null));
+        }
+
+        return list;
     }
 
     /// <summary>

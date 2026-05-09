@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
 
@@ -253,6 +254,92 @@ internal static class BucketProbePanel
                 {
                     return ch;
                 }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Render the four-line live status panel for the credential-verify
+    /// probe (workspace-cgnt). One line per step (Auth, Upload, Download,
+    /// Delete) with a spinner / check / cross prefix and an inline timing
+    /// suffix once the step completes. Subsequent calls overwrite in place
+    /// so the same four rows update through the run.
+    /// </summary>
+    public static int RenderVerifyStatus(
+        ThemePalette palette,
+        int startRow,
+        GcsVerifyStep currentStep,
+        IReadOnlyList<(GcsVerifyStep Step, bool? Done, TimeSpan? Elapsed, string? Note)> rows)
+    {
+        ArgumentNullException.ThrowIfNull(palette);
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var labels = new (GcsVerifyStep Step, string Label)[]
+        {
+            (GcsVerifyStep.Auth, "Authenticate"),
+            (GcsVerifyStep.Upload, "Upload sentinel object"),
+            (GcsVerifyStep.Download, "Download and compare"),
+            (GcsVerifyStep.Delete, "Delete sentinel object"),
+        };
+
+        var row = startRow;
+        for (var i = 0; i < labels.Length; i++)
+        {
+            var step = labels[i].Step;
+            var label = labels[i].Label;
+            var meta = FindRow(rows, step);
+            ClearLine(row);
+            string prefix;
+            string textColor;
+            if (meta is null)
+            {
+                if (step == currentStep)
+                {
+                    prefix = $"{palette.GetAccentFg().AnsiFg}…{Reset}";
+                    textColor = palette.PrimaryText.AnsiFg;
+                }
+                else
+                {
+                    prefix = $"{palette.GetDimFg().AnsiFg}·{Reset}";
+                    textColor = palette.GetDimFg().AnsiFg;
+                }
+            }
+            else if (meta.Value.Done == true)
+            {
+                prefix = $"{palette.GetSuccessFg().AnsiFg}✓{Reset}";
+                textColor = palette.PrimaryText.AnsiFg;
+            }
+            else if (meta.Value.Done == false)
+            {
+                prefix = $"{palette.ErrorFg.AnsiFg}✗{Reset}";
+                textColor = palette.ErrorFg.AnsiFg;
+            }
+            else
+            {
+                prefix = $"{palette.GetAccentFg().AnsiFg}…{Reset}";
+                textColor = palette.PrimaryText.AnsiFg;
+            }
+
+            var timing = meta?.Elapsed is TimeSpan ts ? $" {palette.GetDimFg().AnsiFg}({ts.TotalMilliseconds:0} ms){Reset}" : string.Empty;
+            var note = !string.IsNullOrEmpty(meta?.Note) ? $" {palette.SecondaryText.AnsiFg}— {meta.Value.Note}{Reset}" : string.Empty;
+            WriteAt(2, row, $"  {prefix} {textColor}{label}{Reset}{timing}{note}");
+            row++;
+        }
+
+        return row;
+    }
+
+    private static (GcsVerifyStep Step, bool? Done, TimeSpan? Elapsed, string? Note)? FindRow(
+        IReadOnlyList<(GcsVerifyStep Step, bool? Done, TimeSpan? Elapsed, string? Note)> rows,
+        GcsVerifyStep step)
+    {
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Step == step)
+            {
+                return rows[i];
             }
         }
 
