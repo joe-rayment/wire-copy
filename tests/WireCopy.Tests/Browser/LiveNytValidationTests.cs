@@ -41,13 +41,11 @@ public class LiveNytValidationTests
 
     #region Live NYT Section Page Validation
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task SectionPageMetadataGuard_MultipleArticles_ShouldNotShareSameAuthor()
     {
-        // Skip if fixture not available (xUnit v2 does not support Skip.If)
-        if (!File.Exists(HtmlPath))
-            return;
+        Skip.IfNot(File.Exists(HtmlPath), $"NYT section fixture missing: {HtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(HtmlPath);
@@ -79,12 +77,11 @@ public class LiveNytValidationTests
         // The failure mode is: all ~87 links sharing the same author from page metadata.
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task InlineVsHeadlineClassification_HeadlinesInH2H3_ShouldBeContent()
     {
-        if (!File.Exists(HtmlPath))
-            return;
+        Skip.IfNot(File.Exists(HtmlPath), $"NYT section fixture missing: {HtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(HtmlPath);
@@ -108,12 +105,11 @@ public class LiveNytValidationTests
             "on a section page, article headlines should not be misclassified as navigation");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task LinkCount_ShouldHaveReasonableNumberOfContentLinks()
     {
-        if (!File.Exists(HtmlPath))
-            return;
+        Skip.IfNot(File.Exists(HtmlPath), $"NYT section fixture missing: {HtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(HtmlPath);
@@ -131,12 +127,11 @@ public class LiveNytValidationTests
             "content link count should be bounded; excessive count suggests misclassification");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NoInlineTextFragmentsDominating_NavigationShouldNotDwarfContent()
     {
-        if (!File.Exists(HtmlPath))
-            return;
+        Skip.IfNot(File.Exists(HtmlPath), $"NYT section fixture missing: {HtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(HtmlPath);
@@ -164,13 +159,11 @@ public class LiveNytValidationTests
 
     #region Live Reader View Validation
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task BbcArticle_ReaderView_ShouldExtractTitle()
     {
-        // Skip if fixture not available
-        if (!File.Exists(BbcHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(BbcHtmlPath), $"BBC fixture missing: {BbcHtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(BbcHtmlPath);
@@ -185,13 +178,11 @@ public class LiveNytValidationTests
             "the article is about Iran regime change and Netanyahu");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task BbcArticle_ReaderView_ShouldExtractMultipleParagraphs()
     {
-        // Skip if fixture not available
-        if (!File.Exists(BbcHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(BbcHtmlPath), $"BBC fixture missing: {BbcHtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(BbcHtmlPath);
@@ -205,13 +196,11 @@ public class LiveNytValidationTests
             "a substantial BBC news article should have at least 10 content paragraphs");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task BbcArticle_ReaderView_ShouldContainArticleTextNotBoilerplate()
     {
-        // Skip if fixture not available
-        if (!File.Exists(BbcHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(BbcHtmlPath), $"BBC fixture missing: {BbcHtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(BbcHtmlPath);
@@ -226,13 +215,11 @@ public class LiveNytValidationTests
             "first paragraph should reference the article's core topic, not navigation boilerplate");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task BbcArticle_ReaderView_ShouldHaveReasonableContentLength()
     {
-        // Skip if fixture not available
-        if (!File.Exists(BbcHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(BbcHtmlPath), $"BBC fixture missing: {BbcHtmlPath}");
 
         // Arrange
         var html = File.ReadAllText(BbcHtmlPath);
@@ -265,12 +252,11 @@ public class LiveNytValidationTests
 
     #region Live NYT Article Reader View Validation
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ShouldExtractTitle()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -283,12 +269,11 @@ public class LiveNytValidationTests
             "the article title is about German industry and energy costs");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ShouldExtractAuthor()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -301,12 +286,11 @@ public class LiveNytValidationTests
             "the article is by Eshe Nelson");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ShouldExtractAtLeastFiveParagraphs()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -318,12 +302,11 @@ public class LiveNytValidationTests
             "a substantial NYT news article should have at least 5 content paragraphs");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ShouldContainArticleTextNotBoilerplate()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -337,12 +320,11 @@ public class LiveNytValidationTests
             "article text should reference the core topic about German energy costs");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ShouldHaveSubstantialContent()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -354,12 +336,11 @@ public class LiveNytValidationTests
             "extracted NYT article content should be substantial, not a truncated snippet");
     }
 
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Integration")]
     public async Task NytArticle_ReaderView_ContentShouldNotBeFromRedirectOrSectionPage()
     {
-        if (!File.Exists(NytArticleHtmlPath))
-            return;
+        Skip.IfNot(File.Exists(NytArticleHtmlPath), $"NYT article fixture missing: {NytArticleHtmlPath}");
 
         var html = File.ReadAllText(NytArticleHtmlPath);
 
@@ -376,6 +357,111 @@ public class LiveNytValidationTests
         var paragraphs = content.Paragraphs.Where(p => p.Length > 50).ToList();
         paragraphs.Should().HaveCountGreaterOrEqualTo(3,
             "article should have multiple substantial paragraphs, not just headline fragments");
+    }
+
+    #endregion
+
+    #region NYT 2026 Pinned Regression (workspace-d799)
+
+    /// <summary>
+    /// Pinned fixture committed to the repo (Fixtures/nyt/nyt-2026-article.html) so this
+    /// regression cannot silently disappear when /workspace/screenshots/ goes missing.
+    /// </summary>
+    private static readonly string Nyt2026FixturePath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "Fixtures", "nyt", "nyt-2026-article.html");
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ReadableContentExtractor_WithNyt2026Markup_ExtractsArticleBody()
+    {
+        // workspace-d799: NYT 2026 ships hashed CSS-module class names; only the
+        // <section name="articleBody"> shell is stable. The new selector ordering
+        // must pick this up without falling through to density extraction.
+        File.Exists(Nyt2026FixturePath).Should().BeTrue(
+            $"committed regression fixture must be present at {Nyt2026FixturePath}");
+
+        var html = await File.ReadAllTextAsync(Nyt2026FixturePath);
+
+        var content = await _contentExtractor.ExtractAsync(
+            html, "https://www.nytimes.com/2026/04/29/business/energy-environment/germany-factory-energy.html");
+
+        content.Should().NotBeNull("NYT 2026 article markup must produce readable content");
+        content!.Paragraphs.Should().HaveCountGreaterOrEqualTo(4,
+            "the fixture has 8 paragraphs in <section name=articleBody>; selectors should pick them all up");
+        content.WordCount.Should().BeGreaterOrEqualTo(200,
+            "the fixture body is roughly 500 words; extraction should preserve at least 200");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ValidateContentQuality_LongFormAlphabeticBypass_AcceptsArticle()
+    {
+        // workspace-d799: long, paragraph-rich content should self-validate even when
+        // the alphabetic-character ratio falls under the 0.70 gate (curly quotes,
+        // em-dashes, numerals push it down on real NYT bodies).
+        var paragraphs = BuildLowAlphabeticRatioFixture(targetWords: 600, paragraphs: 10, alphabeticRatio: 0.65);
+
+        // Sanity check the synthesised fixture matches the conditions named in the bead.
+        var totalWords = paragraphs.Sum(p => p.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length);
+        totalWords.Should().BeGreaterOrEqualTo(400,
+            "long-form bypass requires totalWords >= 400");
+        paragraphs.Should().HaveCountGreaterOrEqualTo(8,
+            "long-form bypass requires paragraphs >= 8");
+
+        var totalChars = paragraphs.Sum(p => p.Length);
+        var alphaChars = paragraphs.Sum(p => p.Count(char.IsLetter));
+        var ratio = (double)alphaChars / totalChars;
+        ratio.Should().BeLessThan(0.70,
+            "fixture must trip the legacy alphabetic-ratio gate, otherwise the test proves nothing");
+
+        ReadableContentExtractor.ValidateContentQuality(paragraphs).Should().BeTrue(
+            "long-form, paragraph-rich content must bypass the alphabetic-ratio and avg-length gates");
+    }
+
+    /// <summary>
+    /// Builds a paragraph list with the requested rough word count, paragraph count,
+    /// and target alphabetic ratio. The non-alphabetic mass comes from numerals/
+    /// punctuation so the content still parses as paragraphs.
+    /// </summary>
+    private static List<string> BuildLowAlphabeticRatioFixture(int targetWords, int paragraphs, double alphabeticRatio)
+    {
+        var wordsPerParagraph = targetWords / paragraphs;
+        var result = new List<string>(paragraphs);
+        // Vary the leading word per paragraph so we don't trip the
+        // "repeated first word > 50%" gate, which is independent of the bypass
+        // and validates real article-shaped variation.
+        string[] leads =
+        {
+            "The factory", "Workers at", "Across Germany", "Economists warn",
+            "By April", "In Mannheim", "Coalition partners", "Industry leaders",
+            "Meanwhile, output", "For decades",
+        };
+
+        for (var i = 0; i < paragraphs; i++)
+        {
+            var lead = leads[i % leads.Length];
+            var alpha = $"{lead} cooled to ambient as the third furnace was throttled back overnight while plant operators reviewed export contracts and energy hedging arrangements";
+
+            var sb = new System.Text.StringBuilder();
+            var built = 0;
+            var sentenceWordCount = alpha.Split(' ').Length;
+            while (built < wordsPerParagraph)
+            {
+                sb.Append(alpha).Append(' ');
+                built += sentenceWordCount;
+            }
+
+            var alphaChunk = sb.ToString().TrimEnd();
+            // Append a non-alphabetic tail sized to drag the ratio down to the target.
+            // ratio = alphaChars / (alphaChars + nonAlphaChars). Solve nonAlphaChars.
+            var alphaCharCount = alphaChunk.Count(char.IsLetter);
+            var totalNeeded = (int)(alphaCharCount / alphabeticRatio);
+            var nonAlphaNeeded = Math.Max(0, totalNeeded - alphaChunk.Length);
+            var tail = string.Concat(Enumerable.Repeat("0123456789 — ", (nonAlphaNeeded / 13) + 1)).Substring(0, nonAlphaNeeded);
+            result.Add(alphaChunk + " " + tail);
+        }
+
+        return result;
     }
 
     #endregion
