@@ -451,29 +451,45 @@ internal static class SettingsCommandHandler
         }
 
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        Console.Clear();
-        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
-        var headerNextRow = PodcastGcsWizard.RenderWizardStepHeader(
-            palette,
-            "GCS Verify",
-            0,
-            0,
-            $"Probing gs://{bucketName} (Auth → Upload → Read → Delete)",
-            fieldWidth);
 
-        var panelRow = headerNextRow + 1;
-        await PodcastGcsWizard.RunVerifyStepAsync(ctx, gcsClient, palette, bucketName, panelRow, ct)
-            .ConfigureAwait(false);
+        // workspace-ur5h: NO Console.Clear, NO wizard header. The verify
+        // panel renders inline so the Settings rows stay visible while the
+        // four-step probe runs.
+        var panelRow = Math.Max(1, (Console.WindowHeight / 2) - 2);
 
-        Console.SetCursorPosition(2, panelRow + 7);
-        Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return…{Reset}");
         try
         {
-            _ = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            await PodcastGcsWizard.RunVerifyStepAsync(ctx, gcsClient, palette, bucketName, panelRow, ct)
+                .ConfigureAwait(false);
+
+            Console.SetCursorPosition(2, panelRow + 7);
+            Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return…{Reset}");
+            try
+            {
+                _ = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // ignore
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // ignore
+            // Wipe the inline panel + prompt line on the way out so the
+            // Settings screen is restored when the caller re-renders.
+            for (var i = 0; i < 9; i++)
+            {
+                try
+                {
+                    Console.SetCursorPosition(0, panelRow + i);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    break;
+                }
+
+                Console.Write(new string(' ', Math.Max(20, Console.WindowWidth - 1)));
+            }
         }
     }
 
@@ -786,25 +802,35 @@ internal static class SettingsCommandHandler
         }
 
         // --- FormField + probe loop (allows "Edit name" to reopen with the previous value) ---
+        // workspace-ur5h: NO Console.Clear. Mirrors the OpenAI inline pattern.
         string? prefilledName = null;
 
         while (!ct.IsCancellationRequested)
         {
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            Console.Clear();
             var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-            var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+            var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
 
-            // workspace-cgnt: Subtitle adds one row to the rendered field,
-            // so help/probe panels are anchored at startRow + (Height + 1).
-            var helpRow = startRow + FormField.Height + 2;
+            // No subtitle now — label + helptext alone keep the field at
+            // FormField.Height (5 rows). The probe panel anchors directly
+            // below that.
+            var helpRow = startRow + FormField.Height + 1;
+            var maxCopy = GcsCopy.MaxCopyWidth(fieldWidth);
 
             var field = new FormFieldConfig
             {
-                Label = "Bucket name for your podcast feed (DNS-style, lowercase, e.g. joe-podcast-feed). Created if it doesn't exist.",
-                Subtitle = "DNS-style: lowercase a-z, 0-9, hyphens. 3-63 chars. We'll create it if it doesn't exist.",
-                Placeholder = "wirecopy-podcasts-acme",
-                HelpText = "Press ? for help. Esc to cancel.",
+                Label = GcsCopy.FitOrShorten(
+                    "Bucket name (e.g. joe-podcast-feed)",
+                    "Bucket name",
+                    maxCopy),
+                Placeholder = GcsCopy.FitOrShorten(
+                    "wirecopy-podcasts-acme",
+                    "bucket-name",
+                    Math.Max(10, fieldWidth - 4)),
+                HelpText = GcsCopy.FitOrShorten(
+                    "? for help · Enter to verify · Esc to cancel",
+                    "? help · Enter verify · Esc",
+                    maxCopy),
                 IsSecret = false,
                 MaxLength = 63,
                 InitialValue = prefilledName,
@@ -824,7 +850,7 @@ internal static class SettingsCommandHandler
                     // return true, which restores the field above the help
                     // region; we still clear the help-text rows below to wipe
                     // the overlay.
-                    RenderBucketHelpOverlay(palette, helpRow);
+                    GcsHelpOverlays.RenderBucketHelp(palette, helpRow);
                     try
                     {
                         _ = ctx.InputHandler.WaitForInputAsync(ct).GetAwaiter().GetResult();
@@ -835,7 +861,7 @@ internal static class SettingsCommandHandler
                         // notice ct on its next iteration.
                     }
 
-                    ClearBucketHelpOverlay(helpRow);
+                    GcsHelpOverlays.ClearOverlay(helpRow, GcsHelpOverlays.BucketOverlayRows);
                     return true;
                 },
             };
@@ -855,6 +881,8 @@ internal static class SettingsCommandHandler
             var name = NormalizeBucketName(entered);
 
             // --- Probe loop: probe → render state panel → (maybe) loop on Retry ---
+            // workspace-ur5h: anchor the probe panel directly under the field
+            // (no gap) so the user's eye stays in context while the probe runs.
             var probeRow = startRow + fieldHeight + 1;
             var probeOutcome = await ProbeAndHandleAsync(ctx, name, palette, probeRow, ct).ConfigureAwait(false);
 
@@ -881,14 +909,42 @@ internal static class SettingsCommandHandler
     /// Prerequisite-gate panel for <see cref="HandleSetBucket"/>. Returns the
     /// lowercase character chosen by the user ('a' to set the service account)
     /// or null when they backed out.
+    ///
+    /// <para>
+    /// workspace-ur5h: NO Console.Clear. Renders inline as an overlay on top
+    /// of the live Settings rows so the user keeps context — same pattern as
+    /// the rest of the Setup screen.
+    /// </para>
     /// </summary>
     private static async Task<char?> ShowPrerequisiteGateAsync(CommandContext ctx, CancellationToken ct)
     {
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        Console.Clear();
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 2);
         BucketProbePanel.RenderPrerequisiteGate(palette, startRow);
-        return await BucketProbePanel.WaitForChoiceAsync(ctx.InputHandler, new[] { 'a' }, ct).ConfigureAwait(false);
+        try
+        {
+            return await BucketProbePanel.WaitForChoiceAsync(ctx.InputHandler, new[] { 'a' }, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Wipe the inline gate so the underlying Settings rows are
+            // visible again when we return to the caller. The gate is
+            // 5 rows tall (header, blank, body, blank, action), but we
+            // wipe a generous 6 to mop up any trailing render.
+            for (var i = 0; i < 6; i++)
+            {
+                try
+                {
+                    Console.SetCursorPosition(0, startRow + i);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    break;
+                }
+
+                Console.Write(new string(' ', Math.Max(20, Console.WindowWidth - 1)));
+            }
+        }
     }
 
     /// <summary>
@@ -1259,78 +1315,6 @@ internal static class SettingsCommandHandler
         return null;
     }
 
-    /// <summary>
-    /// Renders the verbose 12-line GCS bucket help panel below the FormField.
-    /// Triggered by pressing <c>?</c> while editing the bucket name; dismissed
-    /// by any keypress in the surrounding interceptor (workspace-dlq5,
-    /// originally spec'd in workspace-dwgl).
-    /// </summary>
-    private static void RenderBucketHelpOverlay(ThemePalette palette, int startRow)
-    {
-        // Clear the region first so re-renders don't overlap previous output.
-        ClearBucketHelpOverlay(startRow);
-
-        string[] lines =
-        [
-            $"{palette.HeaderTitleFg.AnsiFg}GCS bucket name — help{Reset}",
-            string.Empty,
-            $"{palette.PrimaryText.AnsiFg}Where to find it:{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  Google Cloud Console → Cloud Storage → Buckets.{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  Copy the value in the \"Name\" column (NOT the URL).{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  If it starts with gs://, that's fine — we'll strip it.{Reset}",
-            string.Empty,
-            $"{palette.PrimaryText.AnsiFg}Don't have one yet?{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  Leave the field with a name you want and press Enter.{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  We'll create it for you in your configured project.{Reset}",
-            string.Empty,
-            $"{palette.PrimaryText.AnsiFg}Permissions on this bucket:{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  Storage Object Admin on the bucket — or, least-privilege,{Reset}",
-            $"{palette.SecondaryText.AnsiFg}  Object Creator + Object Viewer for the service account.{Reset}",
-            string.Empty,
-            $"{palette.SecondaryText.AnsiFg}Naming: lowercase a-z, 0-9, hyphens. 3-63 chars. Globally unique.{Reset}",
-            string.Empty,
-            $"{palette.GetDimFg().AnsiFg}Press any key to return.{Reset}",
-        ];
-
-        for (var i = 0; i < lines.Length; i++)
-        {
-            try
-            {
-                Console.SetCursorPosition(2, startRow + i);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                break;
-            }
-
-            Console.Write(lines[i]);
-        }
-    }
-
-    /// <summary>
-    /// Erases the rows occupied by <see cref="RenderBucketHelpOverlay"/>. Sized
-    /// generously so trailing blank lines + the dismissal hint are wiped on
-    /// dismiss.
-    /// </summary>
-    private static void ClearBucketHelpOverlay(int startRow)
-    {
-        const int OverlayRows = 20;
-        var width = Math.Max(20, Console.WindowWidth - 1);
-        for (var i = 0; i < OverlayRows; i++)
-        {
-            try
-            {
-                Console.SetCursorPosition(0, startRow + i);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                break;
-            }
-
-            Console.Write(new string(' ', width));
-        }
-    }
-
     private static void ClearPanelRegion(int startRow)
     {
         var height = Math.Max(0, Console.WindowHeight - startRow - 1);
@@ -1374,26 +1358,35 @@ internal static class SettingsCommandHandler
     {
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
 
-        // workspace-cgnt root cause: HandleSetKey never cleared the screen
-        // before rendering the FormField, so the underlying Settings rows
-        // bled through behind the input box. Mirror HandleSetBucket and
-        // call Console.Clear plus a wizard header.
-        Console.Clear();
-        var headerFieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
-        PodcastGcsWizard.RenderWizardStepHeader(
-            palette,
-            "GCS Service Account",
-            0,
-            0,
-            "Paste your service account JSON below.",
-            headerFieldWidth);
+        // workspace-ur5h: NO Console.Clear, NO wizard header. Mirror the
+        // OpenAI inline pattern so the FormField lands as an inline overlay
+        // on the live Settings screen — exactly like every other Setup row.
+        // The previous wizard chrome (workspace-cgnt) introduced the 9-line
+        // void between the header and the input that the user reported
+        // was "the wrong place for input."
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+        var helpRow = startRow + FormField.Height + 1;
 
-        var field = new FormFieldConfig
+        // Width-aware copy. Every visible string is wrapped at
+        // GcsCopy.MaxCopyWidth(fieldWidth) so nothing truncates at width 80.
+        var maxCopy = GcsCopy.MaxCopyWidth(fieldWidth);
+
+        FormFieldConfig field = null!;
+        field = new FormFieldConfig
         {
-            Label = "Paste your GCP service account JSON here (the full file contents starting with { and ending with }).",
-            Subtitle = "Find or create one at console.cloud.google.com/iam-admin/serviceaccounts → your service account → Keys → Add Key → JSON.",
-            Placeholder = "Paste JSON content (or a file path)",
-            HelpText = "JSON starts with { · paths support ~/ for your home dir.",
+            Label = GcsCopy.FitOrShorten(
+                "Paste your GCP service account JSON, or a file path",
+                "Paste service account JSON or path",
+                maxCopy),
+            Placeholder = GcsCopy.FitOrShorten(
+                "Paste JSON content here, or type ~/keys/sa.json",
+                "Paste JSON or path",
+                Math.Max(10, fieldWidth - 4)),
+            HelpText = GcsCopy.FitOrShorten(
+                "Press ? for a beginner guide · Esc to cancel",
+                "? for help · Esc to cancel",
+                maxCopy),
             MaxLength = 8192, // service-account JSON keys are ~2-3 KB; allow headroom.
             Validate = v =>
             {
@@ -1436,10 +1429,30 @@ internal static class SettingsCommandHandler
                 var fileResult = GcsStorageClient.ValidateKeyFile(path);
                 return fileResult.IsValid ? null : fileResult.ErrorMessage;
             },
+            OnExtraKey = ch =>
+            {
+                if (ch != '?')
+                {
+                    return false;
+                }
+
+                // Beginner on-ramp: explains what GCS is, what a service
+                // account key is, where to get one. Modal — any key dismisses.
+                GcsHelpOverlays.RenderServiceAccountHelp(palette, helpRow);
+                try
+                {
+                    _ = ctx.InputHandler.WaitForInputAsync(ct).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    // dismiss
+                }
+
+                GcsHelpOverlays.ClearOverlay(helpRow, GcsHelpOverlays.ServiceAccountOverlayRows);
+                return true;
+            },
         };
 
-        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
         var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
         if (input == null)
