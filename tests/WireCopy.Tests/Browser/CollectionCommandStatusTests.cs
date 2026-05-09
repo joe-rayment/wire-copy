@@ -90,6 +90,23 @@ public class CollectionCommandStatusTests
     }
 
     [Fact]
+    public async Task HandleSaveToCollection_Success_FiresSuccessToast()
+    {
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _collectionService.SaveToReadingListAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CollectionItem.Create(Guid.NewGuid(), "https://example.com/article", "My Article"));
+
+        await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
+
+        _navService.CurrentContext.ActiveToast.Should().NotBeNull(
+            "successful save fires a toast for visual feedback");
+        _navService.CurrentContext.ActiveToast!.Type.Should().Be(ToastType.Success);
+        _navService.CurrentContext.ActiveToast!.Message.Should().Be("Saved to Reading List");
+        _navService.CurrentContext.ActiveToast!.Detail.Should().Be("My Article");
+    }
+
+    [Fact]
     public async Task HandleSaveToCollection_Failure_ShowsFailedMessage()
     {
         SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
@@ -100,6 +117,43 @@ public class CollectionCommandStatusTests
         await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Failed to save");
+    }
+
+    [Fact]
+    public async Task HandleSaveToCollection_Failure_FiresErrorToast()
+    {
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _collectionService.SaveToReadingListAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<CollectionItem>(_ => throw new InvalidOperationException("DB error"));
+
+        await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
+
+        _navService.CurrentContext.ActiveToast.Should().NotBeNull(
+            "failure fires an error toast — green flash is suppressed");
+        _navService.CurrentContext.ActiveToast!.Type.Should().Be(ToastType.Error);
+        _navService.CurrentContext.ActiveToast!.Message.Should().Be("Couldn't save");
+        _navService.CurrentContext.ActiveToast!.Detail.Should().Be("DB error");
+    }
+
+    [Fact]
+    public async Task HandleSaveToCollection_DisableAnimations_StillFiresToast()
+    {
+        // Build a fresh context with DisableAnimations=true to verify the toast
+        // path is unaffected (it's not an animation) while the row flash is skipped.
+        var disabledCtx = BuildContextWithAnimationsDisabled();
+
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article", disabledCtx.NavService);
+        disabledCtx.CollectionService.SaveToReadingListAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CollectionItem.Create(Guid.NewGuid(), "https://example.com/article", "My Article"));
+
+        await CollectionCommandHandler.HandleSaveToCollection(disabledCtx.Ctx, _options, CancellationToken.None);
+
+        disabledCtx.NavService.CurrentContext.ActiveToast.Should().NotBeNull(
+            "toast still fires even when animations are disabled");
+        disabledCtx.NavService.CurrentContext.ActiveToast!.Type.Should().Be(ToastType.Success);
+        disabledCtx.Ctx.DisableAnimations.Should().BeTrue();
     }
 
     [Fact]
@@ -442,6 +496,11 @@ public class CollectionCommandStatusTests
 
     private void SetupHierarchicalWithSelectedLink(string title, string url)
     {
+        SetupHierarchicalWithSelectedLink(title, url, _navService);
+    }
+
+    private static void SetupHierarchicalWithSelectedLink(string title, string url, NavigationService navService)
+    {
         var links = new List<LinkInfo>
         {
             new LinkInfo { Url = url, DisplayText = title, Type = LinkType.Content, ImportanceScore = 80 }
@@ -449,7 +508,49 @@ public class CollectionCommandStatusTests
         var tree = NavigationTree.Build(links);
         var page = Page.Create(url, "<html></html>", new PageMetadata { Title = title });
         page.SetLinkTree(tree);
-        _navService.NavigateTo(page);
+        navService.NavigateTo(page);
+    }
+
+    private (CommandContext Ctx, NavigationService NavService, ICollectionService CollectionService)
+        BuildContextWithAnimationsDisabled()
+    {
+        var logger = Substitute.For<ILogger<NavigationService>>();
+        var navService = new NavigationService(logger);
+        var service = Substitute.For<ICollectionService>();
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        scopeFactory.CreateScope().Returns(scope);
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+
+        var ctx = new CommandContext
+        {
+            NavigationService = navService,
+            Renderer = Substitute.For<IPageRenderer>(),
+            InputHandler = Substitute.For<IInputHandler>(),
+            ScopeFactory = scopeFactory,
+            Logger = NullLogger.Instance,
+            PageCache = Substitute.For<IPageCache>(),
+            LineCacheManager = new LineCacheManager(navService, themeProvider),
+            ThemeProvider = themeProvider,
+            PreloadService = Substitute.For<IPreloadService>(),
+            LayoutVariantProvider = Substitute.For<ILayoutVariantProvider>(),
+            DisableAnimations = true,
+            RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
+            RefreshCollectionsAsync = _ => Task.CompletedTask,
+            RefreshBookmarksAsync = _ => Task.CompletedTask,
+            NavigateToAsync = (_, _, _) => Task.CompletedTask,
+            ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
+            InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            GetCurrentRenderOptions = () => _options,
+            CreateCollectionService = _ => service,
+            GetReaderViewportHeight = _ => 20,
+            GetHierarchicalViewportHeight = _ => 20,
+            AdjustScrollForSelection = (_, _) => { },
+            ScrollToSearchMatch = (_, _) => { },
+        };
+
+        return (ctx, navService, service);
     }
 
     private void SetupHierarchicalWithLinks(params (string Title, string Url)[] items)

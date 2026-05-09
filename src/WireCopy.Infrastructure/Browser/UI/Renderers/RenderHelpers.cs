@@ -362,6 +362,37 @@ internal class RenderHelpers
         }
     }
 
+    /// <summary>
+    /// Positions the cursor at (col,row) and writes the given text. When a frame
+    /// buffer is active, both the cursor position escape and the text accumulate
+    /// into the buffer so the toast/overlay survives the EndFrame flush. When no
+    /// frame is active (legacy mode), falls back to direct Console writes guarded
+    /// by <see cref="ConsoleSync.Lock"/>.
+    /// Used by overlay components (toasts) that need to position absolutely.
+    /// </summary>
+    public void WriteAt(int col, int row, string text)
+    {
+        if (_frameBuffer != null)
+        {
+            EmitCursorPos(col, row);
+            EmitWrite(text);
+            return;
+        }
+
+        lock (ConsoleSync.Lock)
+        {
+            try
+            {
+                Console.SetCursorPosition(col, row);
+                Console.Write(text);
+            }
+            catch
+            {
+                // Non-standard console — silently skip
+            }
+        }
+    }
+
     public void WriteLine(string text = "")
     {
         try
