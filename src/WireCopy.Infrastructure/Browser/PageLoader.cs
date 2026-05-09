@@ -39,49 +39,12 @@ public class PageLoader : IPageLoader
 
     /// <summary>
     /// Checks if the loaded HTML is a bot challenge or CAPTCHA page rather than real content.
-    /// Detects DataDome, Cloudflare challenge, and generic CAPTCHA interstitials.
+    /// Thin wrapper that delegates to <see cref="HumanActionDetector.IsBotChallenge"/> for
+    /// backwards compatibility; new code should call <see cref="HumanActionDetector.Detect"/>
+    /// directly to obtain a typed <see cref="Application.DTOs.Browser.HumanActionRequired"/> verdict.
     /// </summary>
     public static bool IsBotChallengePage(string html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return false;
-        }
-
-        // Real pages can be large (100KB+). Bot challenge interstitials are small (<20KB).
-        // Cloudflare injects "challenge-platform" scripts into real pages for ongoing
-        // monitoring, so keyword detection alone causes false positives on large pages.
-        const int realPageThreshold = 20 * 1024;
-        if (html.Length > realPageThreshold)
-        {
-            return false;
-        }
-
-        // DataDome detection (small page with DataDome markers)
-        if (html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
-            html.Contains("datadome", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Cloudflare challenge interstitial (small page with challenge markers)
-        if (html.Contains("cf-challenge", StringComparison.OrdinalIgnoreCase) ||
-            html.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Generic CAPTCHA detection: very small page with captcha/challenge keywords
-        const int smallPageThreshold = 5 * 1024;
-        if (html.Length < smallPageThreshold &&
-            (html.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
-             html.Contains("challenge", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
-    }
+        => HumanActionDetector.IsBotChallenge(html);
 
     public async Task<PageLoadResult> LoadAsync(PageLoadRequest request, CancellationToken cancellationToken = default)
     {
@@ -244,28 +207,14 @@ public class PageLoader : IPageLoader
 
     private static bool IsJavaScriptRequired(string html)
     {
-        // Check for Cloudflare/DataDome challenge/block pages - these need browser to solve
-        var cloudflareIndicators = new[]
-        {
-            "attention required! | cloudflare",
-            "you have been blocked",
-            "checking your browser",
-            "cf-browser-verification",
-            "cf-challenge",
-            "challenge-platform",
-            "just a moment...",
-            "enable cookies",
-            "captcha-delivery.com",
-            "datadome",
-            "geo.captcha-delivery.com"
-        };
-
-        if (Array.Exists(cloudflareIndicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase)))
+        // Cloudflare / DataDome / general bot-challenge pages — these need a browser to solve.
+        // Delegated to the consolidated HumanActionDetector to keep the bot-string list in one place.
+        if (HumanActionDetector.IsBotDetectionResponse(html))
         {
             return true;
         }
 
-        // Check for explicit "enable/require JavaScript" messages
+        // Explicit "enable/require JavaScript" messages — distinct from bot detection.
         var indicators = new[]
         {
             "please enable javascript",
@@ -281,6 +230,16 @@ public class PageLoader : IPageLoader
         }
 
         return false;
+    }
+
+    private static string ExtractDomainSafe(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
     }
 
     private static PageMetadata ExtractMetadata(string html, string url)
@@ -471,7 +430,28 @@ public class PageLoader : IPageLoader
 
             if (!response.IsSuccessStatusCode)
             {
-                return PageLoadResult.Failure($"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+                var status = (int)response.StatusCode;
+                var requestUrl = response.RequestMessage?.RequestUri?.ToString() ?? request.Url;
+
+                // For auth/region status codes, surface a typed HITL signal so consumers
+                // can render variant-aware copy instead of "HTTP 403".
+                var bodyForDetect = string.Empty;
+                try
+                {
+                    bodyForDetect = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Body read failures are non-fatal here — we still emit the failure with status code.
+                }
+
+                var action = HumanActionDetector.Detect(bodyForDetect, requestUrl, status);
+                if (action != null)
+                {
+                    return PageLoadResult.Failure(action, $"HTTP {status}", status);
+                }
+
+                return PageLoadResult.Failure($"HTTP {status}", status);
             }
 
             var html = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
@@ -548,15 +528,21 @@ public class PageLoader : IPageLoader
             var pageContent = await page.ContentAsync().ConfigureAwait(false);
             if (IsBotChallengePage(pageContent))
             {
-                _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
-                var resolved = await PollForChallengeResolutionAsync(page, request.Url, cancellationToken).ConfigureAwait(false);
-                if (resolved == null)
-                {
-                    _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
-                    return PageLoadResult.Failure("Bot challenge could not be resolved");
-                }
-
-                _logger.LogInformation("Bot challenge resolved after polling: {Url}", page.Url);
+                // Speed fix (workspace-0b9s QA #5): emit the typed HITL verdict
+                // immediately on first detection instead of paying the 60s
+                // PollForChallengeResolutionAsync window. The reader-view box
+                // appears in <1s with verb-led copy ("Site is showing a CAPTCHA",
+                // "Solve it in the browser, then press R"), and the user can
+                // Shift+O to open in their real browser, solve, then press R
+                // to retry. The 60s blind wait gave the user nothing actionable
+                // to do for a full minute and almost never resolved on its own
+                // in headless mode anyway.
+                _logger.LogWarning(
+                    "Bot challenge page detected after browser load, surfacing verdict (no poll wait): {Url}",
+                    request.Url);
+                var action = HumanActionDetector.Detect(pageContent, page.Url, statusCode: 0)
+                    ?? new HumanActionRequired(HumanActionVariant.Captcha, ExtractDomainSafe(page.Url));
+                return PageLoadResult.Failure(action, "Bot challenge detected");
             }
 
             // Dismiss login/subscription overlays that may cover content
@@ -564,10 +550,17 @@ public class PageLoader : IPageLoader
             var finalUrl = page.Url;
             var html = await page.ContentAsync().ConfigureAwait(false);
 
+            // Even after overlay dismissal, surface a typed HITL signal if the post-load
+            // markup still looks like a CAPTCHA / login wall / cookie banner / region block.
+            // This is a non-fatal annotation: success path stays unchanged when the detector
+            // returns null, but the caller can still inspect RequiredAction on success when
+            // we do detect a soft block (e.g., a paywall preview that "loaded" but is gated).
+            var detectedAction = HumanActionDetector.Detect(html, finalUrl, statusCode: 0);
+
             var metadata = ExtractMetadata(html, finalUrl);
 
             _logger.LogInformation("Successfully loaded page via browser: {Url}", finalUrl);
-            return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Browser);
+            return PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Browser) with { RequiredAction = detectedAction };
         }
         catch (PlaywrightException ex)
         {
@@ -584,44 +577,6 @@ public class PageLoader : IPageLoader
             _logger.LogWarning(ex, "Browser unavailable for page load: {Url}", request.Url);
             return PageLoadResult.Failure("Browser unavailable");
         }
-    }
-
-    private async Task<string?> PollForChallengeResolutionAsync(
-        IPage page,
-        string url,
-        CancellationToken cancellationToken)
-    {
-        var pollIntervalMs = _browserConfig.BotChallengePollIntervalMs;
-        var maxWaitMs = _browserConfig.BotChallengeMaxWaitMs;
-        var sw = Stopwatch.StartNew();
-
-        while (sw.ElapsedMilliseconds < maxWaitMs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await Task.Delay(pollIntervalMs, cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                var currentHtml = await page.ContentAsync().ConfigureAwait(false);
-                if (!IsBotChallengePage(currentHtml))
-                {
-                    return currentHtml;
-                }
-
-                _logger.LogDebug(
-                    "Bot challenge still present after {ElapsedMs}ms, continuing to poll: {Url}",
-                    sw.ElapsedMilliseconds,
-                    url);
-            }
-            catch (PlaywrightException ex)
-            {
-                _logger.LogWarning(ex, "Error polling page source during challenge resolution: {Url}", url);
-                return null;
-            }
-        }
-
-        return null;
     }
 
     private async Task WaitForPageLoadAsync(IPage page, int timeoutMs, CancellationToken cancellationToken)
