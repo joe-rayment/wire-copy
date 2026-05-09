@@ -281,6 +281,94 @@ internal class LinkTreeRenderer
         return node.CollapseState == NodeCollapseState.Expanded ? 3 : 2;
     }
 
+    /// <summary>
+    /// Computes the absolute (row, col) screen position of the title text for the
+    /// node at <paramref name="selectedNodeIndex"/> in <paramref name="visibleNodes"/>,
+    /// matching the layout produced by <see cref="RenderLinkList"/>.
+    /// Returns null when the node is not visible (e.g. scrolled off-screen) or when
+    /// <paramref name="visibleNodes"/> is empty/invalid.
+    /// </summary>
+    /// <param name="visibleNodes">The current visible-node ordering (from NavigationTree.GetVisibleNodes).</param>
+    /// <param name="selectedNodeIndex">Index into <paramref name="visibleNodes"/> of the selected node.</param>
+    /// <param name="scrollOffset">Current grid-row scroll offset (from NavigationContext.ScrollOffset).</param>
+    /// <param name="layout">Active layout, typically obtained from <see cref="ComputeLayout"/>.</param>
+    /// <param name="maxLines">Maximum lines available for the link list (viewport height).</param>
+    /// <returns>(row, col) of the title text, or null if not currently visible.</returns>
+    internal static (int Row, int Col)? TryGetSelectedRowScreenPosition(
+        IReadOnlyList<LinkNode> visibleNodes,
+        int selectedNodeIndex,
+        int scrollOffset,
+        LinkTreeLayout layout,
+        int maxLines)
+    {
+        if (visibleNodes == null || visibleNodes.Count == 0)
+        {
+            return null;
+        }
+
+        if (selectedNodeIndex < 0 || selectedNodeIndex >= visibleNodes.Count)
+        {
+            return null;
+        }
+
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes.ToList(), layout.Columns);
+        var (gridRowIdx, gridCol) = LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedNodeIndex);
+
+        if (gridRowIdx < scrollOffset)
+        {
+            return null;
+        }
+
+        // Account for the leading scroll-up indicator line if present.
+        var screenLine = layout.HeaderLines + (scrollOffset > 0 ? 1 : 0);
+        var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
+
+        for (var r = scrollOffset; r < gridRows.Count; r++)
+        {
+            var gr = gridRows[r];
+            var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
+
+            if (r == gridRowIdx)
+            {
+                if (gr.IsGroupHeader)
+                {
+                    // Group headers don't have a title-text col offset that matches a card —
+                    // skip the flash for them.
+                    return null;
+                }
+
+                // Title line within the card: row 1 of a 5-row card, row 0 of a compact card.
+                var titleLineIdx = layout.CellHeight >= 5 ? 1 : 0;
+
+                // Cards write at column 0 of the line. The title text sits after the
+                // leading prefix character (accent bar/space/dot) + 1 separator space = col 2.
+                const int leftCardTitleCol = 2;
+                int col;
+                if (gridCol == 0)
+                {
+                    col = leftCardTitleCol;
+                }
+                else
+                {
+                    // Right column cards start after left cell + 1-char divider.
+                    col = layout.CellWidth + 1 + leftCardTitleCol;
+                }
+
+                return (screenLine + titleLineIdx, col);
+            }
+
+            // Bail out if this row would have been clipped by the viewport.
+            if (screenLine - layout.HeaderLines + linesNeeded > maxLines)
+            {
+                return null;
+            }
+
+            screenLine += linesNeeded;
+        }
+
+        return null;
+    }
+
     private static string BuildHeaderSubtitle(PageMetadata metadata, string url, int linkCount, int sectionCount)
     {
         var parts = new List<string>();
