@@ -46,6 +46,16 @@ public class PageLoadPipeline
     private IHierarchyConfigStore? _hierarchyConfigStore;
     private bool _hierarchyConfigStoreResolved;
 
+    // Lazily resolved article-layout services (only constructed when an
+    // article-shaped page slips past the heuristic content extractor and we
+    // need to escalate to the saved-config / AI pipeline).
+    private IArticleLayoutStore? _articleLayoutStore;
+    private bool _articleLayoutStoreResolved;
+    private ISelectorBasedArticleExtractor? _selectorExtractor;
+    private bool _selectorExtractorResolved;
+    private IAiArticleExtractor? _aiArticleExtractor;
+    private bool _aiArticleExtractorResolved;
+
     public PageLoadPipeline(
         IPageLoader pageLoader,
         ILinkExtractor linkExtractor,
@@ -413,6 +423,19 @@ public class PageLoadPipeline
         if (classification != PageClassification.LinkList)
         {
             readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
+
+            // Escalate to the AI article-layout pipeline when the heuristic
+            // extractor returns null for a URL that *looks* article-shaped
+            // (workspace-xusy). The escalation tries a saved per-domain config
+            // first, then asks the AI extractor for a fresh selector set when
+            // there's no saved config or the saved config also misses.
+            if (readable == null && !string.IsNullOrEmpty(loadResult.Html)
+                && PageClassifier.IsArticleUrlPattern(finalUrl))
+            {
+                readable = await TryArticleSelectorEscalationAsync(
+                    finalUrl, loadResult.Html, cancellationToken).ConfigureAwait(false);
+            }
+
             if (readable != null)
             {
                 page.SetReadableContent(readable);
@@ -1012,6 +1035,183 @@ public class PageLoadPipeline
 
         return _articleContentCache;
     }
+
+    private IArticleLayoutStore? ResolveArticleLayoutStore()
+    {
+        if (!_articleLayoutStoreResolved)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            _articleLayoutStore = scope.ServiceProvider.GetService<IArticleLayoutStore>();
+            _articleLayoutStoreResolved = true;
+        }
+
+        return _articleLayoutStore;
+    }
+
+    private ISelectorBasedArticleExtractor? ResolveSelectorExtractor()
+    {
+        if (!_selectorExtractorResolved)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            _selectorExtractor = scope.ServiceProvider.GetService<ISelectorBasedArticleExtractor>();
+            _selectorExtractorResolved = true;
+        }
+
+        return _selectorExtractor;
+    }
+
+    private IAiArticleExtractor? ResolveAiArticleExtractor()
+    {
+        if (!_aiArticleExtractorResolved)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            _aiArticleExtractor = scope.ServiceProvider.GetService<IAiArticleExtractor>();
+            _aiArticleExtractorResolved = true;
+        }
+
+        return _aiArticleExtractor;
+    }
+
+    /// <summary>
+    /// Escalation chain when the heuristic <see cref="IReadableContentExtractor"/>
+    /// returns null (or fails the quality gate) for an article-shaped URL. Tries:
+    /// <list type="number">
+    ///   <item>Saved per-domain article-layout config (if present)</item>
+    ///   <item>AI extractor — only when (1) miss AND saved config doesn't already produce non-empty content</item>
+    /// </list>
+    /// On AI success the candidate config is self-tested via the
+    /// <see cref="ISelectorBasedArticleExtractor"/>; only configs that produce
+    /// non-empty content meeting the global quality gate are persisted.
+    /// </summary>
+    /// <returns>Extracted content or null if the chain produced nothing.</returns>
+    private async Task<ReadableContent?> TryArticleSelectorEscalationAsync(
+        string url,
+        string html,
+        CancellationToken cancellationToken)
+    {
+        if (!PageClassifier.IsArticleUrlPattern(url))
+        {
+            return null;
+        }
+
+        var store = ResolveArticleLayoutStore();
+        var selectorExtractor = ResolveSelectorExtractor();
+        if (store is null || selectorExtractor is null)
+        {
+            return null;
+        }
+
+        string? domain;
+        try
+        {
+            domain = new Uri(url).Host.ToLowerInvariant();
+        }
+        catch
+        {
+            return null;
+        }
+
+        // 1. Saved config first.
+        var savedConfig = await store.LoadAsync(domain).ConfigureAwait(false);
+        if (savedConfig != null)
+        {
+            var fromSaved = selectorExtractor.Extract(savedConfig, url, html);
+            if (fromSaved != null)
+            {
+                _logger.LogInformation(
+                    "Article extracted via saved selector config for {Url} ({Words} words)",
+                    url,
+                    fromSaved.WordCount);
+                return fromSaved;
+            }
+        }
+
+        // 2. AI escalation.
+        var aiExtractor = ResolveAiArticleExtractor();
+        if (aiExtractor is null || !aiExtractor.IsConfigured)
+        {
+            _logger.LogDebug("AI article extractor unavailable for {Url}; skipping", url);
+            return null;
+        }
+
+        ArticleSelectorConfig? candidate;
+        try
+        {
+            candidate = await aiExtractor.AnalyzeAsync(url, html, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI article extractor failed for {Url}", url);
+            return null;
+        }
+
+        if (candidate == null || candidate.PageTypes.Count == 0)
+        {
+            return null;
+        }
+
+        // Self-test gate: run the candidate against the live HTML.
+        var fromAi = selectorExtractor.Extract(candidate, url, html);
+        if (fromAi == null)
+        {
+            _logger.LogInformation(
+                "AI article extractor produced a candidate for {Url} that failed the self-test gate; not persisting",
+                url);
+            return null;
+        }
+
+        // Merge with any pre-existing saved config (replace the entry that
+        // shares the same Name; otherwise append).
+        var merged = MergeArticleConfigs(savedConfig, candidate);
+        try
+        {
+            await store.SaveAsync(merged).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist AI-generated article layout for {Domain}", merged.Domain);
+        }
+
+        _logger.LogInformation(
+            "AI extracted article for {Url} ({Words} words); config persisted",
+            url,
+            fromAi.WordCount);
+        return fromAi;
+    }
+
+#pragma warning disable SA1204 // grouped with the escalation logic that produces it
+    private static ArticleSelectorConfig MergeArticleConfigs(
+        ArticleSelectorConfig? existing,
+        ArticleSelectorConfig fresh)
+    {
+        if (existing == null || existing.PageTypes.Count == 0)
+        {
+            return fresh;
+        }
+
+        var freshEntry = fresh.PageTypes[0];
+        var entries = new List<PageTypeEntry>(existing.PageTypes);
+        var idx = entries.FindIndex(e => string.Equals(e.Name, freshEntry.Name, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+        {
+            entries[idx] = freshEntry;
+        }
+        else
+        {
+            entries.Add(freshEntry);
+        }
+
+        return existing with
+        {
+            UpdatedAt = DateTime.UtcNow,
+            PageTypes = entries,
+        };
+    }
+#pragma warning restore SA1204
 
     /// <summary>
     /// Stores extracted readable content in the persistent article cache so podcast
