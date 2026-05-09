@@ -66,6 +66,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private volatile bool _disposed;
     private volatile string? _currentlyFetchingUrl;
 
+    // Last typed human-action signal raised by the preloader's HTML check
+    // (workspace-0b9s). Surfaced through PreloadProgress so the launcher /
+    // link-tree status bar can warn the user before they Enter into a doomed
+    // article load. Cleared when the next preload succeeds for a URL on the
+    // same origin.
+    private HumanActionRequired? _lastBlockedAction;
+
     // Debounce state: stores the latest selection change parameters
     private int _pendingSelectedIndex;
     private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
@@ -133,6 +140,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        // Drop a stale "⏸ verify at X" badge as soon as the user navigates to a
+        // page on a different origin (workspace-0b9s QA #2). Otherwise a verdict
+        // raised on site A would keep showing while the user reads site B.
+        ClearBlockedActionIfDifferentOrigin(currentPageUrl);
+
         lock (_queueLock)
         {
             _pendingSelectedIndex = selectedIndex;
@@ -158,6 +170,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
         if (_disposed)
         {
             return;
+        }
+
+        // Drop a stale HITL badge if the collection's first item is on a
+        // different origin than the last verdict (workspace-0b9s QA #2).
+        // Collection URLs are typically same-domain, but reading-list / saved
+        // collections can mix origins.
+        if (urls is { Count: > 0 })
+        {
+            ClearBlockedActionIfDifferentOrigin(urls[0]);
         }
 
         lock (_queueLock)
@@ -306,6 +327,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             PaywalledLinkCount = _paywalledLinkCount,
             IsActivelyFetching = hasQueuedWork && !_paused,
             CurrentlyFetchingUrl = _currentlyFetchingUrl,
+            BlockedAction = _lastBlockedAction,
         };
     }
 
@@ -390,24 +412,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return new[] { domain };
     }
 
+    /// <summary>
+    /// Backwards-compatible wrapper around <see cref="HumanActionDetector.IsBotDetectionResponse"/>.
+    /// Kept on this type for tests that still call it directly. New code should use
+    /// <see cref="HumanActionDetector.Detect"/> for a typed verdict.
+    /// </summary>
     internal static bool IsBotDetectionResponse(string html)
-    {
-        var indicators = new[]
-        {
-            "attention required! | cloudflare",
-            "you have been blocked",
-            "checking your browser",
-            "cf-browser-verification",
-            "cf-challenge",
-            "challenge-platform",
-            "just a moment...",
-            "enable cookies",
-            "please enable javascript",
-            "access denied"
-        };
-
-        return Array.Exists(indicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase));
-    }
+        => HumanActionDetector.IsBotDetectionResponse(html);
 
     /// <summary>
     /// Computes a priority score for a preload item. Lower score = higher priority.
@@ -1098,15 +1109,29 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
             if (result.Success)
             {
-                if (IsBotDetectionResponse(result.Html))
+                // Typed HITL detection (workspace-0b9s): consolidate captcha / login /
+                // cookie-consent / 2FA / paywall / region-block detection in one place
+                // and surface the variant up through PreloadProgress so the status bar
+                // shows "⏸ {verb} at {domain}" before the user even Enters the article.
+                var hitlAction = HumanActionDetector.Detect(result.Html, result.Url ?? url, result.StatusCode);
+                if (hitlAction != null || IsBotDetectionResponse(result.Html))
                 {
                     var origin = UrlNormalizer.GetOrigin(url);
                     if (origin != null)
                     {
                         _circuitBrokenDomains[origin] = DateTime.UtcNow;
                         _logger.LogWarning(
-                            "Bot detection triggered for {Origin}, stopping pre-loads for this domain",
-                            origin);
+                            "Human action required for {Origin} ({Variant}), stopping pre-loads for this domain",
+                            origin,
+                            hitlAction?.Variant.ToString() ?? "BotDetection");
+                    }
+
+                    // Surface the typed verdict to the UI; preserve the silent
+                    // circuit-break behaviour (we still don't keep retrying).
+                    if (hitlAction != null)
+                    {
+                        _lastBlockedAction = hitlAction;
+                        NotifyProgressChanged();
                     }
                 }
                 else if (ReadableContentExtractor.IsEmptyArticleShell(result.Html))
@@ -1152,7 +1177,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         "Skipping cache for preloaded URL with no extractable article content: {Url}",
                         url);
                 }
-                else if (IsRedirectedUrl(url, result.Url))
+                else if (result.Url != null && IsRedirectedUrl(url, result.Url))
                 {
                     // Server redirected to a different page (e.g., paywalled article → section page).
                     // Do NOT cache under the original URL — the content doesn't match the request.
@@ -1207,6 +1232,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
                     await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken).ConfigureAwait(false);
+
+                    // Clear the sticky HITL badge if this success is on the same
+                    // origin as the last verdict (workspace-0b9s QA #2). Without
+                    // this, one tripped URL keeps the "⏸ verify at {domain}" badge
+                    // on for the rest of the session.
+                    ClearBlockedActionForOriginIfMatches(url);
                 }
             }
             else
@@ -1364,7 +1395,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
             var html = await _backgroundPage.ContentAsync().ConfigureAwait(false);
             var finalUrl = _backgroundPage.Url;
 
-            if (PageLoader.IsBotChallengePage(html))
+            // Typed HITL detection on the browser preload path (workspace-0b9s QA #3).
+            // Previously this branch only called IsBotChallengePage(html), set the
+            // circuit breaker, and returned silently — so the NYT scenario named in
+            // the bead (browser-preload-routed paywalled domain hits a CAPTCHA / login
+            // wall) never surfaced a verdict to the status bar. Now we run the same
+            // HumanActionDetector the HTTP path uses and publish the result.
+            var browserDetection = HumanActionDetector.Detect(html, finalUrl, statusCode: 0);
+            if (browserDetection != null || PageLoader.IsBotChallengePage(html))
             {
                 var origin = UrlNormalizer.GetOrigin(url);
                 if (origin != null)
@@ -1372,7 +1410,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _circuitBrokenDomains[origin] = DateTime.UtcNow;
                 }
 
-                _logger.LogWarning("Bot challenge during browser preload: {Url}", url);
+                _logger.LogWarning(
+                    "Human action required during browser preload ({Variant}): {Url}",
+                    browserDetection?.Variant.ToString() ?? "BotDetection",
+                    url);
+
+                if (browserDetection != null)
+                {
+                    _lastBlockedAction = browserDetection;
+                    NotifyProgressChanged();
+                }
+
                 return;
             }
 
@@ -1429,6 +1477,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             }
 
             _logger.LogInformation("Browser pre-loaded and cached: {Url}", url);
+
+            // Clear sticky HITL badge on browser-path success too (workspace-0b9s QA #2):
+            // the same clear-on-same-origin-success rule applies regardless of whether
+            // the preload that succeeds went through HTTP or the browser path.
+            ClearBlockedActionForOriginIfMatches(url);
         }
         catch (PlaywrightException ex)
         {
@@ -1448,6 +1501,37 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
+#pragma warning disable SA1202 // Internal test seams kept adjacent to the private code they exercise (workspace-0b9s QA #2).
+    /// <summary>
+    /// Test seam (workspace-0b9s QA #2): lets unit tests prime the
+    /// "last blocked action" field so the clearing-on-success and
+    /// clearing-on-origin-change behaviour can be exercised without
+    /// having to stand up a full HTTP test server.
+    /// </summary>
+    internal void SetBlockedActionForTesting(HumanActionRequired? action)
+    {
+        _lastBlockedAction = action;
+        NotifyProgressChanged();
+    }
+
+    /// <summary>
+    /// Test seam (workspace-0b9s QA #2): exposes the success-path clear so
+    /// tests can verify the behaviour without driving a real preload.
+    /// </summary>
+    internal void ClearBlockedActionForOriginIfMatchesForTesting(string url)
+        => ClearBlockedActionForOriginIfMatches(url);
+#pragma warning restore SA1202
+
+    private static string ExtractHostFromOrigin(string origin)
+    {
+        // origin format from UrlNormalizer.GetOrigin: "scheme://host[:port]"
+        // Strip scheme prefix and any :port suffix to get bare host.
+        var schemeSep = origin.IndexOf("://", StringComparison.Ordinal);
+        var hostStart = schemeSep >= 0 ? schemeSep + 3 : 0;
+        var portSep = origin.IndexOf(':', hostStart);
+        return portSep >= 0 ? origin[hostStart..portSep] : origin[hostStart..];
+    }
+
     private void NotifyProgressChanged()
     {
         try
@@ -1457,6 +1541,67 @@ internal sealed class BackgroundPreloadService : IPreloadService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "ProgressChanged handler error");
+        }
+    }
+
+    /// <summary>
+    /// Clears <see cref="_lastBlockedAction"/> when the just-completed preload
+    /// succeeds on the same origin that previously raised the verdict. Without
+    /// this, once any URL trips a HITL detection during preload the badge
+    /// sticks for the entire app session even after the user solves the gate
+    /// and other URLs on that domain start succeeding (workspace-0b9s QA #2).
+    /// </summary>
+    private void ClearBlockedActionForOriginIfMatches(string url)
+    {
+        var current = _lastBlockedAction;
+        if (current == null)
+        {
+            return;
+        }
+
+        var origin = UrlNormalizer.GetOrigin(url);
+        if (origin == null)
+        {
+            return;
+        }
+
+        // Compare by host (Domain). Origin is "scheme://host[:port]"; current.Domain
+        // is the bare host. Strip the scheme/port for the comparison so e.g. an
+        // origin of "https://www.nytimes.com" matches a stored Domain of
+        // "www.nytimes.com".
+        var host = ExtractHostFromOrigin(origin);
+        if (string.Equals(host, current.Domain, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastBlockedAction = null;
+            NotifyProgressChanged();
+        }
+    }
+
+    /// <summary>
+    /// Clears <see cref="_lastBlockedAction"/> when the user moves to a page
+    /// whose origin differs from the one that raised the last HITL verdict.
+    /// Prevents a stale badge for one site from leaking into another's status
+    /// bar (workspace-0b9s QA #2).
+    /// </summary>
+    private void ClearBlockedActionIfDifferentOrigin(string? currentPageUrl)
+    {
+        var current = _lastBlockedAction;
+        if (current == null || string.IsNullOrWhiteSpace(currentPageUrl))
+        {
+            return;
+        }
+
+        var origin = UrlNormalizer.GetOrigin(currentPageUrl);
+        if (origin == null)
+        {
+            return;
+        }
+
+        var host = ExtractHostFromOrigin(origin);
+        if (!string.Equals(host, current.Domain, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastBlockedAction = null;
+            NotifyProgressChanged();
         }
     }
 

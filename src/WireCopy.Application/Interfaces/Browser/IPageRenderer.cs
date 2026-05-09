@@ -57,6 +57,16 @@ public interface IPageRenderer
     void RenderChallenge(string url);
 
     /// <summary>
+    /// Renders a variant-aware human-action box (workspace-0b9s). Replaces the
+    /// generic "Something went wrong" / "Bot challenge detected" copy with copy
+    /// that names the variant (CAPTCHA, login, cookie consent, 2FA, paywall,
+    /// region block, generic) and tells the user exactly what to do next.
+    /// </summary>
+    /// <param name="action">Typed signal describing the action required.</param>
+    /// <param name="url">URL that triggered the action.</param>
+    void RenderHumanAction(HumanActionRequired action, string url);
+
+    /// <summary>
     /// Renders a message for interactive refresh mode (headed browser open for manual intervention).
     /// </summary>
     /// <param name="url">URL being loaded interactively.</param>

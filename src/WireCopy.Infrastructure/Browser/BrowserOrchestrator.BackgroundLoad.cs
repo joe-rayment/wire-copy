@@ -149,6 +149,22 @@ public partial class BrowserOrchestrator
         {
             _logger.LogDebug("Background page load was cancelled for {Url}", url);
         }
+        catch (HumanActionRequiredException hitl)
+        {
+            _logger.LogWarning(
+                "Background page load blocked on human action ({Variant} at {Domain}) for {Url}",
+                hitl.RequiredAction.Variant,
+                hitl.RequiredAction.Domain,
+                url);
+
+            // If still on skeleton, render the variant-aware HITL box so the user
+            // knows exactly what to do (solve CAPTCHA / log in / accept cookies / …)
+            // instead of the generic "Something went wrong" error.
+            if (_navigationService.CurrentPage?.Url == url)
+            {
+                _renderer.RenderHumanAction(hitl.RequiredAction, url);
+            }
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Background page load failed for {Url}", url);
