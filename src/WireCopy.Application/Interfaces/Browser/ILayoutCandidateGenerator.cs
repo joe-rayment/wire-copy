@@ -56,7 +56,7 @@ public sealed record LayoutCandidate
     /// <summary>
     /// Human-readable reason this strategy is unavailable, surfaced in the
     /// chooser status bar so the user knows what to do (e.g., "No OpenAI
-    /// API key — press S to open Setup"). Null when <see cref="IsUnavailable"/>
+    /// API key — press c on the launcher to open Setup"). Null when <see cref="IsUnavailable"/>
     /// is false. workspace-33jw.
     /// </summary>
     public string? UnavailableReason { get; init; }

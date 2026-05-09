@@ -148,7 +148,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     {
         var apiKey = GetApiKey()
             ?? throw new InvalidOperationException(
-                "OpenAI API key not configured. Use Setup (press S) to configure.");
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
         var domain = new Uri(pageUrl).Host.ToLowerInvariant();
         var systemPrompt = BuildHierarchySystemPrompt();
@@ -213,7 +213,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     {
         var apiKey = GetApiKey()
             ?? throw new InvalidOperationException(
-                "OpenAI API key not configured. Use Setup (press S) to configure.");
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
         var contentLinks = links
             .Where(l => l.Type == LinkType.Content)

@@ -13,9 +13,10 @@ namespace WireCopy.Tests.Browser;
 
 /// <summary>
 /// Regression tests for workspace-ayt8: when no API credentials are configured,
-/// the launcher renders a non-focusable "Set up API keys · press S" hint
+/// the launcher renders a non-focusable "Set up API keys · press c" hint
 /// inside the wordmark/header box (replacing the trailing blank line). The
-/// `S` keystroke opens the unified Setup screen. The hint must NOT add rows
+/// `c` keystroke opens the unified Setup screen (rebound from `S` in
+/// workspace-jby8 to avoid the save-letter overlap). The hint must NOT add rows
 /// to the header card and must NOT be reachable via the launcher's selection
 /// model — it is chrome, not a grid item.
 /// </summary>
@@ -54,7 +55,7 @@ public class LauncherSetupHintTests
 
         screen.Should().Contain("Set up API keys",
             "the setup hint must be rendered when ShowSetupHint=true");
-        screen.Should().Contain("press S",
+        screen.Should().Contain("press c",
             "the hint must advertise the dedicated keybinding");
 
         // Hint should appear before the URL bar in the rendered output —
@@ -73,7 +74,7 @@ public class LauncherSetupHintTests
 
         screen.Should().NotContain("Set up API keys",
             "configured users must not see the hint anywhere");
-        screen.Should().NotContain("press S",
+        screen.Should().NotContain("→ Set up API keys to enable AI features · press c",
             "configured users must not see the dedicated-keybinding affordance");
     }
 

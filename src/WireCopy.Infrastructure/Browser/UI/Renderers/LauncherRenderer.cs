@@ -18,14 +18,11 @@ internal class LauncherRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    // Reading List secondary-accent background (workspace-ul5z).
-    // ANSI 23 (#005f5f, dark cyan teal) — chosen as a dimmed counterpart to
-    // AccentFg (ANSI 51 cyan) which the design system reserves for interactive
-    // accents. Reads as "secondary accent": present and identifiable, but
-    // visually quieter than the selected cell's brightened green border + bg.
-    // Source: docs/design-system.md (cyan accent role) — see workspace-ul5z.
-    private const string ReadingListBg = "\x1b[48;5;23m";
-    private const string ResetBg = "\x1b[49m";
+    // Reading List glyph: cyan ★ prefix marks the slot as a different kind
+    // of tile (a saved-articles container, not a saved URL) without leaving
+    // the design palette. The accent colour comes from ThemePalette.AccentFg
+    // at render time so each theme maps it to its own accent hue.
+    private const string ReadingListGlyph = "★";
 
     private const int WordmarkWidth = 87;
 
@@ -303,7 +300,7 @@ internal class LauncherRenderer
         // Slot layout (workspace-ul5z): with bookmarks present, virtual
         // index 1 is the Reading List; bookmarks shift one slot later.
         //   virtual 0 → bookmark[0]
-        //   virtual 1 → Reading List (secondary-accent fill)
+        //   virtual 1 → Reading List (cyan-accented border + ★ glyph)
         //   virtual N (≥ 2) → bookmark[N - 1]
         var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
         var isSelected = itemIdx == selectedIndex;
@@ -338,22 +335,24 @@ internal class LauncherRenderer
             badge = string.Empty;
         }
 
-        // Borders: dim grey by default; brighten to PrimaryText when selected.
-        // Reading List uses the same border style — the secondary-accent
-        // background fill is what differentiates it, not the border colour.
+        // Borders stay consistent across every card so the launcher grid
+        // reads as one coherent surface: dim secondary green by default,
+        // brightening to PrimaryText when selected. Reading List
+        // differentiation lives in the title (cyan ★ + cyan title) so the
+        // box outlines never go off-theme.
+        var accentFg = p.GetAccentFg().AnsiFg;
         var borderColor = isSelected
             ? $"{p.PrimaryText.AnsiFg}"
             : $"{p.SecondaryText.AnsiFg}{Dim}";
-        var titleSegment = $"{Bold}{p.PrimaryText.AnsiFg}";
+
+        // Reading List title uses AccentFg (cyan in Phosphor) instead of
+        // PrimaryText so the tile's special role reads at a glance, while the
+        // surrounding card stays visually consistent with the bookmarks.
+        var titleSegment = isReadingList
+            ? $"{Bold}{accentFg}"
+            : $"{Bold}{p.PrimaryText.AnsiFg}";
         var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
         var domainColor = p.SecondaryText.AnsiFg;
-
-        // Background fill for the Reading List cell. Applied across ALL four
-        // box rows so the whole tile shows the fill, not just inner content.
-        // Reset before any inter-cell content (the row builder is responsible
-        // for not letting the fill bleed into the gutter).
-        var bg = isReadingList ? ReadingListBg : string.Empty;
-        var bgReset = isReadingList ? ResetBg : string.Empty;
 
         // Inner content width = cellWidth - 2 borders - 2 single-cell pads.
         var inner = Math.Max(1, cellWidth - 4);
@@ -362,36 +361,38 @@ internal class LauncherRenderer
         {
             case 0:
                 // ╭───────────╮
-                return $"{bg}{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}{bgReset}";
+                return $"{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}";
 
             case 1:
             {
-                // │ NAME .................. [N] │  (badge right-aligned)
+                // │ ★ NAME ................. [N] │  (badge right-aligned)
                 // Reserve 5 cells for the badge zone (" [N]") so the title never
                 // collides with it. Items without a badge get the full inner width.
                 var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0; // 1-cell pre-pad
-                var titleMax = Math.Max(1, inner - badgeZone);
+                var glyphPrefix = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
+                var glyphWidth = isReadingList ? 2 : 0; // ★ + space
+                var titleMax = Math.Max(1, inner - badgeZone - glyphWidth);
                 var truncName = RenderHelpers.TruncateText(name, titleMax);
                 var nameDisplayLen = truncName.Length;
-                var gap = Math.Max(0, inner - nameDisplayLen - badgeZone);
+                var gap = Math.Max(0, inner - nameDisplayLen - badgeZone - glyphWidth);
 
-                var renderedTitle = $"{bg}{titleSegment}{truncName}{Reset}{bg}";
+                var renderedTitle = $"{glyphPrefix}{titleSegment}{truncName}{Reset}";
 
                 if (badge.Length > 0)
                 {
-                    return $"{bg}{borderColor}│{Reset}{bg} " +
+                    return $"{borderColor}│{Reset} " +
                            $"{renderedTitle}" +
                            $"{new string(' ', gap)}" +
-                           $"{badgeColor}{badge}{Reset}{bg}" +
-                           $" {borderColor}│{Reset}{bgReset}";
+                           $"{badgeColor}{badge}{Reset}" +
+                           $" {borderColor}│{Reset}";
                 }
 
                 // No badge — pad the full width.
-                var padNoBadge = Math.Max(0, inner - nameDisplayLen);
-                return $"{bg}{borderColor}│{Reset}{bg} " +
+                var padNoBadge = Math.Max(0, inner - nameDisplayLen - glyphWidth);
+                return $"{borderColor}│{Reset} " +
                        $"{renderedTitle}" +
                        $"{new string(' ', padNoBadge)}" +
-                       $" {borderColor}│{Reset}{bgReset}";
+                       $" {borderColor}│{Reset}";
             }
 
             case 2:
@@ -399,15 +400,15 @@ internal class LauncherRenderer
                 // │ domain.example                │
                 var truncDomain = RenderHelpers.TruncateText(domain, inner);
                 var pad = Math.Max(0, inner - truncDomain.Length);
-                return $"{bg}{borderColor}│{Reset}{bg} " +
-                       $"{domainColor}{truncDomain}{Reset}{bg}" +
+                return $"{borderColor}│{Reset} " +
+                       $"{domainColor}{truncDomain}{Reset}" +
                        $"{new string(' ', pad)}" +
-                       $" {borderColor}│{Reset}{bgReset}";
+                       $" {borderColor}│{Reset}";
             }
 
             case 3:
                 // ╰───────────╯
-                return $"{bg}{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}{bgReset}";
+                return $"{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}";
 
             default:
                 // Defensive — caller renders the inter-row gap blank line itself,
@@ -720,28 +721,32 @@ internal class LauncherRenderer
         string SetupHintBoxLine()
         {
             const string fullLabel = "→ Set up API keys to enable AI features";
-            const string suffix = " · press S";
+            const string suffix = " · press c";
             var accent = p.GetAccentFg().AnsiFg;
             var muted = p.SecondaryText.AnsiFg;
 
-            // Inner content width (between the box pipes plus a one-cell pad on each side).
+            // Left-align with the tagline (workspace-jby8): the hint shares
+            // the same indent as "All copy, no clutter." so the two lines
+            // form a single left edge under the wordmark, rather than the
+            // hint being centred and floating away from the rest of the card.
+            var hintPad = useLargeWordmark ? "      " : " ";
             var inner = Math.Max(0, boxOuter - 2);
 
             // Truncation order: drop suffix first, then truncate the label.
+            var available = Math.Max(0, inner - hintPad.Length);
             var label = fullLabel;
-            var includeSuffix = suffix.Length + label.Length <= inner;
-            if (!includeSuffix && label.Length > inner)
+            var includeSuffix = suffix.Length + label.Length <= available;
+            if (!includeSuffix && label.Length > available)
             {
-                label = label[..Math.Max(0, inner)];
+                label = label[..Math.Max(0, available)];
             }
 
-            var visible = includeSuffix ? label.Length + suffix.Length : label.Length;
-            var leftPad = Math.Max(0, (inner - visible) / 2);
-            var rightPad = Math.Max(0, inner - leftPad - visible);
+            var visible = hintPad.Length + (includeSuffix ? label.Length + suffix.Length : label.Length);
+            var rightPad = Math.Max(0, inner - visible);
 
             var rendered = includeSuffix
-                ? $"{new string(' ', leftPad)}{accent}{label}{Reset}{muted}{suffix}{Reset}{new string(' ', rightPad)}"
-                : $"{new string(' ', leftPad)}{accent}{label}{Reset}{new string(' ', rightPad)}";
+                ? $"{hintPad}{accent}{label}{Reset}{muted}{suffix}{Reset}{new string(' ', rightPad)}"
+                : $"{hintPad}{accent}{label}{Reset}{new string(' ', rightPad)}";
 
             return $"{margin} {borderColor}│{Reset} {rendered} {borderColor}│{Reset}";
         }
@@ -873,7 +878,7 @@ internal class LauncherRenderer
     {
         if (count is null or 0)
         {
-            return "nothing saved yet — press c on any link to add";
+            return "nothing saved yet — press s on any link to add";
         }
 
         return count == 1 ? "1 saved article" : $"{count} saved articles";

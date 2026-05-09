@@ -19,15 +19,17 @@ internal static class LauncherCommandHandler
     {
         var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
 
-        // Setup hotkey: capital 'S' opens the unified Setup screen from the
-        // launcher (workspace-ayt8 + workspace-9qzh). Always active — the
-        // launcher is the only place this fires, and fully-configured users
-        // still need a way into Settings (the `?` help overlay also lists
-        // this binding). Intercepted before the URL-bar typing fall-through
-        // below so the keystroke doesn't get typed into the URL field.
-        // The welcome banner one-shot is gated on first-run inside the
-        // settings handler call.
-        if (command.RawKeyChar == 'S')
+        // Setup hotkey: lowercase 'c' opens the unified Setup screen from the
+        // launcher (workspace-ayt8 + workspace-9qzh; rebound from 'S' to 'c'
+        // in workspace-jby8 to avoid the save-letter overlap and the
+        // capital-letter ergonomic hit). Intercepts BEFORE the OpenCollections
+        // dispatch — at the launcher the Reading List tile already lives at
+        // slot 1 (digit 2) so collection-opening via 'c' is redundant; the
+        // letter is therefore safe to repurpose for Setup at this screen.
+        // Intercepted before the URL-bar typing fall-through below so the
+        // keystroke doesn't get typed into the URL field. The welcome banner
+        // one-shot is gated on first-run inside the settings handler call.
+        if (command.RawKeyChar == 'c')
         {
             // Welcome banner is for genuine first-run (no credential set yet).
             // Once the user has any credential configured, S still opens
