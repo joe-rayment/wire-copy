@@ -25,27 +25,29 @@ namespace WireCopy.Tests.Browser;
 public class LauncherSetupHintTests
 {
     [Fact]
-    public void ComputeHeaderPlusUrlBarLines_IdenticalRegardlessOfSetupHint()
+    public void ComputeHeaderPlusUrlBarLines_SetupHintAddsExactlyOneRow()
     {
         var without = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: false);
         var with = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: true);
 
-        with.Should().Be(without,
-            "the setup hint lives inside the header card and adds zero rows; " +
-            "all callers (scroll math, URL-bar row) must see the same offsets " +
-            "regardless of first-run state");
+        // workspace-0rde: the trailing blank-before-bottom-border inside the
+        // header card is now elided when no hint is shown, so the hint
+        // legitimately adds one row to the header card. Callers that compute
+        // scroll offsets must pass the active flag.
+        with.Should().Be(without + 1,
+            "the setup hint replaces an elided blank slot inside the header card, " +
+            "adding exactly one row when present");
     }
 
     [Fact]
-    public void ComputeLayout_IdenticalHeaderLinesRegardlessOfSetupHint()
+    public void ComputeLayout_SetupHintAddsExactlyOneRowToHeader()
     {
         var without = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: false);
         var with = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: true);
 
-        with.HeaderLines.Should().Be(without.HeaderLines,
-            "header card height is constant — the setup hint replaces a blank line, " +
-            "not an additional row");
-        with.VisibleRows.Should().Be(without.VisibleRows);
+        with.HeaderLines.Should().Be(without.HeaderLines + 1,
+            "header card grows by one row when the setup hint is shown; " +
+            "the trailing blank slot is otherwise elided (workspace-0rde)");
     }
 
     [Fact]

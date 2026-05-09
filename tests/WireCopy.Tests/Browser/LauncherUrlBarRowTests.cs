@@ -29,10 +29,11 @@ public class LauncherUrlBarRowTests
         // termtest harness uses 100 cols which triggers the large wordmark.
         var row = LauncherRenderer.ComputeUrlBarInputRow(terminalWidth: 100);
 
-        // Large header is 11 rows (top border + blank + 6 wordmark + subtitle + blank + bottom border).
-        // URL bar adds: blank, top border, content, bottom border, blank.
-        // The input/content line is therefore at row 13 (0-based).
-        row.Should().Be(13);
+        // Large header (no setup hint) is 10 rows (top border + blank + 6 wordmark + subtitle + bottom border)
+        // after workspace-0rde compression.
+        // URL bar adds: blank, top border, content, bottom border (4 rows).
+        // The input/content line is therefore at row 12 (0-based).
+        row.Should().Be(12);
     }
 
     [Fact]
@@ -41,10 +42,11 @@ public class LauncherUrlBarRowTests
         // 80 cols is below WordmarkWidth + 8 (= 95) so the narrow title is shown.
         var row = LauncherRenderer.ComputeUrlBarInputRow(terminalWidth: 80);
 
-        // Narrow header is 5 rows (top border + title + subtitle + blank + bottom border).
+        // Narrow header (no setup hint) is 4 rows (top border + title + subtitle + bottom border)
+        // after workspace-0rde compression.
         // URL bar adds: blank, top border, content, ...
-        // The input/content line is therefore at row 7 (0-based).
-        row.Should().Be(7);
+        // The input/content line is therefore at row 6 (0-based).
+        row.Should().Be(6);
     }
 
     [Fact]
@@ -52,8 +54,8 @@ public class LauncherUrlBarRowTests
     {
         // RenderHeader switches on INNER width (terminalWidth - 2) >= WordmarkWidth + 8,
         // i.e. terminalWidth >= WordmarkWidth + 10 (= 97). Below: narrow. At/above: large.
-        LauncherRenderer.ComputeUrlBarInputRow(WordmarkWidth + 9).Should().Be(7);
-        LauncherRenderer.ComputeUrlBarInputRow(WordmarkWidth + 10).Should().Be(13);
+        LauncherRenderer.ComputeUrlBarInputRow(WordmarkWidth + 9).Should().Be(6);
+        LauncherRenderer.ComputeUrlBarInputRow(WordmarkWidth + 10).Should().Be(12);
     }
 
     [Fact]
@@ -73,7 +75,7 @@ public class LauncherUrlBarRowTests
         // For narrow widths the title sits at row 1; the URL bar must clear that too.
         for (var w = 30; w < 97; w += 5)
         {
-            LauncherRenderer.ComputeUrlBarInputRow(w).Should().BeGreaterThan(4,
+            LauncherRenderer.ComputeUrlBarInputRow(w).Should().BeGreaterThan(3,
                 $"width {w} uses the narrow header; URL bar row must sit below the box");
         }
     }
@@ -129,12 +131,13 @@ public class LauncherUrlBarRowTests
             renderHeader.Invoke(renderer, new object[] { width, palette });
             var headerLines = helpers.LinesWritten;
 
-            // Then render the URL bar; the input content line is row headerLines + 1
-            // (URL bar lays out: blank, top border, content, bottom border, blank).
+            // Then render the URL bar; the input content line is row headerLines + 2
+            // (URL bar lays out: blank, top border, content, bottom border — 4 rows
+            // after workspace-0rde compression).
             renderUrlBar.Invoke(renderer, new object[] { width, true, palette });
             var totalLines = helpers.LinesWritten;
-            totalLines.Should().Be(headerLines + 5,
-                "URL bar emits 5 lines (blank, top border, content, bottom border, blank)");
+            totalLines.Should().Be(headerLines + 4,
+                "URL bar emits 4 lines (blank, top border, content, bottom border)");
 
             var expectedInputRow = headerLines + 2; // blank(0) + top border(1) + content(2)
             var computedInputRow = LauncherRenderer.ComputeUrlBarInputRow(terminalWidth);

@@ -35,6 +35,13 @@ internal class LauncherRenderer
     private const int GridCellBoxHeight = 4;
     private const int GridRowStride = GridCellBoxHeight + 1;
 
+    // URL bar block height (workspace-0rde): blank + top border + content
+    // + bottom border = 4 lines. The trailing blank that previously padded
+    // the bar from below was removed; the first bookmark row's own top
+    // border now sits directly under the URL bar's bottom border with
+    // no extra gutter.
+    private const int UrlBarLines = 4;
+
     // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
     // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
     // inner rows (3,4) in CelebrationFg (#ff5fd7 ANSI 206) for vertical stripe.
@@ -136,18 +143,18 @@ internal class LauncherRenderer
     /// </remarks>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant, bool showSetupHint)
     {
-        // Large wordmark: border + pad + 6 art rows + subtitle + pad + border = 11
-        // Narrow: border + title + subtitle + pad + border = 5
+        // Header height (workspace-0rde, after vertical-compression):
+        //   Large wordmark + setup hint: border + blank + 6 art + subtitle + hint + border = 11
+        //   Large wordmark, no hint:     border + blank + 6 art + subtitle + border         = 10
+        //   Narrow + setup hint:         border + title + subtitle + hint + border          = 5
+        //   Narrow, no hint:             border + title + subtitle + border                 = 4
         // Threshold: large wordmark needs WordmarkWidth (87) + 8 chars of margin/border.
         // Note: the inner-width threshold (terminalWidth - 2) >= WordmarkWidth + 8
         // mirrors the rendering switch in BuildHeaderLines and avoids an
         // off-by-two mismatch at the boundary (terminalWidth ∈ {95, 96}).
-        // showSetupHint affects only header *content* (the trailing blank inside
-        // the box becomes a hint line) — total header line count is unchanged.
-        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
-        const int urlBarLines = 5;
+        var headerLines = HeaderLineCount(terminalWidth, showSetupHint);
+        const int urlBarLines = UrlBarLines;
         const int footerLines = 2;
-        _ = showSetupHint;
 
         var width = Math.Max(1, terminalWidth - 2);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
@@ -211,20 +218,14 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Returns the line offset (in the virtual content stream) of the first
-    /// bookmark row. Setup hint no longer adds rows of its own — it lives
-    /// inside the header card (workspace-ayt8) — so the result is identical
-    /// for both flag values. The overload is kept for source compatibility.
+    /// bookmark row. After workspace-0rde, the setup hint adds exactly one
+    /// row to the header card (the trailing blank-before-bottom-border is now
+    /// elided when the hint is absent), so callers must pass the active
+    /// flag to get the correct offset.
     /// </summary>
     internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth, bool showSetupHint)
     {
-        // Mirror the BuildHeaderLines threshold: when inner width
-        // (terminalWidth - 2) is at least WordmarkWidth + 8, the large 11-line
-        // wordmark variant is shown; otherwise the 5-line narrow header.
-        // showSetupHint affects only header *content*, not its line count.
-        _ = showSetupHint;
-        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
-        const int urlBarLines = 5;
-        return headerLines + urlBarLines;
+        return HeaderLineCount(terminalWidth, showSetupHint) + UrlBarLines;
     }
 
     /// <summary>
@@ -245,12 +246,12 @@ internal class LauncherRenderer
     /// leading blank line written by the URL-bar block.
     /// </summary>
     /// <remarks>
-    /// Header line counts:
+    /// Header line counts (workspace-0rde):
     /// <list type="bullet">
-    ///   <item>Large wordmark (terminalWidth &gt;= WordmarkWidth + 8): top border + blank + 6 wordmark + subtitle + blank + bottom border = 11.</item>
-    ///   <item>Narrow: top border + title + subtitle + blank + bottom border = 5.</item>
+    ///   <item>Large wordmark (terminalWidth &gt;= WordmarkWidth + 8): top border + blank + 6 wordmark + subtitle + bottom border = 10 (or 11 with setup hint).</item>
+    ///   <item>Narrow: top border + title + subtitle + bottom border = 4 (or 5 with setup hint).</item>
     /// </list>
-    /// URL bar lines: blank + top border + content + bottom border + blank.
+    /// URL bar lines: blank + top border + content + bottom border (4 lines after compression).
     /// The input line is therefore at headerLines + 2 (1 blank + 1 top border).
     /// Because the URL bar can only be focused when <c>pageScrollOffset == 0</c>
     /// (see <see cref="CommandHandlers.LauncherCommandHandler"/>), this row is
@@ -258,9 +259,18 @@ internal class LauncherRenderer
     /// </remarks>
     internal static int ComputeUrlBarInputRow(int terminalWidth)
     {
+        return ComputeUrlBarInputRow(terminalWidth, showSetupHint: false);
+    }
+
+    /// <summary>
+    /// Returns the absolute terminal row (0-based) of the URL bar's input
+    /// line for the given header variant. The setup-hint flag adds one row
+    /// to the header card (workspace-0rde).
+    /// </summary>
+    internal static int ComputeUrlBarInputRow(int terminalWidth, bool showSetupHint)
+    {
         // Mirror the BuildHeaderLines switch on inner width (terminalWidth - 2).
-        var headerLines = (terminalWidth - 2) >= WordmarkWidth + 8 ? 11 : 5;
-        return headerLines + 2;
+        return HeaderLineCount(terminalWidth, showSetupHint) + 2;
     }
 
     internal static string ExtractDomain(string url)
@@ -274,6 +284,24 @@ internal class LauncherRenderer
         {
             return url;
         }
+    }
+
+    /// <summary>
+    /// Returns the header card height for the given terminal width and
+    /// setup-hint state. Centralised so <see cref="ComputeLayout"/>,
+    /// <see cref="ComputeHeaderPlusUrlBarLines"/>, and
+    /// <see cref="ComputeUrlBarInputRow"/> always agree on the row math
+    /// (workspace-0rde).
+    /// </summary>
+    private static int HeaderLineCount(int terminalWidth, bool showSetupHint)
+    {
+        var useLargeWordmark = (terminalWidth - 2) >= WordmarkWidth + 8;
+        if (useLargeWordmark)
+        {
+            return showSetupHint ? 11 : 10;
+        }
+
+        return showSetupHint ? 5 : 4;
     }
 
     /// <summary>
@@ -781,9 +809,15 @@ internal class LauncherRenderer
             $"{taglinePad}{p.SecondaryText.AnsiFg}{subtitle}{Reset}{versionStyled}",
             subtitle.Length + taglinePad.Length + versionSuffix.Length));
 
-        // Trailing blank-before-bottom-border becomes the setup hint when first-run.
-        // Net header height (11 large / 5 narrow) is unchanged.
-        lines.Add(showSetupHint ? SetupHintBoxLine() : BlankBoxLine());
+        // workspace-0rde: drop the trailing blank-before-bottom-border when no
+        // setup hint is shown — the bottom border already provides visual closure.
+        // When the hint IS shown it occupies that slot, so header height is
+        // 11/5 with hint and 10/4 without.
+        if (showSetupHint)
+        {
+            lines.Add(SetupHintBoxLine());
+        }
+
         lines.Add($"{margin} {borderColor}╰{new string('─', boxOuter)}╯{Reset}");
 
         return lines;
@@ -791,8 +825,13 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Builds the URL bar as a list of lines: blank, top border, content,
-    /// bottom border, blank (5 lines total).
+    /// bottom border (4 lines total).
     /// </summary>
+    /// <remarks>
+    /// workspace-0rde dropped the trailing blank that previously padded
+    /// the URL bar from below; the first bookmark row's own top border now
+    /// sits directly under the URL bar's bottom border.
+    /// </remarks>
     private static List<string> BuildUrlBarLines(int width, bool isSelected, ThemePalette p)
     {
         var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
@@ -818,7 +857,6 @@ internal class LauncherRenderer
             $"{textColor}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
             $"{borderColor} │{Reset}",
             $"{new string(' ', pad)}{borderColor}╰{new string('─', barWidth - 2)}╯{Reset}",
-            string.Empty,
         };
     }
 
@@ -1021,8 +1059,8 @@ internal class LauncherRenderer
 
         // Build the full virtual content stream:
         //   [0 .. headerLines)              wordmark / title (setup hint inside header card when ShowSetupHint)
-        //   [headerLines .. +5)             URL bar
-        //   [headerLines + 5 .. end)        bookmark rows
+        //   [headerLines .. +UrlBarLines)   URL bar (4 rows)
+        //   [headerLines + UrlBarLines ..)  bookmark rows
         var content = new List<string>();
         content.AddRange(BuildHeaderLines(layout.Width, p, showSetupHint));
         content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));

@@ -53,7 +53,8 @@ public class LauncherPageScrollTests
     [Fact]
     public void ScrollOffset_PastWordmark_HidesWordmarkAndShowsBookmarks()
     {
-        var headerLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(LargeTerminalWidth) - 5;
+        // URL bar is 4 rows after workspace-0rde compression.
+        var headerLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(LargeTerminalWidth) - 4;
 
         var capture = RenderLauncherCapture(
             CreateBookmarks(20),
