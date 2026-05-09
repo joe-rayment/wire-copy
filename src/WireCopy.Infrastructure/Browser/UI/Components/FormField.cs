@@ -9,22 +9,39 @@ namespace WireCopy.Infrastructure.Browser.UI.Components;
 /// Reusable inline form field component that renders a labeled text input
 /// with a rounded border, placeholder, validation, and error display.
 ///
-/// Visual layout (5 lines):
+/// Visual layout (5 lines, or 6 with optional Subtitle):
 ///   Label
-///   ╭──────────────────────────────────────╮
-///   │ input text                           │
-///   ╰──────────────────────────────────────╯
-///   ✓ Help text  — or —  ✗ Error message
+///   [Subtitle - optional one-line "where to find this" pointer]
+///   top border
+///   inner input row
+///   bottom border
+///   help / error
+///
+/// workspace-cgnt: <c>inputCol</c> bumped from 2 to 4 so the cursor lands
+/// inside the borders rather than overwriting the left side, and the
+/// underlying clear is narrowed to the box's inner width via the
+/// <c>clearWidth</c> arg on <see cref="IInputHandler.PromptForInputAsync"/>.
 /// </summary>
 internal static class FormField
 {
     /// <summary>
-    /// Total number of terminal rows this component occupies.
+    /// Default number of terminal rows the component occupies (no subtitle).
+    /// Use <see cref="HeightFor"/> when the field carries a Subtitle.
     /// </summary>
     public const int Height = 5;
 
     private const string Reset = "\x1b[0m";
     private const string Dim = "\x1b[2m";
+
+    /// <summary>
+    /// Returns the number of terminal rows the component will occupy for the
+    /// given field config — 6 when a Subtitle is present, else <see cref="Height"/>.
+    /// </summary>
+    public static int HeightFor(FormFieldConfig field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return string.IsNullOrEmpty(field.Subtitle) ? Height : Height + 1;
+    }
 
     /// <summary>
     /// Renders the form field and captures user input. Returns the entered value
@@ -46,15 +63,20 @@ internal static class FormField
 
         var boxWidth = innerWidth + 4;
         string? errorMessage = null;
+        var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
+        var topBorderOffset = hasSubtitle ? 2 : 1; // label[+subtitle], then top border
 
         while (!ct.IsCancellationRequested)
         {
-            // Render the field chrome (label, borders, help/error)
+            // Render the field chrome (label, optional subtitle, borders, help/error)
             RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage);
 
-            // Position cursor inside the box for input
-            var inputRow = startRow + 2; // label=0, top border=1, input=2
-            var inputCol = 2; // "│ " = 2 chars
+            // Position cursor INSIDE the box for input. workspace-cgnt:
+            // col 2 = left border, col 3 = padding space, col 4 = first
+            // input cell. Bumping inputCol to 4 keeps the left border intact
+            // when the input handler clears the row.
+            var inputRow = startRow + topBorderOffset + 1; // label[+sub], top border, then input
+            var inputCol = 4;
 
             // Wrap the field's optional OnExtraKey so that after the caller
             // handles the keystroke (typically by drawing an overlay) we can
@@ -73,20 +95,42 @@ internal static class FormField
                     return handled;
                 };
 
-            // Use the input handler to capture text
-            var value = await input.PromptForInputAsync(
-                string.Empty,
-                ct,
-                isSecret: field.IsSecret,
-                row: inputRow,
-                col: inputCol,
-                initialInput: field.InitialValue,
-                interceptKey: interceptKey).ConfigureAwait(false);
+            // workspace-cgnt: When the production TerminalInputHandler is
+            // wired up, call its specialised PromptForFieldInputAsync so the
+            // input clear stops short of the right border. For substitutes
+            // (and any future IInputHandler implementations), fall back to
+            // the standard 7-arg PromptForInputAsync — without this fallback
+            // we'd break NSubstitute mocks of the interface (see workspace-qi5p
+            // tests for CollectionCommandHandler).
+            string? value;
+            if (input is TerminalInputHandler concrete)
+            {
+                value = await concrete.PromptForFieldInputAsync(
+                    prompt: string.Empty,
+                    cancellationToken: ct,
+                    isSecret: field.IsSecret,
+                    row: inputRow,
+                    col: inputCol,
+                    initialInput: field.InitialValue,
+                    interceptKey: interceptKey,
+                    clearWidth: innerWidth).ConfigureAwait(false);
+            }
+            else
+            {
+                value = await input.PromptForInputAsync(
+                    string.Empty,
+                    ct,
+                    isSecret: field.IsSecret,
+                    row: inputRow,
+                    col: inputCol,
+                    initialInput: field.InitialValue,
+                    interceptKey: interceptKey).ConfigureAwait(false);
+            }
 
             if (value == null)
             {
                 // User pressed Escape — cancel
-                ClearFieldArea(startRow, boxWidth);
+                ClearFieldArea(startRow, boxWidth, hasSubtitle);
                 return null;
             }
 
@@ -107,8 +151,11 @@ internal static class FormField
                 }
             }
 
-            // Success — show brief confirmation and return
-            RenderValidationMessage(palette, startRow + 4, boxWidth, null, field.HelpText);
+            // Success — show brief confirmation and return. Validation row
+            // is the row after the bottom border, which depends on whether
+            // the field carries a Subtitle (workspace-cgnt).
+            var helpRow = startRow + topBorderOffset + 3; // [label, sub?, top, input, bottom, help]
+            RenderValidationMessage(palette, helpRow, boxWidth, null, field.HelpText);
             return value;
         }
 
@@ -116,7 +163,9 @@ internal static class FormField
     }
 
     /// <summary>
-    /// Renders the static parts of the field: label, border box, and status line.
+    /// Renders the static parts of the field: label, optional subtitle, border
+    /// box, and status line. Subtitle is the workspace-cgnt addition - when
+    /// present, it shifts the box and validation row down by one.
     /// </summary>
     private static void RenderFieldChrome(
         ThemePalette palette,
@@ -126,32 +175,57 @@ internal static class FormField
         int innerWidth,
         string? errorMessage)
     {
+        var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
+
         // Row 0: Label
         Console.SetCursorPosition(0, startRow);
         ClearLine(boxWidth + 2);
         Console.SetCursorPosition(2, startRow);
         Console.Write($"{palette.PrimaryText.AnsiFg}{field.Label}{Reset}");
 
-        // Row 1: Top border ╭───╮
-        Console.SetCursorPosition(0, startRow + 1);
-        ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, startRow + 1);
-        Console.Write($"{palette.HeaderBorderFg.AnsiFg}\u256d{new string('\u2500', boxWidth - 2)}\u256e{Reset}");
+        var nextRow = startRow + 1;
 
-        // Row 2: Input area │ ... │
-        Console.SetCursorPosition(0, startRow + 2);
+        // Optional subtitle row - the "where to find this" pointer rendered
+        // directly under the label so users see it BEFORE they start typing.
+        if (hasSubtitle)
+        {
+            Console.SetCursorPosition(0, nextRow);
+            ClearLine(boxWidth + 2);
+            Console.SetCursorPosition(2, nextRow);
+            var maxSubLen = Math.Max(1, boxWidth);
+            var sub = field.Subtitle!;
+            if (sub.Length > maxSubLen)
+            {
+                sub = sub[..maxSubLen];
+            }
+
+            Console.Write($"{palette.SecondaryText.AnsiFg}{Dim}{sub}{Reset}");
+            nextRow++;
+        }
+
+        // Top border
+        Console.SetCursorPosition(0, nextRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, startRow + 2);
+        Console.SetCursorPosition(2, nextRow);
+        Console.Write($"{palette.HeaderBorderFg.AnsiFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
+        nextRow++;
+
+        // Input row
+        Console.SetCursorPosition(0, nextRow);
+        ClearLine(boxWidth + 2);
+        Console.SetCursorPosition(2, nextRow);
         WriteInputRow(palette, field, innerWidth);
+        nextRow++;
 
-        // Row 3: Bottom border ╰───╯
-        Console.SetCursorPosition(0, startRow + 3);
+        // Bottom border
+        Console.SetCursorPosition(0, nextRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, startRow + 3);
-        Console.Write($"{palette.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', boxWidth - 2)}\u256f{Reset}");
+        Console.SetCursorPosition(2, nextRow);
+        Console.Write($"{palette.HeaderBorderFg.AnsiFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
+        nextRow++;
 
-        // Row 4: Validation message or help text
-        RenderValidationMessage(palette, startRow + 4, boxWidth, errorMessage, field.HelpText);
+        // Validation message or help text
+        RenderValidationMessage(palette, nextRow, boxWidth, errorMessage, field.HelpText);
     }
 
     private static void WriteInputRow(
@@ -183,9 +257,9 @@ internal static class FormField
 
         var padding = new string(' ', Math.Max(0, innerWidth - displayLength));
         Console.Write(
-            $"{palette.HeaderBorderFg.AnsiFg}\u2502 " +
+            $"{palette.HeaderBorderFg.AnsiFg}│ " +
             $"{palette.PrimaryText.AnsiFg}{displayContent}{padding}" +
-            $" {palette.HeaderBorderFg.AnsiFg}\u2502{Reset}");
+            $" {palette.HeaderBorderFg.AnsiFg}│{Reset}");
     }
 
     private static void RenderValidationMessage(
@@ -200,7 +274,7 @@ internal static class FormField
             var truncated = errorMessage.Length > width - 6
                 ? errorMessage[..(width - 6)]
                 : errorMessage;
-            Console.Write($"{palette.ErrorFg.AnsiFg}\u2717 {truncated}{Reset}");
+            Console.Write($"{palette.ErrorFg.AnsiFg}✗ {truncated}{Reset}");
         }
         else if (helpText != null)
         {
@@ -217,9 +291,10 @@ internal static class FormField
         Console.Write(new string(' ', Math.Max(0, clearWidth)));
     }
 
-    private static void ClearFieldArea(int startRow, int width)
+    private static void ClearFieldArea(int startRow, int width, bool hasSubtitle = false)
     {
-        for (var i = 0; i < Height; i++)
+        var height = hasSubtitle ? Height + 1 : Height;
+        for (var i = 0; i < height; i++)
         {
             Console.SetCursorPosition(0, startRow + i);
             ClearLine(width + 2);

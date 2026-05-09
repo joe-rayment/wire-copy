@@ -9,6 +9,15 @@ internal sealed class FormFieldConfig
 {
     public required string Label { get; init; }
 
+    /// <summary>
+    /// Optional one-line "where to find this" pointer rendered between the
+    /// Label and the input box. Surfaces the disambiguating sentence above
+    /// the field so the user reads it before they start typing — used by the
+    /// GCS service-account row and bucket row (workspace-cgnt) to point at
+    /// the GCP console path.
+    /// </summary>
+    public string? Subtitle { get; init; }
+
     public string? Placeholder { get; init; }
 
     public string? HelpText { get; init; }
