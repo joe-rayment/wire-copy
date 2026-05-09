@@ -26,7 +26,7 @@ public class LauncherTaglineAlignmentTests
         var palette = BuiltInThemes.Get(ThemeName.Phosphor);
         var lines = LauncherRenderer.BuildHeaderLines(width: 100, palette, showSetupHint: false);
 
-        // Header rows: 0 top border · 1 blank · 2..7 wordmark (6 rows) · 8 tagline · 9 setup-hint/blank · 10 bottom border
+        // Header rows (no setup hint, after workspace-0rde): 0 top border · 1 blank · 2..7 wordmark (6 rows) · 8 tagline · 9 bottom border
         var wordmarkRow = StripAnsi(lines[2]);
         var taglineRow = StripAnsi(lines[8]);
 
@@ -44,7 +44,7 @@ public class LauncherTaglineAlignmentTests
         var palette = BuiltInThemes.Get(ThemeName.Phosphor);
         var lines = LauncherRenderer.BuildHeaderLines(width: 80, palette, showSetupHint: false);
 
-        // Narrow header rows: 0 top border · 1 title · 2 tagline · 3 blank · 4 bottom border
+        // Narrow header rows (no setup hint, after workspace-0rde): 0 top border · 1 title · 2 tagline · 3 bottom border
         var titleRow = StripAnsi(lines[1]);
         var taglineRow = StripAnsi(lines[2]);
 

@@ -402,7 +402,7 @@ internal static class LauncherCommandHandler
         var width = Math.Max(1, options.TerminalWidth - 2);
         var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
         var pad = Math.Max(0, (width - barWidth) / 2);
-        var urlBarRow = LauncherRenderer.ComputeUrlBarInputRow(options.TerminalWidth);
+        var urlBarRow = LauncherRenderer.ComputeUrlBarInputRow(options.TerminalWidth, options.ShowSetupHint);
         var inputCol = pad + 2;  // Inside the box border
 
         // Pre-seed with the initial character if provided (user started typing on URL bar)
