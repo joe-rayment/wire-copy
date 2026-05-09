@@ -51,7 +51,7 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             return Task.FromResult(new ScrapingStrategyAvailability
             {
                 IsAvailable = false,
-                ReasonWhenUnavailable = "No OpenAI API key (press S to open Setup)",
+                ReasonWhenUnavailable = "No OpenAI API key (press c on the launcher to open Setup)",
             });
         }
 

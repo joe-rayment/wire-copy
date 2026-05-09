@@ -87,7 +87,7 @@ internal static class SettingsCommandHandler
 
     /// <summary>
     /// Returns true when at least one of the three primary credentials is still
-    /// unconfigured. Drives the launcher's "press S" Setup hint inside the
+    /// unconfigured. Drives the launcher's "press c" Setup hint inside the
     /// header card (workspace-9qzh) — partial-setup users still need a path
     /// into Setup. Distinct from <see cref="IsFirstRun"/>, which is the
     /// stricter "no credential at all" predicate used for the welcome banner.

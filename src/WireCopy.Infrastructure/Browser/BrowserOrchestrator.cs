@@ -314,9 +314,9 @@ public partial class BrowserOrchestrator : IBrowserService
             {
                 // No URL → show launcher home screen. First-run users land here
                 // too: reading flows work without API keys, and the launcher's
-                // header card surfaces a non-focusable "press S" Setup hint
-                // (workspace-ayt8). Default focus stays on the URL bar so
-                // Enter submits a URL and S opens Setup.
+                // header card surfaces a non-focusable "press c" Setup hint
+                // (workspace-ayt8 + workspace-jby8). Default focus stays on the
+                // URL bar so Enter submits a URL and c opens Setup.
                 await EnterLauncherAsync(options, cancellationToken).ConfigureAwait(false);
             }
 

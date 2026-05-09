@@ -20,12 +20,14 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 /// <summary>
-/// Regression tests for workspace-ul5z: the launcher Grid promotes Reading
-/// List from a trailing tile to a reserved slot at virtual index 1, with a
-/// secondary-accent background fill (ANSI 48;5;23 — dim cyan, design-system
-/// counterpart to the AccentFg cyan reserved for interactive accents). The
-/// slot is also protected from `d` (delete) and JumpToIndex now addresses it
-/// as digit `2`.
+/// Regression tests for workspace-ul5z (slot layout) and workspace-jby8
+/// (visual treatment): the launcher Grid promotes Reading List from a trailing
+/// tile to a reserved slot at virtual index 1. The tile is differentiated from
+/// bookmark cells by an AccentFg-coloured title and a leading ★ glyph (no
+/// background fill, borders stay consistent with the rest of the grid) — an
+/// in-palette accent treatment that fits visually with the other cards. The
+/// slot is protected from `d` (delete) and JumpToIndex addresses it as
+/// digit `2`.
 /// </summary>
 [Trait("Category", "Unit")]
 [Collection("ConsoleOutput")]
@@ -35,20 +37,26 @@ public class LauncherReadingListSlotTests
     private const int TerminalHeight = 35;
 
     [Fact]
-    public void Grid_RendersReadingListAtSlot1_WithSecondaryAccentBg()
+    public void Grid_RendersReadingListAtSlot1_WithAccentTitleAndGlyph()
     {
         // 3 bookmarks: virtual 0 = bookmark[0], virtual 1 = Reading List,
         // virtual 2 = bookmark[1], virtual 3 = bookmark[2]. The Reading List
-        // cell carries the ANSI 48;5;23 background fill across all four box
-        // rows so the whole tile reads as the secondary-accent surface.
+        // tile is differentiated by an AccentFg-coloured title (ANSI 51 cyan
+        // in Phosphor) and a leading ★ glyph. Borders stay consistent with
+        // the bookmark cards so the grid reads as one coherent surface.
         var raw = RenderLauncherCapture(CreateBookmarks(3), selectedIndex: -1);
 
-        raw.Should().Contain("\x1b[48;5;23m",
-            "the Reading List cell must use ANSI 48;5;23 as its secondary-accent background fill");
+        raw.Should().NotContain("\x1b[48;5;23m",
+            "the off-palette ANSI 23 background fill has been replaced with an in-palette accent treatment (workspace-jby8)");
+
+        raw.Should().Contain("\x1b[38;5;51m",
+            "the Reading List tile must use AccentFg (ANSI 51 cyan in Phosphor) on its ★ glyph and title text");
 
         var stripped = StripAnsi(raw);
         stripped.Should().Contain("READING LIST",
             "the Reading List title must render in the reserved slot");
+        stripped.Should().Contain("★",
+            "the Reading List tile must lead with a ★ glyph to mark it as a different kind of slot");
     }
 
     [Fact]
@@ -67,15 +75,16 @@ public class LauncherReadingListSlotTests
     }
 
     [Fact]
-    public void Grid_ReadingListBgReset_BeforeInterCellGutter()
+    public void Grid_ReadingList_DoesNotEmitOffPaletteBackgroundFill()
     {
-        // The cell must reset its background (\x1b[49m) before any subsequent
-        // text — otherwise the inter-cell gutter or the next cell's content
-        // will inherit the fill.
+        // workspace-jby8: the Reading List tile no longer paints the
+        // off-palette ANSI 23 (#005f5f, dark cyan-teal) background fill that
+        // clashed with the green Phosphor theme. Differentiation comes from
+        // an AccentFg-coloured border and a ★ glyph instead.
         var raw = RenderLauncherCapture(CreateBookmarks(3), selectedIndex: -1);
 
-        raw.Should().Contain("\x1b[49m",
-            "the Reading List cell must reset its background to default before inter-cell content");
+        raw.Should().NotContain("\x1b[48;5;23m",
+            "the off-palette ANSI 23 background fill has been removed (workspace-jby8)");
     }
 
     [Fact]
