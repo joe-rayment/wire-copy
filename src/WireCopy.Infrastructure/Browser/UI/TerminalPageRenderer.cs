@@ -102,8 +102,7 @@ public class TerminalPageRenderer : IPageRenderer
             }
             else
             {
-                _helpers.WriteLine("  No readable content available for this page.");
-                _helpers.WriteLine("  Press 'v' to switch to link view.");
+                RenderExtractionFailureBox(options.TerminalWidth);
             }
 
             _helpers.PositionAtBottom();
@@ -325,6 +324,67 @@ public class TerminalPageRenderer : IPageRenderer
 
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         ToastRenderer.RenderToast(context.ActiveToast, palette, terminalWidth, _helpers);
+    }
+
+    /// <summary>
+    /// Renders an inline rounded box for the "extraction failed" state in reader view.
+    /// Unlike RenderCenteredBox, this preserves the header that was already drawn —
+    /// it just emits a centered, WarningFg-bordered box at the current cursor position
+    /// with verb-led copy and the four recovery key bindings (workspace-d799).
+    /// </summary>
+    private void RenderExtractionFailureBox(int terminalWidth)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+
+        var lines = new List<CenteredBoxLine>
+        {
+            CenteredBoxLine.Empty,
+            new($"{p.PrimaryText.AnsiFg}Couldn't extract this article.{Reset}", "Couldn't extract this article."),
+            new($"{p.SecondaryText.AnsiFg}Try a fresh fetch, or open it in your browser.{Reset}", "Try a fresh fetch, or open it in your browser."),
+            CenteredBoxLine.Empty,
+            new(
+                $"{p.GetAccentFg().AnsiFg}o{Reset}{p.SecondaryText.AnsiFg}:open in browser{Reset}",
+                "o:open in browser"),
+            new(
+                $"{p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.SecondaryText.AnsiFg}:refresh{Reset}",
+                "Shift+R:refresh"),
+            new(
+                $"{p.GetAccentFg().AnsiFg}Shift+I{Reset}{p.SecondaryText.AnsiFg}:headed re-fetch{Reset}",
+                "Shift+I:headed re-fetch"),
+            new(
+                $"{p.GetAccentFg().AnsiFg}v{Reset}{p.SecondaryText.AnsiFg}:toggle view{Reset}",
+                "v:toggle view"),
+            CenteredBoxLine.Empty,
+        };
+
+        // Box width = longest content + 4 (2 border chars + 2 padding spaces).
+        var maxContentWidth = 0;
+        foreach (var line in lines)
+        {
+            var w = RenderHelpers.GetDisplayWidth(line.PlainText);
+            if (w > maxContentWidth)
+            {
+                maxContentWidth = w;
+            }
+        }
+
+        var innerWidth = Math.Max(MinBoxWidth - 4, maxContentWidth + 2);
+        var boxWidth = innerWidth + 4;
+        var leftPad = Math.Max(0, (terminalWidth - boxWidth) / 2);
+        var pad = new string(' ', leftPad);
+        var borderFg = p.GetWarningFg().AnsiFg;
+
+        // Top border
+        _helpers.WriteLine($"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
+
+        foreach (var line in lines)
+        {
+            var displayWidth = RenderHelpers.GetDisplayWidth(line.PlainText);
+            var rightPadding = Math.Max(0, innerWidth - displayWidth);
+            _helpers.WriteLine($"{pad}{borderFg}│{Reset} {line.StyledText}{new string(' ', rightPadding)} {borderFg}│{Reset}");
+        }
+
+        _helpers.WriteLine($"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
     }
 
     /// <summary>

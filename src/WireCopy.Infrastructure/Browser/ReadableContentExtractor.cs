@@ -59,6 +59,13 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
 
     private static readonly string[] ContentAreaSelectors =
     {
+        // NYT 2026 stable semantic selectors — ship hashed CSS module class names
+        // (`css-1abcd23`) on every other element, but `<section name="articleBody">`
+        // and `data-testid="*companionColumn*"` are anchored attributes that survive
+        // their UI rewrites. Keep these BEFORE class-name fallbacks below.
+        "//section[@name='articleBody']",
+        "//*[contains(@data-testid, 'companionColumn')]",
+
         "//*[@itemprop='articleBody']",
         "//*[contains(@class, 'article-body')]",
         "//*[contains(@class, 'article-content')]",
@@ -76,7 +83,7 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         "//*[contains(@class, 'field-body')]",
         "//*[contains(@class, 'text-content')]",
 
-        // NYT / React SSR patterns
+        // NYT / React SSR class-name patterns (legacy / non-hashed builds)
         "//*[contains(@class, 'StoryBodyCompanionColumn')]",
         "//*[contains(@class, 'story-body-supplemental')]",
         "//*[contains(@data-testid, 'article-body')]",
@@ -388,11 +395,23 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return false;
         }
 
-        // Reject if average paragraph length < 50 chars (likely fragmented garbage)
-        var averageLength = paragraphs.Average(p => p.Length);
-        if (averageLength < 50)
+        // Length-aware quality bypass (workspace-d799): a substantial volume of
+        // paragraph content is self-validating. NYT 2026 articles trip the
+        // alphabetic-ratio gate (apostrophes, em-dashes, captions push it under
+        // 70%) and the average-paragraph-length gate (short topical paragraphs
+        // pull the mean under 50 chars), but they are clearly real article text.
+        // We still apply the repeated-first-word gate below, which catches
+        // template/menu scaffolding regardless of size.
+        var longFormBypass = totalWords >= 400 && paragraphs.Count >= 8;
+
+        if (!longFormBypass)
         {
-            return false;
+            // Reject if average paragraph length < 50 chars (likely fragmented garbage)
+            var averageLength = paragraphs.Average(p => p.Length);
+            if (averageLength < 50)
+            {
+                return false;
+            }
         }
 
         // Reject if >50% of paragraphs start with the same word (repeated template text)
@@ -408,12 +427,15 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             return false;
         }
 
-        // Reject if >30% of total text is non-alphabetic characters (JS/code content)
-        var totalChars = paragraphs.Sum(p => p.Length);
-        var alphabeticChars = paragraphs.Sum(p => p.Count(char.IsLetter));
-        if (totalChars > 0 && (double)alphabeticChars / totalChars < 0.70)
+        if (!longFormBypass)
         {
-            return false;
+            // Reject if >30% of total text is non-alphabetic characters (JS/code content)
+            var totalChars = paragraphs.Sum(p => p.Length);
+            var alphabeticChars = paragraphs.Sum(p => p.Count(char.IsLetter));
+            if (totalChars > 0 && (double)alphabeticChars / totalChars < 0.70)
+            {
+                return false;
+            }
         }
 
         return true;
