@@ -438,11 +438,29 @@ public class PageLoadPipeline
             // (workspace-xusy). The escalation tries a saved per-domain config
             // first, then asks the AI extractor for a fresh selector set when
             // there's no saved config or the saved config also misses.
-            if (readable == null && !string.IsNullOrEmpty(loadResult.Html)
-                && PageClassifier.IsArticleUrlPattern(finalUrl))
+            //
+            // workspace-l811: also escalate when the heuristic returns content
+            // that *fails* the article quality bar — paywall previews and
+            // ad-heavy results currently return non-null with 1–2 thin
+            // paragraphs. We retry via the AI path; if AI returns nothing
+            // useful, we keep the heuristic's low-quality content rather than
+            // showing the user a blank reader.
+            var needsAiEscalation = !string.IsNullOrEmpty(loadResult.Html)
+                && PageClassifier.IsArticleUrlPattern(finalUrl)
+                && (readable == null || !ReadableContentExtractor.ValidateContentQuality(readable.Paragraphs));
+
+            if (needsAiEscalation)
             {
-                readable = await TryArticleSelectorEscalationAsync(
+                var aiReadable = await TryArticleSelectorEscalationAsync(
                     finalUrl, loadResult.Html, cancellationToken).ConfigureAwait(false);
+
+                // Prefer AI output when it is non-null and meets the quality
+                // bar. When AI returns nothing, fall back to whatever the
+                // heuristic produced (possibly null).
+                if (aiReadable != null && ReadableContentExtractor.ValidateContentQuality(aiReadable.Paragraphs))
+                {
+                    readable = aiReadable;
+                }
             }
 
             if (readable != null)
