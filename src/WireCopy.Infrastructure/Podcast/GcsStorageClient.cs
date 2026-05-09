@@ -632,6 +632,30 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         _logger.LogInformation("Service account key path cleared");
     }
 
+    /// <summary>
+    /// Runs the four-step verify probe (Auth → Upload → Download+compare →
+    /// Delete) against <paramref name="bucketName"/>. workspace-cgnt:
+    /// replaces the prior GET-bucket-only check so we exercise the actual
+    /// permission set the podcast publisher needs at runtime, surfacing
+    /// IAM / billing / region failures BEFORE the user proceeds.
+    /// </summary>
+    public Task<GcsVerifyCredentialsResult> VerifyCredentialsAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bucketName);
+        return GcsCredentialVerifier.VerifyAsync(new GcsVerifyOps(this), bucketName, cancellationToken);
+    }
+
+    /// <summary>
+    /// Internal accessor used by <see cref="GcsVerifyOps"/> to obtain the
+    /// underlying StorageClient. Exposed at <c>internal</c> visibility so
+    /// the verify adapter can live in its own file (keeps SA1201 happy)
+    /// without making the auth path public.
+    /// </summary>
+    internal Task<StorageClient> GetClientForVerifyAsync(CancellationToken cancellationToken) =>
+        GetClientAsync(cancellationToken);
+
     private async Task<StorageClient> GetClientWithDiagnosticsAsync(CancellationToken cancellationToken)
     {
         try
