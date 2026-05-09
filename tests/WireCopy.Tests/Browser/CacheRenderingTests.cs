@@ -457,4 +457,52 @@ public class CacheRenderingTests
     }
 
     #endregion
+
+    #region HumanAction Badge (workspace-0b9s)
+
+    [Fact]
+    public void StatusBar_RequiredAction_RendersPauseGlyphAndVerb()
+    {
+        // Live-rendered status-bar badge for the workspace-0b9s typed verdict.
+        // Covers the fact that the bead's "⏸ {verb} at {domain} · Shift+O:open"
+        // badge replaces the legacy "🍪✗ nytimes.com" copy when a typed verdict
+        // is active.
+        var context = new NavigationContext { ViewMode = ViewMode.Hierarchical };
+        var action = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+
+        var output = CaptureConsoleOutput(() =>
+            _statusBar.RenderStatusBar(
+                context,
+                ViewMode.Hierarchical,
+                120,
+                requiredAction: action));
+
+        output.Should().Contain("⏸", "pause glyph (⏸) is the badge anchor");
+        output.Should().Contain("captcha", "Captcha variant verb is 'captcha'");
+        output.Should().Contain("www.nytimes.com");
+        output.Should().Contain("Shift+O");
+    }
+
+    [Fact]
+    public void StatusBar_RequiredAction_TakesPrecedenceOverLegacyCookieBadge()
+    {
+        // When both signals are present the typed verdict wins — drops the
+        // misleading 🍪✗ copy that read as "something about cookies" when the
+        // actual block was a CAPTCHA.
+        var context = new NavigationContext { ViewMode = ViewMode.Hierarchical };
+        var action = new HumanActionRequired(HumanActionVariant.Login, "wsj.com");
+
+        var output = CaptureConsoleOutput(() =>
+            _statusBar.RenderStatusBar(
+                context,
+                ViewMode.Hierarchical,
+                120,
+                missingCookieDomains: new[] { "wsj.com" },
+                requiredAction: action));
+
+        output.Should().Contain("⏸");
+        output.Should().NotContain("\U0001F36A", "legacy cookie cookie-glyph badge must not be drawn alongside the typed verdict");
+    }
+
+    #endregion
 }
