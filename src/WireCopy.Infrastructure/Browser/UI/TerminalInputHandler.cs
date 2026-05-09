@@ -172,7 +172,30 @@ public class TerminalInputHandler : IInputHandler
         return url;
     }
 
-    public async Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null, Func<char, bool>? interceptKey = null)
+    public Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null, Func<char, bool>? interceptKey = null)
+    {
+        // Public 7-arg signature unchanged (workspace-cgnt: do NOT extend
+        // this signature — the GCS verify branch tried that and broke
+        // qi5p's NSubstitute mocks). Delegates to PromptForInputCoreAsync
+        // with clearWidth=null, preserving the historical "clear to right
+        // edge" behaviour for command-line / search-bar callers.
+        return PromptForInputCoreAsync(prompt, cancellationToken, isSecret, row, col, initialInput, interceptKey, clearWidth: null);
+    }
+
+    /// <summary>
+    /// Specialised entry point for FormField callers (workspace-cgnt).
+    /// Narrows the row-clear to <paramref name="clearWidth"/> cells so the
+    /// surrounding box border characters survive typing. Lives on the
+    /// concrete class (not <see cref="IInputHandler"/>) so existing
+    /// NSubstitute mocks of the interface remain unaffected.
+    /// </summary>
+    public Task<string?> PromptForFieldInputAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int row, int col, string? initialInput, Func<char, bool>? interceptKey, int clearWidth)
+    {
+        return PromptForInputCoreAsync(prompt, cancellationToken, isSecret, row, col, initialInput, interceptKey, clearWidth);
+    }
+
+#pragma warning disable SA1202 // private core kept adjacent to the two public wrappers that delegate to it
+    private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth)
     {
         EnsureKeyReaderStarted();
 
@@ -189,10 +212,16 @@ public class TerminalInputHandler : IInputHandler
             // Show cursor during input — it's hidden globally by BrowserOrchestrator
             Console.CursorVisible = true;
 
-            // Clear the line and render prompt
+            // Clear the line and render prompt. workspace-cgnt: when caller
+            // passes clearWidth (e.g. FormField), narrow the wipe to the
+            // box's inner-content width so the surrounding │ … │ border
+            // chars survive typing. Default behaviour (clear to the right
+            // edge) is preserved for non-FormField callers.
             Console.SetCursorPosition(targetCol, targetRow);
-            var clearWidth = Math.Max(1, Console.WindowWidth - 1 - targetCol);
-            Console.Write(new string(' ', clearWidth));
+            var clearCells = clearWidth.HasValue
+                ? Math.Max(1, clearWidth.Value)
+                : Math.Max(1, Console.WindowWidth - 1 - targetCol);
+            Console.Write(new string(' ', clearCells));
             Console.SetCursorPosition(targetCol, targetRow);
             var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
             Console.Write(palette.PromptFg.AnsiFg);
@@ -205,11 +234,18 @@ public class TerminalInputHandler : IInputHandler
             var input = new System.Text.StringBuilder();
             var cursorPos = 0;
 
+            // Cap the visible input width so we never write past the right
+            // border of a FormField box. Falls back to "WindowWidth - prompt"
+            // when no explicit clearWidth was supplied.
+            var maxInputCells = clearWidth.HasValue
+                ? Math.Max(1, clearWidth.Value - prompt.Length)
+                : Math.Max(1, Console.WindowWidth - 1 - promptStart);
+
             if (!string.IsNullOrEmpty(initialInput))
             {
                 input.Append(initialInput);
                 cursorPos = initialInput.Length;
-                RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
             }
 
             while (!cancellationToken.IsCancellationRequested)
@@ -233,7 +269,7 @@ public class TerminalInputHandler : IInputHandler
                     {
                         input.Remove(cursorPos - 1, 1);
                         cursorPos--;
-                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     }
 
                     continue;
@@ -244,7 +280,7 @@ public class TerminalInputHandler : IInputHandler
                     if (cursorPos < input.Length)
                     {
                         input.Remove(cursorPos, 1);
-                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     }
 
                     continue;
@@ -295,21 +331,25 @@ public class TerminalInputHandler : IInputHandler
                         // Caller consumed the key. The overlay may have moved the
                         // cursor or written into the prompt row, so redraw the
                         // prompt label, current input, and restore cursor before
-                        // continuing the input loop.
+                        // continuing the input loop. Honour the same narrow
+                        // clearWidth as the initial draw so border chrome
+                        // around the field is preserved (workspace-cgnt).
                         Console.SetCursorPosition(targetCol, targetRow);
-                        var clearWidth2 = Math.Max(1, Console.WindowWidth - 1 - targetCol);
-                        Console.Write(new string(' ', clearWidth2));
+                        var clearCells2 = clearWidth.HasValue
+                            ? Math.Max(1, clearWidth.Value)
+                            : Math.Max(1, Console.WindowWidth - 1 - targetCol);
+                        Console.Write(new string(' ', clearCells2));
                         Console.SetCursorPosition(targetCol, targetRow);
                         Console.Write(palette.PromptFg.AnsiFg);
                         Console.Write(prompt);
                         Console.Write("\x1b[0m");
-                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                         continue;
                     }
 
                     input.Insert(cursorPos, keyInfo.KeyChar);
                     cursorPos++;
-                    RedrawInput(input, promptStart, targetRow, cursorPos, isSecret);
+                    RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                 }
             }
         }
@@ -350,15 +390,21 @@ public class TerminalInputHandler : IInputHandler
         Thread.Sleep(50);
         DrainChannel();
     }
+#pragma warning restore SA1202
 
     /// <summary>
-    /// Redraws the input text at the prompt position and sets cursor.
+    /// Redraws the input text at the prompt position and sets cursor. The
+    /// optional <paramref name="maxInputCells"/> cap is honoured so FormField
+    /// callers (with a narrow box) don't paint over the right-hand border —
+    /// see workspace-cgnt.
     /// </summary>
-    private static void RedrawInput(System.Text.StringBuilder input, int promptStart, int targetRow, int cursorPos, bool isSecret)
+    private static void RedrawInput(System.Text.StringBuilder input, int promptStart, int targetRow, int cursorPos, bool isSecret, int? maxInputCells = null)
     {
         Console.SetCursorPosition(promptStart, targetRow);
         var display = isSecret ? new string('*', input.Length) : input.ToString();
-        var maxWidth = Math.Max(1, Console.WindowWidth - 1 - promptStart);
+        var maxWidth = maxInputCells.HasValue
+            ? Math.Max(1, maxInputCells.Value)
+            : Math.Max(1, Console.WindowWidth - 1 - promptStart);
         if (display.Length > maxWidth)
         {
             display = display[..maxWidth];
