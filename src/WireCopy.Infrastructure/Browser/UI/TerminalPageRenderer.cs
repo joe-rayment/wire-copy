@@ -22,7 +22,14 @@ public class TerminalPageRenderer : IPageRenderer
 {
     private const string Reset = "\x1b[0m";
     private const int MinBoxWidth = 30;
-    private const int MaxBoxContentWidth = 46;
+
+    // Maximum inner width (content + 2 padding spaces) of the centered status box.
+    // Practical content cap = MaxBoxContentWidth - 2 = 54 chars per line. Sized to
+    // accommodate longest plausible variant copy with a 22-char domain (e.g.
+    // "subdomain.nytimes.com") while still fitting an 80-col terminal:
+    //   boxWidth = 56 + 4 = 60, leftPad = (80 - 60) / 2 = 10. Bumped from 46 in
+    //   workspace-0b9s after QA flagged TwoFactor and Login overflow at 80 cols.
+    private const int MaxBoxContentWidth = 56;
     private static readonly char[] SpinnerFrames = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
 
     private readonly IThemeProvider _themeProvider;
@@ -287,7 +294,7 @@ public class TerminalPageRenderer : IPageRenderer
                 "Try a different network or VPN",
                 "b:back"),
             _ => (
-                $"Something on {d} needs your attention",
+                $"Action needed at {d}",
                 "Open it in your browser, then press R",
                 "Shift+O:open  b:back"),
         };
