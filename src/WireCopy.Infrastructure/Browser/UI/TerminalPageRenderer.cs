@@ -324,7 +324,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        ToastRenderer.RenderToast(context.ActiveToast, palette, terminalWidth);
+        ToastRenderer.RenderToast(context.ActiveToast, palette, terminalWidth, _helpers);
     }
 
     /// <summary>

@@ -3,8 +3,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 
@@ -19,6 +21,13 @@ internal static class CollectionCommandHandler
     {
         var viewMode = ctx.NavigationService.CurrentContext.ViewMode;
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
+
+        // (row, col) of the saved row's title — captured BEFORE the await so we can
+        // flash the original screen position even if a re-render shifts things.
+        // Null when not applicable (multi-save, reader view, off-screen).
+        (int Row, int Col)? flashPosition = null;
+        string? flashText = null;
+        Guid? savedNodeId = null;
 
         if (viewMode == ViewMode.Hierarchical)
         {
@@ -39,11 +48,18 @@ internal static class CollectionCommandHandler
                     tree.ClearSelection();
                     ctx.Logger.LogInformation("Saved {Count} items to Reading List", links.Count);
                     ctx.NavigationService.SetStatusMessage($"Saved {links.Count} items to Reading List");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Success,
+                        $"Saved {links.Count} to Reading List");
                 }
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save selected items");
                     ctx.NavigationService.SetStatusMessage("Failed to save selected items");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Error,
+                        "Couldn't save selected items",
+                        ex.Message);
                 }
             }
             else
@@ -52,6 +68,13 @@ internal static class CollectionCommandHandler
                 var saveNode = tree?.GetSelectedNode();
                 if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
                 {
+                    // Capture the saved row's screen position BEFORE awaiting save —
+                    // a re-render or scroll between now and the flash should still
+                    // target the row the user originally pressed `s` on.
+                    flashPosition = ComputeSelectedRowFlashPosition(tree!, ctx, options);
+                    flashText = saveNode.Link.DisplayText;
+                    savedNodeId = saveNode.Id;
+
                     try
                     {
                         using var scope = ctx.ScopeFactory.CreateScope();
@@ -60,11 +83,23 @@ internal static class CollectionCommandHandler
                             saveNode.Link.Url, saveNode.Link.DisplayText, ct).ConfigureAwait(false);
                         ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
                         ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
+                        ctx.NavigationService.ShowToast(
+                            ToastType.Success,
+                            "Saved to Reading List",
+                            TruncateForToast(saveNode.Link.DisplayText));
                     }
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to default collection");
                         ctx.NavigationService.SetStatusMessage("Failed to save");
+                        ctx.NavigationService.ShowToast(
+                            ToastType.Error,
+                            "Couldn't save",
+                            ex.Message);
+
+                        // Failure path: skip the success flash.
+                        flashPosition = null;
+                        flashText = null;
                     }
                 }
             }
@@ -83,11 +118,19 @@ internal static class CollectionCommandHandler
                     await service.SaveToReadingListAsync(url, title, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved to Reading List from reader: {Title}", title);
                     ctx.NavigationService.SetStatusMessage($"Saved: {title}");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Success,
+                        "Saved to Reading List",
+                        TruncateForToast(title));
                 }
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save from reader view");
                     ctx.NavigationService.SetStatusMessage("Failed to save");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Error,
+                        "Couldn't save",
+                        ex.Message);
                 }
             }
         }
@@ -110,6 +153,31 @@ internal static class CollectionCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+        // After the toast is staged and the page has been re-rendered, play the
+        // row flash on the saved card. This runs synchronously (~400ms) and
+        // is skipped when animations are globally disabled. Skipped if the
+        // selection moved during the await (race protection).
+        if (flashPosition is { } pos
+            && !string.IsNullOrEmpty(flashText)
+            && !ctx.DisableAnimations
+            && SelectionStillOnSavedNode(ctx, savedNodeId))
+        {
+            try
+            {
+                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+                // Match the title-text width budget used by BuildSelectedCardLine —
+                // truncate so the flash never spills past the card edge.
+                var maxWidth = Math.Max(1, (options.TerminalWidth / 2) - 4);
+                var displayText = RenderHelpers.TruncateText(flashText!, maxWidth);
+                SaveFlashAnimation.PlayRow(displayText, pos.Row, pos.Col, palette);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogDebug(ex, "Save flash animation failed");
+            }
+        }
     }
 
     public static async Task HandleSaveToSpecific(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -188,11 +256,18 @@ internal static class CollectionCommandHandler
                     ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
                     ctx.NavigationService.SetStatusMessage(
                         $"Saved {visibleNodes.Count} links to Reading List");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Success,
+                        $"Saved {visibleNodes.Count} to Reading List");
                 }
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
                     ctx.NavigationService.SetStatusMessage("Failed to save");
+                    ctx.NavigationService.ShowToast(
+                        ToastType.Error,
+                        "Couldn't save",
+                        ex.Message);
                 }
             }
         }
@@ -423,6 +498,85 @@ internal static class CollectionCommandHandler
             ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Computes the screen (row, col) of the currently-selected link tree row's
+    /// title text, for use as a save-flash target. Returns null if not applicable.
+    /// </summary>
+    private static (int Row, int Col)? ComputeSelectedRowFlashPosition(
+        NavigationTree tree,
+        CommandContext ctx,
+        RenderOptions options)
+    {
+        try
+        {
+            var visibleNodes = tree.GetVisibleNodes().ToList();
+            var selectedNode = tree.GetSelectedNode();
+            if (selectedNode == null)
+            {
+                return null;
+            }
+
+            var selectedIdx = -1;
+            for (var i = 0; i < visibleNodes.Count; i++)
+            {
+                if (visibleNodes[i].Id == selectedNode.Id)
+                {
+                    selectedIdx = i;
+                    break;
+                }
+            }
+
+            if (selectedIdx < 0)
+            {
+                return null;
+            }
+
+            var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+            var maxLines = ctx.GetHierarchicalViewportHeight(options) * Math.Max(1, layout.CellHeight);
+            return LinkTreeRenderer.TryGetSelectedRowScreenPosition(
+                visibleNodes,
+                selectedIdx,
+                ctx.NavigationService.CurrentContext.ScrollOffset,
+                layout,
+                maxLines);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Failed to compute save flash position");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the currently-selected link tree node is still the
+    /// same node that was saved — protects against the user pressing j/k
+    /// while the save is in flight.
+    /// </summary>
+    private static bool SelectionStillOnSavedNode(CommandContext ctx, Guid? savedNodeId)
+    {
+        if (savedNodeId == null)
+        {
+            return false;
+        }
+
+        var current = ctx.NavigationService.CurrentPage?.LinkTree?.GetSelectedNode();
+        return current != null && current.Id == savedNodeId.Value;
+    }
+
+    /// <summary>
+    /// Truncates a title to fit comfortably in a toast detail line.
+    /// </summary>
+    private static string TruncateForToast(string text)
+    {
+        const int maxLength = 48;
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        return text.Substring(0, maxLength - 1) + "…";
     }
 
     private static int IndexOfItemById(IReadOnlyList<Domain.Entities.Collections.CollectionItem> items, Guid id)

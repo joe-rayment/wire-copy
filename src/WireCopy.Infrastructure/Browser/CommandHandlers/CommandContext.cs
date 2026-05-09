@@ -36,6 +36,12 @@ internal class CommandContext
 
     public required ILayoutVariantProvider LayoutVariantProvider { get; init; }
 
+    /// <summary>
+    /// When true, animation effects (decrypt-reveal, save flash, etc.) are skipped.
+    /// Mirrors <see cref="Configuration.BrowserConfiguration.DisableAnimations"/>.
+    /// </summary>
+    public bool DisableAnimations { get; init; }
+
     // Mutable shared state
     public IReadOnlyList<Collection>? Collections { get; set; }
 

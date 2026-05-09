@@ -26,7 +26,12 @@ internal static class DecryptRevealAnimation
     /// <param name="row">Console row where the title is rendered.</param>
     /// <param name="col">Console column where the title text begins.</param>
     /// <param name="palette">Theme palette for color selection.</param>
-    public static void Play(string title, int row, int col, ThemePalette palette)
+    /// <param name="revealColor">
+    /// Optional ANSI color override for the final reveal frames. When null,
+    /// uses <see cref="ThemePalette.HeaderTitleFg"/> (bold) — the title-load default.
+    /// Pass <see cref="ThemePalette.GetAccentFg"/> for save-flash highlighting, etc.
+    /// </param>
+    public static void Play(string title, int row, int col, ThemePalette palette, string? revealColor = null)
     {
         if (string.IsNullOrEmpty(title))
         {
@@ -36,7 +41,7 @@ internal static class DecryptRevealAnimation
         var random = new Random();
         var dimFg = palette.GetDimFg().AnsiFg;
         var mutedFg = palette.GetMutedFg().AnsiFg;
-        var titleFg = $"{palette.HeaderTitleFg.AnsiFg}\x1b[1m"; // Bold, matching RenderHeader
+        var titleFg = revealColor ?? $"{palette.HeaderTitleFg.AnsiFg}\x1b[1m"; // Bold, matching RenderHeader
 
         for (var frame = 1; frame <= FrameCount; frame++)
         {
