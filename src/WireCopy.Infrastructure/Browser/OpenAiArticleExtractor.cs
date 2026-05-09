@@ -4,6 +4,8 @@ using System.ClientModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
@@ -31,10 +33,29 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
 {
+    private const int MaxPromptHtmlLength = 80_000;
+
     private static readonly JsonSerializerOptions ParseOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    private static readonly Regex Base64DataUriRegex = new(
+        @"data:[^;,""'\s]+;base64,[A-Za-z0-9+/=]+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly string[] TrackerHostFragments =
+    {
+        "google-analytics.com",
+        "googletagmanager.com",
+        "doubleclick.net",
+        "facebook.com/tr",
+        "scorecardresearch.com",
+        "quantserve.com",
+        "chartbeat.com",
+        "segment.io",
+        "mixpanel.com",
     };
 
     private static readonly BinaryData ArticleSelectorSchema = BinaryData.FromString(
@@ -142,7 +163,7 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
         }
 
         var systemPrompt = BuildSystemPrompt();
-        var trimmedHtml = TrimHtmlForPrompt(html);
+        var trimmedHtml = SanitizeAndTrimHtmlForPrompt(html);
         var userPromptBuilder = new StringBuilder(BuildUserPrompt(url, trimmedHtml));
 
         for (int attempt = 0; attempt < 2; attempt++)
@@ -224,19 +245,131 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
     }
 
     /// <summary>
-    /// HTML can be megabytes; we cap at ~80 KB to stay well under the token
-    /// budget. We keep the head element intact (matchers depend on meta /
-    /// ld+json) and a generous prefix of the body.
+    /// Sanitises HTML before sending to the LLM:
+    /// strips script/style/noscript/svg/iframe (preserving ld+json scripts which
+    /// are matcher signals), strips base64 data URIs, drops obvious tracker
+    /// pixels, and caps the result at <see cref="MaxPromptHtmlLength"/> bytes.
     /// </summary>
-    private static string TrimHtmlForPrompt(string html)
+    private static string SanitizeAndTrimHtmlForPrompt(string html)
     {
-        const int MaxLength = 80_000;
-        if (string.IsNullOrEmpty(html) || html.Length <= MaxLength)
+        if (string.IsNullOrEmpty(html))
         {
-            return html ?? string.Empty;
+            return string.Empty;
         }
 
-        return html[..MaxLength] + "\n<!-- truncated -->";
+        string sanitised;
+        try
+        {
+            var doc = new HtmlDocument
+            {
+                OptionEmptyCollection = true,
+            };
+            doc.LoadHtml(html);
+
+            RemoveSensitiveOrNoiseNodes(doc);
+            RedactBase64DataUris(doc);
+            RemoveTrackerPixels(doc);
+
+            sanitised = doc.DocumentNode.OuterHtml;
+        }
+        catch
+        {
+            // HtmlAgilityPack should not throw on malformed HTML, but be defensive.
+            sanitised = html;
+        }
+
+        if (sanitised.Length <= MaxPromptHtmlLength)
+        {
+            return sanitised;
+        }
+
+        return sanitised[..MaxPromptHtmlLength] + "\n<!-- truncated -->";
+    }
+
+    private static void RemoveSensitiveOrNoiseNodes(HtmlDocument doc)
+    {
+        // Remove all script nodes EXCEPT application/ld+json — those carry
+        // PageTypeMatcher signals (NewsArticle / LiveBlogPosting / Recipe).
+        var scripts = doc.DocumentNode.SelectNodes("//script");
+        if (scripts != null)
+        {
+            foreach (var node in scripts)
+            {
+                var type = node.GetAttributeValue("type", string.Empty);
+                if (string.Equals(type, "application/ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                node.Remove();
+            }
+        }
+
+        var noiseNodes = doc.DocumentNode.SelectNodes("//style|//noscript|//svg|//iframe");
+        if (noiseNodes != null)
+        {
+            foreach (var node in noiseNodes)
+            {
+                node.Remove();
+            }
+        }
+    }
+
+    private static void RedactBase64DataUris(HtmlDocument doc)
+    {
+        var nodesWithUriAttrs = doc.DocumentNode.SelectNodes("//*[@src or @href or @srcset or @poster]");
+        if (nodesWithUriAttrs == null)
+        {
+            return;
+        }
+
+        foreach (var node in nodesWithUriAttrs)
+        {
+            foreach (var attrName in new[] { "src", "href", "srcset", "poster" })
+            {
+                var attr = node.Attributes[attrName];
+                if (attr == null || string.IsNullOrEmpty(attr.Value))
+                {
+                    continue;
+                }
+
+                if (Base64DataUriRegex.IsMatch(attr.Value))
+                {
+                    attr.Value = Base64DataUriRegex.Replace(attr.Value, "data:redacted");
+                }
+            }
+        }
+    }
+
+    private static void RemoveTrackerPixels(HtmlDocument doc)
+    {
+        var imgs = doc.DocumentNode.SelectNodes("//img");
+        if (imgs == null)
+        {
+            return;
+        }
+
+        foreach (var img in imgs.ToList())
+        {
+            var width = img.GetAttributeValue("width", string.Empty);
+            var height = img.GetAttributeValue("height", string.Empty);
+            if (width == "1" && height == "1")
+            {
+                img.Remove();
+                continue;
+            }
+
+            var src = img.GetAttributeValue("src", string.Empty);
+            if (string.IsNullOrEmpty(src))
+            {
+                continue;
+            }
+
+            if (TrackerHostFragments.Any(fragment => src.Contains(fragment, StringComparison.OrdinalIgnoreCase)))
+            {
+                img.Remove();
+            }
+        }
     }
 
     private static ArticleSelectorConfig ParseResponse(string responseText, string domain, string sampleUrl, string model)

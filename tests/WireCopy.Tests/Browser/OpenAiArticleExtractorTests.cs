@@ -194,4 +194,142 @@ public class OpenAiArticleExtractorTests
 
         result.Should().BeNull();
     }
+
+    [Fact]
+    public async Task AnalyzeAsync_StripsScriptStyleAndIframeFromPrompt()
+    {
+        var capturedPrompt = string.Empty;
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+            {
+                capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
+                    .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
+                return Task.FromResult(MinimalFakeResponse);
+            };
+
+        var sut = MakeExtractor(completer);
+
+        const string Html = """
+            <html>
+              <head>
+                <script>window.dataLayer = [];</script>
+                <style>.ad { display: none; }</style>
+                <noscript>Enable JavaScript</noscript>
+                <script type="application/ld+json">{"@type":"NewsArticle"}</script>
+              </head>
+              <body>
+                <iframe src="https://ads.example.com/banner"></iframe>
+                <svg><path/></svg>
+                <article><p>Real content.</p></article>
+              </body>
+            </html>
+            """;
+
+        await sut.AnalyzeAsync("https://example.com/story", Html, CancellationToken.None);
+
+        capturedPrompt.Should().NotContain("dataLayer", "inline scripts must be stripped");
+        capturedPrompt.Should().NotContain(".ad { display: none; }", "style blocks must be stripped");
+        capturedPrompt.Should().NotContain("Enable JavaScript", "noscript blocks must be stripped");
+        capturedPrompt.Should().NotContain("ads.example.com/banner", "iframe must be stripped");
+        capturedPrompt.Should().NotContain("<svg", "svg must be stripped");
+        capturedPrompt.Should().Contain("@type\":\"NewsArticle", "ld+json scripts are matcher signals and must be preserved");
+        capturedPrompt.Should().Contain("Real content.", "article body must survive sanitisation");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_RedactsBase64DataUrisInPrompt()
+    {
+        var capturedPrompt = string.Empty;
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+            {
+                capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
+                    .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
+                return Task.FromResult(MinimalFakeResponse);
+            };
+
+        var sut = MakeExtractor(completer);
+
+        const string Html = """
+            <html><body>
+              <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==">
+              <a href="data:text/html;base64,PGgxPnBvaXNvbjwvaDE+">link</a>
+              <p>Real text.</p>
+            </body></html>
+            """;
+
+        await sut.AnalyzeAsync("https://example.com/story", Html, CancellationToken.None);
+
+        capturedPrompt.Should().NotContain("iVBORw0KGgo", "base64 image data must be redacted");
+        capturedPrompt.Should().NotContain("PGgxPnBvaXNvbjwvaDE", "base64 link data must be redacted");
+        capturedPrompt.Should().Contain("data:redacted", "the redaction marker must replace base64 payloads");
+        capturedPrompt.Should().Contain("Real text.", "regular content must survive");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_RemovesTrackerPixelsFromPrompt()
+    {
+        var capturedPrompt = string.Empty;
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+            {
+                capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
+                    .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
+                return Task.FromResult(MinimalFakeResponse);
+            };
+
+        var sut = MakeExtractor(completer);
+
+        const string Html = """
+            <html><body>
+              <img src="https://www.google-analytics.com/collect?v=1" />
+              <img src="https://stats.g.doubleclick.net/r/collect?v=1" />
+              <img width="1" height="1" src="/spacer.gif" />
+              <img src="/hero.jpg" alt="hero photo" />
+              <p>Story body.</p>
+            </body></html>
+            """;
+
+        await sut.AnalyzeAsync("https://example.com/story", Html, CancellationToken.None);
+
+        capturedPrompt.Should().NotContain("google-analytics.com", "tracker hosts must be removed");
+        capturedPrompt.Should().NotContain("doubleclick.net", "tracker hosts must be removed");
+        capturedPrompt.Should().NotContain("/spacer.gif", "1x1 pixels must be removed");
+        capturedPrompt.Should().Contain("/hero.jpg", "regular images must survive");
+        capturedPrompt.Should().Contain("Story body.", "regular content must survive");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_TruncatesOversizedHtml()
+    {
+        var capturedPromptLength = 0;
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+            {
+                capturedPromptLength = string.Join(string.Empty, messages.OfType<UserChatMessage>()
+                    .SelectMany(m => m.Content.Select(p => p.Text))).Length;
+                return Task.FromResult(MinimalFakeResponse);
+            };
+
+        var sut = MakeExtractor(completer);
+
+        // Build an HTML payload well above the 80KB cap.
+        var bigBody = new string('x', 200_000);
+        var html = $"<html><body><p>{bigBody}</p></body></html>";
+
+        await sut.AnalyzeAsync("https://example.com/story", html, CancellationToken.None);
+
+        capturedPromptLength.Should().BeLessThan(120_000, "the prompt must be truncated to keep token cost bounded");
+    }
+
+    private const string MinimalFakeResponse = """
+        {
+          "name": "article",
+          "pageType": "Article",
+          "priority": 10,
+          "matcher": { "urlPattern": null, "ldJsonType": null, "bodyClassContains": null },
+          "selectors": { "headline": [], "byline": [], "publishDate": [], "body": [], "excludeRegions": [] },
+          "quality": { "minWords": 100, "minParagraphs": 3 }
+        }
+        """;
 }
