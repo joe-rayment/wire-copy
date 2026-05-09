@@ -140,6 +140,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        // Drop a stale "⏸ verify at X" badge as soon as the user navigates to a
+        // page on a different origin (workspace-0b9s QA #2). Otherwise a verdict
+        // raised on site A would keep showing while the user reads site B.
+        ClearBlockedActionIfDifferentOrigin(currentPageUrl);
+
         lock (_queueLock)
         {
             _pendingSelectedIndex = selectedIndex;
@@ -165,6 +170,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
         if (_disposed)
         {
             return;
+        }
+
+        // Drop a stale HITL badge if the collection's first item is on a
+        // different origin than the last verdict (workspace-0b9s QA #2).
+        // Collection URLs are typically same-domain, but reading-list / saved
+        // collections can mix origins.
+        if (urls is { Count: > 0 })
+        {
+            ClearBlockedActionIfDifferentOrigin(urls[0]);
         }
 
         lock (_queueLock)
@@ -1218,6 +1232,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
                     await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken).ConfigureAwait(false);
+
+                    // Clear the sticky HITL badge if this success is on the same
+                    // origin as the last verdict (workspace-0b9s QA #2). Without
+                    // this, one tripped URL keeps the "⏸ verify at {domain}" badge
+                    // on for the rest of the session.
+                    ClearBlockedActionForOriginIfMatches(url);
                 }
             }
             else
@@ -1459,6 +1479,37 @@ internal sealed class BackgroundPreloadService : IPreloadService
         }
     }
 
+#pragma warning disable SA1202 // Internal test seams kept adjacent to the private code they exercise (workspace-0b9s QA #2).
+    /// <summary>
+    /// Test seam (workspace-0b9s QA #2): lets unit tests prime the
+    /// "last blocked action" field so the clearing-on-success and
+    /// clearing-on-origin-change behaviour can be exercised without
+    /// having to stand up a full HTTP test server.
+    /// </summary>
+    internal void SetBlockedActionForTesting(HumanActionRequired? action)
+    {
+        _lastBlockedAction = action;
+        NotifyProgressChanged();
+    }
+
+    /// <summary>
+    /// Test seam (workspace-0b9s QA #2): exposes the success-path clear so
+    /// tests can verify the behaviour without driving a real preload.
+    /// </summary>
+    internal void ClearBlockedActionForOriginIfMatchesForTesting(string url)
+        => ClearBlockedActionForOriginIfMatches(url);
+#pragma warning restore SA1202
+
+    private static string ExtractHostFromOrigin(string origin)
+    {
+        // origin format from UrlNormalizer.GetOrigin: "scheme://host[:port]"
+        // Strip scheme prefix and any :port suffix to get bare host.
+        var schemeSep = origin.IndexOf("://", StringComparison.Ordinal);
+        var hostStart = schemeSep >= 0 ? schemeSep + 3 : 0;
+        var portSep = origin.IndexOf(':', hostStart);
+        return portSep >= 0 ? origin[hostStart..portSep] : origin[hostStart..];
+    }
+
     private void NotifyProgressChanged()
     {
         try
@@ -1468,6 +1519,67 @@ internal sealed class BackgroundPreloadService : IPreloadService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "ProgressChanged handler error");
+        }
+    }
+
+    /// <summary>
+    /// Clears <see cref="_lastBlockedAction"/> when the just-completed preload
+    /// succeeds on the same origin that previously raised the verdict. Without
+    /// this, once any URL trips a HITL detection during preload the badge
+    /// sticks for the entire app session even after the user solves the gate
+    /// and other URLs on that domain start succeeding (workspace-0b9s QA #2).
+    /// </summary>
+    private void ClearBlockedActionForOriginIfMatches(string url)
+    {
+        var current = _lastBlockedAction;
+        if (current == null)
+        {
+            return;
+        }
+
+        var origin = UrlNormalizer.GetOrigin(url);
+        if (origin == null)
+        {
+            return;
+        }
+
+        // Compare by host (Domain). Origin is "scheme://host[:port]"; current.Domain
+        // is the bare host. Strip the scheme/port for the comparison so e.g. an
+        // origin of "https://www.nytimes.com" matches a stored Domain of
+        // "www.nytimes.com".
+        var host = ExtractHostFromOrigin(origin);
+        if (string.Equals(host, current.Domain, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastBlockedAction = null;
+            NotifyProgressChanged();
+        }
+    }
+
+    /// <summary>
+    /// Clears <see cref="_lastBlockedAction"/> when the user moves to a page
+    /// whose origin differs from the one that raised the last HITL verdict.
+    /// Prevents a stale badge for one site from leaking into another's status
+    /// bar (workspace-0b9s QA #2).
+    /// </summary>
+    private void ClearBlockedActionIfDifferentOrigin(string? currentPageUrl)
+    {
+        var current = _lastBlockedAction;
+        if (current == null || string.IsNullOrWhiteSpace(currentPageUrl))
+        {
+            return;
+        }
+
+        var origin = UrlNormalizer.GetOrigin(currentPageUrl);
+        if (origin == null)
+        {
+            return;
+        }
+
+        var host = ExtractHostFromOrigin(origin);
+        if (!string.Equals(host, current.Domain, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastBlockedAction = null;
+            NotifyProgressChanged();
         }
     }
 
