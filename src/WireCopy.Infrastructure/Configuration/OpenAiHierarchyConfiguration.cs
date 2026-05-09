@@ -41,4 +41,13 @@ public class OpenAiHierarchyConfiguration
     /// re-runs on the next visit so layouts adapt to site changes.
     /// </summary>
     public int AiCuratedCacheDays { get; init; } = 30;
+
+    /// <summary>
+    /// Per-month soft cap on tokens billed to AI article extraction. When the
+    /// running total for the current calendar month (UTC) reaches this value,
+    /// further AI extractor calls are skipped — the heuristic path runs alone.
+    /// Counter is keyed <c>AiArticleTokens:YYYYMM</c> in the settings store
+    /// and rotates automatically. Set to <c>0</c> to disable the cap.
+    /// </summary>
+    public int MonthlyTokenBudget { get; init; } = 200_000;
 }

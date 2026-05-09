@@ -135,7 +135,7 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
         _chatCompleter = chatCompleter ?? DefaultChatCompleterAsync;
     }
 
-    internal delegate Task<string> ChatCompleter(
+    internal delegate Task<ChatCompletionResult> ChatCompleter(
         string apiKey,
         string model,
         IEnumerable<ChatMessage> messages,
@@ -159,6 +159,16 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
         if (domain == null)
         {
             _logger.LogDebug("Could not extract domain from {Url}; skipping AI article extraction", url);
+            return null;
+        }
+
+        if (IsBudgetExceeded(out var spent, out var budget))
+        {
+            _logger.LogWarning(
+                "AI article-extractor budget exhausted for {Month}: {Spent}/{Budget} tokens. Falling back to heuristic.",
+                CurrentBudgetPeriod(),
+                spent,
+                budget);
             return null;
         }
 
@@ -187,14 +197,19 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
                     MaxOutputTokenCount = _config.MaxTokens,
                 };
 
-                var responseText = await _chatCompleter(
+                var completion = await _chatCompleter(
                     apiKey,
                     _config.Model,
                     messages,
                     options,
                     ct).ConfigureAwait(false);
 
-                return ParseResponse(responseText, domain, url, _config.Model);
+                if (completion.TotalTokens > 0)
+                {
+                    RecordTokens(completion.TotalTokens);
+                }
+
+                return ParseResponse(completion.Text, domain, url, _config.Model);
             }
             catch (JsonException ex) when (attempt == 0)
             {
@@ -464,7 +479,7 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
         }
     }
 
-    private static async Task<string> DefaultChatCompleterAsync(
+    private static async Task<ChatCompletionResult> DefaultChatCompleterAsync(
         string apiKey,
         string model,
         IEnumerable<ChatMessage> messages,
@@ -490,8 +505,13 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
             }
         }
 
-        return sb.ToString();
+        var totalTokens = completion.Usage?.TotalTokenCount ?? 0;
+        return new ChatCompletionResult(sb.ToString(), totalTokens);
     }
+
+    private static string CurrentBudgetPeriod() => DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string BudgetSettingsKey(string period) => $"AiArticleTokens:{period}";
 
     private string? GetApiKey()
     {
@@ -508,6 +528,32 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
 
         var envKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         return string.IsNullOrWhiteSpace(envKey) ? null : envKey;
+    }
+
+    private bool IsBudgetExceeded(out int spent, out int budget)
+    {
+        budget = _config.MonthlyTokenBudget;
+        spent = ReadTokensSpent();
+        return budget > 0 && spent >= budget;
+    }
+
+    private int ReadTokensSpent()
+    {
+        var raw = _settingsStore.Get(BudgetSettingsKey(CurrentBudgetPeriod()));
+        return int.TryParse(raw, out var n) ? n : 0;
+    }
+
+    private void RecordTokens(int tokens)
+    {
+        if (tokens <= 0)
+        {
+            return;
+        }
+
+        var key = BudgetSettingsKey(CurrentBudgetPeriod());
+        var previous = ReadTokensSpent();
+        var updated = previous + tokens;
+        _settingsStore.Set(key, updated.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
