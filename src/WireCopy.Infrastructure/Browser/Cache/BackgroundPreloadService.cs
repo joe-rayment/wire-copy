@@ -1395,7 +1395,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
             var html = await _backgroundPage.ContentAsync().ConfigureAwait(false);
             var finalUrl = _backgroundPage.Url;
 
-            if (PageLoader.IsBotChallengePage(html))
+            // Typed HITL detection on the browser preload path (workspace-0b9s QA #3).
+            // Previously this branch only called IsBotChallengePage(html), set the
+            // circuit breaker, and returned silently — so the NYT scenario named in
+            // the bead (browser-preload-routed paywalled domain hits a CAPTCHA / login
+            // wall) never surfaced a verdict to the status bar. Now we run the same
+            // HumanActionDetector the HTTP path uses and publish the result.
+            var browserDetection = HumanActionDetector.Detect(html, finalUrl, statusCode: 0);
+            if (browserDetection != null || PageLoader.IsBotChallengePage(html))
             {
                 var origin = UrlNormalizer.GetOrigin(url);
                 if (origin != null)
@@ -1403,7 +1410,17 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _circuitBrokenDomains[origin] = DateTime.UtcNow;
                 }
 
-                _logger.LogWarning("Bot challenge during browser preload: {Url}", url);
+                _logger.LogWarning(
+                    "Human action required during browser preload ({Variant}): {Url}",
+                    browserDetection?.Variant.ToString() ?? "BotDetection",
+                    url);
+
+                if (browserDetection != null)
+                {
+                    _lastBlockedAction = browserDetection;
+                    NotifyProgressChanged();
+                }
+
                 return;
             }
 
@@ -1460,6 +1477,11 @@ internal sealed class BackgroundPreloadService : IPreloadService
             }
 
             _logger.LogInformation("Browser pre-loaded and cached: {Url}", url);
+
+            // Clear sticky HITL badge on browser-path success too (workspace-0b9s QA #2):
+            // the same clear-on-same-origin-success rule applies regardless of whether
+            // the preload that succeeds went through HTTP or the browser path.
+            ClearBlockedActionForOriginIfMatches(url);
         }
         catch (PlaywrightException ex)
         {
