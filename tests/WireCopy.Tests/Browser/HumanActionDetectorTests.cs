@@ -213,7 +213,7 @@ public class HumanActionDetectorTests
     [InlineData(HumanActionVariant.TwoFactor, "Two-factor code required at nytimes.com")]
     [InlineData(HumanActionVariant.Paywall, "Article is paywalled at nytimes.com")]
     [InlineData(HumanActionVariant.RegionBlock, "Site blocks this region (HTTP 451)")]
-    [InlineData(HumanActionVariant.Generic, "Something on nytimes.com needs your attention")]
+    [InlineData(HumanActionVariant.Generic, "Action needed at nytimes.com")]
     public void GetHumanActionCopy_RendersVariantSpecificHeadline(HumanActionVariant variant, string expectedHeadline)
     {
         var (headline, _, _) = TerminalPageRenderer.GetHumanActionCopy(variant, "nytimes.com");
@@ -248,5 +248,44 @@ public class HumanActionDetectorTests
         // Must NOT name a specific cause (no "captcha", "login", "consent" leaking through).
         headline.Should().Contain("example.com");
         headline.Should().NotContainAny("CAPTCHA", "Log in", "consent banner");
+    }
+
+    /// <summary>
+    /// Box width regression guard (workspace-0b9s QA #4): every variant's
+    /// headline / body / hint must fit inside the centered box's inner width
+    /// even when the domain is a long subdomain (worst-case 22 chars).
+    ///
+    /// <para>The box is sized as <c>boxWidth = innerWidth + 4</c> (2 border chars + 2
+    /// padding spaces) where <c>innerWidth</c> is capped at <c>MaxBoxContentWidth = 56</c>.
+    /// Practical limit per content line therefore is <c>MaxBoxContentWidth - 2 = 54</c>
+    /// chars (since the inner width is content + 2 padding). The headline carries an
+    /// additional 2-char braille bullet prefix (<c>"⠇ "</c>) that we add here.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(HumanActionVariant.Captcha)]
+    [InlineData(HumanActionVariant.Login)]
+    [InlineData(HumanActionVariant.CookieConsent)]
+    [InlineData(HumanActionVariant.TwoFactor)]
+    [InlineData(HumanActionVariant.Paywall)]
+    [InlineData(HumanActionVariant.RegionBlock)]
+    [InlineData(HumanActionVariant.Generic)]
+    public void GetHumanActionCopy_AllVariantsFitWithinBoxWidth(HumanActionVariant variant)
+    {
+        // Worst-case 22-char subdomain — matches "subdomain.nytimes.com".
+        const string longestPlausibleDomain = "subdomain.nytimes.com";
+        const int maxContentChars = 54; // MaxBoxContentWidth (56) - 2 padding spaces
+        const int headlineBulletPrefix = 2; // "⠇ " prepended to the styled headline
+
+        var (headline, body, hint) = TerminalPageRenderer.GetHumanActionCopy(variant, longestPlausibleDomain);
+
+        (headline.Length + headlineBulletPrefix).Should().BeLessThanOrEqualTo(
+            maxContentChars,
+            $"variant {variant} headline '⠇ {headline}' must fit in {maxContentChars} chars at 80 cols");
+        body.Length.Should().BeLessThanOrEqualTo(
+            maxContentChars,
+            $"variant {variant} body '{body}' must fit in {maxContentChars} chars at 80 cols");
+        hint.Length.Should().BeLessThanOrEqualTo(
+            maxContentChars,
+            $"variant {variant} hint '{hint}' must fit in {maxContentChars} chars at 80 cols");
     }
 }
