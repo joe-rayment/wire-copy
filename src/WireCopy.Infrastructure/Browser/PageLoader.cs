@@ -528,17 +528,21 @@ public class PageLoader : IPageLoader
             var pageContent = await page.ContentAsync().ConfigureAwait(false);
             if (IsBotChallengePage(pageContent))
             {
-                _logger.LogWarning("Bot challenge page detected after browser load, polling for resolution: {Url}", request.Url);
-                var resolved = await PollForChallengeResolutionAsync(page, request.Url, cancellationToken).ConfigureAwait(false);
-                if (resolved == null)
-                {
-                    _logger.LogWarning("Bot challenge did not resolve within polling window: {Url}", request.Url);
-                    var action = HumanActionDetector.Detect(pageContent, page.Url, statusCode: 0)
-                        ?? new HumanActionRequired(HumanActionVariant.Captcha, ExtractDomainSafe(page.Url));
-                    return PageLoadResult.Failure(action, "Bot challenge could not be resolved");
-                }
-
-                _logger.LogInformation("Bot challenge resolved after polling: {Url}", page.Url);
+                // Speed fix (workspace-0b9s QA #5): emit the typed HITL verdict
+                // immediately on first detection instead of paying the 60s
+                // PollForChallengeResolutionAsync window. The reader-view box
+                // appears in <1s with verb-led copy ("Site is showing a CAPTCHA",
+                // "Solve it in the browser, then press R"), and the user can
+                // Shift+O to open in their real browser, solve, then press R
+                // to retry. The 60s blind wait gave the user nothing actionable
+                // to do for a full minute and almost never resolved on its own
+                // in headless mode anyway.
+                _logger.LogWarning(
+                    "Bot challenge page detected after browser load, surfacing verdict (no poll wait): {Url}",
+                    request.Url);
+                var action = HumanActionDetector.Detect(pageContent, page.Url, statusCode: 0)
+                    ?? new HumanActionRequired(HumanActionVariant.Captcha, ExtractDomainSafe(page.Url));
+                return PageLoadResult.Failure(action, "Bot challenge detected");
             }
 
             // Dismiss login/subscription overlays that may cover content
@@ -573,44 +577,6 @@ public class PageLoader : IPageLoader
             _logger.LogWarning(ex, "Browser unavailable for page load: {Url}", request.Url);
             return PageLoadResult.Failure("Browser unavailable");
         }
-    }
-
-    private async Task<string?> PollForChallengeResolutionAsync(
-        IPage page,
-        string url,
-        CancellationToken cancellationToken)
-    {
-        var pollIntervalMs = _browserConfig.BotChallengePollIntervalMs;
-        var maxWaitMs = _browserConfig.BotChallengeMaxWaitMs;
-        var sw = Stopwatch.StartNew();
-
-        while (sw.ElapsedMilliseconds < maxWaitMs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            await Task.Delay(pollIntervalMs, cancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                var currentHtml = await page.ContentAsync().ConfigureAwait(false);
-                if (!IsBotChallengePage(currentHtml))
-                {
-                    return currentHtml;
-                }
-
-                _logger.LogDebug(
-                    "Bot challenge still present after {ElapsedMs}ms, continuing to poll: {Url}",
-                    sw.ElapsedMilliseconds,
-                    url);
-            }
-            catch (PlaywrightException ex)
-            {
-                _logger.LogWarning(ex, "Error polling page source during challenge resolution: {Url}", url);
-                return null;
-            }
-        }
-
-        return null;
     }
 
     private async Task WaitForPageLoadAsync(IPage page, int timeoutMs, CancellationToken cancellationToken)

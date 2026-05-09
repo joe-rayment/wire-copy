@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using NSubstitute;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Configuration;
 using Xunit;
@@ -412,27 +413,31 @@ public class PageLoaderTests
     }
 
     [Fact]
-    public async Task BrowserFetch_BotChallengeResolves_ReturnsResolvedContent()
+    public async Task BrowserFetch_BotChallengeDetected_ReturnsFailureImmediately()
     {
-        // Arrange - Fast polling for test speed
-        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 5000 };
+        // Speed fix (workspace-0b9s QA #5): the bot-challenge detection must
+        // surface a Failure with a typed RequiredAction immediately on the FIRST
+        // ContentAsync read, not after a 60-second polling window. Previously the
+        // reader paid the full BotChallengeMaxWaitMs window before showing any
+        // feedback. Now the orchestrator catches the verdict at <1s and renders
+        // the variant-aware "Site is showing a CAPTCHA / press R" reader-view box.
+        var config = new BrowserConfiguration { BotChallengeMaxWaitMs = 60000 };
         var sut = CreateSut(httpClient: null, config: config);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
         var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
-        var resolvedHtml = "<html><head><title>Real Page</title></head><body><p>Real content here</p></body></html>";
 
         var page = Substitute.For<IPage>();
         var response = Substitute.For<IResponse>();
         page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
         page.Url.Returns("https://example.com");
 
-        // First call returns challenge, subsequent calls return resolved
+        // Counts how many times ContentAsync was called — proves we did NOT poll.
         var callCount = 0;
         page.ContentAsync().Returns(_ =>
         {
             callCount++;
-            return Task.FromResult(callCount <= 2 ? challengeHtml : resolvedHtml);
+            return Task.FromResult(challengeHtml);
         });
 
         page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
@@ -443,20 +448,31 @@ public class PageLoaderTests
 
         _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
 
-        // Act
-        var result = await sut.LoadAsync(request);
+        // Wall-clock guard: if we're still polling, this would take ~60s. Cap at 5s.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var task = sut.LoadAsync(request);
+        var completed = await Task.WhenAny(task, Task.Delay(5000));
+        sw.Stop();
+        completed.Should().BeSameAs(task,
+            $"LoadAsync must not block on the polling window — elapsed {sw.ElapsedMilliseconds}ms (max 5000ms)");
 
-        // Assert - Should have polled and returned the resolved content
-        result.Success.Should().BeTrue();
-        result.Html.Should().Be(resolvedHtml);
-        result.Metadata!.Title.Should().Be("Real Page");
+        var result = await task;
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Bot challenge");
+        result.RequiredAction.Should().NotBeNull(
+            "the failure must carry a typed HumanActionRequired so the orchestrator can render the variant box");
+        result.RequiredAction!.Variant.Should().Be(HumanActionVariant.Captcha);
+
+        // ContentAsync called once for the initial check — not the multi-call polling pattern.
+        callCount.Should().Be(1, "no polling: only the initial ContentAsync read");
     }
 
     [Fact]
     public async Task BrowserFetch_BotChallengeNeverResolves_ReturnsFailure()
     {
-        // Arrange - Very short max wait so the test completes quickly
-        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 100 };
+        // Same as above but with the original test name kept for compatibility —
+        // verifies the failure path returns a typed verdict.
+        var config = new BrowserConfiguration { BotChallengeMaxWaitMs = 100 };
         var sut = CreateSut(httpClient: null, config: config);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
@@ -478,53 +494,10 @@ public class PageLoaderTests
         // Act
         var result = await sut.LoadAsync(request);
 
-        // Assert - Should return failure after polling times out
+        // Assert - Should return failure with a typed action
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Bot challenge");
-    }
-
-    [Fact]
-    public async Task BrowserFetch_BotChallengePolling_PlaywrightException_ReturnsFailure()
-    {
-        // Arrange - Browser crashes during polling
-        var config = new BrowserConfiguration { BotChallengePollIntervalMs = 50, BotChallengeMaxWaitMs = 5000 };
-        var sut = CreateSut(httpClient: null, config: config);
-        var request = new PageLoadRequest { Url = "https://example.com" };
-
-        var challengeHtml = "<html><head></head><body><script src=\"https://captcha-delivery.com/c\"></script></body></html>";
-
-        var page = Substitute.For<IPage>();
-        var response = Substitute.For<IResponse>();
-        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>()).Returns(Task.FromResult<IResponse?>(response));
-        page.Url.Returns("https://example.com");
-
-        // First call returns challenge, second throws (browser crash)
-        var callCount = 0;
-        page.ContentAsync().Returns(_ =>
-        {
-            callCount++;
-            if (callCount <= 2)
-            {
-                return Task.FromResult(challengeHtml);
-            }
-
-            throw new PlaywrightException("Session lost");
-        });
-
-        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
-            .Returns(Task.CompletedTask);
-        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
-            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
-        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
-
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
-
-        // Act
-        var result = await sut.LoadAsync(request);
-
-        // Assert - Should return failure when browser crashes during polling
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Bot challenge");
+        result.RequiredAction.Should().NotBeNull();
     }
 
     [Fact]
