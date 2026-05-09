@@ -196,13 +196,24 @@ internal static class BucketProbePanel
 
     /// <summary>
     /// Render the prerequisite-gate panel asking the user to set the service
-    /// account first.
+    /// account first. workspace-ur5h: wraps to fit narrow terminals so the
+    /// "we need the service account key" sentence doesn't run off the edge
+    /// at width 80.
     /// </summary>
     public static int RenderPrerequisiteGate(ThemePalette palette, int startRow)
     {
+        ArgumentNullException.ThrowIfNull(palette);
         var row = startRow;
+        var width = Math.Min(80, Math.Max(40, Console.WindowWidth)) - 6;
+
         WriteAt(2, row++, $"{palette.PrimaryText.AnsiFg}Service account first.{Reset}");
-        WriteAt(2, row++, $"{palette.SecondaryText.AnsiFg}We need the service account key to verify your bucket and (if needed) create it.{Reset}");
+
+        const string body = "Set the service account key before the bucket — we need it to verify (and, if asked, create) the bucket.";
+        foreach (var line in WrapToWidth(body, width))
+        {
+            WriteAt(2, row++, $"{palette.SecondaryText.AnsiFg}{line}{Reset}");
+        }
+
         row++;
         WriteAt(
             2,
@@ -344,6 +355,63 @@ internal static class BucketProbePanel
         }
 
         return null;
+    }
+
+    private static IEnumerable<string> WrapToWidth(string text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text) || maxLen <= 0)
+        {
+            yield return text;
+            yield break;
+        }
+
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var current = new System.Text.StringBuilder();
+        foreach (var word in words)
+        {
+            var prospective = current.Length == 0 ? word.Length : current.Length + 1 + word.Length;
+            if (prospective > maxLen)
+            {
+                if (current.Length > 0)
+                {
+                    yield return current.ToString();
+                    current.Clear();
+                }
+
+                if (word.Length > maxLen)
+                {
+                    var w = word;
+                    while (w.Length > maxLen)
+                    {
+                        yield return w[..maxLen];
+                        w = w[maxLen..];
+                    }
+
+                    if (w.Length > 0)
+                    {
+                        current.Append(w);
+                    }
+                }
+                else
+                {
+                    current.Append(word);
+                }
+            }
+            else
+            {
+                if (current.Length > 0)
+                {
+                    current.Append(' ');
+                }
+
+                current.Append(word);
+            }
+        }
+
+        if (current.Length > 0)
+        {
+            yield return current.ToString();
+        }
     }
 
     private static void DrawSpinner(ThemePalette palette, string label, int row, string frame)
