@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<!--
+  Synthetic NYT 2026-style article fixture for workspace-d799 regression tests.
+  Models the production markup pattern observed in 2026: every styling class
+  is a hashed CSS-module name (`css-1abc23`), but the semantic shell uses a
+  stable `<section name="articleBody">` and `data-testid="*companionColumn*"`
+  attributes. The body is also peppered with curly quotes, em-dashes, and
+  short topical paragraphs that historically tripped the alphabetic-ratio
+  and average-paragraph-length gates in ValidateContentQuality.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Inside Berlin's energy gamble: a German factory town counts the cost" />
+  <title>Inside Berlin's energy gamble — The New York Times</title>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "NewsArticle",
+      "headline": "Inside Berlin's energy gamble: a German factory town counts the cost",
+      "author": [{ "@type": "Person", "name": "Eshe Nelson" }],
+      "datePublished": "2026-04-29T05:00:00.000Z"
+    }
+  </script>
+</head>
+<body class="css-1abcd23">
+  <header class="css-9zx7k">
+    <nav class="css-nav-2k1d"><a href="/section/world">World</a><a href="/section/business">Business</a></nav>
+  </header>
+
+  <main class="css-9aa2b">
+    <article class="css-1qwe45">
+      <h1 class="css-headline-9z">Inside Berlin's energy gamble: a German factory town counts the cost</h1>
+      <p class="css-byline-21">By Eshe Nelson</p>
+      <time datetime="2026-04-29">April 29, 2026</time>
+
+      <section name="articleBody" data-testid="9c8b-companionColumn-1">
+        <p class="css-pp-71">For three generations, the foundry on the edge of Mannheim has shaped steel for German carmakers — body panels, gearbox housings, the unglamorous skeleton of an industrial economy. This spring, its furnaces went cold for the first time since the 1970s.</p>
+
+        <p class="css-pp-71">"It isn't the orders," said Klaus Werner, who has run the family business for two decades. "It's the bill." Mr. Werner's electricity contract, renegotiated in March, came in at nearly four times the rate his father paid in 2019. He laid off twelve workers in April and is weighing whether to mothball a second furnace.</p>
+
+        <p class="css-pp-71">Across Germany's industrial Mittelstand — the constellation of mid-size manufacturers that has long defined the country's export power — variations of Mr. Werner's calculation are playing out in foundries, glassworks, and chemical plants from the Ruhr to Bavaria. Energy-intensive output is down sharply year over year, and economists at the Ifo Institute project further contraction through 2027.</p>
+
+        <p class="css-pp-71">The squeeze is the long shadow of decisions made in haste after Russia's 2022 invasion of Ukraine. Berlin pivoted away from cheap pipeline gas, banked on liquefied natural gas terminals on the North Sea coast, and accelerated a phaseout of nuclear power that critics now describe as ill-timed. The result, three years on: an electricity price floor stubbornly above the European average, and a manufacturing sector that has begun to quietly relocate.</p>
+
+        <p class="css-pp-71">"We didn't expect the price gap to be permanent — we thought it was a 2022 problem," said Veronika Grimm, an economist on the German Council of Economic Experts. "What we are seeing now is structural. Companies that move production to the United States or to Italy don't come back."</p>
+
+        <p class="css-pp-71">The political response has been halting. Chancellor Olaf Scholz's coalition has floated subsidies for industrial electricity, but coalition partners disagree on the price ceiling and on whether to extend support to chemical giants like BASF, which has already announced plant closures in Ludwigshafen. Meanwhile, the opposition Christian Democrats — leading in spring polls — have begun openly debating a partial nuclear restart, an idea that would have been unthinkable in 2022.</p>
+
+        <p class="css-pp-71">For Mr. Werner, the abstractions of energy policy translate into a single number on a single piece of paper each month. He pulls the latest bill from a folder. "This is what they cost us," he says. "Politicians talk about transitions. I talk about whether my nephew has a job in September."</p>
+
+        <p class="css-pp-71">The foundry's silence carries. In Mannheim, a town built on the heat of its industries, even the absence of furnace noise is now a kind of news.</p>
+      </section>
+
+      <aside class="css-aside-77">
+        <a href="/2026/04/22/business/germany-bmw-supplier.html">More from this series</a>
+      </aside>
+    </article>
+  </main>
+
+  <footer class="css-foot-1z">© 2026 The New York Times Company</footer>
+</body>
+</html>
