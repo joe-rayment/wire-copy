@@ -87,6 +87,7 @@ public class TerminalInputHandler : IInputHandler
    h / ← / -       Narrow width
    l / → / +       Widen width
    0               Reset width
+   Shift+E         Regenerate article layout (AI re-extract)
 
  Speed Reading (Reader View)
    f               Toggle speed reading on/off
@@ -564,6 +565,7 @@ public class TerminalInputHandler : IInputHandler
             's' => new NavigationCommand { Type = CommandType.SaveToCollection },
             'S' => new NavigationCommand { Type = CommandType.SaveToSpecific },
             'A' => new NavigationCommand { Type = CommandType.SaveAllToReadingList },
+            'E' => new NavigationCommand { Type = CommandType.RegenerateArticleLayout },
             'd' => new NavigationCommand { Type = CommandType.DeleteItem },
             'p' => new NavigationCommand { Type = CommandType.GeneratePodcast },
             'a' => new NavigationCommand { Type = CommandType.AddBookmark },

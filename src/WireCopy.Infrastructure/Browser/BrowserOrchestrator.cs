@@ -1048,6 +1048,10 @@ public partial class BrowserOrchestrator : IBrowserService
                     _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
                     await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     break;
+
+                case CommandType.RegenerateArticleLayout:
+                    await ArticleLayoutCommandHandler.HandleRegenerateAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                    break;
             }
 
             // Notify pre-loader of selection changes in hierarchical view

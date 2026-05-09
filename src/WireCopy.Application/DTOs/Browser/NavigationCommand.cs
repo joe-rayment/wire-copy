@@ -143,4 +143,8 @@ public enum CommandType
 
     // Launcher: jump to a 1-9 index. Carries Count = digit (1..9).
     JumpToIndex,
+
+    // Reader: ask the AI extractor to re-derive selectors for the current
+    // article and replace the saved layout config (workspace-2e1k).
+    RegenerateArticleLayout,
 }
