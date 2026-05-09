@@ -66,6 +66,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private volatile bool _disposed;
     private volatile string? _currentlyFetchingUrl;
 
+    // Last typed human-action signal raised by the preloader's HTML check
+    // (workspace-0b9s). Surfaced through PreloadProgress so the launcher /
+    // link-tree status bar can warn the user before they Enter into a doomed
+    // article load. Cleared when the next preload succeeds for a URL on the
+    // same origin.
+    private HumanActionRequired? _lastBlockedAction;
+
     // Debounce state: stores the latest selection change parameters
     private int _pendingSelectedIndex;
     private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
@@ -306,6 +313,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             PaywalledLinkCount = _paywalledLinkCount,
             IsActivelyFetching = hasQueuedWork && !_paused,
             CurrentlyFetchingUrl = _currentlyFetchingUrl,
+            BlockedAction = _lastBlockedAction,
         };
     }
 
@@ -390,24 +398,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
         return new[] { domain };
     }
 
+    /// <summary>
+    /// Backwards-compatible wrapper around <see cref="HumanActionDetector.IsBotDetectionResponse"/>.
+    /// Kept on this type for tests that still call it directly. New code should use
+    /// <see cref="HumanActionDetector.Detect"/> for a typed verdict.
+    /// </summary>
     internal static bool IsBotDetectionResponse(string html)
-    {
-        var indicators = new[]
-        {
-            "attention required! | cloudflare",
-            "you have been blocked",
-            "checking your browser",
-            "cf-browser-verification",
-            "cf-challenge",
-            "challenge-platform",
-            "just a moment...",
-            "enable cookies",
-            "please enable javascript",
-            "access denied"
-        };
-
-        return Array.Exists(indicators, i => html.Contains(i, StringComparison.OrdinalIgnoreCase));
-    }
+        => HumanActionDetector.IsBotDetectionResponse(html);
 
     /// <summary>
     /// Computes a priority score for a preload item. Lower score = higher priority.
@@ -1098,15 +1095,29 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
             if (result.Success)
             {
-                if (IsBotDetectionResponse(result.Html))
+                // Typed HITL detection (workspace-0b9s): consolidate captcha / login /
+                // cookie-consent / 2FA / paywall / region-block detection in one place
+                // and surface the variant up through PreloadProgress so the status bar
+                // shows "⏸ {verb} at {domain}" before the user even Enters the article.
+                var hitlAction = HumanActionDetector.Detect(result.Html, result.Url ?? url, result.StatusCode);
+                if (hitlAction != null || IsBotDetectionResponse(result.Html))
                 {
                     var origin = UrlNormalizer.GetOrigin(url);
                     if (origin != null)
                     {
                         _circuitBrokenDomains[origin] = DateTime.UtcNow;
                         _logger.LogWarning(
-                            "Bot detection triggered for {Origin}, stopping pre-loads for this domain",
-                            origin);
+                            "Human action required for {Origin} ({Variant}), stopping pre-loads for this domain",
+                            origin,
+                            hitlAction?.Variant.ToString() ?? "BotDetection");
+                    }
+
+                    // Surface the typed verdict to the UI; preserve the silent
+                    // circuit-break behaviour (we still don't keep retrying).
+                    if (hitlAction != null)
+                    {
+                        _lastBlockedAction = hitlAction;
+                        NotifyProgressChanged();
                     }
                 }
                 else if (ReadableContentExtractor.IsEmptyArticleShell(result.Html))
@@ -1152,7 +1163,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         "Skipping cache for preloaded URL with no extractable article content: {Url}",
                         url);
                 }
-                else if (IsRedirectedUrl(url, result.Url))
+                else if (result.Url != null && IsRedirectedUrl(url, result.Url))
                 {
                     // Server redirected to a different page (e.g., paywalled article → section page).
                     // Do NOT cache under the original URL — the content doesn't match the request.

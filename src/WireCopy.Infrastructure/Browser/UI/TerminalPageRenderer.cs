@@ -75,7 +75,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
         RenderToastOverlay(context, options.TerminalWidth);
     }
 
@@ -106,7 +106,7 @@ public class TerminalPageRenderer : IPageRenderer
             }
 
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
             RenderToastOverlay(context, options.TerminalWidth);
             return;
         }
@@ -132,7 +132,8 @@ public class TerminalPageRenderer : IPageRenderer
                 readerContentWidth: options.MaxContentWidth,
                 readerViewportHeight: viewportHeight,
                 layoutVariantLabel: options.LayoutVariantLabel,
-                missingCookieDomains: options.MissingCookieDomains);
+                missingCookieDomains: options.MissingCookieDomains,
+                requiredAction: options.RequiredAction);
         }
         else
         {
@@ -140,7 +141,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
         }
 
         RenderToastOverlay(context, options.TerminalWidth);
@@ -205,19 +206,93 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderChallenge(string url)
     {
+        // Legacy entry-point preserved for any caller still wired to the old API
+        // (workspace-0b9s leaves this in place per "thin wrapper" rule). New code
+        // should prefer RenderHumanAction with a typed HumanActionRequired signal.
+        var domain = ExtractDomainSafe(url);
+        RenderHumanAction(
+            new HumanActionRequired(Domain.Enums.Browser.HumanActionVariant.Captcha, domain),
+            url);
+    }
+
+    public void RenderHumanAction(HumanActionRequired action, string url)
+    {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var domain = !string.IsNullOrWhiteSpace(action.Domain) ? action.Domain : ExtractDomainSafe(url);
+        var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+
+        var copy = GetHumanActionCopy(action.Variant, domain);
+        var (headlinePlain, bodyPlain, hintPlain) = copy;
+
+        var headlineStyled = $"{p.GetWarningFg().AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}{headlinePlain}{Reset}";
+        var headlineFull = $"\u2847 {headlinePlain}";
+
+        var bodyStyled = $"{p.SecondaryText.AnsiFg}{bodyPlain}{Reset}";
+
+        // Hint line: highlight the key verbs (Shift+O / Shift+R / Shift+I / b)
+        var hintStyled = StyleHintLine(hintPlain, p);
 
         var lines = new List<CenteredBoxLine>
         {
             CenteredBoxLine.Empty,
-            new($"{p.GetWarningFg().AnsiFg}\u2847{Reset} {p.PrimaryText.AnsiFg}Bot challenge detected{Reset}", "\u2847 Bot challenge detected"),
+            new(headlineStyled, headlineFull),
             CenteredBoxLine.Empty,
-            new($"{p.SecondaryText.AnsiFg}Waiting for manual intervention...{Reset}", "Waiting for manual intervention..."),
+            new(bodyStyled, bodyPlain),
+            CenteredBoxLine.Empty,
+            new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
+            CenteredBoxLine.Empty,
+            new(hintStyled, hintPlain),
             CenteredBoxLine.Empty,
         };
 
         RenderCenteredBox(lines, p.GetWarningFg());
     }
+
+    /// <summary>
+    /// Public so tests can verify the variant copy without going through the
+    /// rendering pipeline. Returns the (headline, body, hint) plain-text triple
+    /// that <see cref="RenderHumanAction"/> renders inside the warning-bordered box.
+    /// </summary>
+#pragma warning disable SA1204 // Static members should appear before non-static members — kept adjacent to RenderHumanAction for readability.
+    public static (string Headline, string Body, string Hint) GetHumanActionCopy(
+        Domain.Enums.Browser.HumanActionVariant variant,
+        string domain)
+    {
+        var d = string.IsNullOrWhiteSpace(domain) ? "this site" : domain;
+
+        return variant switch
+        {
+            Domain.Enums.Browser.HumanActionVariant.Captcha => (
+                "Site is showing a CAPTCHA",
+                $"Solve it in the browser window, then press R",
+                $"{d} \u2014 Shift+O:open  b:back"),
+            Domain.Enums.Browser.HumanActionVariant.Login => (
+                $"Log in at {d} in your browser",
+                "Then press R to refresh.",
+                "Tip: Shift+I imports cookies after login"),
+            Domain.Enums.Browser.HumanActionVariant.CookieConsent => (
+                "Cookie consent banner blocking content",
+                "Accept it in the browser, then press R",
+                $"{d} \u2014 Shift+O:open  b:back"),
+            Domain.Enums.Browser.HumanActionVariant.TwoFactor => (
+                $"Two-factor code required at {d}",
+                "Complete verification in the browser, then press R",
+                "Shift+O:open  b:back"),
+            Domain.Enums.Browser.HumanActionVariant.Paywall => (
+                $"Article is paywalled at {d}",
+                "Log in or open in browser",
+                "Shift+O:open  b:back"),
+            Domain.Enums.Browser.HumanActionVariant.RegionBlock => (
+                "Site blocks this region (HTTP 451)",
+                "Try a different network or VPN",
+                "b:back"),
+            _ => (
+                $"Something on {d} needs your attention",
+                "Open it in your browser, then press R",
+                "Shift+O:open  b:back"),
+        };
+    }
+#pragma warning restore SA1204
 
     public void RenderInteractiveRefresh(string url)
     {
@@ -451,6 +526,38 @@ public class TerminalPageRenderer : IPageRenderer
 
         _helpers.ClearRemainingLines();
     }
+
+#pragma warning disable SA1204 // Static helpers kept after the methods that use them for readability.
+    private static string StyleHintLine(string hint, ThemePalette p)
+    {
+        // Style recognised key tokens (Shift+O, Shift+R, Shift+I, Enter, b, Esc) in AccentFg
+        // and the surrounding ":verb" descriptors in DimFg/SecondaryText. Falls back to a
+        // single-color render when the hint contains no recognised tokens.
+        var styled = hint;
+        var tokens = new[] { "Shift+O", "Shift+R", "Shift+I", "Enter", "Esc" };
+        foreach (var token in tokens)
+        {
+            if (!styled.Contains(token, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            styled = styled.Replace(token, $"{p.GetAccentFg().AnsiFg}{token}{Reset}{p.SecondaryText.AnsiFg}", StringComparison.Ordinal);
+        }
+
+        return $"{p.SecondaryText.AnsiFg}{styled}{Reset}";
+    }
+
+    private static string ExtractDomainSafe(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
+    }
+#pragma warning restore SA1204
 
     /// <summary>
     /// Represents a line inside a centered box, carrying both styled (ANSI) and plain text

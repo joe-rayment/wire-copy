@@ -46,4 +46,12 @@ public record PreloadProgress
     /// so the user knows exactly what article is being cached right now.
     /// </summary>
     public string? CurrentlyFetchingUrl { get; init; }
+
+    /// <summary>
+    /// Typed human-action signal raised by the preloader when its HTML check
+    /// recognises an interstitial (CAPTCHA, login wall, cookie consent, etc.).
+    /// Surfaced to the launcher / link-tree status bar so the user is warned
+    /// BEFORE they Enter into a doomed article load (workspace-0b9s MVP).
+    /// </summary>
+    public HumanActionRequired? BlockedAction { get; init; }
 }

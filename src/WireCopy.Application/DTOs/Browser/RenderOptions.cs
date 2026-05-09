@@ -104,6 +104,16 @@ public record RenderOptions
     public IReadOnlyList<string>? MissingCookieDomains { get; init; }
 
     /// <summary>
+    /// Typed human-action signal currently active for the page being rendered
+    /// (CAPTCHA, login wall, cookie consent, 2FA, paywall, region block, generic).
+    /// When non-null, the status bar replaces the legacy <see cref="MissingCookieDomains"/>
+    /// cookie badge with a variant-aware "⏸ {verb} at {domain}" badge per
+    /// workspace-0b9s. When null, the status bar falls back to the existing
+    /// cookie-domain badge for backwards compatibility.
+    /// </summary>
+    public HumanActionRequired? RequiredAction { get; init; }
+
+    /// <summary>
     /// When true the launcher renders a "set up API keys" hint row above the
     /// bookmark grid and exposes it as a focusable element (selectedIndex = -2).
     /// Driven by <c>SettingsCommandHandler.IsFirstRun</c>: visible while none of

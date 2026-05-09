@@ -37,7 +37,8 @@ internal class StatusBarRenderer
         int readerContentWidth = 0,
         int readerViewportHeight = 0,
         string? layoutVariantLabel = null,
-        IReadOnlyList<string>? missingCookieDomains = null)
+        IReadOnlyList<string>? missingCookieDomains = null,
+        HumanActionRequired? requiredAction = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
@@ -53,7 +54,7 @@ internal class StatusBarRenderer
         var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
         var leftWidth = RenderHelpers.GetDisplayWidth(left);
 
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains);
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
         // Responsive help hint: show preview controls or standard help
@@ -339,15 +340,30 @@ internal class StatusBarRenderer
         PreloadProgress? cacheProgress,
         double cacheUsagePercent,
         string? layoutVariantLabel = null,
-        IReadOnlyList<string>? missingCookieDomains = null)
+        IReadOnlyList<string>? missingCookieDomains = null,
+        HumanActionRequired? requiredAction = null)
     {
         var parts = new List<string>();
 
-        // Missing-cookie badge for paywalled domains. Surfaces silently failing
-        // pre-fetch so the user knows to recover via :cookies import (or Shift+I).
-        // Format: "🍪✗ nytimes.com Shift+I:login" — single-line, unobtrusive.
-        if (missingCookieDomains is { Count: > 0 })
+        // Typed human-action badge takes precedence over the legacy cookie badge
+        // (workspace-0b9s). Format: "⏸ {verb} at {domain} · Shift+O:open" — replaces
+        // the confusing "🍪✗ nytimes.com Shift+I:login" copy that read as "something
+        // about cookies" when the actual block was a CAPTCHA / login wall / consent
+        // banner / etc.
+        if (requiredAction != null)
         {
+            var verb = GetActionVerb(requiredAction.Variant);
+            var domainText = string.IsNullOrWhiteSpace(requiredAction.Domain) ? "site" : requiredAction.Domain;
+            parts.Add(
+                $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
+                $"{p.SecondaryText.AnsiFg}{verb} at {domainText}{Reset} " +
+                $"{p.SecondaryText.AnsiFg}·{Reset} " +
+                $"{p.GetAccentFg().AnsiFg}Shift+O{Reset}{p.GetDimFg().AnsiFg}:open{Reset}");
+        }
+        else if (missingCookieDomains is { Count: > 0 })
+        {
+            // Legacy cookie badge — kept for backwards compat with consumers that haven't
+            // wired the typed RequiredAction signal yet.
             var domainList = string.Join(",", missingCookieDomains);
             parts.Add(
                 $"{p.PromptFg.AnsiFg}\U0001F36A✗{Reset} " +
@@ -522,6 +538,22 @@ internal class StatusBarRenderer
     {
         return string.Join(" ", hints.Select(h =>
             $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.GetDimFg().AnsiFg}:{h.Action}{Reset}"));
+    }
+
+    private static string GetActionVerb(HumanActionVariant variant)
+    {
+        // Verb chosen to read naturally inside "{verb} at {domain}" so the badge
+        // works as a single sentence in the status bar (workspace-0b9s).
+        return variant switch
+        {
+            HumanActionVariant.Captcha => "captcha",
+            HumanActionVariant.Login => "login",
+            HumanActionVariant.CookieConsent => "consent",
+            HumanActionVariant.TwoFactor => "2FA",
+            HumanActionVariant.Paywall => "paywall",
+            HumanActionVariant.RegionBlock => "region-block",
+            _ => "action needed",
+        };
     }
 
     private static string GetDomain(string url)
