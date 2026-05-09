@@ -151,6 +151,9 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IHierarchyConfigStore, HierarchyConfigStore>();
         services.AddSingleton<IHierarchyAnalyzer, OpenAiHierarchyAnalyzer>();
         services.AddSingleton<IReadableContentExtractor, ReadableContentExtractor>();
+        services.AddSingleton<IArticleLayoutStore, ArticleLayoutStore>();
+        services.AddSingleton<ISelectorBasedArticleExtractor, SelectorBasedArticleExtractor>();
+        services.AddSingleton<IAiArticleExtractor, OpenAiArticleExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
         services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();
 
