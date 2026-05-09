@@ -20,16 +20,34 @@ internal static class ToastRenderer
     private const int RightMargin = 1;
 
     // Icons per toast type (see design system)
-    private const char InfoIcon = '\u26A1';        // ⚡
-    private const char SuccessIcon = '\u2714';     // ✔
-    private const char ErrorIcon = '\u2717';       // ✗
-    private const char CelebrationIcon = '\u2726'; // ✦
+    private const char InfoIcon = '⚡';        // ⚡
+    private const char SuccessIcon = '✔';     // ✔
+    private const char ErrorIcon = '✗';       // ✗
+    private const char CelebrationIcon = '✦'; // ✦
 
     /// <summary>
     /// Renders a toast notification overlay at the top-right corner of the terminal.
     /// Uses direct cursor positioning to overlay existing content without shifting layout.
+    /// Compatibility overload that bypasses frame buffering — kept for tests and
+    /// non-buffered fallbacks. Prefer the overload that takes <see cref="RenderHelpers"/>
+    /// from production render paths so the toast survives the frame flush.
     /// </summary>
     public static void RenderToast(ToastNotification toast, ThemePalette palette, int terminalWidth)
+    {
+        RenderToastInternal(toast, palette, terminalWidth, writer: null);
+    }
+
+    /// <summary>
+    /// Renders a toast via <see cref="RenderHelpers.WriteAt"/>, ensuring its
+    /// escape sequences accumulate into the active frame buffer (when buffering)
+    /// and therefore aren't overwritten by the subsequent EndFrame flush.
+    /// </summary>
+    public static void RenderToast(ToastNotification toast, ThemePalette palette, int terminalWidth, RenderHelpers helpers)
+    {
+        RenderToastInternal(toast, palette, terminalWidth, helpers);
+    }
+
+    private static void RenderToastInternal(ToastNotification toast, ThemePalette palette, int terminalWidth, RenderHelpers? writer)
     {
         var borderColor = GetBorderColor(toast.Type, palette);
         var icon = GetIcon(toast.Type);
@@ -83,28 +101,37 @@ internal static class ToastRenderer
             + (string.IsNullOrEmpty(renderedDetail) ? 0 : 1 + RenderHelpers.GetDisplayWidth(renderedDetail));
         var paddingRight = Math.Max(0, innerWidth - contentLineWidth);
 
+        var topBorder = $"{borderFg}╭{new string('─', innerWidth + BoxPadding)}╮{Reset}";
+        var detailPart = string.IsNullOrEmpty(renderedDetail)
+            ? string.Empty
+            : $" {detailFg}{renderedDetail}";
+        var contentLine =
+            $"{borderFg}│ " +
+            $"{iconColor.AnsiFg}{iconStr}" +
+            $" {messageFg}{renderedMessage}" +
+            $"{detailPart}" +
+            $"{new string(' ', paddingRight)}" +
+            $" {borderFg}│{Reset}";
+        var bottomBorder = $"{borderFg}╰{new string('─', innerWidth + BoxPadding)}╯{Reset}";
+
+        if (writer != null)
+        {
+            // Buffered path: escapes accumulate into the active frame buffer
+            // and survive the EndFrame flush.
+            writer.WriteAt(startCol, startRow, topBorder);
+            writer.WriteAt(startCol, startRow + 1, contentLine);
+            writer.WriteAt(startCol, startRow + 2, bottomBorder);
+            return;
+        }
+
         try
         {
-            // Top border: ╭──────────╮
             Console.SetCursorPosition(startCol, startRow);
-            Console.Write($"{borderFg}\u256d{new string('\u2500', innerWidth + BoxPadding)}\u256e{Reset}");
-
-            // Content line: │ ✔ Message detail │
+            Console.Write(topBorder);
             Console.SetCursorPosition(startCol, startRow + 1);
-            var detailPart = string.IsNullOrEmpty(renderedDetail)
-                ? string.Empty
-                : $" {detailFg}{renderedDetail}";
-            Console.Write(
-                $"{borderFg}\u2502 " +
-                $"{iconColor.AnsiFg}{iconStr}" +
-                $" {messageFg}{renderedMessage}" +
-                $"{detailPart}" +
-                $"{new string(' ', paddingRight)}" +
-                $" {borderFg}\u2502{Reset}");
-
-            // Bottom border: ╰──────────╯
+            Console.Write(contentLine);
             Console.SetCursorPosition(startCol, startRow + 2);
-            Console.Write($"{borderFg}\u2570{new string('\u2500', innerWidth + BoxPadding)}\u256f{Reset}");
+            Console.Write(bottomBorder);
         }
         catch
         {

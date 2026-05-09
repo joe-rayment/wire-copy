@@ -134,6 +134,7 @@ public partial class BrowserOrchestrator : IBrowserService
             ThemeProvider = themeProvider,
             PreloadService = _preloadService,
             LayoutVariantProvider = layoutVariantProvider,
+            DisableAnimations = _browserConfig.DisableAnimations,
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
