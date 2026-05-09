@@ -39,6 +39,13 @@ public partial class BrowserOrchestrator
         // when on the launcher so those fields stay null/empty/zero.
         var isLauncher = _navigationService.CurrentContext.ViewMode == ViewMode.Launcher;
 
+        // Surface the typed human-action signal raised by the preload service so
+        // status-bar / reader-view consumers can render variant-aware copy
+        // (workspace-0b9s). When non-null, the status bar replaces the legacy
+        // 🍪✗ cookie badge with "⏸ {verb} at {domain} · Shift+O:open".
+        var preloadProgress = isLauncher ? null : _preloadService.GetProgress();
+        var requiredAction = preloadProgress?.BlockedAction;
+
         return new RenderOptions
         {
             TerminalWidth = width,
@@ -46,7 +53,7 @@ public partial class BrowserOrchestrator
             MaxContentWidth = ComputeContentWidth(width),
             Use256Colors = use256,
             CachedUrls = isLauncher ? null : GetMergedCachedUrls(),
-            CacheProgress = isLauncher ? null : _preloadService.GetProgress(),
+            CacheProgress = preloadProgress,
             PodcastButtonState = isLauncher ? 0 : GetPodcastButtonState(),
             PodcastProgressFraction = isLauncher ? 0 : _commandContext.PodcastGenerationProgress,
             PodcastArticleCount = isLauncher ? 0 : GetPodcastArticleCount(),
@@ -59,6 +66,7 @@ public partial class BrowserOrchestrator
                     _navigationService.CurrentContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
+            RequiredAction = requiredAction,
         };
     }
 

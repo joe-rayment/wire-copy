@@ -243,6 +243,15 @@ public class PageLoadPipeline
 
         if (!loadResult.Success)
         {
+            // Surface the typed HITL verdict (CAPTCHA, login, cookie banner, 2FA, paywall,
+            // region block) when the loader recognised one. The orchestrator catches this
+            // exception and renders a variant-aware reader-view box instead of the generic
+            // "Something went wrong" error.
+            if (loadResult.RequiredAction != null)
+            {
+                throw new HumanActionRequiredException(loadResult.RequiredAction, loadResult.ErrorMessage);
+            }
+
             throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
         }
 

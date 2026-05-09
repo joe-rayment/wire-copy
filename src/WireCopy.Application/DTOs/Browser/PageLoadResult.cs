@@ -46,6 +46,15 @@ public record PageLoadResult
     public FetchMethod FetchMethod { get; init; }
 
     /// <summary>
+    /// Typed signal for human-in-the-loop actions that block the load
+    /// (CAPTCHA, login wall, cookie consent, 2FA, paywall, region block).
+    /// Populated on failure when the loader pipeline recognises the response
+    /// as an HITL interstitial. Null when the failure is unrelated (transient
+    /// network error, timeout, etc.).
+    /// </summary>
+    public HumanActionRequired? RequiredAction { get; init; }
+
+    /// <summary>
     /// Creates a successful result.
     /// </summary>
     public static PageLoadResult Successful(string url, string html, PageMetadata metadata, FetchMethod fetchMethod = FetchMethod.Http)
@@ -71,6 +80,20 @@ public record PageLoadResult
             Success = false,
             ErrorMessage = errorMessage,
             StatusCode = statusCode
+        };
+    }
+
+    /// <summary>
+    /// Creates a failure result tagged with a typed human-action signal.
+    /// </summary>
+    public static PageLoadResult Failure(HumanActionRequired requiredAction, string? errorMessage = null, int statusCode = 0)
+    {
+        return new PageLoadResult
+        {
+            Success = false,
+            ErrorMessage = errorMessage ?? $"Human action required: {requiredAction.Variant}",
+            StatusCode = statusCode,
+            RequiredAction = requiredAction,
         };
     }
 }
