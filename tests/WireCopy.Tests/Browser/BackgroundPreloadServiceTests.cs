@@ -2462,6 +2462,126 @@ public class BackgroundPreloadServiceTests : IDisposable
             .Should().ContainSingle().Which.Should().Be("nytimes.com");
     }
 
+    #region BlockedAction badge clearing (workspace-0b9s QA #2)
+
+    [Fact]
+    public void ClearBlockedActionForOriginIfMatches_SameDomain_ClearsBadge()
+    {
+        // Direct test of the success-path helper (workspace-0b9s QA #2): once the
+        // verdict is primed for nytimes.com, a success on another nytimes.com URL
+        // must clear it. Drives the helper directly because the full PreloadUrlAsync
+        // path has many independent quality gates (paywall preview, IsArticlePage,
+        // HasExtractableContent, redirect detection, etc.) that make the test brittle.
+        // The clearing logic itself is what matters here — the wiring into the
+        // success path is verified by inspecting the source.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+        service.GetProgress().BlockedAction.Should().NotBeNull("precondition: badge is active");
+
+        service.ClearBlockedActionForOriginIfMatchesForTesting(
+            "https://www.nytimes.com/2026/05/some-other-article");
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "successful preload on the same origin must clear the sticky HITL badge");
+    }
+
+    [Fact]
+    public void NotifySelectionChanged_DifferentOrigin_ClearsBlockedActionBadge()
+    {
+        // When the user navigates from a HITL-blocked site to a different domain,
+        // the stale "⏸ verify at X" badge must drop. Without this, the badge
+        // raised for nytimes.com would still show while reading example.com.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.SetBlockedActionForTesting(
+            new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com"));
+        service.GetProgress().BlockedAction.Should().NotBeNull("precondition: badge is active");
+
+        var nodes = CreateContentNodes("https://example.com/article");
+        service.NotifySelectionChanged(0, nodes, "https://example.com/page");
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "navigating to a different origin must clear a stale HITL badge");
+    }
+
+    [Fact]
+    public void NotifySelectionChanged_SameOrigin_KeepsBlockedActionBadge()
+    {
+        // Stays on the same origin: the badge must remain so the user keeps seeing
+        // why pre-fetch is silently failing for this domain.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        var nodes = CreateContentNodes("https://www.nytimes.com/2026/05/article-2");
+        service.NotifySelectionChanged(0, nodes, "https://www.nytimes.com/2026/05/section");
+
+        service.GetProgress().BlockedAction.Should().Be(verdict,
+            "same-origin selection changes must NOT clear an active HITL badge");
+    }
+
+    [Fact]
+    public void NotifyCollectionChanged_DifferentOrigin_ClearsBlockedActionBadge()
+    {
+        // Same clear-on-origin-change behaviour applies to collection navigation
+        // (e.g., reading-list view) so cross-domain switches don't carry stale badges.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.SetBlockedActionForTesting(
+            new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com"));
+
+        service.NotifyCollectionChanged(0, new List<string> { "https://example.com/post-1" });
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "collection origin change must clear a stale HITL badge");
+    }
+
+    [Fact]
+    public void ClearBlockedActionForOriginIfMatches_DifferentDomain_LeavesBadgeAlone()
+    {
+        // Direct unit on the helper: a success on a different domain than the
+        // verdict's must NOT clear the badge.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        service.ClearBlockedActionForOriginIfMatchesForTesting("https://example.com/article");
+
+        service.GetProgress().BlockedAction.Should().Be(verdict,
+            "success on a different origin should not clear the verdict for nytimes.com");
+    }
+
+    #endregion
+
     /// <summary>
     /// Captures all log entries emitted during the test. Used to verify the
     /// "one log line per domain per session" throttle in BackgroundPreloadService.
