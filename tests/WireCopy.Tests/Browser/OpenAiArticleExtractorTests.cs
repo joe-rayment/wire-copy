@@ -19,15 +19,30 @@ public class OpenAiArticleExtractorTests
 {
     private static OpenAiArticleExtractor MakeExtractor(
         OpenAiArticleExtractor.ChatCompleter? completer,
-        bool hasApiKey = true)
+        bool hasApiKey = true,
+        int monthlyTokenBudget = 200_000,
+        IUserSettingsStore? settingsStoreOverride = null)
     {
-        var hierConfig = Options.Create(new OpenAiHierarchyConfiguration { Model = "gpt-test" });
+        var hierConfig = Options.Create(new OpenAiHierarchyConfiguration
+        {
+            Model = "gpt-test",
+            MonthlyTokenBudget = monthlyTokenBudget,
+        });
         var ttsConfig = Options.Create(new OpenAiTtsConfiguration
         {
             ApiKey = hasApiKey ? "sk-test-fake" : string.Empty,
         });
-        var settings = Substitute.For<IUserSettingsStore>();
-        settings.Get(Arg.Any<string>()).Returns((string?)null);
+        IUserSettingsStore settings;
+        if (settingsStoreOverride != null)
+        {
+            settings = settingsStoreOverride;
+        }
+        else
+        {
+            settings = Substitute.For<IUserSettingsStore>();
+            settings.Get(Arg.Any<string>()).Returns((string?)null);
+        }
+
         var logger = Substitute.For<ILogger<OpenAiArticleExtractor>>();
 
         return new OpenAiArticleExtractor(hierConfig, ttsConfig, settings, logger, completer);
@@ -90,7 +105,7 @@ public class OpenAiArticleExtractorTests
             """;
 
         OpenAiArticleExtractor.ChatCompleter completer =
-            (key, model, messages, options, ct) => Task.FromResult(FakeResponse);
+            (key, model, messages, options, ct) => Task.FromResult(new ChatCompletionResult(FakeResponse, 0));
 
         var sut = MakeExtractor(completer);
 
@@ -136,7 +151,7 @@ public class OpenAiArticleExtractorTests
             """;
 
         OpenAiArticleExtractor.ChatCompleter completer =
-            (key, model, messages, options, ct) => Task.FromResult(FakeResponse);
+            (key, model, messages, options, ct) => Task.FromResult(new ChatCompletionResult(FakeResponse, 0));
 
         var sut = MakeExtractor(completer);
 
@@ -159,10 +174,11 @@ public class OpenAiArticleExtractorTests
                 calls++;
                 if (calls == 1)
                 {
-                    return Task.FromResult("not json at all");
+                    return Task.FromResult(new ChatCompletionResult("not json at all", 0));
                 }
 
-                return Task.FromResult("""
+                return Task.FromResult(new ChatCompletionResult(
+                    """
                     {
                       "name": "article",
                       "pageType": "Article",
@@ -171,7 +187,8 @@ public class OpenAiArticleExtractorTests
                       "selectors": { "headline": [], "byline": [], "publishDate": [], "body": [], "excludeRegions": [] },
                       "quality": { "minWords": 100, "minParagraphs": 3 }
                     }
-                    """);
+                    """,
+                    0));
             };
 
         var sut = MakeExtractor(completer);
@@ -186,7 +203,7 @@ public class OpenAiArticleExtractorTests
     public async Task AnalyzeAsync_InvalidUrl_ReturnsNull()
     {
         OpenAiArticleExtractor.ChatCompleter completer =
-            (key, model, messages, options, ct) => Task.FromResult("{}");
+            (key, model, messages, options, ct) => Task.FromResult(new ChatCompletionResult("{}", 0));
 
         var sut = MakeExtractor(completer);
 
@@ -204,7 +221,7 @@ public class OpenAiArticleExtractorTests
             {
                 capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
                     .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
-                return Task.FromResult(MinimalFakeResponse);
+                return Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 0));
             };
 
         var sut = MakeExtractor(completer);
@@ -245,7 +262,7 @@ public class OpenAiArticleExtractorTests
             {
                 capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
                     .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
-                return Task.FromResult(MinimalFakeResponse);
+                return Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 0));
             };
 
         var sut = MakeExtractor(completer);
@@ -275,7 +292,7 @@ public class OpenAiArticleExtractorTests
             {
                 capturedPrompt = string.Join("\n", messages.OfType<UserChatMessage>()
                     .Select(m => string.Join(string.Empty, m.Content.Select(p => p.Text))));
-                return Task.FromResult(MinimalFakeResponse);
+                return Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 0));
             };
 
         var sut = MakeExtractor(completer);
@@ -308,7 +325,7 @@ public class OpenAiArticleExtractorTests
             {
                 capturedPromptLength = string.Join(string.Empty, messages.OfType<UserChatMessage>()
                     .SelectMany(m => m.Content.Select(p => p.Text))).Length;
-                return Task.FromResult(MinimalFakeResponse);
+                return Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 0));
             };
 
         var sut = MakeExtractor(completer);
@@ -320,6 +337,105 @@ public class OpenAiArticleExtractorTests
         await sut.AnalyzeAsync("https://example.com/story", html, CancellationToken.None);
 
         capturedPromptLength.Should().BeLessThan(120_000, "the prompt must be truncated to keep token cost bounded");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_RecordsTokensInSettingsStore()
+    {
+        var settings = new InMemorySettingsStore();
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+                Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, TotalTokens: 1234));
+
+        var sut = MakeExtractor(completer, settingsStoreOverride: settings);
+
+        await sut.AnalyzeAsync("https://example.com/story", "<html/>", CancellationToken.None);
+
+        var period = DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
+        var key = $"AiArticleTokens:{period}";
+        settings.Get(key).Should().Be("1234");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_AccumulatesTokensAcrossCalls()
+    {
+        var settings = new InMemorySettingsStore();
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+                Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, TotalTokens: 500));
+
+        var sut = MakeExtractor(completer, settingsStoreOverride: settings);
+
+        await sut.AnalyzeAsync("https://example.com/story1", "<html/>", CancellationToken.None);
+        await sut.AnalyzeAsync("https://example.com/story2", "<html/>", CancellationToken.None);
+        await sut.AnalyzeAsync("https://example.com/story3", "<html/>", CancellationToken.None);
+
+        var period = DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
+        settings.Get($"AiArticleTokens:{period}").Should().Be("1500");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_BudgetExceeded_SkipsCall()
+    {
+        var settings = new InMemorySettingsStore();
+        var period = DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
+        settings.Set($"AiArticleTokens:{period}", "9999");
+
+        var calls = 0;
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 100));
+            };
+
+        var sut = MakeExtractor(
+            completer,
+            monthlyTokenBudget: 5000,
+            settingsStoreOverride: settings);
+
+        var result = await sut.AnalyzeAsync(
+            "https://example.com/story",
+            "<html/>",
+            CancellationToken.None);
+
+        result.Should().BeNull("the extractor must skip when the budget is exhausted");
+        calls.Should().Be(0, "the chat completer must NOT be invoked over budget");
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_BudgetZero_DisablesCap()
+    {
+        var settings = new InMemorySettingsStore();
+        var period = DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
+        settings.Set($"AiArticleTokens:{period}", "10000000");
+
+        OpenAiArticleExtractor.ChatCompleter completer =
+            (key, model, messages, options, ct) =>
+                Task.FromResult(new ChatCompletionResult(MinimalFakeResponse, 100));
+
+        var sut = MakeExtractor(
+            completer,
+            monthlyTokenBudget: 0,
+            settingsStoreOverride: settings);
+
+        var result = await sut.AnalyzeAsync(
+            "https://example.com/story",
+            "<html/>",
+            CancellationToken.None);
+
+        result.Should().NotBeNull("budget=0 disables the cap");
+    }
+
+    private sealed class InMemorySettingsStore : IUserSettingsStore
+    {
+        private readonly Dictionary<string, string> _data = new();
+
+        public string? Get(string key) => _data.TryGetValue(key, out var v) ? v : null;
+
+        public void Set(string key, string value, bool encrypt = false) => _data[key] = value;
+
+        public void Remove(string key) => _data.Remove(key);
     }
 
     private const string MinimalFakeResponse = """
