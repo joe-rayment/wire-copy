@@ -1582,10 +1582,35 @@ internal static class SettingsCommandHandler
                     settingsStore.Set(KeyGcsServiceAccountDisplay, maskedEmail);
                 }
 
+                // workspace-p1me: run an auth-only probe against GCS so a typo
+                // / wrong-project / revoked key surfaces here instead of later
+                // during bucket setup or podcast generation.
                 ctx.NavigationService.SetStatusMessage(
                     string.IsNullOrEmpty(maskedEmail)
-                        ? "Service account saved"
-                        : $"Service account saved · {maskedEmail}");
+                        ? "Verifying credentials with Google Cloud…"
+                        : $"Verifying {maskedEmail} with Google Cloud…");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+                var authOps = new GcsVerifyOps(gcsClient);
+                var (authFailure, authMessage) = await authOps.AuthenticateAsync(ct).ConfigureAwait(false);
+
+                if (authFailure is GcsVerifyFailureClass cls && cls != GcsVerifyFailureClass.None)
+                {
+                    var remediation = GcsCredentialVerifier.RemediationFor(cls);
+                    ctx.Logger.LogWarning(
+                        "Service account saved but GCP auth probe failed: {Class} — {Message}",
+                        cls,
+                        authMessage);
+                    ctx.NavigationService.SetStatusMessage(
+                        $"Saved, but auth failed: {remediation}");
+                }
+                else
+                {
+                    ctx.NavigationService.SetStatusMessage(
+                        string.IsNullOrEmpty(maskedEmail)
+                            ? "Service account saved · authenticated with Google Cloud"
+                            : $"Service account saved · authenticated as {maskedEmail}");
+                }
             }
             else
             {
