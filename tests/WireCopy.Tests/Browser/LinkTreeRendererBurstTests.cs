@@ -26,6 +26,7 @@ namespace WireCopy.Tests.Browser;
 /// useful negative result and the bead's investigation notes call for it.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class LinkTreeRendererBurstTests
 {
     private static readonly Regex SelectionBgEscape = new(@"\x1b\[48;5;\d+m", RegexOptions.Compiled);
