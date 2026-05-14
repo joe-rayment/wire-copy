@@ -123,7 +123,15 @@ internal static class GcsHelpOverlays
         lines.Add($"{palette.PrimaryText.AnsiFg}Naming rules{Reset}");
         lines.AddRange(WrapBody(
             palette,
-            "Lowercase letters, numbers, hyphens. 3-63 characters. Globally unique.",
+            "Lowercase letters, numbers, hyphens, underscores, dots. 3-63 characters. " +
+            "Must start and end with a letter or number. Globally unique.",
+            maxCopy));
+
+        lines.Add(string.Empty);
+        lines.Add($"{palette.PrimaryText.AnsiFg}Examples{Reset}");
+        lines.AddRange(WrapBody(
+            palette,
+            "joe-podcast-feed · acmecorp-podcasts-prod · tr_list_reader",
             maxCopy));
 
         lines.Add(string.Empty);
