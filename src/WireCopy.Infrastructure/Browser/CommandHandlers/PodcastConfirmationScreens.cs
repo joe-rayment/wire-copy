@@ -122,6 +122,50 @@ internal static class PodcastConfirmationScreens
     internal static string StripAnsi(string s) => SettingsRowRenderer.StripAnsi(s);
 
     /// <summary>
+    /// Resolves the one-line readiness banner shown directly under the
+    /// "Generate Podcast" title (workspace-hcqc). Before this banner the
+    /// confirmation screen looked identical to a settings page and gave the
+    /// user no signal about why they were there. The returned text is a
+    /// complete sentence; pair it with the supplied colour for inline render.
+    /// </summary>
+    /// <param name="palette">Active theme palette — accent / warning / dim foregrounds.</param>
+    /// <param name="isTtsConfigured">True when the OpenAI TTS API key is set.</param>
+    /// <param name="isGcsConfigured">True when the GCS bucket name is set AND valid.</param>
+    /// <param name="bucketError">Non-null when the configured bucket failed pre-flight verification.</param>
+    /// <returns>(bannerText, ansiForegroundColor) ready to splice into a write call.</returns>
+    internal static (string Text, string Color) ResolveReadinessBanner(
+        ThemePalette palette,
+        bool isTtsConfigured,
+        bool isGcsConfigured,
+        string? bucketError)
+    {
+        if (!isTtsConfigured)
+        {
+            return (
+                "Not ready — an OpenAI TTS API key is required. Set it below, then press Enter on Generate.",
+                palette.GetWarningFg().AnsiFg);
+        }
+
+        if (bucketError != null)
+        {
+            return (
+                "GCS bucket failed verification — fix the bucket row, or generate locally without RSS.",
+                palette.GetWarningFg().AnsiFg);
+        }
+
+        if (!isGcsConfigured)
+        {
+            return (
+                "Ready — local-only mode (MP3 saved to output folder; no RSS publish without GCS bucket).",
+                palette.GetAccentFg().AnsiFg);
+        }
+
+        return (
+            "Ready — TTS audio will be generated and published as an RSS feed via GCS.",
+            palette.PromptFg.AnsiFg);
+    }
+
+    /// <summary>
     /// Shows a progress screen while AnalyzeCacheStatusAsync extracts article content
     /// for cache/cost analysis. Returns null if the user cancels or the analysis fails.
     /// </summary>
@@ -532,6 +576,16 @@ internal static class PodcastConfirmationScreens
             var width = Math.Max(20, options.TerminalWidth - 2);
             PodcastCommandHandler.RenderBox(helpers, p, "Generate Podcast", width);
             helpers.WriteLine();
+
+            // Readiness banner (workspace-hcqc): one line that tells the user
+            // why they are on THIS screen and what will happen if they press
+            // Generate. Without this, the credential-row layout looks like a
+            // settings page and the user has no idea what to do next.
+            var (bannerText, bannerColor) = ResolveReadinessBanner(
+                p, isTtsConfigured, isGcsConfigured, bucketError);
+            helpers.WriteLine($"  {bannerColor}{bannerText}{Reset}");
+            helpers.WriteLine();
+
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Collection:{Reset}   {p.PrimaryText.AnsiFg}{collection.Name}{Reset}");
             helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Articles:{Reset}     {p.PrimaryText.AnsiFg}{collection.Items.Count}{Reset}");
             helpers.WriteLine();
@@ -795,7 +849,20 @@ internal static class PodcastConfirmationScreens
             helpers.WriteLine();
             var generateSelected = rows[selectedIndex] == ConfirmRow.Generate;
             var canGenerate = isTtsConfigured;
-            var generateLabel = canGenerate ? "Generate Podcast" : "Generate Podcast (set OpenAI key first)";
+            string generateLabel;
+            if (!canGenerate)
+            {
+                generateLabel = "Generate Podcast (set OpenAI key first)";
+            }
+            else if (!isGcsConfigured)
+            {
+                generateLabel = "Generate Locally (no RSS publish)";
+            }
+            else
+            {
+                generateLabel = "Generate & Publish RSS Feed";
+            }
+
             var generateLabelColor = canGenerate ? p.HeaderTitleFg.AnsiFg : p.SecondaryText.AnsiFg;
             var generatePrefix = generateSelected
                 ? $"  {p.GetMutedFg().AnsiFg}▌{Reset} "
