@@ -803,7 +803,11 @@ internal static class SettingsCommandHandler
 
         // --- FormField + probe loop (allows "Edit name" to reopen with the previous value) ---
         // workspace-ur5h: NO Console.Clear. Mirrors the OpenAI inline pattern.
-        string? prefilledName = null;
+        // workspace-76ig: pre-fill with "{project_id}-wirecopy-feed" parsed
+        // from the saved SA-key JSON when the user has not yet typed a name.
+        // ResolveBucketSmartDefault returns null when no SA key is configured
+        // or the JSON cannot be parsed.
+        string? prefilledName = ResolveBucketSmartDefault(ctx);
 
         while (!ct.IsCancellationRequested)
         {
@@ -967,6 +971,54 @@ internal static class SettingsCommandHandler
         }
 
         return GcsConfiguration.ExplainBucketInvalid(s);
+    }
+
+    /// <summary>
+    /// Returns "{project_id}-wirecopy-feed" parsed from the saved
+    /// service-account JSON, or <c>null</c> when no SA key is configured,
+    /// the file is missing, or the JSON has no <c>project_id</c> field
+    /// (workspace-76ig). The user can accept the default with Enter or
+    /// override it by typing.
+    /// </summary>
+    /// <returns>Pre-fill bucket name candidate, or null when unavailable.</returns>
+    internal static string? ResolveBucketSmartDefault(CommandContext ctx)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            var keyPath = store.Get(KeyGcsServiceAccountKeyPath);
+            if (string.IsNullOrWhiteSpace(keyPath) || !File.Exists(keyPath))
+            {
+                return null;
+            }
+
+            var json = File.ReadAllText(keyPath);
+            var (_, projectId) = GcsStorageClient.ExtractKeyMetadata(json);
+            return BuildSmartDefaultBucket(projectId);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Smart-default bucket lookup failed; using empty pre-fill");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Builds the smart-default bucket name from a project ID. Returns
+    /// <c>null</c> when the project ID is empty or the derived bucket name
+    /// would violate the 63-char limit or fail validation. Tested separately
+    /// so the file IO path in ResolveBucketSmartDefault stays minimal.
+    /// </summary>
+    internal static string? BuildSmartDefaultBucket(string? projectId)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            return null;
+        }
+
+        var candidate = $"{projectId.Trim()}-wirecopy-feed";
+        return GcsConfiguration.IsValidBucketName(candidate) ? candidate : null;
     }
 
     /// <summary>
