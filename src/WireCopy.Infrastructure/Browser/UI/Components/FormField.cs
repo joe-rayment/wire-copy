@@ -285,10 +285,19 @@ internal static class FormField
         }
     }
 
+    /// <summary>
+    /// Clears the current terminal row from column 0 to the screen's right
+    /// edge. The <paramref name="width"/> parameter is ignored — kept for
+    /// call-site compatibility. Workspace-ys9b: the overlay must mask the
+    /// underlying row content beyond the box, not just the box itself,
+    /// otherwise "news anchor" etc. bleeds past the right edge of the
+    /// FormField at narrow widths.
+    /// </summary>
     private static void ClearLine(int width)
     {
-        var clearWidth = Math.Min(width, Console.WindowWidth - 1);
-        Console.Write(new string(' ', Math.Max(0, clearWidth)));
+        _ = width;
+        var clearWidth = Math.Max(0, Console.WindowWidth - 1);
+        Console.Write(new string(' ', clearWidth));
     }
 
     private static void ClearFieldArea(int startRow, int width, bool hasSubtitle = false)
