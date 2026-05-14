@@ -10,6 +10,7 @@ using Xunit;
 namespace WireCopy.Tests.Browser.UI;
 
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class FormFieldTests
 {
     [Fact]
