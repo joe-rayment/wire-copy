@@ -1212,9 +1212,10 @@ internal static class PodcastConfirmationScreens
             return null;
         }
 
-        if (!GcsConfiguration.IsValidBucketName(trimmed))
+        var nameError = GcsConfiguration.ExplainBucketInvalid(trimmed);
+        if (nameError is not null)
         {
-            return $"Invalid: \"{trimmed}\" — must be 3–63 chars, lowercase a–z/0–9/hyphens/dots";
+            return $"Invalid: \"{trimmed}\" — {nameError}";
         }
 
         var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(

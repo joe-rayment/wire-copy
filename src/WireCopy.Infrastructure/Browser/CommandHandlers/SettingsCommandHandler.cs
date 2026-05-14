@@ -966,24 +966,7 @@ internal static class SettingsCommandHandler
             s = s[5..];
         }
 
-        if (s.Length < 3)
-        {
-            return "Too short — bucket names must be 3-63 chars";
-        }
-
-        if (s.Length > 63)
-        {
-            return "Too long — bucket names must be 3-63 chars";
-        }
-
-        if (!GcsConfiguration.IsValidBucketName(s)
-            || s.Contains("..", StringComparison.Ordinal)
-            || s.StartsWith("goog", StringComparison.Ordinal))
-        {
-            return "Use only lowercase a-z, 0-9, hyphens, dots (no underscores, no caps)";
-        }
-
-        return null;
+        return GcsConfiguration.ExplainBucketInvalid(s);
     }
 
     /// <summary>
