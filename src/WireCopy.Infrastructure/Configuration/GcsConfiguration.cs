@@ -43,7 +43,7 @@ public partial class GcsConfiguration
     /// check only — does not catch every GCP rule (e.g. ".." substrings or the
     /// reserved <c>goog</c> prefix). Callers that surface user-facing errors
     /// should layer those extra checks on top (see the bucket Setup row in
-    /// SettingsCommandHandler — workspace-dwgl).
+    /// SettingsCommandHandler — workspace-dwgl, workspace-wooa).
     /// </summary>
     /// <returns>True if the name is valid, false otherwise.</returns>
     public static bool IsValidBucketName(string? name)
@@ -53,12 +53,89 @@ public partial class GcsConfiguration
             return false;
         }
 
+        // Bucket names with dots must follow DNS rules, which exclude
+        // underscores. Names without dots may contain underscores. Names
+        // cannot contain BOTH (mixed _ and . is invalid per GCS).
+        if (name!.Contains('.') && name.Contains('_'))
+        {
+            return false;
+        }
+
+        if (name.Contains("..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (name.StartsWith("goog", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         return BucketNamePattern().IsMatch(name);
     }
 
-    // Underscore intentionally excluded from the middle char class —
-    // GCP rejects bucket names containing `_` at runtime even though
-    // older docs implied otherwise (workspace-dwgl).
-    [GeneratedRegex(@"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
+    /// <summary>
+    /// Returns a user-facing explanation of why a bucket name is invalid, or
+    /// <c>null</c> when the name passes validation. Intended for inline error
+    /// rendering — surfaces the specific rule that failed instead of dumping
+    /// every constraint at once (workspace-wooa).
+    /// </summary>
+    public static string? ExplainBucketInvalid(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "Bucket name cannot be empty";
+        }
+
+        var s = name!;
+
+        if (s.Length < 3)
+        {
+            return "Too short — bucket names must be at least 3 characters";
+        }
+
+        if (s.Length > 63)
+        {
+            return "Too long — bucket names must be at most 63 characters";
+        }
+
+        if (s != s.ToLowerInvariant())
+        {
+            return "Use only lowercase letters — uppercase is not allowed";
+        }
+
+        if (s.Contains("..", StringComparison.Ordinal))
+        {
+            return "Bucket names cannot contain two consecutive dots";
+        }
+
+        if (s.StartsWith("goog", StringComparison.Ordinal))
+        {
+            return "Bucket names cannot begin with the reserved \"goog\" prefix";
+        }
+
+        if (s.Contains('.') && s.Contains('_'))
+        {
+            return "Bucket names with dots cannot also contain underscores";
+        }
+
+        if (!char.IsLetterOrDigit(s[0]) || !char.IsLetterOrDigit(s[^1]))
+        {
+            return "Must start and end with a letter or number";
+        }
+
+        if (!BucketNamePattern().IsMatch(s))
+        {
+            return "Use only lowercase a-z, 0-9, hyphens, underscores, dots";
+        }
+
+        return null;
+    }
+
+    // workspace-wooa: underscores ARE valid in GCS bucket names (per
+    // https://cloud.google.com/storage/docs/buckets#naming). The DNS-style
+    // restriction only applies to names containing dots; the IsValidBucketName
+    // pre-check above rejects mixed dot+underscore names.
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$")]
     private static partial Regex BucketNamePattern();
 }
