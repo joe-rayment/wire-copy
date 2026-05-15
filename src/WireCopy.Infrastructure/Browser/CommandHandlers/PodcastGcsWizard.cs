@@ -524,10 +524,19 @@ internal static class PodcastGcsWizard
         var rows = new List<(GcsVerifyStep, bool?, TimeSpan?, string?)>();
         BucketProbePanel.RenderVerifyStatus(p, panelRow, GcsVerifyStep.Auth, rows);
 
-        // Run the verify on a background task and tick the panel until done.
-        var verifyTask = gcsClient.VerifyCredentialsAsync(bucketName, ct);
-        var spinnerFrame = 0;
+        // workspace-4l1l: subscribe to real per-step progress from the
+        // verifier instead of advancing through phases on wall time. Each
+        // IProgress.Report fires on the threadpool — use a lock-free
+        // assignment plus a volatile read in the spinner loop.
         var currentStep = GcsVerifyStep.Auth;
+        var progress = new Progress<GcsVerifyStep>(step =>
+        {
+            currentStep = step;
+        });
+
+        // Run the verify on a background task and tick the panel until done.
+        var verifyTask = gcsClient.VerifyCredentialsAsync(bucketName, ct, progress);
+        var spinnerFrame = 0;
         var spinFrames = new[] { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
         while (!verifyTask.IsCompleted && !ct.IsCancellationRequested)
         {
@@ -541,18 +550,7 @@ internal static class PodcastGcsWizard
                 break;
             }
 
-            // Advance current-step heuristically — without a streaming API
-            // we step through each phase based on elapsed wall time. This
-            // is purely cosmetic; the result still carries the authoritative
-            // per-step timings.
             spinnerFrame = (spinnerFrame + 1) % spinFrames.Length;
-            currentStep = currentStep switch
-            {
-                GcsVerifyStep.Auth => GcsVerifyStep.Upload,
-                GcsVerifyStep.Upload => GcsVerifyStep.Download,
-                GcsVerifyStep.Download => GcsVerifyStep.Delete,
-                _ => GcsVerifyStep.Delete,
-            };
         }
 
         GcsVerifyCredentialsResult result;
