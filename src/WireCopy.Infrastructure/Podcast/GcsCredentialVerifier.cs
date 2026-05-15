@@ -23,7 +23,8 @@ internal static class GcsCredentialVerifier
         IGcsVerifyOperations ops,
         string bucketName,
         CancellationToken ct,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        IProgress<GcsVerifyStep>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(ops);
         ArgumentNullException.ThrowIfNull(bucketName);
@@ -39,6 +40,7 @@ internal static class GcsCredentialVerifier
         var stepDurations = new long[4];
 
         // ---- Step 1: Auth ----
+        progress?.Report(GcsVerifyStep.Auth);
         var authStart = Stopwatch.GetTimestamp();
         try
         {
@@ -57,6 +59,7 @@ internal static class GcsCredentialVerifier
         }
 
         // ---- Step 2: Upload ----
+        progress?.Report(GcsVerifyStep.Upload);
         var uploadStart = Stopwatch.GetTimestamp();
         try
         {
@@ -71,6 +74,7 @@ internal static class GcsCredentialVerifier
         }
 
         // ---- Step 3: Download + bytewise compare ----
+        progress?.Report(GcsVerifyStep.Download);
         var downloadStart = Stopwatch.GetTimestamp();
         try
         {
@@ -110,6 +114,7 @@ internal static class GcsCredentialVerifier
         }
 
         // ---- Step 4: Delete ----
+        progress?.Report(GcsVerifyStep.Delete);
         var deleteStart = Stopwatch.GetTimestamp();
         try
         {

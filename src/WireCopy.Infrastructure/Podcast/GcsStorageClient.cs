@@ -641,10 +641,16 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     /// </summary>
     public Task<GcsVerifyCredentialsResult> VerifyCredentialsAsync(
         string bucketName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<GcsVerifyStep>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(bucketName);
-        return GcsCredentialVerifier.VerifyAsync(new GcsVerifyOps(this), bucketName, cancellationToken);
+        return GcsCredentialVerifier.VerifyAsync(
+            new GcsVerifyOps(this),
+            bucketName,
+            cancellationToken,
+            clock: null,
+            progress: progress);
     }
 
     /// <summary>

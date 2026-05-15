@@ -183,6 +183,72 @@ public class GcsCredentialVerifierTests
     }
 
     /// <summary>
+    /// workspace-4l1l: IProgress&lt;GcsVerifyStep&gt; must fire once per step
+    /// (Auth, Upload, Download, Delete) on the happy path. We assert SET
+    /// membership rather than exact order because Progress&lt;T&gt; dispatches
+    /// callbacks via the captured sync context (the threadpool here) and
+    /// reordering is allowed; the UI uses each report as a "set current
+    /// step" signal, not a sequence.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_ProgressReports_FireOncePerStepOnHappyPath()
+    {
+        var fake = new FakeOps();
+        var reported = new System.Collections.Concurrent.ConcurrentBag<GcsVerifyStep>();
+        var progress = new Progress<GcsVerifyStep>(s => reported.Add(s));
+
+        var result = await GcsCredentialVerifier.VerifyAsync(
+            fake, Bucket, CancellationToken.None, clock: null, progress: progress);
+
+        result.Success.Should().BeTrue();
+
+        for (var i = 0; i < 50 && reported.Count < 4; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        reported.Should().BeEquivalentTo(new[]
+        {
+            GcsVerifyStep.Auth,
+            GcsVerifyStep.Upload,
+            GcsVerifyStep.Download,
+            GcsVerifyStep.Delete,
+        });
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ProgressReports_StopAtFailingStep()
+    {
+        var fake = new FakeOps
+        {
+            UploadException = new GoogleApiException("Storage", "objects.create denied")
+            {
+                HttpStatusCode = HttpStatusCode.Forbidden,
+            },
+        };
+        var reported = new System.Collections.Concurrent.ConcurrentBag<GcsVerifyStep>();
+        var progress = new Progress<GcsVerifyStep>(s => reported.Add(s));
+
+        var result = await GcsCredentialVerifier.VerifyAsync(
+            fake, Bucket, CancellationToken.None, clock: null, progress: progress);
+
+        result.Success.Should().BeFalse();
+        result.FailedAt.Should().Be(GcsVerifyStep.Upload);
+
+        for (var i = 0; i < 50 && reported.Count < 2; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        // Settle: catch any spurious late reports that would indicate the
+        // verifier did not short-circuit on failure.
+        await Task.Delay(60);
+
+        // Auth + Upload fire; Download + Delete do NOT.
+        reported.Should().BeEquivalentTo(new[] { GcsVerifyStep.Auth, GcsVerifyStep.Upload });
+    }
+
+    /// <summary>
     /// Deterministic fake of <see cref="IGcsVerifyOperations"/> that records
     /// call counts and lets each step be configured to throw.
     /// </summary>
