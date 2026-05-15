@@ -256,10 +256,10 @@ public class PageLoader : IPageLoader
 
         return new PageMetadata
         {
-            Title = title ?? "Untitled",
-            Description = description,
+            Title = TextNormalizer.NormalizeDisplayText(title ?? "Untitled"),
+            Description = description is null ? null : TextNormalizer.NormalizeDisplayText(description),
             CanonicalUrl = canonicalUrl,
-            Author = author,
+            Author = author is null ? null : TextNormalizer.NormalizeDisplayText(author),
             PublishedDate = publishedDate,
             FaviconUrl = favicon
         };
@@ -275,7 +275,8 @@ public class PageLoader : IPageLoader
             return ogTitle;
         }
 
-        // Fall back to <title> tag
+        // Fall back to <title> tag — NormalizeDisplayText at the call site
+        // strips U+00A0 ("&nbsp;") and re-decodes any double-encoded entities.
         var titleNode = doc.DocumentNode.SelectSingleNode("//title");
         var title = titleNode?.InnerText.Trim();
         return title != null ? WebUtility.HtmlDecode(title) : null;
