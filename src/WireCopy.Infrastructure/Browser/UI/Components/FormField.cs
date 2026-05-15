@@ -163,6 +163,27 @@ internal static class FormField
     }
 
     /// <summary>
+    /// Clears the current terminal row across its full width. The
+    /// <paramref name="width"/> parameter is ignored — kept for call-site
+    /// compatibility. Workspace-ys9b: the overlay must mask the underlying
+    /// row content beyond the box, not just the box itself, otherwise
+    /// "news anchor" etc. bleeds past the right edge of the FormField at
+    /// narrow widths. Workspace-u9cc: switched to the <c>\x1b[2K</c> erase-
+    /// in-line escape so the last column (the one writing <c>WindowWidth</c>
+    /// spaces would skip to avoid auto-wrap) is also masked — that column
+    /// previously preserved a stray tail char (e.g. the <c>h</c> from
+    /// <c>[Enter] Change</c> on an overflowed Setup row) at width 80.
+    /// Marked <c>internal</c> so the workspace-u9cc regression test can
+    /// drive it without going through <see cref="PromptAsync"/> (which
+    /// calls <see cref="Console.SetCursorPosition"/> and throws in CI).
+    /// </summary>
+    internal static void ClearLine(int width)
+    {
+        _ = width;
+        Console.Write("\x1b[2K");
+    }
+
+    /// <summary>
     /// Renders the static parts of the field: label, optional subtitle, border
     /// box, and status line. Subtitle is the workspace-cgnt addition - when
     /// present, it shifts the box and validation row down by one.
@@ -283,21 +304,6 @@ internal static class FormField
                 : helpText;
             Console.Write($"{palette.SecondaryText.AnsiFg}{Dim}{truncated}{Reset}");
         }
-    }
-
-    /// <summary>
-    /// Clears the current terminal row from column 0 to the screen's right
-    /// edge. The <paramref name="width"/> parameter is ignored — kept for
-    /// call-site compatibility. Workspace-ys9b: the overlay must mask the
-    /// underlying row content beyond the box, not just the box itself,
-    /// otherwise "news anchor" etc. bleeds past the right edge of the
-    /// FormField at narrow widths.
-    /// </summary>
-    private static void ClearLine(int width)
-    {
-        _ = width;
-        var clearWidth = Math.Max(0, Console.WindowWidth - 1);
-        Console.Write(new string(' ', clearWidth));
     }
 
     private static void ClearFieldArea(int startRow, int width, bool hasSubtitle = false)
