@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Text;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.Interfaces.Podcast;
@@ -62,7 +63,7 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
             new XDeclaration("1.0", "UTF-8", null),
             rss);
 
-        using var writer = new StringWriter();
+        using var writer = new Utf8StringWriter();
         document.Save(writer);
 
         return Task.FromResult(writer.ToString());
@@ -158,5 +159,10 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
     {
         // Podlove format: HH:MM:SS.mmm
         return $"{(int)time.TotalHours:D2}:{time.Minutes:D2}:{time.Seconds:D2}.{time.Milliseconds:D3}";
+    }
+
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
     }
 }
