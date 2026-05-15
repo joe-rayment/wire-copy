@@ -1213,31 +1213,8 @@ public class PageLoadPipeline
 #pragma warning disable SA1204 // grouped with the escalation logic that produces it
     private static ArticleSelectorConfig MergeArticleConfigs(
         ArticleSelectorConfig? existing,
-        ArticleSelectorConfig fresh)
-    {
-        if (existing == null || existing.PageTypes.Count == 0)
-        {
-            return fresh;
-        }
-
-        var freshEntry = fresh.PageTypes[0];
-        var entries = new List<PageTypeEntry>(existing.PageTypes);
-        var idx = entries.FindIndex(e => string.Equals(e.Name, freshEntry.Name, StringComparison.OrdinalIgnoreCase));
-        if (idx >= 0)
-        {
-            entries[idx] = freshEntry;
-        }
-        else
-        {
-            entries.Add(freshEntry);
-        }
-
-        return existing with
-        {
-            UpdatedAt = DateTime.UtcNow,
-            PageTypes = entries,
-        };
-    }
+        ArticleSelectorConfig fresh) =>
+        ArticleConfigMerger.Merge(existing, fresh);
 #pragma warning restore SA1204
 
     /// <summary>
