@@ -76,12 +76,37 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 var episodeUuid = DeriveEpisodeId(episode.Title, episode.SourceUrl);
                 var objectPath = $"{feedBasePath}/episodes/{episodeUuid}.m4b";
 
-                if (await _storage.ExistsAsync(objectPath, cancellationToken).ConfigureAwait(false))
+                // workspace-z2om: the deterministic episode id is title+sourceUrl.
+                // For Reading List runs both can stay constant while the M4B
+                // *content* changes (e.g. a second article gets added). Skipping
+                // the upload because the path already exists then leaves the
+                // feed.xml + manifest advertising new size/duration/chapters
+                // pointing at the OLD audio bytes. So: only skip when the
+                // remote size matches the local size. Mismatch → re-upload.
+                var existingSize = await _storage.GetObjectSizeAsync(objectPath, cancellationToken).ConfigureAwait(false);
+                var localSize = File.Exists(episode.LocalAudioFilePath)
+                    ? new FileInfo(episode.LocalAudioFilePath).Length
+                    : -1L;
+                var alreadyUploaded = existingSize.HasValue && localSize >= 0 && existingSize.Value == localSize;
+
+                if (alreadyUploaded)
                 {
-                    _logger.LogDebug("Episode already uploaded, skipping: {Title}", episode.Title);
+                    _logger.LogDebug(
+                        "Episode already uploaded with matching size, skipping: {Title} ({Size} bytes)",
+                        episode.Title,
+                        localSize);
                 }
                 else
                 {
+                    if (existingSize.HasValue && localSize >= 0 && existingSize.Value != localSize)
+                    {
+                        _logger.LogInformation(
+                            "Remote audio size {RemoteSize} differs from local {LocalSize} for episode '{Title}'; re-uploading",
+                            existingSize.Value,
+                            localSize,
+                            episode.Title);
+                    }
+
                     if (!File.Exists(episode.LocalAudioFilePath))
                     {
                         // workspace-mie2: promote to error and capture the

@@ -170,10 +170,16 @@ public class PodcastPublisherTests : IDisposable
     }
 
     [Fact]
-    public async Task PublishFeedAsync_AlreadyUploadedEpisode_Skipped()
+    public async Task PublishFeedAsync_AlreadyUploadedEpisode_SameSize_Skipped()
     {
+        // workspace-z2om: the upload-skip optimization is keyed on REMOTE size
+        // matching LOCAL size, not on existence alone. A local temp file is
+        // 1024 bytes (CreateTestEpisode writes that), so we mock the remote
+        // size to match exactly.
         _storage.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
+        _storage.GetObjectSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(1024L);
 
         var podcast = CreateTestPodcast();
         var episodes = new List<EpisodeSource> { CreateTestEpisode() };
@@ -187,6 +193,32 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.Contains("episodes/")),
             Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PublishFeedAsync_RemoteSizeDiffersFromLocal_ReUploadsAudio()
+    {
+        // workspace-z2om regression: same deterministic id but the local
+        // M4B has changed (e.g. a second article was appended). The publisher
+        // MUST re-upload so the audio matches the new feed.xml metadata.
+        _storage.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        _storage.GetObjectSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(512L); // stale remote — local is 1024
+
+        var podcast = CreateTestPodcast();
+        var episodes = new List<EpisodeSource> { CreateTestEpisode() };
+
+        var result = await _publisher.PublishFeedAsync(podcast, episodes);
+
+        result.Success.Should().BeTrue();
+        result.EpisodesPublished.Should().Be(1, because: "size mismatch forces re-upload");
+
+        await _storage.Received(1).UploadAsync(
+            Arg.Any<string>(),
+            Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4b")),
+            "audio/x-m4b",
             Arg.Any<CancellationToken>());
     }
 
@@ -299,13 +331,18 @@ public class PodcastPublisherTests : IDisposable
 
         await _publisher.PublishFeedAsync(podcast, [episode1]);
 
-        // Second publish of same episode: ExistsAsync returns true so it skips upload
+        // Second publish of same episode: ExistsAsync returns true AND the
+        // remote size matches the local size (1024 — see CreateTestEpisode),
+        // so the publisher skips the re-upload (workspace-z2om).
         _storage.ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(true);
+        _storage.GetObjectSizeAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(1024L);
 
         await _publisher.PublishFeedAsync(podcast, [episode2]);
 
-        // Should have uploaded exactly once (second was skipped as exists)
+        // Should have uploaded exactly once (second was skipped because both
+        // existence and size matched)
         var episodePaths = uploadPaths.Where(p => p.Contains("episodes/")).ToList();
         episodePaths.Should().HaveCount(1);
     }
