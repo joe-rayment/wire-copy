@@ -324,6 +324,25 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         }
     }
 
+    public async Task<long?> GetObjectSizeAsync(
+        string objectName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(objectName);
+
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var obj = await client.GetObjectAsync(_config.BucketName, objectName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return (long?)obj.Size;
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public string GetPublicUrl(string objectName)
     {
         return $"https://storage.googleapis.com/{_config.BucketName}/{objectName}";

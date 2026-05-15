@@ -58,6 +58,17 @@ public interface ICloudStorageClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the size in bytes of the named object, or null if it does not
+    /// exist. Used by the publisher to detect content drift: if the local file
+    /// size differs from the remote, the upload-skip optimization is unsafe
+    /// because the local content has changed under the same deterministic id
+    /// (workspace-z2om).
+    /// </summary>
+    Task<long?> GetObjectSizeAsync(
+        string objectName,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the public URL for an object in cloud storage.
     /// </summary>
     /// <param name="objectName">The object name.</param>
