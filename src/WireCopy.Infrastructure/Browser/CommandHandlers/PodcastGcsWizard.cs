@@ -592,9 +592,75 @@ internal static class PodcastGcsWizard
             var msgRow = panelRow + 5;
             Console.SetCursorPosition(2, msgRow);
             Console.Write($"{p.GetSuccessFg().AnsiFg}✓ {result.Message}{Reset}");
+
+            // workspace-nlq6: publish a placeholder feed.xml so the user can
+            // open the public URL in a browser and confirm public-read works
+            // end-to-end (not just the verifier's own upload/download/delete
+            // probe). Failures are logged but do NOT flip the result —
+            // verification already succeeded.
+            try
+            {
+                var feedUrl = await PublishSelfTestFeedAsync(gcsClient, bucketName, ct).ConfigureAwait(false);
+                Console.SetCursorPosition(2, msgRow + 1);
+                Console.Write(
+                    $"{p.GetAccentFg().AnsiFg}↳ Test feed published at {feedUrl}{Reset}");
+                Console.SetCursorPosition(2, msgRow + 2);
+                Console.Write(
+                    $"  {p.SecondaryText.AnsiFg}\x1b[2mOpen it in a browser to confirm.{Reset}");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ctx.Logger.LogWarning(ex, "Self-test feed.xml publish failed; verify already succeeded");
+                Console.SetCursorPosition(2, msgRow + 1);
+                Console.Write(
+                    $"{p.SecondaryText.AnsiFg}\x1b[2m(self-test feed publish skipped: {ex.Message}){Reset}");
+            }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Publishes a minimal placeholder RSS feed (channel + title +
+    /// description) at the bucket's <c>feed.xml</c> path so the user can
+    /// open the public URL in a browser and confirm public-read works. The
+    /// real feed is overwritten on the first podcast generation
+    /// (workspace-nlq6). Returns the public URL of the published object.
+    /// </summary>
+    internal static async Task<string> PublishSelfTestFeedAsync(
+        GcsStorageClient gcsClient,
+        string bucketName,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(gcsClient);
+        ArgumentNullException.ThrowIfNull(bucketName);
+
+        var xml = BuildSelfTestFeedXml(bucketName, DateTime.UtcNow);
+        await gcsClient.UploadStringAsync(xml, "feed.xml", "application/rss+xml", ct).ConfigureAwait(false);
+        return $"https://storage.googleapis.com/{bucketName}/feed.xml";
+    }
+
+    /// <summary>
+    /// Pure helper that returns the placeholder RSS XML used by
+    /// <see cref="PublishSelfTestFeedAsync"/>. Extracted so the XML shape
+    /// can be unit-tested without needing a GCS client.
+    /// </summary>
+    internal static string BuildSelfTestFeedXml(string bucketName, DateTime nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(bucketName);
+        var feedUrl = $"https://storage.googleapis.com/{bucketName}/feed.xml";
+        var nowRfc822 = nowUtc.ToString("ddd, dd MMM yyyy HH:mm:ss '+0000'", System.Globalization.CultureInfo.InvariantCulture);
+        return
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<rss version=\"2.0\">\n" +
+            "  <channel>\n" +
+            "    <title>WireCopy — feed under construction</title>\n" +
+            "    <description>Placeholder feed published by WireCopy verify. " +
+            "Will be replaced once you generate your first podcast.</description>\n" +
+            $"    <link>{feedUrl}</link>\n" +
+            $"    <lastBuildDate>{nowRfc822}</lastBuildDate>\n" +
+            "  </channel>\n" +
+            "</rss>\n";
     }
 
     /// <summary>
