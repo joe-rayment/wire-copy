@@ -1,8 +1,10 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces.Podcast;
@@ -26,15 +28,18 @@ internal sealed class PodcastPublisher : IPodcastPublisher
     private readonly ICloudStorageClient _storage;
     private readonly IPodcastFeedGenerator _feedGenerator;
     private readonly ILogger<PodcastPublisher> _logger;
+    private readonly IFeedReachabilityProbe _reachability;
 
     public PodcastPublisher(
         ICloudStorageClient storage,
         IPodcastFeedGenerator feedGenerator,
-        ILogger<PodcastPublisher> logger)
+        ILogger<PodcastPublisher> logger,
+        IFeedReachabilityProbe? reachability = null)
     {
         _storage = storage;
         _feedGenerator = feedGenerator;
         _logger = logger;
+        _reachability = reachability ?? new HttpFeedReachabilityProbe();
     }
 
     public async Task<FeedPublishResult> PublishFeedAsync(
@@ -62,6 +67,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             // Step 3: Upload new episodes (using deterministic IDs to enable skip-if-exists)
             var newEpisodeMetadata = new List<EpisodeMetadata>();
             var episodesUploaded = 0;
+            var skipped = new List<SkippedEpisodeDetail>();
 
             foreach (var episode in episodes)
             {
@@ -78,7 +84,22 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 {
                     if (!File.Exists(episode.LocalAudioFilePath))
                     {
-                        _logger.LogWarning("Audio file not found: {Path}", episode.LocalAudioFilePath);
+                        // workspace-mie2: promote to error and capture the
+                        // missing-file detail so the result screen can name
+                        // what didn't ship. Also probe the parent directory
+                        // so the log line gives future devs a fighting chance
+                        // at triaging a path mismatch.
+                        var siblings = ProbeSiblingFiles(episode.LocalAudioFilePath);
+                        _logger.LogError(
+                            "Audio file not found: {Path}. Directory contents: {Siblings}",
+                            episode.LocalAudioFilePath,
+                            siblings);
+                        skipped.Add(new SkippedEpisodeDetail
+                        {
+                            Title = episode.Title,
+                            MissingPath = episode.LocalAudioFilePath,
+                            Reason = "Audio file missing on disk at the path the assembler reported.",
+                        });
                         continue;
                     }
 
@@ -109,6 +130,22 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 });
             }
 
+            // workspace-mie2: if every requested episode was skipped because
+            // the local audio file was missing, fail loudly instead of
+            // overwriting feed.xml with stale-or-empty metadata. The user
+            // would otherwise see "Podcast Ready!" pointing at a feed that
+            // contains nothing new.
+            if (skipped.Count > 0 && skipped.Count == episodes.Count)
+            {
+                _logger.LogError(
+                    "Aborting publish: all {Count} requested episodes were missing their local audio files — assembler likely failed silently or temp cleanup ran early",
+                    skipped.Count);
+                return FeedPublishResult.Failure(
+                    $"All {skipped.Count} episode(s) skipped — audio files missing on disk",
+                    FeedPublishFailureClass.NoAudioFiles,
+                    skipped);
+            }
+
             // Step 4: Merge new episodes with existing ones (new episodes replace duplicates by ID)
             var mergedEpisodes = MergeEpisodes(existingEpisodes, newEpisodeMetadata);
 
@@ -134,6 +171,32 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             // Step 7: Update manifest and feed index
             await UpdateManifestAsync(feedBasePath, podcast, mergedEpisodes, cancellationToken).ConfigureAwait(false);
             await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken).ConfigureAwait(false);
+
+            // workspace-nb6b: anonymous HTTP GET of feed.xml so we catch any
+            // remaining "bytes-on-disk-don't-match-what-the-internet-sees"
+            // class of bug BEFORE we tell the user "Podcast Ready!". Same
+            // probe Apple Podcasts and Overcast run. Three checks:
+            // (1) HTTP 200, (2) Content-Type is RSS/XML, (3) body parses as
+            // XML. A failure flips the result to a typed FeedPublishFailureClass
+            // and the result screen renders specific remediation.
+            var probe = await _reachability.CheckAsync(feedUrl, cancellationToken).ConfigureAwait(false);
+            if (probe.FailureClass != FeedPublishFailureClass.None)
+            {
+                _logger.LogError(
+                    "Post-publish reachability probe failed at {FailureClass}: {Diagnostic}",
+                    probe.FailureClass,
+                    probe.Diagnostic);
+                return FeedPublishResult.Failure(probe.Diagnostic, probe.FailureClass, skipped);
+            }
+
+            if (skipped.Count > 0)
+            {
+                _logger.LogWarning(
+                    "Publish completed with {SkipCount} skipped episode(s); {UploadCount} uploaded",
+                    skipped.Count,
+                    episodesUploaded);
+                return FeedPublishResult.Partial(feedUrl, episodesUploaded, skipped);
+            }
 
             return FeedPublishResult.Successful(feedUrl, episodesUploaded);
         }
@@ -247,6 +310,32 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         var input = $"{title}|{sourceUrl ?? string.Empty}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hash)[..32].ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Returns a short summary of the .m4b files alongside the missing audio
+    /// path so the error log gives a fighting chance at triaging a path
+    /// mismatch (workspace-mie2).
+    /// </summary>
+    private static string ProbeSiblingFiles(string missingPath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(missingPath);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                return "(parent directory does not exist)";
+            }
+
+            var siblings = Directory.GetFiles(dir, "*.m4b", SearchOption.TopDirectoryOnly);
+            return siblings.Length == 0
+                ? "(no .m4b files in parent directory)"
+                : string.Join(", ", siblings.Select(Path.GetFileName));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return $"(directory probe failed: {ex.Message})";
+        }
     }
 
     private async Task<string> GetOrCreateFeedUuidAsync(string title, CancellationToken cancellationToken)
