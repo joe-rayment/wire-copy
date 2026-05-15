@@ -42,4 +42,15 @@ public interface IPodcastOrchestrator
     /// so the user can see (and copy) the destination before/after generation.
     /// </summary>
     string GetOutputFilePath(string collectionName);
+
+    /// <summary>
+    /// Resolves the destination paths (local file + feed URL) for an upcoming
+    /// generation run BEFORE the pipeline starts, so the progress screen can
+    /// pin them to the footer (workspace-zh3u). The feed URL is null when no
+    /// GCS bucket is configured — caller renders a "local-only" line in that
+    /// case.
+    /// </summary>
+    Task<PodcastTargets> ResolveTargetsAsync(
+        Collection collection,
+        CancellationToken cancellationToken = default);
 }

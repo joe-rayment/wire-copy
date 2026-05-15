@@ -286,6 +286,26 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         return null;
     }
 
+    public async Task<string> ResolveFeedUrlAsync(
+        string title,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+
+        var existing = await GetExistingFeedUrlAsync(title, cancellationToken).ConfigureAwait(false);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        // No feed has been published yet — derive the URL the next publish
+        // WILL use. workspace-zh3u: matches GetOrCreateFeedUuidAsync exactly so
+        // the progress-screen footer shows the same URL the publisher
+        // eventually writes to.
+        var feedUuid = await GetOrCreateFeedUuidAsync(title, cancellationToken).ConfigureAwait(false);
+        return _storage.GetPublicUrl($"podcasts/{feedUuid}/feed.xml");
+    }
+
     private static IReadOnlyList<EpisodeMetadata> MergeEpisodes(
         IReadOnlyList<EpisodeMetadata> existing,
         IReadOnlyList<EpisodeMetadata> incoming)

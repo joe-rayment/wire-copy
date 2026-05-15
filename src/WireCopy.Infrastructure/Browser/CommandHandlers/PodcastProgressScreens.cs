@@ -31,6 +31,20 @@ internal static class PodcastProgressScreens
         IPodcastOrchestrator orchestrator,
         CancellationToken ct)
     {
+        // workspace-zh3u: resolve destination paths up-front so the in-progress
+        // footer can answer "where will this land?" while the pipeline runs.
+        // Failures are swallowed and degrade to a null FeedUrl; we never
+        // block generation on this lookup.
+        PodcastTargets? targets = null;
+        try
+        {
+            targets = await orchestrator.ResolveTargetsAsync(collection, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to resolve podcast targets for progress footer");
+        }
+
         var articleCount = collection.Items.Count;
         var statuses = new PodcastCommandHandler.ArticleStatus[articleCount];
         for (var i = 0; i < articleCount; i++)
@@ -129,7 +143,8 @@ internal static class PodcastProgressScreens
                     animFrame,
                     statuses,
                     options.TerminalWidth,
-                    options.TerminalHeight);
+                    options.TerminalHeight,
+                    targets);
                 helpers.ClearRemainingLines();
 
                 pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
@@ -597,7 +612,8 @@ internal static class PodcastProgressScreens
         int animFrame,
         PodcastCommandHandler.ArticleStatus[] statuses,
         int terminalWidth,
-        int terminalHeight)
+        int terminalHeight,
+        PodcastTargets? targets = null)
     {
         var width = Math.Max(20, terminalWidth - 2);
         PodcastCommandHandler.RenderBox(helpers, p, "Generating Podcast", width);
@@ -666,7 +682,58 @@ internal static class PodcastProgressScreens
         }
 
         helpers.WriteLine();
+
+        // workspace-zh3u: destination footer. Tells the user where the
+        // result lands and that closing the terminal cancels the run.
+        // Truncate paths in the middle so both the parent folder and the
+        // filename remain visible.
+        if (targets is not null)
+        {
+            RenderDestinationFooter(helpers, p, targets, width);
+        }
+
         helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+    }
+
+    /// <summary>
+    /// Renders the destination footer beneath the per-article progress list
+    /// (workspace-zh3u). Two lines for "will save / will publish" + an
+    /// ephemerality line warning the user that closing the terminal cancels.
+    /// </summary>
+    internal static void RenderDestinationFooter(
+        RenderHelpers helpers,
+        ThemePalette p,
+        PodcastTargets targets,
+        int width)
+    {
+        const string LocalLabel = "Will save to";
+        const string FeedLabel = "Will publish at";
+
+        var labelWidth = FeedLabel.Length;
+        var available = Math.Max(20, width - labelWidth - 6);
+
+        var localDisplay = PodcastConfirmationScreens.TruncateMiddle(targets.LocalFilePath, available);
+        helpers.WriteLine(
+            $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
+            $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
+
+        if (!string.IsNullOrEmpty(targets.FeedUrl))
+        {
+            var feedDisplay = PodcastConfirmationScreens.TruncateMiddle(targets.FeedUrl, available);
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}{FeedLabel.PadRight(labelWidth)}{Reset}  " +
+                $"{p.PrimaryText.AnsiFg}{feedDisplay}{Reset}");
+        }
+        else
+        {
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}(no GCS bucket configured — generating locally only){Reset}");
+        }
+
+        helpers.WriteLine();
+        helpers.WriteLine(
+            $"  {p.SecondaryText.AnsiFg}Running in this terminal — closing it cancels the run.{Reset}");
+        helpers.WriteLine();
     }
 
     internal static void CopyToClipboardOsc52(string text)
