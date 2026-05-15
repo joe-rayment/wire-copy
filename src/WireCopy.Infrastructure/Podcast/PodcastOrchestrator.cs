@@ -76,6 +76,42 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return Path.Combine(folder, $"{SanitizeFileName(collectionName)}.m4b");
     }
 
+    /// <summary>
+    /// Resolves the local M4B path AND the public feed URL the upcoming
+    /// generation will write to (workspace-zh3u). If no GCS bucket is
+    /// configured, FeedUrl is null and the caller should render a
+    /// local-only footer line. Errors resolving the feed URL (e.g. SA key
+    /// problems) are caught here so the progress screen never crashes on a
+    /// non-critical lookup; the footer falls back to local-only in that
+    /// case.
+    /// </summary>
+    public async Task<PodcastTargets> ResolveTargetsAsync(
+        Collection collection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(collection);
+
+        var localPath = GetOutputFilePath(collection.Name);
+
+        var bucketConfigured = !string.IsNullOrWhiteSpace(_settingsStore?.Get("GcsBucketName"));
+        if (!bucketConfigured)
+        {
+            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = null };
+        }
+
+        try
+        {
+            var feedUrl = await _publisher.ResolveFeedUrlAsync(_podcastConfig.Title, cancellationToken)
+                .ConfigureAwait(false);
+            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = feedUrl };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to resolve feed URL for footer; falling back to local-only");
+            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = null };
+        }
+    }
+
     public async Task<PodcastResult> GeneratePodcastAsync(
         Collection collection,
         IProgress<PodcastProgress>? progress = null,

@@ -33,6 +33,19 @@ public interface IPodcastPublisher
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the public feed URL the next publish will write to, creating
+    /// a new feed UUID if one does not already exist for the given title.
+    /// Used by the progress screen footer (workspace-zh3u) so the user can
+    /// see and copy the destination URL BEFORE the publish step runs.
+    /// </summary>
+    /// <param name="title">The podcast title.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The full public URL of the feed.xml object.</returns>
+    Task<string> ResolveFeedUrlAsync(
+        string title,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates an empty but valid RSS feed for a new bucket, so the user gets a subscribable feed URL immediately.
     /// Returns the existing feed URL if one already exists.
     /// </summary>
