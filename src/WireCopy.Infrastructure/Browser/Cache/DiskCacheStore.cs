@@ -389,17 +389,23 @@ internal sealed class DiskCacheStore
                     continue;
                 }
 
+                // workspace-5zta: cache files written before the upstream
+                // normalization landed (or by code paths that bypassed it) may
+                // contain raw HTML entities like "&nbsp;". Run every visible
+                // text field through NormalizeDisplayText on read so the link
+                // list never renders an unencoded entity, regardless of when
+                // the cache entry was produced.
                 var links = persisted.Links.Select(l => new LinkInfo
                 {
                     Url = l.Url,
-                    DisplayText = l.DisplayText,
+                    DisplayText = TextNormalizer.NormalizeDisplayText(l.DisplayText),
                     Type = (LinkType)l.Type,
                     ImportanceScore = l.ImportanceScore,
                     AriaLabel = l.AriaLabel,
                     ParentSelector = l.ParentSelector,
-                    Author = l.Author,
+                    Author = l.Author is null ? null : TextNormalizer.NormalizeDisplayText(l.Author),
                     PublishedDate = l.PublishedDate,
-                    SectionTitle = l.SectionTitle,
+                    SectionTitle = l.SectionTitle is null ? null : TextNormalizer.NormalizeDisplayText(l.SectionTitle),
                     IsFromImageAlt = l.IsFromImageAlt,
                     HeaderType = (HeaderType)l.HeaderType,
                 }).ToList();
