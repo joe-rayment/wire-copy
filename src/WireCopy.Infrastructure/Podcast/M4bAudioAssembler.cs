@@ -158,6 +158,22 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
             // Get final file info
             var fileInfo = new FileInfo(request.OutputPath);
 
+            // workspace-mie2: a 0-byte or missing output here means FFmpeg
+            // silently produced an invalid file — fail loudly so the
+            // publisher doesn't try to upload (and ultimately surface)
+            // a dead episode.
+            if (!fileInfo.Exists)
+            {
+                return AssemblyResult.Failure(
+                    $"Assembly reported success but the output file is missing: {request.OutputPath}");
+            }
+
+            if (fileInfo.Length == 0)
+            {
+                return AssemblyResult.Failure(
+                    $"Assembly reported success but the output file is zero bytes: {request.OutputPath}");
+            }
+
             _logger.LogInformation(
                 "M4B assembly complete: {Duration:hh\\:mm\\:ss}, {Size} bytes, {Chapters} chapters",
                 runningTime,

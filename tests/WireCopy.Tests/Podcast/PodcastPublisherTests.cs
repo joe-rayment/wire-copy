@@ -16,6 +16,7 @@ public class PodcastPublisherTests : IDisposable
 {
     private readonly ICloudStorageClient _storage;
     private readonly IPodcastFeedGenerator _feedGenerator;
+    private readonly IFeedReachabilityProbe _reachability;
     private readonly PodcastPublisher _publisher;
     private readonly List<string> _tempFiles = [];
 
@@ -23,10 +24,14 @@ public class PodcastPublisherTests : IDisposable
     {
         _storage = Substitute.For<ICloudStorageClient>();
         _feedGenerator = Substitute.For<IPodcastFeedGenerator>();
+        _reachability = Substitute.For<IFeedReachabilityProbe>();
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(FeedReachabilityResult.Ok());
         _publisher = new PodcastPublisher(
             _storage,
             _feedGenerator,
-            NullLogger<PodcastPublisher>.Instance);
+            NullLogger<PodcastPublisher>.Instance,
+            _reachability);
 
         // Default setup: no existing feed index
         _storage.DownloadStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -201,7 +206,7 @@ public class PodcastPublisherTests : IDisposable
     }
 
     [Fact]
-    public async Task PublishFeedAsync_MissingAudioFile_SkipsEpisode()
+    public async Task PublishFeedAsync_AllAudioFilesMissing_FailsWithNoAudioFiles()
     {
         var episode = new EpisodeSource
         {
@@ -217,8 +222,41 @@ public class PodcastPublisherTests : IDisposable
 
         var result = await _publisher.PublishFeedAsync(podcast, episodes);
 
+        result.Success.Should().BeFalse();
+        result.FailureClass.Should().Be(FeedPublishFailureClass.NoAudioFiles);
+        result.SkippedEpisodes.Should().HaveCount(1);
+        result.SkippedEpisodes[0].Title.Should().Be("Missing Episode");
+
+        // workspace-mie2: when all episodes skip, feed.xml is NOT overwritten
+        await _storage.DidNotReceive().UploadStringAsync(
+            Arg.Any<string>(),
+            Arg.Is<string>(s => s.EndsWith("feed.xml")),
+            "application/rss+xml",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PublishFeedAsync_OneOfTwoAudioFilesMissing_ReturnsPartial()
+    {
+        var goodEpisode = CreateTestEpisode("Good Episode", "https://example.com/good");
+        var badEpisode = new EpisodeSource
+        {
+            Title = "Bad Episode",
+            Description = "Has a missing file",
+            LocalAudioFilePath = "/nonexistent/path/audio.m4b",
+            Duration = TimeSpan.FromMinutes(5),
+            SourceUrl = "https://example.com/missing",
+        };
+
+        var podcast = CreateTestPodcast();
+        var episodes = new List<EpisodeSource> { goodEpisode, badEpisode };
+
+        var result = await _publisher.PublishFeedAsync(podcast, episodes);
+
         result.Success.Should().BeTrue();
-        result.EpisodesPublished.Should().Be(0);
+        result.EpisodesPublished.Should().Be(1);
+        result.SkippedEpisodes.Should().HaveCount(1);
+        result.SkippedEpisodes[0].Title.Should().Be("Bad Episode");
     }
 
     [Fact]
