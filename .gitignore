@@ -155,3 +155,6 @@ drops/
 # Agent / assistant workflow docs (untracked; local copies persist across pulls)
 AGENTS.md
 CLAUDE.md
+
+# Credential files (local only)
+creds/
