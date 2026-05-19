@@ -411,7 +411,7 @@ public class PageLoadPipeline
                 // Feed unavailable — fallback to document-order
                 tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken).ConfigureAwait(false);
                 _navigationService.SetAiHierarchy(false);
-                _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+L to reconfigure");
+                _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+l to reconfigure");
             }
         }
         else if (hierarchyConfig != null)
@@ -964,7 +964,7 @@ public class PageLoadPipeline
         var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
         if (hintLinkCount >= 3)
         {
-            _navigationService.SetStatusMessage("Ctrl+L to customize layout");
+            _navigationService.SetStatusMessage("Ctrl+l to customize layout");
         }
 
         return null;

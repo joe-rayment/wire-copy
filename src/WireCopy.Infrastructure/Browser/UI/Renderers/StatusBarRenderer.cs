@@ -400,7 +400,7 @@ internal class StatusBarRenderer
             if (mode == ViewMode.Hierarchical &&
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
-                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+L{Reset}{p.GetDimFg().AnsiFg}:layout{Reset}");
+                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+l{Reset}{p.GetDimFg().AnsiFg}:layout{Reset}");
             }
 
             // Layout variant indicator (e.g., "Grid 1/3")
