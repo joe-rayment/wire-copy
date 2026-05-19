@@ -68,9 +68,9 @@ public class LauncherReadingListSlotTests
         var raw = RenderLauncherCapture(CreateBookmarks(3), selectedIndex: -1);
         var stripped = StripAnsi(raw);
 
-        stripped.Should().Contain("[2] │",
-            "Reading List slot at virtual index 1 must advertise digit badge [2]");
-        stripped.Should().NotContain("[c] │",
+        stripped.Should().Contain("[2] ",
+            "Reading List slot at virtual index 1 must advertise digit badge [2] with a trailing space");
+        stripped.Should().NotContain("[c]",
             "the legacy letter badge [c] must be removed from the bookmark grid");
     }
 
@@ -104,10 +104,10 @@ public class LauncherReadingListSlotTests
         stripped.Should().Contain("ALPHA");
         stripped.Should().Contain("BRAVO");
         stripped.Should().Contain("CHARLIE");
-        stripped.Should().Contain("[3] │",
-            "bookmark[1] must render at slot 2 with badge [3]");
-        stripped.Should().Contain("[4] │",
-            "bookmark[2] must render at slot 3 with badge [4]");
+        stripped.Should().Contain("[3] ",
+            "bookmark[1] must render at slot 2 with badge [3] and a trailing space");
+        stripped.Should().Contain("[4] ",
+            "bookmark[2] must render at slot 3 with badge [4] and a trailing space");
     }
 
     [Fact]

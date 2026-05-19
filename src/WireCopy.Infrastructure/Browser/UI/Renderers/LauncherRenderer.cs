@@ -26,14 +26,19 @@ internal class LauncherRenderer
 
     private const int WordmarkWidth = 87;
 
-    // Grid (boxed) cell layout (workspace-wxht):
-    //   line 0: top border    ╭───╮
-    //   line 1: title          │ NAME            [N] │
-    //   line 2: url            │ domain.example      │
-    //   line 3: bottom border  ╰───╯
-    //   line 4: blank          (inter-row gutter)
-    private const int GridCellBoxHeight = 4;
-    private const int GridRowStride = GridCellBoxHeight + 1;
+    // Grid card cell layout (workspace-bs93) — mirrors LinkTreeRenderer's
+    // BuildSelectedCardLine vocabulary so launcher and link-list tiles read
+    // as one product:
+    //   line 0: blank padding    (breathing room above the title)
+    //   line 1: title row        " NAME                [N]"  ← ▌ replaces the leading
+    //                                                          space when selected or
+    //                                                          on the Reading List slot
+    //   line 2: subtitle row     " domain.example"           ← same ▌ rule
+    //   line 3: separator rule   "────────────────"          ← dim secondary, always
+    //                                                          rendered (matches link-list)
+    // No box-drawing characters around the card; the separator rule provides
+    // the visual cap. cellHeight stays 4 so adjacent cards stack directly.
+    private const int GridCardHeight = 4;
 
     // URL bar block height (workspace-0rde): blank + top border + content
     // + bottom border = 4 lines. The trailing blank that previously padded
@@ -182,12 +187,13 @@ internal class LauncherRenderer
                 const int columnThreshold = 40;
                 columns = width >= columnThreshold ? 2 : 1;
 
-                // Boxed grid cell: 4 visible box lines (top border + title + url
-                // + bottom border) plus 1 trailing blank line for the
-                // inter-row vertical gutter (workspace-wxht). The scroll math
-                // and viewport sizing treat the whole 5-line block as the
+                // Card cell (workspace-bs93): blank pad + title + subtitle +
+                // separator rule = 4 lines. Adjacent cards stack directly —
+                // the separator rule provides the visual break, matching the
+                // link-list card vocabulary so the two views feel like the
+                // same product. Scroll math treats the 4-line block as the
                 // logical row height so a row never partially scrolls in.
-                cellHeight = GridRowStride;
+                cellHeight = GridCardHeight;
                 break;
             }
         }
@@ -305,12 +311,22 @@ internal class LauncherRenderer
     }
 
     /// <summary>
-    /// Builds one line of a boxed grid cell (workspace-wxht).
-    /// Cell layout (4 lines): top border, title (name + right-aligned [N] badge),
-    /// url, bottom border. The trailing inter-row gutter is rendered by the
-    /// row-level builder, not this helper.
+    /// Builds one line of a card-style launcher cell (workspace-bs93).
+    /// Mirrors <see cref="LinkTreeRenderer.BuildCardLine"/> so launcher tiles
+    /// and link-list tiles share visual vocabulary.
+    /// Layout (4 lines per cell):
+    /// <list type="bullet">
+    ///   <item>line 0 — blank padding</item>
+    ///   <item>line 1 — title (▌ on selected/Reading-List, space otherwise) +
+    ///   NAME + right-aligned <c>[N]</c> badge</item>
+    ///   <item>line 2 — subtitle (same ▌ rule) + domain.example</item>
+    ///   <item>line 3 — separator rule (dim secondary)</item>
+    /// </list>
+    /// Reading List always shows its accent bar in <see cref="ThemePalette.GetAccentFg"/>
+    /// (cyan in Phosphor) so the slot reads as different from a bookmark even
+    /// when not selected; bookmark cells only show the bar when selected.
     /// </summary>
-    private static string BuildBoxedGridCell(
+    private static string BuildCardCellLine(
         List<Bookmark> bookmarks,
         int itemIdx,
         int selectedIndex,
@@ -328,7 +344,7 @@ internal class LauncherRenderer
         // Slot layout (workspace-ul5z): with bookmarks present, virtual
         // index 1 is the Reading List; bookmarks shift one slot later.
         //   virtual 0 → bookmark[0]
-        //   virtual 1 → Reading List (cyan-accented border + ★ glyph)
+        //   virtual 1 → Reading List (cyan accent bar + ★ glyph)
         //   virtual N (≥ 2) → bookmark[N - 1]
         var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
         var isSelected = itemIdx == selectedIndex;
@@ -353,94 +369,100 @@ internal class LauncherRenderer
         // numeric badge consistent with its slot (`[2]`) so the digit-jump
         // contract stays uniform across all addressable slots. Items past
         // slot 8 render no badge — same contract as before.
-        string badge;
-        if (itemIdx < 9)
-        {
-            badge = $"[{itemIdx + 1}]";
-        }
-        else
-        {
-            badge = string.Empty;
-        }
+        var badge = itemIdx < 9 ? $"[{itemIdx + 1}]" : string.Empty;
 
-        // Borders stay consistent across every card so the launcher grid
-        // reads as one coherent surface: dim secondary green by default,
-        // brightening to PrimaryText when selected. Reading List
-        // differentiation lives in the title (cyan ★ + cyan title) so the
-        // box outlines never go off-theme.
         var accentFg = p.GetAccentFg().AnsiFg;
-        var borderColor = isSelected
-            ? $"{p.PrimaryText.AnsiFg}"
-            : $"{p.SecondaryText.AnsiFg}{Dim}";
+        var selBg = p.SelectedItemBg.AnsiBg;
+        var selFg = p.SelectedItemFg.AnsiFg;
+        var borderFg = p.HeaderBorderFg.AnsiFg;
+        var domainFg = p.SecondaryText.AnsiFg;
+        var titleFg = isReadingList ? accentFg : p.PrimaryText.AnsiFg;
+        var badgeFg = $"{p.SecondaryText.AnsiFg}{Dim}";
 
-        // Reading List title uses AccentFg (cyan in Phosphor) instead of
-        // PrimaryText so the tile's special role reads at a glance, while the
-        // surrounding card stays visually consistent with the bookmarks.
-        var titleSegment = isReadingList
-            ? $"{Bold}{accentFg}"
-            : $"{Bold}{p.PrimaryText.AnsiFg}";
-        var badgeColor = $"{p.SecondaryText.AnsiFg}{Dim}";
-        var domainColor = p.SecondaryText.AnsiFg;
-
-        // Inner content width = cellWidth - 2 borders - 2 single-cell pads.
-        var inner = Math.Max(1, cellWidth - 4);
+        // Reading List always shows an accent bar; bookmark cells only show
+        // it when selected. The bar colour identifies the slot — cyan for
+        // Reading List, HeaderBorderFg (matches link-list selection) otherwise.
+        var showAccentBar = isSelected || isReadingList;
+        var accentBarColor = isReadingList ? accentFg : borderFg;
+        var contentWidth = Math.Max(1, cellWidth - 1);
 
         switch (lineIdx)
         {
             case 0:
-                // ╭───────────╮
-                return $"{borderColor}╭{new string('─', cellWidth - 2)}╮{Reset}";
+                // Blank padding — no accent bar, no bg fill. Matches link-tree:
+                // line 0 of a 5-line selected card is also a transparent gap.
+                return new string(' ', cellWidth);
 
             case 1:
             {
-                // │ ★ NAME ................. [N] │  (badge right-aligned)
-                // Reserve 5 cells for the badge zone (" [N]") so the title never
-                // collides with it. Items without a badge get the full inner width.
-                var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0; // 1-cell pre-pad
-                var glyphPrefix = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
-                var glyphWidth = isReadingList ? 2 : 0; // ★ + space
-                var titleMax = Math.Max(1, inner - badgeZone - glyphWidth);
+                // Title row: optional accent bar + leading space + glyph (RL only)
+                // + NAME + right-aligned [N] badge.
+                var glyph = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
+                var glyphWidth = isReadingList ? 2 : 0;
+                var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0;
+
+                // contentWidth - 1 reserves the leading space inside the highlight.
+                var titleMax = Math.Max(1, contentWidth - 1 - glyphWidth - badgeZone);
                 var truncName = RenderHelpers.TruncateText(name, titleMax);
-                var nameDisplayLen = truncName.Length;
-                var gap = Math.Max(0, inner - nameDisplayLen - badgeZone - glyphWidth);
+                var gap = Math.Max(0, contentWidth - 1 - glyphWidth - truncName.Length - badgeZone);
 
-                var renderedTitle = $"{glyphPrefix}{titleSegment}{truncName}{Reset}";
+                var prefix = showAccentBar
+                    ? $"{accentBarColor}▌{Reset}"
+                    : " ";
 
-                if (badge.Length > 0)
+                if (isSelected)
                 {
-                    return $"{borderColor}│{Reset} " +
-                           $"{renderedTitle}" +
-                           $"{new string(' ', gap)}" +
-                           $"{badgeColor}{badge}{Reset}" +
-                           $" {borderColor}│{Reset}";
+                    // Painted highlight: leading space + glyph + title + pad + badge
+                    // + trailing space, all inside selBg so the bar reads as a
+                    // continuous rectangle.
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append(prefix);
+                    sb.Append($"{selBg}{selFg}{Bold} {glyph}{selBg}{selFg}{Bold}{truncName}{Reset}");
+                    sb.Append($"{selBg}{new string(' ', gap)}");
+                    if (badge.Length > 0)
+                    {
+                        sb.Append($"{selBg}{badgeFg}{badge}{Reset}{selBg} {Reset}");
+                    }
+                    else
+                    {
+                        sb.Append($"{selBg} {Reset}");
+                    }
+
+                    return sb.ToString();
                 }
 
-                // No badge — pad the full width.
-                var padNoBadge = Math.Max(0, inner - nameDisplayLen - glyphWidth);
-                return $"{borderColor}│{Reset} " +
-                       $"{renderedTitle}" +
-                       $"{new string(' ', padNoBadge)}" +
-                       $" {borderColor}│{Reset}";
+                var titleSegment = $"{Bold}{titleFg}{truncName}{Reset}";
+                if (badge.Length > 0)
+                {
+                    return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)}{badgeFg}{badge}{Reset} ";
+                }
+
+                return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)} ";
             }
 
             case 2:
             {
-                // │ domain.example                │
-                var truncDomain = RenderHelpers.TruncateText(domain, inner);
-                var pad = Math.Max(0, inner - truncDomain.Length);
-                return $"{borderColor}│{Reset} " +
-                       $"{domainColor}{truncDomain}{Reset}" +
-                       $"{new string(' ', pad)}" +
-                       $" {borderColor}│{Reset}";
+                // Subtitle row: optional accent bar + leading space + domain.
+                var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, contentWidth - 1));
+                var pad = Math.Max(0, contentWidth - 1 - truncDomain.Length);
+                var prefix = showAccentBar
+                    ? $"{accentBarColor}▌{Reset}"
+                    : " ";
+
+                if (isSelected)
+                {
+                    return $"{prefix}{selBg}{domainFg} {truncDomain}{new string(' ', pad)}{Reset}";
+                }
+
+                return $"{prefix} {domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
             }
 
             case 3:
-                // ╰───────────╯
-                return $"{borderColor}╰{new string('─', cellWidth - 2)}╯{Reset}";
+                // Separator rule, always rendered in dim secondary. Matches
+                // LinkTreeRenderer's separator (line 4 of a 5-line card).
+                return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";
 
             default:
-                // Defensive — caller renders the inter-row gap blank line itself,
-                // not via this helper. Anything else is a blank cell-width fill.
                 return new string(' ', cellWidth);
         }
     }
@@ -932,20 +954,18 @@ internal class LauncherRenderer
         ThemePalette p,
         int? readingListCount = null)
     {
-        // The Grid path uses a 5-line stride per row (workspace-wxht):
-        //   line 0..3 — boxed cell content
-        //   line 4    — blank inter-row gutter
-        // Adjacent boxes are separated by a single space gutter (their
-        // borders form the visual separator); the explicit `│` divider
-        // from the previous design is intentionally omitted.
-        if (line >= GridCellBoxHeight)
+        // 4-line card stride (workspace-bs93): blank pad + title + subtitle
+        // + separator. Mirrors LinkTreeRenderer's row layout — including the
+        // `│` divider between columns, with `┼` on the separator row so the
+        // intersection reads as continuous.
+        if (line >= GridCardHeight)
         {
             return new string(' ', layout.Width);
         }
 
         var sb = new System.Text.StringBuilder();
         var leftIdx = row * layout.Columns;
-        sb.Append(BuildBoxedGridCell(
+        sb.Append(BuildCardCellLine(
             bookmarks,
             leftIdx,
             selectedIndex,
@@ -956,13 +976,15 @@ internal class LauncherRenderer
 
         if (layout.Columns == 2)
         {
-            // 1-cell horizontal gutter between adjacent boxes.
-            sb.Append(' ');
+            var isSeparatorLine = line == GridCardHeight - 1;
+            var divider = isSeparatorLine ? "┼" : "│";
+            sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{divider}{Reset}");
+
             var rightIdx = leftIdx + 1;
             var rightWidth = layout.Width - layout.CellWidth - 1;
             if (rightIdx < totalItems)
             {
-                sb.Append(BuildBoxedGridCell(
+                sb.Append(BuildCardCellLine(
                     bookmarks,
                     rightIdx,
                     selectedIndex,
@@ -970,6 +992,12 @@ internal class LauncherRenderer
                     line,
                     p,
                     readingListCount));
+            }
+            else if (isSeparatorLine)
+            {
+                // Continue the separator rule across the empty right cell so
+                // the bottom edge reads as a single line.
+                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{new string('─', rightWidth)}{Reset}");
             }
             else
             {

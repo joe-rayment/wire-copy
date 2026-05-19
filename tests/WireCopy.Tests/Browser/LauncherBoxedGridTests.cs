@@ -19,13 +19,15 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 /// <summary>
-/// Regression tests for workspace-wxht: the launcher Grid variant renders each
-/// bookmark as a closed thin-box cell with a right-aligned [N] digit badge,
-/// drops the per-cell `▌` accent bar in favour of brightening the selected
-/// cell's border, drops the inter-column `│` divider in favour of a 1-cell
-/// horizontal gutter (and a 1-line vertical gutter between rows), and wires
-/// digits 1-9 in launcher view to a JumpToIndex command instead of consuming
-/// them as a numeric prefix.
+/// Regression tests for workspace-bs93: the launcher Grid variant renders each
+/// bookmark as a link-list-style card (blank pad + title + subtitle + thin
+/// separator rule) with a right-aligned [N] digit badge. Selection is signalled
+/// by an accent bar (▌) on the title and subtitle rows plus a background
+/// highlight. The inter-column divider matches the link list (`│` on content
+/// rows, `┼` on the separator row). Box-drawing borders from the pre-bs93
+/// design (`╭ ╮ ╰ ╯`) are gone — both views now share the same vocabulary so
+/// the product reads as coherent. Digits `1`-`9` still emit a JumpToIndex
+/// command (lower fixture).
 /// </summary>
 [Trait("Category", "Unit")]
 [Collection("ConsoleOutput")]
@@ -35,27 +37,30 @@ public class LauncherBoxedGridTests
     private const int TerminalHeight = 35;
 
     [Fact]
-    public void Grid_RendersClosedBoxBorders_TopAndBottomGlyphs()
+    public void Grid_DoesNotRenderClosedBoxBorders_OnBookmarkCells()
     {
-        var raw = RenderLauncherCapture(CreateBookmarks(2), selectedIndex: -1);
+        // workspace-bs93: bookmark cells no longer use box-drawing borders.
+        // The wordmark/header card and the URL bar each still use corners
+        // (╭ ╮ ╰ ╯), so up to 2 of each is expected. A per-cell box would
+        // emit many more — 4 cards × 2 top corners = at least 8 of each.
+        var raw = RenderLauncherCapture(CreateBookmarks(4), selectedIndex: -1);
 
-        raw.Should().Contain("╭", "top-left rounded corner glyph must be present");
-        raw.Should().Contain("╮", "top-right rounded corner glyph must be present");
-        raw.Should().Contain("╰", "bottom-left rounded corner glyph must be present");
-        raw.Should().Contain("╯", "bottom-right rounded corner glyph must be present");
+        CountOccurrences(raw, "╭").Should().BeLessOrEqualTo(2, "only the header card and URL bar may have a top-left corner");
+        CountOccurrences(raw, "╮").Should().BeLessOrEqualTo(2, "only the header card and URL bar may have a top-right corner");
+        CountOccurrences(raw, "╰").Should().BeLessOrEqualTo(2, "only the header card and URL bar may have a bottom-left corner");
+        CountOccurrences(raw, "╯").Should().BeLessOrEqualTo(2, "only the header card and URL bar may have a bottom-right corner");
     }
 
     [Fact]
-    public void Grid_DoesNotRenderAccentBar_OnSelectedCell()
+    public void Grid_RendersAccentBar_OnSelectedCell()
     {
-        // The pre-redesign launcher rendered '▌' (U+258C) as the left-edge
-        // accent bar on the selected cell. With every cell now bordered, the
-        // bar is gone — the brightened border is the selection signal.
+        // workspace-bs93: selection is signalled by an accent bar `▌` on the
+        // title and subtitle rows plus a background highlight — matching the
+        // link-list card.
         var raw = RenderLauncherCapture(CreateBookmarks(2), selectedIndex: 0);
 
-        raw.Should().NotContain("▌",
-            "the per-cell accent bar must be removed in the boxed Grid path; " +
-            "selection is signalled by brightening the border colour");
+        raw.Should().Contain("▌",
+            "selected bookmark cells must show the link-list-style accent bar");
     }
 
     [Fact]
@@ -63,17 +68,16 @@ public class LauncherBoxedGridTests
     {
         var raw = RenderLauncherCapture(CreateBookmarks(2), selectedIndex: -1);
 
-        // Title ends with a `[N]` token followed by a single padding space and
-        // the right border. Strip ANSI then look for that signature.
-        // Slot layout (workspace-ul5z): bookmark[0] at slot 0 → [1],
+        // workspace-bs93: badge ends with a trailing space — no more right box
+        // border. Slot layout (workspace-ul5z): bookmark[0] at slot 0 → [1],
         // Reading List at slot 1 → [2], bookmark[1] at slot 2 → [3].
         var stripped = StripAnsi(raw);
-        stripped.Should().Contain("[1] │",
-            "digit badge [1] must be right-aligned next to the right box border");
-        stripped.Should().Contain("[2] │",
-            "digit badge [2] must be right-aligned next to the right box border");
-        stripped.Should().Contain("[3] │",
-            "digit badge [3] must be right-aligned next to the right box border");
+        stripped.Should().Contain("[1] ",
+            "digit badge [1] must be right-aligned with a trailing space");
+        stripped.Should().Contain("[2] ",
+            "digit badge [2] must be right-aligned with a trailing space");
+        stripped.Should().Contain("[3] ",
+            "digit badge [3] must be right-aligned with a trailing space");
     }
 
     [Fact]
@@ -88,30 +92,58 @@ public class LauncherBoxedGridTests
     }
 
     [Fact]
-    public void Grid_LayoutCellHeight_IsFiveLineStride()
+    public void Grid_LayoutCellHeight_IsFourLineCardStride()
     {
-        // 4 visible box lines (top + title + url + bottom) plus 1 inter-row
-        // blank line = 5-line stride per row. Scroll math relies on this
-        // stride to keep selected cells fully in the viewport.
+        // workspace-bs93: card cell stride is 4 lines — blank pad + title +
+        // subtitle + separator rule. Adjacent cards stack directly; the
+        // separator provides the visual break, matching link-list cards.
+        // Scroll math relies on this stride to keep selected cells fully in
+        // the viewport.
         var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, TerminalHeight, "Grid");
-        layout.CellHeight.Should().Be(5);
+        layout.CellHeight.Should().Be(4);
     }
 
     [Fact]
-    public void Grid_NoVerticalDivider_BetweenColumns()
+    public void Grid_HasVerticalDivider_BetweenColumns_ToMatchLinkList()
     {
-        // The previous design drew a `│` divider between the two columns,
-        // independent of the cell borders. With both cells now bordered,
-        // the divider is gone — adjacent cells are separated by a 1-cell
-        // horizontal gutter (a single space), and their right/left borders
-        // form the visual separation.
-        // The single bare `│` between cells produced a sequence like
-        // "│{Reset}│" (right border of left cell, divider, left border of
-        // right cell). After the redesign this no longer occurs because the
-        // gutter is a space.
-        var raw = RenderLauncherCapture(CreateBookmarks(4), selectedIndex: -1);
-        raw.Should().NotContain("│[0m│",
-            "the divider │ between adjacent boxes must be replaced by a single space");
+        // workspace-bs93: the launcher now mirrors the link-list's inter-column
+        // divider: `│` on content rows and `┼` on the separator row.
+        var stripped = StripAnsi(RenderLauncherCapture(CreateBookmarks(4), selectedIndex: -1));
+
+        stripped.Should().Contain("│",
+            "two-column launcher cards must use a │ divider between columns, matching the link list");
+        stripped.Should().Contain("┼",
+            "the divider must transition to ┼ on the separator row so the bottom rule reads as continuous");
+    }
+
+    [Fact]
+    public void Grid_SeparatorRule_RendersBetweenCards()
+    {
+        // workspace-bs93: each card ends with a `─` rule across its width —
+        // the visual separator between adjacent cards, replacing the old
+        // boxed border + blank-gutter design.
+        var stripped = StripAnsi(RenderLauncherCapture(CreateBookmarks(2), selectedIndex: -1));
+
+        stripped.Should().Contain("─",
+            "each card must end with a thin separator rule matching the link-list card");
+    }
+
+    private static int CountOccurrences(string text, string needle)
+    {
+        if (string.IsNullOrEmpty(needle))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 
     private static List<Bookmark> CreateBookmarks(int count)
