@@ -102,6 +102,17 @@ public interface IPreloadService : IDisposable
     bool IsDomainNeedsJs(string url);
 
     /// <summary>
+    /// Notifies the preloader that a human-action interruption on this URL's origin
+    /// has been resolved (e.g. the user solved a captcha in the headed browser and
+    /// the subsequent load succeeded with real content). The preloader clears any
+    /// sticky <c>BlockedAction</c> verdict for that origin and unblocks the
+    /// circuit breaker so prefetch can resume (workspace-m7nc).
+    /// Safe to call when no verdict is pending — it's a no-op in that case.
+    /// </summary>
+    /// <param name="url">URL whose origin should be cleared.</param>
+    void NotifyChallengeResolved(string url);
+
+    /// <summary>
     /// Returns the configured paywalled domains relevant to a given URL where the
     /// pre-loader currently has no usable authentication cookies (missing or expired).
     /// The status bar uses this to surface a visible "cookies missing" badge so the
