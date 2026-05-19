@@ -127,6 +127,31 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    public async Task InvalidatePageAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_page == null)
+            {
+                return;
+            }
+
+            _logger.LogInformation("InvalidatePageAsync: forcing fresh Playwright page on next request");
+            await DisposeContextUnsafeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public async Task RestoreWindowAsync()
     {
         if (_disposed || _page == null || _pageIsHeadless)

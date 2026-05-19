@@ -2580,6 +2580,164 @@ public class BackgroundPreloadServiceTests : IDisposable
             "success on a different origin should not clear the verdict for nytimes.com");
     }
 
+    [Fact]
+    public void NotifyChallengeResolved_SameOrigin_ClearsBadgeAndCircuitBreak()
+    {
+        // workspace-m7nc: a successful interactive page load on the captcha origin
+        // (e.g. user solved it in the headed browser) must clear both the sticky
+        // HITL badge AND the circuit-breaker entry so prefetch can resume.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+        service.SetCircuitBrokenForTesting("https://www.nytimes.com");
+        service.GetProgress().BlockedAction.Should().NotBeNull("precondition: badge is active");
+
+        service.NotifyChallengeResolved("https://www.nytimes.com/2026/05/article");
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "challenge-resolved must clear the sticky HITL badge for the same origin");
+        service.IsCircuitBrokenForTesting("https://www.nytimes.com")
+            .Should().BeFalse("challenge-resolved must lift the prefetch circuit-breaker too");
+    }
+
+    [Fact]
+    public void NotifyChallengeResolved_DifferentOrigin_DoesNotClearBadge()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        service.NotifyChallengeResolved("https://example.com/post");
+
+        service.GetProgress().BlockedAction.Should().Be(verdict,
+            "challenge-resolved for a different origin must NOT clear the verdict for nytimes.com");
+    }
+
+    [Fact]
+    public void NotifyChallengeResolved_NoVerdict_IsNoOp()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // No badge primed, no circuit-break — just confirm the call is safe.
+        service.NotifyChallengeResolved("https://www.nytimes.com/article");
+
+        service.GetProgress().BlockedAction.Should().BeNull();
+    }
+
+    [Fact]
+    public void NotifyPageLoaded_PageWithReadableContent_ClearsSameOriginBadge()
+    {
+        // workspace-m7nc: when an interactive page load succeeds with real readable
+        // content for the captcha origin, the orchestrator's NotifyPageLoaded call
+        // must clear the stale verdict. This is the auto-clear path that fires
+        // without the caller having to know about NotifyChallengeResolved.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        var page = Page.Create(
+            "https://www.nytimes.com/2026/05/headline",
+            "<html><body><p>article body</p></body></html>",
+            new PageMetadata { Title = "Headline" });
+        page.SetReadableContent(ReadableContent.Create("Headline", "article body", new List<string> { "article body" }));
+
+        service.NotifyPageLoaded(page);
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "a successful interactive load on the captcha origin must auto-clear the verdict");
+    }
+
+    [Fact]
+    public void NotifyPageLoaded_LinkListPageWithLinks_ClearsSameOriginBadge()
+    {
+        // workspace-m7nc: the user's reported scenario was a captcha on the
+        // nytimes.com/section/todayspaper page — a LinkList classification with
+        // no readable content. After the user solves the captcha the page comes
+        // back with a populated LinkTree but no ReadableContent. Clearing must
+        // still fire so the badge doesn't stay stuck.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        var page = Page.Create(
+            "https://www.nytimes.com/section/todayspaper",
+            "<html><body>section links</body></html>",
+            new PageMetadata { Title = "Today's Paper" });
+        // No readable content (LinkList page) but a real tree:
+        var link = new LinkInfo
+        {
+            Url = "https://www.nytimes.com/2026/05/an-article",
+            DisplayText = "An article",
+            Type = LinkType.Content,
+            ImportanceScore = 1,
+        };
+        var tree = NavigationTree.Build(new List<LinkInfo> { link });
+        page.SetLinkTree(tree);
+
+        service.NotifyPageLoaded(page);
+
+        service.GetProgress().BlockedAction.Should().BeNull(
+            "a successful link-list load on the captcha origin must auto-clear the verdict — " +
+            "this is the exact scenario the bead exists to fix (nytimes.com/section/todayspaper)");
+    }
+
+    [Fact]
+    public void NotifyPageLoaded_PageWithNoContentAndNoLinks_KeepsBadge()
+    {
+        // If the load returned a Page object but neither readable content nor any
+        // links were populated, the verdict isn't proven resolved — keep the badge
+        // so the user still sees the warning. This is the half-loaded-captcha case.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var verdict = new HumanActionRequired(HumanActionVariant.Captcha, "www.nytimes.com");
+        service.SetBlockedActionForTesting(verdict);
+
+        var page = Page.Create(
+            "https://www.nytimes.com/2026/05/headline",
+            "<html><body><p>still captcha-shaped</p></body></html>",
+            new PageMetadata { Title = "Headline" });
+        // Intentionally no SetReadableContent, no SetLinkTree.
+
+        service.NotifyPageLoaded(page);
+
+        service.GetProgress().BlockedAction.Should().Be(verdict,
+            "a blank-shell load proves nothing — the verdict should NOT auto-clear");
+    }
+
     #endregion
 
     /// <summary>

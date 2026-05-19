@@ -46,6 +46,18 @@ public interface IBrowserSession : IBrowserSessionControl
     void ReleasePage();
 
     /// <summary>
+    /// Forcibly disposes the cached Playwright page so the next
+    /// <see cref="GetOrCreatePageAsync"/> creates a fresh one. Used to recover
+    /// from stale-target errors after the user solves a captcha and the
+    /// previous page reference is no longer usable (workspace-m7nc).
+    /// The liveness check in <see cref="GetOrCreatePageAsync"/> alone is not
+    /// sufficient — it relies on <c>Page.Url</c> throwing, but a half-torn-down
+    /// Playwright target can still return a cached URL while every other call
+    /// fails.
+    /// </summary>
+    Task InvalidatePageAsync();
+
+    /// <summary>
     /// Restores a minimized browser window to normal size for interactive use.
     /// No-op if headless or no active page.
     /// </summary>

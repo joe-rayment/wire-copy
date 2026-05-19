@@ -743,3 +743,158 @@ public class PageLoaderTests
         }
     }
 }
+
+/// <summary>
+/// Unit tests for the stale-page heuristic (<see cref="PageLoader.LooksLikeStalePlaywrightPage"/>)
+/// that drives the workspace-m7nc retry-once behaviour. Picks out the Playwright
+/// "Target page, context or browser has been closed" pattern so the loader can
+/// retry with a fresh page object after an out-of-band navigation (captcha solve)
+/// invalidates the in-flight reference.
+/// </summary>
+[Trait("Category", "Unit")]
+public class PageLoaderStalePageHeuristicTests
+{
+    [Theory]
+    [InlineData("Target page, context or browser has been closed", true)]
+    [InlineData("Target page, context or browser has been closed.", true)]
+    [InlineData("Target closed", true)]
+    [InlineData("Page.gotoAsync: Target page, context or browser has been closed", true)]
+    [InlineData("context or browser has been closed", true)]
+    [InlineData("Timeout 30000ms exceeded", false)]
+    [InlineData("net::ERR_NAME_NOT_RESOLVED", false)]
+    [InlineData("", false)]
+    public void LooksLikeStalePlaywrightPage_RecognisesTargetClosedFamily(
+        string errorMessage,
+        bool expected)
+    {
+        WireCopy.Infrastructure.Browser.PageLoader.LooksLikeStalePlaywrightPage(errorMessage)
+            .Should().Be(expected);
+    }
+}
+
+/// <summary>
+/// Integration-shape unit tests for the workspace-m7nc retry behaviour:
+/// when the first <c>GotoAsync</c> throws a stale-page PlaywrightException, the
+/// loader must invalidate the cached page and retry with a fresh page reference
+/// instead of surfacing the raw "Target page" error to the user.
+/// </summary>
+[Trait("Category", "Unit")]
+public class PageLoaderRetryOnStalePageTests
+{
+    private readonly ILogger<PageLoader> _logger;
+    private readonly IOptions<BrowserConfiguration> _browserConfig;
+    private readonly IBrowserSession _browserSession;
+
+    public PageLoaderRetryOnStalePageTests()
+    {
+        _logger = Substitute.For<ILogger<PageLoader>>();
+        _browserConfig = Options.Create(new BrowserConfiguration { BotChallengeMaxWaitMs = 100 });
+        _browserSession = Substitute.For<IBrowserSession>();
+        _browserSession.IsBrowserAvailable.Returns(true);
+    }
+
+    private static IPage CreateThrowingPage(string errorMessage)
+    {
+        var page = Substitute.For<IPage>();
+        page.Url.Returns("https://example.com");
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>())
+            .Returns<IResponse?>(_ => throw new PlaywrightException(errorMessage));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
+        return page;
+    }
+
+    private static IPage CreateHealthyPage(string html, string url)
+    {
+        var page = Substitute.For<IPage>();
+        var response = Substitute.For<IResponse>();
+        page.GotoAsync(Arg.Any<string>(), Arg.Any<PageGotoOptions>())
+            .Returns(Task.FromResult<IResponse?>(response));
+        page.Url.Returns(url);
+        page.ContentAsync().Returns(Task.FromResult(html));
+        page.WaitForLoadStateAsync(Arg.Any<LoadState>(), Arg.Any<PageWaitForLoadStateOptions>())
+            .Returns(Task.CompletedTask);
+        page.WaitForFunctionAsync(Arg.Any<string>(), Arg.Any<object?>(), Arg.Any<PageWaitForFunctionOptions>())
+            .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
+        page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
+        return page;
+    }
+
+    [Fact]
+    public async Task BrowserFetch_FirstCallThrowsStalePage_RetriesAndSucceeds()
+    {
+        // workspace-m7nc: the named acceptance test. Mock the first GotoAsync to throw
+        // a "Target page" PlaywrightException (the post-captcha stale-page shape) and
+        // the second to return real HTML. LoadAsync must invalidate the cached page,
+        // get a fresh IPage from the session, and succeed on the retry — instead of
+        // surfacing the raw Playwright error to the user.
+        var stalePage = CreateThrowingPage("Target page, context or browser has been closed");
+        var freshHtml = "<html><head><title>Recovered</title></head><body><p>article body</p></body></html>";
+        var freshPage = CreateHealthyPage(freshHtml, "https://example.com/article");
+
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns(Task.FromResult(stalePage), Task.FromResult(freshPage));
+
+        // Force the browser path (no HttpClient → BrowserFetchAsync is taken directly).
+        var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
+        var request = new PageLoadRequest { Url = "https://example.com/article", ForceBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeTrue(
+            "the loader must retry with a fresh page when the first call hits a stale-target Playwright exception");
+        result.Html.Should().Be(freshHtml);
+        await _browserSession.Received(1).InvalidatePageAsync();
+        await _browserSession.Received(2).GetOrCreatePageAsync(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BrowserFetch_RetryAlsoThrowsStalePage_SurfacesFriendlierCopy()
+    {
+        // workspace-m7nc: when even the retry sees a stale target, surface the
+        // user-actionable copy ("Page navigated mid-load … Press Shift+R to retry")
+        // instead of the raw Playwright message.
+        var stale1 = CreateThrowingPage("Target page, context or browser has been closed");
+        var stale2 = CreateThrowingPage("Target closed");
+
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns(Task.FromResult(stale1), Task.FromResult(stale2));
+
+        var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
+        var request = new PageLoadRequest { Url = "https://example.com/article", ForceBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("Page navigated mid-load",
+            "stale-page failures must surface the user-actionable copy, not the raw Playwright message");
+        result.ErrorMessage.Should().Contain("Shift+R");
+        await _browserSession.Received(1).InvalidatePageAsync();
+        await _browserSession.Received(2).GetOrCreatePageAsync(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BrowserFetch_NonStalePlaywrightFailure_DoesNotRetry()
+    {
+        // Non-stale Playwright errors (e.g. DNS resolution) should NOT trigger the
+        // retry path — that would waste a second browser round-trip on a failure
+        // that has no chance of succeeding.
+        var pageWithDnsError = CreateThrowingPage("net::ERR_NAME_NOT_RESOLVED at https://invalid.example");
+
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns(Task.FromResult(pageWithDnsError));
+
+        var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
+        var request = new PageLoadRequest { Url = "https://invalid.example", ForceBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("net::ERR_NAME_NOT_RESOLVED");
+        await _browserSession.DidNotReceive().InvalidatePageAsync();
+        await _browserSession.Received(1).GetOrCreatePageAsync(Arg.Any<bool>());
+    }
+}

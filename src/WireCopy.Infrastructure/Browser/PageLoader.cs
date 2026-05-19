@@ -499,6 +499,78 @@ public class PageLoader : IPageLoader
 
     private async Task<PageLoadResult> BrowserFetchAsync(PageLoadRequest request, CancellationToken cancellationToken)
     {
+        // workspace-m7nc: a Playwright IPage reference can become invalid mid-load when
+        // the headed Chrome window navigates underneath us (most commonly: user just
+        // solved a captcha). The page's underlying CDP target disposes, and the next
+        // call surfaces as "Target page, context or browser has been closed". Retry
+        // once with a fresh page from the session pool before surfacing the error —
+        // the user shouldn't have to press Shift+R themselves.
+        //
+        // The retry MUST go through InvalidatePageAsync first; the BrowserSession
+        // liveness check (`_ = _page.Url`) doesn't catch all stale-target shapes,
+        // so without explicit invalidation the second attempt could see the same
+        // dead IPage and fail identically.
+        var first = await BrowserFetchOnceAsync(request, cancellationToken).ConfigureAwait(false);
+        if (first.Success || !LooksLikeStalePlaywrightFailure(first))
+        {
+            return first;
+        }
+
+        _logger.LogWarning(
+            "Playwright stale-page exception for {Url}; invalidating page and retrying once",
+            request.Url);
+        try
+        {
+            await _browserSession.InvalidatePageAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "InvalidatePageAsync threw before retry for {Url}", request.Url);
+        }
+
+        var second = await BrowserFetchOnceAsync(request, cancellationToken).ConfigureAwait(false);
+        if (second.Success || !LooksLikeStalePlaywrightFailure(second))
+        {
+            return second;
+        }
+
+        // Both attempts saw a stale target — surface user-actionable copy instead
+        // of the opaque Playwright "Target page, context or browser has been closed".
+        return PageLoadResult.Failure(
+            "Page navigated mid-load (e.g. after a captcha solve). Press Shift+R to retry.");
+    }
+
+#pragma warning disable SA1204 // helper kept adjacent to its sole caller for readability (workspace-m7nc).
+    private static bool LooksLikeStalePlaywrightFailure(PageLoadResult result)
+    {
+        return !result.Success
+            && result.ErrorMessage is { } msg
+            && LooksLikeStalePlaywrightPage(msg);
+    }
+#pragma warning restore SA1204
+
+#pragma warning disable SA1202, SA1204 // helper kept adjacent to its sole caller for readability (workspace-m7nc).
+    /// <summary>
+    /// Heuristic: did this Playwright failure look like an in-flight page that got
+    /// invalidated by an out-of-band navigation (typical captcha-solve scenario)?
+    /// Used by <see cref="BrowserFetchAsync"/> to retry once with a fresh page
+    /// (workspace-m7nc).
+    /// </summary>
+    internal static bool LooksLikeStalePlaywrightPage(string errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            return false;
+        }
+
+        return errorMessage.Contains("Target page", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("context or browser has been closed", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("Target closed", StringComparison.OrdinalIgnoreCase);
+    }
+#pragma warning restore SA1202, SA1204
+
+    private async Task<PageLoadResult> BrowserFetchOnceAsync(PageLoadRequest request, CancellationToken cancellationToken)
+    {
         if (!_browserSession.IsBrowserAvailable)
         {
             _logger.LogDebug("Browser unavailable on this platform, skipping browser fetch for {Url}", request.Url);
@@ -566,6 +638,16 @@ public class PageLoader : IPageLoader
         catch (PlaywrightException ex)
         {
             _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
+
+            // workspace-m7nc: stale-page detection happens in the outer
+            // BrowserFetchAsync — preserve the raw Playwright message here so
+            // LooksLikeStalePlaywrightFailure can route through the retry path.
+            // The friendlier user-facing copy is applied AFTER the retry also fails.
+            if (LooksLikeStalePlaywrightPage(ex.Message))
+            {
+                return PageLoadResult.Failure(ex.Message);
+            }
+
             return PageLoadResult.Failure($"Browser error: {ex.Message}");
         }
         catch (ObjectDisposedException ex)

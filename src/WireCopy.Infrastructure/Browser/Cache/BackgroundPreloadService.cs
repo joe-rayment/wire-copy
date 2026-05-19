@@ -129,8 +129,65 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     public void NotifyPageLoaded(Page page)
     {
-        // Page loaded — queue will be rebuilt on next selection change
+        // Page loaded — queue will be rebuilt on next selection change.
         _logger.LogDebug("Page loaded: {Url}", page.Url);
+
+        // workspace-m7nc: a successful page load with real content is the
+        // strongest signal that any HITL verdict raised by prefetch was either
+        // resolved (user solved a captcha in the headed browser) or a false
+        // positive (Cloudflare bot-monitor noise on a healthy page). Clear the
+        // sticky badge for that origin so prefetch can resume and the status bar
+        // doesn't keep showing a stale "action needed" hint.
+        //
+        // "Real content" = the orchestrator built a non-trivial page. Either:
+        //   - readable content was extracted (article-shaped pages), OR
+        //   - the link tree was populated with at least one link (link-list pages
+        //     like nytimes.com/section/todayspaper where the captcha originally
+        //     fired but the user's solve revealed the underlying section page).
+        // A blank shell with neither is excluded so a half-loaded captcha page
+        // doesn't accidentally clear the verdict.
+        if (!string.IsNullOrWhiteSpace(page.Url)
+            && (page.ReadableContent != null || page.HasLinks()))
+        {
+            NotifyChallengeResolved(page.Url);
+        }
+    }
+
+    /// <summary>
+    /// Clears any sticky <see cref="HumanActionRequired"/> verdict and circuit-
+    /// breaker entry for the given URL's origin (workspace-m7nc). Called when an
+    /// interactive page load on that origin proves the prefetch verdict was either
+    /// resolved or a false positive.
+    /// </summary>
+    public void NotifyChallengeResolved(string url)
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        var origin = UrlNormalizer.GetOrigin(url);
+        if (origin == null)
+        {
+            return;
+        }
+
+        var hadAction = _lastBlockedAction != null;
+        var hadCircuitBreak = _circuitBrokenDomains.ContainsKey(origin);
+
+        if (!hadAction && !hadCircuitBreak)
+        {
+            return;
+        }
+
+        ClearBlockedActionForOriginIfMatches(url);
+        if (_circuitBrokenDomains.TryRemove(origin, out _))
+        {
+            _logger.LogInformation(
+                "NotifyChallengeResolved: cleared circuit-break for {Origin}",
+                origin);
+            NotifyProgressChanged();
+        }
     }
 
     public void NotifySelectionChanged(int selectedIndex, IReadOnlyList<LinkNode> visibleNodes, string currentPageUrl)
@@ -1520,6 +1577,29 @@ internal sealed class BackgroundPreloadService : IPreloadService
     /// </summary>
     internal void ClearBlockedActionForOriginIfMatchesForTesting(string url)
         => ClearBlockedActionForOriginIfMatches(url);
+
+    /// <summary>
+    /// Test seam (workspace-m7nc): lets unit tests prime the circuit-breaker
+    /// entry for an origin without having to drive a real preload failure.
+    /// </summary>
+    internal void SetCircuitBrokenForTesting(string url)
+    {
+        var origin = UrlNormalizer.GetOrigin(url);
+        if (origin != null)
+        {
+            _circuitBrokenDomains[origin] = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// Test seam (workspace-m7nc): exposes the circuit-breaker state so tests
+    /// can verify <see cref="NotifyChallengeResolved"/> lifts the break.
+    /// </summary>
+    internal bool IsCircuitBrokenForTesting(string url)
+    {
+        var origin = UrlNormalizer.GetOrigin(url);
+        return origin != null && _circuitBrokenDomains.ContainsKey(origin);
+    }
 #pragma warning restore SA1202
 
     private static string ExtractHostFromOrigin(string origin)
