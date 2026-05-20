@@ -25,6 +25,41 @@ internal static class PodcastProgressScreens
     private const string Reset = PodcastCommandHandler.Reset;
 
     /// <summary>
+    /// workspace-i3kh: builds the "· 32s" or "· 1m 14s" suffix appended to
+    /// completed/failed/cached per-article lines on the progress screen.
+    /// Returns an empty string while the article is still in-flight or if
+    /// no start timestamp was captured (defensive). Total seconds rounds to
+    /// the nearest whole second so the suffix doesn't churn millisecond-to-
+    /// millisecond on each render frame.
+    /// </summary>
+    internal static string FormatElapsedSuffix(PodcastCommandHandler.ArticleStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+
+        var elapsed = status.Elapsed;
+        if (!elapsed.HasValue)
+        {
+            return string.Empty;
+        }
+
+        var totalSeconds = (int)Math.Round(elapsed.Value.TotalSeconds);
+        if (totalSeconds < 0)
+        {
+            // Defensive: clock skew shouldn't render a "-3s" suffix.
+            return string.Empty;
+        }
+
+        if (totalSeconds < 60)
+        {
+            return $"{totalSeconds}s";
+        }
+
+        var minutes = totalSeconds / 60;
+        var seconds = totalSeconds % 60;
+        return seconds == 0 ? $"{minutes}m" : $"{minutes}m {seconds}s";
+    }
+
+    /// <summary>
     /// workspace-6dzj: builds the status-bar copy shown after the user
     /// presses Esc to cancel a podcast run. Counts Completed + Cached articles
     /// (work that the user got something useful from) so the message reads
@@ -124,9 +159,15 @@ internal static class PodcastProgressScreens
                 {
                     statuses[idx].State = p.IsArticleSuccess ? PodcastCommandHandler.ArticleState.Completed : PodcastCommandHandler.ArticleState.Failed;
                     statuses[idx].Method = null;
+                    statuses[idx].FinishedAtUtc ??= DateTime.UtcNow;
                 }
                 else
                 {
+                    if (statuses[idx].State != PodcastCommandHandler.ArticleState.Processing)
+                    {
+                        statuses[idx].StartedAtUtc ??= DateTime.UtcNow;
+                    }
+
                     statuses[idx].State = PodcastCommandHandler.ArticleState.Processing;
                     statuses[idx].Method = p.ExtractionMethod;
                 }
@@ -141,6 +182,19 @@ internal static class PodcastProgressScreens
                     statuses[lastProcessingIndex].State == PodcastCommandHandler.ArticleState.Processing)
                 {
                     statuses[lastProcessingIndex].State = PodcastCommandHandler.ArticleState.Completed;
+                    statuses[lastProcessingIndex].FinishedAtUtc ??= DateTime.UtcNow;
+                }
+
+                // workspace-i3kh: an article entering the TTS phase carries
+                // a stale FinishedAtUtc from when its CachingContent phase
+                // marked it complete. Clear that stamp so the in-flight TTS
+                // step doesn't render a stale elapsed suffix. PRESERVE
+                // StartedAtUtc so the eventual rendered elapsed reflects the
+                // TOTAL per-article time (caching + TTS), per the bead's
+                // "per-article elapsed time on completion" wording.
+                if (!p.IsFromCache && statuses[idx].State != PodcastCommandHandler.ArticleState.Processing)
+                {
+                    statuses[idx].FinishedAtUtc = null;
                 }
 
                 statuses[idx].State = p.IsFromCache ? PodcastCommandHandler.ArticleState.Cached : PodcastCommandHandler.ArticleState.Processing;
@@ -254,6 +308,12 @@ internal static class PodcastProgressScreens
                         if (statuses[i].State == PodcastCommandHandler.ArticleState.Processing)
                         {
                             statuses[i].State = PodcastCommandHandler.ArticleState.Completed;
+
+                            // workspace-i3kh: stamp completion time for any
+                            // article we forcibly transition to Completed
+                            // here — otherwise the elapsed suffix would be
+                            // missing for the last article in the run.
+                            statuses[i].FinishedAtUtc ??= DateTime.UtcNow;
                         }
                     }
 
@@ -937,17 +997,25 @@ internal static class PodcastProgressScreens
         for (var i = 0; i < articleCount; i++)
         {
             var status = statuses[i];
-            var displayTitle = RenderHelpers.TruncateText(status.Title, width - 10);
+
+            // workspace-i3kh: reserve room for the elapsed suffix (e.g.
+            // " · 1m 14s") so a long title doesn't crowd it off the line.
+            var elapsedSuffix = FormatElapsedSuffix(status);
+            var elapsedReserve = elapsedSuffix.Length;
+            var displayTitle = RenderHelpers.TruncateText(status.Title, Math.Max(10, width - 10 - elapsedReserve));
             var methodSuffix = status.Method != null
                 ? $" {p.SecondaryText.AnsiFg}({status.Method}){Reset}"
+                : string.Empty;
+            var elapsedRender = elapsedSuffix.Length > 0
+                ? $" {p.SecondaryText.AnsiFg}· {elapsedSuffix}{Reset}"
                 : string.Empty;
 
             var line = status.State switch
             {
                 PodcastCommandHandler.ArticleState.Cached =>
-                    $"  {p.GetSuccessFg().AnsiFg}✓{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}",
+                    $"  {p.GetSuccessFg().AnsiFg}✓{Reset} {displayTitle} {p.SecondaryText.AnsiFg}(cached){Reset}{elapsedRender}",
                 PodcastCommandHandler.ArticleState.Completed =>
-                    $"  {p.GetSuccessFg().AnsiFg}✓{Reset} {displayTitle}",
+                    $"  {p.GetSuccessFg().AnsiFg}✓{Reset} {displayTitle}{elapsedRender}",
                 PodcastCommandHandler.ArticleState.Processing when isCaching =>
                     $"  {p.HeaderTitleFg.AnsiFg}↻{Reset} {displayTitle}" +
                     $"{methodSuffix}" +
@@ -956,7 +1024,7 @@ internal static class PodcastProgressScreens
                     $"  {p.HeaderTitleFg.AnsiFg}♫{Reset} {displayTitle}" +
                     $"{p.SecondaryText.AnsiFg}{PodcastCommandHandler.AnimationFrames[animFrame]}{Reset}",
                 PodcastCommandHandler.ArticleState.Failed =>
-                    $"  {p.ErrorFg.AnsiFg}✗{Reset} {displayTitle}",
+                    $"  {p.ErrorFg.AnsiFg}✗{Reset} {displayTitle}{elapsedRender}",
                 _ =>
                     $"  {p.SecondaryText.AnsiFg}  {displayTitle}{Reset}",
             };
