@@ -73,27 +73,45 @@ internal sealed class PreloadDetailRenderer
         var innerWidth = Math.Min(MaxPanelWidth, Math.Max(MinPanelWidth, terminalWidth - 8));
         var boxWidth = innerWidth + 4;
         var leftPad = Math.Max(0, (terminalWidth - boxWidth) / 2);
-        var topPad = Math.Max(0, (terminalHeight - (lines.Count + 2)) / 3);
-        var pad = new string(' ', leftPad);
+
+        // workspace-c8v3: reserve at least the status-bar's 2-line footprint at
+        // the bottom so the overlay never paints over the chrome below. The
+        // panel is centered in the remaining height — same visual rule as the
+        // prior "topPad = (height - lines.Count - 2) / 3" but enforced via the
+        // available-height clamp.
+        const int StatusBarReservedLines = 2;
+        var availableHeight = Math.Max(0, terminalHeight - StatusBarReservedLines);
+        var topPad = Math.Max(0, (availableHeight - (lines.Count + 2)) / 3);
         var borderFg = palette.HeaderBorderFg.AnsiFg;
 
-        for (var i = 0; i < topPad; i++)
-        {
-            _helpers.WriteLine();
-        }
-
         var titleLabel = " PREFETCH ";
-        var titleBar = $"{pad}{borderFg}╭─{Bold}{titleLabel}{Reset}{borderFg}{new string('─', boxWidth - 3 - titleLabel.Length)}╮{Reset}";
-        _helpers.WriteLine(titleBar);
+        var titleBar = $"{borderFg}╭─{Bold}{titleLabel}{Reset}{borderFg}{new string('─', boxWidth - 3 - titleLabel.Length)}╮{Reset}";
+
+        // Absolute positioning so the overlay doesn't disturb _linesWritten on
+        // the underlying view (status bar stays intact, link list stays intact).
+        // (col, row) is 0-indexed and matches RenderHelpers.WriteAt's contract.
+        var row = topPad;
+        _helpers.WriteAt(leftPad, row++, titleBar);
 
         foreach (var line in lines)
         {
+            if (row >= availableHeight)
+            {
+                // Clamp: never paint over the reserved status-bar region.
+                break;
+            }
+
             var displayWidth = RenderHelpers.GetDisplayWidth(line.PlainText);
             var rightPadding = Math.Max(0, innerWidth - displayWidth);
-            _helpers.WriteLine($"{pad}{borderFg}│{Reset} {line.StyledText}{new string(' ', rightPadding)} {borderFg}│{Reset}");
+            var rendered = $"{borderFg}│{Reset} {line.StyledText}{new string(' ', rightPadding)} {borderFg}│{Reset}";
+            _helpers.WriteAt(leftPad, row++, rendered);
         }
 
-        _helpers.WriteLine($"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
+        if (row < availableHeight)
+        {
+            var bottomBorder = $"{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}";
+            _helpers.WriteAt(leftPad, row, bottomBorder);
+        }
     }
 
     /// <summary>

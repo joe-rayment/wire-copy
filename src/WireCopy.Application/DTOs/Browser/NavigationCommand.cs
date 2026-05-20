@@ -147,4 +147,9 @@ public enum CommandType
     // Reader: ask the AI extractor to re-derive selectors for the current
     // article and replace the saved layout config (workspace-2e1k).
     RegenerateArticleLayout,
+
+    // Prefetch: toggle the prefetch detail overlay on/off (workspace-c8v3).
+    // Hidden by default; bound to backslash so it works from any non-modal
+    // view. Pressing again or Esc dismisses.
+    TogglePreloadDetail,
 }
