@@ -77,33 +77,48 @@ internal static class PodcastCostGateModal
                    $"{palette.GetAccentFg().AnsiFg}[Esc]{Reset} {palette.PrimaryText.AnsiFg}cancel{Reset}";
         var hintPlain = "[Enter] go  [Esc] cancel";
 
-        while (true)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
+            // Paint the page once so the reading list shows behind the box.
             options = ctx.GetCurrentRenderOptions();
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-
             RenderBox(options, palette, summary, hint, hintPlain);
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-
-            if (command.Type == CommandType.TerminalResized)
+            while (true)
             {
-                continue;
-            }
+                ct.ThrowIfCancellationRequested();
+                var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
 
-            if (command.Type == CommandType.ActivateLink)
-            {
-                return true;
-            }
+                if (command.Type == CommandType.TerminalResized)
+                {
+                    options = ctx.GetCurrentRenderOptions();
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    RenderBox(options, palette, summary, hint, hintPlain);
+                    continue;
+                }
 
-            if (command.Type is CommandType.GoBack or CommandType.Quit)
-            {
-                return false;
-            }
+                if (command.Type == CommandType.ActivateLink)
+                {
+                    return true;
+                }
 
-            // Any other key — re-prompt (don't swallow the decision).
+                if (command.Type is CommandType.GoBack or CommandType.Quit)
+                {
+                    return false;
+                }
+
+                // Any other key — re-paint the modal so the user sees their
+                // input was ignored and the modal is still awaiting Enter/Esc.
+                RenderBox(options, palette, summary, hint, hintPlain);
+            }
+        }
+        finally
+        {
+            // Blank the rows where the modal's box was painted so the next
+            // RenderCurrentPageAsync starts from a clean state. WriteAt leaves
+            // artifacts otherwise — the box would persist as ghost rows under
+            // the reading list when the caller repaints.
+            ClearBoxRows(options);
         }
     }
 
@@ -144,17 +159,31 @@ internal static class PodcastCostGateModal
         var borderFg = palette.HeaderBorderFg.AnsiFg;
 
         // Layout the inner row: summary on left, hint right-aligned.
-        var contentWidth = boxWidth - 4; // 2 border chars + 2 padding spaces
+        var contentWidth = boxWidth - 4;
         var summaryWidth = RenderHelpers.GetDisplayWidth(summary);
         var hintWidth = RenderHelpers.GetDisplayWidth(hintPlain);
         var gapWidth = Math.Max(2, contentWidth - summaryWidth - hintWidth);
 
         var styledSummary = $"{Bold}{palette.PrimaryText.AnsiFg}{summary}{Reset}";
 
-        helpers.PositionAtBottom();
-        helpers.WriteLine();
-        helpers.WriteLine($"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
-        helpers.WriteLine($"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{hint} {borderFg}│{Reset}");
-        helpers.WriteLine($"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
+        // Position the 3-line box so it fits ABOVE the 2-line status bar and is
+        // fully visible. PositionAtBottom would land at TerminalHeight-2 and we'd
+        // overflow the screen — we render 3 box rows so we need to land at
+        // TerminalHeight-5 (3 box rows + 2 status bar rows).
+        var topRow = Math.Max(0, options.TerminalHeight - 5);
+        helpers.WriteAt(0, topRow, $"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
+        helpers.WriteAt(0, topRow + 1, $"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{hint} {borderFg}│{Reset}");
+        helpers.WriteAt(0, topRow + 2, $"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
+    }
+
+    private static void ClearBoxRows(RenderOptions options)
+    {
+        var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+        var topRow = Math.Max(0, options.TerminalHeight - 5);
+        var blank = new string(' ', Math.Max(1, options.TerminalWidth));
+        for (var row = topRow; row < Math.Min(options.TerminalHeight - 2, topRow + 3); row++)
+        {
+            helpers.WriteAt(0, row, blank);
+        }
     }
 }
