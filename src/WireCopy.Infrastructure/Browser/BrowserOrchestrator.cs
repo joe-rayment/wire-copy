@@ -527,7 +527,10 @@ public partial class BrowserOrchestrator : IBrowserService
     /// </summary>
     private static int GetReaderViewportHeight(RenderOptions options)
     {
-        return Math.Max(3, options.TerminalHeight - 3);
+        // workspace-umi7: route through the shared ReaderLayout so the speed-read
+        // scroller's threshold matches what the renderer actually paints. The old
+        // `terminalHeight - 3` assumed a 1-line header but the title bar writes 3.
+        return UI.ReaderLayout.ComputeContentHeight(options.TerminalHeight);
     }
 
     /// <summary>
