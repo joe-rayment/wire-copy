@@ -32,6 +32,13 @@ internal sealed class PreloadDetailRenderer
     internal const int MinTerminalWidthForOverlay = MinPanelWidth + 6;
     internal const int MinTerminalHeightForOverlay = 8;
 
+    // workspace-fh7g: stall thresholds. Past WarningThreshold the "Now:" URL
+    // renders in warning color with elapsed time. Past StuckThreshold a hint
+    // line appears telling the user the load is probably wedged and how to
+    // recover.
+    internal static readonly TimeSpan StallWarningThreshold = TimeSpan.FromSeconds(8);
+    internal static readonly TimeSpan StallStuckThreshold = TimeSpan.FromSeconds(30);
+
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const int MaxListEntries = 10;
@@ -135,6 +142,21 @@ internal sealed class PreloadDetailRenderer
             lines.Add(new PanelLine($"      {stageChip.Value.Styled}", $"      {stageChip.Value.Plain}"));
         }
 
+        // workspace-fh7g: past the 30s "stuck" threshold, surface a recovery
+        // hint so the user knows the load is jammed and how to retry. Both
+        // a non-empty CurrentlyFetchingUrl AND a past-stuck elapsed are
+        // required — an idle preloader with a stale elapsed value should
+        // never trip this.
+        if (!string.IsNullOrWhiteSpace(progress.CurrentlyFetchingUrl)
+            && progress.ElapsedOnCurrent is { } elapsed
+            && elapsed >= StallStuckThreshold)
+        {
+            const string Hint = "looks stuck — Shift+R to retry";
+            var styled = $"      {palette.GetWarningFg().AnsiFg}{Hint}{Reset}";
+            var plain = $"      {Hint}";
+            lines.Add(new PanelLine(styled, plain));
+        }
+
         lines.Add(PanelLine.Blank);
         lines.Add(BuildSectionHeader("Up next", palette));
 
@@ -199,6 +221,30 @@ internal sealed class PreloadDetailRenderer
         return (styled, plain);
     }
 
+    /// <summary>
+    /// Compact "Xs" / "Xm Ys" elapsed-time formatter (workspace-fh7g). Used
+    /// by the "Now:" line of the prefetch detail panel to surface how long
+    /// the in-flight URL has been pending. Sub-second elapsed is rendered as
+    /// "&lt;1s" so the suffix is never empty when the timer is just starting.
+    /// </summary>
+    internal static string FormatElapsed(TimeSpan elapsed)
+    {
+        if (elapsed.TotalSeconds < 1)
+        {
+            return "<1s";
+        }
+
+        var total = (int)Math.Round(elapsed.TotalSeconds);
+        if (total < 60)
+        {
+            return $"{total}s";
+        }
+
+        var minutes = total / 60;
+        var rem = total % 60;
+        return rem == 0 ? $"{minutes}m" : $"{minutes}m {rem}s";
+    }
+
     private static PanelLine BuildSummaryLine(PreloadProgress progress, ThemePalette palette)
     {
         var total = Math.Max(progress.TotalCacheableLinks, 0);
@@ -223,10 +269,23 @@ internal sealed class PreloadDetailRenderer
             return new PanelLine($"{palette.GetDimFg().AnsiFg}Now: idle{Reset}", "Now: idle");
         }
 
-        var maxUrlWidth = Math.Max(10, innerWidth - "Now: ".Length);
+        // workspace-fh7g: only surface the elapsed suffix + warning color once
+        // we've crossed the 8s stall threshold. Below that, the panel stays
+        // calm — adding "(2s)" to every Now line during normal operation
+        // would just be visual noise.
+        var elapsed = progress.ElapsedOnCurrent;
+        var isStall = elapsed.HasValue && elapsed.Value >= StallWarningThreshold;
+        var elapsedSuffix = isStall ? $" ({FormatElapsed(elapsed!.Value)})" : string.Empty;
+
+        var maxUrlWidth = Math.Max(10, innerWidth - "Now: ".Length - elapsedSuffix.Length);
         var truncated = RenderHelpers.TruncateUrl(progress.CurrentlyFetchingUrl, maxUrlWidth);
-        var styled = $"{palette.SecondaryText.AnsiFg}Now: {Reset}{palette.PrimaryText.AnsiFg}{truncated}{Reset}";
-        var plain = $"Now: {truncated}";
+
+        var urlColor = isStall ? palette.GetWarningFg().AnsiFg : palette.PrimaryText.AnsiFg;
+        var suffixColor = isStall ? palette.GetWarningFg().AnsiFg : palette.GetDimFg().AnsiFg;
+
+        var styled = $"{palette.SecondaryText.AnsiFg}Now: {Reset}{urlColor}{truncated}{Reset}" +
+                     $"{suffixColor}{elapsedSuffix}{Reset}";
+        var plain = $"Now: {truncated}{elapsedSuffix}";
         return new PanelLine(styled, plain);
     }
 
