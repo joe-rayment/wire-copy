@@ -144,6 +144,33 @@ public record PodcastProgress
     /// (workspace-74zy).
     /// </summary>
     public int UncachedArticleCount { get; init; }
+
+    /// <summary>
+    /// workspace-rz1c: whether the TTS service is currently retrying a
+    /// transient error (e.g. HTTP 429 rate-limit, 5xx). When true the
+    /// progress screen surfaces a "Rate-limited by OpenAI, retrying in Xs"
+    /// banner instead of leaving the user staring at a frozen progress bar.
+    /// </summary>
+    public bool IsRetrying { get; init; }
+
+    /// <summary>
+    /// workspace-rz1c: 1-based retry attempt number (1 = first retry).
+    /// Only meaningful when <see cref="IsRetrying"/> is true.
+    /// </summary>
+    public int RetryAttempt { get; init; }
+
+    /// <summary>
+    /// workspace-rz1c: configured maximum retry budget for the in-flight
+    /// chunk. Only meaningful when <see cref="IsRetrying"/> is true.
+    /// </summary>
+    public int RetryMaxAttempts { get; init; }
+
+    /// <summary>
+    /// workspace-rz1c: seconds the orchestrator will sleep before the next
+    /// retry attempt. Drives the user-visible countdown copy on the
+    /// progress screen so the bar doesn't appear frozen.
+    /// </summary>
+    public int RetryDelaySeconds { get; init; }
 }
 
 /// <summary>

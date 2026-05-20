@@ -379,6 +379,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                             UncachedArticleCount = uncachedSnapshot,
                             PhaseElapsed = stopwatch.Elapsed,
                             Message = p.Message,
+
+                            // workspace-rz1c: carry retry state through so the
+                            // screen can render a "rate-limited, retrying" banner.
+                            IsRetrying = p.IsRetrying,
+                            RetryAttempt = p.RetryAttempt,
+                            RetryMaxAttempts = p.RetryMaxAttempts,
+                            RetryDelaySeconds = p.RetryDelaySeconds,
                         }));
                     }
 

@@ -883,6 +883,19 @@ internal static class PodcastProgressScreens
             helpers.WriteLine();
         }
 
+        // workspace-rz1c: render a "Rate-limited by OpenAI, retrying in Xs"
+        // banner whenever the TTS service is currently waiting out an
+        // exponential-backoff sleep. Without this the progress bar appears
+        // frozen during retries and the user can't tell whether the job is
+        // stuck. The Message field carries the pre-formatted user copy so we
+        // don't have to reconstruct it here.
+        if (progress is { IsRetrying: true } && !string.IsNullOrEmpty(progress.Message))
+        {
+            helpers.WriteLine(
+                $"  {p.GetWarningFg().AnsiFg}⟳{Reset} {p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(progress.Message!, width - 4)}{Reset}");
+            helpers.WriteLine();
+        }
+
         var maxArticleLines = Math.Max(1, terminalHeight - helpers.LinesWritten - 4);
         var articleCount = Math.Min(statuses.Length, maxArticleLines);
 

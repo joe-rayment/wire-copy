@@ -160,6 +160,135 @@ public class ProgressScreenAggregatorRenderTests
             because: "the four-sub-bar block requires an aggregator");
     }
 
+    /// <summary>
+    /// workspace-rz1c: when the TTS service is retrying a 429/5xx, the
+    /// progress screen must render an inline banner so the user sees a
+    /// countdown instead of a frozen bar. Without this guard, the progress
+    /// bar pauses mid-article and the user assumes the job is stuck.
+    /// </summary>
+    [Fact]
+    [Trait("Collection", "ConsoleOutput")]
+    public void RenderProgressContent_RetryingTTS_RendersInlineRateLimitBanner()
+    {
+        var progress = new PodcastProgress
+        {
+            Phase = PodcastPhase.GeneratingAudio,
+            CurrentArticle = 3,
+            TotalArticles = 12,
+            ArticleTitle = "An article that hit rate limit",
+            PercentComplete = 32,
+            IsRetrying = true,
+            RetryAttempt = 2,
+            RetryMaxAttempts = 3,
+            RetryDelaySeconds = 4,
+            Message = "Rate-limited by OpenAI (HTTP 429), retrying in 4s (attempt 2/3)",
+        };
+
+        var statuses = new PodcastCommandHandler.ArticleStatus[1]
+        {
+            new() { Title = "Article 1", State = PodcastCommandHandler.ArticleState.Processing },
+        };
+
+        var output = CaptureRender(h => PodcastProgressScreens.RenderProgressContent(
+            h, Palette, progress, animFrame: 0, statuses, terminalWidth: 100, terminalHeight: 40));
+
+        output.Should().Contain("Rate-limited by OpenAI",
+            because: "the user MUST see why the progress bar is frozen — silence is the bug");
+        output.Should().Contain("retrying in 4s");
+        output.Should().Contain("attempt 2/3");
+    }
+
+    /// <summary>
+    /// workspace-rz1c: pins the message wire-format produced by
+    /// <c>OpenAiTtsService.BuildRetryProgress</c>. The screen renderer just
+    /// echoes <c>progress.Message</c>; the user-visible copy is determined
+    /// here. Together with the screen test above, this proves the full
+    /// chain from (attempt, delayMs, status) input to rendered terminal
+    /// output.
+    /// </summary>
+    [Fact]
+    public void BuildRetryProgress_429_FormatsRateLimitedMessage()
+    {
+        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
+            attempt: 2,
+            delayMs: 4000,
+            status: 429,
+            chunkIndex: 3,
+            totalChunks: 7,
+            charactersProcessed: 1200,
+            totalCharacters: 5400,
+            maxRetries: 5);
+
+        progress.IsRetrying.Should().BeTrue();
+        progress.RetryAttempt.Should().Be(2);
+        progress.RetryMaxAttempts.Should().Be(5);
+        progress.RetryDelaySeconds.Should().Be(4);
+        progress.Message.Should().Be("Rate-limited by OpenAI (HTTP 429), retrying in 4s (attempt 2/5)",
+            "the wire-format copy MUST stay stable — the renderer just echoes Message");
+    }
+
+    [Fact]
+    public void BuildRetryProgress_5xx_FormatsServerErrorMessage()
+    {
+        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
+            attempt: 1, delayMs: 1500, status: 503,
+            chunkIndex: 1, totalChunks: 2,
+            charactersProcessed: 0, totalCharacters: 800, maxRetries: 3);
+
+        progress.Message.Should().Contain("HTTP 503");
+        progress.Message.Should().Contain("retrying in 2s",
+            "1500ms rounds UP to 2s — the user shouldn't see fractional waits");
+        progress.Message.Should().Contain("attempt 1/3");
+    }
+
+    [Fact]
+    public void BuildRetryProgress_SubSecondDelay_RoundsUpToOneSecond()
+    {
+        // Defensive: a 300ms backoff (e.g. RetryBaseDelayMs=300, attempt 0)
+        // would format as "retrying in 0s" without the Math.Max(1, ...) clamp.
+        // The user shouldn't see a zero-second wait.
+        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
+            attempt: 1, delayMs: 300, status: 429,
+            chunkIndex: 1, totalChunks: 1,
+            charactersProcessed: 0, totalCharacters: 100, maxRetries: 3);
+
+        progress.RetryDelaySeconds.Should().Be(1);
+        progress.Message.Should().Contain("retrying in 1s");
+    }
+
+    /// <summary>
+    /// Inverse pin: without IsRetrying, the banner must NOT render. This
+    /// guards against future regressions where IsRetrying gets defaulted to
+    /// true or the rendering condition gets inverted.
+    /// </summary>
+    [Fact]
+    [Trait("Collection", "ConsoleOutput")]
+    public void RenderProgressContent_NotRetrying_DoesNotRenderRateLimitBanner()
+    {
+        var progress = new PodcastProgress
+        {
+            Phase = PodcastPhase.GeneratingAudio,
+            CurrentArticle = 3,
+            TotalArticles = 12,
+            ArticleTitle = "An article",
+            PercentComplete = 32,
+            IsRetrying = false,
+            Message = "Chunk 2/4 complete",
+        };
+
+        var statuses = new PodcastCommandHandler.ArticleStatus[1]
+        {
+            new() { Title = "Article 1", State = PodcastCommandHandler.ArticleState.Processing },
+        };
+
+        var output = CaptureRender(h => PodcastProgressScreens.RenderProgressContent(
+            h, Palette, progress, animFrame: 0, statuses, terminalWidth: 100, terminalHeight: 40));
+
+        output.Should().NotContain("Rate-limited",
+            because: "the retry banner must be exclusive to IsRetrying == true");
+        output.Should().NotContain("retrying in");
+    }
+
     [Fact]
     [Trait("Collection", "ConsoleOutput")]
     public void RenderProgressContent_DetailStickyAcrossPhases_ShowsTtsCountInAssembling()

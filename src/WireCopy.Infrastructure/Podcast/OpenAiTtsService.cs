@@ -134,15 +134,35 @@ internal sealed class OpenAiTtsService : ITtsService
                 chunk.Length);
 
             ChunkGenerationResult chunkResult;
+
+            // workspace-rz1c: a retry handler that surfaces the transient
+            // 429/5xx wait via the IProgress<TtsProgress> stream so the
+            // podcast progress screen can render a "Rate-limited, retrying
+            // in Xs" banner instead of appearing frozen during exponential
+            // backoff. Captures i + 1 / chunks.Count so the consumer can
+            // colocate the retry banner with the in-flight chunk.
+            void OnRetry(int attempt, int delayMs, int status)
+            {
+                progress?.Report(BuildRetryProgress(
+                    attempt,
+                    delayMs,
+                    status,
+                    chunkIndex: i + 1,
+                    totalChunks: chunks.Count,
+                    charactersProcessed: totalCharsProcessed,
+                    totalCharacters: text.Length,
+                    maxRetries: _config.MaxRetries));
+            }
+
             if (string.IsNullOrWhiteSpace(instructions))
             {
                 chunkResult = await GenerateChunkWithRetryAsync(
-                    audioClient!, chunk, voice, options!, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
+                    audioClient!, chunk, voice, options!, i + 1, chunks.Count, OnRetry, cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 chunkResult = await GenerateChunkViaHttpWithRetryAsync(
-                    chunk, effectiveModel, effectiveVoice, instructions, i + 1, chunks.Count, cancellationToken).ConfigureAwait(false);
+                    chunk, effectiveModel, effectiveVoice, instructions, i + 1, chunks.Count, OnRetry, cancellationToken).ConfigureAwait(false);
             }
 
             if (!chunkResult.Success || chunkResult.AudioData is null)
@@ -263,6 +283,42 @@ internal sealed class OpenAiTtsService : ITtsService
     }
 
     #pragma warning disable OPENAI001 // Experimental voices
+    /// <summary>
+    /// workspace-rz1c: builds the <see cref="TtsProgress"/> emitted just
+    /// before each backoff sleep so the consumer can render a "rate-limited,
+    /// retrying in Xs (attempt N/M)" banner. Extracted to a static helper so
+    /// the formatter is testable without a real <see cref="OpenAiTtsService"/>
+    /// + HTTP/SDK seam.
+    /// </summary>
+    internal static TtsProgress BuildRetryProgress(
+        int attempt,
+        int delayMs,
+        int status,
+        int chunkIndex,
+        int totalChunks,
+        int charactersProcessed,
+        int totalCharacters,
+        int maxRetries)
+    {
+        var delaySeconds = Math.Max(1, (int)Math.Ceiling(delayMs / 1000.0));
+        var message = status == 429
+            ? $"Rate-limited by OpenAI (HTTP 429), retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})"
+            : $"OpenAI returned HTTP {status}, retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})";
+
+        return new TtsProgress
+        {
+            CurrentChunk = chunkIndex,
+            TotalChunks = totalChunks,
+            CharactersProcessed = charactersProcessed,
+            TotalCharacters = totalCharacters,
+            IsRetrying = true,
+            RetryAttempt = attempt,
+            RetryMaxAttempts = maxRetries,
+            RetryDelaySeconds = delaySeconds,
+            Message = message,
+        };
+    }
+
     private static GeneratedSpeechVoice MapVoice(string voice)
     {
         return voice.ToLowerInvariant() switch
@@ -303,6 +359,7 @@ internal sealed class OpenAiTtsService : ITtsService
         SpeechGenerationOptions options,
         int chunkNumber,
         int totalChunks,
+        Action<int, int, int>? onRetry,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt <= _config.MaxRetries; attempt++)
@@ -336,6 +393,11 @@ internal sealed class OpenAiTtsService : ITtsService
                     attempt + 1,
                     ex.Status,
                     delayMs);
+
+                // workspace-rz1c: surface the retry on the progress stream so
+                // the user sees "Rate-limited, retrying in Xs" instead of a
+                // frozen progress bar during the backoff sleep.
+                onRetry?.Invoke(attempt + 1, delayMs, ex.Status);
 
                 await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
@@ -409,6 +471,7 @@ internal sealed class OpenAiTtsService : ITtsService
         string instructions,
         int chunkNumber,
         int totalChunks,
+        Action<int, int, int>? onRetry,
         CancellationToken cancellationToken)
     {
         var apiKey = GetEffectiveApiKey();
@@ -449,6 +512,10 @@ internal sealed class OpenAiTtsService : ITtsService
                     attempt + 1,
                     (int?)ex.StatusCode,
                     delayMs);
+
+                // workspace-rz1c: emit the retry to the progress stream so the
+                // user gets a visible countdown instead of a frozen bar.
+                onRetry?.Invoke(attempt + 1, delayMs, (int?)ex.StatusCode ?? 0);
 
                 await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
