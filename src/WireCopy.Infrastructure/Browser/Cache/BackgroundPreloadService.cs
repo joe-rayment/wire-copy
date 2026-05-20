@@ -66,6 +66,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
     private volatile bool _disposed;
     private volatile string? _currentlyFetchingUrl;
 
+    // workspace-fh7g: timestamp when the current fetch started, so the detail
+    // panel can compute ElapsedOnCurrent and flag stalls (>8s warning,
+    // >30s "looks stuck") without the renderer needing its own clock.
+    // Updated atomically alongside _currentlyFetchingUrl; long.MinValue is
+    // the "not currently fetching" sentinel since DateTime can't be volatile.
+    private long _currentlyFetchingStartedAtTicks = long.MinValue;
+
     // Last typed human-action signal raised by the preloader's HTML check
     // (workspace-0b9s). Surfaced through PreloadProgress so the launcher /
     // link-tree status bar can warn the user before they Enter into a doomed
@@ -340,6 +347,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
                 // Clear the "currently fetching" indicator when batch ends
                 _currentlyFetchingUrl = null;
+                Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, long.MinValue);
 
                 // If items remain uncached, trigger a queue rebuild so the loop continues.
                 // Without this, the loop stalls on WaitForSignalAsync waiting for a user
@@ -408,6 +416,26 @@ internal sealed class BackgroundPreloadService : IPreloadService
             recent = _recentItems.ToList();
         }
 
+        // workspace-fh7g: compute elapsed time on the in-flight URL. The
+        // worker is single-threaded so the URL+tick pair is consistent at the
+        // write site (both set together in PreloadUrlAsync / Browser preload),
+        // but a worker rotation can land between the URL read and the tick
+        // read below. Worst case: one ProgressChanged frame shows an elapsed
+        // value computed against the next URL using the prior URL's start
+        // tick. The panel refreshes within ~100ms via the next ProgressChanged
+        // tick, so the stale value clears immediately — acceptable noise.
+        TimeSpan? elapsedOnCurrent = null;
+        var fetchingUrlSnapshot = _currentlyFetchingUrl;
+        var startedAtTicks = Interlocked.Read(ref _currentlyFetchingStartedAtTicks);
+        if (fetchingUrlSnapshot != null && startedAtTicks != long.MinValue)
+        {
+            var elapsedTicks = DateTime.UtcNow.Ticks - startedAtTicks;
+            if (elapsedTicks > 0)
+            {
+                elapsedOnCurrent = TimeSpan.FromTicks(elapsedTicks);
+            }
+        }
+
         return new PreloadProgress
         {
             TotalCacheableLinks = eligible.Count,
@@ -415,11 +443,12 @@ internal sealed class BackgroundPreloadService : IPreloadService
             NeedsBrowserCount = needsJs.Count,
             PaywalledLinkCount = _paywalledLinkCount,
             IsActivelyFetching = hasQueuedWork && !_paused,
-            CurrentlyFetchingUrl = _currentlyFetchingUrl,
+            CurrentlyFetchingUrl = fetchingUrlSnapshot,
             BlockedAction = _lastBlockedAction,
             CurrentStage = _currentStage,
             UpcomingUrls = upcoming,
             RecentItems = recent,
+            ElapsedOnCurrent = elapsedOnCurrent,
         };
     }
 
@@ -1229,6 +1258,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         try
         {
             _currentlyFetchingUrl = url;
+            Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, DateTime.UtcNow.Ticks);
             _currentStage = PreloadStage.Fetching;
             _logger.LogDebug("Pre-loading: {Url}", url);
             var result = await HttpFetchAsync(url, cancellationToken).ConfigureAwait(false);
@@ -1478,6 +1508,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         try
         {
             _currentlyFetchingUrl = url;
+            Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, DateTime.UtcNow.Ticks);
             _logger.LogDebug("Browser pre-loading: {Url}", url);
 
             // Lazily create background page on first use.
@@ -1658,6 +1689,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
         finally
         {
             _currentlyFetchingUrl = null;
+            Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, long.MinValue);
             NotifyProgressChanged();
         }
     }
@@ -1710,6 +1742,20 @@ internal sealed class BackgroundPreloadService : IPreloadService
     /// without standing up a real preload.
     /// </summary>
     internal void SetStageForTesting(PreloadStage stage) => _currentStage = stage;
+
+    /// <summary>
+    /// Test seam (workspace-fh7g): primes the in-flight URL + start tick so
+    /// tests can verify ElapsedOnCurrent populates correctly without
+    /// standing up a real network fetch. Pass <c>startedAt = null</c> to
+    /// simulate "no fetch in flight" (clears both fields atomically).
+    /// </summary>
+    internal void SetCurrentlyFetchingForTesting(string? url, DateTime? startedAt)
+    {
+        _currentlyFetchingUrl = url;
+        Interlocked.Exchange(
+            ref _currentlyFetchingStartedAtTicks,
+            startedAt.HasValue ? startedAt.Value.Ticks : long.MinValue);
+    }
 
     /// <summary>
     /// Test seam (workspace-7xw0): exposes <see cref="AppendHistory"/> so

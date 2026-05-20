@@ -77,4 +77,13 @@ public record PreloadProgress
     /// repeated skips/failures on the same origin.
     /// </summary>
     public IReadOnlyList<PreloadHistoryEntry> RecentItems { get; init; } = System.Array.Empty<PreloadHistoryEntry>();
+
+    /// <summary>
+    /// Wall-clock time elapsed on <see cref="CurrentlyFetchingUrl"/> since it
+    /// became the in-flight item (workspace-fh7g). Null when no fetch is in
+    /// flight. The detail panel renders this in warning style past 8s and adds
+    /// a "looks stuck — Shift+R to retry" hint past 30s so the user can tell
+    /// whether prefetch is progressing or jammed on one URL.
+    /// </summary>
+    public TimeSpan? ElapsedOnCurrent { get; init; }
 }
