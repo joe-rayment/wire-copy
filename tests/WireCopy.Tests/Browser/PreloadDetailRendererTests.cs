@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using NSubstitute;
 using WireCopy.Application.DTOs.Browser;
@@ -20,6 +21,7 @@ namespace WireCopy.Tests.Browser;
 /// with a representative <see cref="PreloadProgress"/>.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection("ConsoleOutput")]
 public class PreloadDetailRendererTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);
@@ -286,6 +288,238 @@ public class PreloadDetailRendererTests
         {
             System.Console.SetOut(originalOut);
         }
+    }
+
+    // ---- QA punch-list strengthening (workspace-v75w post-review) ----
+
+    [Theory]
+    [InlineData(PreloadStage.ExtractingContent)]
+    public void StageChip_Extracting_DoesNotAlsoUsePrimaryOrDimColor(PreloadStage stage)
+    {
+        var chip = PreloadDetailRenderer.BuildStageChip(stage, Palette);
+        chip.Should().NotBeNull();
+        // Strict colour ownership: extracting uses ONLY AccentFg, not PrimaryText
+        // or DimFg. A regression that double-set the colour would otherwise
+        // sneak through the inclusive Contains() check.
+        chip!.Value.Styled.Should().NotContain(Palette.GetDimFg().AnsiFg,
+            "extracting must not be styled with the dim/caching colour");
+    }
+
+    [Theory]
+    [InlineData(PreloadStage.PersistingCache)]
+    public void StageChip_Caching_DoesNotAlsoUseAccentColor(PreloadStage stage)
+    {
+        var chip = PreloadDetailRenderer.BuildStageChip(stage, Palette);
+        chip.Should().NotBeNull();
+        chip!.Value.Styled.Should().NotContain(Palette.GetAccentFg().AnsiFg,
+            "caching must not be styled with the accent/extracting colour");
+    }
+
+    [Theory]
+    [InlineData(ThemeName.Phosphor)]
+    [InlineData(ThemeName.Amber)]
+    [InlineData(ThemeName.Dracula)]
+    [InlineData(ThemeName.Light)]
+    public void StageChip_Extracting_UsesAccentFg_InAllThemes(ThemeName theme)
+    {
+        var palette = BuiltInThemes.Get(theme);
+        var chip = PreloadDetailRenderer.BuildStageChip(PreloadStage.ExtractingContent, palette);
+        chip.Should().NotBeNull();
+        chip!.Value.Styled.Should().Contain(palette.GetAccentFg().AnsiFg,
+            "extracting always reads from the theme's AccentFg, not Phosphor's specifically");
+    }
+
+    [Theory]
+    [InlineData(ThemeName.Phosphor)]
+    [InlineData(ThemeName.Amber)]
+    [InlineData(ThemeName.Dracula)]
+    [InlineData(ThemeName.Light)]
+    public void StageChip_Caching_UsesDimFg_InAllThemes(ThemeName theme)
+    {
+        var palette = BuiltInThemes.Get(theme);
+        var chip = PreloadDetailRenderer.BuildStageChip(PreloadStage.PersistingCache, palette);
+        chip.Should().NotBeNull();
+        chip!.Value.Styled.Should().Contain(palette.GetDimFg().AnsiFg,
+            "caching always reads from the theme's DimFg, not Phosphor's specifically");
+    }
+
+    [Theory]
+    [InlineData(80)]
+    [InlineData(100)]
+    [InlineData(120)]
+    [InlineData(140)]
+    public void Render_FullOutput_FitsWithinTerminalWidth(int terminalWidth)
+    {
+        // The renderer writes chrome rows via `helpers.WriteLine`. Each logical
+        // row IS a separate write — the rows boundary in the captured stream is
+        // a `╭` (top border) or `│` (vertical border) or `╰`
+        // (bottom border). We use that to slice the concatenated output and
+        // assert each row stays inside the terminal width.
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var renderer = new PreloadDetailRenderer(helpers, themeProvider);
+
+        var captured = CaptureRender(renderer, CreateRepresentativeProgress(), terminalWidth, terminalHeight: 30);
+        var ansiStripper = new Regex("\x1b\\[[0-9;]*[A-Za-z]");
+        var plain = ansiStripper.Replace(captured, string.Empty).Replace("\0", string.Empty);
+
+        // Each panel row starts with leftPad spaces + a border char. Split on
+        // the runs that begin with the left-margin + border-glyph pattern.
+        // The simplest robust slice: find each row by matching the box border
+        // chars (╭ / │ / ╰) — every row begins with leftPad spaces then exactly
+        // one of those chars.
+        var rowStartRegex = new Regex(@"(?=\s*[╭│╰])");
+        var rows = rowStartRegex.Split(plain).Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+        rows.Should().NotBeEmpty();
+
+        foreach (var row in rows)
+        {
+            var width = RenderHelpers.GetDisplayWidth(row.TrimEnd());
+            width.Should().BeLessThanOrEqualTo(terminalWidth,
+                $"a single panel row (chrome included) must not exceed the terminal width at {terminalWidth}; row was: '{row}'");
+        }
+    }
+
+    [Theory]
+    [InlineData(20, 24)]   // too narrow
+    [InlineData(50, 24)]   // exactly under threshold
+    [InlineData(80, 5)]    // too short
+    public void Render_TinyTerminalWithProgress_SuppressesOverlay(int terminalWidth, int terminalHeight)
+    {
+        var helpers = new RenderHelpers { TerminalHeight = terminalHeight };
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var renderer = new PreloadDetailRenderer(helpers, themeProvider);
+
+        var captured = CaptureRender(renderer, CreateRepresentativeProgress(), terminalWidth, terminalHeight);
+        captured.Should().BeEmpty(
+            "below the minimum terminal size the overlay suppresses itself rather than overflowing into wrap junk");
+    }
+
+    [Fact]
+    public void Render_AtMinimumTerminalWidth_DrawsOverlay()
+    {
+        var helpers = new RenderHelpers { TerminalHeight = 30 };
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var renderer = new PreloadDetailRenderer(helpers, themeProvider);
+
+        // Just at the threshold the overlay must still draw.
+        var captured = CaptureRender(renderer, CreateRepresentativeProgress(), PreloadDetailRenderer.MinTerminalWidthForOverlay, terminalHeight: 30);
+        captured.Should().NotBeEmpty();
+        captured.Should().Contain("PREFETCH");
+    }
+
+    private static string CaptureRender(PreloadDetailRenderer renderer, PreloadProgress? progress, int terminalWidth, int terminalHeight)
+    {
+        var originalOut = System.Console.Out;
+        using var sw = new System.IO.StringWriter();
+        System.Console.SetOut(sw);
+        try
+        {
+            renderer.Render(progress, terminalWidth, terminalHeight);
+        }
+        finally
+        {
+            System.Console.SetOut(originalOut);
+        }
+
+        return sw.ToString();
+    }
+
+    // ---- Behavioural test: TerminalPageRenderer hides the overlay by default ----
+
+    [Fact]
+    public void TerminalPageRenderer_RenderHierarchical_WithDefaultOptions_DoesNotShowPrefetchOverlay()
+    {
+        // Even with non-null CacheProgress (the data IS available), the overlay
+        // must stay hidden unless ShowPreloadDetail is explicitly set to true.
+        // Regression catch: if someone flips the default to true tomorrow, this
+        // test fails. (QA punch-list item 4.)
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var logger = Substitute.For<Microsoft.Extensions.Logging.ILogger<WireCopy.Infrastructure.Browser.UI.TerminalPageRenderer>>();
+        var pageRenderer = new WireCopy.Infrastructure.Browser.UI.TerminalPageRenderer(themeProvider, logger);
+
+        var html = "<html><head><title>Test</title></head><body>Content</body></html>";
+        var metadata = new WireCopy.Domain.ValueObjects.Browser.PageMetadata { Title = "Test" };
+        var page = WireCopy.Domain.Entities.Browser.Page.Create("https://example.com", html, metadata);
+        var links = new List<WireCopy.Domain.ValueObjects.Browser.LinkInfo>
+        {
+            new() { Url = "https://example.com/a", DisplayText = "Link A", Type = WireCopy.Domain.Enums.Browser.LinkType.Content, ImportanceScore = 80 },
+        };
+        page.SetLinkTree(WireCopy.Domain.Entities.Browser.NavigationTree.Build(links));
+
+        var context = new WireCopy.Domain.ValueObjects.Browser.NavigationContext { ViewMode = WireCopy.Domain.Enums.Browser.ViewMode.Hierarchical };
+        var options = new RenderOptions
+        {
+            TerminalWidth = 100,
+            TerminalHeight = 30,
+            MaxContentWidth = 100,
+            CacheProgress = CreateRepresentativeProgress(),
+            // ShowPreloadDetail intentionally NOT set — defaults to false
+        };
+
+        var originalOut = System.Console.Out;
+        using var sw = new System.IO.StringWriter();
+        System.Console.SetOut(sw);
+        try
+        {
+            pageRenderer.RenderHierarchical(page, context, options);
+        }
+        finally
+        {
+            System.Console.SetOut(originalOut);
+        }
+
+        sw.ToString().Should().NotContain("PREFETCH",
+            "default options must not paint the prefetch detail overlay — toggle wiring (workspace-c8v3) owns when it appears");
+    }
+
+    [Fact]
+    public void TerminalPageRenderer_RenderHierarchical_WithShowPreloadDetailTrue_PaintsOverlay()
+    {
+        // Counterpart to the above: when the flag IS set we DO see the overlay.
+        // Pins the wired call-site rather than just the structural default.
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var logger = Substitute.For<Microsoft.Extensions.Logging.ILogger<WireCopy.Infrastructure.Browser.UI.TerminalPageRenderer>>();
+        var pageRenderer = new WireCopy.Infrastructure.Browser.UI.TerminalPageRenderer(themeProvider, logger);
+
+        var html = "<html><head><title>Test</title></head><body>Content</body></html>";
+        var metadata = new WireCopy.Domain.ValueObjects.Browser.PageMetadata { Title = "Test" };
+        var page = WireCopy.Domain.Entities.Browser.Page.Create("https://example.com", html, metadata);
+        var links = new List<WireCopy.Domain.ValueObjects.Browser.LinkInfo>
+        {
+            new() { Url = "https://example.com/a", DisplayText = "Link A", Type = WireCopy.Domain.Enums.Browser.LinkType.Content, ImportanceScore = 80 },
+        };
+        page.SetLinkTree(WireCopy.Domain.Entities.Browser.NavigationTree.Build(links));
+
+        var context = new WireCopy.Domain.ValueObjects.Browser.NavigationContext { ViewMode = WireCopy.Domain.Enums.Browser.ViewMode.Hierarchical };
+        var options = new RenderOptions
+        {
+            TerminalWidth = 100,
+            TerminalHeight = 30,
+            MaxContentWidth = 100,
+            CacheProgress = CreateRepresentativeProgress(),
+            ShowPreloadDetail = true,
+        };
+
+        var originalOut = System.Console.Out;
+        using var sw = new System.IO.StringWriter();
+        System.Console.SetOut(sw);
+        try
+        {
+            pageRenderer.RenderHierarchical(page, context, options);
+        }
+        finally
+        {
+            System.Console.SetOut(originalOut);
+        }
+
+        sw.ToString().Should().Contain("PREFETCH",
+            "the wired call-site in TerminalPageRenderer must paint the overlay when the flag is on");
     }
 
     private static PreloadProgress CreateRepresentativeProgress()

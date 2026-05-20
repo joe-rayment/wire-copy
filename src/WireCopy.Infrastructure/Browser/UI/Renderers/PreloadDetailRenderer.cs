@@ -27,11 +27,14 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal sealed class PreloadDetailRenderer
 {
+    internal const int MinPanelWidth = 50;
+    internal const int MaxPanelWidth = 120;
+    internal const int MinTerminalWidthForOverlay = MinPanelWidth + 6;
+    internal const int MinTerminalHeightForOverlay = 8;
+
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const int MaxListEntries = 10;
-    private const int MinPanelWidth = 50;
-    private const int MaxPanelWidth = 120;
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -46,11 +49,20 @@ internal sealed class PreloadDetailRenderer
     /// Renders the prefetch detail panel as a centered overlay. No-op when
     /// <paramref name="progress"/> is null — callers wire this in so the panel
     /// only appears when the user has toggled it on AND the preloader has data
-    /// to report.
+    /// to report. Also a no-op when the terminal is too small to fit the
+    /// minimum panel width (workspace-v75w QA punch-list item 3) — avoids
+    /// painting a 54-wide box into a 20-column terminal and producing wrap junk.
     /// </summary>
     public void Render(PreloadProgress? progress, int terminalWidth, int terminalHeight)
     {
         if (progress == null)
+        {
+            return;
+        }
+
+        // Need at least MinPanelWidth + 4 chrome cols + 2 outer cols of breathing room.
+        // Below that, give up rather than overflow — the caller's main view stays visible.
+        if (terminalWidth < MinTerminalWidthForOverlay || terminalHeight < MinTerminalHeightForOverlay)
         {
             return;
         }
