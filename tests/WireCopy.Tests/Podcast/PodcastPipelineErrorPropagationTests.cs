@@ -213,7 +213,7 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
 
     private void SetupAssemblySuccess()
     {
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(AssemblyResult.Successful(
                 Path.Combine(_tempDir, "out.m4b"),
                 TimeSpan.FromMinutes(5),
@@ -225,6 +225,7 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
     {
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(FeedPublishResult.Successful("https://example.com/feed.xml", 1));
     }
@@ -296,7 +297,7 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
         SetupTtsSuccess();
 
         // Assembly fails
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(AssemblyResult.Failure("FFmpeg exited with code 1"));
 
         var collection = CreateCollection(url1, url2);
@@ -319,6 +320,7 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
 
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(FeedPublishResult.Failure("GCS bucket not configured"));
 
@@ -413,11 +415,11 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
 
         using var cts = new CancellationTokenSource();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 await cts.CancelAsync();
-                callInfo.ArgAt<CancellationToken>(1).ThrowIfCancellationRequested();
+                callInfo.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
                 return AssemblyResult.Failure("unreachable");
             });
 
@@ -440,11 +442,12 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
 
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 await cts.CancelAsync();
-                callInfo.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
+                callInfo.ArgAt<CancellationToken>(3).ThrowIfCancellationRequested();
                 return FeedPublishResult.Failure("unreachable");
             });
 
@@ -549,9 +552,12 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
             Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>());
         await _audioAssembler.DidNotReceive().AssembleAsync(
-            Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>());
+            Arg.Any<AssemblyRequest>(),
+            Arg.Any<IProgress<AssemblyProgress>?>(),
+            Arg.Any<CancellationToken>());
         await _publisher.DidNotReceive().PublishFeedAsync(
             Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+            Arg.Any<IProgress<PublishProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -704,11 +710,11 @@ public class PodcastPipelineErrorPropagationTests : IDisposable
 
         using var cts = new CancellationTokenSource();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 await cts.CancelAsync();
-                callInfo.ArgAt<CancellationToken>(1).ThrowIfCancellationRequested();
+                callInfo.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
                 return AssemblyResult.Failure("unreachable");
             });
 

@@ -15,11 +15,19 @@ public interface IPodcastPublisher
     /// </summary>
     /// <param name="podcast">The podcast channel metadata.</param>
     /// <param name="episodes">The episode sources to publish.</param>
+    /// <param name="progress">
+    /// Optional sink for per-episode upload progress. Ticked after each
+    /// successful UploadAsync and, when the storage client surfaces it,
+    /// during long uploads with byte-level signal. Lets the caller show a
+    /// live "N of M episodes uploaded" line during the otherwise opaque
+    /// publish phase (workspace-74zy).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The publish result with the feed URL and episode count, or an error.</returns>
     Task<FeedPublishResult> PublishFeedAsync(
         PodcastMetadata podcast,
         IReadOnlyList<EpisodeSource> episodes,
+        IProgress<PublishProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

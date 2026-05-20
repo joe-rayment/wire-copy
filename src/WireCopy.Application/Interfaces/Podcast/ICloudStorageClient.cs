@@ -15,12 +15,19 @@ public interface ICloudStorageClient
     /// <param name="localFilePath">Path to the local file to upload.</param>
     /// <param name="objectName">The destination object name in storage.</param>
     /// <param name="contentType">The MIME content type of the file.</param>
+    /// <param name="progress">
+    /// Optional sink for byte-level upload progress. Reports cumulative bytes
+    /// sent. Lets callers show a live progress bar during multi-MB uploads
+    /// instead of going silent for minutes (workspace-74zy). Implementations
+    /// may no-op if the underlying SDK does not surface byte-level signal.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The public URL of the uploaded object.</returns>
     Task<string> UploadAsync(
         string localFilePath,
         string objectName,
         string contentType,
+        IProgress<long>? progress = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

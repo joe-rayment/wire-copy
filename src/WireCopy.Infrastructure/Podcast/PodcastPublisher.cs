@@ -45,6 +45,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
     public async Task<FeedPublishResult> PublishFeedAsync(
         PodcastMetadata podcast,
         IReadOnlyList<EpisodeSource> episodes,
+        IProgress<PublishProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(podcast);
@@ -128,14 +129,50 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                         continue;
                     }
 
+                    // workspace-74zy: feed byte-level upload progress back through
+                    // the publisher's IProgress so the orchestrator can show a
+                    // moving bar during the multi-MB upload instead of going
+                    // silent. UploadedBytesTotal stays pinned at the local file
+                    // size so the consumer can render a real percent.
+                    var localFileSize = new FileInfo(episode.LocalAudioFilePath).Length;
+                    IProgress<long>? bytesProgress = null;
+                    if (progress is not null)
+                    {
+                        var publisherProgress = progress;
+                        var currentTotal = episodes.Count;
+                        var currentUploaded = episodesUploaded;
+                        var currentTitle = episode.Title;
+                        bytesProgress = new Progress<long>(bytesSent => publisherProgress.Report(new PublishProgress
+                        {
+                            TotalEpisodes = currentTotal,
+                            UploadedEpisodes = currentUploaded,
+                            UploadedBytes = bytesSent,
+                            UploadedBytesTotal = localFileSize,
+                            Message = $"Uploading '{currentTitle}'",
+                        }));
+                    }
+
                     await _storage.UploadAsync(
                         episode.LocalAudioFilePath,
                         objectPath,
                         "audio/x-m4b",
+                        bytesProgress,
                         cancellationToken).ConfigureAwait(false);
 
                     _logger.LogInformation("Uploaded episode: {Title}", episode.Title);
                     episodesUploaded++;
+
+                    // Coarse per-episode tick — fires once on success so consumers
+                    // can update "N of M episodes uploaded" copy even when the
+                    // storage client surfaces no byte-level signal.
+                    progress?.Report(new PublishProgress
+                    {
+                        TotalEpisodes = episodes.Count,
+                        UploadedEpisodes = episodesUploaded,
+                        UploadedBytes = localFileSize,
+                        UploadedBytesTotal = localFileSize,
+                        Message = $"Uploaded '{episode.Title}'",
+                    });
                 }
 
                 var fileInfo = new FileInfo(episode.LocalAudioFilePath);

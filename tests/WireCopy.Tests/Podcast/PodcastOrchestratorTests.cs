@@ -254,7 +254,7 @@ public class PodcastOrchestratorTests : IDisposable
     private void SetupAssemblySuccess(string? outputPath = null)
     {
         var path = outputPath ?? Path.Combine(_tempDir, "output.m4b");
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(AssemblyResult.Successful(
                 path,
                 TimeSpan.FromMinutes(10),
@@ -270,6 +270,7 @@ public class PodcastOrchestratorTests : IDisposable
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(),
                 Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(FeedPublishResult.Successful(feedUrl, 1));
     }
@@ -279,6 +280,7 @@ public class PodcastOrchestratorTests : IDisposable
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(),
                 Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(FeedPublishResult.Failure(error));
     }
@@ -515,6 +517,7 @@ public class PodcastOrchestratorTests : IDisposable
 
         await _audioAssembler.Received(1).AssembleAsync(
             Arg.Is<AssemblyRequest>(r => r.Segments.Count == 1),
+            Arg.Any<IProgress<AssemblyProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -530,6 +533,7 @@ public class PodcastOrchestratorTests : IDisposable
         await _publisher.Received(1).PublishFeedAsync(
             Arg.Is<PodcastMetadata>(m => m.Title == "Test Podcast"),
             Arg.Is<IReadOnlyList<EpisodeSource>>(e => e.Count == 1),
+            Arg.Any<IProgress<PublishProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -741,7 +745,7 @@ public class PodcastOrchestratorTests : IDisposable
         SetupTtsGeneration();
         SetupTtsAudioCachePut();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(AssemblyResult.Failure("FFmpeg crashed"));
 
         var collection = CreateCollection(url);
@@ -763,7 +767,7 @@ public class PodcastOrchestratorTests : IDisposable
         SetupTtsGeneration();
         SetupTtsAudioCachePut();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(new AssemblyResult
             {
                 Success = true,
@@ -943,7 +947,7 @@ public class PodcastOrchestratorTests : IDisposable
         SetupTtsGeneration();
         SetupTtsAudioCachePut();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<CancellationToken>())
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("Disk full"));
 
         var collection = CreateCollection(url);
@@ -968,6 +972,7 @@ public class PodcastOrchestratorTests : IDisposable
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(),
                 Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
@@ -1247,6 +1252,7 @@ public class PodcastOrchestratorTests : IDisposable
             Arg.Is<AssemblyRequest>(r =>
                 r.Metadata.Title.Contains("Test Podcast") &&
                 r.Metadata.Author == "Test Author"),
+            Arg.Any<IProgress<AssemblyProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1261,6 +1267,7 @@ public class PodcastOrchestratorTests : IDisposable
 
         await _audioAssembler.Received(1).AssembleAsync(
             Arg.Is<AssemblyRequest>(r => r.OutputPath.Contains("Test Collection")),
+            Arg.Any<IProgress<AssemblyProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1284,6 +1291,7 @@ public class PodcastOrchestratorTests : IDisposable
                 m.Language == "en-us" &&
                 m.Category == "Technology"),
             Arg.Any<IReadOnlyList<EpisodeSource>>(),
+            Arg.Any<IProgress<PublishProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1300,6 +1308,7 @@ public class PodcastOrchestratorTests : IDisposable
             Arg.Any<PodcastMetadata>(),
             Arg.Is<IReadOnlyList<EpisodeSource>>(e =>
                 e.Count == 1 && e[0].Title.Contains("Test Collection")),
+            Arg.Any<IProgress<PublishProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
