@@ -3,10 +3,29 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Configuration;
 
 namespace WireCopy.Infrastructure.Browser.ScrapingStrategies;
+
+/// <summary>
+/// workspace-hapr: Reasons an AI-curated result fails to actually reorder the
+/// page. Surfaced in the strategy summary so the user can tell whether the
+/// AI added any editorial value or whether they'd be just as well off with
+/// Document Order.
+/// </summary>
+internal enum AiCuratedDegenerateReason
+{
+    /// <summary>The AI returned a non-trivial ranking that differs from doc order.</summary>
+    None,
+
+    /// <summary>StoryOrderLinkKeys is empty — every link was excluded or the AI returned nothing.</summary>
+    EmptyRanking,
+
+    /// <summary>The ranking matches the surviving document order exactly — AI ran but did not reorder.</summary>
+    MatchesDocumentOrder,
+}
 
 /// <summary>
 /// AI Curated scraping strategy. Sends the page links + screenshot to OpenAI
@@ -125,6 +144,37 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             fromCache = false;
         }
 
+        // workspace-hapr: diagnostic — emit the first 10 ranked keys so a
+        // future user report ("AI Curated didn't reorder") can be triaged
+        // from the log without re-running the model. The hash prefix is
+        // unique enough to spot order-divergence between two runs.
+        _logger.LogInformation(
+            "AiCuratedStrategy result for {Url}: {Stories} ranked stories, {Excluded} excluded, {Sections} sections, fromCache={FromCache}. First10={First10}",
+            context.PageUrl,
+            curated.StoryOrderLinkKeys.Count,
+            curated.ExcludedLinkKeys.Count,
+            curated.Sections.Count,
+            fromCache,
+            string.Join(",", curated.StoryOrderLinkKeys.Take(10)));
+
+        // workspace-hapr: surface the "AI returned no useful reordering" case
+        // so the user knows whether the curated layout is actually doing
+        // anything. Two failure shapes covered:
+        //   (a) StoryOrderLinkKeys is empty — AI excluded everything or
+        //       returned an empty ranking.
+        //   (b) StoryOrderLinkKeys matches the surviving document order
+        //       exactly — AI ran but the ranking equals doc order, which is
+        //       indistinguishable from no curation.
+        var contentLinks = context.Links.Where(l => l.Type == LinkType.Content).ToList();
+        var degenerate = DetectDegenerateRanking(curated, contentLinks);
+        if (degenerate != AiCuratedDegenerateReason.None)
+        {
+            _logger.LogWarning(
+                "AiCuratedStrategy: degenerate result for {Url} — {Reason}. User-visible layout will match document order.",
+                context.PageUrl,
+                degenerate);
+        }
+
         var tree = await _treeBuilder.BuildFromAiResultAsync(
             context.Links.ToList(), curated, cancellationToken).ConfigureAwait(false);
 
@@ -143,15 +193,90 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             StructuralSignature = $"ai-curated:{curated.StoryOrderLinkKeys.Count}",
         };
 
-        var summary = fromCache
-            ? $"AI curated · {curated.StoryOrderLinkKeys.Count} stories (cached)"
-            : $"AI curated · {curated.StoryOrderLinkKeys.Count} stories, {curated.ExcludedLinkKeys.Count} excluded";
+        var summary = BuildSummary(curated, degenerate, fromCache);
 
         return new ScrapingStrategyResult
         {
             Tree = tree,
             Config = config,
             Summary = summary,
+        };
+    }
+
+    /// <summary>
+    /// workspace-hapr: detects whether the AI's ranking is degenerate
+    /// (empty or matches the surviving document order). The check ignores
+    /// excluded links — we only compare ranking against the order links
+    /// would naturally appear after exclusion.
+    /// </summary>
+    internal static AiCuratedDegenerateReason DetectDegenerateRanking(
+        AiCuratedResult curated,
+        IReadOnlyList<LinkInfo> contentLinks)
+    {
+        ArgumentNullException.ThrowIfNull(curated);
+        ArgumentNullException.ThrowIfNull(contentLinks);
+
+        if (curated.StoryOrderLinkKeys.Count == 0)
+        {
+            return AiCuratedDegenerateReason.EmptyRanking;
+        }
+
+        var excluded = new HashSet<string>(curated.ExcludedLinkKeys, StringComparer.Ordinal);
+        var survivingDocOrder = contentLinks
+            .Select(l => AiCuratedResult.KeyFor(l.Url))
+            .Where(k => !excluded.Contains(k))
+            .ToList();
+
+        // The AI's ranking should at least produce a different sequence than
+        // the surviving document order. If the prefix overlap is total, no
+        // reordering happened.
+        if (survivingDocOrder.Count == 0)
+        {
+            // Nothing left after exclusion — degenerate by construction.
+            return AiCuratedDegenerateReason.EmptyRanking;
+        }
+
+        var compareLength = Math.Min(survivingDocOrder.Count, curated.StoryOrderLinkKeys.Count);
+        if (compareLength != survivingDocOrder.Count
+            || curated.StoryOrderLinkKeys.Count != survivingDocOrder.Count)
+        {
+            // The AI dropped or added links beyond the surviving set — that's
+            // a non-trivial change, not a degenerate ranking.
+            return AiCuratedDegenerateReason.None;
+        }
+
+        for (var i = 0; i < compareLength; i++)
+        {
+            if (!string.Equals(survivingDocOrder[i], curated.StoryOrderLinkKeys[i], StringComparison.Ordinal))
+            {
+                return AiCuratedDegenerateReason.None;
+            }
+        }
+
+        return AiCuratedDegenerateReason.MatchesDocumentOrder;
+    }
+
+    /// <summary>
+    /// Builds the user-visible Summary line for the strategy. Surfaces the
+    /// degenerate-result reason so the chooser can warn the user that the
+    /// AI didn't actually reorder (workspace-hapr).
+    /// </summary>
+    internal static string BuildSummary(AiCuratedResult curated, AiCuratedDegenerateReason degenerate, bool fromCache)
+    {
+        ArgumentNullException.ThrowIfNull(curated);
+
+        var cachedSuffix = fromCache ? " (cached)" : string.Empty;
+        var statsBody = fromCache
+            ? $"{curated.StoryOrderLinkKeys.Count} stories"
+            : $"{curated.StoryOrderLinkKeys.Count} stories, {curated.ExcludedLinkKeys.Count} excluded";
+
+        return degenerate switch
+        {
+            AiCuratedDegenerateReason.EmptyRanking =>
+                $"AI curated · empty result — AI returned no stories{cachedSuffix}",
+            AiCuratedDegenerateReason.MatchesDocumentOrder =>
+                $"AI curated · {statsBody} (no reordering — matches document order){cachedSuffix}",
+            _ => $"AI curated · {statsBody}{cachedSuffix}",
         };
     }
 
