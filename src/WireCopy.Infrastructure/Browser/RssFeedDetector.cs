@@ -141,6 +141,11 @@ public class RssFeedDetector : IRssFeedDetector
     /// <inheritdoc />
     public async Task<List<FeedInfo>> ProbeWellKnownFeedsAsync(string pageUrl, CancellationToken cancellationToken = default)
     {
+        // workspace-in59: probe all well-known paths IN PARALLEL with a tight
+        // per-request timeout. The old serial loop with the default HttpClient
+        // timeout could take ~3 minutes on sites without RSS feeds (e.g.
+        // macleans.ca) — the user observed exactly that. Each probe now has a
+        // 3-second cap and the loop bails as soon as any probe finds a feed.
         var feeds = new List<FeedInfo>();
 
         Uri baseUri;
@@ -156,51 +161,71 @@ public class RssFeedDetector : IRssFeedDetector
         var origin = $"{baseUri.Scheme}://{baseUri.Host}";
         string[] probePaths = ["/feed/", "/feed", "/rss", "/feed.xml", "/rss.xml", "/atom.xml", "/feed/rss/"];
 
-        foreach (var path in probePaths)
+        // Overall budget — caps the cost of probing many paths in worst case.
+        using var allProbesCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        allProbesCts.CancelAfter(TimeSpan.FromSeconds(6));
+
+        async Task<FeedInfo?> ProbeSingleAsync(string path)
         {
             var feedUrl = origin + path;
+            using var perRequestCts = CancellationTokenSource.CreateLinkedTokenSource(allProbesCts.Token);
+            perRequestCts.CancelAfter(TimeSpan.FromSeconds(3));
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Head, feedUrl);
                 request.Headers.Add("User-Agent", "Mozilla/5.0 (compatible; WireCopy/1.0)");
 
                 using var response = await _httpClient.SendAsync(
-                    request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    perRequestCts.Token).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    continue;
+                    return null;
                 }
 
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                if (contentType.Contains("xml", StringComparison.OrdinalIgnoreCase) ||
-                    contentType.Contains("rss", StringComparison.OrdinalIgnoreCase) ||
-                    contentType.Contains("atom", StringComparison.OrdinalIgnoreCase))
+                if (!contentType.Contains("xml", StringComparison.OrdinalIgnoreCase) &&
+                    !contentType.Contains("rss", StringComparison.OrdinalIgnoreCase) &&
+                    !contentType.Contains("atom", StringComparison.OrdinalIgnoreCase))
                 {
-                    var feedType = contentType.Contains("atom", StringComparison.OrdinalIgnoreCase)
-                        ? FeedType.Atom
-                        : FeedType.Rss;
-
-                    feeds.Add(new FeedInfo
-                    {
-                        Url = feedUrl,
-                        Title = null,
-                        Type = feedType,
-                    });
-
-                    _logger.LogInformation(
-                        "Discovered feed via well-known URL probe: {FeedUrl} ({ContentType})",
-                        feedUrl,
-                        contentType);
-
-                    // Found one — that's enough, don't probe further
-                    break;
+                    return null;
                 }
+
+                var feedType = contentType.Contains("atom", StringComparison.OrdinalIgnoreCase)
+                    ? FeedType.Atom
+                    : FeedType.Rss;
+                return new FeedInfo
+                {
+                    Url = feedUrl,
+                    Title = null,
+                    Type = feedType,
+                };
             }
             catch
             {
-                // Probe failed — try next path
+                return null;
             }
+        }
+
+        var probeTasks = probePaths.Select(ProbeSingleAsync).ToList();
+        try
+        {
+            var results = await Task.WhenAll(probeTasks).ConfigureAwait(false);
+            var firstHit = results.FirstOrDefault(r => r != null);
+            if (firstHit != null)
+            {
+                feeds.Add(firstHit);
+                _logger.LogInformation(
+                    "Discovered feed via well-known URL probe: {FeedUrl} ({Type})",
+                    firstHit.Url,
+                    firstHit.Type);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Feed probing cancelled or timed out for {PageUrl}", pageUrl);
         }
 
         return feeds;

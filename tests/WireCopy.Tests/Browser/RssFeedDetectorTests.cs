@@ -262,6 +262,123 @@ public class RssFeedDetectorTests
 
     #endregion
 
+    #region ProbeWellKnownFeedsAsync (workspace-in59)
+
+    [Fact]
+    public async Task ProbeWellKnownFeeds_AllPathsHang_BoundsTotalWallClockTime()
+    {
+        // workspace-in59: pre-fix the probe ran 7 paths SERIALLY against the
+        // default HttpClient timeout. On a site that swallows all probes (e.g.
+        // macleans.ca returning 4xx but slowly) the chooser stalled for ~3
+        // minutes. After the fix every probe runs in parallel with a 3s
+        // per-request cap and a 6s overall cap. Asserted by wall clock.
+        var handler = new HangingHttpMessageHandler(System.TimeSpan.FromSeconds(30));
+        var httpClient = new HttpClient(handler);
+        var detector = new RssFeedDetector(
+            Substitute.For<ILogger<RssFeedDetector>>(),
+            httpClient);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var feeds = await detector.ProbeWellKnownFeedsAsync("https://hang.example/");
+        sw.Stop();
+
+        feeds.Should().BeEmpty("no feed should be detected when every probe hangs");
+        sw.Elapsed.Should().BeLessThan(System.TimeSpan.FromSeconds(8),
+            $"probe must give up well under the 30s hang each path would take serially — " +
+            $"observed {sw.Elapsed.TotalSeconds:0.0}s. " +
+            "The 6s overall budget gives a comfortable ceiling under the assertion threshold.");
+    }
+
+    [Fact]
+    public async Task ProbeWellKnownFeeds_FastFeedHitOnFirstPath_ShortCircuits()
+    {
+        // When a probe responds with a real feed content type, the result
+        // contains exactly one FeedInfo regardless of which path responded.
+        var handler = new SelectiveProbeHandler(matchPath: "/feed/", "application/rss+xml");
+        var httpClient = new HttpClient(handler);
+        var detector = new RssFeedDetector(
+            Substitute.For<ILogger<RssFeedDetector>>(),
+            httpClient);
+
+        var feeds = await detector.ProbeWellKnownFeedsAsync("https://example.com/");
+
+        feeds.Should().HaveCount(1);
+        feeds[0].Url.Should().Be("https://example.com/feed/");
+        feeds[0].Type.Should().Be(FeedType.Rss);
+    }
+
+    [Fact]
+    public async Task ProbeWellKnownFeeds_AtomFeed_ReturnsAtomType()
+    {
+        var handler = new SelectiveProbeHandler(matchPath: "/atom.xml", "application/atom+xml");
+        var httpClient = new HttpClient(handler);
+        var detector = new RssFeedDetector(
+            Substitute.For<ILogger<RssFeedDetector>>(),
+            httpClient);
+
+        var feeds = await detector.ProbeWellKnownFeedsAsync("https://example.com/");
+
+        feeds.Should().HaveCount(1);
+        feeds[0].Type.Should().Be(FeedType.Atom);
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Test helper: simulates a domain where every probe takes a long time
+    /// (used to verify the parallel + bounded-timeout behaviour added by
+    /// workspace-in59).
+    /// </summary>
+    private sealed class HangingHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly TimeSpan _delay;
+
+        public HangingHttpMessageHandler(TimeSpan delay)
+        {
+            _delay = delay;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(_delay, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        }
+    }
+
+    /// <summary>
+    /// Test helper: returns a feed-content-type response for one specific path
+    /// and 404 for everything else.
+    /// </summary>
+    private sealed class SelectiveProbeHandler : HttpMessageHandler
+    {
+        private readonly string _matchPath;
+        private readonly string _contentType;
+
+        public SelectiveProbeHandler(string matchPath, string contentType)
+        {
+            _matchPath = matchPath;
+            _contentType = contentType;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath == _matchPath)
+            {
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                response.Content = new ByteArrayContent(System.Array.Empty<byte>());
+                response.Content.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue(_contentType);
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+        }
+    }
+
     /// <summary>
     /// Test helper to mock HTTP responses for feed parsing tests.
     /// </summary>
