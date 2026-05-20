@@ -551,6 +551,62 @@ public class ProgressScreenAggregatorRenderTests
             because: $"halfway ETA ({halfwayEta.Value.TotalSeconds:F1}s) should be within ±20% of velocity-projected target ({expectedEtaSeconds:F1}s)");
     }
 
+    /// <summary>
+    /// workspace-q4yd: the parent bead's acceptance asks for ±20% ETA
+    /// accuracy on a 12-article run at half-way. The earlier 24-article test
+    /// pins the same math but the bead specifically names 12 articles —
+    /// this test makes the bead's acceptance directly verifiable.
+    /// </summary>
+    [Fact]
+    public void Aggregator_TwelveArticleRun_EtaAtHalfwayWithinTwentyPercentOfTrueRemaining()
+    {
+        var start = new DateTime(2026, 5, 20, 12, 0, 0, DateTimeKind.Utc);
+        var now = start;
+        var aggregator = new PodcastProgressAggregator(() => now);
+
+        const int Total = 12;
+        const double SecondsPerArticle = 6.0;
+
+        TimeSpan? halfwayEta = null;
+        TimeSpan halfwayElapsed = TimeSpan.Zero;
+
+        for (var i = 1; i <= Total; i++)
+        {
+            now += TimeSpan.FromSeconds(SecondsPerArticle);
+            aggregator.Observe(new PodcastProgress
+            {
+                Phase = PodcastPhase.GeneratingAudio,
+                CurrentArticle = i,
+                TotalArticles = Total,
+                CurrentArticleChunkIndex = 1,
+                CurrentArticleChunkTotal = 1,
+                CurrentArticleChunkPercent = 100,
+            });
+
+            if (i == Total / 2)
+            {
+                halfwayEta = aggregator.Eta;
+                halfwayElapsed = now - start;
+            }
+        }
+
+        halfwayEta.Should().NotBeNull("half-way of a 12-article run exceeds the 10s minimum velocity history");
+
+        // Velocity-projected target: at half-way, global percent ≈ 0.05 + 0.75 * 0.5 = 0.425,
+        // velocity ≈ 0.425 / halfwayElapsed.TotalSeconds. The remaining 0.575
+        // projects to roughly halfwayElapsed * (0.575/0.425) ≈ 1.35×halfwayElapsed.
+        var globalAtHalfway = 0.05 + (0.75 * (Total / 2.0 / Total));
+        var remaining = 1.0 - globalAtHalfway;
+        var velocityPerSecond = globalAtHalfway / halfwayElapsed.TotalSeconds;
+        var expectedEtaSeconds = remaining / velocityPerSecond;
+
+        var error = Math.Abs(halfwayEta!.Value.TotalSeconds - expectedEtaSeconds);
+        var tolerance = expectedEtaSeconds * 0.20;
+        error.Should().BeLessThanOrEqualTo(
+            tolerance,
+            because: $"12-article ETA at half-way ({halfwayEta.Value.TotalSeconds:F1}s) must be within ±20% of the velocity-projected target ({expectedEtaSeconds:F1}s) — the workspace-q4yd acceptance");
+    }
+
     [Fact]
     public void Aggregator_AfterTenSecondsOfWork_ProducesEta()
     {
