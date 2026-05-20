@@ -1206,12 +1206,46 @@ internal static class PodcastProgressScreens
         int barWidth,
         int labelWidth)
     {
+        // workspace-lxga: prefix each sub-bar with a state glyph so the user
+        // can name the current stage at a glance:
+        //   ✓ complete (fraction >= 0.999)
+        //   ⟳ in-flight (any partial fraction)
+        //   · pending (fraction == 0, not yet started)
+        var (glyph, glyphColor) = ClassifyPhaseState(fraction, p);
+
         var filledColor = fraction >= 0.999 ? p.GetSuccessFg().AnsiFg : p.GetMutedFg().AnsiFg;
         var bar = Indicators.RenderEighthBlockBar(
             filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
-        var paddedLabel = label.PadRight(labelWidth);
+
+        // Leave room for the glyph + space at the front of the label column so
+        // the bars stay column-aligned.
+        var glyphCellWidth = 2;
+        var paddedLabel = label.PadRight(Math.Max(1, labelWidth - glyphCellWidth));
         helpers.WriteLine(
-            $"  {p.SecondaryText.AnsiFg}{paddedLabel}{Reset} {bar}  {p.SecondaryText.AnsiFg}{detail}{Reset}");
+            $"  {glyphColor}{glyph}{Reset} {p.SecondaryText.AnsiFg}{paddedLabel}{Reset} {bar}  {p.SecondaryText.AnsiFg}{detail}{Reset}");
+    }
+
+    /// <summary>
+    /// workspace-lxga: maps a phase fraction to the (glyph, color) used as
+    /// a state indicator on the four sub-bars. Pulled out so unit tests can
+    /// pin the boundary behaviour (0.0 / 0.001 / 0.999 / 1.0) without
+    /// re-deriving the threshold logic from the renderer.
+    /// </summary>
+    internal static (string Glyph, string Color) ClassifyPhaseState(double fraction, ThemePalette p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+
+        if (fraction >= 0.999)
+        {
+            return ("✓", p.GetSuccessFg().AnsiFg);
+        }
+
+        if (fraction > 0.0)
+        {
+            return ("⟳", p.GetWarningFg().AnsiFg);
+        }
+
+        return ("·", p.SecondaryText.AnsiFg);
     }
 
     internal static string FormatDuration(TimeSpan duration)
