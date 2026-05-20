@@ -86,6 +86,41 @@ internal static class PodcastConfirmationScreens
     /// unified <c>:config</c> Setup screen share row code (workspace-fn1u).
     /// </summary>
     /// <returns>(mainLine, subLine) — subLine is null when neither warning nor helper text was provided.</returns>
+    /// <summary>
+    /// workspace-g3uu: cancels a pending <see cref="WireCopy.Application.Interfaces.Browser.IInputHandler.WaitForInputAsync"/>
+    /// call and awaits it so the underlying <c>TerminalInputHandler._pendingKeyTask</c>
+    /// observes the cancellation before control returns to the caller. Prevents an
+    /// orphaned WaitForInputAsync from dequeueing the next screen's keys behind
+    /// our back. No-op when <paramref name="pendingKeyTask"/> is null.
+    /// </summary>
+    internal static async Task DrainPendingKeyAsync(
+        Task<NavigationCommand>? pendingKeyTask,
+        CancellationTokenSource keyCts)
+    {
+        ArgumentNullException.ThrowIfNull(keyCts);
+
+        if (pendingKeyTask is null)
+        {
+            return;
+        }
+
+        await keyCts.CancelAsync().ConfigureAwait(false);
+
+        try
+        {
+            await pendingKeyTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected — we just cancelled the source. Swallow.
+        }
+        catch (Exception)
+        {
+            // Defensive: any other exception in the orphan is irrelevant to the
+            // caller; the screen is exiting anyway. Don't propagate.
+        }
+    }
+
     internal static (string MainLine, string? SubLine) BuildConfirmationRow(
         ThemePalette palette,
         int width,
@@ -213,6 +248,14 @@ internal static class PodcastConfirmationScreens
         // even if the user skips the UI. The orchestrator stores the running task
         // and GeneratePodcastAsync will await it to reuse extracted articles.
         var analysisTask = orchestrator.AnalyzeCacheStatusAsync(collection, progress, ct);
+
+        // workspace-g3uu: pendingKeyTask must be cancellable independently of the
+        // parent ct so we can ABORT the orphaned WaitForInputAsync when
+        // analysisTask wins the WhenAny. Otherwise the orphan stays subscribed to
+        // TerminalInputHandler._keyChannel, dequeues the first key the next
+        // screen (cost-gate modal) is waiting for, and silently consumes it —
+        // the modal then blocks indefinitely on the channel.
+        using var keyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task<NavigationCommand>? pendingKeyTask = null;
 
         try
@@ -274,7 +317,7 @@ internal static class PodcastConfirmationScreens
                     $"  {palette.GetAccentFg().AnsiFg}Esc{Reset}{palette.SecondaryText.AnsiFg}:skip{Reset}");
                 helpers.ClearRemainingLines();
 
-                pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+                pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(keyCts.Token);
                 var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 Task completed;
                 try
@@ -352,6 +395,18 @@ internal static class PodcastConfirmationScreens
             ctx.Logger.LogWarning(ex, "Cache analysis screen failed");
             return null;
         }
+        finally
+        {
+            // workspace-g3uu: drain the orphaned WaitForInputAsync on EVERY
+            // exit path — happy break, GoBack/Quit return, catch handlers,
+            // even cancellation rethrow. `using var keyCts` only releases the
+            // CTS resource; it does NOT cancel pending registrations. Without
+            // this finally, an exception mid-loop would leak the orphan to
+            // the next screen's WaitForInputAsync — the exact bug being
+            // fixed. CancellationTokenSource cannot be cancelled after
+            // dispose, so we cancel BEFORE the `using` runs Dispose.
+            await DrainPendingKeyAsync(pendingKeyTask, keyCts).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -377,86 +432,103 @@ internal static class PodcastConfirmationScreens
 
         var animFrame = 0;
         var elapsed = 0;
+
+        // workspace-g3uu: see ShowCacheAnalysisScreenAsync for the same pattern.
+        // The orphaned WaitForInputAsync would otherwise dequeue the next
+        // screen's keys (e.g. the cost-gate modal's Enter/Esc). The drain MUST
+        // happen in a `finally` so cancellation / mid-loop exceptions also
+        // clean up the orphan — `using var keyCts` doesn't cancel on dispose.
+        using var keyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task<NavigationCommand>? pendingKeyTask = null;
 
-        while (!ct.IsCancellationRequested && elapsed < maxWaitMs)
+        try
         {
-            var progress = CollectionCacheHelper.GetProgress(collection, ctx.PageCache, ctx.PreloadService);
-
-            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            helpers.Clear();
-
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            PodcastCommandHandler.RenderBox(helpers, p, "Caching Articles", width);
-            helpers.WriteLine();
-
-            // Progress summary
-            var dots = PodcastCommandHandler.AnimationFrames[animFrame % PodcastCommandHandler.AnimationFrames.Length];
-            helpers.WriteLine(
-                $"  {p.PrimaryText.AnsiFg}{progress.CachedCount}{Reset}" +
-                $"{p.SecondaryText.AnsiFg} of {progress.Total} cached{dots}{Reset}");
-            helpers.WriteLine();
-
-            // Per-article status indicators
-            var maxTitleLen = Math.Max(10, width - 10);
-            foreach (var article in progress.Articles)
+            while (!ct.IsCancellationRequested && elapsed < maxWaitMs)
             {
-                var (indicator, color) = article.State switch
+                var progress = CollectionCacheHelper.GetProgress(collection, ctx.PageCache, ctx.PreloadService);
+
+                var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+                var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+                helpers.Clear();
+
+                var width = Math.Max(20, options.TerminalWidth - 2);
+                PodcastCommandHandler.RenderBox(helpers, p, "Caching Articles", width);
+                helpers.WriteLine();
+
+                // Progress summary
+                var dots = PodcastCommandHandler.AnimationFrames[animFrame % PodcastCommandHandler.AnimationFrames.Length];
+                helpers.WriteLine(
+                    $"  {p.PrimaryText.AnsiFg}{progress.CachedCount}{Reset}" +
+                    $"{p.SecondaryText.AnsiFg} of {progress.Total} cached{dots}{Reset}");
+                helpers.WriteLine();
+
+                // Per-article status indicators
+                var maxTitleLen = Math.Max(10, width - 10);
+                foreach (var article in progress.Articles)
                 {
-                    ArticleCacheState.Cached => ("✓", p.GetSuccessFg()),
-                    ArticleCacheState.Caching => ("⟳", p.SecondaryText),
-                    ArticleCacheState.NeedsBrowser => ("▸", p.ErrorFg),
-                    _ => ("·", p.SecondaryText)
-                };
+                    var (indicator, color) = article.State switch
+                    {
+                        ArticleCacheState.Cached => ("✓", p.GetSuccessFg()),
+                        ArticleCacheState.Caching => ("⟳", p.SecondaryText),
+                        ArticleCacheState.NeedsBrowser => ("▸", p.ErrorFg),
+                        _ => ("·", p.SecondaryText)
+                    };
 
-                var title = RenderHelpers.TruncateText(article.Title, maxTitleLen);
-                helpers.WriteLine($"    {color.AnsiFg}{indicator}{Reset} {p.PrimaryText.AnsiFg}{title}{Reset}");
-            }
-
-            // Key hints
-            helpers.WriteLine();
-            helpers.WriteLine(
-                $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:skip waiting{Reset}");
-
-            helpers.ClearRemainingLines();
-
-            // Check preload service's progress (authoritative for needs-browser tracking)
-            preloadProgress = ctx.PreloadService.GetProgress();
-            if (preloadProgress.IsComplete)
-            {
-                break;
-            }
-
-            // Poll: wait for key press or tick
-            pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
-            using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var tickTask = Task.Delay(pollIntervalMs, tickCts.Token);
-            var completed = await Task.WhenAny(pendingKeyTask, tickTask).ConfigureAwait(false);
-            await tickCts.CancelAsync().ConfigureAwait(false);
-
-            if (completed == pendingKeyTask)
-            {
-                var command = await pendingKeyTask.ConfigureAwait(false);
-                pendingKeyTask = null;
-
-                if (command.Type == CommandType.TerminalResized)
-                {
-                    options = ctx.GetCurrentRenderOptions();
-                    continue;
+                    var title = RenderHelpers.TruncateText(article.Title, maxTitleLen);
+                    helpers.WriteLine($"    {color.AnsiFg}{indicator}{Reset} {p.PrimaryText.AnsiFg}{title}{Reset}");
                 }
 
-                if (command.Type is CommandType.GoBack or CommandType.Quit)
+                // Key hints
+                helpers.WriteLine();
+                helpers.WriteLine(
+                    $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:skip waiting{Reset}");
+
+                helpers.ClearRemainingLines();
+
+                // Check preload service's progress (authoritative for needs-browser tracking)
+                preloadProgress = ctx.PreloadService.GetProgress();
+                if (preloadProgress.IsComplete)
                 {
                     break;
                 }
+
+                // Poll: wait for key press or tick
+                pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(keyCts.Token);
+                using var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var tickTask = Task.Delay(pollIntervalMs, tickCts.Token);
+                var completed = await Task.WhenAny(pendingKeyTask, tickTask).ConfigureAwait(false);
+                await tickCts.CancelAsync().ConfigureAwait(false);
+
+                if (completed == pendingKeyTask)
+                {
+                    var command = await pendingKeyTask.ConfigureAwait(false);
+                    pendingKeyTask = null;
+
+                    if (command.Type == CommandType.TerminalResized)
+                    {
+                        options = ctx.GetCurrentRenderOptions();
+                        continue;
+                    }
+
+                    if (command.Type is CommandType.GoBack or CommandType.Quit)
+                    {
+                        break;
+                    }
+                }
+
+                animFrame++;
+                elapsed += pollIntervalMs;
             }
 
-            animFrame++;
-            elapsed += pollIntervalMs;
+            return false;
         }
-
-        return false;
+        finally
+        {
+            // workspace-g3uu: drain orphan on EVERY exit path (loop end,
+            // break, cancellation throw) so the next screen's input handler
+            // isn't fighting an orphan for the channel read.
+            await DrainPendingKeyAsync(pendingKeyTask, keyCts).ConfigureAwait(false);
+        }
     }
 
     internal static async Task<bool> ShowConfirmationScreenAsync(
