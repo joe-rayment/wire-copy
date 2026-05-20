@@ -674,16 +674,31 @@ internal static class PodcastProgressScreens
         return lines;
     }
 
-    internal static async Task ShowErrorScreenAsync(
+    internal static Task ShowErrorScreenAsync(
         CommandContext ctx,
         RenderOptions options,
         string errorMessage,
         IReadOnlyList<ArticleFailure> failedArticles,
         CancellationToken ct)
     {
+        return ShowErrorScreenAsync(ctx, options, errorMessage, failedArticles, typedDetail: null, ct);
+    }
+
+    internal static async Task ShowErrorScreenAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string errorMessage,
+        IReadOnlyList<ArticleFailure> failedArticles,
+        PodcastFailureDetail? typedDetail,
+        CancellationToken ct)
+    {
         // workspace-n49i Shape D: typed (Step, Reason, Fix) tuple replaces
         // the previous heuristic-bulleted "What to try" list.
-        var classification = PodcastFailureClassifier.Classify(errorMessage, failedArticles);
+        // workspace-3a2k Phase E: prefer the typed FailureDetail when present
+        // (publish-step failures with a configured bucket carry it) so the
+        // bucket-public remediation surfaces verbatim instead of via the
+        // string-pattern heuristic.
+        var classification = PodcastFailureClassifier.Classify(typedDetail, errorMessage, failedArticles);
 
         while (!ct.IsCancellationRequested)
         {

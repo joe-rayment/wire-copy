@@ -3,6 +3,7 @@
 using FluentAssertions;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Tests;
@@ -53,6 +54,8 @@ public sealed class CompletionScreenVisualSmoke
             "Shape C headline must include the failure count");
         content.Should().Contain("OpenAI API returned 429",
             "Shape D must show the typed Reason from the classifier");
+        content.Should().Contain("allUsers:objectViewer",
+            "Shape D must surface the bucket-public IAM grant remediation when the typed detail is FeedNotReachable (workspace-3a2k)");
     }
 
     private static void DumpAllFrames(StreamWriter dump)
@@ -123,6 +126,35 @@ public sealed class CompletionScreenVisualSmoke
             dump.WriteLine($"  At step:     {d_429.Step}");
             dump.WriteLine($"  Reason:      {d_429.Reason}");
             dump.WriteLine($"  Fix:         {d_429.Fix}");
+            dump.WriteLine();
+            dump.WriteLine("  Enter:back");
+            dump.WriteLine();
+
+            // ---- Shape D via typed PodcastFailureDetail (workspace-3a2k Phase E) ----
+            // Exercises the typed-classification path the orchestrator now
+            // takes when publish fails with a configured bucket. Confirms the
+            // bucket-public IAM grant remediation lands verbatim in the
+            // Fix line — the bead's headline acceptance criterion.
+            var bucketPublicDetail = new PodcastFailureDetail(
+                Step: "Publishing",
+                FailureClass: FeedPublishFailureClass.FeedNotReachable,
+                RawMessage: "feed.xml uploaded but URL returned HTTP 403 from public internet.",
+                RemediationCopy:
+                    "feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on "
+                    + "the bucket (Cloud Console → Buckets → Permissions → Add: allUsers, role Storage "
+                    + "Object Viewer), or run `gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.");
+            var d_typed = PodcastFailureClassifier.Classify(
+                bucketPublicDetail,
+                errorMessage: bucketPublicDetail.RawMessage,
+                failedArticles: Array.Empty<ArticleFailure>());
+            dump.WriteLine("========================================");
+            dump.WriteLine($"WIDTH {width}, SHAPE D — TOTAL FAILURE (workspace-3a2k typed bucket-not-public)");
+            dump.WriteLine("========================================");
+            dump.WriteLine($"  ✗ Podcast generation failed");
+            dump.WriteLine();
+            dump.WriteLine($"  At step:     {d_typed.Step}");
+            dump.WriteLine($"  Reason:      {d_typed.Reason}");
+            dump.WriteLine($"  Fix:         {d_typed.Fix}");
             dump.WriteLine();
             dump.WriteLine("  Enter:back");
             dump.WriteLine();

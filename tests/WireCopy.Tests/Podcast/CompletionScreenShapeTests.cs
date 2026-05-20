@@ -3,6 +3,7 @@
 using FluentAssertions;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
 using WireCopy.Infrastructure.Browser.Themes;
 using Xunit;
@@ -198,6 +199,32 @@ public class CompletionScreenShapeTests
         // PodcastCommandHandler.HandleGeneratePodcast's retry loop.
         CompletionScreenAction.Retry.Should().Be(CompletionScreenAction.Retry,
             because: "Retry must exist as a result-screen action per the bead contract");
+    }
+
+    /// <summary>
+    /// workspace-3a2k Phase E: Shape D (total failure) — when a typed
+    /// <see cref="PodcastFailureDetail"/> is attached (e.g. bucket-not-public),
+    /// the classifier consumed by <c>ShowErrorScreenAsync</c> must surface its
+    /// (Step, Reason, Fix) tuple verbatim. The bucket-public IAM grant
+    /// remediation must land in the Fix line.
+    /// </summary>
+    [Fact]
+    public void ShapeD_BucketNotPublic_RendersBucketPublicRemediation()
+    {
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.FeedNotReachable,
+            RawMessage: "feed.xml uploaded but URL returned HTTP 403 from public internet.",
+            RemediationCopy:
+                "Bucket is not configured for public read. Open Cloud Console → Buckets → my-bucket → "
+                + "Permissions → grant allUsers the Storage Object Viewer role.");
+
+        var c = PodcastFailureClassifier.Classify(detail, errorMessage: detail.RawMessage, failedArticles: Array.Empty<ArticleFailure>());
+
+        c.Step.Should().Be("Publishing");
+        c.Reason.Should().Contain("403");
+        c.Fix.Should().Contain("Storage Object Viewer",
+            "Shape D's Fix line must direct the user to the Cloud-Console bucket-public IAM grant");
     }
 
     [Fact]
