@@ -128,4 +128,13 @@ public record RenderOptions
     /// zero. Populated only on launcher view; null elsewhere.
     /// </summary>
     public int? ReadingListItemCount { get; init; }
+
+    /// <summary>
+    /// When true the prefetch detail panel (workspace-v75w) is drawn as an
+    /// overlay on top of the active link-list / collection-items view. The
+    /// panel reads from <see cref="CacheProgress"/> and is a no-op when that
+    /// is null. The toggle keybind lives in a separate child task
+    /// (workspace-c8v3); this flag is the renderer-facing surface.
+    /// </summary>
+    public bool ShowPreloadDetail { get; init; }
 }

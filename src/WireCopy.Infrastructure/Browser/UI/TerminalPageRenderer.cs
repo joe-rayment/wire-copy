@@ -39,6 +39,7 @@ public class TerminalPageRenderer : IPageRenderer
     private readonly CollectionRenderer _collectionRenderer;
     private readonly LauncherRenderer _launcherRenderer;
     private readonly StatusBarRenderer _statusBarRenderer;
+    private readonly PreloadDetailRenderer _preloadDetailRenderer;
     private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
 
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
@@ -50,6 +51,7 @@ public class TerminalPageRenderer : IPageRenderer
         _collectionRenderer = new CollectionRenderer(_helpers, themeProvider);
         _launcherRenderer = new LauncherRenderer(_helpers, themeProvider);
         _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider);
+        _preloadDetailRenderer = new PreloadDetailRenderer(_helpers, themeProvider);
     }
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
@@ -83,6 +85,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
+        RenderPreloadDetailOverlay(options);
         RenderToastOverlay(context, options.TerminalWidth);
     }
 
@@ -364,6 +367,7 @@ public class TerminalPageRenderer : IPageRenderer
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel);
+        RenderPreloadDetailOverlay(options);
     }
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
@@ -397,6 +401,23 @@ public class TerminalPageRenderer : IPageRenderer
     public void EndFrame() => _helpers.EndFrame();
 
     internal void SetParagraphSpans(IReadOnlyList<LineCacheManager.ParagraphSpan>? spans) => _paragraphSpans = spans;
+
+    /// <summary>
+    /// Renders the prefetch detail overlay (workspace-v75w) when the toggle is
+    /// active and there is preload progress to show. No-op otherwise so the
+    /// existing view paints unchanged.
+    /// </summary>
+    private void RenderPreloadDetailOverlay(RenderOptions options)
+    {
+        if (!options.ShowPreloadDetail || options.CacheProgress == null)
+        {
+            return;
+        }
+
+        _helpers.Clear();
+        _preloadDetailRenderer.Render(options.CacheProgress, options.TerminalWidth, options.TerminalHeight);
+        _helpers.ClearRemainingLines();
+    }
 
     /// <summary>
     /// Renders the active toast notification as an overlay in the top-right corner.
