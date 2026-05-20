@@ -142,7 +142,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                         var currentTotal = episodes.Count;
                         var currentUploaded = episodesUploaded;
                         var currentTitle = episode.Title;
-                        bytesProgress = new Progress<long>(bytesSent => publisherProgress.Report(new PublishProgress
+                        bytesProgress = new SyncProgress<long>(bytesSent => publisherProgress.Report(new PublishProgress
                         {
                             TotalEpisodes = currentTotal,
                             UploadedEpisodes = currentUploaded,

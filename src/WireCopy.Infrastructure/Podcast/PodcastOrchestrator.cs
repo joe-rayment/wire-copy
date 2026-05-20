@@ -365,7 +365,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                         var stopwatch = audioPhaseStopwatch;
                         var cachedSnapshot = cacheAnalysis.CachedArticles;
                         var uncachedSnapshot = cacheAnalysis.UncachedArticles;
-                        ttsProgress = new Progress<TtsProgress>(p => outerProgress.Report(new PodcastProgress
+                        ttsProgress = new SyncProgress<TtsProgress>(p => outerProgress.Report(new PodcastProgress
                         {
                             Phase = PodcastPhase.GeneratingAudio,
                             CurrentArticle = articleIndex,
@@ -474,7 +474,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             {
                 var outerProgress = progress;
                 var stopwatch = assemblyPhaseStopwatch;
-                assemblyProgress = new Progress<AssemblyProgress>(p => outerProgress.Report(new PodcastProgress
+                assemblyProgress = new SyncProgress<AssemblyProgress>(p => outerProgress.Report(new PodcastProgress
                 {
                     Phase = PodcastPhase.AssemblingAudio,
                     PercentComplete = 70 + (int)(p.FfmpegPercent * 0.15),
@@ -540,7 +540,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             {
                 var outerProgress = progress;
                 var stopwatch = publishPhaseStopwatch;
-                publishProgress = new Progress<PublishProgress>(p =>
+                publishProgress = new SyncProgress<PublishProgress>(p =>
                 {
                     var per = p.TotalEpisodes > 0
                         ? (double)p.UploadedEpisodes / p.TotalEpisodes
