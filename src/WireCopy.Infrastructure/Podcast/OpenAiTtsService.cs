@@ -301,9 +301,17 @@ internal sealed class OpenAiTtsService : ITtsService
         int maxRetries)
     {
         var delaySeconds = Math.Max(1, (int)Math.Ceiling(delayMs / 1000.0));
-        var message = status == 429
-            ? $"Rate-limited by OpenAI (HTTP 429), retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})"
-            : $"OpenAI returned HTTP {status}, retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})";
+        var message = status switch
+        {
+            429 => $"Rate-limited by OpenAI (HTTP 429), retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})",
+
+            // workspace-roab: status==0 signals a network-layer transient
+            // (DNS failure, connection refused, no status code from the
+            // server). Surface it with copy distinct from the HTTP-status
+            // path so the user knows the issue is connectivity, not auth.
+            0 => $"Network issue, retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})",
+            _ => $"OpenAI returned HTTP {status}, retrying in {delaySeconds}s (attempt {attempt}/{maxRetries})",
+        };
 
         return new TtsProgress
         {
@@ -421,6 +429,40 @@ internal sealed class OpenAiTtsService : ITtsService
                     totalChunks);
                 return ChunkGenerationResult.Fail(
                     $"Bad request for chunk {chunkNumber}/{totalChunks}: {ex.Message}");
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == null)
+            {
+                // workspace-roab: transport-layer transients (DNS lookup
+                // failed, connection refused, TLS handshake error) — the
+                // SDK propagates these as a bare HttpRequestException with
+                // no StatusCode. Retry with the same backoff as 429/5xx,
+                // surface "Network issue" copy via onRetry(0) so the user
+                // sees connectivity-specific messaging instead of frozen.
+                if (attempt == _config.MaxRetries)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Chunk {ChunkNumber}/{TotalChunks} failed after {Attempts} network attempts: {Message}",
+                        chunkNumber,
+                        totalChunks,
+                        attempt + 1,
+                        ex.Message);
+                    return ChunkGenerationResult.Fail(
+                        $"Network error generating chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries: {ex.Message}");
+                }
+
+                var delayMs = _config.RetryBaseDelayMs * (int)Math.Pow(2, attempt);
+                _logger.LogWarning(
+                    "Chunk {ChunkNumber}/{TotalChunks} attempt {Attempt} failed (network): {Message}, retrying in {DelayMs}ms",
+                    chunkNumber,
+                    totalChunks,
+                    attempt + 1,
+                    ex.Message,
+                    delayMs);
+
+                onRetry?.Invoke(attempt + 1, delayMs, 0);
+
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -558,8 +600,18 @@ internal sealed class OpenAiTtsService : ITtsService
     }
 
 #pragma warning disable SA1204 // static helper grouped with the instance method that calls it
+
+    /// <summary>
+    /// workspace-roab: an HttpRequestException with a null StatusCode is a
+    /// transport-layer transient — DNS lookup failed, TCP connection
+    /// refused, TLS handshake error. These deserve the same retry-with-
+    /// backoff treatment as a 5xx, but with a different user-visible
+    /// "Network issue" message that doesn't reference an HTTP status.
+    /// </summary>
     private static bool ShouldRetryHttp(System.Net.HttpStatusCode? status) =>
-        status == System.Net.HttpStatusCode.TooManyRequests || (status.HasValue && (int)status.Value >= 500);
+        status == null
+        || status == System.Net.HttpStatusCode.TooManyRequests
+        || (status.HasValue && (int)status.Value >= 500);
 #pragma warning restore SA1204
 
     private async Task<byte[]> PostSpeechRequestAsync(

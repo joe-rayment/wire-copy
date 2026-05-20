@@ -241,6 +241,71 @@ public class ProgressScreenAggregatorRenderTests
         progress.Message.Should().Contain("attempt 1/3");
     }
 
+    /// <summary>
+    /// workspace-roab: DNS failures, connection-refused, and TLS handshake
+    /// errors arrive at OpenAiTtsService as HttpRequestException with a
+    /// null StatusCode. BuildRetryProgress receives status=0 in that case
+    /// and must render network-specific copy (no "HTTP 0", no "Rate-limited
+    /// by OpenAI" misleading text).
+    /// </summary>
+    [Fact]
+    public void BuildRetryProgress_NetworkLayer_FormatsNetworkIssueMessage()
+    {
+        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
+            attempt: 2,
+            delayMs: 3000,
+            status: 0,
+            chunkIndex: 1,
+            totalChunks: 4,
+            charactersProcessed: 0,
+            totalCharacters: 2000,
+            maxRetries: 3);
+
+        progress.IsRetrying.Should().BeTrue();
+        progress.Message.Should().Be("Network issue, retrying in 3s (attempt 2/3)",
+            "DNS/connection-refused must surface as 'Network issue' — not 'HTTP 0' garbage");
+        progress.Message.Should().NotContain("HTTP",
+            "the network-layer path must NOT mention an HTTP status code");
+        progress.Message.Should().NotContain("OpenAI",
+            "network connectivity isn't OpenAI's fault — don't blame the API");
+    }
+
+    [Fact]
+    [Trait("Collection", "ConsoleOutput")]
+    public void RenderProgressContent_NetworkRetry_RendersNetworkIssueBanner()
+    {
+        // End-to-end: feed a PodcastProgress carrying the network-issue copy
+        // and confirm the screen renders it on the retry banner. Mirrors
+        // the rate-limit test above but with the no-status-code wording.
+        var progress = new PodcastProgress
+        {
+            Phase = PodcastPhase.GeneratingAudio,
+            CurrentArticle = 2,
+            TotalArticles = 5,
+            ArticleTitle = "An article hit by a DNS blip",
+            PercentComplete = 28,
+            IsRetrying = true,
+            RetryAttempt = 1,
+            RetryMaxAttempts = 3,
+            RetryDelaySeconds = 2,
+            Message = "Network issue, retrying in 2s (attempt 1/3)",
+        };
+
+        var statuses = new PodcastCommandHandler.ArticleStatus[1]
+        {
+            new() { Title = "Article 2", State = PodcastCommandHandler.ArticleState.Processing },
+        };
+
+        var output = CaptureRender(h => PodcastProgressScreens.RenderProgressContent(
+            h, Palette, progress, animFrame: 0, statuses, terminalWidth: 100, terminalHeight: 40));
+
+        output.Should().Contain("Network issue");
+        output.Should().Contain("retrying in 2s");
+        output.Should().Contain("attempt 1/3");
+        output.Should().NotContain("Rate-limited",
+            "the network-layer banner must NOT carry rate-limit copy");
+    }
+
     [Fact]
     public void BuildRetryProgress_SubSecondDelay_RoundsUpToOneSecond()
     {
