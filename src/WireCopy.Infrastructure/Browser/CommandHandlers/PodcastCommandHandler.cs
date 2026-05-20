@@ -400,5 +400,31 @@ internal static class PodcastCommandHandler
         public ArticleState State { get; set; }
 
         public string? Method { get; set; }
+
+        /// <summary>
+        /// workspace-i3kh: wall-clock timestamp when the article entered the
+        /// Processing state. Null while Pending. Set on the Pending→Processing
+        /// transition so <see cref="Elapsed"/> can compute a meaningful
+        /// duration on completion.
+        /// </summary>
+        public DateTime? StartedAtUtc { get; set; }
+
+        /// <summary>
+        /// workspace-i3kh: wall-clock timestamp when the article reached a
+        /// terminal state (Completed / Failed / Cached). Null while
+        /// Processing. Together with <see cref="StartedAtUtc"/> drives the
+        /// "· {elapsed}" suffix on the per-article line.
+        /// </summary>
+        public DateTime? FinishedAtUtc { get; set; }
+
+        /// <summary>
+        /// workspace-i3kh: convenience accessor for the elapsed duration
+        /// rendered on the progress screen. Returns null while still
+        /// Processing or if no start timestamp was captured (defensive).
+        /// </summary>
+        public TimeSpan? Elapsed
+            => StartedAtUtc.HasValue && FinishedAtUtc.HasValue
+                ? FinishedAtUtc.Value - StartedAtUtc.Value
+                : null;
     }
 }
