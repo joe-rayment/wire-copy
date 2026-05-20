@@ -2791,4 +2791,489 @@ public class BackgroundPreloadServiceTests : IDisposable
     }
 
     #endregion
+
+    #region Stage + history (workspace-7xw0)
+
+    [Fact]
+    public void GetProgress_DefaultState_CurrentStageIsIdle()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.GetProgress().CurrentStage.Should().Be(PreloadStage.Idle);
+        service.GetProgress().RecentItems.Should().BeEmpty();
+        service.GetProgress().UpcomingUrls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SetStage_FlowsThroughGetProgress()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.SetStageForTesting(PreloadStage.Fetching);
+        service.GetProgress().CurrentStage.Should().Be(PreloadStage.Fetching);
+
+        service.SetStageForTesting(PreloadStage.ExtractingContent);
+        service.GetProgress().CurrentStage.Should().Be(PreloadStage.ExtractingContent);
+
+        service.SetStageForTesting(PreloadStage.Idle);
+        service.GetProgress().CurrentStage.Should().Be(PreloadStage.Idle);
+    }
+
+    [Fact]
+    public void AppendHistory_RingBuffer_EvictsOldestWhenAtCapacity()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Capacity is 20; push 25 entries and assert the oldest 5 are dropped.
+        for (var i = 0; i < 25; i++)
+        {
+            service.AppendHistoryForTesting(
+                $"https://example.com/{i}",
+                PreloadOutcome.Cached,
+                elapsedMs: 100 + i);
+        }
+
+        var recent = service.GetProgress().RecentItems;
+        recent.Should().HaveCount(20, "ring buffer is capped at 20 entries");
+        recent[0].Url.Should().Be("https://example.com/5",
+            "oldest 5 entries should have been evicted FIFO");
+        recent[19].Url.Should().Be("https://example.com/24",
+            "newest entry stays at the tail");
+    }
+
+    [Fact]
+    public void AppendHistory_RecordsOutcomeAndElapsedAndReason()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.AppendHistoryForTesting("https://a/", PreloadOutcome.Cached, 320);
+        service.AppendHistoryForTesting("https://b/", PreloadOutcome.Skipped, 12, "paywall");
+        service.AppendHistoryForTesting("https://c/", PreloadOutcome.Failed, 800, "timeout");
+
+        var recent = service.GetProgress().RecentItems;
+        recent[0].Outcome.Should().Be(PreloadOutcome.Cached);
+        recent[0].ElapsedMs.Should().Be(320);
+        recent[0].Reason.Should().BeNull();
+
+        recent[1].Outcome.Should().Be(PreloadOutcome.Skipped);
+        recent[1].Reason.Should().Be("paywall");
+
+        recent[2].Outcome.Should().Be(PreloadOutcome.Failed);
+        recent[2].Reason.Should().Be("timeout");
+    }
+
+    [Fact]
+    public async Task GetProgress_ReturnsStableSnapshot_NoTornReadUnderConcurrentAppend()
+    {
+        // Multi-threaded smoke: spin up 8 writer threads each appending 200
+        // entries while a reader loop calls GetProgress(). The reader's
+        // snapshot is .ToList()-copied under _historyLock, so even when the
+        // ring is mid-eviction the returned list must (a) be readable end to
+        // end without exceptions, and (b) have a count in [0, capacity].
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var stopFlag = new System.Threading.ManualResetEventSlim(false);
+        var writers = Enumerable.Range(0, 8).Select(workerId => Task.Run(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                service.AppendHistoryForTesting(
+                    $"https://writer-{workerId}/{i}",
+                    PreloadOutcome.Cached,
+                    elapsedMs: i);
+            }
+        })).ToArray();
+
+        var reader = Task.Run(() =>
+        {
+            while (!stopFlag.IsSet)
+            {
+                var snapshot = service.GetProgress().RecentItems;
+                snapshot.Count.Should().BeInRange(0, 20);
+                foreach (var entry in snapshot)
+                {
+                    entry.Url.Should().StartWith("https://writer-");
+                }
+            }
+        });
+
+        await Task.WhenAll(writers);
+        stopFlag.Set();
+        await reader.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Final read: capped at 20.
+        service.GetProgress().RecentItems.Count.Should().Be(20);
+    }
+
+    [Fact]
+    public void GetProgress_UpcomingUrls_TruncatesToFirstTen_InQueueOrder()
+    {
+        // workspace-7xw0: GetProgress must surface the next 10 queued URLs in
+        // order. Asserted directly so the renderer can rely on the snapshot.
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        // Drive the internal queue via the internal SetQueueForTesting seam
+        // added alongside the stage-tracking instrumentation. Using existing
+        // EnqueueUrls would also exercise the dedup pipeline which we don't
+        // want to test here.
+        var urls = Enumerable.Range(0, 25)
+            .Select(i => $"https://example.com/article-{i}")
+            .ToList();
+        service.SetQueueForTesting(urls);
+
+        var upcoming = service.GetProgress().UpcomingUrls;
+        upcoming.Should().HaveCount(10,
+            "GetProgress must cap UpcomingUrls at 10 — the renderer's 'up next' list shows ~10 items");
+        upcoming.Should().BeEquivalentTo(
+            urls.Take(10),
+            opts => opts.WithStrictOrdering(),
+            "UpcomingUrls must preserve queue order so the user sees what's actually next");
+    }
+
+    [Fact]
+    public void GetProgress_UpcomingUrls_FewerThanTenQueued_ReturnsAll()
+    {
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        service.SetQueueForTesting(new List<string>
+        {
+            "https://example.com/a",
+            "https://example.com/b",
+            "https://example.com/c",
+        });
+
+        service.GetProgress().UpcomingUrls.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task PreloadUrlAsync_FullFlow_StageTransitionsObservable()
+    {
+        // workspace-7xw0 AC#1: stage transitions must fire in order on a
+        // successful preload. The post-fetch stages (Detecting → PersistingCache
+        // → ExtractingContent) flip in microseconds on a happy path, so the
+        // test injects a SyncedPageCache that BLOCKS Put on a release gate.
+        // While Put is blocked, the observer captures whatever stage is
+        // current; once released, the rest of the pipeline runs.
+        var html = "<html><head><title>Article</title></head><body>" +
+                   "<article>" +
+                   string.Join("\n", Enumerable.Range(0, 40).Select(i =>
+                       $"<p>This is paragraph {i} with enough words to pass the content-length quality gate easily.</p>")) +
+                   "</article></body></html>";
+
+        var releaseHttp = new System.Threading.ManualResetEventSlim(false);
+        var releaseCachePut = new System.Threading.ManualResetEventSlim(false);
+        var handler = new SyncedHttpMessageHandler(html, releaseHttp);
+        var httpClient = new HttpClient(handler);
+        var cache = new BlockingPageCache(releaseCachePut);
+
+        using var service = new BackgroundPreloadService(
+            cache,
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var observedStages = new System.Collections.Concurrent.ConcurrentQueue<PreloadStage>();
+        var stopFlag = new System.Threading.ManualResetEventSlim(false);
+        var observer = Task.Run(async () =>
+        {
+            PreloadStage? last = null;
+            while (!stopFlag.IsSet)
+            {
+                var current = service.GetProgress().CurrentStage;
+                if (current != last)
+                {
+                    observedStages.Enqueue(current);
+                    last = current;
+                }
+
+                await Task.Delay(2).ConfigureAwait(false);
+            }
+        });
+
+        // Start preload; it will block first on HTTP, then on cache.Put.
+        var preloadTask = service.PreloadUrlAsyncForTesting("https://example.com/article-1", CancellationToken.None);
+
+        // Give the observer time to record Fetching.
+        await Task.Delay(80);
+        releaseHttp.Set();
+
+        // After HTTP releases, the pipeline runs Detecting checks then hits
+        // cache.Put which BLOCKS. Observer should catch PersistingCache.
+        await Task.Delay(80);
+        releaseCachePut.Set();
+
+        await preloadTask;
+        await Task.Delay(30); // let observer record the final Idle
+        stopFlag.Set();
+        await observer;
+
+        var stages = observedStages.ToArray();
+        stages.Should().Contain(PreloadStage.Fetching,
+            "the observer must catch the Fetching transition (HTTP is held until we release the gate)");
+        stages.Should().Contain(PreloadStage.PersistingCache,
+            "the observer must catch PersistingCache (cache.Put is held until we release the gate)");
+        stages.Should().EndWith(PreloadStage.Idle,
+            "the finally block must restore Idle when preload completes");
+
+        // Ordering: walk the list and assert no out-of-order transitions
+        // (apart from the final Idle which is the terminator).
+        var stageOrder = new Dictionary<PreloadStage, int>
+        {
+            [PreloadStage.Idle] = 0,
+            [PreloadStage.Fetching] = 1,
+            [PreloadStage.Detecting] = 2,
+            [PreloadStage.PersistingCache] = 3,
+            [PreloadStage.ExtractingContent] = 4,
+        };
+        for (var i = 1; i < stages.Length; i++)
+        {
+            if (stages[i] == PreloadStage.Idle)
+            {
+                continue;
+            }
+
+            stageOrder[stages[i]].Should().BeGreaterOrEqualTo(stageOrder[stages[i - 1]],
+                $"stages saw {stages[i - 1]} → {stages[i]} which goes backwards in the pipeline");
+        }
+    }
+
+    [Fact]
+    public async Task PreloadUrlAsync_FullFlow_AppendsHistoryWithOutcome()
+    {
+        var html = "<html><head><title>X</title></head><body>" +
+                   "<article>" +
+                   string.Join("\n", Enumerable.Range(0, 40).Select(i =>
+                       $"<p>Paragraph {i} has enough words to pass the content-quality gate easily.</p>")) +
+                   "</article></body></html>";
+        var handler = new SlowHttpMessageHandler(html, TimeSpan.FromMilliseconds(20));
+        var httpClient = new HttpClient(handler);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        await service.PreloadUrlAsyncForTesting("https://example.com/x", CancellationToken.None);
+
+        var recent = service.GetProgress().RecentItems;
+        recent.Should().HaveCount(1, "the completed preload must append exactly one history entry");
+        recent[0].Url.Should().Be("https://example.com/x");
+        recent[0].ElapsedMs.Should().BeGreaterOrEqualTo(0L,
+            "elapsed time must be recorded (StopWatch is started in the try block)");
+    }
+
+    [Fact]
+    public async Task StageInvariant_NonIdleStageImpliesIsActivelyFetching()
+    {
+        // workspace-7xw0 AC#4 (relaxed form): while the per-URL pipeline is
+        // running, CurrentStage is non-Idle AND IsActivelyFetching is true.
+        // The strict bead wording ("Fetching iff IsActivelyFetching") doesn't
+        // hold because IsActivelyFetching is also true during Detecting /
+        // ExtractingContent / PersistingCache. We assert the meaningful
+        // invariant that the panel will rely on.
+        var html = "<html><head><title>X</title></head><body>" +
+                   "<article>" +
+                   string.Join("\n", Enumerable.Range(0, 40).Select(i =>
+                       $"<p>Paragraph {i} has enough words to pass the content-quality gate easily.</p>")) +
+                   "</article></body></html>";
+        var handler = new SlowHttpMessageHandler(html, TimeSpan.FromMilliseconds(200));
+        var httpClient = new HttpClient(handler);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            httpClient,
+            new CacheConfiguration(),
+            NullLogger<BackgroundPreloadService>.Instance);
+
+        var violations = 0;
+        var stopFlag = new System.Threading.ManualResetEventSlim(false);
+        var observer = Task.Run(async () =>
+        {
+            while (!stopFlag.IsSet)
+            {
+                var progress = service.GetProgress();
+                if (progress.CurrentStage != PreloadStage.Idle && !progress.IsActivelyFetching)
+                {
+                    Interlocked.Increment(ref violations);
+                }
+
+                await Task.Delay(5).ConfigureAwait(false);
+            }
+        });
+
+        await service.PreloadUrlAsyncForTesting("https://example.com/x", CancellationToken.None);
+        await Task.Delay(30);
+        stopFlag.Set();
+        await observer;
+
+        violations.Should().Be(0,
+            "while CurrentStage != Idle, IsActivelyFetching must be true; the panel " +
+            "depends on this so the 'now' card never shows a stage with no surrounding activity indicator");
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Test helper: HttpMessageHandler that responds after a fixed delay so
+    /// the stage observer in <c>PreloadUrlAsync_FullFlow_StageTransitionsObservable</c>
+    /// has time to record the Fetching → Detecting transition. Used by the
+    /// non-synchronization-sensitive tests where rough timing is enough.
+    /// </summary>
+    private sealed class SlowHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly string _html;
+        private readonly TimeSpan _delay;
+
+        public SlowHttpMessageHandler(string html, TimeSpan delay)
+        {
+            _html = html;
+            _delay = delay;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(_delay, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(_html, System.Text.Encoding.UTF8, "text/html"),
+                RequestMessage = request,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Test helper: IPageCache that BLOCKS on <see cref="Put"/> until a
+    /// release ManualResetEventSlim is set. Used by the stage-transition
+    /// observation test so the observer is guaranteed a window to record
+    /// the PersistingCache stage.
+    /// </summary>
+    private sealed class BlockingPageCache : IPageCache
+    {
+        private readonly System.Threading.ManualResetEventSlim _release;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, WireCopy.Application.DTOs.Browser.PageLoadResult> _store = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, WireCopy.Application.DTOs.Browser.PageBuildCache> _buildStore = new();
+
+        public BlockingPageCache(System.Threading.ManualResetEventSlim release)
+        {
+            _release = release;
+        }
+
+        public WireCopy.Application.DTOs.Browser.PageLoadResult? TryGet(string url) =>
+            _store.TryGetValue(url, out var r) ? r : null;
+
+        public void Put(string requestUrl, WireCopy.Application.DTOs.Browser.PageLoadResult result)
+        {
+            _release.Wait();
+            _store[requestUrl] = result;
+        }
+
+        public bool Remove(string url) => _store.TryRemove(url, out _);
+
+        public bool Contains(string url) => _store.ContainsKey(url);
+
+        public WireCopy.Application.DTOs.Browser.CacheStats Clear()
+        {
+            var n = _store.Count;
+            _store.Clear();
+            _buildStore.Clear();
+            return new WireCopy.Application.DTOs.Browser.CacheStats { EntryCount = n };
+        }
+
+        public WireCopy.Application.DTOs.Browser.CacheStats GetStats() =>
+            new() { EntryCount = _store.Count };
+
+        public IReadOnlySet<string> GetCachedUrls() => new HashSet<string>(_store.Keys);
+
+        public DateTime? GetCachedAt(string url) => _store.ContainsKey(url) ? DateTime.UtcNow : null;
+
+        public WireCopy.Application.DTOs.Browser.PageBuildCache? TryGetBuildCache(string url) =>
+            _buildStore.TryGetValue(url, out var b) ? b : null;
+
+        public void PutBuildCache(string url, WireCopy.Application.DTOs.Browser.PageBuildCache buildCache) =>
+            _buildStore[url] = buildCache;
+
+        public void UpdateTtl(string url, int ttlSeconds)
+        {
+            // No-op: blocking test cache has no TTL.
+        }
+
+        public void ApplyLinkListTtl(string url)
+        {
+            // No-op: blocking test cache has no TTL.
+        }
+    }
+
+    /// <summary>
+    /// Test helper: HttpMessageHandler that BLOCKS until an explicit
+    /// ManualResetEventSlim is set. Used by the stage-transition observation
+    /// test so the observer is guaranteed a window to record the Fetching
+    /// stage, regardless of test thread-pool contention.
+    /// </summary>
+    private sealed class SyncedHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly string _html;
+        private readonly System.Threading.ManualResetEventSlim _release;
+
+        public SyncedHttpMessageHandler(string html, System.Threading.ManualResetEventSlim release)
+        {
+            _html = html;
+            _release = release;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return Task.Run(() =>
+            {
+                _release.Wait(cancellationToken);
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(_html, System.Text.Encoding.UTF8, "text/html"),
+                    RequestMessage = request,
+                };
+            }, cancellationToken);
+        }
+    }
 }

@@ -1,5 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using WireCopy.Domain.Enums.Browser;
+
 namespace WireCopy.Application.DTOs.Browser;
 
 /// <summary>
@@ -54,4 +56,25 @@ public record PreloadProgress
     /// BEFORE they Enter into a doomed article load (workspace-0b9s MVP).
     /// </summary>
     public HumanActionRequired? BlockedAction { get; init; }
+
+    /// <summary>
+    /// Current per-URL stage the preloader is in (workspace-7xw0). Drives
+    /// the prefetch detail panel'\''s "now: loading / extracting / caching"
+    /// label so the user can tell whether the loader is making progress.
+    /// </summary>
+    public PreloadStage CurrentStage { get; init; } = PreloadStage.Idle;
+
+    /// <summary>
+    /// Snapshot of the next URLs queued for prefetch (workspace-7xw0). Used
+    /// by the prefetch detail panel'\''s "up next" list. Empty when the queue
+    /// is drained or has been throttled by an idle-detect / circuit-break.
+    /// </summary>
+    public IReadOnlyList<string> UpcomingUrls { get; init; } = System.Array.Empty<string>();
+
+    /// <summary>
+    /// Most-recent prefetch outcomes (workspace-7xw0). Bounded ring buffer
+    /// of up to ~20 entries. The detail panel uses this to spot stalls and
+    /// repeated skips/failures on the same origin.
+    /// </summary>
+    public IReadOnlyList<PreloadHistoryEntry> RecentItems { get; init; } = System.Array.Empty<PreloadHistoryEntry>();
 }
