@@ -279,7 +279,7 @@ internal static class PodcastProgressScreens
         return string.Equals(response, "y", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal static async Task ShowCompletionScreenAsync(
+    internal static async Task<CompletionScreenAction> ShowCompletionScreenAsync(
         CommandContext ctx,
         RenderOptions options,
         PodcastResult result,
@@ -344,14 +344,27 @@ internal static class PodcastProgressScreens
                 helpers.WriteLine();
             }
 
-            // Key hints
-            var hints = $"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}";
-            if (maxScroll > 0)
+            // Key hints — assemble based on what's available so the user
+            // only sees keystrokes that do something (workspace-n49i).
+            var hintParts = new List<string>
             {
-                hints += $"   {p.GetAccentFg().AnsiFg}j/k{Reset}{p.SecondaryText.AnsiFg}:scroll{Reset}";
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}",
+            };
+
+            if (!string.IsNullOrEmpty(result.LocalFilePath))
+            {
+                hintParts.Add($"{p.GetAccentFg().AnsiFg}o{Reset}{p.SecondaryText.AnsiFg}:open folder{Reset}");
+                hintParts.Add($"{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}:copy path{Reset}");
             }
 
-            helpers.WriteLine(hints);
+            hintParts.Add($"{p.GetAccentFg().AnsiFg}r{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}");
+
+            if (maxScroll > 0)
+            {
+                hintParts.Add($"{p.GetAccentFg().AnsiFg}j/k{Reset}{p.SecondaryText.AnsiFg}:scroll{Reset}");
+            }
+
+            helpers.WriteLine("  " + string.Join("   ", hintParts));
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
@@ -364,7 +377,30 @@ internal static class PodcastProgressScreens
 
             if (command.Type is CommandType.ActivateLink or CommandType.GoBack or CommandType.Quit)
             {
-                break;
+                return CompletionScreenAction.Back;
+            }
+
+            // workspace-n49i Phase 4: keystroke handlers for the result screen.
+            // `o` opens the OS file manager at the output folder, `c` copies
+            // the absolute file path to the clipboard via OSC52. Both no-op
+            // gracefully if LocalFilePath is unset. `r` re-runs the generation
+            // flow from scratch (retry-from-scratch fallback per the bead).
+            if (command.RawKeyChar == 'o' && !string.IsNullOrEmpty(result.LocalFilePath))
+            {
+                TryOpenOutputFolder(ctx, result.LocalFilePath);
+                continue;
+            }
+
+            if (command.RawKeyChar == 'c' && !string.IsNullOrEmpty(result.LocalFilePath))
+            {
+                CopyToClipboardOsc52(result.LocalFilePath);
+                ctx.NavigationService.SetStatusMessage("File path copied to clipboard");
+                continue;
+            }
+
+            if (command.RawKeyChar == 'r')
+            {
+                return CompletionScreenAction.Retry;
             }
 
             if (command.Type == CommandType.MoveDown)
@@ -384,6 +420,131 @@ internal static class PodcastProgressScreens
                 scrollOffset = Math.Max(scrollOffset - (viewportHeight / 2), 0);
             }
         }
+
+        return CompletionScreenAction.Back;
+    }
+
+    /// <summary>
+    /// Opens the OS file manager at the folder containing
+    /// <paramref name="localFilePath"/> (workspace-n49i Phase 4). Cross-platform
+    /// via <c>UseShellExecute = true</c> — defers to xdg-open on Linux, open
+    /// on macOS, explorer.exe on Windows. Failures are logged and swallowed
+    /// so the result screen never crashes on a non-critical "show me where
+    /// this lives" gesture.
+    /// </summary>
+    internal static void TryOpenOutputFolder(CommandContext ctx, string localFilePath)
+    {
+        try
+        {
+            var folder = Path.GetDirectoryName(localFilePath);
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+            {
+                ctx.NavigationService.SetStatusMessage("Output folder not found");
+                return;
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true };
+            System.Diagnostics.Process.Start(psi);
+            ctx.NavigationService.SetStatusMessage("Opened output folder");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to open output folder for {Path}", localFilePath);
+            ctx.NavigationService.SetStatusMessage("Couldn't open folder — file path copied to clipboard instead");
+            CopyToClipboardOsc52(localFilePath);
+        }
+    }
+
+    /// <summary>
+    /// workspace-n49i Phase 4: emits a labelled value line, wrapping the
+    /// value onto a continuation line under the value column when it doesn't
+    /// fit. The continuation line uses the same indent as the value (label
+    /// column blanked) so the text reads as a single logical row. Avoids
+    /// relying on the terminal's natural wrap, which breaks selection
+    /// rectangles and OSC2026 reflow.
+    /// </summary>
+    internal static void EmitLabelledValue(
+        List<string> lines,
+        ThemePalette p,
+        string paddedLabel,
+        string blankLabel,
+        string value,
+        string valueColor,
+        string trailingSuffix,
+        string suffixColor,
+        int valueWidth)
+    {
+        // The value+suffix together must fit within valueWidth. When they
+        // don't, render the value alone on a wrapped line, then the suffix
+        // (if any) below it. For now: if value alone fits, append the suffix
+        // and rely on hyphen-free copy-friendly wrap only if necessary.
+        if (value.Length + trailingSuffix.Length <= valueWidth)
+        {
+            lines.Add(
+                $"  {p.SecondaryText.AnsiFg}{paddedLabel}{Reset}{valueColor}{value}{Reset}" +
+                $"{suffixColor}{trailingSuffix}{Reset}");
+            return;
+        }
+
+        // Path too long for one line. Hard-wrap the value character-by-
+        // character into chunks of valueWidth, then place the suffix (if any)
+        // on its own line under the value column so it never overlaps.
+        var valueChunks = ChunkLine(value, valueWidth);
+        for (var i = 0; i < valueChunks.Count; i++)
+        {
+            var labelHere = i == 0 ? paddedLabel : blankLabel;
+            lines.Add($"  {p.SecondaryText.AnsiFg}{labelHere}{Reset}{valueColor}{valueChunks[i]}{Reset}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(trailingSuffix))
+        {
+            lines.Add($"  {p.SecondaryText.AnsiFg}{blankLabel}{Reset}{suffixColor}{trailingSuffix.TrimStart()}{Reset}");
+        }
+    }
+
+    /// <summary>
+    /// Splits a long string into fixed-width chunks at the requested width.
+    /// Used for hard-wrapping copy-paste-friendly values (file paths, URLs)
+    /// that don't have natural word breaks. Returns at least one chunk —
+    /// empty input becomes a single empty chunk so the caller can still
+    /// render the label row.
+    /// </summary>
+    internal static List<string> ChunkLine(string s, int width)
+    {
+        var chunks = new List<string>();
+        if (string.IsNullOrEmpty(s) || width <= 0)
+        {
+            chunks.Add(s ?? string.Empty);
+            return chunks;
+        }
+
+        for (var i = 0; i < s.Length; i += width)
+        {
+            var len = Math.Min(width, s.Length - i);
+            chunks.Add(s.Substring(i, len));
+        }
+
+        return chunks;
+    }
+
+    /// <summary>
+    /// workspace-n49i Phase 4: classifies the completion result into one of
+    /// the three documented shapes. Drives both the headline glyph and which
+    /// content blocks render.
+    /// </summary>
+    internal static CompletionShape ClassifyCompletion(PodcastResult result)
+    {
+        if (result.ArticlesFailed > 0)
+        {
+            return CompletionShape.PartialFailure;
+        }
+
+        if (string.IsNullOrEmpty(result.FeedUrl))
+        {
+            return CompletionShape.LocalOnlySuccess;
+        }
+
+        return CompletionShape.FullSuccess;
     }
 
     internal static List<string> BuildCompletionLines(
@@ -391,90 +552,121 @@ internal static class PodcastProgressScreens
         PodcastResult result,
         int width)
     {
+        var shape = ClassifyCompletion(result);
         var lines = new List<string>();
 
-        // Box header
-        lines.Add(string.Empty);
-        lines.Add($"{p.HeaderBorderFg.AnsiFg}╭{new string('─', width - 2)}╮{Reset}");
-        var boxTitle = RenderHelpers.TruncateText("Podcast Ready!", width - 4);
-        lines.Add(
-            $"{p.HeaderBorderFg.AnsiFg}│ {p.HeaderTitleFg.AnsiFg}" +
-            $"{boxTitle.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} │{Reset}");
-        lines.Add($"{p.HeaderBorderFg.AnsiFg}╰{new string('─', width - 2)}╯{Reset}");
-        lines.Add(string.Empty);
-
-        // --- Summary ---
-        var duration = FormatDuration(result.TotalDuration);
-        var fileSize = FormatFileSize(result.FileSizeBytes);
-        lines.Add(
-            $"  {p.HeaderTitleFg.AnsiFg}♫{Reset} {p.PrimaryText.AnsiFg}" +
-            $"{result.ArticlesProcessed} articles »»» {duration} »»» {fileSize}{Reset}");
-
-        if (result.ArticlesCached > 0)
+        // workspace-n49i: single-line headline per shape (A/B/C). Replaces
+        // the previous "Podcast Ready!" box-header that didn't distinguish
+        // full success from partial failure.
+        var (glyph, glyphColor, headline) = shape switch
         {
-            lines.Add(
-                $"    {p.SecondaryText.AnsiFg}{result.ArticlesCached} from cache{Reset}");
+            CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated and published"),
+            CompletionShape.LocalOnlySuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated (local-only — no RSS publish)"),
+            CompletionShape.PartialFailure => ("⚠", p.GetWarningFg().AnsiFg, $"Podcast generated with {result.ArticlesFailed} article failure{(result.ArticlesFailed == 1 ? string.Empty : "s")}"),
+            _ => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated"),
+        };
+
+        lines.Add(string.Empty);
+        lines.Add($"  {glyphColor}{glyph}{Reset} {p.PrimaryText.AnsiFg}{headline}{Reset}");
+        lines.Add(string.Empty);
+
+        // ---- Labelled metadata block: File / Feed / Duration / Cost ----
+        // Two-column "key   value" rendering at a fixed gutter so the
+        // values line up vertically in all three shapes.
+        const int labelWidth = 11; // "Duration" + 3 spaces, longest label below "Feed"/"File"
+        string Label(string s) => s.PadRight(labelWidth);
+
+        // Bead acceptance: paths must be copy-friendly with NO truncation, and
+        // explicitly wrap onto a separate line under the value column when
+        // they don't fit (workspace-n49i Acceptance: "Path display is monospace
+        // and copy-friendly (no truncation; long paths wrap on a separate
+        // line if needed)"). The natural terminal wrap is unacceptable — it
+        // breaks selection rectangles and OSC2026 reflow.
+        const int margin = 2;
+        var valueColumn = labelWidth + margin;
+        var availableForValue = Math.Max(20, width - valueColumn - 2);
+
+        if (!string.IsNullOrEmpty(result.LocalFilePath))
+        {
+            var suffix = shape == CompletionShape.PartialFailure
+                ? $"  ({result.ArticlesProcessed} of {result.ArticlesProcessed + result.ArticlesFailed} articles)"
+                : string.Empty;
+
+            EmitLabelledValue(
+                lines,
+                p,
+                Label("File"),
+                blankLabel: new string(' ', labelWidth),
+                value: result.LocalFilePath,
+                valueColor: p.HeaderTitleFg.AnsiFg,
+                trailingSuffix: suffix,
+                suffixColor: p.SecondaryText.AnsiFg,
+                valueWidth: availableForValue);
         }
+
+        if (!string.IsNullOrEmpty(result.FeedUrl) && shape == CompletionShape.FullSuccess)
+        {
+            EmitLabelledValue(
+                lines,
+                p,
+                Label("Feed"),
+                blankLabel: new string(' ', labelWidth),
+                value: result.FeedUrl,
+                valueColor: p.PromptFg.AnsiFg,
+                trailingSuffix: string.Empty,
+                suffixColor: p.SecondaryText.AnsiFg,
+                valueWidth: availableForValue);
+        }
+
+        var durationValue = $"{result.ArticlesProcessed} article{(result.ArticlesProcessed == 1 ? string.Empty : "s")} · {FormatDuration(result.TotalDuration)} audio · {FormatFileSize(result.FileSizeBytes)}";
+        lines.Add($"  {p.SecondaryText.AnsiFg}{Label("Duration")}{Reset}{p.PrimaryText.AnsiFg}{durationValue}{Reset}");
 
         if (result.TotalCost > 0)
         {
-            lines.Add(
-                $"    {p.SecondaryText.AnsiFg}API cost: ${result.TotalCost:F4}{Reset}");
-        }
+            var costValue = $"${result.TotalCost:F4}";
+            if (result.ArticlesCached > 0)
+            {
+                costValue += $" ({result.ArticlesCached} cached, no charge)";
+            }
 
-        if (result.ArticlesFailed > 0)
-        {
-            lines.Add(
-                $"    {p.ErrorFg.AnsiFg}{result.ArticlesFailed} article(s) failed{Reset}");
+            lines.Add($"  {p.SecondaryText.AnsiFg}{Label("Cost")}{Reset}{p.PrimaryText.AnsiFg}{costValue}{Reset}");
         }
 
         lines.Add(string.Empty);
 
-        // --- File ---
-        // Prominent path display: surrounded by box-drawing accents so the user
-        // can clearly identify (and copy/paste) the destination. Long paths get
-        // truncated in the middle to keep both ends visible.
-        if (!string.IsNullOrEmpty(result.LocalFilePath))
+        // ---- Shape-specific extras ----
+        switch (shape)
         {
-            lines.Add($"  {p.SecondaryText.AnsiFg}File saved to{Reset}");
+            case CompletionShape.FullSuccess:
+                lines.Add($"  {p.SecondaryText.AnsiFg}Feed URL copied to clipboard. Subscribe in your podcast app:{Reset}");
+                lines.Add($"    {p.SecondaryText.AnsiFg}Apple Podcasts / Overcast → Add show by URL → paste{Reset}");
+                lines.Add($"    {p.SecondaryText.AnsiFg}Pocket Casts → Search → \"Add by URL\" → paste{Reset}");
+                lines.Add($"    {p.SecondaryText.AnsiFg}Any RSS reader → Add feed → paste{Reset}");
+                break;
 
-            var pathInner = Math.Max(10, width - 6);
-            var displayPath = PodcastConfirmationScreens.TruncateMiddle(
-                result.LocalFilePath, pathInner - 2);
-            var bar = new string('─', pathInner);
-            lines.Add($"    {p.HeaderBorderFg.AnsiFg}╭{bar}╮{Reset}");
-            var paddedPath = displayPath.PadRight(pathInner - 2);
-            lines.Add(
-                $"    {p.HeaderBorderFg.AnsiFg}│ {p.HeaderTitleFg.AnsiFg}" +
-                $"{paddedPath}{p.HeaderBorderFg.AnsiFg} │{Reset}");
-            lines.Add($"    {p.HeaderBorderFg.AnsiFg}╰{bar}╯{Reset}");
-            lines.Add(string.Empty);
-        }
+            case CompletionShape.LocalOnlySuccess:
+                lines.Add($"  {p.SecondaryText.AnsiFg}Listen with VLC, Apple Books, or any M4B-aware player.{Reset}");
+                lines.Add($"  {p.SecondaryText.AnsiFg}Configure a GCS bucket in Setup to enable RSS publishing.{Reset}");
+                break;
 
-        // --- Feed + subscription instructions ---
-        if (!string.IsNullOrEmpty(result.FeedUrl))
-        {
-            lines.Add($"  {p.SecondaryText.AnsiFg}Feed{Reset}");
-            lines.Add($"    {p.PromptFg.AnsiFg}{result.FeedUrl}{Reset}");
-            lines.Add($"    {p.SecondaryText.AnsiFg}Feed URL copied to clipboard{Reset}");
-            lines.Add(string.Empty);
-            lines.Add($"  {p.SecondaryText.AnsiFg}What's next{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}1.{Reset} {p.PrimaryText.AnsiFg}Subscribe in your podcast app{Reset}");
-            lines.Add($"       {p.SecondaryText.AnsiFg}Apple Podcasts / Overcast → Add show by URL → paste{Reset}");
-            lines.Add($"       {p.SecondaryText.AnsiFg}Pocket Casts → Search → \"Add by URL\" → paste{Reset}");
-            lines.Add($"       {p.SecondaryText.AnsiFg}Any RSS reader → Add feed → paste{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}2.{Reset} {p.PrimaryText.AnsiFg}Take a walk{Reset}");
-            lines.Add($"       {p.SecondaryText.AnsiFg}Next time you generate, subscribe first and go do{Reset}");
-            lines.Add($"       {p.SecondaryText.AnsiFg}something else. The episode will be waiting for you.{Reset}");
-        }
-        else
-        {
-            // Local-only instructions
-            lines.Add($"  {p.SecondaryText.AnsiFg}Listen{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}VLC{Reset}{p.SecondaryText.AnsiFg} — File → Open, supports chapters{Reset}");
-            lines.Add($"    {p.PrimaryText.AnsiFg}Apple Books{Reset}{p.SecondaryText.AnsiFg} — drag M4B file into library{Reset}");
-            lines.Add(string.Empty);
-            lines.Add($"    {p.SecondaryText.AnsiFg}Configure a GCS bucket to publish as RSS feed{Reset}");
+            case CompletionShape.PartialFailure:
+                lines.Add($"  {p.SecondaryText.AnsiFg}Failures:{Reset}");
+                var maxList = Math.Min(result.FailedArticleDetails.Count, 5);
+                for (var i = 0; i < maxList; i++)
+                {
+                    var failure = result.FailedArticleDetails[i];
+                    var displayUrl = string.IsNullOrEmpty(failure.Url) ? failure.Title : failure.Url;
+                    var displayReason = RenderHelpers.TruncateText(failure.Reason, Math.Max(20, width - 8));
+                    lines.Add($"    {p.ErrorFg.AnsiFg}{i + 1}.{Reset} {p.PrimaryText.AnsiFg}{RenderHelpers.TruncateText(displayUrl, Math.Max(20, width - 8))}{Reset}");
+                    lines.Add($"       {p.SecondaryText.AnsiFg}— {displayReason}{Reset}");
+                }
+
+                if (result.FailedArticleDetails.Count > maxList)
+                {
+                    lines.Add($"    {p.SecondaryText.AnsiFg}... and {result.FailedArticleDetails.Count - maxList} more{Reset}");
+                }
+
+                break;
         }
 
         lines.Add(string.Empty);
@@ -489,6 +681,10 @@ internal static class PodcastProgressScreens
         IReadOnlyList<ArticleFailure> failedArticles,
         CancellationToken ct)
     {
+        // workspace-n49i Shape D: typed (Step, Reason, Fix) tuple replaces
+        // the previous heuristic-bulleted "What to try" list.
+        var classification = PodcastFailureClassifier.Classify(errorMessage, failedArticles);
+
         while (!ct.IsCancellationRequested)
         {
             var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -496,25 +692,45 @@ internal static class PodcastProgressScreens
             helpers.Clear();
 
             var width = Math.Max(20, options.TerminalWidth - 2);
-            PodcastCommandHandler.RenderBox(helpers, p, "Podcast Error", width);
+
+            // Headline: single line with ✗ glyph in error color
+            helpers.WriteLine();
+            helpers.WriteLine($"  {p.ErrorFg.AnsiFg}✗{Reset} {p.PrimaryText.AnsiFg}Podcast generation failed{Reset}");
             helpers.WriteLine();
 
-            // Error summary
-            var wrappedLines = RenderHelpers.WrapText(errorMessage, width - 4);
-            foreach (var line in wrappedLines)
+            // Typed (Step, Reason, Fix) block — single-line each so the
+            // user can read the three crucial questions left-to-right.
+            // Multi-line wraps indent the continuation under the value
+            // column so the labels stay visually anchored.
+            const int labelWidth = 13;
+            var blankLabel = new string(' ', labelWidth);
+
+            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{"At step:".PadRight(labelWidth)}{Reset}{p.PrimaryText.AnsiFg}{classification.Step}{Reset}");
+
+            var reasonWrap = RenderHelpers.WrapText(classification.Reason, Math.Max(20, width - labelWidth - 4));
+            for (var i = 0; i < reasonWrap.Count; i++)
             {
-                helpers.WriteLine($"  {p.ErrorFg.AnsiFg}{line}{Reset}");
+                var label = i == 0 ? "Reason:".PadRight(labelWidth) : blankLabel;
+                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{label}{Reset}{p.PrimaryText.AnsiFg}{reasonWrap[i]}{Reset}");
+            }
+
+            var fixWrap = RenderHelpers.WrapText(classification.Fix, Math.Max(20, width - labelWidth - 4));
+            for (var i = 0; i < fixWrap.Count; i++)
+            {
+                var label = i == 0 ? "Fix:".PadRight(labelWidth) : blankLabel;
+                helpers.WriteLine($"  {p.SecondaryText.AnsiFg}{label}{Reset}{p.PrimaryText.AnsiFg}{fixWrap[i]}{Reset}");
             }
 
             helpers.WriteLine();
 
-            // Per-article failure details
+            // Per-article failure details (when present — every-article-failed
+            // total errors carry the per-article list).
             if (failedArticles.Count > 0)
             {
                 helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Failed articles:{Reset}");
 
                 var maxArticleLines = Math.Max(1,
-                    options.TerminalHeight - helpers.LinesWritten - 10);
+                    options.TerminalHeight - helpers.LinesWritten - 6);
                 var displayCount = Math.Min(failedArticles.Count, maxArticleLines);
 
                 for (var i = 0; i < displayCount; i++)
@@ -537,14 +753,6 @@ internal static class PodcastProgressScreens
                 helpers.WriteLine();
             }
 
-            // Actionable suggestions based on error type
-            helpers.WriteLine($"  {p.SecondaryText.AnsiFg}What to try:{Reset}");
-            foreach (var suggestion in GetSuggestionsForError(errorMessage, failedArticles))
-            {
-                helpers.WriteLine($"    {p.SecondaryText.AnsiFg}• {suggestion}{Reset}");
-            }
-
-            helpers.WriteLine();
             helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
             helpers.ClearRemainingLines();
 

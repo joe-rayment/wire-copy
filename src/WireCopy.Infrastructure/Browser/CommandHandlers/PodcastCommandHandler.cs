@@ -113,13 +113,38 @@ internal static class PodcastCommandHandler
         RenderOptions options,
         CancellationToken ct)
     {
+        // workspace-n49i: pressing 'r' on the completion screen retries the
+        // run from scratch. We loop the entire pre-flight + generation flow
+        // so the retry sees fresh cache analysis, fresh pre-flight checks,
+        // and a clean progress run. Capped at 3 iterations to prevent
+        // accidental infinite loops if the failure mode is sticky.
+        const int MaxRetries = 3;
+        for (var attempt = 0; attempt < MaxRetries; attempt++)
+        {
+            var retry = await RunGeneratePodcastAttempt(ctx, options, ct).ConfigureAwait(false);
+            if (!retry)
+            {
+                return;
+            }
+
+            // Refresh render options between retries — terminal may have
+            // resized while the user sat on the completion screen.
+            options = ctx.GetCurrentRenderOptions();
+        }
+    }
+
+    internal static async Task<bool> RunGeneratePodcastAttempt(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
         try
         {
             if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
             {
                 ctx.NavigationService.SetStatusMessage("Open a collection first, then press p");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             var collection = ctx.NavigationService.ActiveCollection;
@@ -127,7 +152,7 @@ internal static class PodcastCommandHandler
             {
                 ctx.NavigationService.SetStatusMessage("No articles to generate podcast from");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             // Press feedback: render one frame with inverted button colors, then continue
@@ -189,7 +214,7 @@ internal static class PodcastCommandHandler
             {
                 await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             // Pre-flight GCS validation: check credentials BEFORE slow cache analysis
@@ -233,7 +258,7 @@ internal static class PodcastCommandHandler
                 {
                     ctx.NavigationService.SetStatusMessage("Podcast cancelled");
                     await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    return;
+                    return false;
                 }
 
                 options = ctx.GetCurrentRenderOptions();
@@ -268,7 +293,7 @@ internal static class PodcastCommandHandler
             if (!confirmed)
             {
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             var result = await PodcastProgressScreens.ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
@@ -277,7 +302,7 @@ internal static class PodcastCommandHandler
             {
                 ctx.NavigationService.SetStatusMessage("Podcast generation cancelled");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
             if (!result.Success)
@@ -294,11 +319,12 @@ internal static class PodcastCommandHandler
 
                 await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
+                return false;
             }
 
-            await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct).ConfigureAwait(false);
+            var action = await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct).ConfigureAwait(false);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return action == CompletionScreenAction.Retry;
         }
         catch (OperationCanceledException)
         {
@@ -317,6 +343,8 @@ internal static class PodcastCommandHandler
                 // Last-resort: if even the error UI fails, just log it
                 ctx.Logger.LogError(renderEx, "Failed to render podcast error screen");
             }
+
+            return false;
         }
     }
 
