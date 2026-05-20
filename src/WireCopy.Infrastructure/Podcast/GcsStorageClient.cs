@@ -226,6 +226,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         string localFilePath,
         string objectName,
         string contentType,
+        IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(localFilePath);
@@ -242,13 +243,30 @@ internal sealed class GcsStorageClient : ICloudStorageClient
             _config.BucketName,
             objectName);
 
+        // workspace-74zy: surface byte-level upload progress to the orchestrator
+        // so the publish phase no longer goes silent for minutes. The Google SDK
+        // exposes IUploadProgress via UploadObjectOptions.ProgressChanged; map
+        // its BytesSent into the caller's IProgress<long>.
+        IProgress<Google.Apis.Upload.IUploadProgress>? sdkProgress = null;
+        if (progress is not null)
+        {
+            sdkProgress = new Progress<Google.Apis.Upload.IUploadProgress>(p =>
+            {
+                if (p?.Status == Google.Apis.Upload.UploadStatus.Uploading || p?.Status == Google.Apis.Upload.UploadStatus.Completed)
+                {
+                    progress.Report(p.BytesSent);
+                }
+            });
+        }
+
         await client.UploadObjectAsync(
             _config.BucketName,
             objectName,
             contentType,
             stream,
             new UploadObjectOptions(),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            sdkProgress).ConfigureAwait(false);
 
         return GetPublicUrl(objectName);
     }

@@ -285,6 +285,23 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             // Step 4: Generate TTS audio for each article
             tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
+
+            // workspace-74zy: stopwatch per phase + cache-hit count emission so
+            // a downstream weighted-ETA consumer can correctly weight
+            // upload-bound vs. TTS-bound runs without inferring it from the
+            // text itself.
+            var audioPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            progress?.Report(new PodcastProgress
+            {
+                Phase = PodcastPhase.GeneratingAudio,
+                TotalArticles = articles.Count,
+                PercentComplete = 10,
+                CachedArticleCount = cacheAnalysis.CachedArticles,
+                UncachedArticleCount = cacheAnalysis.UncachedArticles,
+                Message = $"{cacheAnalysis.CachedArticles} cached · {cacheAnalysis.UncachedArticles} need TTS",
+                PhaseElapsed = audioPhaseStopwatch.Elapsed,
+            });
+
             for (var i = 0; i < articles.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -297,6 +314,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     TotalArticles = articles.Count,
                     ArticleTitle = article.Title,
                     PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
+                    CachedArticleCount = cacheAnalysis.CachedArticles,
+                    UncachedArticleCount = cacheAnalysis.UncachedArticles,
+                    PhaseElapsed = audioPhaseStopwatch.Elapsed,
                 });
 
                 // Build spoken text with headline/author/date intro
@@ -318,6 +338,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                         ArticleTitle = article.Title,
                         PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
                         IsFromCache = true,
+                        CachedArticleCount = cacheAnalysis.CachedArticles,
+                        UncachedArticleCount = cacheAnalysis.UncachedArticles,
+                        PhaseElapsed = audioPhaseStopwatch.Elapsed,
                     });
                     _logger.LogInformation(
                         "Using cached audio for '{Title}' (key={Key})",
@@ -326,10 +349,43 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 }
                 else
                 {
-                    // Cache miss — generate via TTS API
+                    // workspace-74zy: forward TTS per-chunk progress through to
+                    // the podcast progress sink. Previously OpenAiTtsService
+                    // emitted TtsProgress per chunk but the orchestrator never
+                    // subscribed, so multi-chunk articles went silent during
+                    // synth. Now consumers see chunk index + percent for the
+                    // current article in real time.
+                    IProgress<TtsProgress>? ttsProgress = null;
+                    if (progress is not null)
+                    {
+                        var outerProgress = progress;
+                        var articleIndex = i + 1;
+                        var totalArticles = articles.Count;
+                        var title = article.Title;
+                        var stopwatch = audioPhaseStopwatch;
+                        var cachedSnapshot = cacheAnalysis.CachedArticles;
+                        var uncachedSnapshot = cacheAnalysis.UncachedArticles;
+                        ttsProgress = new Progress<TtsProgress>(p => outerProgress.Report(new PodcastProgress
+                        {
+                            Phase = PodcastPhase.GeneratingAudio,
+                            CurrentArticle = articleIndex,
+                            TotalArticles = totalArticles,
+                            ArticleTitle = title,
+                            PercentComplete = 10 + (int)((articleIndex - 1 + (p.PercentComplete / 100.0)) * 60.0 / totalArticles),
+                            CurrentArticleChunkIndex = p.CurrentChunk,
+                            CurrentArticleChunkTotal = p.TotalChunks,
+                            CurrentArticleChunkPercent = p.PercentComplete,
+                            CachedArticleCount = cachedSnapshot,
+                            UncachedArticleCount = uncachedSnapshot,
+                            PhaseElapsed = stopwatch.Elapsed,
+                            Message = p.Message,
+                        }));
+                    }
+
                     var ttsResult = await _ttsService.GenerateAudioAsync(
                         spokenText,
                         article.Title,
+                        ttsProgress,
                         cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     if (!ttsResult.Success || ttsResult.AudioData == null)
@@ -407,7 +463,29 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 },
             };
 
-            var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, cancellationToken).ConfigureAwait(false);
+            // workspace-74zy: stopwatch + assembly progress forwarding. The
+            // assembler ticks once per segment probe + a steady stream from
+            // FFmpeg's NotifyOnProgress callback during concat. We translate
+            // both into PodcastProgress events so the consumer can show a
+            // moving bar through the assembly phase.
+            var assemblyPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            IProgress<AssemblyProgress>? assemblyProgress = null;
+            if (progress is not null)
+            {
+                var outerProgress = progress;
+                var stopwatch = assemblyPhaseStopwatch;
+                assemblyProgress = new Progress<AssemblyProgress>(p => outerProgress.Report(new PodcastProgress
+                {
+                    Phase = PodcastPhase.AssemblingAudio,
+                    PercentComplete = 70 + (int)(p.FfmpegPercent * 0.15),
+                    AssembledSegments = p.CompletedSegments,
+                    AssembledSegmentsTotal = p.TotalSegments,
+                    Message = p.Message,
+                    PhaseElapsed = stopwatch.Elapsed,
+                }));
+            }
+
+            var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, assemblyProgress, cancellationToken).ConfigureAwait(false);
             if (!assemblyResult.Success || string.IsNullOrEmpty(assemblyResult.OutputPath))
             {
                 return PodcastResult.Failure(
@@ -452,9 +530,45 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 },
             };
 
+            // workspace-74zy: forward publish progress through to PodcastProgress
+            // so the consumer can show "N of M episodes uploaded" + bytes/total
+            // for the in-flight episode instead of holding the bar at 85% for
+            // the full duration of a multi-MB upload.
+            var publishPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            IProgress<PublishProgress>? publishProgress = null;
+            if (progress is not null)
+            {
+                var outerProgress = progress;
+                var stopwatch = publishPhaseStopwatch;
+                publishProgress = new Progress<PublishProgress>(p =>
+                {
+                    var per = p.TotalEpisodes > 0
+                        ? (double)p.UploadedEpisodes / p.TotalEpisodes
+                        : 0;
+                    var inflight = p.UploadedBytesTotal > 0
+                        ? (double)p.UploadedBytes / p.UploadedBytesTotal
+                        : 0;
+                    var fraction = p.TotalEpisodes > 0
+                        ? Math.Clamp(per + (inflight / p.TotalEpisodes), 0, 1)
+                        : 0;
+                    outerProgress.Report(new PodcastProgress
+                    {
+                        Phase = PodcastPhase.Publishing,
+                        PercentComplete = 85 + (int)(fraction * 14),
+                        UploadedEpisodes = p.UploadedEpisodes,
+                        UploadedEpisodesTotal = p.TotalEpisodes,
+                        UploadedBytes = p.UploadedBytes,
+                        UploadedBytesTotal = p.UploadedBytesTotal,
+                        Message = p.Message,
+                        PhaseElapsed = stopwatch.Elapsed,
+                    });
+                });
+            }
+
             var publishResult = await _publisher.PublishFeedAsync(
                 podcastMetadata,
                 episodeSources,
+                publishProgress,
                 cancellationToken).ConfigureAwait(false);
 
             progress?.Report(new PodcastProgress

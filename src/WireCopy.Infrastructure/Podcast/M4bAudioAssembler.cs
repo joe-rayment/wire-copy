@@ -60,6 +60,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
     public async Task<AssemblyResult> AssembleAsync(
         AssemblyRequest request,
+        IProgress<AssemblyProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -119,6 +120,17 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
                     request.Segments.Count,
                     segment.Title,
                     duration);
+
+                // workspace-74zy: tick after each segment is probed and queued so
+                // the orchestrator can show real "N of M segments" copy instead
+                // of a frozen percent during the otherwise silent probe phase.
+                progress?.Report(new AssemblyProgress
+                {
+                    TotalSegments = request.Segments.Count,
+                    CompletedSegments = i + 1,
+                    FfmpegPercent = 0,
+                    Message = $"Probed {i + 1} of {request.Segments.Count} segments",
+                });
             }
 
             // Phase C: Concatenate all segments into single M4B
@@ -138,13 +150,32 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
             _logger.LogInformation("Concatenating {Count} segments into M4B...", segmentPaths.Count);
 
-            await FFMpegArguments
+            // workspace-74zy: FFMpegCore's NotifyOnProgress fires with a 0..100
+            // percent while concat runs. Forward it as a smooth in-segment
+            // signal so the orchestrator can drive a real progress bar during
+            // the assembly phase instead of holding at "70%" for minutes.
+            var concatArgs = FFMpegArguments
                 .FromDemuxConcatInput(segmentPaths)
                 .OutputToFile(request.OutputPath, overwrite: true, options => options
                     .WithAudioCodec(_config.AudioCodec)
                     .WithAudioBitrate(ParseBitrate(_config.AudioBitrate))
-                    .WithCustomArgument($"-ac {_config.AudioChannels} -ar {_config.SampleRate} -movflags +faststart"))
-                .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
+                    .WithCustomArgument($"-ac {_config.AudioChannels} -ar {_config.SampleRate} -movflags +faststart"));
+
+            if (progress is not null)
+            {
+                var total = request.Segments.Count;
+                concatArgs = concatArgs.NotifyOnProgress(
+                    percent => progress.Report(new AssemblyProgress
+                    {
+                        TotalSegments = total,
+                        CompletedSegments = total,
+                        FfmpegPercent = percent,
+                        Message = $"Concatenating ({percent:F0}%)",
+                    }),
+                    runningTime > TimeSpan.Zero ? runningTime : TimeSpan.FromHours(1));
+            }
+
+            await concatArgs.ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 

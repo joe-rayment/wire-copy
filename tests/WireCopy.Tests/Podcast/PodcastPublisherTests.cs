@@ -38,7 +38,7 @@ public class PodcastPublisherTests : IDisposable
             .Returns((string?)null);
 
         // Default setup: return a URL for any upload
-        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(1)}");
 
         _storage.UploadStringAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -118,6 +118,7 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4b")),
             "audio/x-m4b",
+            Arg.Any<IProgress<long>?>(),
             Arg.Any<CancellationToken>());
 
         await _storage.Received(1).UploadStringAsync(
@@ -193,6 +194,7 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.Contains("episodes/")),
             Arg.Any<string>(),
+            Arg.Any<IProgress<long>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -219,13 +221,14 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4b")),
             "audio/x-m4b",
+            Arg.Any<IProgress<long>?>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task PublishFeedAsync_UploadFailure_ReturnsFailure()
     {
-        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>())
             .Returns<string>(_ => throw new InvalidOperationException("Upload failed"));
 
         var podcast = CreateTestPodcast();
@@ -321,7 +324,7 @@ public class PodcastPublisherTests : IDisposable
         // Track all episode upload paths
         var uploadPaths = new List<string>();
 
-        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 var path = callInfo.ArgAt<string>(1);
