@@ -73,6 +73,23 @@ internal sealed class BackgroundPreloadService : IPreloadService
     // same origin.
     private HumanActionRequired? _lastBlockedAction;
 
+    // workspace-7xw0: per-URL stage tracking for the detail panel. Updated as
+    // PreloadUrlAsync progresses (Fetching → Detecting → ExtractingContent →
+    // PersistingCache → Idle on completion). Surfaced via PreloadProgress so
+    // the user can answer "is the loader actually doing something?"
+    private volatile PreloadStage _currentStage = PreloadStage.Idle;
+
+    // Bounded ring buffer of recent outcomes (workspace-7xw0). Capacity 20
+    // covers ~10-15 seconds of preload activity at the typical 1.5s/URL pace.
+    // Older entries are evicted FIFO. Guarded by _historyLock for thread
+    // safety since AppendHistory may fire from worker threads while
+    // GetProgress reads from the UI thread.
+#pragma warning disable SA1203 // constant kept next to its associated lock + queue.
+    private const int RecentItemsCapacity = 20;
+#pragma warning restore SA1203
+    private readonly object _historyLock = new();
+    private readonly Queue<PreloadHistoryEntry> _recentItems = new(RecentItemsCapacity);
+
     // Debounce state: stores the latest selection change parameters
     private int _pendingSelectedIndex;
     private IReadOnlyList<LinkNode>? _pendingVisibleNodes;
@@ -366,15 +383,30 @@ internal sealed class BackgroundPreloadService : IPreloadService
     {
         List<string> eligible;
         List<string> needsJs;
+        List<string> upcoming;
 
         lock (_queueLock)
         {
             eligible = _allEligibleUrls;
             needsJs = _needsJsUrls;
+
+            // workspace-7xw0: snapshot the next 10 queued URLs for the detail
+            // panel'\''s "up next" list. Taking the snapshot under _queueLock
+            // guarantees a stable read even when the worker enqueues
+            // concurrently.
+            upcoming = _queue.Take(10).Select(item => item.Url).ToList();
         }
 
         var cachedCount = eligible.Count(url => _cache.Contains(url) || IsInArticleCache(url));
         var hasQueuedWork = _queue.Count > 0 || !_inFlight.IsEmpty;
+
+        // workspace-7xw0: snapshot history under _historyLock so a concurrent
+        // AppendHistory cannot tear the read.
+        List<PreloadHistoryEntry> recent;
+        lock (_historyLock)
+        {
+            recent = _recentItems.ToList();
+        }
 
         return new PreloadProgress
         {
@@ -385,7 +417,37 @@ internal sealed class BackgroundPreloadService : IPreloadService
             IsActivelyFetching = hasQueuedWork && !_paused,
             CurrentlyFetchingUrl = _currentlyFetchingUrl,
             BlockedAction = _lastBlockedAction,
+            CurrentStage = _currentStage,
+            UpcomingUrls = upcoming,
+            RecentItems = recent,
         };
+    }
+
+#pragma warning disable SA1202 // helper kept adjacent to its sole caller GetProgress (workspace-7xw0).
+    /// <summary>
+    /// Appends an entry to the bounded history ring (workspace-7xw0). Called
+    /// from the preload worker as URLs complete. Capped at
+    /// <see cref="RecentItemsCapacity"/>; oldest entry evicted FIFO.
+    /// </summary>
+    private void AppendHistory(string url, PreloadOutcome outcome, long elapsedMs, string? reason)
+    {
+        var entry = new PreloadHistoryEntry
+        {
+            Url = url,
+            Outcome = outcome,
+            ElapsedMs = elapsedMs,
+            Reason = reason,
+        };
+
+        lock (_historyLock)
+        {
+            if (_recentItems.Count >= RecentItemsCapacity)
+            {
+                _recentItems.Dequeue();
+            }
+
+            _recentItems.Enqueue(entry);
+        }
     }
 
     /// <inheritdoc />
@@ -1158,11 +1220,20 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        // workspace-7xw0: track elapsed time + final outcome so the detail panel
+        // can show "✓ url (320ms)" entries in its recent-history pane.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = PreloadOutcome.Failed;
+        string? outcomeReason = null;
+
         try
         {
             _currentlyFetchingUrl = url;
+            _currentStage = PreloadStage.Fetching;
             _logger.LogDebug("Pre-loading: {Url}", url);
             var result = await HttpFetchAsync(url, cancellationToken).ConfigureAwait(false);
+
+            _currentStage = PreloadStage.Detecting;
 
             if (result.Success)
             {
@@ -1190,6 +1261,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         _lastBlockedAction = hitlAction;
                         NotifyProgressChanged();
                     }
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = hitlAction != null ? hitlAction.Variant.ToString() : "bot detection";
                 }
                 else if (ReadableContentExtractor.IsEmptyArticleShell(result.Html))
                 {
@@ -1201,6 +1275,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                             "Domain {Origin} needs JS rendering, skipping future HTTP pre-loads",
                             origin);
                     }
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "needs JS";
                 }
                 else if (!CachingPageLoader.HasSufficientContent(result.Html))
                 {
@@ -1217,6 +1294,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _logger.LogDebug(
                         "Skipping cache for preloaded URL with insufficient content: {Url}",
                         url);
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "insufficient content";
                 }
                 else if (ReadableContentExtractor.IsArticlePage(result.Html) &&
                          !ReadableContentExtractor.HasExtractableContent(result.Html))
@@ -1233,6 +1313,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     _logger.LogDebug(
                         "Skipping cache for preloaded URL with no extractable article content: {Url}",
                         url);
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "no article body";
                 }
                 else if (result.Url != null && IsRedirectedUrl(url, result.Url))
                 {
@@ -1242,6 +1325,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         "Skipping cache for redirected URL: requested={RequestUrl}, redirected={FinalUrl}",
                         url,
                         result.Url);
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "redirected";
                 }
                 else if (ReadableContentExtractor.HasPaywallElements(result.Html))
                 {
@@ -1254,6 +1340,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     }
 
                     _logger.LogDebug("Skipping cache for paywalled content: {Url}", url);
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "paywall";
                 }
                 else if (IsPaywalledDomain(url) && !CachingPageLoader.HasSufficientContent(result.Html, MinPaywalledWordCount))
                 {
@@ -1270,9 +1359,13 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         "Skipping cache for paywalled domain with insufficient content (<{MinWords} words): {Url}",
                         MinPaywalledWordCount,
                         url);
+
+                    outcome = PreloadOutcome.Skipped;
+                    outcomeReason = "paywall preview";
                 }
                 else
                 {
+                    _currentStage = PreloadStage.PersistingCache;
                     _cache.Put(url, result);
 
                     if (IsPaywalledDomain(url))
@@ -1288,6 +1381,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
                     // Bridge to article content cache: extract article and persist
                     // so collection items served from article cache on navigation.
+                    _currentStage = PreloadStage.ExtractingContent;
                     await TryExtractAndCacheArticleAsync(url, result.Html, cancellationToken).ConfigureAwait(false);
 
                     // Clear the sticky HITL badge if this success is on the same
@@ -1295,6 +1389,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     // this, one tripped URL keeps the "⏸ verify at {domain}" badge
                     // on for the rest of the session.
                     ClearBlockedActionForOriginIfMatches(url);
+
+                    outcome = PreloadOutcome.Cached;
                 }
             }
             else
@@ -1312,6 +1408,9 @@ internal sealed class BackgroundPreloadService : IPreloadService
                         _needsJsDomains[origin] = true;
                     }
                 }
+
+                outcome = PreloadOutcome.Failed;
+                outcomeReason = result.ErrorMessage;
             }
 
             tcs.TrySetResult(result);
@@ -1325,9 +1424,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
         {
             tcs.TrySetException(ex);
             _logger.LogDebug(ex, "Pre-load error for {Url}", url);
+            outcome = PreloadOutcome.Failed;
+            outcomeReason = ex.Message;
         }
         finally
         {
+            sw.Stop();
+            _currentStage = PreloadStage.Idle;
+            AppendHistory(url, outcome, sw.ElapsedMilliseconds, outcomeReason);
             _inFlight.TryRemove(normalizedUrl, out _);
             NotifyProgressChanged();
 
@@ -1600,6 +1704,42 @@ internal sealed class BackgroundPreloadService : IPreloadService
         var origin = UrlNormalizer.GetOrigin(url);
         return origin != null && _circuitBrokenDomains.ContainsKey(origin);
     }
+
+    /// <summary>
+    /// Test seam (workspace-7xw0): lets unit tests prime the per-URL stage
+    /// without standing up a real preload.
+    /// </summary>
+    internal void SetStageForTesting(PreloadStage stage) => _currentStage = stage;
+
+    /// <summary>
+    /// Test seam (workspace-7xw0): exposes <see cref="AppendHistory"/> so
+    /// tests can drive the history ring buffer directly without driving the
+    /// full preload pipeline.
+    /// </summary>
+    internal void AppendHistoryForTesting(string url, PreloadOutcome outcome, long elapsedMs, string? reason = null)
+        => AppendHistory(url, outcome, elapsedMs, reason);
+
+    /// <summary>
+    /// Test seam (workspace-7xw0): replaces the internal <c>_queue</c> with
+    /// a synthetic list so tests can assert the <c>UpcomingUrls</c> snapshot
+    /// behaviour without running through the dedupe / eligibility pipeline.
+    /// </summary>
+    internal void SetQueueForTesting(IEnumerable<string> urls)
+    {
+        lock (_queueLock)
+        {
+            _queue = urls.Select(url => new PreloadItem(url, 0)).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Test seam (workspace-7xw0): exposes <see cref="PreloadUrlAsync"/> so
+    /// unit tests can drive the full per-URL pipeline (stage transitions +
+    /// history append + outcome classification) with mocked HttpClient and
+    /// IPageCache, without standing up the background worker loop.
+    /// </summary>
+    internal Task PreloadUrlAsyncForTesting(string url, CancellationToken cancellationToken)
+        => PreloadUrlAsync(url, cancellationToken);
 #pragma warning restore SA1202
 
     private static string ExtractHostFromOrigin(string origin)
