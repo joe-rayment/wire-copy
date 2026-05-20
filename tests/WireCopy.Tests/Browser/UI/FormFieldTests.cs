@@ -382,46 +382,15 @@ public class FormFieldTests
 
     #region workspace-u9cc — overlay must mask the rightmost column
 
-    /// <summary>
-    /// Workspace-u9cc regression: at width 80 the Setup-screen "Output folder"
-    /// row's content (label + middle-truncated path + the right-aligned
-    /// <c>[Enter] Change</c> action) overflows past column 80. Before the
-    /// inline overlay renders, the tail of that overflow lives at column 80
-    /// of the underlying row. <see cref="FormField.ClearLine"/> must mask
-    /// that column when redrawing the rows the overlay covers — otherwise a
-    /// stray <c>h</c> from <c>[Enter] Change</c> shows up to the right of
-    /// the overlay's top border.
-    /// </summary>
-    [Fact]
-    public void SettingsRow_OutputFolder_OverflowsBeyondColumn80_AtWidth80()
-    {
-        var palette = BuiltInThemes.Get(Domain.Enums.Browser.ThemeName.Phosphor);
-
-        // Replicates the HandleConfigScreen Output-folder row at terminal width 80:
-        // width param = TerminalWidth - 2 = 78, path = TruncateMiddle(home/.local/...output, 38).
-        var path = "/home/agent/.local/…re/WireCopy/output";
-        var (mainLine, _) = SettingsRowRenderer.Build(
-            palette,
-            width: 78,
-            isSelected: false,
-            isWarning: false,
-            statusIcon: "●",
-            statusColor: palette.PromptFg.AnsiFg,
-            label: "Output folder",
-            value: path,
-            valueColor: palette.PromptFg.AnsiFg,
-            actionLabel: "Change");
-
-        var plain = SettingsRowRenderer.StripAnsi(mainLine);
-        plain.Length.Should().BeGreaterOrEqualTo(80,
-            "the Output-folder row's content + '[Enter] Change' action overflows past col 80 at width 80 — this is the visible bleed prerequisite");
-
-        // The 80th visible column (1-indexed) carries a non-blank tail char
-        // from "[Enter] Change" — this is the character that bleeds when the
-        // overlay's ClearLine fails to mask it.
-        plain[79].Should().NotBe(' ',
-            "the row's tail-character at col 80 is what bleeds when the overlay fails to clear the rightmost column");
-    }
+    // workspace-u9cc's `SettingsRow_OutputFolder_OverflowsBeyondColumn80_AtWidth80`
+    // pinned the bleed PRE-condition that the overlay's \x1b[2K masked. With
+    // workspace-l6w0's root-cause fix in SettingsRowRenderer.Build the row no
+    // longer overflows, so that test is gone. Coverage of the no-overflow
+    // invariant now lives in
+    // SettingsRowRendererTests.Build_LongValueAtWidth80_DoesNotOverflowTerminal
+    // (and a sibling visual smoke). Inverting the original assertion under
+    // its defect name was the wrong shape — bisecting workspace-u9cc would
+    // have walked into a confusingly-renamed test with the opposite claim.
 
     /// <summary>
     /// Workspace-u9cc fix verification: <see cref="FormField.ClearLine"/>
@@ -468,43 +437,29 @@ public class FormFieldTests
     [Fact]
     public void OverlayRender_AtWidth80_MasksRightmostColumnOfCoveredRows()
     {
-        var palette = BuiltInThemes.Get(Domain.Enums.Browser.ThemeName.Phosphor);
-
         const int width = 80;
         const int height = 24;
         var term = new SimulatedTerminal(width, height);
 
-        // ---- Underlying Setup-screen render: the overflowing "Output folder" row
-        //      lives at row index 5 (the overlay's top border will land on it).
-        //      Use the actual SettingsRowRenderer.Build output so the visible
-        //      tail (the bleed character) is realistic.
-        var (mainLine, _) = SettingsRowRenderer.Build(
-            palette,
-            width: width - 2,
-            isSelected: false,
-            isWarning: false,
-            statusIcon: "●",
-            statusColor: palette.PromptFg.AnsiFg,
-            label: "Output folder",
-            value: "/home/agent/.local/…re/WireCopy/output",
-            valueColor: palette.PromptFg.AnsiFg,
-            actionLabel: "Change");
-        var overflowRow = SettingsRowRenderer.StripAnsi(mainLine);
-
-        // Place the overflowing row on rows that the overlay will cover so
-        // the bleed has somewhere to be hidden / surface.
+        // ---- workspace-l6w0 fixes the underlying SettingsRowRenderer bleed,
+        //      but the FormField overlay's defense-in-depth still needs to
+        //      mask col 80 in case any other code path leaves a bleed tail
+        //      there. We synthesize a worst-case row that fills col 80 with
+        //      a non-blank tail character (representing a hypothetical
+        //      future overflow), then verify the overlay's \x1b[2K clears it.
         const int startRow = 5;
         const int overlayHeight = FormField.Height; // label + top + input + bottom + help
+        var overflowRow = new string('X', 80); // every col is non-blank
         for (var r = startRow; r < startRow + overlayHeight; r++)
         {
             term.WriteAt(0, r, overflowRow);
         }
 
-        // Sanity: col 80 (1-indexed) of those rows should currently carry
-        // the bleed-tail char from "[Enter] Change" — that's the bug.
+        // Sanity: col 80 (0-indexed 79) of every row currently has a non-blank
+        // char — that's the bleed scenario the overlay must defend against.
         var tailBefore = term.CharAt(79, startRow + 1);
         tailBefore.Should().NotBe(' ',
-            "the underlying row has a non-blank tail at col 80 — that's the bleed source");
+            "the synthetic underlying row has a non-blank tail at col 80 — the bleed scenario");
 
         // ---- Overlay render: replicate FormField.RenderFieldChrome for a
         //      simple label + border + input + bottom + help span. Each row
@@ -539,15 +494,14 @@ public class FormFieldTests
         term.WriteAt(2, startRow + 4, "? for help · Enter to verify · Esc to cancel");
 
         // ---- Assert: col 80 (1-indexed = 79 0-indexed) of every overlay
-        //      row is whitespace. The bleed tail char must be gone.
-        var bleedChars = new[] { 'h', 'e', 'g', 'n', 'a', 'C' };
+        //      row is whitespace. The synthetic 'X' tail char must be gone.
         for (var r = startRow; r < startRow + overlayHeight; r++)
         {
             var rightmost = term.CharAt(79, r);
             rightmost.Should().Be(' ',
                 $"col 80 of row {r} (overlay-covered) must be cleared by the overlay's \\x1b[2K — found '{rightmost}'");
-            bleedChars.Should().NotContain(rightmost,
-                $"col 80 of overlay row {r} must not retain a tail char from '[Enter] Change'");
+            rightmost.Should().NotBe('X',
+                $"col 80 of overlay row {r} must not retain the synthetic bleed tail");
         }
 
         // Spot-check that the overlay's own content still renders inside the
