@@ -1857,6 +1857,216 @@ public class PodcastOrchestratorTests : IDisposable
     }
 
     #endregion
+
+    #region Publish-Failure Classification (workspace-3a2k Phase E)
+
+    /// <summary>
+    /// workspace-3a2k Phase E: when a GCS bucket IS configured and publish
+    /// fails, the orchestrator must return a TOTAL failure (Success=false) so
+    /// the result screen can render Shape D with bucket-public remediation —
+    /// NOT a "local-only success" that hides the broken feed URL behind a
+    /// ✓ headline. Previously the orchestrator silently degraded any publish
+    /// failure to LocalOnlySuccess regardless of whether the user had
+    /// configured GCS.
+    /// </summary>
+    [Fact]
+    public async Task GeneratePodcastAsync_PublishFails_WithBucketConfigured_ReturnsTotalFailureWithTypedDetail()
+    {
+        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        store.Get("GcsBucketName").Returns("my-bucket");
+
+        const string url = "https://example.com/article1";
+        var article = CreateExtractedArticle(url);
+        articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
+
+        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheAnalysis
+            {
+                TotalArticles = 1,
+                CachedArticles = 0,
+                UncachedArticles = 1,
+                EstimatedCost = 0.05m,
+                ArticleStatuses = [],
+            });
+
+        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((TtsAudioCacheEntry?)null);
+
+        ttsService.GenerateAudioAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
+
+        audioCacheLocal.PutAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
+            .Returns(new TtsAudioCacheEntry
+            {
+                CacheKey = "k",
+                AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
+                FileSizeBytes = 1,
+                CachedAtUtc = DateTime.UtcNow,
+                ContentHash = "h",
+                TtsConfigHash = "c",
+            });
+
+        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(AssemblyResult.Successful(
+                Path.Combine(_tempDir, "out.m4b"),
+                TimeSpan.FromMinutes(5),
+                1024,
+                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+
+        publisher.PublishFeedAsync(
+                Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FeedPublishResult.Failure(
+                "Anonymous HTTP GET returned 403 — bucket may not grant allUsers:objectViewer.",
+                FeedPublishFailureClass.FeedNotReachable));
+
+        var collection = CreateCollection(url);
+        var result = await sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeFalse(
+            "publish failure with a configured bucket must surface as TotalFailure — not a misleading 'local-only success'");
+        result.Classification.Should().Be(PodcastResultClassification.TotalFailure);
+        result.FailureDetail.Should().NotBeNull();
+        result.FailureDetail!.Step.Should().Be("Publishing");
+        result.FailureDetail.FailureClass.Should().Be(FeedPublishFailureClass.FeedNotReachable);
+        result.FailureDetail.RemediationCopy.Should().Contain("allUsers:objectViewer",
+            "Shape D's Fix line must direct the user to the bucket-public IAM grant");
+        result.LocalFilePath.Should().NotBeNullOrEmpty(
+            "the M4B still got written locally — surface its path so the user can recover it");
+        result.FeedUrl.Should().BeNull(
+            "a publish that failed reachability MUST NOT advertise a broken feed URL — the whole point of the bead");
+    }
+
+    /// <summary>
+    /// Inverse: when NO bucket is configured, a publish failure still falls
+    /// back to the legacy LocalOnlySuccess path (the publish attempt was
+    /// best-effort; the user never asked for it). Pinned so the new
+    /// classification logic doesn't regress the local-only flow.
+    /// </summary>
+    [Fact]
+    public async Task GeneratePodcastAsync_PublishFails_WithoutBucketConfigured_StillReturnsLocalOnlySuccess()
+    {
+        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        store.Get("GcsBucketName").Returns((string?)null);
+
+        const string url = "https://example.com/article1";
+        var article = CreateExtractedArticle(url);
+        articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
+
+        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheAnalysis
+            {
+                TotalArticles = 1, CachedArticles = 0, UncachedArticles = 1,
+                EstimatedCost = 0.05m, ArticleStatuses = [],
+            });
+        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((TtsAudioCacheEntry?)null);
+        ttsService.GenerateAudioAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
+            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
+        audioCacheLocal.PutAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
+            .Returns(new TtsAudioCacheEntry
+            {
+                CacheKey = "k", AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
+                FileSizeBytes = 1, CachedAtUtc = DateTime.UtcNow, ContentHash = "h", TtsConfigHash = "c",
+            });
+        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(AssemblyResult.Successful(
+                Path.Combine(_tempDir, "out.m4b"),
+                TimeSpan.FromMinutes(5),
+                1024,
+                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+        publisher.PublishFeedAsync(
+                Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
+                Arg.Any<IProgress<PublishProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FeedPublishResult.Failure("No bucket configured — running local-only"));
+
+        var collection = CreateCollection(url);
+        var result = await sut.GeneratePodcastAsync(collection);
+
+        result.Success.Should().BeTrue(
+            "without a configured bucket the publish attempt is best-effort; the M4B still represents a successful local-only run");
+        result.FeedUrl.Should().BeNull();
+        result.FailureDetail.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Builds an orchestrator with substitutes for every collaborator we need
+    /// to drive a full pipeline + a settings store so the publish-failure
+    /// classification path is exercisable. The shared <see cref="_sut"/>
+    /// fixture lacks the settings store, which is required to hit the new
+    /// workspace-3a2k branch.
+    /// </summary>
+    private (
+        PodcastOrchestrator sut,
+        IUserSettingsStore store,
+        IPodcastPublisher publisher,
+        IAudioAssembler audioAssembler,
+        ITtsAudioCache audioCache,
+        ITtsService ttsService,
+        IArticleContentCache articleCache) BuildOrchestratorAllSubs()
+    {
+        var store = Substitute.For<IUserSettingsStore>();
+        var pageLoader = Substitute.For<IPageLoader>();
+        var contentExtractor = Substitute.For<IReadableContentExtractor>();
+        var preloadService = Substitute.For<IPreloadService>();
+        var pageCache = Substitute.For<IPageCache>();
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.IsBrowserAvailable.Returns(true);
+        var articleCache = Substitute.For<IArticleContentCache>();
+
+        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
+        var pageAccessQueue = Substitute.For<IPageAccessQueue>();
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
+
+        var contentProvider = new ReadingListContentProvider(
+            pageLoader,
+            contentExtractor,
+            browserConfig,
+            preloadService,
+            pageCache,
+            browserSession,
+            pageAccessQueue,
+            articleCache,
+            NullLogger<ReadingListContentProvider>.Instance);
+
+        var ttsService = Substitute.For<ITtsService>();
+        ttsService.IsConfigured.Returns(true);
+        var audioCache = Substitute.For<ITtsAudioCache>();
+        var audioAssembler = Substitute.For<IAudioAssembler>();
+        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var publisher = Substitute.For<IPodcastPublisher>();
+
+        var pConfig = Options.Create(new PodcastConfiguration
+        {
+            Title = "Test Podcast",
+            Description = "Test podcast description",
+            Author = "Test Author",
+            Language = "en-us",
+            Category = "Technology",
+            TempDirectory = _tempDir,
+        });
+        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "test-key", MaxBudgetUsd = 5.00m });
+
+        var sut = new PodcastOrchestrator(
+            contentProvider,
+            ttsService,
+            audioCache,
+            audioAssembler,
+            publisher,
+            pConfig,
+            ttsConfig,
+            NullLogger<PodcastOrchestrator>.Instance,
+            store);
+
+        return (sut, store, publisher, audioAssembler, audioCache, ttsService, articleCache);
+    }
+
+    #endregion
 }
 
 [Trait("Category", "Unit")]

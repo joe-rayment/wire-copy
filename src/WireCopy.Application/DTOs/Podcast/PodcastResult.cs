@@ -1,5 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using WireCopy.Domain.ValueObjects.Podcast;
+
 namespace WireCopy.Application.DTOs.Podcast;
 
 /// <summary>
@@ -63,6 +65,23 @@ public record PodcastResult
     public IReadOnlyList<ArticleFailure> FailedArticleDetails { get; init; } = [];
 
     /// <summary>
+    /// Gets the explicit classification of the result (workspace-3a2k).
+    /// Defaults to <c>null</c> meaning "let the screen infer from
+    /// <see cref="Success"/> + <see cref="FeedUrl"/> + <see cref="ArticlesFailed"/>".
+    /// The orchestrator sets this explicitly for the publish-failed-while-bucket-
+    /// configured path, which must render as <see cref="PodcastResultClassification.TotalFailure"/>
+    /// rather than the legacy "local-only success" silent-degradation behaviour.
+    /// </summary>
+    public PodcastResultClassification? Classification { get; init; }
+
+    /// <summary>
+    /// Gets the typed failure detail (workspace-3a2k). Non-null when
+    /// <see cref="Classification"/> is <see cref="PodcastResultClassification.TotalFailure"/>;
+    /// drives the result screen's typed (Step, Reason, Fix) tuple.
+    /// </summary>
+    public PodcastFailureDetail? FailureDetail { get; init; }
+
+    /// <summary>
     /// Creates a successful result.
     /// </summary>
     public static PodcastResult Successful(
@@ -100,5 +119,26 @@ public record PodcastResult
         ErrorMessage = errorMessage,
         LocalFilePath = localFilePath,
         FailedArticleDetails = failedArticleDetails ?? [],
+        Classification = PodcastResultClassification.TotalFailure,
+    };
+
+    /// <summary>
+    /// Creates a typed failure result (workspace-3a2k Phase E). Used by the
+    /// orchestrator when the publish step fails but the user did configure a
+    /// GCS bucket — the failure-class drives targeted remediation copy on
+    /// the result screen instead of the heuristic string-pattern fallback.
+    /// </summary>
+    public static PodcastResult Failure(
+        string errorMessage,
+        PodcastFailureDetail detail,
+        string? localFilePath = null,
+        IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
+    {
+        Success = false,
+        ErrorMessage = errorMessage,
+        LocalFilePath = localFilePath,
+        FailedArticleDetails = failedArticleDetails ?? [],
+        Classification = PodcastResultClassification.TotalFailure,
+        FailureDetail = detail,
     };
 }

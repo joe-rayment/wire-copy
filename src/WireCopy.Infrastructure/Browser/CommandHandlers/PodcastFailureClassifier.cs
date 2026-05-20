@@ -27,6 +27,32 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 internal static class PodcastFailureClassifier
 {
     /// <summary>
+    /// Maps a typed <see cref="PodcastFailureDetail"/> (when present) to the
+    /// (Step, Reason, Fix) tuple — bypasses the heuristic string fallback so
+    /// the orchestrator's typed FailureClass surfaces directly on the result
+    /// screen (workspace-3a2k Phase E). Falls back to the legacy heuristic
+    /// pipeline when no typed detail is supplied.
+    /// </summary>
+    internal static PodcastFailureClassification Classify(
+        PodcastFailureDetail? typedDetail,
+        string? errorMessage,
+        IReadOnlyList<ArticleFailure> failedArticles)
+    {
+        if (typedDetail is not null)
+        {
+            var reason = string.IsNullOrWhiteSpace(typedDetail.RawMessage)
+                ? typedDetail.FailureClass.ToString()
+                : typedDetail.RawMessage;
+            return new PodcastFailureClassification(
+                Step: typedDetail.Step,
+                Reason: reason,
+                Fix: typedDetail.RemediationCopy);
+        }
+
+        return Classify(errorMessage, failedArticles);
+    }
+
+    /// <summary>
     /// Maps a raw failure into a typed classification. Always returns
     /// non-null fields; ambiguous failures get the <c>Unknown</c> generic
     /// tuple.

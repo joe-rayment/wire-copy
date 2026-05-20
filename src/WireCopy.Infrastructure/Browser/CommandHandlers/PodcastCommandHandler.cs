@@ -317,7 +317,7 @@ internal static class PodcastCommandHandler
                     ttsService.SetApiKeyOverride(string.Empty);
                 }
 
-                await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, ct).ConfigureAwait(false);
+                await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, result.FailureDetail, ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return false;
             }

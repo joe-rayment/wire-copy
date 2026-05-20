@@ -2,6 +2,7 @@
 
 using FluentAssertions;
 using WireCopy.Application.DTOs.Podcast;
+using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
 using Xunit;
 
@@ -163,5 +164,64 @@ public class PodcastFailureClassifierTests
             NoFailures);
 
         c.Step.Should().Contain("audio assembly");
+    }
+
+    /// <summary>
+    /// workspace-3a2k Phase E: when the orchestrator attaches a typed
+    /// <see cref="PodcastFailureDetail"/>, the classifier must surface its
+    /// fields verbatim instead of pattern-matching on the error string. This
+    /// preserves the bucket-public remediation copy through the pipeline so
+    /// the Shape D screen tells the user exactly what to do — not some
+    /// heuristic best-guess.
+    /// </summary>
+    [Fact]
+    public void Classify_TypedDetail_BypassesHeuristic_AndReturnsItsFieldsVerbatim()
+    {
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.FeedNotReachable,
+            RawMessage: "Anonymous HTTP GET returned 403 — bucket may not grant allUsers:objectViewer.",
+            RemediationCopy: "Grant allUsers:objectViewer on the bucket, or run gsutil iam ch allUsers:objectViewer gs://<your-bucket>.");
+
+        var c = PodcastFailureClassifier.Classify(
+            detail,
+            errorMessage: "Anonymous HTTP GET returned 403 — bucket may not grant allUsers:objectViewer.",
+            failedArticles: NoFailures);
+
+        c.Step.Should().Be("Publishing");
+        c.Reason.Should().Contain("403");
+        c.Fix.Should().Contain("allUsers:objectViewer",
+            "the bucket-public remediation MUST land in the Fix line — the bead's headline acceptance");
+    }
+
+    [Fact]
+    public void Classify_TypedDetailNull_FallsBackToHeuristic()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            typedDetail: null,
+            errorMessage: "FFmpeg is not installed or not found in PATH.",
+            failedArticles: NoFailures);
+
+        c.Step.Should().Contain("audio assembly",
+            "the legacy heuristic path must still run when the orchestrator didn't attach a typed detail");
+    }
+
+    [Fact]
+    public void Classify_TypedDetailWithEmptyRawMessage_FallsBackToFailureClassName()
+    {
+        // Defensive: if for some reason RawMessage is empty (shouldn't happen
+        // but cheap to guard), the Reason line should not be blank — fall
+        // back to the FailureClass enum name so the user still sees what
+        // broke.
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.FeedNotParseable,
+            RawMessage: string.Empty,
+            RemediationCopy: "Retry the publish — encoding/transfer issue in the just-uploaded blob.");
+
+        var c = PodcastFailureClassifier.Classify(detail, errorMessage: null, failedArticles: NoFailures);
+
+        c.Reason.Should().Be("FeedNotParseable",
+            "an empty raw message must not render an empty Reason — fall back to the FailureClass");
     }
 }

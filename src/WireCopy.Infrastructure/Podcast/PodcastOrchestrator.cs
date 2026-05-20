@@ -588,6 +588,29 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     publishResult.ErrorMessage,
                     assemblyResult.OutputPath);
 
+                // workspace-3a2k: when the user configured a GCS bucket, a
+                // publish failure is a TOTAL failure — not a "local-only
+                // success". Otherwise the user sees "✓ Podcast Ready!" and
+                // only finds the broken subscription URL when their podcast
+                // app silently fails to add the feed. Carry the publisher's
+                // typed FailureClass through so the result screen can render
+                // the correct bucket-public remediation.
+                var hadBucketConfigured = !string.IsNullOrWhiteSpace(_settingsStore?.Get("GcsBucketName"));
+                if (hadBucketConfigured)
+                {
+                    var failureDetail = new PodcastFailureDetail(
+                        Step: "Publishing",
+                        FailureClass: publishResult.FailureClass,
+                        RawMessage: publishResult.ErrorMessage ?? "Publish failed",
+                        RemediationCopy: BuildPublishRemediation(publishResult.FailureClass));
+
+                    return PodcastResult.Failure(
+                        publishResult.ErrorMessage ?? "Publish failed",
+                        detail: failureDetail,
+                        localFilePath: assemblyResult.OutputPath,
+                        failedArticleDetails: allFailures);
+                }
+
                 return PodcastResult.Successful(
                     feedUrl: null,
                     localFilePath: assemblyResult.OutputPath,
@@ -687,6 +710,29 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
         return path;
     }
+
+    /// <summary>
+    /// Maps a typed <see cref="FeedPublishFailureClass"/> to the single-line
+    /// remediation copy rendered on the Phase E result screen (workspace-3a2k).
+    /// Targeted enough to be actionable (bucket-public IAM grant, audio-file
+    /// triage) without leaning on the heuristic string-pattern fallback in
+    /// <c>PodcastFailureClassifier</c>.
+    /// </summary>
+    private static string BuildPublishRemediation(FeedPublishFailureClass failureClass) => failureClass switch
+    {
+        FeedPublishFailureClass.FeedNotReachable =>
+            "feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on the bucket "
+            + "(Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run "
+            + "`gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.",
+        FeedPublishFailureClass.FeedNotParseable =>
+            "feed.xml uploaded but the response body did not parse as XML. Re-run with the same key — this usually "
+            + "indicates an encoding/transfer issue in the just-uploaded blob.",
+        FeedPublishFailureClass.NoAudioFiles =>
+            "Every episode skipped because the local audio file was missing on disk. Check ffmpeg output / "
+            + "temp-dir cleanup and re-run.",
+        _ =>
+            "Check the bucket name + service-account key in Setup, or see logs at ~/.local/share/WireCopy/logs/ for the underlying error.",
+    };
 
     private static int CountWords(string text)
     {
