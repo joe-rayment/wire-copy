@@ -30,17 +30,24 @@ public static class HumanActionDetector
     private const int RealPageThreshold = 20 * 1024;
     private const int SmallPageThreshold = 5 * 1024;
 
-    private static readonly string[] CaptchaIndicators =
+    // workspace-kq4b: split captcha indicators by confidence so large pages
+    // with noise keywords (e.g. Cloudflare's "challenge-platform" injected on
+    // every page of a CF-fronted site, even when no challenge is shown) no
+    // longer trip a Generic "action needed" badge on healthy pages. Strong
+    // indicators are vendor-confirmed markers that genuinely correlate with
+    // a challenge; weak indicators are noisy keywords that must be paired
+    // with a small page size before they imply an interruption.
+    private static readonly string[] StrongCaptchaIndicators =
     {
         // DataDome
         "captcha-delivery.com",
         "geo.captcha-delivery.com",
         "datadome",
 
-        // Cloudflare
+        // Cloudflare — vendor-specific challenge UI markers (NOT the
+        // "challenge-platform" script which CF injects on healthy pages too)
         "cf-challenge",
         "cf-browser-verification",
-        "challenge-platform",
         "attention required! | cloudflare",
         "checking your browser",
         "just a moment...",
@@ -49,12 +56,25 @@ public static class HumanActionDetector
         "g-recaptcha",
         "h-captcha",
         "hcaptcha.com",
+    };
 
-        // Generic
+    private static readonly string[] WeakCaptchaIndicators =
+    {
+        // Cloudflare's ongoing bot-monitor injects this on EVERY page of a
+        // CF-fronted site (e.g. thestar.com) — only meaningful on a tiny page.
+        "challenge-platform",
+
+        // Generic keywords — too noisy to fire on a large article page that
+        // happens to mention them.
         "you have been blocked",
         "access denied",
         "enable cookies",
     };
+
+    // Combined accessor kept so the back-compat IsBotDetectionResponse path
+    // still scans the full keyword set.
+    private static readonly string[] CaptchaIndicators =
+        StrongCaptchaIndicators.Concat(WeakCaptchaIndicators).ToArray();
 
     private static readonly string[] CookieConsentIndicators =
     {
@@ -144,7 +164,7 @@ public static class HumanActionDetector
         var captchaConfidence = ScoreCaptcha(bodyLower);
         if (captchaConfidence == CaptchaConfidence.High)
         {
-            return new HumanActionRequired(HumanActionVariant.Captcha, domain);
+            return new HumanActionRequired(HumanActionVariant.Captcha, domain, "vendor markers detected");
         }
 
         // 3. TwoFactor: explicit OTP autocomplete or verification-code copy.
@@ -172,17 +192,26 @@ public static class HumanActionDetector
             return new HumanActionRequired(HumanActionVariant.Paywall, domain);
         }
 
-        // 7. Captcha (low confidence) — falls through to Generic, since misidentifying a
-        //    cookie banner as "solve the captcha" is worse than vague-but-actionable copy.
+        // 7. Captcha (low confidence) — workspace-kq4b: this used to fall through to
+        //    Generic on ANY page mentioning a noisy keyword (Cloudflare's
+        //    "challenge-platform" script lands on every healthy page of a CF-fronted
+        //    site), which produced a vague and demonstrably wrong "action needed"
+        //    badge on thestar.com homepages and similar. The narrower path through
+        //    ScoreCaptcha now only returns Low for strong indicators on large pages
+        //    (e.g. a real CAPTCHA that loaded a heavyweight challenge UI). Weak
+        //    indicators on large pages no longer reach this branch at all.
         if (captchaConfidence == CaptchaConfidence.Low)
         {
-            return new HumanActionRequired(HumanActionVariant.Generic, domain);
+            return new HumanActionRequired(
+                HumanActionVariant.Generic,
+                domain,
+                "ambiguous challenge markers on a large page");
         }
 
         // 8. Generic last-resort: tiny page with a single form + button (interstitial pattern).
         if (LooksLikeInterstitial(bodyLower))
         {
-            return new HumanActionRequired(HumanActionVariant.Generic, domain);
+            return new HumanActionRequired(HumanActionVariant.Generic, domain, "interstitial-shaped HTML");
         }
 
         // 9. HTTP 401/403 without recognizable form — surface as Login (high cost of missing
@@ -232,51 +261,44 @@ public static class HumanActionDetector
             return CaptchaConfidence.None;
         }
 
-        // Real article pages can contain "challenge-platform" injected by Cloudflare's
-        // ongoing bot-monitoring scripts even on logged-in normal pages — so we require
-        // small page size before declaring HIGH confidence on those keyword hits.
         var isSmall = html.Length <= RealPageThreshold;
+        var isTiny = html.Length < SmallPageThreshold;
+        var hasStrong = ContainsAny(html, StrongCaptchaIndicators);
+        var hasWeak = ContainsAny(html, WeakCaptchaIndicators);
 
-        // Vendor-specific markers: high confidence when on a small page.
-        if (isSmall)
+        // Vendor-confirmed markers on a small page → high confidence: a real
+        // CAPTCHA UI loaded a heavyweight script and the page body is otherwise
+        // small enough that this isn't an article that mentions the vendor name.
+        if (isSmall && hasStrong)
         {
-            if (html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("datadome", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("cf-challenge", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("challenge-platform", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("g-recaptcha", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("h-captcha", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("hcaptcha.com", StringComparison.OrdinalIgnoreCase))
-            {
-                return CaptchaConfidence.High;
-            }
-
-            // Generic captcha keywords on very small pages.
-            if (html.Length < SmallPageThreshold &&
-                (html.Contains("captcha", StringComparison.OrdinalIgnoreCase) ||
-                 html.Contains("challenge", StringComparison.OrdinalIgnoreCase)))
-            {
-                return CaptchaConfidence.High;
-            }
-
-            // Cloudflare/blocked text hints — high confidence on small pages.
-            if (html.Contains("attention required! | cloudflare", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("checking your browser", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("just a moment...", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("you have been blocked", StringComparison.OrdinalIgnoreCase) ||
-                html.Contains("cf-browser-verification", StringComparison.OrdinalIgnoreCase))
-            {
-                return CaptchaConfidence.High;
-            }
+            return CaptchaConfidence.High;
         }
 
-        // Larger page mentioning bot-style keywords is LOW confidence — could be an
-        // article quoting the words. Surface as Generic, never as a confident captcha.
-        if (ContainsAny(html, CaptchaIndicators))
+        // TINY pages (<5KB) mentioning "captcha" or "challenge" alone are
+        // almost certainly real challenge interstitials — too small to be an
+        // article that incidentally uses the word. This preserves the
+        // pre-kq4b detection for plain-text challenge pages without vendor
+        // scripts. Also covers weak indicators (challenge-platform, etc.) on
+        // tiny pages.
+        if (isTiny &&
+            (html.Contains("captcha", StringComparison.OrdinalIgnoreCase)
+                || html.Contains("challenge", StringComparison.OrdinalIgnoreCase)
+                || hasWeak))
+        {
+            return CaptchaConfidence.High;
+        }
+
+        // Larger page with a STRONG vendor marker is LOW confidence: rare but
+        // possible (article quoting the vendor name). Surface as Generic so
+        // the user gets *some* warning, but not a confident captcha verdict.
+        if (hasStrong)
         {
             return CaptchaConfidence.Low;
         }
 
+        // Larger page with only weak markers (e.g. CF "challenge-platform" on a
+        // healthy thestar.com homepage) is NOT a signal. Returning None here is
+        // the fix for the workspace-kq4b false-positive badge.
         return CaptchaConfidence.None;
     }
 
