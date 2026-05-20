@@ -582,6 +582,7 @@ public class TerminalInputHandler : IInputHandler
             'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
             '<' => new NavigationCommand { Type = CommandType.SpeedReadSlower },
             '>' => new NavigationCommand { Type = CommandType.SpeedReadFaster },
+            '\\' => new NavigationCommand { Type = CommandType.TogglePreloadDetail },
             _ => MapKeyToCommandStatic(keyInfo.Key, keyInfo.Modifiers)
         };
     }

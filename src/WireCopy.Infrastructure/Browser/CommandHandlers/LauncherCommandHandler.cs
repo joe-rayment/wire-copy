@@ -58,7 +58,8 @@ internal static class LauncherCommandHandler
                 or CommandType.Quit or CommandType.GoBack
                 or CommandType.ActivateLink or CommandType.ShowHelp
                 or CommandType.TerminalResized or CommandType.OpenCommandLine
-                or CommandType.Undo;
+                or CommandType.Undo
+                or CommandType.TogglePreloadDetail;
 
             if (!isNavKey && command.RawKeyChar.HasValue && command.RawKeyChar.Value >= 32)
             {
@@ -73,9 +74,26 @@ internal static class LauncherCommandHandler
                 return false;
 
             case CommandType.GoBack:
+                // workspace-c8v3: Esc dismisses the prefetch detail overlay
+                // first when it's up; otherwise fall through to the legacy
+                // launcher refresh.
+                if (ctx.IsPreloadDetailVisible)
+                {
+                    ctx.IsPreloadDetailVisible = false;
+                    var refreshedOptions = ctx.GetCurrentRenderOptions();
+                    await ctx.RenderCurrentPageAsync(refreshedOptions, ct).ConfigureAwait(false);
+                    break;
+                }
+
                 // Re-render launcher (recovers from error pages shown over launcher mode)
                 await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                break;
+
+            case CommandType.TogglePreloadDetail:
+                ctx.IsPreloadDetailVisible = !ctx.IsPreloadDetailVisible;
+                var toggleOptions = ctx.GetCurrentRenderOptions();
+                await ctx.RenderCurrentPageAsync(toggleOptions, ct).ConfigureAwait(false);
                 break;
 
             case CommandType.MoveDown:

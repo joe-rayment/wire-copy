@@ -43,7 +43,11 @@ public partial class BrowserOrchestrator
         // status-bar / reader-view consumers can render variant-aware copy
         // (workspace-0b9s). When non-null, the status bar replaces the legacy
         // 🍪✗ cookie badge with "⏸ {verb} at {domain} · Shift+O:open".
-        var preloadProgress = isLauncher ? null : _preloadService.GetProgress();
+        // workspace-c8v3: also populate CacheProgress on the launcher when the
+        // user has explicitly toggled the prefetch detail overlay on, so the
+        // panel has something to render. Otherwise keep the launcher fast.
+        var needPreloadProgress = !isLauncher || _commandContext.IsPreloadDetailVisible;
+        var preloadProgress = needPreloadProgress ? _preloadService.GetProgress() : null;
         var requiredAction = preloadProgress?.BlockedAction;
 
         return new RenderOptions
@@ -67,6 +71,7 @@ public partial class BrowserOrchestrator
             ShowSetupHint = HasIncompleteSetup(),
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
             RequiredAction = requiredAction,
+            ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
         };
     }
 

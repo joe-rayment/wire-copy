@@ -117,6 +117,7 @@ public class TerminalPageRenderer : IPageRenderer
 
             _helpers.PositionAtBottom();
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
+            RenderPreloadDetailOverlay(options);
             RenderToastOverlay(context, options.TerminalWidth);
             return;
         }
@@ -159,6 +160,7 @@ public class TerminalPageRenderer : IPageRenderer
             _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
         }
 
+        RenderPreloadDetailOverlay(options);
         RenderToastOverlay(context, options.TerminalWidth);
     }
 
@@ -377,6 +379,7 @@ public class TerminalPageRenderer : IPageRenderer
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
         _launcherRenderer.RenderFooter(options.TerminalWidth);
+        RenderPreloadDetailOverlay(options);
     }
 
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
@@ -414,9 +417,13 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        _helpers.Clear();
+        // workspace-c8v3: the panel is an OVERLAY — it must NOT call _helpers.Clear()
+        // (resets cursor + _linesWritten) or _helpers.ClearRemainingLines() (writes
+        // \x1b[K from _linesWritten downward, wiping the status bar already painted
+        // by the calling view). Both are layout-management ops that conflict with
+        // the "render on top of existing chrome" contract. Position absolutely
+        // instead.
         _preloadDetailRenderer.Render(options.CacheProgress, options.TerminalWidth, options.TerminalHeight);
-        _helpers.ClearRemainingLines();
     }
 
     /// <summary>

@@ -67,6 +67,15 @@ internal class CommandContext
     /// </summary>
     public double PodcastGenerationProgress { get; set; }
 
+    /// <summary>
+    /// When true, the prefetch detail overlay (workspace-v75w renderer) is
+    /// drawn on top of the active view. Toggled by the backslash keybind
+    /// (workspace-c8v3); dismissed by toggling again or by Esc/GoBack while
+    /// visible. Defaults to false — the panel is hidden until the user asks
+    /// for it.
+    /// </summary>
+    public bool IsPreloadDetailVisible { get; set; }
+
     // Delegates for operations that remain in BrowserOrchestrator
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 

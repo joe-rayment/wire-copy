@@ -887,7 +887,24 @@ public partial class BrowserOrchestrator : IBrowserService
                     await NavigationCommandHandler.HandleActivateLink(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoBack:
+                    // workspace-c8v3: when the prefetch detail overlay is up,
+                    // Esc/Backspace dismisses the overlay instead of falling
+                    // back to history navigation. The overlay is the closest
+                    // modal-ish thing so it should consume the gesture first.
+                    if (_commandContext.IsPreloadDetailVisible)
+                    {
+                        _commandContext.IsPreloadDetailVisible = false;
+                        var refreshed = GetCurrentRenderOptions();
+                        await RenderCurrentPageAsync(refreshed, cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+
                     await NavigationCommandHandler.HandleGoBack(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                    break;
+                case CommandType.TogglePreloadDetail:
+                    _commandContext.IsPreloadDetailVisible = !_commandContext.IsPreloadDetailVisible;
+                    var togglesOptions = GetCurrentRenderOptions();
+                    await RenderCurrentPageAsync(togglesOptions, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.GoForward:
                     await NavigationCommandHandler.HandleGoForward(_commandContext, options, cancellationToken).ConfigureAwait(false);
