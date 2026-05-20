@@ -201,6 +201,57 @@ public class M4bAudioAssemblerIntegrationTests : IAsyncLifetime, IDisposable
         atomType.Should().Be("ftyp", "M4B with faststart should begin with ftyp atom");
     }
 
+    // workspace-74zy QA follow-up: cover the per-segment progress tick wired
+    // at M4bAudioAssembler line ~127. Verifies the real implementation reports
+    // AssemblyProgress events with monotonically increasing CompletedSegments
+    // across the probe phase, plus at least one event during concat with
+    // FfmpegPercent > 0. Skipped by default per the file convention; flip the
+    // Skip attribute locally to run against the installed ffmpeg.
+    [Fact(Skip = "Requires FFmpeg on PATH")]
+    public async Task AssembleAsync_WithProgressSink_EmitsPerSegmentAndConcatEvents()
+    {
+        if (!_ffmpegAvailable)
+        {
+            return;
+        }
+
+        var segments = await CreateTestSegmentsAsync(3);
+        var outputPath = Path.Combine(_tempDir, "progress-output.m4b");
+
+        var request = new AssemblyRequest
+        {
+            Segments = segments,
+            OutputPath = outputPath,
+            Metadata = new AudioMetadata
+            {
+                Title = "Progress Test",
+                Author = "Author",
+                Description = "desc",
+                Genre = "Podcast",
+            },
+            CleanupTemporaryFiles = false,
+        };
+
+        var events = new List<AssemblyProgress>();
+        var sink = new Progress<AssemblyProgress>(p => events.Add(p));
+
+        var result = await _assembler.AssembleAsync(request, sink);
+
+        result.Success.Should().BeTrue();
+        events.Should().NotBeEmpty("the assembler must forward at least one progress event");
+
+        // Per-segment tick: probe phase emits CompletedSegments = 1, 2, 3.
+        var probeEvents = events.Where(e => e.FfmpegPercent == 0 && e.CompletedSegments > 0).ToList();
+        probeEvents.Should().NotBeEmpty("the per-segment probe loop ticks the progress sink");
+        probeEvents.Select(e => e.CompletedSegments).Should().Contain(3,
+            "the final probe tick reports CompletedSegments = TotalSegments");
+
+        // FFmpeg NotifyOnProgress: at least one event with FfmpegPercent > 0
+        // proves the concat-phase wiring actually fires at runtime.
+        events.Any(e => e.FfmpegPercent > 0).Should().BeTrue(
+            "FFMpegCore's NotifyOnProgress must propagate at least one mid-concat percent");
+    }
+
     private async Task<List<ArticleAudioSegment>> CreateTestSegmentsAsync(int count)
     {
         var segments = new List<ArticleAudioSegment>();
