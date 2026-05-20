@@ -239,6 +239,12 @@ internal static class PodcastProgressScreens
                 catch (Exception ex)
                 {
                     ctx.Logger.LogError(ex, "Podcast generation failed");
+
+                    // workspace-pvr6: untyped — defensive catch for exceptions
+                    // the orchestrator's own outer catch missed (e.g. a
+                    // pre-Async ArgumentNullException). The classifier's
+                    // generic-fallback "see logs" remediation is the honest
+                    // answer for a path the orchestrator didn't claim.
                     return PodcastResult.Failure(ex.Message);
                 }
             }
