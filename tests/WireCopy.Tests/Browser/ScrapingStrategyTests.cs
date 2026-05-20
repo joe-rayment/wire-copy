@@ -166,6 +166,122 @@ public class ScrapingStrategyTests
         visible[^1].Link.Url.Should().Be("https://example.com/story0");
     }
 
+    /// <summary>
+    /// workspace-hapr: regression pin — when the AI returns a ranking that
+    /// EXACTLY matches the surviving document order (which is what we suspect
+    /// is happening on macleans.ca), the strategy surfaces "no reordering" in
+    /// the summary so the user knows AI Curated added no editorial value.
+    /// Without this guard, the summary reads "AI curated · N stories" — the
+    /// same as if the AI had actually reordered, and the user sees doc order
+    /// silently.
+    /// </summary>
+    [Fact]
+    public async Task AiCuratedStrategy_MatchesDocumentOrder_SummaryFlagsNoReordering()
+    {
+        var links = BuildTechmemeFixture();
+        var excludedKeys = links.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+
+        // Critical: ranked keys are in the SAME order as the surviving doc
+        // order (story0, story1, ..., story29). This is the macleans.ca-like
+        // failure mode.
+        var degenerateRanking = links.Skip(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new AiCuratedResult
+            {
+                ExcludedLinkKeys = excludedKeys,
+                StoryOrderLinkKeys = degenerateRanking,
+                AnalyzedAt = DateTime.UtcNow,
+            });
+
+        var strategy = new AiCuratedStrategy(
+            new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://macleans.ca/",
+            Html = string.Empty,
+            Links = links,
+        });
+
+        result.Summary.Should().Contain("no reordering",
+            "the user MUST see that the AI's ranking matched document order — otherwise the bug shape (workspace-hapr) is invisible");
+        result.Summary.Should().Contain("document order");
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_EmptyRanking_SummaryFlagsEmpty()
+    {
+        var links = BuildTechmemeFixture();
+        var allExcluded = links.Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new AiCuratedResult
+            {
+                ExcludedLinkKeys = allExcluded,
+                StoryOrderLinkKeys = new List<string>(),
+                AnalyzedAt = DateTime.UtcNow,
+            });
+
+        var strategy = new AiCuratedStrategy(
+            new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://macleans.ca/",
+            Html = string.Empty,
+            Links = links,
+        });
+
+        result.Summary.Should().Contain("empty result",
+            "an empty StoryOrderLinkKeys must be surfaced as a degenerate result, not as 'AI curated · 0 stories' that looks like a normal small page");
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_GenuineReorder_NoDegenerateFlag()
+    {
+        var links = BuildTechmemeFixture();
+        var stories = links.Skip(8).ToList();
+        var reversedKeys = stories.AsEnumerable().Reverse().Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new AiCuratedResult
+            {
+                ExcludedLinkKeys = links.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
+                StoryOrderLinkKeys = reversedKeys,
+                AnalyzedAt = DateTime.UtcNow,
+            });
+
+        var strategy = new AiCuratedStrategy(
+            new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://techmeme.com/",
+            Html = string.Empty,
+            Links = links,
+        });
+
+        result.Summary.Should().NotContain("no reordering");
+        result.Summary.Should().NotContain("empty result");
+        result.Summary.Should().Contain("30 stories");
+    }
+
     [Fact]
     public async Task AiCuratedStrategy_NoApiKey_StrategyUnavailable()
     {
