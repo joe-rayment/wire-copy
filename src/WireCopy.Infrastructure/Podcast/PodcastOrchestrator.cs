@@ -122,11 +122,17 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         _logger.LogInformation("Starting podcast generation for '{Collection}'", collection.Name);
 
         // Step 1: Pre-flight checks
+        // workspace-pvr6: untyped failure — PodcastFailureClassifier's heuristic
+        // matches "API key" / "not configured" and routes to the credentials
+        // remediation copy without needing a typed FailureDetail here. Typing
+        // would duplicate string-pattern-matching with no user-visible gain.
         if (!_ttsService.IsConfigured)
         {
             return PodcastResult.Failure("TTS service is not configured. Set an OpenAI API key.");
         }
 
+        // workspace-pvr6: untyped — classifier's "FFmpeg" pattern produces the
+        // brew/apt install remediation. No upside to typing.
         if (!await _audioAssembler.ValidatePrerequisitesAsync(cancellationToken).ConfigureAwait(false))
         {
             return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
@@ -195,6 +201,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             if (articles.Count == 0)
             {
+                // workspace-pvr6: untyped — classifier's "No readable articles"
+                // pattern routes to the "open articles in browser first" copy.
                 return PodcastResult.Failure(
                     "No readable articles found in the collection.",
                     failedArticleDetails: extractionFailures);
@@ -248,6 +256,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             if (articles.Count == 0)
             {
+                // workspace-pvr6: untyped — the heuristic falls through to the
+                // generic "see logs" remediation, which is correct: the quality
+                // failures live in failedArticleDetails and the result screen
+                // renders them inline. No typed FailureClass adds value here.
                 return PodcastResult.Failure(
                     "All articles failed content quality validation.",
                     failedArticleDetails: extractionFailures);
@@ -270,6 +282,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             if (totalCost > _ttsConfig.MaxBudgetUsd)
             {
+                // workspace-pvr6: untyped — classifier matches "budget"/"cost"
+                // and routes to the cost-gate remediation.
                 return PodcastResult.Failure(
                     $"Estimated cost ${totalCost:F4} exceeds budget ${_ttsConfig.MaxBudgetUsd:F2}. " +
                     $"Reduce articles or increase MaxBudgetUsd.",
@@ -440,6 +454,11 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             if (segments.Count == 0)
             {
+                // workspace-pvr6: untyped — the per-article failure reasons in
+                // allFailures carry the typed 429/401/500 details from the TTS
+                // service. The result screen surfaces them inline; the
+                // classifier's TTS-error patterns produce a sensible Step/Fix
+                // line. No typed FailureDetail adds clarity here.
                 return PodcastResult.Failure(
                     "All articles failed TTS generation.",
                     failedArticleDetails: allFailures);
@@ -495,6 +514,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, assemblyProgress, cancellationToken).ConfigureAwait(false);
             if (!assemblyResult.Success || string.IsNullOrEmpty(assemblyResult.OutputPath))
             {
+                // workspace-pvr6: untyped — assembly errors are typically
+                // FFmpeg-related (caught by the classifier's "ffmpeg" pattern)
+                // or transient I/O issues that don't have a FailureClass.
+                // The error message is rich enough for the heuristic.
                 return PodcastResult.Failure(
                     $"M4B assembly failed: {assemblyResult.ErrorMessage}",
                     failedArticleDetails: allFailures);
@@ -648,6 +671,12 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         catch (Exception ex)
         {
             _logger.LogError(ex, "Podcast generation failed: {Message}", ex.Message);
+
+            // workspace-pvr6: outer catch is the catch-all for unforeseen
+            // exceptions. The exception's message string is the richest
+            // signal we have, and the heuristic classifier handles common
+            // patterns (network/auth/budget/ffmpeg) better than a hand-typed
+            // FailureClass=Generic would. Leave untyped on purpose.
             return PodcastResult.Failure(
                 $"Podcast generation failed: {ex.Message}",
                 failedArticleDetails: extractionFailures.Concat(ttsFailures).ToList());
