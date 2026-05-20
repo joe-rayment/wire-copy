@@ -221,6 +221,24 @@ internal static class PodcastCommandHandler
                 options = ctx.GetCurrentRenderOptions();
             }
 
+            // workspace-lr80: cost-gate confirm. Only pops when the estimated
+            // spend OR article count exceeds the user's configured threshold.
+            // Below threshold = silent kickoff (preserves Phase 1's
+            // one-keystroke contract from workspace-kuu7).
+            if (cacheAnalysis != null)
+            {
+                var costGateConfig = LoadCostGateConfig(settingsStore);
+                var proceed = await PodcastCostGateModal.ShowAsync(ctx, options, cacheAnalysis, costGateConfig, ct).ConfigureAwait(false);
+                if (!proceed)
+                {
+                    ctx.NavigationService.SetStatusMessage("Podcast cancelled");
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                options = ctx.GetCurrentRenderOptions();
+            }
+
             // Show cache-wait screen if preloading is still in progress
             var skippedWait = await PodcastConfirmationScreens.ShowCacheWaitScreenAsync(ctx, options, collection, ct).ConfigureAwait(false);
 
@@ -300,6 +318,37 @@ internal static class PodcastCommandHandler
                 ctx.Logger.LogError(renderEx, "Failed to render podcast error screen");
             }
         }
+    }
+
+    /// <summary>
+    /// Reads cost-gate thresholds from the user-settings store, falling back
+    /// to the <see cref="PodcastCostGateConfig"/> defaults (workspace-lr80).
+    /// Keys: <c>PodcastCostGateThresholdUsd</c>, <c>PodcastCostGateArticleThreshold</c>,
+    /// <c>PodcastCostGateAlwaysShow</c>.
+    /// </summary>
+    internal static PodcastCostGateConfig LoadCostGateConfig(IUserSettingsStore settingsStore)
+    {
+        ArgumentNullException.ThrowIfNull(settingsStore);
+
+        var defaults = new PodcastCostGateConfig();
+        var thresholdRaw = settingsStore.Get("PodcastCostGateThresholdUsd");
+        var articleRaw = settingsStore.Get("PodcastCostGateArticleThreshold");
+        var alwaysRaw = settingsStore.Get("PodcastCostGateAlwaysShow");
+
+        var thresholdUsd = decimal.TryParse(thresholdRaw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var t) && t >= 0
+            ? t
+            : defaults.ThresholdUsd;
+        var articleThreshold = int.TryParse(articleRaw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var a) && a > 0
+            ? a
+            : defaults.ArticleThreshold;
+        var alwaysShow = bool.TryParse(alwaysRaw, out var b) && b;
+
+        return new PodcastCostGateConfig
+        {
+            ThresholdUsd = thresholdUsd,
+            ArticleThreshold = articleThreshold,
+            AlwaysShow = alwaysShow,
+        };
     }
 
     internal static void RenderBox(RenderHelpers helpers, ThemePalette p, string title, int width)
