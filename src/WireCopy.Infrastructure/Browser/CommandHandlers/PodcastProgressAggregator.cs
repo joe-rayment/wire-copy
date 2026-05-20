@@ -46,6 +46,17 @@ internal sealed class PodcastProgressAggregator
     private int _uncachedArticleCount;
     private bool _hasAnyEvent;
 
+    // workspace-v34z QA fix: persist the last meaningful per-phase "n/total"
+    // detail across phase transitions so that, e.g., the Synthesizing sub-bar
+    // still reads "12/12" after the run advances into Assembling. Without this
+    // the detail string vanishes the moment the phase changes, which is
+    // exactly when the user wants to confirm the previous phase actually
+    // finished.
+    private string _extractingDetail = string.Empty;
+    private string _ttsDetail = string.Empty;
+    private string _assemblingDetail = string.Empty;
+    private string _publishingDetail = string.Empty;
+
     public PodcastProgressAggregator(Func<DateTime>? clock = null)
     {
         _clock = clock ?? (() => DateTime.UtcNow);
@@ -93,6 +104,7 @@ internal sealed class PodcastProgressAggregator
                 {
                     var done = Math.Max(0, progress.CurrentArticle - (progress.IsArticleComplete ? 0 : 1));
                     _extractingFraction = Math.Clamp((double)done / progress.TotalArticles, 0, 1);
+                    _extractingDetail = $"{Math.Min(progress.CurrentArticle, progress.TotalArticles)}/{progress.TotalArticles}";
                 }
 
                 break;
@@ -100,12 +112,39 @@ internal sealed class PodcastProgressAggregator
             case PodcastPhase.GeneratingAudio:
                 _extractingFraction = 1.0; // entering TTS means extraction is done
                 _ttsFraction = ComputeTtsFraction(progress);
+                if (progress.TotalArticles > 0)
+                {
+                    _ttsDetail = $"{Math.Min(progress.CurrentArticle, progress.TotalArticles)}/{progress.TotalArticles}";
+                }
+
+                if (_extractingDetail.Length == 0 && progress.TotalArticles > 0)
+                {
+                    // First event we've seen is TTS — synthesize the "all done"
+                    // detail for the prior phase so the sub-bar reads sanely.
+                    _extractingDetail = $"{progress.TotalArticles}/{progress.TotalArticles}";
+                }
+
                 break;
 
             case PodcastPhase.AssemblingAudio:
                 _extractingFraction = 1.0;
                 _ttsFraction = 1.0;
                 _assemblingFraction = ComputeAssembleFraction(progress);
+                if (progress.AssembledSegmentsTotal > 0)
+                {
+                    _assemblingDetail = $"{progress.AssembledSegments}/{progress.AssembledSegmentsTotal}";
+                }
+
+                if (_ttsDetail.Length == 0 && progress.TotalArticles > 0)
+                {
+                    _ttsDetail = $"{progress.TotalArticles}/{progress.TotalArticles}";
+                }
+
+                if (_extractingDetail.Length == 0 && progress.TotalArticles > 0)
+                {
+                    _extractingDetail = $"{progress.TotalArticles}/{progress.TotalArticles}";
+                }
+
                 break;
 
             case PodcastPhase.Publishing:
@@ -113,6 +152,26 @@ internal sealed class PodcastProgressAggregator
                 _ttsFraction = 1.0;
                 _assemblingFraction = 1.0;
                 _publishingFraction = ComputePublishFraction(progress);
+                if (progress.UploadedEpisodesTotal > 0)
+                {
+                    _publishingDetail = $"{progress.UploadedEpisodes}/{progress.UploadedEpisodesTotal}";
+                }
+
+                if (_assemblingDetail.Length == 0 && progress.AssembledSegmentsTotal > 0)
+                {
+                    _assemblingDetail = $"{progress.AssembledSegmentsTotal}/{progress.AssembledSegmentsTotal}";
+                }
+
+                if (_ttsDetail.Length == 0 && progress.TotalArticles > 0)
+                {
+                    _ttsDetail = $"{progress.TotalArticles}/{progress.TotalArticles}";
+                }
+
+                if (_extractingDetail.Length == 0 && progress.TotalArticles > 0)
+                {
+                    _extractingDetail = $"{progress.TotalArticles}/{progress.TotalArticles}";
+                }
+
                 break;
         }
 
@@ -135,6 +194,26 @@ internal sealed class PodcastProgressAggregator
             PodcastPhase.AssemblingAudio => _assemblingFraction,
             PodcastPhase.Publishing => _publishingFraction,
             _ => 0,
+        };
+    }
+
+    /// <summary>
+    /// Returns the latest "n/total" detail string captured for a phase. Sticky
+    /// across phase transitions: once Synthesizing has reported "12/12", that
+    /// string stays even after the run advances into Assembling so the user
+    /// can confirm at a glance that the previous phase finished cleanly.
+    /// Returns the empty string until a meaningful event has been observed
+    /// for the phase.
+    /// </summary>
+    public string GetPhaseDetail(PodcastPhase phase)
+    {
+        return phase switch
+        {
+            PodcastPhase.CachingContent => _extractingDetail,
+            PodcastPhase.GeneratingAudio => _ttsDetail,
+            PodcastPhase.AssemblingAudio => _assemblingDetail,
+            PodcastPhase.Publishing => _publishingDetail,
+            _ => string.Empty,
         };
     }
 

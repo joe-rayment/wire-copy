@@ -63,14 +63,21 @@ internal static class PodcastProgressScreens
         PodcastProgress? latestProgress = null;
         var animFrame = 0;
 
+        // workspace-v34z Phase B: aggregator turns the raw progress events into
+        // a weighted global percent + velocity-based ETA, so the bar no longer
+        // sits frozen on the 70% TTS step.
+        var aggregator = new PodcastProgressAggregator();
+
         var lastProcessingIndex = -1;
         var lastPhase = PodcastPhase.CachingContent;
         var progress = new Progress<PodcastProgress>(p =>
         {
             Volatile.Write(ref latestProgress, p);
+            aggregator.Observe(p);
 
-            // Update shared progress for CTA rendering
-            ctx.PodcastGenerationProgress = Math.Clamp(p.PercentComplete / 100.0, 0.0, 1.0);
+            // Update shared progress for CTA rendering — use the weighted global
+            // percent, not the orchestrator's stair-stepped PercentComplete.
+            ctx.PodcastGenerationProgress = Math.Clamp(aggregator.GlobalPercent, 0.0, 1.0);
 
             // Phase transition: reset article statuses when moving to GeneratingAudio
             if (p.Phase == PodcastPhase.GeneratingAudio && lastPhase == PodcastPhase.CachingContent)
@@ -144,7 +151,8 @@ internal static class PodcastProgressScreens
                     statuses,
                     options.TerminalWidth,
                     options.TerminalHeight,
-                    targets);
+                    targets,
+                    aggregator);
                 helpers.ClearRemainingLines();
 
                 pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
@@ -613,7 +621,8 @@ internal static class PodcastProgressScreens
         PodcastCommandHandler.ArticleStatus[] statuses,
         int terminalWidth,
         int terminalHeight,
-        PodcastTargets? targets = null)
+        PodcastTargets? targets = null,
+        PodcastProgressAggregator? aggregator = null)
     {
         var width = Math.Max(20, terminalWidth - 2);
         PodcastCommandHandler.RenderBox(helpers, p, "Generating Podcast", width);
@@ -631,14 +640,25 @@ internal static class PodcastProgressScreens
         helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Phase:{Reset} {p.PrimaryText.AnsiFg}{phaseName}{Reset}");
         helpers.WriteLine();
 
-        var percent = progress?.PercentComplete ?? 0;
-        var barWidth = Math.Max(10, width - 12);
-        var fraction = percent / 100.0;
+        // workspace-v34z: prefer the velocity-based aggregator output when it
+        // is available. Falls back to the legacy stair-step on PercentComplete
+        // when no aggregator is supplied (test paths, etc.).
+        var fraction = aggregator?.GlobalPercent
+            ?? Math.Clamp((progress?.PercentComplete ?? 0) / 100.0, 0, 1);
+        var percent = (int)Math.Round(fraction * 100);
+        var barWidth = Math.Max(10, width - 22);
         var isComplete = percent >= 100;
         var filledColor = isComplete ? p.GetSuccessFg().AnsiFg : p.GetWarningFg().AnsiFg;
         var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
-        helpers.WriteLine($"  {bar} {percent}%");
+        var etaLabel = FormatEta(aggregator?.Eta, isComplete);
+        helpers.WriteLine($"  {bar} {percent,3}%   {p.SecondaryText.AnsiFg}{etaLabel}{Reset}");
         helpers.WriteLine();
+
+        if (aggregator is not null)
+        {
+            RenderPhaseSubBars(helpers, p, aggregator, width);
+            helpers.WriteLine();
+        }
 
         var maxArticleLines = Math.Max(1, terminalHeight - helpers.LinesWritten - 4);
         var articleCount = Math.Min(statuses.Length, maxArticleLines);
@@ -740,6 +760,121 @@ internal static class PodcastProgressScreens
     {
         var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
         Console.Write($"\x1b]52;c;{base64}\x07");
+    }
+
+    /// <summary>
+    /// Renders the ETA suffix shown after the global progress bar
+    /// (workspace-v34z). "done" when the run finishes, "ETA —" until the
+    /// aggregator has enough history, otherwise a human-friendly seconds /
+    /// minutes string. Defensively clamps negative or absurdly large
+    /// TimeSpans so a clock-skew event can't render "ETA -3s" or "ETA 300m".
+    /// </summary>
+    internal static string FormatEta(TimeSpan? eta, bool isComplete)
+    {
+        if (isComplete)
+        {
+            return "done";
+        }
+
+        if (eta is null)
+        {
+            return "ETA —";
+        }
+
+        var totalSeconds = eta.Value.TotalSeconds;
+        if (totalSeconds < 0)
+        {
+            // Negative ETA is treated as "no useful estimate"; the aggregator
+            // already returns null for negatives but this guards direct callers.
+            return "ETA —";
+        }
+
+        // Cap at 1 hour to avoid rendering stale or unbounded values as
+        // huge numbers like "ETA 300m".
+        if (totalSeconds > 3600)
+        {
+            return "ETA >1h";
+        }
+
+        var seconds = (int)Math.Round(totalSeconds);
+        if (seconds < 1)
+        {
+            return "ETA <1s";
+        }
+
+        if (seconds < 60)
+        {
+            return $"ETA {seconds}s";
+        }
+
+        var minutes = seconds / 60;
+        var rem = seconds % 60;
+        return rem == 0 ? $"ETA {minutes}m" : $"ETA {minutes}m {rem}s";
+    }
+
+    /// <summary>
+    /// Renders four sub-bars (extracting / synthesizing / assembling /
+    /// publishing) underneath the global bar so the user can see exactly
+    /// where the work is happening (workspace-v34z).
+    /// </summary>
+    internal static void RenderPhaseSubBars(
+        RenderHelpers helpers,
+        ThemePalette p,
+        PodcastProgressAggregator aggregator,
+        int width)
+    {
+        const int LabelWidth = 12;
+        var subBarWidth = Math.Max(8, width - LabelWidth - 14);
+
+        RenderPhaseSubBar(
+            helpers,
+            p,
+            "Extracting",
+            aggregator.GetPhasePercent(PodcastPhase.CachingContent),
+            aggregator.GetPhaseDetail(PodcastPhase.CachingContent),
+            subBarWidth,
+            LabelWidth);
+        RenderPhaseSubBar(
+            helpers,
+            p,
+            "Synthesizing",
+            aggregator.GetPhasePercent(PodcastPhase.GeneratingAudio),
+            aggregator.GetPhaseDetail(PodcastPhase.GeneratingAudio),
+            subBarWidth,
+            LabelWidth);
+        RenderPhaseSubBar(
+            helpers,
+            p,
+            "Assembling",
+            aggregator.GetPhasePercent(PodcastPhase.AssemblingAudio),
+            aggregator.GetPhaseDetail(PodcastPhase.AssemblingAudio),
+            subBarWidth,
+            LabelWidth);
+        RenderPhaseSubBar(
+            helpers,
+            p,
+            "Publishing",
+            aggregator.GetPhasePercent(PodcastPhase.Publishing),
+            aggregator.GetPhaseDetail(PodcastPhase.Publishing),
+            subBarWidth,
+            LabelWidth);
+    }
+
+    internal static void RenderPhaseSubBar(
+        RenderHelpers helpers,
+        ThemePalette p,
+        string label,
+        double fraction,
+        string detail,
+        int barWidth,
+        int labelWidth)
+    {
+        var filledColor = fraction >= 0.999 ? p.GetSuccessFg().AnsiFg : p.GetMutedFg().AnsiFg;
+        var bar = Indicators.RenderEighthBlockBar(
+            filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+        var paddedLabel = label.PadRight(labelWidth);
+        helpers.WriteLine(
+            $"  {p.SecondaryText.AnsiFg}{paddedLabel}{Reset} {bar}  {p.SecondaryText.AnsiFg}{detail}{Reset}");
     }
 
     internal static string FormatDuration(TimeSpan duration)
