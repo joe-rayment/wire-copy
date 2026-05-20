@@ -118,8 +118,13 @@ public class TerminalPageRenderer : IPageRenderer
             return;
         }
 
-        // Reserve 2 lines: 1 for separator rule + 1 for anchored status bar
-        var viewportHeight = Math.Max(3, options.TerminalHeight - _helpers.LinesWritten - 2);
+        // workspace-umi7: viewport height MUST agree with BrowserOrchestrator's
+        // GetReaderViewportHeight so the speed-read scroller doesn't think the
+        // visible area is taller than what we actually paint. Both routes go
+        // through ReaderLayout.ComputeContentHeight. An invariant test verifies
+        // that LinkTreeRenderer.RenderHeader writes exactly ReaderLayout.HeaderLines
+        // lines so this stays correct as the codebase evolves.
+        var viewportHeight = ReaderLayout.ComputeContentHeight(options.TerminalHeight);
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
         // Center article content when narrower than terminal

@@ -120,20 +120,61 @@ public partial class BrowserOrchestrator
 
         _navigationService.SetReaderCursorLine(newCursor);
 
-        // Scroll only when the cursor reaches the very last line of the viewport,
-        // then jump a full page to minimize visual movement during speed reading.
+        // workspace-umi7: vpHeight MUST come from the same ReaderLayout helper
+        // the renderer uses (see GetReaderViewportHeight). ScrollForCursor is a
+        // pure function so unit tests can lock the invariant "cursor stays
+        // inside the rendered viewport" across many sizes without standing up
+        // the full app.
         var scroll = _navigationService.CurrentContext.ScrollOffset;
         var vpHeight = GetReaderViewportHeight(options);
-        var maxScroll = Math.Max(0, totalLines - vpHeight);
-
-        if (newCursor >= scroll + vpHeight)
+        var newScroll = ScrollForCursor(newCursor, scroll, vpHeight, totalLines);
+        if (newScroll != scroll)
         {
-            // Jump a full viewport (cursor lands at top of new page)
-            scroll = Math.Min(maxScroll, newCursor);
-            _navigationService.SetScrollOffset(Math.Clamp(scroll, 0, maxScroll));
+            _navigationService.SetScrollOffset(newScroll);
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Pure scroll-offset calculation for the speed-read cursor (workspace-umi7).
+    /// Given the cursor position, current scroll, viewport height, and article
+    /// length, returns the scroll offset that keeps the cursor inside the
+    /// rendered viewport.
+    ///
+    /// <para>
+    /// Behaviour:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item>If <paramref name="cursor"/> is already inside the viewport
+    ///   (<c>scroll &lt;= cursor &lt; scroll + vpHeight</c>) the scroll offset
+    ///   is unchanged.</item>
+    ///   <item>If the cursor advanced past the bottom, scroll jumps a full
+    ///   page so the cursor lands at the top of the new viewport — the
+    ///   "minimize visual jitter during speed reading" choice from
+    ///   workspace-1a49ee9.</item>
+    ///   <item>If the cursor went above the viewport (back-jumping), scroll
+    ///   snaps so the cursor is the top line.</item>
+    ///   <item>Scroll is always clamped to <c>[0, max(0, totalLines - vpHeight)]</c>.</item>
+    /// </list>
+    /// </summary>
+    internal static int ScrollForCursor(int cursor, int scroll, int vpHeight, int totalLines)
+    {
+        var maxScroll = Math.Max(0, totalLines - vpHeight);
+
+        // Cursor below the viewport → jump a full page (or to maxScroll).
+        if (cursor >= scroll + vpHeight)
+        {
+            return Math.Clamp(cursor, 0, maxScroll);
+        }
+
+        // Cursor above the viewport → bring it to the top.
+        if (cursor < scroll)
+        {
+            return Math.Clamp(cursor, 0, maxScroll);
+        }
+
+        return scroll;
     }
 
     internal static int CountWordsStrippingAnsi(string text)
