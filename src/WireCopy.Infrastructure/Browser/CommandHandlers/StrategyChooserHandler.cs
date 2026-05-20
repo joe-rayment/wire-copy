@@ -17,6 +17,15 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class StrategyChooserHandler
 {
+    /// <summary>
+    /// Per-strategy availability probe budget (workspace-in59). Previously a
+    /// slow RSS probe could stall the whole chooser for ~3 minutes on
+    /// macleans.ca and similar sites without an advertised feed. With a
+    /// 5-second cap per strategy, the worst case is bounded at
+    /// <c>5s × strategy count</c> (~15s for 3 strategies).
+    /// </summary>
+    private static readonly TimeSpan StrategyProbeBudget = TimeSpan.FromSeconds(5);
+
     private static readonly string[] Spinner =
     {
         "⠋", "⠙", "⠹", "⠸",
@@ -104,7 +113,31 @@ internal static class StrategyChooserHandler
                     TimeSpan.FromMinutes(1));
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-                var availability = await strategy.IsAvailableAsync(stContext, ct).ConfigureAwait(false);
+                // workspace-in59: cap each strategy's availability probe at
+                // StrategyProbeBudget so a single slow probe (the
+                // ProbeWellKnownFeedsAsync hang on RSS-less domains) can't stall
+                // the entire chooser. A timed-out probe surfaces as "unavailable
+                // (probe timed out)" so the user still sees the strategy listed.
+                ScrapingStrategyAvailability availability;
+                try
+                {
+                    using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    probeCts.CancelAfter(StrategyProbeBudget);
+                    availability = await strategy.IsAvailableAsync(stContext, probeCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    ctx.Logger.LogWarning(
+                        "Strategy probe for {Id} exceeded {Budget}s budget",
+                        strategy.Id,
+                        StrategyProbeBudget.TotalSeconds);
+                    availability = new ScrapingStrategyAvailability
+                    {
+                        IsAvailable = false,
+                        ReasonWhenUnavailable = $"probe timed out after {StrategyProbeBudget.TotalSeconds:0}s",
+                    };
+                }
+
                 if (!availability.IsAvailable)
                 {
                     unavailable.Add((strategy.DisplayName, availability.ReasonWhenUnavailable));
