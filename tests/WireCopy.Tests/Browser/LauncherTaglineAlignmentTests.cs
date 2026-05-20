@@ -9,7 +9,7 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 /// <summary>
-/// workspace-usr3: the launcher tagline ("All copy, no clutter.") starts
+/// workspace-usr3: the launcher tagline ("All copy, no nonsense.") starts
 /// at the same column as the leftmost glyph of the wordmark above it.
 /// On the large wordmark the W is at column 6 of <c>Wordmark[0]</c>; on
 /// the narrow fallback the title "Wire Copy" sits at column 1.

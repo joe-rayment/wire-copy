@@ -748,7 +748,7 @@ internal class LauncherRenderer
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
         var titleColorDark = p.GetCelebrationFg().AnsiFg; // dark pink  (#ff5fd7 ANSI 206)
-        var subtitle = "All copy, no clutter.";
+        var subtitle = "All copy, no nonsense.";
         var useLargeWordmark = width >= WordmarkWidth + 8;
 
         var boxOuter = useLargeWordmark
@@ -776,7 +776,7 @@ internal class LauncherRenderer
             var muted = p.SecondaryText.AnsiFg;
 
             // Left-align with the tagline (workspace-jby8): the hint shares
-            // the same indent as "All copy, no clutter." so the two lines
+            // the same indent as "All copy, no nonsense." so the two lines
             // form a single left edge under the wordmark, rather than the
             // hint being centred and floating away from the rest of the card.
             var hintPad = useLargeWordmark ? "      " : " ";
