@@ -352,13 +352,29 @@ internal class StatusBarRenderer
         // banner / etc.
         if (requiredAction != null)
         {
-            var verb = GetActionVerb(requiredAction.Variant);
+            // workspace-kq4b: Generic verdicts no longer render the bare "action
+            // needed at {domain}" — that copy is ambiguous and was wrong on
+            // pages that loaded fine (Cloudflare bot-monitor false positives).
+            // Instead, lead with "uncertain interruption" + the Shift+R retry
+            // affordance so the user has a clear next step.
             var domainText = string.IsNullOrWhiteSpace(requiredAction.Domain) ? "site" : requiredAction.Domain;
-            parts.Add(
-                $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
-                $"{p.SecondaryText.AnsiFg}{verb} at {domainText}{Reset} " +
-                $"{p.SecondaryText.AnsiFg}·{Reset} " +
-                $"{p.GetAccentFg().AnsiFg}Shift+O{Reset}{p.GetDimFg().AnsiFg}:open{Reset}");
+            if (requiredAction.Variant == HumanActionVariant.Generic)
+            {
+                parts.Add(
+                    $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
+                    $"{p.SecondaryText.AnsiFg}uncertain interruption at {domainText}{Reset} " +
+                    $"{p.SecondaryText.AnsiFg}·{Reset} " +
+                    $"{p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.GetDimFg().AnsiFg}:retry{Reset}");
+            }
+            else
+            {
+                var verb = GetActionVerb(requiredAction.Variant);
+                parts.Add(
+                    $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
+                    $"{p.SecondaryText.AnsiFg}{verb} at {domainText}{Reset} " +
+                    $"{p.SecondaryText.AnsiFg}·{Reset} " +
+                    $"{p.GetAccentFg().AnsiFg}Shift+O{Reset}{p.GetDimFg().AnsiFg}:open{Reset}");
+            }
         }
         else if (missingCookieDomains is { Count: > 0 })
         {

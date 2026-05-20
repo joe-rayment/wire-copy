@@ -185,6 +185,124 @@ public class HumanActionDetectorTests
     }
 
     [Fact]
+    public void Detect_LargeCloudflareHostedHomepage_NoFalsePositive()
+    {
+        // workspace-kq4b: thestar.com (and any other CF-fronted site) ships
+        // Cloudflare's bot-monitoring script on every healthy page. That script
+        // injects markup matching the literal token `challenge-platform` (the
+        // hyphenated form used by CF's runtime). On the pre-kq4b detector this
+        // tripped the path-7 LOW-confidence fall-through and surfaced a
+        // Generic "action needed" badge on healthy pages. After the fix, weak
+        // keywords on a LARGE page must NOT produce any verdict — confirmed
+        // by `Detect()` returning null and `IsBotChallenge()` returning false.
+        var html = "<html><head><title>Breaking News - Headlines &amp; Top Stories | The Star</title></head><body>" +
+                   "<header><nav>Home GTA Canada Politics Opinion</nav></header><main>" +
+                   "<article><h1>Top headline</h1><p>" + new string('q', 80000) + "</p></article></main>" +
+                   "<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\"></script>" +
+                   // The literal token CF's runtime injects on every CF-fronted page.
+                   // We plant it explicitly here so the fixture exercises the exact
+                   // false-positive shape — not a near-miss that would pass even on
+                   // the broken detector (qa-enforcer 2026-05-19 review).
+                   "<div class=\"cf-mgmt challenge-platform\" data-cf=\"challenge-platform\"></div>" +
+                   "<script>/* injected by challenge-platform runtime */</script>" +
+                   "</body></html>";
+
+        // Sanity: the fixture genuinely contains the literal indicator the
+        // detector matches. Without this assertion the test could regress to a
+        // placebo if the fixture is edited.
+        html.Should().Contain("challenge-platform",
+            "the fixture must contain the literal indicator the detector tries to match — " +
+            "otherwise this test is a placebo regardless of detector behaviour");
+
+        var verdict = HumanActionDetector.Detect(html, "https://www.thestar.com/");
+
+        verdict.Should().BeNull(
+            "a large healthy page containing `challenge-platform` (CF's bot-monitor noise) " +
+            "must NOT trip a Generic verdict — this is the exact false positive the user reported");
+
+        // Belt-and-suspenders: the back-compat wrapper used by the preload path
+        // must agree. Otherwise BackgroundPreloadService.IsBotDetectionResponse
+        // would still circuit-break the domain even with the typed Detect path
+        // happy.
+        HumanActionDetector.IsBotChallenge(html).Should().BeFalse(
+            "the back-compat IsBotChallenge predicate must also reject the false-positive shape");
+    }
+
+    [Fact]
+    public void ScoreCaptcha_LargePage_WeakOnly_ProvenNotPlacebo()
+    {
+        // Companion to Detect_LargeCloudflareHostedHomepage_NoFalsePositive.
+        // Verifies the fix is load-bearing by:
+        //   1. constructing a fixture with the literal `challenge-platform` weak
+        //      indicator,
+        //   2. confirming the detector returns null,
+        //   3. asserting that swapping in a STRONG indicator on the same large
+        //      page DOES still surface a verdict (Generic LOW confidence) —
+        //      proves the size-gating only filters weak markers, not all signals.
+        var weakOnlyHtml = "<html><body><article><p>" + new string('q', 60000) +
+                           "</p></article><div class=\"challenge-platform\"></div></body></html>";
+
+        HumanActionDetector.Detect(weakOnlyHtml, "https://example.com/").Should().BeNull(
+            "weak-only indicator on large page must return null");
+
+        // Same page, but with a STRONG indicator instead of the weak one —
+        // proves the detector still notices vendor-confirmed signals.
+        var strongHtml = "<html><body><article><p>" + new string('q', 60000) +
+                         "</p></article><iframe src=\"https://hcaptcha.com/\"></iframe></body></html>";
+
+        var strongVerdict = HumanActionDetector.Detect(strongHtml, "https://example.com/");
+        strongVerdict.Should().NotBeNull(
+            "strong vendor marker on a large page must still surface SOMETHING");
+        strongVerdict!.Variant.Should().Be(HumanActionVariant.Generic,
+            "large + strong marker downgrades to Generic; the gating is precise, not blanket-off");
+    }
+
+    [Fact]
+    public void Detect_LargePage_StrongCaptchaMarker_ReturnsGenericNotHigh()
+    {
+        // workspace-kq4b: even a strong vendor marker on a large page should
+        // remain LOW confidence (Generic) — it might be an article quoting the
+        // vendor name. The bead acceptance criterion requires the badge to
+        // either downgrade or vanish on large pages; it must never escalate
+        // to a high-confidence Captcha verdict.
+        var html = $"""
+            <html><body>
+            <article>
+            <p>How DataDome and other captcha vendors work to stop bots.</p>
+            <p>{new string('x', 50000)}</p>
+            </article>
+            <noscript>captcha-delivery.com</noscript>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/security-article");
+
+        verdict.Should().NotBeNull("strong markers on a large page should still surface SOMETHING actionable");
+        verdict!.Variant.Should().Be(HumanActionVariant.Generic,
+            "ambiguous strong marker on a large page must downgrade to Generic, never Captcha");
+    }
+
+    [Fact]
+    public void Detect_LargePage_WeakIndicatorAlone_ReturnsNull()
+    {
+        // Variant of the thestar case with each weak indicator on its own.
+        foreach (var weak in new[] { "challenge-platform", "you have been blocked", "access denied" })
+        {
+            var html = $"""
+                <html><body>
+                <article><p>{new string('p', 60000)}</p></article>
+                <div data-tag="{weak}"></div>
+                </body></html>
+                """;
+
+            var verdict = HumanActionDetector.Detect(html, "https://example.com/page");
+
+            verdict.Should().BeNull(
+                $"weak indicator '{weak}' on a large healthy page must NOT trigger a verdict");
+        }
+    }
+
+    [Fact]
     public void IsBotChallenge_BackwardsCompatWrapper_AgreesWithDetect()
     {
         const string html = """
