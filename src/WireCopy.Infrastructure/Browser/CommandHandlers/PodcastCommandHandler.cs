@@ -300,7 +300,10 @@ internal static class PodcastCommandHandler
 
             if (result == null)
             {
-                ctx.NavigationService.SetStatusMessage("Podcast generation cancelled");
+                // workspace-6dzj: ShowProgressScreenAsync now sets a richer
+                // "Cancelled — N articles completed" status message before
+                // returning null, so we leave that intact rather than
+                // overwriting with the bare "Podcast generation cancelled".
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return false;
             }

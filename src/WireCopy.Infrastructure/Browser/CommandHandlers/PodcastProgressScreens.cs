@@ -24,6 +24,25 @@ internal static class PodcastProgressScreens
 {
     private const string Reset = PodcastCommandHandler.Reset;
 
+    /// <summary>
+    /// workspace-6dzj: builds the status-bar copy shown after the user
+    /// presses Esc to cancel a podcast run. Counts Completed + Cached articles
+    /// (work that the user got something useful from) so the message reads
+    /// "Cancelled — N articles completed" instead of the bare "Podcast
+    /// cancelled" that gave no signal about partial progress.
+    /// </summary>
+    internal static string BuildCancelledStatusMessage(IReadOnlyList<PodcastCommandHandler.ArticleStatus> statuses)
+    {
+        ArgumentNullException.ThrowIfNull(statuses);
+
+        var completed = statuses.Count(s =>
+            s.State is PodcastCommandHandler.ArticleState.Completed
+                or PodcastCommandHandler.ArticleState.Cached);
+
+        var suffix = completed == 1 ? string.Empty : "s";
+        return $"Cancelled — {completed} article{suffix} completed";
+    }
+
     internal static async Task<PodcastResult?> ShowProgressScreenAsync(
         CommandContext ctx,
         RenderOptions options,
@@ -200,6 +219,14 @@ internal static class PodcastProgressScreens
                             {
                                 // Expected
                             }
+
+                            // workspace-6dzj: surface the cancelled-mid-run count
+                            // BEFORE the caller sets a generic "Podcast cancelled"
+                            // message. Reading `statuses` here is safe — the
+                            // generation task has finished (we just awaited it
+                            // through OCE) so no more progress events will mutate
+                            // the array.
+                            ctx.NavigationService.SetStatusMessage(BuildCancelledStatusMessage(statuses));
 
                             return null;
                         }
