@@ -62,6 +62,7 @@ public static class PodcastDependencyInjection
         services.AddSingleton<ReadingListContentProvider>();
         services.AddSingleton<OutputFolderPurger>();
         services.AddHostedService<OutputFolderPurgeStartupService>();
+        services.AddHostedService<PodcastJobLifecycleService>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
 
         return services;
