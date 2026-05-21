@@ -1132,7 +1132,7 @@ internal static class PodcastProgressScreens
         return lines;
     }
 
-    internal static Task ShowErrorScreenAsync(
+    internal static Task<bool> ShowErrorScreenAsync(
         CommandContext ctx,
         RenderOptions options,
         string errorMessage,
@@ -1142,7 +1142,15 @@ internal static class PodcastProgressScreens
         return ShowErrorScreenAsync(ctx, options, errorMessage, failedArticles, typedDetail: null, ct);
     }
 
-    internal static async Task ShowErrorScreenAsync(
+    /// <summary>
+    /// Renders the typed (Step, Reason, Fix) error screen and waits for user
+    /// input. Returns <c>true</c> when the user pressed <c>r</c> to retry —
+    /// callers should re-enter the generation flow from scratch. Returns
+    /// <c>false</c> on Enter / Esc / Quit. workspace-p1px: enables the
+    /// "run gsutil then press [r]" remediation flow without the user having
+    /// to back out and press 'p' again.
+    /// </summary>
+    internal static async Task<bool> ShowErrorScreenAsync(
         CommandContext ctx,
         RenderOptions options,
         string errorMessage,
@@ -1226,7 +1234,13 @@ internal static class PodcastProgressScreens
                 helpers.WriteLine();
             }
 
-            helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
+            // workspace-p1px: surface the retry affordance so the BucketNotPublic
+            // remediation flow ("run this gsutil one-liner, then press r") works
+            // end-to-end. The retry signal returns up through HandleGeneratePodcast's
+            // retry loop, which re-runs from scratch with fresh pre-flight checks.
+            helpers.WriteLine(
+                $"  {p.GetAccentFg().AnsiFg}r{Reset}{p.SecondaryText.AnsiFg}:retry   " +
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
@@ -1237,11 +1251,18 @@ internal static class PodcastProgressScreens
                 continue;
             }
 
+            if (command.RawKeyChar == 'r')
+            {
+                return true;
+            }
+
             if (command.Type != CommandType.NoOp)
             {
-                break;
+                return false;
             }
         }
+
+        return false;
     }
 
     internal static List<string> GetSuggestionsForError(

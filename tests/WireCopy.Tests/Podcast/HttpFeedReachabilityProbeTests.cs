@@ -30,16 +30,21 @@ public class HttpFeedReachabilityProbeTests
     }
 
     [Fact]
-    public async Task Returns_FeedNotReachable_On403()
+    public async Task Returns_BucketNotPublic_On403()
     {
+        // workspace-p1px: 403 routes to its own FailureClass so the publish
+        // path can attempt auto-remediation (adding allUsers:objectViewer to
+        // the bucket policy) before declaring the publish failed.
         var handler = new StubHandler(HttpStatusCode.Forbidden, "text/html", "<html>forbidden</html>");
         var probe = new HttpFeedReachabilityProbe(new HttpClient(handler));
 
         var result = await probe.CheckAsync("https://example.com/feed.xml", default);
 
-        result.FailureClass.Should().Be(FeedPublishFailureClass.FeedNotReachable);
+        result.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
         result.HttpStatusCode.Should().Be(403);
         result.Diagnostic.Should().Contain("403");
+        result.Diagnostic.Should().Contain("allUsers:objectViewer",
+            because: "the diagnostic must name the missing IAM binding so the remediation copy is obvious");
     }
 
     [Fact]

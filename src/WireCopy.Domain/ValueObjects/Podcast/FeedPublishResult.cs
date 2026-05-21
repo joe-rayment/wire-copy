@@ -20,6 +20,16 @@ public enum FeedPublishFailureClass
     /// <summary>feed.xml fetched OK but the response body is not parseable XML (workspace-nb6b).</summary>
     FeedNotParseable,
 
+    /// <summary>
+    /// feed.xml uploaded successfully, but the anonymous public GET returned
+    /// HTTP 403 — the bucket has no <c>allUsers:roles/storage.objectViewer</c>
+    /// binding (workspace-p1px). Distinguished from
+    /// <see cref="FeedNotReachable"/> so the auto-remediation flow can attempt
+    /// <c>GcsStorageClient.MakeBucketPublicAsync</c> before surfacing the
+    /// failure to the user.
+    /// </summary>
+    BucketNotPublic,
+
     /// <summary>Catch-all for anything that doesn't fit a specific class.</summary>
     Generic,
 }

@@ -68,12 +68,26 @@ internal sealed class HttpFeedReachabilityProbe : IFeedReachabilityProbe
             var contentType = response.Content.Headers.ContentType?.MediaType;
             if (!response.IsSuccessStatusCode)
             {
+                // workspace-p1px: 403 specifically routes to BucketNotPublic so
+                // the auto-remediation path can attempt to add the
+                // allUsers:objectViewer binding before surfacing the failure.
+                // Other non-2xx statuses (404, 502, etc.) stay on the generic
+                // FeedNotReachable path that just tells the user to retry.
+                if (response.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    return new FeedReachabilityResult
+                    {
+                        FailureClass = FeedPublishFailureClass.BucketNotPublic,
+                        Diagnostic = $"Anonymous HTTP GET returned {status} — bucket may not grant allUsers:objectViewer.",
+                        HttpStatusCode = status,
+                        ContentType = contentType,
+                    };
+                }
+
                 return new FeedReachabilityResult
                 {
                     FailureClass = FeedPublishFailureClass.FeedNotReachable,
-                    Diagnostic = response.StatusCode == HttpStatusCode.Forbidden
-                        ? $"Anonymous HTTP GET returned {status} — bucket may not grant allUsers:objectViewer."
-                        : $"Anonymous HTTP GET returned {status}.",
+                    Diagnostic = $"Anonymous HTTP GET returned {status}.",
                     HttpStatusCode = status,
                     ContentType = contentType,
                 };

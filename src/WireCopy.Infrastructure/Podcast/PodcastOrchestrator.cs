@@ -756,10 +756,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     /// </summary>
     private static string BuildPublishRemediation(FeedPublishFailureClass failureClass) => failureClass switch
     {
-        FeedPublishFailureClass.FeedNotReachable =>
-            "feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on the bucket "
+        FeedPublishFailureClass.BucketNotPublic =>
+            "feed.xml uploaded but the bucket isn't world-readable. Grant allUsers:objectViewer on the bucket "
             + "(Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run "
             + "`gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.",
+        FeedPublishFailureClass.FeedNotReachable =>
+            "feed.xml uploaded but the public URL is not reachable (non-403 response). Check the bucket name "
+            + "and network connectivity, then retry. If this persists, see logs at ~/.local/share/WireCopy/logs/.",
         FeedPublishFailureClass.FeedNotParseable =>
             "feed.xml uploaded but the response body did not parse as XML. Re-run with the same key — this usually "
             + "indicates an encoding/transfer issue in the just-uploaded blob.",

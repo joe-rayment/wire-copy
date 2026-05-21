@@ -242,6 +242,41 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             // XML. A failure flips the result to a typed FeedPublishFailureClass
             // and the result screen renders specific remediation.
             var probe = await _reachability.CheckAsync(feedUrl, cancellationToken).ConfigureAwait(false);
+
+            // workspace-p1px: when the bucket is private (probe routed
+            // BucketNotPublic), try to flip allUsers:objectViewer in-process
+            // before bothering the user. If the SA has setIamPolicy, this
+            // saves the user a trip to Cloud Console; if not, we still
+            // surface the gsutil one-liner via the remediation copy below.
+            if (probe.FailureClass == FeedPublishFailureClass.BucketNotPublic
+                && !string.IsNullOrWhiteSpace(_storage.BucketName))
+            {
+                _logger.LogInformation(
+                    "Reachability probe returned 403 on {Bucket}; attempting auto-remediation",
+                    _storage.BucketName);
+                var remediation = await _storage
+                    .MakeBucketPublicAsync(_storage.BucketName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (remediation.Status is MakeBucketPublicStatus.Success
+                    or MakeBucketPublicStatus.AlreadyPublic)
+                {
+                    _logger.LogInformation(
+                        "Auto-remediation result on {Bucket}: {Status}. Re-running reachability probe.",
+                        _storage.BucketName,
+                        remediation.Status);
+                    probe = await _reachability.CheckAsync(feedUrl, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Auto-remediation could not make {Bucket} public ({Status}): {Message}",
+                        _storage.BucketName,
+                        remediation.Status,
+                        remediation.ErrorMessage ?? "(no message)");
+                }
+            }
+
             if (probe.FailureClass != FeedPublishFailureClass.None)
             {
                 _logger.LogError(
