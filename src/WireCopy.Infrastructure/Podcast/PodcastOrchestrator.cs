@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs;
@@ -22,6 +23,16 @@ namespace WireCopy.Infrastructure.Podcast;
 /// </summary>
 internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 {
+    /// <summary>
+    /// workspace-hzjs (F.3): how often the orchestrator allows the
+    /// <see cref="PodcastJobJournal"/> to push a PodcastProgress snapshot
+    /// to the SQLite row. Tuned so multi-byte upload events don't hammer
+    /// the DB — 1s is fast enough that a UI restoring from the row sees
+    /// a fresh status, slow enough that an 8-minute generation produces
+    /// ~500 writes, not 5,000.
+    /// </summary>
+    private static readonly TimeSpan JobJournalDebounceInterval = TimeSpan.FromSeconds(1);
+
     private readonly ReadingListContentProvider _contentProvider;
     private readonly ITtsService _ttsService;
     private readonly ITtsAudioCache _audioCache;
@@ -30,6 +41,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     private readonly PodcastConfiguration _podcastConfig;
     private readonly OpenAiTtsConfiguration _ttsConfig;
     private readonly IUserSettingsStore? _settingsStore;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<PodcastOrchestrator> _logger;
 
     // Cache extracted articles from AnalyzeCacheStatusAsync so GeneratePodcastAsync
@@ -52,7 +64,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         IOptions<PodcastConfiguration> podcastConfig,
         IOptions<OpenAiTtsConfiguration> ttsConfig,
         ILogger<PodcastOrchestrator> logger,
-        IUserSettingsStore? settingsStore = null)
+        IUserSettingsStore? settingsStore = null,
+        IServiceScopeFactory? scopeFactory = null)
     {
         _contentProvider = contentProvider;
         _ttsService = ttsService;
@@ -62,6 +75,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         _podcastConfig = podcastConfig.Value;
         _ttsConfig = ttsConfig.Value;
         _settingsStore = settingsStore;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -138,6 +152,178 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
         }
 
+        // workspace-hzjs (F.3): persist a Running PodcastJob row so generation
+        // shows up in the orphan sweep (workspace-nk06) and the future resume
+        // path (workspace-ur2s) can see it. Best-effort — never fails the run.
+        PodcastJobJournal? journal = null;
+        if (_scopeFactory is not null)
+        {
+            try
+            {
+                var targets = await ResolveTargetsAsync(collection, cancellationToken).ConfigureAwait(false);
+                journal = await PodcastJobJournal.CreateAsync(
+                    _scopeFactory,
+                    collection,
+                    targets.LocalFilePath,
+                    targets.FeedUrl,
+                    JobJournalDebounceInterval,
+                    _logger,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Failed to start podcast job journal — generation will proceed without DB persistence");
+            }
+        }
+
+        PodcastProgress? lastSnapshot = null;
+        IProgress<PodcastProgress>? wrappedProgress = progress;
+        if (journal is not null)
+        {
+            var inner = progress;
+            var j = journal;
+            wrappedProgress = new SyncProgress<PodcastProgress>(p =>
+            {
+                lastSnapshot = p;
+                j.ReportProgress(p);
+                inner?.Report(p);
+            });
+        }
+
+        PodcastResult result;
+        try
+        {
+            result = await GeneratePodcastCoreAsync(collection, wrappedProgress, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (journal is not null)
+            {
+                await journal.MarkCancelledAsync(lastSnapshot, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            throw;
+        }
+
+        if (journal is not null)
+        {
+            await journal.FinishAsync(result, lastSnapshot, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
+    public Task<CacheAnalysis> AnalyzeCacheStatusAsync(
+        Collection collection,
+        IProgress<ContentExtractionProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(collection);
+
+        var task = AnalyzeCacheStatusCoreAsync(collection, progress, cancellationToken);
+
+        // Store the running task so GeneratePodcastAsync can await it if the user
+        // skips the analysis UI before extraction completes.
+        _pendingAnalysisTask = task;
+        _pendingAnalysisCollection = collection.Name;
+
+        return task;
+    }
+
+    /// <summary>
+    /// Builds the full text to send to TTS, prepending headline, author, and date
+    /// as a spoken introduction before the article body.
+    /// </summary>
+    internal static string BuildSpokenText(ExtractedArticle article)
+    {
+        var parts = new List<string> { article.Title + "." };
+
+        if (!string.IsNullOrWhiteSpace(article.Author))
+        {
+            parts.Add($"By {article.Author}.");
+        }
+
+        if (article.PublishedDate.HasValue)
+        {
+            parts.Add($"Published {article.PublishedDate.Value:MMMM d, yyyy}.");
+        }
+
+        parts.Add(string.Empty); // blank line separator
+        parts.Add(article.CleanedText);
+
+        return string.Join("\n", parts);
+    }
+
+    private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
+
+    private static string ExpandUserPath(string path)
+    {
+        if (path.StartsWith("~/", StringComparison.Ordinal) || path == "~")
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return path.Length == 1 ? home : Path.Combine(home, path[2..]);
+        }
+
+        return path;
+    }
+
+    /// <summary>
+    /// Maps a typed <see cref="FeedPublishFailureClass"/> to the single-line
+    /// remediation copy rendered on the Phase E result screen (workspace-3a2k).
+    /// Targeted enough to be actionable (bucket-public IAM grant, audio-file
+    /// triage) without leaning on the heuristic string-pattern fallback in
+    /// <c>PodcastFailureClassifier</c>.
+    /// </summary>
+    private static string BuildPublishRemediation(FeedPublishFailureClass failureClass) => failureClass switch
+    {
+        FeedPublishFailureClass.BucketNotPublic =>
+            "feed.xml uploaded but the bucket isn't world-readable. Grant allUsers:objectViewer on the bucket "
+            + "(Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run "
+            + "`gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.",
+        FeedPublishFailureClass.FeedNotReachable =>
+            "feed.xml uploaded but the public URL is not reachable (non-403 response). Check the bucket name "
+            + "and network connectivity, then retry. If this persists, see logs at ~/.local/share/WireCopy/logs/.",
+        FeedPublishFailureClass.FeedNotParseable =>
+            "feed.xml uploaded but the response body did not parse as XML. Re-run with the same key — this usually "
+            + "indicates an encoding/transfer issue in the just-uploaded blob.",
+        FeedPublishFailureClass.NoAudioFiles =>
+            "Every episode skipped because the local audio file was missing on disk. Check ffmpeg output / "
+            + "temp-dir cleanup and re-run.",
+        _ =>
+            "Check the bucket name + service-account key in Setup, or see logs at ~/.local/share/WireCopy/logs/ for the underlying error.",
+    };
+
+    private static int CountWords(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+
+        var wordCount = 0;
+        var inWord = false;
+        foreach (var c in text)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                wordCount++;
+            }
+        }
+
+        return wordCount;
+    }
+
+    private async Task<PodcastResult> GeneratePodcastCoreAsync(
+        Collection collection,
+        IProgress<PodcastProgress>? progress,
+        CancellationToken cancellationToken)
+    {
         // All pipeline state declared up-front so catch/finally blocks can access them
         IReadOnlyList<ArticleFailure> extractionFailures = [];
         var segments = new List<ArticleAudioSegment>();
@@ -691,111 +877,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
             // Audio segment files are managed by the TTS cache — do not delete them here.
         }
-    }
-
-    public Task<CacheAnalysis> AnalyzeCacheStatusAsync(
-        Collection collection,
-        IProgress<ContentExtractionProgress>? progress = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(collection);
-
-        var task = AnalyzeCacheStatusCoreAsync(collection, progress, cancellationToken);
-
-        // Store the running task so GeneratePodcastAsync can await it if the user
-        // skips the analysis UI before extraction completes.
-        _pendingAnalysisTask = task;
-        _pendingAnalysisCollection = collection.Name;
-
-        return task;
-    }
-
-    /// <summary>
-    /// Builds the full text to send to TTS, prepending headline, author, and date
-    /// as a spoken introduction before the article body.
-    /// </summary>
-    internal static string BuildSpokenText(ExtractedArticle article)
-    {
-        var parts = new List<string> { article.Title + "." };
-
-        if (!string.IsNullOrWhiteSpace(article.Author))
-        {
-            parts.Add($"By {article.Author}.");
-        }
-
-        if (article.PublishedDate.HasValue)
-        {
-            parts.Add($"Published {article.PublishedDate.Value:MMMM d, yyyy}.");
-        }
-
-        parts.Add(string.Empty); // blank line separator
-        parts.Add(article.CleanedText);
-
-        return string.Join("\n", parts);
-    }
-
-    private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
-
-    private static string ExpandUserPath(string path)
-    {
-        if (path.StartsWith("~/", StringComparison.Ordinal) || path == "~")
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return path.Length == 1 ? home : Path.Combine(home, path[2..]);
-        }
-
-        return path;
-    }
-
-    /// <summary>
-    /// Maps a typed <see cref="FeedPublishFailureClass"/> to the single-line
-    /// remediation copy rendered on the Phase E result screen (workspace-3a2k).
-    /// Targeted enough to be actionable (bucket-public IAM grant, audio-file
-    /// triage) without leaning on the heuristic string-pattern fallback in
-    /// <c>PodcastFailureClassifier</c>.
-    /// </summary>
-    private static string BuildPublishRemediation(FeedPublishFailureClass failureClass) => failureClass switch
-    {
-        FeedPublishFailureClass.BucketNotPublic =>
-            "feed.xml uploaded but the bucket isn't world-readable. Grant allUsers:objectViewer on the bucket "
-            + "(Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run "
-            + "`gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.",
-        FeedPublishFailureClass.FeedNotReachable =>
-            "feed.xml uploaded but the public URL is not reachable (non-403 response). Check the bucket name "
-            + "and network connectivity, then retry. If this persists, see logs at ~/.local/share/WireCopy/logs/.",
-        FeedPublishFailureClass.FeedNotParseable =>
-            "feed.xml uploaded but the response body did not parse as XML. Re-run with the same key — this usually "
-            + "indicates an encoding/transfer issue in the just-uploaded blob.",
-        FeedPublishFailureClass.NoAudioFiles =>
-            "Every episode skipped because the local audio file was missing on disk. Check ffmpeg output / "
-            + "temp-dir cleanup and re-run.",
-        _ =>
-            "Check the bucket name + service-account key in Setup, or see logs at ~/.local/share/WireCopy/logs/ for the underlying error.",
-    };
-
-    private static int CountWords(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return 0;
-        }
-
-        var wordCount = 0;
-        var inWord = false;
-        foreach (var c in text)
-        {
-            if (char.IsWhiteSpace(c))
-            {
-                inWord = false;
-            }
-            else if (!inWord)
-            {
-                inWord = true;
-                wordCount++;
-            }
-        }
-
-        return wordCount;
     }
 
     /// <summary>
