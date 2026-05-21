@@ -99,72 +99,17 @@ internal static class PodcastCommandHandler
     }
 
     /// <summary>
-    /// Opens the podcast settings/confirmation screen directly, skipping cache analysis.
+    /// Legacy entry point for the ":settings" command — now an alias for the
+    /// unified Setup screen (<see cref="SettingsCommandHandler.HandleConfigScreen"/>).
+    /// workspace-ny44 (Phase 6 of workspace-mhwa) retired the old podcast
+    /// confirmation/settings screen in favour of a single canonical place to
+    /// edit every credential + preference.
     /// </summary>
-    public static async Task HandlePodcastSettings(
+    public static Task HandlePodcastSettings(
         CommandContext ctx,
         RenderOptions options,
-        CancellationToken ct)
-    {
-        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.CollectionItems)
-        {
-            ctx.NavigationService.SetStatusMessage("Open a collection first");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var collection = ctx.NavigationService.ActiveCollection;
-        if (collection == null || collection.Items.Count == 0)
-        {
-            ctx.NavigationService.SetStatusMessage("No articles in collection");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        using var scope = ctx.ScopeFactory.CreateScope();
-        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
-        var gcsConfig = scope.ServiceProvider
-            .GetRequiredService<IOptions<GcsConfiguration>>().Value;
-        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-
-        // Hydrate persisted settings
-        if (!ttsService.IsConfigured)
-        {
-            var savedKey = settingsStore.Get("OpenAiApiKey");
-            if (!string.IsNullOrWhiteSpace(savedKey))
-            {
-                ttsService.SetApiKeyOverride(savedKey);
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
-        {
-            var savedBucket = settingsStore.Get("GcsBucketName");
-            if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
-            {
-                gcsConfig.BucketName = savedBucket;
-            }
-        }
-
-        var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
-        var gcsClient = cloudStorage as GcsStorageClient;
-
-        await PodcastConfirmationScreens.ShowConfirmationScreenAsync(
-            ctx,
-            options,
-            collection,
-            ttsService,
-            gcsConfig,
-            settingsStore,
-            gcsClient,
-            null,
-            null,
-            null,
-            null,
-            ct).ConfigureAwait(false);
-
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-    }
+        CancellationToken ct) =>
+        SettingsCommandHandler.HandleConfigScreen(ctx, options, ct);
 
     public static async Task HandleGeneratePodcast(
         CommandContext ctx,
@@ -320,34 +265,25 @@ internal static class PodcastCommandHandler
                 return false;
             }
 
-            // Pre-flight GCS validation: check credentials BEFORE slow cache analysis
-            string? preflight_bucketError = null;
-            string? preflight_feedUrl = null;
-            string? preflight_feedStatusNote = null;
+            // Pre-flight GCS validation: check credentials BEFORE slow cache
+            // analysis. workspace-ny44 (Phase 6) retired the confirmation
+            // screen, so the success/error tuple from this probe is now
+            // either consumed by the auto-remediation flow (workspace-p1px,
+            // which lives in PodcastPublisher) or surfaced via the typed
+            // failure pipeline in the result screen — we no longer need to
+            // pass it forward as banner copy.
             var preflightBucketName = gcsConfig.BucketName;
             if (!string.IsNullOrWhiteSpace(preflightBucketName))
             {
-                var (success, url, feedExisted, error) = await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
+                await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
                     ctx, options, preflightBucketName, gcsConfig, ct).ConfigureAwait(false);
-
-                if (success)
-                {
-                    preflight_feedUrl = url;
-                    preflight_feedStatusNote = feedExisted ? "Existing feed found" : "New feed created";
-                }
-                else if (error != null)
-                {
-                    preflight_bucketError = error;
-                }
             }
 
             // Pre-flight cache analysis for cost estimation (with progress UI)
-            CacheAnalysis? cacheAnalysis = null;
-            if (ttsService.IsConfigured)
-            {
-                cacheAnalysis = await PodcastConfirmationScreens.ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
-                options = ctx.GetCurrentRenderOptions();
-            }
+            CacheAnalysis? cacheAnalysis = await PodcastConfirmationScreens
+                .ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct)
+                .ConfigureAwait(false);
+            options = ctx.GetCurrentRenderOptions();
 
             // workspace-lr80: cost-gate confirm. Only pops when the estimated
             // spend OR article count exceeds the user's configured threshold.
@@ -376,29 +312,12 @@ internal static class PodcastCommandHandler
                 options = ctx.GetCurrentRenderOptions();
             }
 
-            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudStorageClient>();
-            var gcsClient = cloudStorage as GcsStorageClient;
-
-            var confirmed = await PodcastConfirmationScreens.ShowConfirmationScreenAsync(
-                ctx,
-                options,
-                collection,
-                ttsService,
-                gcsConfig,
-                settingsStore,
-                gcsClient,
-                cacheAnalysis,
-                preflight_bucketError,
-                preflight_feedUrl,
-                preflight_feedStatusNote,
-                ct).ConfigureAwait(false);
-
-            if (!confirmed)
-            {
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return false;
-            }
-
+            // workspace-ny44: ShowConfirmationScreenAsync deleted. With Phase 1
+            // (workspace-kuu7, modal-for-missing-key) and Phase 5
+            // (workspace-yib5, resume-after-save) in place, the user has
+            // already cleared every pre-flight gate by the time we reach
+            // here — there is no remaining ambiguous state to confirm. We
+            // proceed straight to the progress screen.
             var result = await PodcastProgressScreens.ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
 
             if (result == null)
