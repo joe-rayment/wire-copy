@@ -560,5 +560,68 @@ public class PodcastConfirmationEditableRowTests
             + "false (user did not confirm generation)");
     }
 
+    /// <summary>
+    /// workspace-yib5 partial: when the user lands on the confirmation screen
+    /// with no TTS key, navigates to TtsKey, pastes a valid key, and saves —
+    /// focus must auto-advance to the Generate row so the very next Enter
+    /// generates the podcast. Without this hop the user has to navigate past
+    /// five settings rows to find the CTA they came here for.
+    /// </summary>
+    [Fact]
+    public async Task ShowConfirmation_TtsSaveOnUnconfigured_AdvancesFocusToGenerate()
+    {
+        var ttsService = Substitute.For<ITtsService>();
+        // First read returns false (initial state); after SetApiKeyOverride is
+        // called, the inline prompt updates the local isTtsConfigured to true,
+        // so subsequent reads from ttsService.IsConfigured don't matter for
+        // this loop. We start unconfigured so the auto-advance branch fires.
+        ttsService.IsConfigured.Returns(false);
+        ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
+            .Returns(WireCopy.Application.DTOs.TtsValidationResult.Valid());
+
+        // Default-focus on screen entry when TTS is unconfigured is TtsKey(0).
+        // ActivateLink → inline prompt accepts the key → save returns true →
+        // focus auto-advances to Generate(5). Next ActivateLink fires Generate
+        // → screen returns true.
+        var queue = new Queue<NavigationCommand>(new[]
+        {
+            NavCmd(CommandType.ActivateLink), // TtsKey(0) Enter → inline prompt
+            NavCmd(CommandType.ActivateLink), // auto-advanced focus → Generate(5) Enter
+        });
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => queue.Dequeue());
+
+        _inputHandler.PromptForInputAsync(
+                Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns("sk-valid-key");
+
+        var collection = Collection.Create("ITest");
+        collection.AddItem("https://example.com/a", "A");
+        var gcsConfig = new GcsConfiguration { BucketName = "some-bucket" };
+
+        var result = await PodcastConfirmationScreens.ShowConfirmationScreenAsync(
+            _ctx,
+            _options,
+            collection,
+            ttsService,
+            gcsConfig,
+            _settingsStore,
+            gcsClient: null,
+            cacheAnalysis: null,
+            preflightBucketError: null,
+            preflightFeedUrl: null,
+            preflightFeedStatusNote: null,
+            CancellationToken.None);
+
+        // If the focus didn't auto-advance, the second ActivateLink would
+        // re-open the TtsKey prompt (an idempotent re-save) and the screen
+        // would still be looping — result would not be true. The fact that
+        // result==true proves the second Enter hit the Generate row.
+        result.Should().BeTrue(
+            "after a successful TTS key save from an unconfigured state, focus "
+            + "must auto-advance to the Generate row so the next Enter ships the podcast");
+    }
+
     #endregion
 }
