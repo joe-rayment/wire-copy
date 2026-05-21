@@ -224,4 +224,112 @@ public class PodcastFailureClassifierTests
         c.Reason.Should().Be("FeedNotParseable",
             "an empty raw message must not render an empty Reason — fall back to the FailureClass");
     }
+
+    // ---- workspace-n0kb: RelevantSetupRow mapping ----
+
+    [Fact]
+    public void Classify_Unauthorized401_PointsAtOpenAiKeyRow()
+    {
+        var c = PodcastFailureClassifier.Classify("HTTP 401 unauthorized", NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.OpenAiKey,
+            "the 's' deep-link must drop the user on the OpenAI key row, not the Setup landing page");
+    }
+
+    [Fact]
+    public void Classify_Forbidden403_PointsAtOpenAiKeyRow()
+    {
+        var c = PodcastFailureClassifier.Classify("HTTP 403 insufficient_credits", NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.OpenAiKey);
+    }
+
+    [Fact]
+    public void Classify_MissingApiKey_PointsAtOpenAiKeyRow()
+    {
+        var c = PodcastFailureClassifier.Classify("TTS service is not configured", NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.OpenAiKey);
+    }
+
+    [Fact]
+    public void Classify_GcsBucketProblem_PointsAtGcsBucketRow()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "Failed to upload feed.xml to GCS bucket: 403 Forbidden",
+            NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.GcsBucket);
+    }
+
+    [Fact]
+    public void Classify_TypedBucketNotPublic_PointsAtGcsBucketRow()
+    {
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.BucketNotPublic,
+            RawMessage: "Anonymous HTTP GET returned 403",
+            RemediationCopy: "gsutil iam ch allUsers:objectViewer gs://your-bucket");
+
+        var c = PodcastFailureClassifier.Classify(detail, errorMessage: null, failedArticles: NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.GcsBucket);
+    }
+
+    [Fact]
+    public void Classify_TypedGenericPublishFailure_PointsAtGcsBucketRow()
+    {
+        // Generic publish failures (e.g. SA-key Base64 errors surfacing as
+        // "Publish failed: Service account authentication failed") still
+        // route the user to the bucket row — the bucket-row handler has the
+        // prerequisite gate for the SA key, so it's the right entry point
+        // for "something about the GCS setup is wrong" remediation.
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.Generic,
+            RawMessage: "Publish failed: unexpected GCS error",
+            RemediationCopy: "Check the bucket name + service-account key in Setup");
+
+        var c = PodcastFailureClassifier.Classify(detail, errorMessage: null, failedArticles: NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.GcsBucket);
+    }
+
+    [Fact]
+    public void Classify_TypedNoAudioFiles_HasNoSetupRow()
+    {
+        // NoAudioFiles is a generation-side bug (every episode's local audio
+        // file was missing on disk) — no Setup row fixes it, so the deep-link
+        // affordance must stay hidden.
+        var detail = new PodcastFailureDetail(
+            Step: "Publishing",
+            FailureClass: FeedPublishFailureClass.NoAudioFiles,
+            RawMessage: "All episodes skipped — no local audio files",
+            RemediationCopy: "Re-run generation");
+
+        var c = PodcastFailureClassifier.Classify(detail, errorMessage: null, failedArticles: NoFailures);
+
+        c.RelevantSetupRow.Should().BeNull();
+    }
+
+    [Fact]
+    public void Classify_NonCredentialFailure_HasNoRelevantSetupRow()
+    {
+        // Network down isn't fixable from any Setup row — the error screen
+        // should hide the 's' affordance to avoid pointing the user at the
+        // wrong cure.
+        var c = PodcastFailureClassifier.Classify("DNS resolution failed", NoFailures);
+
+        c.RelevantSetupRow.Should().BeNull();
+    }
+
+    [Fact]
+    public void Classify_FFmpegMissing_HasNoRelevantSetupRow()
+    {
+        // FFmpeg lives outside the Setup screen — Setup doesn't surface a
+        // "press s to install ffmpeg" affordance, so the row stays null.
+        var c = PodcastFailureClassifier.Classify("FFmpeg is not installed", NoFailures);
+
+        c.RelevantSetupRow.Should().BeNull();
+    }
 }
