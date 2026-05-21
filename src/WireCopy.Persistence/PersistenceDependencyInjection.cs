@@ -3,6 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.Interfaces;
+using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Persistence.Repositories;
 
 namespace WireCopy.Persistence;
@@ -28,6 +29,7 @@ public static class PersistenceDependencyInjection
         services.AddSingleton<ICollectionPreferences, PersistentCollectionPreferences>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ISiteCredentialRepository, SiteCredentialRepository>();
+        services.AddScoped<IPodcastJobRepository, PodcastJobRepository>();
 
         return services;
     }

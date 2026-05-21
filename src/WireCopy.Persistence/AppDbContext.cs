@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using WireCopy.Domain.Entities.Bookmarks;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Entities.Credentials;
+using WireCopy.Domain.Entities.Podcast;
 
 namespace WireCopy.Persistence;
 
@@ -26,6 +27,8 @@ public class AppDbContext : DbContext
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
 
     public DbSet<SiteCredential> SiteCredentials => Set<SiteCredential>();
+
+    public DbSet<PodcastJob> PodcastJobs => Set<PodcastJob>();
 
     /// <summary>
     /// Ensures the database is created and all migrations are applied.
