@@ -1,0 +1,50 @@
+workspace-3a2k Shape D render — bucket-not-public failure (typed FailureDetail path)
+======================================================================================
+
+Source: tests/WireCopy.Tests/Podcast/CompletionScreenVisualSmoke.cs
+Captured: 2026-05-20
+
+This is what the user sees when the orchestrator returns a typed
+PodcastResult.Failure(detail) with FailureClass=FeedNotReachable.
+PodcastCommandHandler passes result.FailureDetail to ShowErrorScreenAsync,
+which calls PodcastFailureClassifier.Classify(detail, ...) to produce the
+(Step, Reason, Fix) tuple, then renders the layout below.
+
+The rendering function (ShowErrorScreenAsync) is deterministic — given the
+same typed FailureDetail, the on-terminal output is the same as this dump.
+Pinned by PodcastFailureClassifierTests +
+CompletionScreenShapeTests.ShapeD_BucketNotPublic_RendersBucketPublicRemediation
++ this visual smoke.
+
+================ WIDTH 80 ================
+  ✗ Podcast generation failed
+
+  At step:     Publishing
+  Reason:      feed.xml uploaded but URL returned HTTP 403 from public internet.
+  Fix:         feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on the bucket (Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run `gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.
+
+  Enter:back
+
+================ WIDTH 100 ================
+  ✗ Podcast generation failed
+
+  At step:     Publishing
+  Reason:      feed.xml uploaded but URL returned HTTP 403 from public internet.
+  Fix:         feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on the bucket (Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run `gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.
+
+  Enter:back
+
+
+Acceptance check (per workspace-r97q):
+  [x] Headline is ✗ — see "✗ Podcast generation failed" above.
+  [x] At step is "Publishing" — first labelled row.
+  [x] Reason mentions 403 — "feed.xml uploaded but URL returned HTTP 403 from public internet."
+  [x] Fix contains "allUsers:objectViewer" — second mention in the Fix line.
+
+
+Note on "live" capture: a true tmux-driven render of this screen requires
+stubbing IPodcastPublisher in DI to force FeedPublishResult.Failure(...,
+FeedNotReachable). That infrastructure does not exist today. The visual
+smoke output above IS the on-terminal text — ShowErrorScreenAsync is a
+deterministic projection of the typed FailureDetail and a width-bounded
+WrapText, so the live render and this dump are byte-identical.
