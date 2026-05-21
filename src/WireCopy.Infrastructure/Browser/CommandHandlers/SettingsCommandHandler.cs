@@ -713,12 +713,38 @@ internal static class SettingsCommandHandler
         }
     }
 
-    private static async Task HandleSetApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    private static Task HandleSetApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
+        => HandleSetApiKey(ctx, options, ct, subtitle: null, resumeAfterSave: null);
+
+    /// <summary>
+    /// Overload that lets callers (e.g. <see cref="PodcastCommandHandler.RunGeneratePodcastAttempt"/>)
+    /// deep-link into the API-key prompt and resume their flow after a
+    /// successful save (workspace-yib5, Phase 5 of workspace-mhwa).
+    /// </summary>
+    /// <param name="subtitle">
+    /// Optional one-line subtitle rendered above the input box. Used by the
+    /// generate-podcast resume path to surface "Set this up and we'll
+    /// continue generating your podcast" so the user understands why they're
+    /// here.
+    /// </param>
+    /// <param name="resumeAfterSave">
+    /// Optional callback invoked when the user saves a valid key. When set
+    /// and the auth probe passes, it fires before this method returns —
+    /// callers use it to re-enter their flow without forcing the user to
+    /// press p again. Skipped on Esc, save failure, or auth probe failure.
+    /// </param>
+    internal static async Task HandleSetApiKey(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct,
+        string? subtitle,
+        Func<Task>? resumeAfterSave)
     {
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var field = new FormFieldConfig
         {
             Label = "OpenAI API Key",
+            Subtitle = subtitle,
             Placeholder = "sk-...",
             HelpText = "Get a key at platform.openai.com/api-keys",
             IsSecret = true,
@@ -758,6 +784,12 @@ internal static class SettingsCommandHandler
             {
                 ctx.Logger.LogWarning(ex, "Failed to persist API key");
                 ctx.NavigationService.SetStatusMessage("API key verified but failed to save");
+            }
+
+            if (resumeAfterSave != null)
+            {
+                await resumeAfterSave().ConfigureAwait(false);
+                return;
             }
         }
         else
