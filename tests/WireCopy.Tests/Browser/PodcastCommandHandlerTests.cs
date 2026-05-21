@@ -224,16 +224,35 @@ public class PodcastCommandHandlerTests
 
     #endregion
 
-    #region Confirmation Screen
+    #region Cancel-before-progress (workspace-ny44 retired the confirmation screen)
 
     [Fact]
-    public async Task HandleGeneratePodcast_UserCancelsAtConfirmation_DoesNotStartGeneration()
+    public async Task HandleGeneratePodcast_UserCancelsAtCostGate_DoesNotStartGeneration()
     {
+        // workspace-ny44: the confirmation screen is gone. The remaining
+        // cancel-before-progress affordance is the cost-gate modal — which
+        // only appears when the analysis exceeds the threshold. Force it
+        // with a high-cost analysis, then press Esc.
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(true);
-        SetupInstantCacheAnalysis();
 
-        // Queue: [GoBack, GoBack] → 1st abandoned by cache analysis, 2nd for confirmation
+        // Force a high-cost analysis (10 articles + $5 estimate) so the
+        // cost-gate is shown above the default thresholds.
+        var analysis = new CacheAnalysis
+        {
+            TotalArticles = 10,
+            CachedArticles = 0,
+            UncachedArticles = 10,
+            EstimatedCost = 5.00m,
+            ArticleStatuses = new List<Application.DTOs.Podcast.ArticleCacheStatus>(),
+        };
+        _orchestrator.AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(analysis);
+
+        // Queue: [GoBack (abandoned by cache analysis), GoBack (cost-gate Esc)]
         SetupInputQueue(Cmd(CommandType.GoBack), Cmd(CommandType.GoBack));
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
