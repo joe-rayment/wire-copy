@@ -1035,11 +1035,29 @@ internal static class PodcastConfirmationScreens
 
                 if (current == ConfirmRow.TtsKey)
                 {
+                    var wasConfigured = isTtsConfigured;
                     var (ok, newConfigured) = await PromptAndSetOpenAiKeyAsync(
                         ctx, p, ttsService, settingsStore, isTtsConfigured, ct).ConfigureAwait(false);
                     if (ok)
                     {
                         isTtsConfigured = newConfigured;
+
+                        // workspace-yib5 partial: when the user JUST configured TTS
+                        // (transition from unconfigured → configured), auto-advance
+                        // focus to the Generate row so their next Enter triggers
+                        // generation. Without this hop the user has to navigate
+                        // past 5 settings rows to find the CTA — the bead's "first-
+                        // time setup hand-off" called for resume-after-save, and
+                        // this is the lowest-risk slice of that behaviour.
+                        if (!wasConfigured && newConfigured)
+                        {
+                            rows = BuildRows();
+                            var generateIdx = Array.IndexOf(rows, ConfirmRow.Generate);
+                            if (generateIdx >= 0)
+                            {
+                                selectedIndex = generateIdx;
+                            }
+                        }
                     }
 
                     continue;
