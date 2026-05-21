@@ -101,7 +101,25 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _logger.LogInformation("Creating new Playwright browser session (headless={Headless})", headless);
-            await LaunchBrowserAsync(headless).ConfigureAwait(false);
+            try
+            {
+                await LaunchBrowserAsync(headless).ConfigureAwait(false);
+            }
+            catch (PlaywrightException ex) when (!headless && LooksLikeMissingDisplay(ex.Message))
+            {
+                // workspace-j0b8: headed Chromium can't initialize when there's no X server
+                // (CI / headless containers / SSH sessions without forwarding). Chromium exits
+                // with "Missing X server or $DISPLAY" surfacing as a TargetClosedException —
+                // the failure shape is indistinguishable from a real "target closed" so the
+                // PageLoader retry path can't help. Auto-fall-back to headless once and log
+                // a clear warning; this turns "Page navigated mid-load" (which is what the
+                // user saw on macleans.ca in workspace-hrrf) into a successful page load on
+                // any host that simply doesn't have a display attached.
+                _logger.LogWarning(
+                    "Headed browser launch failed — no X server / DISPLAY available. Falling back to headless mode for this session.");
+                await LaunchBrowserAsync(headless: true).ConfigureAwait(false);
+            }
+
             return _page!;
         }
         finally
@@ -679,6 +697,27 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             throw;
         }
     }
+
+#pragma warning disable SA1202 // helper kept adjacent to its sole caller (LaunchBrowserAsync) for readability (workspace-j0b8).
+    /// <summary>
+    /// Heuristic: did the Chromium launch fail because there is no X server / DISPLAY?
+    /// The Chromium process logs ozone_platform_x11 / aura.env errors which Playwright
+    /// surfaces inside the TargetClosedException's <c>Browser logs</c> panel. We match on
+    /// the Playwright-team-formatted banner so we don't false-positive on Chrome crashes
+    /// for unrelated reasons. (workspace-j0b8)
+    /// </summary>
+    internal static bool LooksLikeMissingDisplay(string errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            return false;
+        }
+
+        return errorMessage.Contains("Missing X server", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("$DISPLAY", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("launched a headed browser without having a XServer", StringComparison.OrdinalIgnoreCase);
+    }
+#pragma warning restore SA1202
 
     private async Task InjectStoredCookiesAsync()
     {
