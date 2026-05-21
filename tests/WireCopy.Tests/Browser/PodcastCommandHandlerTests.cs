@@ -281,53 +281,120 @@ public class PodcastCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleGeneratePodcast_TtsNotConfigured_EnterPromptsForApiKey()
+    public async Task HandleGeneratePodcast_NoTtsKey_ModalSPressEntersSetupAndSaves()
     {
+        // workspace-yib5 Phase 5: pressing `p` without a TTS key now pops an
+        // inline modal BEFORE the slow cache-analysis pass. Pressing `s` on
+        // that modal deep-links into HandleSetApiKey; a successful save
+        // persists the key, triggers the resume-after-save callback, and the
+        // outer retry loop re-enters generation now that the key is set —
+        // proving the "zero extra keystrokes after paste + Enter" contract.
         SetupCollectionView();
 
-        // Always returns false from the mock — the local variable tracks the real state
+        // Flip IsConfigured to true once SetApiKeyOverride is called with the
+        // real key. This models the singleton TTS service: after a successful
+        // save the override is set, so the retry skips the modal and proceeds
+        // through cache-analysis (which we observe via AnalyzeCacheStatusAsync).
         _ttsService.IsConfigured.Returns(false);
+        _ttsService.WhenForAnyArgs(s => s.SetApiKeyOverride(default!))
+            .Do(call =>
+            {
+                if (call.Arg<string>() == "sk-test-key-123")
+                {
+                    _ttsService.IsConfigured.Returns(true);
+                }
+            });
 
         _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
             .Returns(TtsValidationResult.Valid());
 
-        // No cache analysis (not configured) → confirmation → Enter (prompts for key) → GoBack
-        SetupInputQueue(Cmd(CommandType.ActivateLink), Cmd(CommandType.GoBack));
+        SetupInstantCacheAnalysis();
+
+        // Modal: 's' → HandleSetApiKey → resume → retry → cache-analysis abandoned → confirmation: GoBack
+        SetupInputQueue(
+            new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 's' },
+            Cmd(CommandType.GoBack),
+            Cmd(CommandType.GoBack));
 
         _inputHandler.PromptForInputAsync(
             Arg.Any<string>(),
             Arg.Any<CancellationToken>(),
-            Arg.Is<bool>(s => s))
+            Arg.Any<bool>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<string?>(),
+            Arg.Any<Func<char, bool>?>())
             .Returns("sk-test-key-123");
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
         _ttsService.Received().SetApiKeyOverride("sk-test-key-123");
         _settingsStore.Received(1).Set("OpenAiApiKey", "sk-test-key-123", encrypt: true);
+
+        // The retry actually proceeded into cache-analysis — proving the
+        // resume callback fired and the outer loop re-entered RunGeneratePodcastAttempt.
+        await _orchestrator.Received().AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task HandleGeneratePodcast_ApiKeyValidationFails_DoesNotPersist()
+    public async Task HandleGeneratePodcast_NoTtsKey_ApiKeyValidationFails_DoesNotPersist()
     {
+        // workspace-yib5 Phase 5: on a failed auth probe, the key is cleared
+        // and resumeAfterSave is NOT invoked — the user falls back to the
+        // "set up cancelled" status line.
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(false);
 
         _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
             .Returns(TtsValidationResult.Invalid("Invalid key", "invalid_key"));
 
-        // No cache analysis → confirmation → Enter (prompts) → GoBack
-        SetupInputQueue(Cmd(CommandType.ActivateLink), Cmd(CommandType.GoBack));
+        // Modal: 's' → HandleSetApiKey → bad key → cancel (no resume)
+        SetupInputQueue(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 's' });
 
         _inputHandler.PromptForInputAsync(
             Arg.Any<string>(),
             Arg.Any<CancellationToken>(),
-            Arg.Is<bool>(s => s))
+            Arg.Any<bool>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<string?>(),
+            Arg.Any<Func<char, bool>?>())
             .Returns("bad-key");
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
         _settingsStore.DidNotReceive().Set("OpenAiApiKey", Arg.Any<string>(), Arg.Any<bool>());
         _ttsService.Received().SetApiKeyOverride(string.Empty);
+    }
+
+    [Fact]
+    public async Task HandleGeneratePodcast_NoTtsKey_ModalEscCancelsGenerate()
+    {
+        // workspace-yib5 Phase 5: pressing Esc on the missing-key modal sets
+        // the status-line message and exits the generate flow without
+        // entering cache-analysis or HandleSetApiKey.
+        SetupCollectionView();
+        _ttsService.IsConfigured.Returns(false);
+
+        SetupInputQueue(Cmd(CommandType.GoBack));
+
+        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
+
+        await _inputHandler.DidNotReceive().PromptForInputAsync(
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<bool>(),
+            Arg.Any<int?>(),
+            Arg.Any<int?>(),
+            Arg.Any<string?>(),
+            Arg.Any<Func<char, bool>?>());
+        await _orchestrator.DidNotReceive().AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

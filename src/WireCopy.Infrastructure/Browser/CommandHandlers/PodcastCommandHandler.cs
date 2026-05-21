@@ -266,6 +266,51 @@ internal static class PodcastCommandHandler
                 }
             }
 
+            // workspace-yib5 Phase 5: pre-cache-analysis missing-key modal.
+            // When the user pressed `p` without an OpenAI key, surface a
+            // one-line modal BEFORE the slow cache-analysis + cost-gate so
+            // they don't sit through minutes of work before being asked to
+            // set up. Pressing `s` deep-links into HandleSetApiKey with a
+            // resume callback that re-enters the generate flow on save
+            // success, satisfying the bead's "zero extra keystrokes beyond
+            // the actual key paste + Enter" acceptance criterion.
+            if (!ttsService.IsConfigured)
+            {
+                var choice = await PodcastMissingKeyModal.ShowAsync(ctx, options, ct).ConfigureAwait(false);
+                if (choice == PodcastMissingKeyModal.Outcome.Cancel)
+                {
+                    ctx.NavigationService.SetStatusMessage("Set up cancelled — press p again when ready");
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    return false;
+                }
+
+                var resumed = false;
+                await SettingsCommandHandler.HandleSetApiKey(
+                    ctx,
+                    options,
+                    ct,
+                    subtitle: "Set this up and we'll continue generating your podcast.",
+                    resumeAfterSave: () =>
+                    {
+                        resumed = true;
+                        return Task.CompletedTask;
+                    }).ConfigureAwait(false);
+
+                if (resumed)
+                {
+                    // Hydration above already pulled the saved key into the
+                    // service; on a fresh save the FormField path also calls
+                    // SetApiKeyOverride. Loop the whole attempt so cache
+                    // analysis + cost-gate run with the configured key.
+                    options = ctx.GetCurrentRenderOptions();
+                    return true;
+                }
+
+                ctx.NavigationService.SetStatusMessage("Set up cancelled — press p again when ready");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return false;
+            }
+
             // Pre-flight FFmpeg check: fail fast before slow cache analysis
             var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
             if (!await audioAssembler.ValidatePrerequisitesAsync(ct).ConfigureAwait(false))
