@@ -19,6 +19,7 @@ namespace WireCopy.Tests.Podcast;
 /// also written to /tmp so it can be diffed across runs.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public sealed class ProgressScreenVisualSmoke
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);

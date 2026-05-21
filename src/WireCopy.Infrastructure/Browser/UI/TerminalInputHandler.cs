@@ -600,6 +600,10 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.I => new NavigationCommand { Type = CommandType.InteractiveRefresh },
                 ConsoleKey.X => new NavigationCommand { Type = CommandType.ClearCollection },
                 ConsoleKey.L => new NavigationCommand { Type = CommandType.GoForward },
+
+                // workspace-vkhr: Shift+P restores the detached podcast-generation
+                // modal. No-op when no active background job exists.
+                ConsoleKey.P => new NavigationCommand { Type = CommandType.RestorePodcastModal },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
         }

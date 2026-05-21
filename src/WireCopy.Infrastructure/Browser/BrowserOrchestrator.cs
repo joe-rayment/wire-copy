@@ -338,6 +338,21 @@ public partial class BrowserOrchestrator : IBrowserService
                 // Re-read terminal dimensions on every iteration to handle resize
                 options = GetCurrentRenderOptions();
 
+                // workspace-vkhr Phase D acceptance: if a detached podcast
+                // generation has finished while the user is on a regular view,
+                // pop the completion / error screen automatically. We can only
+                // be in this top-level loop when no modal is on screen, so a
+                // completed-but-uncleared job here means "detached run reached
+                // the finish line; user must see the result." Hand off to
+                // HandleRestorePodcastModal which attaches to the existing job,
+                // renders the result, and calls jobManager.Clear() so the
+                // status-bar badge stops showing "Generating 100%" forever.
+                if (await CheckDetachedPodcastCompletionAsync(options, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    continue;
+                }
+
                 // Start waiting for input if not already waiting
                 pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
@@ -1018,6 +1033,14 @@ public partial class BrowserOrchestrator : IBrowserService
                         _commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
+                case CommandType.RestorePodcastModal:
+                    // workspace-vkhr Phase D: Shift+P restores the detached
+                    // podcast modal when a background job is active. No-op
+                    // (with a brief status message) when none is running.
+                    await PodcastCommandHandler.HandleRestorePodcastModal(
+                        _commandContext, options, cancellationToken).ConfigureAwait(false);
+                    break;
+
                 case CommandType.ChooseLayout:
                     await StrategyChooserHandler.HandleOpenChooserAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
@@ -1327,6 +1350,50 @@ public partial class BrowserOrchestrator : IBrowserService
             var maxOffset = Math.Max(0, gridRows.Count - contentHeight);
             _navigationService.SetScrollOffset(Math.Min(idealOffset, maxOffset));
         }
+    }
+
+    /// <summary>
+    /// workspace-vkhr Phase D acceptance criterion ("on completion the modal
+    /// auto-pops with the result screen"): when a detached podcast job has
+    /// finished, hand control to <see cref="PodcastCommandHandler.HandleRestorePodcastModal"/>
+    /// which renders the completion / error screen and calls
+    /// <see cref="Application.Interfaces.Browser.IPodcastBackgroundJobManager.Clear"/>.
+    /// Returns true when a completion was surfaced (the main loop must
+    /// <c>continue</c> so the next iteration sees fresh terminal state).
+    /// </summary>
+    /// <remarks>
+    /// Only triggers from the top-level input loop, which is unreachable
+    /// while any of the podcast modal flows are on screen — so this never
+    /// double-fires for an attached user.
+    /// </remarks>
+    private async Task<bool> CheckDetachedPodcastCompletionAsync(
+        RenderOptions options,
+        CancellationToken cancellationToken)
+    {
+        Application.Interfaces.Browser.IPodcastBackgroundJobManager? jobManager;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            jobManager = scope.ServiceProvider
+                .GetService<Application.Interfaces.Browser.IPodcastBackgroundJobManager>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to resolve podcast background job manager");
+            return false;
+        }
+
+        if (jobManager is null
+            || !jobManager.HasActiveJob
+            || jobManager.CurrentJobTask is null
+            || !jobManager.CurrentJobTask.IsCompleted)
+        {
+            return false;
+        }
+
+        await CommandHandlers.PodcastCommandHandler.HandleRestorePodcastModal(
+            _commandContext, options, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     /// <summary>

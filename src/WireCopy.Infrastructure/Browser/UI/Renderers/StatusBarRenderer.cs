@@ -21,10 +21,26 @@ internal class StatusBarRenderer
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
 
+    // workspace-vkhr Phase D: optional reference to the singleton background
+    // job manager so the right-hand side of the status bar can render a
+    // "🎧 Generating XX%" badge while the podcast modal is detached. Optional
+    // because most test paths construct the renderer directly; null simply
+    // means the badge never renders.
+    private readonly IPodcastBackgroundJobManager? _podcastJobManager;
+
     public StatusBarRenderer(RenderHelpers helpers, IThemeProvider themeProvider)
+        : this(helpers, themeProvider, podcastJobManager: null)
+    {
+    }
+
+    public StatusBarRenderer(
+        RenderHelpers helpers,
+        IThemeProvider themeProvider,
+        IPodcastBackgroundJobManager? podcastJobManager)
     {
         _helpers = helpers;
         _themeProvider = themeProvider;
+        _podcastJobManager = podcastJobManager;
     }
 
     public void RenderStatusBar(
@@ -54,7 +70,7 @@ internal class StatusBarRenderer
         var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
         var leftWidth = RenderHelpers.GetDisplayWidth(left);
 
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction);
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction, _podcastJobManager);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
         // Responsive help hint: show preview controls or standard help
@@ -273,6 +289,36 @@ internal class StatusBarRenderer
         }
     }
 
+    /// <summary>
+    /// workspace-vkhr Phase D: renders the headphones-glyph status-bar badge
+    /// surfaced while the podcast modal is detached but a background job is
+    /// still running. Returns an empty string when no job is active or no
+    /// manager is wired (e.g. test fixtures that construct the renderer
+    /// without DI). The percent is read from the manager's latest snapshot
+    /// via a volatile barrier so the render thread never blocks on the
+    /// generation thread. The bead allows omitting an ETA at the badge layer
+    /// since no aggregator is reachable from this layer — the modal owns it.
+    /// </summary>
+    internal static string FormatPodcastBadge(IPodcastBackgroundJobManager? manager, ThemePalette p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+
+        if (manager is null || !manager.HasActiveJob)
+        {
+            return string.Empty;
+        }
+
+        var snapshot = manager.LastSnapshot;
+        var percent = snapshot is null
+            ? 0
+            : Math.Clamp(snapshot.PercentComplete, 0, 100);
+
+        return $"{p.GetAccentFg().AnsiFg}\U0001F3A7{Reset} " +
+               $"{p.PrimaryText.AnsiFg}Generating {percent}%{Reset} " +
+               $"{p.SecondaryText.AnsiFg}·{Reset} " +
+               $"{p.GetAccentFg().AnsiFg}Shift+P{Reset}{p.GetDimFg().AnsiFg}:restore{Reset}";
+    }
+
     private static string FormatModeBadge(ViewMode mode, ThemePalette p)
     {
         var label = GetShortModeLabel(mode);
@@ -341,9 +387,20 @@ internal class StatusBarRenderer
         double cacheUsagePercent,
         string? layoutVariantLabel = null,
         IReadOnlyList<string>? missingCookieDomains = null,
-        HumanActionRequired? requiredAction = null)
+        HumanActionRequired? requiredAction = null,
+        IPodcastBackgroundJobManager? podcastJobManager = null)
     {
         var parts = new List<string>();
+
+        // workspace-vkhr Phase D: when a podcast job is generating in the
+        // background (modal detached), surface a "🎧 Generating XX%" badge
+        // so the user remembers there's a run in flight. Rendered first so
+        // the user notices the indicator even on narrow terminals.
+        var podcastBadge = FormatPodcastBadge(podcastJobManager, p);
+        if (!string.IsNullOrEmpty(podcastBadge))
+        {
+            parts.Add(podcastBadge);
+        }
 
         // Typed human-action badge takes precedence over the legacy cookie badge
         // (workspace-0b9s). Format: "⏸ {verb} at {domain} · Shift+O:open" — replaces

@@ -152,4 +152,10 @@ public enum CommandType
     // Hidden by default; bound to backslash so it works from any non-modal
     // view. Pressing again or Esc dismisses.
     TogglePreloadDetail,
+
+    // Podcast: restore the in-progress podcast modal when a background job
+    // is running and the user has detached it via 'D'. Bound to Shift+P
+    // (workspace-vkhr) and also via the ":podcast" command-line accelerator.
+    // No-op when no active job exists.
+    RestorePodcastModal,
 }

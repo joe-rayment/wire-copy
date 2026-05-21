@@ -41,6 +41,63 @@ internal static class PodcastCommandHandler
     }
 
     /// <summary>
+    /// workspace-vkhr Phase D: restores the in-progress podcast modal when a
+    /// background job is running and the user has detached it via 'D' (or
+    /// ":podcast" while a run is in flight). Subscribes to the live progress
+    /// stream from the manager, awaits the same generation task, and runs
+    /// the same result/error/cancel completion flow as
+    /// <see cref="HandleGeneratePodcast"/>. When no active job exists, the
+    /// handler shows a brief status message and returns.
+    /// </summary>
+    public static async Task HandleRestorePodcastModal(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        IPodcastBackgroundJobManager? jobManager;
+        using (var scope = ctx.ScopeFactory.CreateScope())
+        {
+            jobManager = scope.ServiceProvider.GetService<IPodcastBackgroundJobManager>();
+        }
+
+        if (jobManager is null || !jobManager.HasActiveJob)
+        {
+            ctx.NavigationService.SetStatusMessage("No active podcast generation.");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
+            ctx, options, jobManager, ct).ConfigureAwait(false);
+
+        if (result == null)
+        {
+            // Either user re-detached (status message already set), the run
+            // was cancelled, or generation faulted into OCE — in all three
+            // cases the next render frame is sufficient feedback.
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (!result.Success)
+        {
+            await PodcastProgressScreens.ShowErrorScreenAsync(
+                ctx,
+                options,
+                result.ErrorMessage ?? "Unknown error",
+                result.FailedArticleDetails,
+                result.FailureDetail,
+                ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct)
+            .ConfigureAwait(false);
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Opens the podcast settings/confirmation screen directly, skipping cache analysis.
     /// </summary>
     public static async Task HandlePodcastSettings(

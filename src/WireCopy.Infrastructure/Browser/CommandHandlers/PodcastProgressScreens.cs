@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.DTOs.Podcast;
+using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
@@ -85,6 +86,22 @@ internal static class PodcastProgressScreens
         IPodcastOrchestrator orchestrator,
         CancellationToken ct)
     {
+        // workspace-vkhr Phase D: resolve the singleton background-job manager
+        // so the modal can hand ownership to it on detach. The manager is
+        // optional (null in test fixtures that don't register it) — when
+        // null, the modal degrades to the pre-Phase-D behaviour: no detach,
+        // generation cancelled if the modal exits.
+        IPodcastBackgroundJobManager? jobManager = null;
+        try
+        {
+            using var managerScope = ctx.ScopeFactory.CreateScope();
+            jobManager = managerScope.ServiceProvider.GetService<IPodcastBackgroundJobManager>();
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Podcast background job manager unavailable (test path?)");
+        }
+
         // workspace-zh3u: resolve destination paths up-front so the in-progress
         // footer can answer "where will this land?" while the pipeline runs.
         // Failures are swallowed and degrade to a null FeedUrl; we never
@@ -128,6 +145,12 @@ internal static class PodcastProgressScreens
         {
             Volatile.Write(ref latestProgress, p);
             aggregator.Observe(p);
+
+            // workspace-vkhr Phase D: fan the same event out to the manager
+            // so the status-bar badge (and any future re-attached modal) see
+            // the live stream. Done up-front so a detached run still updates
+            // the badge even when statuses[] mutation paths bail out below.
+            jobManager?.ReportProgress(p);
 
             // Update shared progress for CTA rendering — use the weighted global
             // percent, not the orchestrator's stair-stepped PercentComplete.
@@ -202,8 +225,17 @@ internal static class PodcastProgressScreens
             }
         });
 
-        using var genCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // workspace-vkhr Phase D: do NOT wrap genCts in a `using` here — when
+        // the user presses 'D' to detach, ownership of the CTS transfers to
+        // the background job manager, and disposing it would cancel the run.
+        // The detach path leaks the CTS to the manager; the non-detach path
+        // disposes it in the finally block below.
+        var genCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var generationTask = orchestrator.GeneratePodcastAsync(collection, progress, genCts.Token);
+
+        // Detach flag — set when 'D' is pressed during an active run. Drives
+        // both the early loop exit and the finally-block cleanup decisions.
+        var detached = false;
 
         Task<NavigationCommand>? pendingKeyTask = null;
 
@@ -251,6 +283,36 @@ internal static class PodcastProgressScreens
                     {
                         options = ctx.GetCurrentRenderOptions();
                         continue;
+                    }
+
+                    // workspace-vkhr Phase D: 'D' (CommandType.DumpHtml carries
+                    // Shift+D in the existing keymap) detaches the modal. The
+                    // generation task keeps running; we hand the CTS + task to
+                    // the singleton manager so the status-bar badge and the
+                    // restore path can both find it. If generation is already
+                    // complete this falls through to the normal collect-result
+                    // exit — no useful detach to perform.
+                    if (command.Type == CommandType.DumpHtml &&
+                        jobManager is not null &&
+                        !generationTask.IsCompleted)
+                    {
+                        try
+                        {
+                            jobManager.StartJob(collection, targets, generationTask, genCts);
+                            detached = true;
+                            ctx.NavigationService.SetStatusMessage(
+                                "Generating in background. Press Shift+P to restore.");
+                            return null;
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            // Manager already has a job — should be impossible
+                            // here (we own the only modal entry point) but
+                            // degrade gracefully and stay in the modal.
+                            ctx.Logger.LogWarning(
+                                ex, "Failed to detach podcast modal; staying attached.");
+                            continue;
+                        }
                     }
 
                     if (command.Type == CommandType.GoBack)
@@ -338,24 +400,327 @@ internal static class PodcastProgressScreens
         }
         finally
         {
-            // Clear generating state so the CTA returns to normal
-            ctx.IsPodcastGenerating = false;
-            ctx.PodcastGenerationProgress = 0.0;
-
-            if (!generationTask.IsCompleted)
+            // Clear generating state so the CTA returns to normal — but only
+            // if we're NOT detaching. A detached run keeps these flags set so
+            // the CTA still shows "Generating" until the manager fires
+            // Completed (workspace-vkhr Phase D).
+            if (!detached)
             {
-                await genCts.CancelAsync().ConfigureAwait(false);
+                ctx.IsPodcastGenerating = false;
+                ctx.PodcastGenerationProgress = 0.0;
+
+                if (!generationTask.IsCompleted)
+                {
+                    await genCts.CancelAsync().ConfigureAwait(false);
+                    try
+                    {
+                        await generationTask.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected
+                    }
+                    catch (Exception ex)
+                    {
+                        ctx.Logger.LogWarning(ex, "Generation task faulted during cleanup: {Message}", ex.Message);
+                    }
+                }
+
+                // Safe to dispose: nobody else owns this CTS in the non-detach
+                // path. In the detach path ownership transferred to the
+                // manager and disposing here would cancel the run.
+                genCts.Dispose();
+
+                // workspace-vkhr Phase D: clear the manager so the next podcast
+                // run can start cleanly. No-op when no job was started (e.g.
+                // the modal never hit detach OR the cancellation path).
+                if (jobManager is not null && jobManager.HasActiveJob)
+                {
+                    jobManager.Clear();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// workspace-vkhr Phase D: entry point for restoring the progress modal
+    /// from a detached background job. Reads the active job + last snapshot
+    /// from the manager, rebuilds a minimal statuses[] view, subscribes to
+    /// the live progress stream, and awaits the same generation task the
+    /// original modal kicked off. On completion, fans out to the same
+    /// result / error / cancellation flows as <see cref="ShowProgressScreenAsync"/>.
+    /// </summary>
+    /// <returns>The collected <see cref="PodcastResult"/> when the job
+    /// completed (including failure), or <c>null</c> on cancellation or
+    /// when the user detached again.</returns>
+    internal static async Task<PodcastResult?> ShowProgressScreenAttachedAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IPodcastBackgroundJobManager jobManager,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(jobManager);
+
+        if (!jobManager.HasActiveJob || jobManager.CurrentJobTask is null)
+        {
+            return null;
+        }
+
+        var collection = jobManager.Collection;
+        var targets = jobManager.Targets;
+        var generationTask = jobManager.CurrentJobTask;
+
+        // Phase F adds full per-article persistence; until then re-attach
+        // accepts the per-article history loss — we seed everything to
+        // Pending and let the live stream rebuild in-flight state.
+        var articleCount = collection?.Items.Count ?? 0;
+        var statuses = new PodcastCommandHandler.ArticleStatus[articleCount];
+        for (var i = 0; i < articleCount; i++)
+        {
+            statuses[i] = new PodcastCommandHandler.ArticleStatus
+            {
+                Title = collection!.Items[i].Title,
+                State = PodcastCommandHandler.ArticleState.Pending,
+            };
+        }
+
+        var aggregator = new PodcastProgressAggregator();
+
+        // Seed both the snapshot and the aggregator from whatever the
+        // manager already cached so the first render frame is up-to-date
+        // (not a 0% bar that re-jitters on the next event).
+        var seedSnapshot = jobManager.LastSnapshot;
+        PodcastProgress? latestProgress = seedSnapshot;
+        if (seedSnapshot is not null)
+        {
+            aggregator.Observe(seedSnapshot);
+            var seedIdx = seedSnapshot.CurrentArticle - 1;
+            if (seedIdx >= 0 && seedIdx < statuses.Length)
+            {
+                statuses[seedIdx].State = PodcastCommandHandler.ArticleState.Processing;
+            }
+        }
+
+        var animFrame = 0;
+        var detachedAgain = false;
+        var lastProcessingIndex = -1;
+        var lastPhase = seedSnapshot?.Phase ?? PodcastPhase.CachingContent;
+
+        // Subscriber must be cheap — the orchestrator delivers events on the
+        // generation thread. We only mutate volatile/array state; nothing here
+        // blocks or renders.
+        void OnProgress(object? sender, PodcastProgress p)
+        {
+            Volatile.Write(ref latestProgress, p);
+            aggregator.Observe(p);
+            ctx.PodcastGenerationProgress = Math.Clamp(aggregator.GlobalPercent, 0.0, 1.0);
+
+            if (p.Phase == PodcastPhase.GeneratingAudio && lastPhase == PodcastPhase.CachingContent)
+            {
+                for (var i = 0; i < articleCount; i++)
+                {
+                    if (statuses[i].State != PodcastCommandHandler.ArticleState.Failed)
+                    {
+                        statuses[i].State = PodcastCommandHandler.ArticleState.Pending;
+                        statuses[i].Method = null;
+                    }
+                }
+
+                lastProcessingIndex = -1;
+            }
+
+            lastPhase = p.Phase;
+
+            if (p.Phase == PodcastPhase.CachingContent && p.CurrentArticle > 0 && p.CurrentArticle <= articleCount)
+            {
+                var idx = p.CurrentArticle - 1;
+                if (p.IsArticleComplete)
+                {
+                    statuses[idx].State = p.IsArticleSuccess
+                        ? PodcastCommandHandler.ArticleState.Completed
+                        : PodcastCommandHandler.ArticleState.Failed;
+                    statuses[idx].Method = null;
+                    statuses[idx].FinishedAtUtc ??= DateTime.UtcNow;
+                }
+                else
+                {
+                    if (statuses[idx].State != PodcastCommandHandler.ArticleState.Processing)
+                    {
+                        statuses[idx].StartedAtUtc ??= DateTime.UtcNow;
+                    }
+
+                    statuses[idx].State = PodcastCommandHandler.ArticleState.Processing;
+                    statuses[idx].Method = p.ExtractionMethod;
+                }
+            }
+
+            if (p.Phase == PodcastPhase.GeneratingAudio && p.CurrentArticle > 0 && p.CurrentArticle <= articleCount)
+            {
+                var idx = p.CurrentArticle - 1;
+                if (lastProcessingIndex >= 0 && lastProcessingIndex < idx &&
+                    statuses[lastProcessingIndex].State == PodcastCommandHandler.ArticleState.Processing)
+                {
+                    statuses[lastProcessingIndex].State = PodcastCommandHandler.ArticleState.Completed;
+                    statuses[lastProcessingIndex].FinishedAtUtc ??= DateTime.UtcNow;
+                }
+
+                if (!p.IsFromCache && statuses[idx].State != PodcastCommandHandler.ArticleState.Processing)
+                {
+                    statuses[idx].FinishedAtUtc = null;
+                }
+
+                statuses[idx].State = p.IsFromCache
+                    ? PodcastCommandHandler.ArticleState.Cached
+                    : PodcastCommandHandler.ArticleState.Processing;
+                lastProcessingIndex = idx;
+            }
+        }
+
+        jobManager.ProgressUpdated += OnProgress;
+
+        // While re-attached the CTA badge should reflect "still generating"
+        // — same flags the original modal sets. They were left alone during
+        // detach so this is largely a no-op, but explicit is safer than
+        // implicit.
+        ctx.IsPodcastGenerating = true;
+
+        Task<NavigationCommand>? pendingKeyTask = null;
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+                var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+                helpers.Clear();
+
+                var currentProgress = Volatile.Read(ref latestProgress);
+                RenderProgressContent(
+                    helpers,
+                    palette,
+                    currentProgress,
+                    animFrame,
+                    statuses,
+                    options.TerminalWidth,
+                    options.TerminalHeight,
+                    targets,
+                    aggregator);
+                helpers.ClearRemainingLines();
+
+                pendingKeyTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+                var tickCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                Task completed;
                 try
                 {
-                    await generationTask.ConfigureAwait(false);
+                    var tickTask = Task.Delay(PodcastCommandHandler.AnimationIntervalMs, tickCts.Token);
+                    completed = await Task.WhenAny(pendingKeyTask, generationTask, tickTask).ConfigureAwait(false);
+                    await tickCts.CancelAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    tickCts.Dispose();
+                }
+
+                if (completed == pendingKeyTask)
+                {
+                    var command = await pendingKeyTask.ConfigureAwait(false);
+                    pendingKeyTask = null;
+
+                    if (command.Type == CommandType.TerminalResized)
+                    {
+                        options = ctx.GetCurrentRenderOptions();
+                        continue;
+                    }
+
+                    if (command.Type == CommandType.DumpHtml && !generationTask.IsCompleted)
+                    {
+                        // Re-detach is idempotent — the job is already
+                        // registered on the manager, so we just exit the
+                        // attached loop without touching the manager state.
+                        detachedAgain = true;
+                        ctx.NavigationService.SetStatusMessage(
+                            "Generating in background. Press Shift+P to restore.");
+                        return null;
+                    }
+
+                    if (command.Type == CommandType.GoBack)
+                    {
+                        if (generationTask.IsCompleted)
+                        {
+                            break;
+                        }
+
+                        var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
+                        if (shouldCancel)
+                        {
+                            jobManager.RequestCancellation();
+                            try
+                            {
+                                await generationTask.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // Expected
+                            }
+
+                            ctx.NavigationService.SetStatusMessage(BuildCancelledStatusMessage(statuses));
+                            return null;
+                        }
+                    }
+                }
+                else if (completed == generationTask)
+                {
+                    break;
+                }
+                else
+                {
+                    animFrame = (animFrame + 1) % PodcastCommandHandler.AnimationFrames.Length;
+                }
+            }
+
+            if (generationTask.IsCompleted)
+            {
+                try
+                {
+                    var result = await generationTask.ConfigureAwait(false);
+                    for (var i = 0; i < statuses.Length; i++)
+                    {
+                        if (statuses[i].State == PodcastCommandHandler.ArticleState.Processing)
+                        {
+                            statuses[i].State = PodcastCommandHandler.ArticleState.Completed;
+                            statuses[i].FinishedAtUtc ??= DateTime.UtcNow;
+                        }
+                    }
+
+                    return result;
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected
+                    return null;
                 }
                 catch (Exception ex)
                 {
-                    ctx.Logger.LogWarning(ex, "Generation task faulted during cleanup: {Message}", ex.Message);
+                    ctx.Logger.LogError(ex, "Podcast generation failed (attached)");
+                    return PodcastResult.Failure(ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            jobManager.ProgressUpdated -= OnProgress;
+
+            // Only clear when we're not detaching again — re-detach keeps the
+            // job alive on the manager.
+            if (!detachedAgain)
+            {
+                ctx.IsPodcastGenerating = false;
+                ctx.PodcastGenerationProgress = 0.0;
+                if (jobManager.HasActiveJob)
+                {
+                    jobManager.Clear();
                 }
             }
         }
@@ -1049,7 +1414,11 @@ internal static class PodcastProgressScreens
             RenderDestinationFooter(helpers, p, targets, width);
         }
 
-        helpers.WriteLine($"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}");
+        // workspace-vkhr Phase D: surface the detach affordance alongside the
+        // cancel keystroke so the user knows D is bound during a live run.
+        helpers.WriteLine(
+            $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}   " +
+            $"{p.GetAccentFg().AnsiFg}D{Reset}{p.SecondaryText.AnsiFg}:detach{Reset}");
     }
 
     /// <summary>
@@ -1088,8 +1457,14 @@ internal static class PodcastProgressScreens
         }
 
         helpers.WriteLine();
+
+        // workspace-vkhr Phase D: the detach affordance is the headline of
+        // the in-progress footer now — the user CAN free the screen and the
+        // job keeps running. Closing the terminal still cancels (that's
+        // Phase F).
         helpers.WriteLine(
-            $"  {p.SecondaryText.AnsiFg}Running in this terminal — closing it cancels the run.{Reset}");
+            $"  {p.SecondaryText.AnsiFg}Running. Press D to free the screen — generation continues. " +
+            $"Closing this terminal still cancels.{Reset}");
         helpers.WriteLine();
     }
 

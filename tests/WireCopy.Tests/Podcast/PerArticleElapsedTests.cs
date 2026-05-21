@@ -16,6 +16,7 @@ namespace WireCopy.Tests.Podcast;
 /// is one of the parent workspace-rz1c acceptance items.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class PerArticleElapsedTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);

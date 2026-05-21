@@ -17,6 +17,7 @@ namespace WireCopy.Tests.Podcast;
 /// legacy stair-stepped PercentComplete.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ProgressScreenAggregatorRenderTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);

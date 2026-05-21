@@ -17,6 +17,7 @@ namespace WireCopy.Tests.Podcast;
 /// terminal output.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class PhaseGlyphTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);
