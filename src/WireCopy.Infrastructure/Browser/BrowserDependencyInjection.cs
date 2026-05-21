@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Infrastructure.Browser.Cache;
+using WireCopy.Infrastructure.Browser.CommandHandlers;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI;
 using WireCopy.Infrastructure.Configuration;
@@ -260,6 +261,11 @@ public static class BrowserDependencyInjection
                 browserConfig.Value,
                 pipelineLogger);
         });
+
+        // Register the podcast background job manager (workspace-vkhr Phase D).
+        // Singleton so detach/reattach across the input loop see the same
+        // live job + progress stream.
+        services.AddSingleton<IPodcastBackgroundJobManager, PodcastBackgroundJobManager>();
 
         // Register the main orchestrator
         services.AddSingleton<IBrowserService, BrowserOrchestrator>();

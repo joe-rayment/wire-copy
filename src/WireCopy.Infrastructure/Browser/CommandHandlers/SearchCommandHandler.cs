@@ -242,6 +242,20 @@ internal static class SearchCommandHandler
                 return true;
 
             case "podcast":
+                // workspace-vkhr Phase D: when a background job is running,
+                // :podcast restores the modal instead of starting a new run
+                // (single-active-job invariant). Otherwise kick off a fresh
+                // generation.
+                using (var podcastScope = ctx.ScopeFactory.CreateScope())
+                {
+                    var jobManager = podcastScope.ServiceProvider.GetService<IPodcastBackgroundJobManager>();
+                    if (jobManager?.HasActiveJob == true)
+                    {
+                        await PodcastCommandHandler.HandleRestorePodcastModal(ctx, options, ct).ConfigureAwait(false);
+                        return true;
+                    }
+                }
+
                 await PodcastCommandHandler.HandleGeneratePodcast(ctx, options, ct).ConfigureAwait(false);
                 return true;
 

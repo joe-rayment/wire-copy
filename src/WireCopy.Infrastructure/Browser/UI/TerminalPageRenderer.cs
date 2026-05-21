@@ -43,6 +43,18 @@ public class TerminalPageRenderer : IPageRenderer
     private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
 
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
+        : this(themeProvider, logger, podcastJobManager: null)
+    {
+    }
+
+    // workspace-vkhr Phase D: podcast job manager is optional so existing
+    // tests that construct the renderer without DI still compile. The DI
+    // registration in BrowserDependencyInjection ALWAYS provides one, so
+    // the production path renders the detached-job badge correctly.
+    public TerminalPageRenderer(
+        IThemeProvider themeProvider,
+        ILogger<TerminalPageRenderer> logger,
+        IPodcastBackgroundJobManager? podcastJobManager)
     {
         _themeProvider = themeProvider;
         _helpers = new RenderHelpers();
@@ -50,7 +62,7 @@ public class TerminalPageRenderer : IPageRenderer
         _articleRenderer = new ArticleRenderer(_helpers, themeProvider);
         _collectionRenderer = new CollectionRenderer(_helpers, themeProvider);
         _launcherRenderer = new LauncherRenderer(_helpers, themeProvider);
-        _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider);
+        _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider, podcastJobManager);
         _preloadDetailRenderer = new PreloadDetailRenderer(_helpers, themeProvider);
     }
 

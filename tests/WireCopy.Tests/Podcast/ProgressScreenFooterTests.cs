@@ -17,6 +17,7 @@ namespace WireCopy.Tests.Podcast;
 /// (workspace-zh3u).
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ProgressScreenFooterTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(WireCopy.Domain.Enums.Browser.ThemeName.Phosphor);
@@ -56,8 +57,13 @@ public class ProgressScreenFooterTests
         output.Should().Contain("reading-list.m4b");
         output.Should().Contain("Will publish at");
         output.Should().Contain("storage.googleapis.com");
-        output.Should().Contain("closing it cancels the run",
-            because: "the ephemerality warning must be present until detach support ships");
+        // workspace-vkhr Phase D: footer now reflects the detach affordance
+        // (D frees the screen) but still warns that the terminal owns the
+        // lifecycle — full-process survival is Phase F.
+        output.Should().Contain("Press D to free the screen",
+            because: "the footer must advertise the new detach keystroke");
+        output.Should().Contain("Closing this terminal still cancels",
+            because: "the user must still be warned that the process owns the run");
     }
 
     [Fact]

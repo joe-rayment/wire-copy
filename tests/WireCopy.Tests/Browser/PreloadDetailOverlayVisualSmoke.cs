@@ -22,6 +22,7 @@ namespace WireCopy.Tests.Browser;
 /// and dumped to <c>/tmp/wirecopy-preload-overlay-c8v3.txt</c>.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public sealed class PreloadDetailOverlayVisualSmoke
 {
     private readonly ITestOutputHelper _output;
