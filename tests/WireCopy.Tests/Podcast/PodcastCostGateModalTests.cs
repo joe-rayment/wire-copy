@@ -124,8 +124,8 @@ public class PodcastCostGateModalTests
 
         var cfg = PodcastCommandHandler.LoadCostGateConfig(store);
 
-        cfg.ThresholdUsd.Should().Be(1.00m);
-        cfg.ArticleThreshold.Should().Be(10);
+        cfg.ThresholdUsd.Should().Be(5.00m, "workspace-reym raised the default so the gate doesn't fire on every realistic Reading List");
+        cfg.ArticleThreshold.Should().Be(50, "workspace-reym raised the default so the gate doesn't fire on every realistic Reading List");
         cfg.AlwaysShow.Should().BeFalse();
     }
 
@@ -154,8 +154,8 @@ public class PodcastCostGateModalTests
 
         var cfg = PodcastCommandHandler.LoadCostGateConfig(store);
 
-        cfg.ThresholdUsd.Should().Be(1.00m, "non-numeric input falls back to default");
-        cfg.ArticleThreshold.Should().Be(10, "non-positive input falls back to default");
+        cfg.ThresholdUsd.Should().Be(5.00m, "non-numeric input falls back to the workspace-reym default");
+        cfg.ArticleThreshold.Should().Be(50, "non-positive input falls back to the workspace-reym default");
         cfg.AlwaysShow.Should().BeFalse("non-bool input falls back to default false");
     }
 
