@@ -229,15 +229,22 @@ public class PodcastCommandHandlerTests
     [Fact]
     public async Task HandleGeneratePodcast_UserCancelsAtCostGate_DoesNotStartGeneration()
     {
-        // workspace-ny44: the confirmation screen is gone. The remaining
-        // cancel-before-progress affordance is the cost-gate modal — which
-        // only appears when the analysis exceeds the threshold. Force it
-        // with a high-cost analysis, then press Esc.
+        // workspace-reym + ny44: the confirmation screen is gone. The
+        // remaining cancel-before-progress affordance is the cost-gate
+        // modal — which only appears when the pre-flight gate is actually
+        // armed. Two paths trigger it:
+        //   - AlwaysShow=true (user opted into always-confirm), OR
+        //   - collection.Items.Count > ArticleThreshold (default 50 since
+        //     workspace-reym).
+        // Use AlwaysShow=true so we don't need a 51-item collection just
+        // to exercise the cancel-at-gate contract.
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(true);
+        _settingsStore.Get("PodcastCostGateAlwaysShow").Returns("true");
 
         // Force a high-cost analysis (10 articles + $5 estimate) so the
-        // cost-gate is shown above the default thresholds.
+        // gate also fires by cost (defense-in-depth — AlwaysShow alone
+        // would suffice).
         var analysis = new CacheAnalysis
         {
             TotalArticles = 10,
@@ -252,8 +259,10 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(analysis);
 
-        // Queue: [GoBack (abandoned by cache analysis), GoBack (cost-gate Esc)]
-        SetupInputQueue(Cmd(CommandType.GoBack), Cmd(CommandType.GoBack));
+        // workspace-reym: the standalone "Analyzing Articles" screen is
+        // gone, so the user only gets to press Esc once — on the cost-gate
+        // modal itself.
+        SetupInputQueue(Cmd(CommandType.GoBack));
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
@@ -350,11 +359,15 @@ public class PodcastCommandHandlerTests
         _ttsService.Received().SetApiKeyOverride("sk-test-key-123");
         _settingsStore.Received(1).Set("OpenAiApiKey", "sk-test-key-123", encrypt: true);
 
-        // The retry actually proceeded into cache-analysis — proving the
-        // resume callback fired and the outer loop re-entered RunGeneratePodcastAttempt.
-        await _orchestrator.Received().AnalyzeCacheStatusAsync(
+        // workspace-reym retired the standalone cache-analysis screen, so
+        // the proof of resume-success is now that GeneratePodcastAsync
+        // was reached. (Pre-workspace-reym this assertion was on
+        // AnalyzeCacheStatusAsync because the screen ran on every press
+        // — now analysis only runs when the cost-gate is armed, which is
+        // not the default path.)
+        await _orchestrator.Received().GeneratePodcastAsync(
             Arg.Any<Collection>(),
-            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<IProgress<PodcastProgress>>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -463,10 +476,18 @@ public class PodcastCommandHandlerTests
     #region Cache Analysis Screen
 
     [Fact]
-    public async Task HandleGeneratePodcast_CacheAnalysisCompletes_PassesToConfirmation()
+    public async Task HandleGeneratePodcast_CacheAnalysisRunsOnlyWhenGateArmed()
     {
+        // workspace-reym: AnalyzeCacheStatusAsync no longer runs as a
+        // mandatory pre-flight UI screen — it only runs when the cost-gate
+        // is plausibly going to fire (AlwaysShow=true OR Items.Count >
+        // ArticleThreshold). When neither is true the handler skips
+        // straight to the Progress screen, which extracts inline via
+        // GeneratePodcastAsync. This test pins that contract: when
+        // AlwaysShow is enabled, analysis runs; otherwise it doesn't.
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(true);
+        _settingsStore.Get("PodcastCostGateAlwaysShow").Returns("true");
 
         var analysis = new CacheAnalysis
         {
@@ -493,12 +514,47 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(analysis);
 
-        // Queue: 1=cache analysis (abandoned, analysis wins), 2=GoBack at confirmation
-        SetupInputQueue(Cmd(CommandType.GoBack), Cmd(CommandType.GoBack));
+        // Cost-gate cancel.
+        SetupInputQueue(Cmd(CommandType.GoBack));
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
         await _orchestrator.Received(1).AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleGeneratePodcast_CacheAnalysisSkippedOnDefaultPath()
+    {
+        // workspace-reym companion: the happy path (small list, AlwaysShow
+        // unset) bypasses AnalyzeCacheStatusAsync entirely. The orchestrator
+        // extracts inline during GeneratePodcastAsync — same total work,
+        // but no separate pre-flight screen and no silent analysis hang.
+        SetupCollectionView();
+        _ttsService.IsConfigured.Returns(true);
+        SetupInstantCacheAnalysis();
+
+        var result = PodcastResult.Successful(
+            feedUrl: null,
+            localFilePath: "/tmp/test.m4b",
+            totalDuration: TimeSpan.FromMinutes(1),
+            articlesProcessed: 2,
+            articlesFailed: 0,
+            fileSizeBytes: 1024);
+        _orchestrator.GeneratePodcastAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<PodcastProgress>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(result);
+
+        // Progress screen then completion-screen dismiss.
+        SetupInputQueue(Cmd(CommandType.ActivateLink), Cmd(CommandType.ActivateLink));
+
+        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
+
+        await _orchestrator.DidNotReceive().AnalyzeCacheStatusAsync(
             Arg.Any<Collection>(),
             Arg.Any<IProgress<ContentExtractionProgress>>(),
             Arg.Any<CancellationToken>());
