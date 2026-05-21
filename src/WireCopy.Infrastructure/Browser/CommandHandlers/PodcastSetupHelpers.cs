@@ -22,7 +22,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// Cache-analysis, cache-wait, and confirmation screens for podcast generation,
 /// extracted from PodcastCommandHandler.
 /// </summary>
-internal static class PodcastConfirmationScreens
+internal static class PodcastSetupHelpers
 {
     private const string Reset = PodcastCommandHandler.Reset;
 

@@ -1486,14 +1486,14 @@ internal static class PodcastProgressScreens
         var labelWidth = FeedLabel.Length;
         var available = Math.Max(20, width - labelWidth - 6);
 
-        var localDisplay = PodcastConfirmationScreens.TruncateMiddle(targets.LocalFilePath, available);
+        var localDisplay = PodcastSetupHelpers.TruncateMiddle(targets.LocalFilePath, available);
         helpers.WriteLine(
             $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
             $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
 
         if (!string.IsNullOrEmpty(targets.FeedUrl))
         {
-            var feedDisplay = PodcastConfirmationScreens.TruncateMiddle(targets.FeedUrl, available);
+            var feedDisplay = PodcastSetupHelpers.TruncateMiddle(targets.FeedUrl, available);
             helpers.WriteLine(
                 $"  {p.SecondaryText.AnsiFg}{FeedLabel.PadRight(labelWidth)}{Reset}  " +
                 $"{p.PrimaryText.AnsiFg}{feedDisplay}{Reset}");

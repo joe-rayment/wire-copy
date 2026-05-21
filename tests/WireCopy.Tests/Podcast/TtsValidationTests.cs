@@ -310,7 +310,7 @@ public class TtsValidationTests
     }
 
     [Fact]
-    public async Task ConfirmationScreen_ValidationSuccess_PersistsKey()
+    public async Task CredentialFlow_ValidationSuccess_PersistsKey()
     {
         var ttsService = Substitute.For<ITtsService>();
         var settingsStore = Substitute.For<IUserSettingsStore>();
@@ -319,7 +319,7 @@ public class TtsValidationTests
         ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
             .Returns(TtsValidationResult.Valid());
 
-        // Simulate confirmation screen flow after user enters key
+        // Simulate the credential-save flow after user enters key
         var trimmedKey = "sk-new-key";
         ttsService.SetApiKeyOverride(trimmedKey);
 
@@ -342,7 +342,7 @@ public class TtsValidationTests
     }
 
     [Fact]
-    public async Task ConfirmationScreen_ValidationFailure_DoesNotPersistAndReverts()
+    public async Task CredentialFlow_ValidationFailure_DoesNotPersistAndReverts()
     {
         var ttsService = Substitute.For<ITtsService>();
         var settingsStore = Substitute.For<IUserSettingsStore>();
@@ -350,7 +350,7 @@ public class TtsValidationTests
         ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
             .Returns(TtsValidationResult.Invalid("Invalid API key.", "invalid_key"));
 
-        // Simulate confirmation screen flow
+        // Simulate the credential-save flow
         var trimmedKey = "sk-bad-key";
         ttsService.SetApiKeyOverride(trimmedKey);
 

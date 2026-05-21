@@ -417,22 +417,21 @@ public class PodcastCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleGeneratePodcast_UnhandledKey_StaysOnConfirmationScreen()
+    public async Task HandleGeneratePodcast_UnhandledKey_StaysOnMissingKeyModal()
     {
+        // workspace-ny44 retired the row-navigated confirmation screen — the
+        // post-cache-analysis modal is now PodcastMissingKeyModal (from
+        // workspace-yib5), which behaves the same way: any non-handled key
+        // re-renders and the loop continues until the user presses Esc.
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(false);
 
-        // Send an unhandled key (MoveDown), then GoBack to exit.
-        // If the unhandled key caused exit, the GoBack would never be consumed
-        // and the orchestrator would not be called with GeneratePodcast.
         var unhandledCmd = new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' };
         SetupInputQueue(unhandledCmd, Cmd(CommandType.GoBack));
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
-        // Should have rendered (from the GoBack exit path), proving we stayed on the screen
         _renderCalled.Should().BeTrue();
-        // Should NOT have called GeneratePodcast (we exited via GoBack, not Enter)
         await _orchestrator.DidNotReceive().GeneratePodcastAsync(
             Arg.Any<Collection>(),
             Arg.Any<IProgress<PodcastProgress>>(),
@@ -440,12 +439,11 @@ public class PodcastCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleGeneratePodcast_MultipleUnhandledKeys_StaysOnConfirmationScreen()
+    public async Task HandleGeneratePodcast_MultipleUnhandledKeys_StaysOnMissingKeyModal()
     {
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(false);
 
-        // Send multiple unhandled keys, then GoBack
         var keys = new[]
         {
             new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' },
