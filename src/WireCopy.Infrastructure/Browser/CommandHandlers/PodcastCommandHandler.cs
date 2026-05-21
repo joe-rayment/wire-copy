@@ -11,6 +11,7 @@ using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Browser.UI.Components;
@@ -367,19 +368,29 @@ internal static class PodcastCommandHandler
 
             if (!result.Success)
             {
-                // If TTS failed due to auth error, clear the persisted key so user is re-prompted
+                // If TTS failed due to auth error, clear the persisted key so user is re-prompted.
+                // workspace-p1px: BucketNotPublic / FeedNotReachable produce 403 in their diagnostic
+                // strings (the public HTTP GET returned 403) but are STORAGE failures, not TTS auth
+                // failures — guarded against clearing the OpenAI key for the wrong reason.
                 var error = result.ErrorMessage ?? "Unknown error";
-                if (error.Contains("401", StringComparison.Ordinal) ||
-                    error.Contains("403", StringComparison.Ordinal) ||
-                    error.Contains("not configured", StringComparison.OrdinalIgnoreCase))
+                var isStorageFailure = result.FailureDetail?.FailureClass
+                    is FeedPublishFailureClass.BucketNotPublic
+                    or FeedPublishFailureClass.FeedNotReachable
+                    or FeedPublishFailureClass.FeedNotParseable;
+                if (!isStorageFailure
+                    && (error.Contains("401", StringComparison.Ordinal)
+                        || error.Contains("403", StringComparison.Ordinal)
+                        || error.Contains("not configured", StringComparison.OrdinalIgnoreCase)))
                 {
                     settingsStore.Remove("OpenAiApiKey");
                     ttsService.SetApiKeyOverride(string.Empty);
                 }
 
-                await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, error, result.FailedArticleDetails, result.FailureDetail, ct).ConfigureAwait(false);
+                var retry = await PodcastProgressScreens.ShowErrorScreenAsync(
+                    ctx, options, error, result.FailedArticleDetails, result.FailureDetail, ct)
+                    .ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return false;
+                return retry;
             }
 
             var action = await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct).ConfigureAwait(false);

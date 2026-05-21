@@ -55,7 +55,7 @@ public sealed class CompletionScreenVisualSmoke
         content.Should().Contain("OpenAI API returned 429",
             "Shape D must show the typed Reason from the classifier");
         content.Should().Contain("allUsers:objectViewer",
-            "Shape D must surface the bucket-public IAM grant remediation when the typed detail is FeedNotReachable (workspace-3a2k)");
+            "Shape D must surface the bucket-public IAM grant remediation when the typed detail is BucketNotPublic (workspace-3a2k → workspace-p1px)");
     }
 
     private static void DumpAllFrames(StreamWriter dump)
@@ -137,10 +137,10 @@ public sealed class CompletionScreenVisualSmoke
             // Fix line — the bead's headline acceptance criterion.
             var bucketPublicDetail = new PodcastFailureDetail(
                 Step: "Publishing",
-                FailureClass: FeedPublishFailureClass.FeedNotReachable,
+                FailureClass: FeedPublishFailureClass.BucketNotPublic,
                 RawMessage: "feed.xml uploaded but URL returned HTTP 403 from public internet.",
                 RemediationCopy:
-                    "feed.xml uploaded but the public URL is not reachable. Grant allUsers:objectViewer on "
+                    "feed.xml uploaded but the bucket isn't world-readable. Grant allUsers:objectViewer on "
                     + "the bucket (Cloud Console → Buckets → Permissions → Add: allUsers, role Storage "
                     + "Object Viewer), or run `gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.");
             var d_typed = PodcastFailureClassifier.Classify(

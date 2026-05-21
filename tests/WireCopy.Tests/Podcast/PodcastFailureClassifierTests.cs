@@ -179,7 +179,7 @@ public class PodcastFailureClassifierTests
     {
         var detail = new PodcastFailureDetail(
             Step: "Publishing",
-            FailureClass: FeedPublishFailureClass.FeedNotReachable,
+            FailureClass: FeedPublishFailureClass.BucketNotPublic,
             RawMessage: "Anonymous HTTP GET returned 403 — bucket may not grant allUsers:objectViewer.",
             RemediationCopy: "Grant allUsers:objectViewer on the bucket, or run gsutil iam ch allUsers:objectViewer gs://<your-bucket>.");
 

@@ -40,6 +40,9 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         _logger = logger;
     }
 
+    /// <inheritdoc />
+    public string BucketName => _config.BucketName ?? string.Empty;
+
     /// <summary>
     /// Validates a service account key file without storing it.
     /// </summary>
@@ -566,6 +569,93 @@ internal sealed class GcsStorageClient : ICloudStorageClient
 
         _logger.LogInformation("Created bucket {Bucket} in {Location}", bucketName, location);
         _ensuredBucketName = bucketName;
+    }
+
+    /// <summary>
+    /// Adds the <c>allUsers:roles/storage.objectViewer</c> IAM binding to
+    /// <paramref name="bucketName"/> if it isn't already granted. Used by the
+    /// publish-failure auto-remediation flow (workspace-p1px) when the post-
+    /// upload public HTTP GET returns 403, indicating the bucket is private.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see cref="MakeBucketPublicStatus.AlreadyPublic"/> when the
+    /// binding is already present (no API write attempted), <c>Success</c>
+    /// after a successful <c>SetBucketIamPolicyAsync</c>, and
+    /// <c>PermissionDenied</c> when the service account lacks
+    /// <c>storage.buckets.setIamPolicy</c>. Any other error is mapped to
+    /// <c>OtherError</c> with the underlying message preserved. Logs at INFO
+    /// on success and WARN on failure so operators can trace what happened
+    /// to a previously-private bucket without enabling debug logs.
+    /// </remarks>
+    public async Task<MakeBucketPublicResult> MakeBucketPublicAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bucketName);
+
+        StorageClient client;
+        try
+        {
+            client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "MakeBucketPublicAsync: failed to initialize GCS client for {Bucket}", bucketName);
+            return MakeBucketPublicResult.OtherError(ex.Message);
+        }
+
+        Google.Apis.Storage.v1.Data.Policy currentPolicy;
+        try
+        {
+            currentPolicy = await client.GetBucketIamPolicyAsync(bucketName, options: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+        {
+            _logger.LogWarning(
+                "MakeBucketPublicAsync: SA lacks getIamPolicy on {Bucket} ({Status}): {Error}",
+                bucketName,
+                ex.HttpStatusCode,
+                ex.Message);
+            return MakeBucketPublicResult.PermissionDenied(ex.Message);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "MakeBucketPublicAsync: GetBucketIamPolicyAsync failed for {Bucket}", bucketName);
+            return MakeBucketPublicResult.OtherError(ex.Message);
+        }
+
+        if (GcsBucketPublicReadHelper.IsPublicRead(currentPolicy))
+        {
+            _logger.LogInformation(
+                "MakeBucketPublicAsync: {Bucket} already grants allUsers:objectViewer — no change",
+                bucketName);
+            return MakeBucketPublicResult.AlreadyPublic();
+        }
+
+        var updatedPolicy = GcsBucketPublicReadHelper.AddPublicReadBinding(currentPolicy);
+
+        try
+        {
+            await client.SetBucketIamPolicyAsync(bucketName, updatedPolicy, options: null, cancellationToken: cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "MakeBucketPublicAsync: added allUsers:objectViewer to {Bucket}",
+                bucketName);
+            return MakeBucketPublicResult.Success();
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+        {
+            _logger.LogWarning(
+                "MakeBucketPublicAsync: SA lacks setIamPolicy on {Bucket} ({Status}): {Error}",
+                bucketName,
+                ex.HttpStatusCode,
+                ex.Message);
+            return MakeBucketPublicResult.PermissionDenied(ex.Message);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "MakeBucketPublicAsync: SetBucketIamPolicyAsync failed for {Bucket}", bucketName);
+            return MakeBucketPublicResult.OtherError(ex.Message);
+        }
     }
 
     /// <summary>

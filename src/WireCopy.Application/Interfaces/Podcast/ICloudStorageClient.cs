@@ -91,4 +91,26 @@ public interface ICloudStorageClient
     Task<CloudStorageValidationResult> ValidateConnectionAsync(
         string bucketName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The bucket name the client is configured to operate against. Used by
+    /// the publish-failure auto-remediation flow (workspace-p1px) so the
+    /// publisher can hand the bucket back to <see cref="MakeBucketPublicAsync"/>
+    /// without depending on <c>IOptions&lt;GcsConfiguration&gt;</c> directly.
+    /// </summary>
+    string BucketName { get; }
+
+    /// <summary>
+    /// Adds the public-read IAM binding (e.g. <c>allUsers:roles/storage.objectViewer</c>
+    /// on GCS) to <paramref name="bucketName"/> if it isn't already present.
+    /// Used by the publish-failure auto-remediation flow (workspace-p1px) when
+    /// the post-upload anonymous HTTP GET returns 403, indicating the bucket
+    /// is private. Returns <see cref="MakeBucketPublicStatus.AlreadyPublic"/>
+    /// when the binding is already granted, <c>Success</c> after a successful
+    /// IAM update, <c>PermissionDenied</c> when the credentials lack
+    /// <c>setIamPolicy</c>, and <c>OtherError</c> for anything else.
+    /// </summary>
+    Task<MakeBucketPublicResult> MakeBucketPublicAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default);
 }

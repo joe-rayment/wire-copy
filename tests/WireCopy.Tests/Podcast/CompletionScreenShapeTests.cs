@@ -213,7 +213,7 @@ public class CompletionScreenShapeTests
     {
         var detail = new PodcastFailureDetail(
             Step: "Publishing",
-            FailureClass: FeedPublishFailureClass.FeedNotReachable,
+            FailureClass: FeedPublishFailureClass.BucketNotPublic,
             RawMessage: "feed.xml uploaded but URL returned HTTP 403 from public internet.",
             RemediationCopy:
                 "Bucket is not configured for public read. Open Cloud Console → Buckets → my-bucket → "

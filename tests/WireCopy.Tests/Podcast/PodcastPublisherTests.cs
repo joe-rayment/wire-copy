@@ -349,4 +349,121 @@ public class PodcastPublisherTests : IDisposable
         var episodePaths = uploadPaths.Where(p => p.Contains("episodes/")).ToList();
         episodePaths.Should().HaveCount(1);
     }
+
+    /// <summary>
+    /// workspace-p1px: when the post-publish reachability probe returns
+    /// BucketNotPublic (the bucket lacks allUsers:objectViewer), the publisher
+    /// auto-attempts MakeBucketPublicAsync. If the SA succeeds in flipping the
+    /// binding, a second probe must run and a passing result must promote the
+    /// publish back to a full success.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BucketNotPublic_HelperSucceeds_RetryProbePasses_Successful()
+    {
+        _storage.BucketName.Returns("my-private-bucket");
+        _storage.MakeBucketPublicAsync("my-private-bucket", Arg.Any<CancellationToken>())
+            .Returns(MakeBucketPublicResult.Success());
+
+        // First probe → 403 (bucket private). Second probe (after remediation)
+        // → Ok. NSubstitute returns values in order across successive calls.
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 },
+                FeedReachabilityResult.Ok());
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeTrue(
+            "after MakeBucketPublic succeeds, the retried probe sees a public bucket and the publish is fully successful");
+        await _storage.Received(1).MakeBucketPublicAsync(
+            "my-private-bucket", Arg.Any<CancellationToken>());
+        await _reachability.Received(2).CheckAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// workspace-p1px: when the helper reports PermissionDenied (SA lacks
+    /// setIamPolicy), the publisher must keep the BucketNotPublic verdict so
+    /// the result screen renders the gsutil one-liner instead of pretending
+    /// nothing went wrong.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BucketNotPublic_HelperPermissionDenied_StaysBucketNotPublic()
+    {
+        _storage.BucketName.Returns("my-private-bucket");
+        _storage.MakeBucketPublicAsync("my-private-bucket", Arg.Any<CancellationToken>())
+            .Returns(MakeBucketPublicResult.PermissionDenied(
+                "Permission iam.serviceAccounts.actAs denied"));
+
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 });
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
+        await _storage.Received(1).MakeBucketPublicAsync(
+            "my-private-bucket", Arg.Any<CancellationToken>());
+        // Probe must NOT be re-run on permission denied — the result is the
+        // probe's original 403 diagnostic.
+        await _reachability.Received(1).CheckAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// workspace-p1px: when the bucket is already public on the IAM side
+    /// (helper returns AlreadyPublic) but the public GET still returns 403,
+    /// the retry probe is run anyway — the second probe's verdict is the
+    /// load-bearing result. This handles the edge case where the GCS API
+    /// reports the binding present while propagation hasn't reached the
+    /// public edge yet.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BucketNotPublic_HelperAlreadyPublic_RetriesProbeAndUsesResult()
+    {
+        _storage.BucketName.Returns("my-public-bucket");
+        _storage.MakeBucketPublicAsync("my-public-bucket", Arg.Any<CancellationToken>())
+            .Returns(MakeBucketPublicResult.AlreadyPublic());
+
+        // First probe → 403 (stale propagation), second probe → still 403.
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 },
+                new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 });
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
+        await _reachability.Received(2).CheckAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// workspace-p1px: when the storage client reports no BucketName (e.g.
+    /// the user is mid-setup), don't attempt MakeBucketPublic at all — we
+    /// have nothing to pass it. The original probe verdict stands.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BucketNotPublic_EmptyBucketName_SkipsRemediation()
+    {
+        _storage.BucketName.Returns(string.Empty);
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 });
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
+        await _storage.DidNotReceive().MakeBucketPublicAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
 }
