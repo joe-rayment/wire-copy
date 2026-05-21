@@ -10,7 +10,7 @@ namespace WireCopy.Tests.Browser;
 
 /// <summary>
 /// Tests for the shared <see cref="SettingsRowRenderer"/> extracted from
-/// <c>PodcastConfirmationScreens.BuildConfirmationRow</c> (workspace-fn1u).
+/// <c>PodcastSetupHelpers.BuildConfirmationRow</c> (workspace-fn1u).
 /// Both the Generate Podcast confirmation screen and the unified <c>:config</c>
 /// Setup screen consume this renderer so row layout stays in sync.
 /// </summary>

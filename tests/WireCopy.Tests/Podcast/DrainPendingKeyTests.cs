@@ -36,7 +36,7 @@ public class DrainPendingKeyTests
         // analysis returned synchronously before the loop iterated even once).
         // The drain must be a no-op in that case — and crucially must NOT
         // cancel the CTS (the caller may want to reuse it).
-        await PodcastConfirmationScreens.DrainPendingKeyAsync(pendingKeyTask: null, cts);
+        await PodcastSetupHelpers.DrainPendingKeyAsync(pendingKeyTask: null, cts);
 
         cts.IsCancellationRequested.Should().BeFalse(
             "no pending task means there's nothing to drain — the helper must NOT cancel proactively");
@@ -55,7 +55,7 @@ public class DrainPendingKeyTests
             return new NavigationCommand { Type = CommandType.NoOp };
         });
 
-        var drainTask = PodcastConfirmationScreens.DrainPendingKeyAsync(orphan, cts);
+        var drainTask = PodcastSetupHelpers.DrainPendingKeyAsync(orphan, cts);
 
         // The drain must complete (even though the orphan is blocked) because
         // it cancels the CTS internally.
@@ -77,7 +77,7 @@ public class DrainPendingKeyTests
         using var cts = new CancellationTokenSource();
         var completed = Task.FromResult(new NavigationCommand { Type = CommandType.NoOp });
 
-        await PodcastConfirmationScreens.DrainPendingKeyAsync(completed, cts);
+        await PodcastSetupHelpers.DrainPendingKeyAsync(completed, cts);
 
         // Cancellation still happens for consistency (the next caller won't
         // re-use this CTS anyway — it's a using var local to the screen).
@@ -93,7 +93,7 @@ public class DrainPendingKeyTests
         // The cache analysis screen is exiting; it has no business with this
         // key anyway. Swallow the exception so the caller can proceed to the
         // next screen without crashing.
-        var act = async () => await PodcastConfirmationScreens.DrainPendingKeyAsync(faulted, cts);
+        var act = async () => await PodcastSetupHelpers.DrainPendingKeyAsync(faulted, cts);
         await act.Should().NotThrowAsync(
             "an orphaned task's exception is irrelevant to the caller — the screen is bailing out anyway");
     }
@@ -101,7 +101,7 @@ public class DrainPendingKeyTests
     [Fact]
     public async Task Drain_NullCts_Throws()
     {
-        var act = async () => await PodcastConfirmationScreens.DrainPendingKeyAsync(
+        var act = async () => await PodcastSetupHelpers.DrainPendingKeyAsync(
             Task.FromResult(new NavigationCommand { Type = CommandType.NoOp }),
             keyCts: null!);
 
@@ -144,7 +144,7 @@ public class DrainPendingKeyTests
             }
             finally
             {
-                await PodcastConfirmationScreens.DrainPendingKeyAsync(pendingKeyTask, keyCts).ConfigureAwait(false);
+                await PodcastSetupHelpers.DrainPendingKeyAsync(pendingKeyTask, keyCts).ConfigureAwait(false);
             }
         }
 

@@ -280,7 +280,7 @@ internal static class PodcastCommandHandler
             }
 
             // Pre-flight cache analysis for cost estimation (with progress UI)
-            CacheAnalysis? cacheAnalysis = await PodcastConfirmationScreens
+            CacheAnalysis? cacheAnalysis = await PodcastSetupHelpers
                 .ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct)
                 .ConfigureAwait(false);
             options = ctx.GetCurrentRenderOptions();
@@ -304,7 +304,7 @@ internal static class PodcastCommandHandler
             }
 
             // Show cache-wait screen if preloading is still in progress
-            var skippedWait = await PodcastConfirmationScreens.ShowCacheWaitScreenAsync(ctx, options, collection, ct).ConfigureAwait(false);
+            var skippedWait = await PodcastSetupHelpers.ShowCacheWaitScreenAsync(ctx, options, collection, ct).ConfigureAwait(false);
 
             // Re-fetch render options in case terminal resized during wait
             if (!skippedWait)
@@ -312,11 +312,11 @@ internal static class PodcastCommandHandler
                 options = ctx.GetCurrentRenderOptions();
             }
 
-            // workspace-ny44: ShowConfirmationScreenAsync deleted. With Phase 1
+            // workspace-ny44: row-navigated review step retired. With Phase 1
             // (workspace-kuu7, modal-for-missing-key) and Phase 5
             // (workspace-yib5, resume-after-save) in place, the user has
             // already cleared every pre-flight gate by the time we reach
-            // here — there is no remaining ambiguous state to confirm. We
+            // here — there is no remaining ambiguous state to review. We
             // proceed straight to the progress screen.
             var result = await PodcastProgressScreens.ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
 

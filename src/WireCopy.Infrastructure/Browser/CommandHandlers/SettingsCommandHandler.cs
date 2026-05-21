@@ -26,7 +26,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// GCS service-account key, GCS bucket, podcast output folder, voice, model,
 /// and the auto-purge window.
 ///
-/// Both this screen and <see cref="PodcastConfirmationScreens"/> share the row
+/// Both this screen and <see cref="PodcastSetupHelpers"/> share the row
 /// renderer (<see cref="SettingsRowRenderer"/>) and the same Enter handlers so
 /// values set in either place persist via <see cref="IUserSettingsStore"/>.
 /// </summary>
@@ -393,7 +393,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyPodcastOutputFolder) ?? ResolveDefaultOutputFolder();
-                await PodcastConfirmationScreens.PromptAndSetOutputFolderAsync(
+                await PodcastSetupHelpers.PromptAndSetOutputFolderAsync(
                     ctx, store, current, ct).ConfigureAwait(false);
                 return;
             }
@@ -404,7 +404,7 @@ internal static class SettingsCommandHandler
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsVoice)
                               ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
-                await PodcastConfirmationScreens.PromptAndPickVoiceAsync(
+                await PodcastSetupHelpers.PromptAndPickVoiceAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
             }
@@ -415,7 +415,7 @@ internal static class SettingsCommandHandler
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsModel)
                               ?? ResolveTtsDefault(scope, c => c.Model, "gpt-4o-mini-tts");
-                await PodcastConfirmationScreens.PromptAndPickModelAsync(
+                await PodcastSetupHelpers.PromptAndPickModelAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
             }
@@ -643,7 +643,7 @@ internal static class SettingsCommandHandler
 
     /// <summary>
     /// Truncates the middle of a long path with an ellipsis so both ends stay
-    /// visible (mirrors the helper in <see cref="PodcastConfirmationScreens"/>).
+    /// visible (mirrors the helper in <see cref="PodcastSetupHelpers"/>).
     /// </summary>
     private static string TruncateMiddle(string text, int maxWidth)
     {
