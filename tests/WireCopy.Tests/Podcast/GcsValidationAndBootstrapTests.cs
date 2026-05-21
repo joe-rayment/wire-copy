@@ -33,7 +33,7 @@ public class GcsValidationAndBootstrapTests
             .Returns((string?)null);
 
         _storage.UploadStringAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(1)}");
 
         _storage.GetPublicUrl(Arg.Any<string>())
@@ -79,6 +79,7 @@ public class GcsValidationAndBootstrapTests
             "<rss>empty feed</rss>",
             Arg.Is<string>(s => s.EndsWith("feed.xml")),
             "application/rss+xml",
+            "no-cache, max-age=0",
             Arg.Any<CancellationToken>());
     }
 
@@ -107,7 +108,7 @@ public class GcsValidationAndBootstrapTests
     public async Task BootstrapFeedAsync_UploadFails_ReturnsFailure()
     {
         _storage.UploadStringAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Upload failed"));
 
         var podcast = CreateTestPodcast();
@@ -144,6 +145,7 @@ public class GcsValidationAndBootstrapTests
             Arg.Is<string>(s => s.Contains("Test Podcast")),
             "podcasts/feed-index.json",
             "application/json",
+            "no-cache, max-age=0",
             Arg.Any<CancellationToken>());
     }
 
@@ -159,6 +161,7 @@ public class GcsValidationAndBootstrapTests
             Arg.Is<string>(s => s.Contains("Test Podcast")),
             Arg.Is<string>(s => s.EndsWith("manifest.json")),
             "application/json",
+            "no-cache, max-age=0",
             Arg.Any<CancellationToken>());
     }
 
@@ -323,7 +326,7 @@ public class GcsValidationAndBootstrapTests
         mockClient.DownloadStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         mockClient.UploadStringAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(1)}");
         mockClient.GetPublicUrl(Arg.Any<string>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(0)}");

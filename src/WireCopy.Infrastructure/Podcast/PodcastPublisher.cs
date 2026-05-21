@@ -19,6 +19,17 @@ internal sealed class PodcastPublisher : IPodcastPublisher
 {
     private const string FeedIndexPath = "podcasts/feed-index.json";
 
+    /// <summary>
+    /// workspace-7m8d: cache-control header for republishable feed metadata
+    /// (feed.xml, manifest.json, feed-index.json). The GCS bucket default is
+    /// <c>public, max-age=3600</c> — fine for immutable content-addressed audio
+    /// episodes, but disastrous for feed metadata: a republish does not take
+    /// effect for podcast clients (or the user's browser, or the W3C
+    /// validator) for up to 60 minutes. Setting <c>no-cache, max-age=0</c>
+    /// keeps the metadata fresh on every fetch.
+    /// </summary>
+    private const string FeedCacheControl = "no-cache, max-age=0";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -243,10 +254,13 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 cancellationToken).ConfigureAwait(false);
 
             // Step 6: Upload feed.xml
+            // workspace-7m8d: no-cache so podcast clients pick up republishes
+            // immediately (GCS bucket default is public, max-age=3600).
             await _storage.UploadStringAsync(
                 feedXml,
                 feedObjectPath,
                 "application/rss+xml",
+                FeedCacheControl,
                 cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Published feed: {FeedUrl}", feedUrl);
@@ -392,10 +406,12 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 cancellationToken).ConfigureAwait(false);
 
             // Upload feed
+            // workspace-7m8d: bootstrap follows the same no-cache policy.
             await _storage.UploadStringAsync(
                 feedXml,
                 feedObjectPath,
                 "application/rss+xml",
+                FeedCacheControl,
                 cancellationToken).ConfigureAwait(false);
 
             // Update manifest and feed index
@@ -542,7 +558,12 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         index[title] = new FeedIndexEntry { Uuid = uuid, FeedUrl = feedUrl };
 
         var json = JsonSerializer.Serialize(index, JsonOptions);
-        await _storage.UploadStringAsync(json, FeedIndexPath, "application/json", cancellationToken).ConfigureAwait(false);
+        await _storage.UploadStringAsync(
+            json,
+            FeedIndexPath,
+            "application/json",
+            FeedCacheControl,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<EpisodeMetadata>> LoadExistingEpisodesAsync(
@@ -588,6 +609,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             json,
             $"{feedBasePath}/manifest.json",
             "application/json",
+            FeedCacheControl,
             cancellationToken).ConfigureAwait(false);
     }
 

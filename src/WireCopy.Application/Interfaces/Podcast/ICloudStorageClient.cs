@@ -36,12 +36,21 @@ public interface ICloudStorageClient
     /// <param name="content">The string content to upload.</param>
     /// <param name="objectName">The destination object name in storage.</param>
     /// <param name="contentType">The MIME content type (e.g., "application/rss+xml").</param>
+    /// <param name="cacheControl">
+    /// Optional HTTP cache-control header to apply to the uploaded object. Use
+    /// <c>"no-cache, max-age=0"</c> for republishable feed metadata (feed.xml,
+    /// manifest.json) so podcast clients see updates immediately rather than
+    /// being served stale copies from the GCS edge for up to 60 minutes
+    /// (workspace-7m8d). Default <c>null</c> leaves bucket defaults in place,
+    /// which is correct for immutable content-addressed audio episodes.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The public URL of the uploaded object.</returns>
     Task<string> UploadStringAsync(
         string content,
         string objectName,
         string contentType,
+        string? cacheControl = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

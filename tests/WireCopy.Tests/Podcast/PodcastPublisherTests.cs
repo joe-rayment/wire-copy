@@ -44,7 +44,7 @@ public class PodcastPublisherTests : IDisposable
         _storage.UploadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(1)}");
 
-        _storage.UploadStringAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _storage.UploadStringAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => $"https://storage.example.com/{callInfo.ArgAt<string>(1)}");
 
         _storage.GetPublicUrl(Arg.Any<string>())
@@ -128,6 +128,7 @@ public class PodcastPublisherTests : IDisposable
             "<rss>feed</rss>",
             Arg.Is<string>(s => s.EndsWith("feed.xml")),
             "application/rss+xml",
+            "no-cache, max-age=0",
             Arg.Any<CancellationToken>());
     }
 
@@ -146,6 +147,7 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.Contains("podcasts/") && s.EndsWith("manifest.json")),
             "application/json",
+            "no-cache, max-age=0",
             Arg.Any<CancellationToken>());
     }
 
@@ -170,6 +172,7 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.StartsWith($"podcasts/{knownUuid}/")),
             Arg.Any<string>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -270,6 +273,7 @@ public class PodcastPublisherTests : IDisposable
             Arg.Any<string>(),
             Arg.Is<string>(s => s.EndsWith("feed.xml")),
             "application/rss+xml",
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 

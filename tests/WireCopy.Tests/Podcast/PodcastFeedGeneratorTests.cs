@@ -81,9 +81,43 @@ public class PodcastFeedGeneratorTests
         channel.Element(Itunes + "author")!.Value.Should().Be("Test Author");
         channel.Element(Itunes + "summary").Should().NotBeNull();
         channel.Element(Itunes + "image")!.Attribute("href")!.Value.Should().Be("https://example.com/cover.jpg");
-        channel.Element(Itunes + "explicit")!.Value.Should().Be("no");
+        channel.Element(Itunes + "explicit")!.Value.Should().Be("false");
         channel.Element(Itunes + "type")!.Value.Should().Be("episodic");
         channel.Element(Itunes + "category")!.Attribute("text")!.Value.Should().Be("Technology");
+    }
+
+    [Fact]
+    public async Task GenerateFeedXmlAsync_ItunesExplicit_True_EmitsTrue()
+    {
+        var podcast = CreateTestPodcast() with { Explicit = true };
+        var xml = await _generator.GenerateFeedXmlAsync(podcast, [CreateTestEpisode()]);
+        var doc = XDocument.Parse(xml);
+        var channel = doc.Root!.Element("channel")!;
+
+        channel.Element(Itunes + "explicit")!.Value.Should().Be("true");
+    }
+
+    [Fact]
+    public async Task GenerateFeedXmlAsync_EmptyImageUrl_OmitsItunesImageElement()
+    {
+        var podcast = CreateTestPodcast() with { ImageUrl = string.Empty };
+        var xml = await _generator.GenerateFeedXmlAsync(podcast, [CreateTestEpisode()]);
+        var doc = XDocument.Parse(xml);
+        var channel = doc.Root!.Element("channel")!;
+
+        channel.Element(Itunes + "image").Should().BeNull(
+            "W3C feed validator rejects itunes:image with empty href; element must be omitted when no image is set");
+    }
+
+    [Fact]
+    public async Task GenerateFeedXmlAsync_WhitespaceImageUrl_OmitsItunesImageElement()
+    {
+        var podcast = CreateTestPodcast() with { ImageUrl = "   " };
+        var xml = await _generator.GenerateFeedXmlAsync(podcast, [CreateTestEpisode()]);
+        var doc = XDocument.Parse(xml);
+        var channel = doc.Root!.Element("channel")!;
+
+        channel.Element(Itunes + "image").Should().BeNull();
     }
 
     [Fact]
