@@ -50,6 +50,7 @@ internal static class SettingsCommandHandler
     internal const string KeyOpenAiTtsModel = "OpenAiTtsModel";
     internal const string KeyOpenAiTtsInstructions = "OpenAiTtsInstructions";
     internal const string KeyOutputRetentionHours = "PodcastOutputRetentionHours";
+    internal const string KeyPodcastCostGateAlwaysShow = "PodcastCostGateAlwaysShow";
 
     private const string Reset = "\x1b[0m";
 
@@ -67,6 +68,7 @@ internal static class SettingsCommandHandler
         Model,
         TtsInstructions,
         AutoPurgeHours,
+        CostGateAlwaysShow,
     }
 
     /// <summary>
@@ -125,6 +127,7 @@ internal static class SettingsCommandHandler
             SetupRow.Model,
             SetupRow.TtsInstructions,
             SetupRow.AutoPurgeHours,
+            SetupRow.CostGateAlwaysShow,
         };
         var selectedIndex = 0;
 
@@ -170,6 +173,9 @@ internal static class SettingsCommandHandler
             var instructions = settingsStore.Get(KeyOpenAiTtsInstructions)
                                ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
             var purgeHours = ResolvePurgeHours(scope, settingsStore);
+            var costGateAlwaysShow = bool.TryParse(
+                settingsStore.Get(KeyPodcastCostGateAlwaysShow), out var alwaysShowParsed)
+                && alwaysShowParsed;
 
             // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Credentials{Reset}");
@@ -294,6 +300,25 @@ internal static class SettingsCommandHandler
                 palette.PromptFg.AnsiFg,
                 "Change",
                 helperText: "Output files older than this are auto-deleted on app start");
+
+            // workspace-sakf: surface the hidden PodcastCostGateAlwaysShow toggle
+            // so users can find it without hand-editing settings.json. Prior to
+            // this row it was an undiscoverable knob set during test scaffolding.
+            // Label kept ≤24 chars to fit SettingsRowRenderer's label column.
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.CostGateAlwaysShow,
+                "●",
+                palette.PromptFg.AnsiFg,
+                "Always confirm cost",
+                costGateAlwaysShow ? "on" : "off",
+                costGateAlwaysShow ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Toggle",
+                helperText: "Pop the cost-gate modal even when the spend is below threshold");
 
             // Bottom hint bar
             helpers.WriteLine();
@@ -427,6 +452,40 @@ internal static class SettingsCommandHandler
             case SetupRow.AutoPurgeHours:
                 await HandleSetAutoPurgeHours(ctx, options, ct).ConfigureAwait(false);
                 return;
+
+            case SetupRow.CostGateAlwaysShow:
+                HandleToggleCostGateAlwaysShow(ctx);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Toggles <see cref="KeyPodcastCostGateAlwaysShow"/> between true and false
+    /// (workspace-sakf). Enter on the Setup row flips the value and writes it
+    /// straight through <see cref="IUserSettingsStore"/> — no input prompt
+    /// needed for a binary preference.
+    /// </summary>
+    private static void HandleToggleCostGateAlwaysShow(CommandContext ctx)
+    {
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            var current = bool.TryParse(
+                settingsStore.Get(KeyPodcastCostGateAlwaysShow), out var parsed) && parsed;
+            var next = !current;
+            settingsStore.Set(
+                KeyPodcastCostGateAlwaysShow,
+                next ? "true" : "false");
+            ctx.NavigationService.SetStatusMessage(
+                next
+                    ? "Cost-gate will pop on every generate"
+                    : "Cost-gate will only pop above threshold");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to toggle PodcastCostGateAlwaysShow");
+            ctx.NavigationService.SetStatusMessage("Failed to update cost-gate setting");
         }
     }
 
