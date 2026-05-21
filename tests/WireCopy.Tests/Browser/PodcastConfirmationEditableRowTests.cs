@@ -309,14 +309,16 @@ public class PodcastConfirmationEditableRowTests
     public async Task ShowConfirmation_NavigateToOutputFolderAndEdit_PersistsViaSettingsStore()
     {
         // Layout (no GCS client wired): TtsKey(0), GcsBucket(1), OutputFolder(2), Voice(3), Model(4), Generate(5).
-        // From TtsKey, two MoveDowns reach OutputFolder.
+        // workspace-sfhy: with TTS configured the default focus is Generate(5);
+        // wrap-around MoveDown lands on TtsKey(0), then DOWN×2 reaches OutputFolder.
         var ttsService = Substitute.For<ITtsService>();
         ttsService.IsConfigured.Returns(true);
 
         var queue = new Queue<NavigationCommand>(new[]
         {
-            NavCmd(CommandType.MoveDown), // → GcsBucket
-            NavCmd(CommandType.MoveDown), // → OutputFolder
+            NavCmd(CommandType.MoveDown), // Generate(5) → TtsKey(0) (wrap)
+            NavCmd(CommandType.MoveDown), // → GcsBucket(1)
+            NavCmd(CommandType.MoveDown), // → OutputFolder(2)
             NavCmd(CommandType.ActivateLink), // dispatch: enters PromptAndSetOutputFolderAsync
             NavCmd(CommandType.GoBack), // exit confirmation after dispatch returns
         });
@@ -355,7 +357,8 @@ public class PodcastConfirmationEditableRowTests
     }
 
     /// <summary>
-    /// Integration test: nav from TtsKey(0) → Voice(3) requires three MoveDowns.
+    /// Integration test: with TTS configured the default focus is Generate(5);
+    /// wrap-around DOWN reaches TtsKey(0), then three more DOWNs land on Voice(3).
     /// On Voice, ActivateLink enters the picker; the picker's default selection lands
     /// on the current voice ("nova"). Down moves to "sage". Enter persists "sage".
     /// </summary>
@@ -370,9 +373,10 @@ public class PodcastConfirmationEditableRowTests
 
         var queue = new Queue<NavigationCommand>(new[]
         {
-            NavCmd(CommandType.MoveDown),     // → GcsBucket
-            NavCmd(CommandType.MoveDown),     // → OutputFolder
-            NavCmd(CommandType.MoveDown),     // → Voice
+            NavCmd(CommandType.MoveDown),     // Generate(5) → TtsKey(0) (wrap)
+            NavCmd(CommandType.MoveDown),     // → GcsBucket(1)
+            NavCmd(CommandType.MoveDown),     // → OutputFolder(2)
+            NavCmd(CommandType.MoveDown),     // → Voice(3)
             NavCmd(CommandType.ActivateLink), // dispatch → enter Voice picker
             NavCmd(CommandType.MoveDown),     // picker: nova(7) → sage(8)
             NavCmd(CommandType.ActivateLink), // picker: pick sage
@@ -404,7 +408,8 @@ public class PodcastConfirmationEditableRowTests
     }
 
     /// <summary>
-    /// Integration test: nav from TtsKey(0) → Model(4) requires four MoveDowns.
+    /// Integration test: with TTS configured the default focus is Generate(5);
+    /// wrap-around DOWN reaches TtsKey(0), then four more DOWNs land on Model(4).
     /// On Model, ActivateLink enters the picker; current model is "tts-1" so the
     /// picker default cursor sits on tts-1(0). Down moves to tts-1-hd(1). Enter persists.
     /// </summary>
@@ -418,10 +423,11 @@ public class PodcastConfirmationEditableRowTests
 
         var queue = new Queue<NavigationCommand>(new[]
         {
-            NavCmd(CommandType.MoveDown),     // → GcsBucket
-            NavCmd(CommandType.MoveDown),     // → OutputFolder
-            NavCmd(CommandType.MoveDown),     // → Voice
-            NavCmd(CommandType.MoveDown),     // → Model
+            NavCmd(CommandType.MoveDown),     // Generate(5) → TtsKey(0) (wrap)
+            NavCmd(CommandType.MoveDown),     // → GcsBucket(1)
+            NavCmd(CommandType.MoveDown),     // → OutputFolder(2)
+            NavCmd(CommandType.MoveDown),     // → Voice(3)
+            NavCmd(CommandType.MoveDown),     // → Model(4)
             NavCmd(CommandType.ActivateLink), // dispatch → enter Model picker
             NavCmd(CommandType.MoveDown),     // picker: tts-1(0) → tts-1-hd(1)
             NavCmd(CommandType.ActivateLink), // picker: pick tts-1-hd
@@ -450,6 +456,108 @@ public class PodcastConfirmationEditableRowTests
 
         result.Should().BeFalse();
         _settingsStore.Received(1).Set("OpenAiTtsModel", "tts-1-hd", Arg.Any<bool>());
+    }
+
+    /// <summary>
+    /// workspace-sfhy regression: when TTS is configured the screen MUST default
+    /// focus to the Generate row so the primary CTA is unmistakable on entry.
+    /// We prove this by pressing Enter as the very first command — if the cursor
+    /// were anywhere else (e.g. row 0 = TtsKey) Enter would open the key prompt
+    /// instead of confirming generation, and ShowConfirmationScreenAsync would
+    /// not return true.
+    /// </summary>
+    [Fact]
+    public async Task ShowConfirmation_TtsConfigured_DefaultFocusIsGenerate()
+    {
+        var ttsService = Substitute.For<ITtsService>();
+        ttsService.IsConfigured.Returns(true);
+
+        var queue = new Queue<NavigationCommand>(new[]
+        {
+            NavCmd(CommandType.ActivateLink), // Enter on default-focus row
+        });
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => queue.Dequeue());
+
+        var collection = Collection.Create("ITest");
+        collection.AddItem("https://example.com/a", "A");
+        var gcsConfig = new GcsConfiguration { BucketName = "some-bucket" };
+
+        var result = await PodcastConfirmationScreens.ShowConfirmationScreenAsync(
+            _ctx,
+            _options,
+            collection,
+            ttsService,
+            gcsConfig,
+            _settingsStore,
+            gcsClient: null,
+            cacheAnalysis: null,
+            preflightBucketError: null,
+            preflightFeedUrl: null,
+            preflightFeedStatusNote: null,
+            CancellationToken.None);
+
+        result.Should().BeTrue(
+            "the Generate row must be the default focus when TTS is configured "
+            + "— Enter on entry confirms generation rather than diving into a credential row");
+    }
+
+    /// <summary>
+    /// workspace-sfhy guardrail: when TTS is NOT configured, the default focus
+    /// must land on the TtsKey row so the user lands on the thing they need to
+    /// fix first. We prove this by pressing Enter as the very first command:
+    /// it must enter the OpenAI key prompt (PromptForInputAsync) rather than
+    /// the (no-op-for-unconfigured) Generate path. The user then Esc's out and
+    /// the screen returns false.
+    /// </summary>
+    [Fact]
+    public async Task ShowConfirmation_TtsNotConfigured_DefaultFocusIsTtsKey()
+    {
+        var ttsService = Substitute.For<ITtsService>();
+        ttsService.IsConfigured.Returns(false);
+
+        var queue = new Queue<NavigationCommand>(new[]
+        {
+            NavCmd(CommandType.ActivateLink), // Enter on default-focus row
+            NavCmd(CommandType.GoBack),       // exit the screen
+        });
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => queue.Dequeue());
+
+        // User cancels the key prompt (Esc → null).
+        _inputHandler
+            .PromptForInputAsync(
+                Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+                Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns((string?)null);
+
+        var collection = Collection.Create("ITest");
+        collection.AddItem("https://example.com/a", "A");
+        var gcsConfig = new GcsConfiguration { BucketName = "some-bucket" };
+
+        var result = await PodcastConfirmationScreens.ShowConfirmationScreenAsync(
+            _ctx,
+            _options,
+            collection,
+            ttsService,
+            gcsConfig,
+            _settingsStore,
+            gcsClient: null,
+            cacheAnalysis: null,
+            preflightBucketError: null,
+            preflightFeedUrl: null,
+            preflightFeedStatusNote: null,
+            CancellationToken.None);
+
+        // The Enter keystroke must have dispatched into the TtsKey prompt — if
+        // it had been on Generate, the key prompt would never have been called.
+        await _inputHandler.Received().PromptForInputAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<bool>(),
+            Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>());
+
+        result.Should().BeFalse(
+            "after cancelling the key prompt and pressing Esc, the screen returns "
+            + "false (user did not confirm generation)");
     }
 
     #endregion
