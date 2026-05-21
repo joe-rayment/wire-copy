@@ -31,7 +31,10 @@ public class PodcastPublisherTests : IDisposable
             _storage,
             _feedGenerator,
             NullLogger<PodcastPublisher>.Instance,
-            _reachability);
+            _reachability,
+            // workspace-i2vl: no-op delay so the backoff loop doesn't add 9s to
+            // every BucketNotPublic test case. Production wires Task.Delay.
+            propagationDelay: (_, _) => Task.CompletedTask);
 
         // Default setup: no existing feed index
         _storage.DownloadStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -354,8 +357,9 @@ public class PodcastPublisherTests : IDisposable
     /// workspace-p1px: when the post-publish reachability probe returns
     /// BucketNotPublic (the bucket lacks allUsers:objectViewer), the publisher
     /// auto-attempts MakeBucketPublicAsync. If the SA succeeds in flipping the
-    /// binding, a second probe must run and a passing result must promote the
-    /// publish back to a full success.
+    /// binding, the publisher re-probes (workspace-i2vl: with IAM-propagation
+    /// backoff) and a passing result promotes the publish back to a full
+    /// success. The first backoff attempt seeing 200 short-circuits the loop.
     /// </summary>
     [Fact]
     public async Task PublishFeedAsync_BucketNotPublic_HelperSucceeds_RetryProbePasses_Successful()
@@ -364,8 +368,10 @@ public class PodcastPublisherTests : IDisposable
         _storage.MakeBucketPublicAsync("my-private-bucket", Arg.Any<CancellationToken>())
             .Returns(MakeBucketPublicResult.Success());
 
-        // First probe → 403 (bucket private). Second probe (after remediation)
-        // → Ok. NSubstitute returns values in order across successive calls.
+        // First probe → 403 (bucket private). Second probe (first backoff
+        // attempt, after remediation) → Ok. NSubstitute returns values in
+        // order; with only two values, the second is sticky for any later
+        // call (so even if the backoff retried, the test stays deterministic).
         _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(
                 new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 },
@@ -376,7 +382,7 @@ public class PodcastPublisherTests : IDisposable
             [CreateTestEpisode()]);
 
         result.Success.Should().BeTrue(
-            "after MakeBucketPublic succeeds, the retried probe sees a public bucket and the publish is fully successful");
+            "after MakeBucketPublic succeeds, the first backoff probe sees a public bucket and the publish is fully successful");
         await _storage.Received(1).MakeBucketPublicAsync(
             "my-private-bucket", Arg.Any<CancellationToken>());
         await _reachability.Received(2).CheckAsync(
@@ -415,25 +421,29 @@ public class PodcastPublisherTests : IDisposable
     }
 
     /// <summary>
-    /// workspace-p1px: when the bucket is already public on the IAM side
-    /// (helper returns AlreadyPublic) but the public GET still returns 403,
-    /// the retry probe is run anyway — the second probe's verdict is the
-    /// load-bearing result. This handles the edge case where the GCS API
-    /// reports the binding present while propagation hasn't reached the
-    /// public edge yet.
+    /// workspace-p1px + workspace-i2vl: when the bucket is already public on
+    /// the IAM side (helper returns AlreadyPublic) but the public GET still
+    /// returns 403 through every backoff attempt, the publisher exhausts the
+    /// backoff and surfaces the gsutil hint. With the default 3-attempt
+    /// backoff the probe must be called 4 times total (initial + 3 retries).
     /// </summary>
     [Fact]
-    public async Task PublishFeedAsync_BucketNotPublic_HelperAlreadyPublic_RetriesProbeAndUsesResult()
+    public async Task PublishFeedAsync_BucketNotPublic_HelperAlreadyPublic_BackoffExhausts_SurfacesGsutilHint()
     {
         _storage.BucketName.Returns("my-public-bucket");
         _storage.MakeBucketPublicAsync("my-public-bucket", Arg.Any<CancellationToken>())
             .Returns(MakeBucketPublicResult.AlreadyPublic());
 
-        // First probe → 403 (stale propagation), second probe → still 403.
+        // Probe ALWAYS returns 403 — propagation never catches up (sticky 403,
+        // something else is wrong). NSubstitute returns the single stub for
+        // every call.
         _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 },
-                new FeedReachabilityResult { FailureClass = FeedPublishFailureClass.BucketNotPublic, Diagnostic = "anonymous GET returned 403", HttpStatusCode = 403 });
+            .Returns(new FeedReachabilityResult
+            {
+                FailureClass = FeedPublishFailureClass.BucketNotPublic,
+                Diagnostic = "anonymous GET returned 403",
+                HttpStatusCode = 403,
+            });
 
         var result = await _publisher.PublishFeedAsync(
             CreateTestPodcast(),
@@ -441,7 +451,42 @@ public class PodcastPublisherTests : IDisposable
 
         result.Success.Should().BeFalse();
         result.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
-        await _reachability.Received(2).CheckAsync(
+        // workspace-i2vl: 1 initial + 3 backoff attempts.
+        await _reachability.Received(4).CheckAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// workspace-i2vl: when IAM propagation lags and the bucket only becomes
+    /// public on the THIRD backoff attempt, the publisher must short-circuit
+    /// and ship a successful publish. Verifies the loop-break-on-success path.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BucketNotPublic_PropagationLag_ThirdBackoffSeesPublic_Successful()
+    {
+        _storage.BucketName.Returns("my-private-bucket");
+        _storage.MakeBucketPublicAsync("my-private-bucket", Arg.Any<CancellationToken>())
+            .Returns(MakeBucketPublicResult.Success());
+
+        var stale = new FeedReachabilityResult
+        {
+            FailureClass = FeedPublishFailureClass.BucketNotPublic,
+            Diagnostic = "anonymous GET returned 403",
+            HttpStatusCode = 403,
+        };
+        // Call sequence: initial (403), backoff #1 (403), backoff #2 (403),
+        // backoff #3 (Ok — propagation caught up). Loop breaks; probe called
+        // 4 times total.
+        _reachability.CheckAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(stale, stale, stale, FeedReachabilityResult.Ok());
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeTrue(
+            "the third backoff probe sees a public bucket — the publisher must short-circuit and ship success");
+        await _reachability.Received(4).CheckAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 

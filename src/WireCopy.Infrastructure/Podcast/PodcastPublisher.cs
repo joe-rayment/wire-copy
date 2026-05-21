@@ -25,21 +25,42 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    /// <summary>
+    /// workspace-i2vl: IAM propagation backoff after MakeBucketPublic succeeds.
+    /// GCS public-edge IAM is eventually consistent — typical propagation lag
+    /// is a few seconds. Three attempts at 1s / 3s / 5s catches the common
+    /// case; 9s total wall-time matches the user's "just generated a podcast"
+    /// attention budget. If the bucket is still 403 after the third attempt
+    /// we fall through to the gsutil-hint path (something else is wrong).
+    /// </summary>
+    private static readonly TimeSpan[] PropagationBackoff =
+    [
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(3),
+        TimeSpan.FromSeconds(5),
+    ];
+
     private readonly ICloudStorageClient _storage;
     private readonly IPodcastFeedGenerator _feedGenerator;
     private readonly ILogger<PodcastPublisher> _logger;
     private readonly IFeedReachabilityProbe _reachability;
+    private readonly Func<TimeSpan, CancellationToken, Task> _propagationDelay;
 
     public PodcastPublisher(
         ICloudStorageClient storage,
         IPodcastFeedGenerator feedGenerator,
         ILogger<PodcastPublisher> logger,
-        IFeedReachabilityProbe? reachability = null)
+        IFeedReachabilityProbe? reachability = null,
+        Func<TimeSpan, CancellationToken, Task>? propagationDelay = null)
     {
         _storage = storage;
         _feedGenerator = feedGenerator;
         _logger = logger;
         _reachability = reachability ?? new HttpFeedReachabilityProbe();
+
+        // Tests pass a no-op delay so the IAM-propagation backoff doesn't add
+        // 9s of wall time to every BucketNotPublic case.
+        _propagationDelay = propagationDelay ?? Task.Delay;
     }
 
     public async Task<FeedPublishResult> PublishFeedAsync(
@@ -262,10 +283,37 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                     or MakeBucketPublicStatus.AlreadyPublic)
                 {
                     _logger.LogInformation(
-                        "Auto-remediation result on {Bucket}: {Status}. Re-running reachability probe.",
+                        "Auto-remediation result on {Bucket}: {Status}. Re-probing with IAM-propagation backoff.",
                         _storage.BucketName,
                         remediation.Status);
-                    probe = await _reachability.CheckAsync(feedUrl, cancellationToken).ConfigureAwait(false);
+
+                    // workspace-i2vl: re-probe with backoff so a Storage Admin
+                    // user whose bucket was previously private gets the silent
+                    // success path, not "gsutil hint + press r" — the IAM write
+                    // has happened but the public edge can lag a few seconds.
+                    for (var attempt = 0; attempt < PropagationBackoff.Length; attempt++)
+                    {
+                        await _propagationDelay(PropagationBackoff[attempt], cancellationToken)
+                            .ConfigureAwait(false);
+                        probe = await _reachability.CheckAsync(feedUrl, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (probe.FailureClass == FeedPublishFailureClass.None)
+                        {
+                            _logger.LogInformation(
+                                "Public read confirmed on {Bucket} after attempt {Attempt}",
+                                _storage.BucketName,
+                                attempt + 1);
+                            break;
+                        }
+                    }
+
+                    if (probe.FailureClass != FeedPublishFailureClass.None)
+                    {
+                        _logger.LogWarning(
+                            "IAM propagation backoff exhausted ({Attempts} attempts) on {Bucket}; surfacing gsutil hint",
+                            PropagationBackoff.Length,
+                            _storage.BucketName);
+                    }
                 }
                 else
                 {
