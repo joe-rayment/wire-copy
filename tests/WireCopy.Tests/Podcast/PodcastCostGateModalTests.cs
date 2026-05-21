@@ -62,13 +62,32 @@ public class PodcastCostGateModalTests
     }
 
     [Fact]
-    public void ShouldShowGate_AlwaysShow_ReturnsTrueEvenForTinyJob()
+    public void ShouldShowGate_AlwaysShowButZeroCost_ReturnsFalse()
     {
+        // workspace-ls53: a fully-cached, zero-cost job has nothing for the
+        // user to approve. Showing a "$0.00 [Enter] go" modal blocks a
+        // single-click contract the user already paid for once. AlwaysShow
+        // is reframed as "always show when there's a cost to confirm" —
+        // never "always interrupt".
         var cfg = new PodcastCostGateConfig { AlwaysShow = true };
         var analysis = AnalysisOf(cached: 1, uncached: 0, cost: 0m);
 
+        cfg.ShouldShowGate(analysis).Should().BeFalse(
+            "AlwaysShow only fires when there's actually a cost or uncached work to confirm — a fully-cached \\$0.00 job has nothing for the user to approve");
+    }
+
+    [Fact]
+    public void ShouldShowGate_AlwaysShowWithSomeUncached_ReturnsTrue()
+    {
+        // workspace-ls53 follow-up: AlwaysShow still fires when there IS
+        // something to confirm — even a tiny cost or a single uncached
+        // article. This keeps the "I want to be asked every time" option
+        // honest for users who genuinely want it.
+        var cfg = new PodcastCostGateConfig { AlwaysShow = true };
+        var analysis = AnalysisOf(cached: 1, uncached: 1, cost: 0.07m);
+
         cfg.ShouldShowGate(analysis).Should().BeTrue(
-            "AlwaysShow forces the gate to pop regardless of cost or article count");
+            "AlwaysShow with at least one uncached article still fires — the user opted into 'confirm before spending'");
     }
 
     [Fact]

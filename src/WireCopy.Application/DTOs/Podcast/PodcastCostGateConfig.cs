@@ -37,13 +37,20 @@ public sealed record PodcastCostGateConfig
 
     /// <summary>
     /// Returns true when the analysis triggers the gate per the configured
-    /// thresholds. <see cref="AlwaysShow"/> overrides both caps.
+    /// thresholds. <see cref="AlwaysShow"/> overrides the thresholds, but
+    /// only when there is actually something to confirm: a zero-cost,
+    /// fully-cached job has nothing for the user to approve, so the gate
+    /// must stay silent even with AlwaysShow set (workspace-ls53 —
+    /// otherwise pressing Generate Podcast on a cached 1-article list
+    /// still requires an extra Enter to dismiss a "$0.00" modal).
     /// </summary>
     public bool ShouldShowGate(CacheAnalysis analysis)
     {
         ArgumentNullException.ThrowIfNull(analysis);
 
-        if (AlwaysShow)
+        var hasSomethingToConfirm = analysis.UncachedArticles > 0 || analysis.EstimatedCost > 0m;
+
+        if (AlwaysShow && hasSomethingToConfirm)
         {
             return true;
         }
