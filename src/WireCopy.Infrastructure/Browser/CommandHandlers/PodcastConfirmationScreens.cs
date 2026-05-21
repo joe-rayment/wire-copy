@@ -599,12 +599,18 @@ internal static class PodcastConfirmationScreens
 
         var rows = BuildRows();
 
-        // Always focus the first row on screen entry so the screen reads as a menu.
-        // The user can navigate down to any unconfigured row or to the Generate
-        // action; previously we'd auto-jump to whichever row was unconfigured (or
-        // straight to Generate when everything was configured), which made the
-        // focused state ambiguous on entry.
-        var selectedIndex = 0;
+        // workspace-sfhy: when credentials are ready, land focus on the Generate
+        // row so the primary CTA is immediately visible — users reported that
+        // with focus always pinned to row 0 the Generate action read as
+        // hidden, since it sits below the cost/cache section and is rendered
+        // without the selected-item background fill until the user finds it.
+        // When TTS is NOT configured, leave focus on row 0 (the first credential
+        // row) so the user lands on the thing they need to fix.
+        var selectedIndex = isTtsConfigured ? Array.IndexOf(rows, ConfirmRow.Generate) : 0;
+        if (selectedIndex < 0)
+        {
+            selectedIndex = 0;
+        }
 
         // Resolve hierarchy-analyzer services for AI Hierarchy status (optional — may not be registered).
         // workspace-65sw collapsed Anthropic into OpenAI — same key powers TTS and AI layout.
