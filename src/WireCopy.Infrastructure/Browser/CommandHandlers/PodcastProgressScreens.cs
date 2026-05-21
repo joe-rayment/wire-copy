@@ -1238,9 +1238,22 @@ internal static class PodcastProgressScreens
             // remediation flow ("run this gsutil one-liner, then press r") works
             // end-to-end. The retry signal returns up through HandleGeneratePodcast's
             // retry loop, which re-runs from scratch with fresh pre-flight checks.
-            helpers.WriteLine(
-                $"  {p.GetAccentFg().AnsiFg}r{Reset}{p.SecondaryText.AnsiFg}:retry   " +
-                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
+            //
+            // workspace-n0kb: when the failure points at a fixable credential
+            // (TTS auth → OpenAI key, GCS publish → bucket), surface an `s`
+            // hint that deep-links into the relevant Setup row. Hidden for
+            // failure modes where no Setup row maps (FFmpeg install, network).
+            var hintParts = new List<string>
+            {
+                $"{p.GetAccentFg().AnsiFg}r{Reset}{p.SecondaryText.AnsiFg}:retry{Reset}",
+            };
+            if (classification.RelevantSetupRow.HasValue)
+            {
+                hintParts.Add($"{p.GetAccentFg().AnsiFg}s{Reset}{p.SecondaryText.AnsiFg}:open setup{Reset}");
+            }
+
+            hintParts.Add($"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:back{Reset}");
+            helpers.WriteLine("  " + string.Join("   ", hintParts));
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
@@ -1254,6 +1267,20 @@ internal static class PodcastProgressScreens
             if (command.RawKeyChar == 'r')
             {
                 return true;
+            }
+
+            // workspace-n0kb: 's' opens the relevant Setup row for the
+            // failure. Per the bead's "on save, returns to library"
+            // acceptance, after DispatchRowAsync unwinds we exit the error
+            // screen entirely (return false ⇒ back through
+            // RunGeneratePodcastAttempt ⇒ HandleGeneratePodcast's outer loop
+            // exits ⇒ user lands on the collection-items view they came
+            // from). The user can re-press `p` once their fix is in place.
+            if (command.RawKeyChar == 's' && classification.RelevantSetupRow.HasValue)
+            {
+                await SettingsCommandHandler.DispatchRowAsync(
+                    ctx, options, classification.RelevantSetupRow.Value, ct).ConfigureAwait(false);
+                return false;
             }
 
             if (command.Type != CommandType.NoOp)

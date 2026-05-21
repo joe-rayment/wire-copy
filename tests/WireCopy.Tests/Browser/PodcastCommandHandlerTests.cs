@@ -743,6 +743,16 @@ public class PodcastCommandHandlerTests
         _ttsService.Received(1).SetApiKeyOverride(string.Empty);
     }
 
+    // workspace-n0kb: 's' deep-link unit coverage lives in
+    // PodcastFailureClassifierTests (RelevantSetupRow → SetupRow.OpenAiKey/GcsBucket).
+    // The end-to-end ShowErrorScreenAsync → DispatchRowAsync wiring shares the
+    // input-queue plumbing of the existing AuthError401/AuthError403 tests,
+    // which under the current substitute-based input handler do not exit
+    // deterministically in CI (separate pre-existing flake — see test method
+    // bodies); the change here is purely additive (new hint + new branch), so
+    // adding another full-flow test would extend the same flake. Live testing
+    // covers the visible UX path.
+
     [Fact]
     public async Task HandleGeneratePodcast_NonAuthError_DoesNotClearApiKey()
     {

@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Podcast;
+using WireCopy.Domain.ValueObjects.Podcast;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -43,10 +44,27 @@ internal static class PodcastFailureClassifier
             var reason = string.IsNullOrWhiteSpace(typedDetail.RawMessage)
                 ? typedDetail.FailureClass.ToString()
                 : typedDetail.RawMessage;
+
+            // workspace-n0kb: any non-None publish failure points the user
+            // at the GcsBucket row — that's where the bucket name, public
+            // ACL, and (via the inline gate) the service-account key are
+            // edited. NoAudioFiles is a generation-side missing local file
+            // rather than a credential bug, so it gets no setup row.
+            SettingsCommandHandler.SetupRow? relevantRow = typedDetail.FailureClass switch
+            {
+                FeedPublishFailureClass.BucketNotPublic
+                    or FeedPublishFailureClass.FeedNotReachable
+                    or FeedPublishFailureClass.FeedNotParseable
+                    or FeedPublishFailureClass.Generic
+                    => SettingsCommandHandler.SetupRow.GcsBucket,
+                _ => null,
+            };
+
             return new PodcastFailureClassification(
                 Step: typedDetail.Step,
                 Reason: reason,
-                Fix: typedDetail.RemediationCopy);
+                Fix: typedDetail.RemediationCopy,
+                RelevantSetupRow: relevantRow);
         }
 
         return Classify(errorMessage, failedArticles);
@@ -80,7 +98,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: "Pre-flight (credentials)",
                 Reason: "OpenAI API key missing or not yet configured",
-                Fix: "Open Setup (:config), paste your key, then press p again");
+                Fix: "Open Setup (:config), paste your key, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.OpenAiKey);
         }
 
         // ---- GCS / publish failures (must come before generic 403 — a
@@ -92,7 +111,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: "RSS publish (GCS upload)",
                 Reason: "Couldn't upload or publish the feed to your GCS bucket",
-                Fix: "Check the bucket name + service-account key in Setup, or run gsutil iam ch allUsers:objectViewer gs://your-bucket");
+                Fix: "Check the bucket name + service-account key in Setup, or run gsutil iam ch allUsers:objectViewer gs://your-bucket",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.GcsBucket);
         }
 
         // ---- OpenAI API errors (429 / 401 / 403 / 5xx) ----
@@ -113,7 +133,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: "TTS synthesis (authentication)",
                 Reason: "OpenAI rejected the API key (401)",
-                Fix: "Verify the key at platform.openai.com/api-keys and re-paste in Setup");
+                Fix: "Verify the key at platform.openai.com/api-keys and re-paste in Setup",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.OpenAiKey);
         }
 
         if (error.Contains("403", StringComparison.Ordinal) ||
@@ -122,7 +143,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: "TTS synthesis (authorization)",
                 Reason: "OpenAI returned 403 — account lacks credits or permission",
-                Fix: "Add credits at platform.openai.com/billing, then retry");
+                Fix: "Add credits at platform.openai.com/billing, then retry",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.OpenAiKey);
         }
 
         if (error.Contains("500", StringComparison.Ordinal) ||
