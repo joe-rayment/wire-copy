@@ -279,45 +279,84 @@ internal static class PodcastCommandHandler
                     ctx, options, preflightBucketName, gcsConfig, ct).ConfigureAwait(false);
             }
 
-            // Pre-flight cache analysis for cost estimation (with progress UI)
-            CacheAnalysis? cacheAnalysis = await PodcastSetupHelpers
-                .ShowCacheAnalysisScreenAsync(ctx, options, collection, orchestrator, ct)
-                .ConfigureAwait(false);
-            options = ctx.GetCurrentRenderOptions();
+            // workspace-reym: deleted the standalone "Analyzing Articles"
+            // and "Caching Articles" screens — they were the second-page the
+            // user kept landing on after pressing `p`. Cache analysis still
+            // runs (orchestrator.GeneratePodcastAsync extracts inline and
+            // emits CachingContent progress events), but those events now
+            // render inside the single Progress screen instead of a
+            // separate full-screen takeover.
+            //
+            // The cost-gate also no longer requires its own pre-flight
+            // screen. We only run analysis up-front when the cost-gate
+            // could *plausibly* fire (article count over threshold or the
+            // user explicitly opted into AlwaysShow); for the typical
+            // Reading List under the (raised) thresholds, we skip straight
+            // to the Progress screen and the user sees ONE screen titled
+            // "Generating podcast" from press to result.
+            var costGateConfig = LoadCostGateConfig(settingsStore);
+            var needsAnalysisForGate = costGateConfig.AlwaysShow
+                || collection.Items.Count > costGateConfig.ArticleThreshold;
 
-            // workspace-lr80: cost-gate confirm. Only pops when the estimated
-            // spend OR article count exceeds the user's configured threshold.
-            // Below threshold = silent kickoff (preserves Phase 1's
-            // one-keystroke contract from workspace-kuu7).
-            if (cacheAnalysis != null)
+            if (needsAnalysisForGate)
             {
-                var costGateConfig = LoadCostGateConfig(settingsStore);
-                var proceed = await PodcastCostGateModal.ShowAsync(ctx, options, cacheAnalysis, costGateConfig, ct).ConfigureAwait(false);
-                if (!proceed)
+                // workspace-reym: surface immediate feedback while the silent
+                // analysis runs — otherwise the user sees the Reading List
+                // unchanged for 10-30s after pressing `p` and re-encounters
+                // the original "nothing's happening" complaint.
+                //
+                // We render an inline 3-row indicator at the bottom of the
+                // view (same position the cost-gate modal lands on) rather
+                // than using NavigationService.SetStatusMessage, because the
+                // CollectionItems render path constructs a fresh empty
+                // NavigationContext and silently drops the status message —
+                // a pre-existing gap separate from this fix.
+                var totalArticles = collection.Items.Count;
+                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                PodcastAnalyzingIndicator.Render(options, palette, completed: 0, total: totalArticles);
+
+                var lastReportedCount = 0;
+                var analysisProgress = new Progress<ContentExtractionProgress>(p =>
                 {
-                    ctx.NavigationService.SetStatusMessage("Podcast cancelled");
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    return false;
+                    if (!p.IsCompleted)
+                    {
+                        return;
+                    }
+
+                    var done = Interlocked.Increment(ref lastReportedCount);
+                    PodcastAnalyzingIndicator.Render(options, palette, done, totalArticles);
+                });
+
+                CacheAnalysis analysis;
+                try
+                {
+                    analysis = await orchestrator
+                        .AnalyzeCacheStatusAsync(collection, analysisProgress, ct)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    PodcastAnalyzingIndicator.Clear(options);
                 }
 
-                options = ctx.GetCurrentRenderOptions();
+                if (costGateConfig.ShouldShowGate(analysis))
+                {
+                    var proceed = await PodcastCostGateModal
+                        .ShowAsync(ctx, options, analysis, costGateConfig, ct)
+                        .ConfigureAwait(false);
+                    if (!proceed)
+                    {
+                        ctx.NavigationService.SetStatusMessage("Podcast cancelled");
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        return false;
+                    }
+
+                    options = ctx.GetCurrentRenderOptions();
+                }
             }
 
-            // Show cache-wait screen if preloading is still in progress
-            var skippedWait = await PodcastSetupHelpers.ShowCacheWaitScreenAsync(ctx, options, collection, ct).ConfigureAwait(false);
-
-            // Re-fetch render options in case terminal resized during wait
-            if (!skippedWait)
-            {
-                options = ctx.GetCurrentRenderOptions();
-            }
-
-            // workspace-ny44: row-navigated review step retired. With Phase 1
-            // (workspace-kuu7, modal-for-missing-key) and Phase 5
-            // (workspace-yib5, resume-after-save) in place, the user has
-            // already cleared every pre-flight gate by the time we reach
-            // here — there is no remaining ambiguous state to review. We
-            // proceed straight to the progress screen.
             var result = await PodcastProgressScreens.ShowProgressScreenAsync(ctx, options, collection, orchestrator, ct).ConfigureAwait(false);
 
             if (result == null)

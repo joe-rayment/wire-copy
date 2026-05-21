@@ -11,18 +11,23 @@ namespace WireCopy.Application.DTOs.Podcast;
 public sealed record PodcastCostGateConfig
 {
     /// <summary>
-    /// USD threshold above which the cost-gate modal appears. Default $1.00.
-    /// Settable via the user settings key <c>PodcastCostGateThresholdUsd</c>.
+    /// USD threshold above which the cost-gate modal appears. Default $5.00
+    /// (workspace-reym: raised from $1.00 because the lower default tripped
+    /// on every realistic Reading List and broke the umbrella's
+    /// one-keystroke contract). Settable via the user settings key
+    /// <c>PodcastCostGateThresholdUsd</c>.
     /// </summary>
-    public decimal ThresholdUsd { get; init; } = 1.00m;
+    public decimal ThresholdUsd { get; init; } = 5.00m;
 
     /// <summary>
     /// Article-count threshold above which the cost-gate modal appears.
-    /// Default 10. Helps catch large reading-list runs that are individually
-    /// cheap but still represent a non-trivial spend in aggregate.
-    /// Settable via <c>PodcastCostGateArticleThreshold</c>.
+    /// Default 50 (workspace-reym: raised from 10 — the old cap fired on
+    /// any reading list big enough to be worth listening to). Helps catch
+    /// very large reading-list runs that are individually cheap but still
+    /// represent a non-trivial spend in aggregate. Settable via
+    /// <c>PodcastCostGateArticleThreshold</c>.
     /// </summary>
-    public int ArticleThreshold { get; init; } = 10;
+    public int ArticleThreshold { get; init; } = 50;
 
     /// <summary>
     /// When true the modal pops on every Generate run, even for tiny jobs.
