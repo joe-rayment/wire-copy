@@ -278,6 +278,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         string content,
         string objectName,
         string contentType,
+        string? cacheControl = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -289,17 +290,42 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
 
         _logger.LogDebug(
-            "Uploading string content to gs://{Bucket}/{Object}",
-            _config.BucketName,
-            objectName);
-
-        await client.UploadObjectAsync(
+            "Uploading string content to gs://{Bucket}/{Object} (cacheControl={CacheControl})",
             _config.BucketName,
             objectName,
-            contentType,
-            stream,
-            new UploadObjectOptions(),
-            cancellationToken).ConfigureAwait(false);
+            cacheControl ?? "(default)");
+
+        if (cacheControl is null)
+        {
+            await client.UploadObjectAsync(
+                _config.BucketName,
+                objectName,
+                contentType,
+                stream,
+                new UploadObjectOptions(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // workspace-7m8d: pass cache-control via a full Object descriptor so
+            // GCS persists it on the uploaded object — the simpler
+            // (bucket, name, contentType, stream) overload has no slot for
+            // metadata, and skipping it leaves bucket-default (1h) caching
+            // active on republishable RSS/manifest assets.
+            var obj = new Google.Apis.Storage.v1.Data.Object
+            {
+                Bucket = _config.BucketName,
+                Name = objectName,
+                ContentType = contentType,
+                CacheControl = cacheControl,
+            };
+
+            await client.UploadObjectAsync(
+                obj,
+                stream,
+                new UploadObjectOptions(),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         return GetPublicUrl(objectName);
     }

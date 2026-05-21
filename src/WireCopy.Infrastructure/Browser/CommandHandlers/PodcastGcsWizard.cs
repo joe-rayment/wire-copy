@@ -634,7 +634,9 @@ internal static class PodcastGcsWizard
         ArgumentNullException.ThrowIfNull(bucketName);
 
         var xml = BuildSelfTestFeedXml(bucketName, DateTime.UtcNow);
-        await gcsClient.UploadStringAsync(xml, "feed.xml", "application/rss+xml", ct).ConfigureAwait(false);
+        await gcsClient
+            .UploadStringAsync(xml, "feed.xml", "application/rss+xml", "no-cache, max-age=0", ct)
+            .ConfigureAwait(false);
         return $"https://storage.googleapis.com/{bucketName}/feed.xml";
     }
 

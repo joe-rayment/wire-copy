@@ -79,10 +79,14 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
             new XElement("generator", "Wire Copy Podcast Generator"),
             new XElement(Itunes + "author", podcast.Author),
             new XElement(Itunes + "summary", new XCData(podcast.Description)),
-            new XElement(Itunes + "image", new XAttribute("href", podcast.ImageUrl)),
-            new XElement(Itunes + "explicit", podcast.Explicit ? "yes" : "no"),
+            new XElement(Itunes + "explicit", podcast.Explicit ? "true" : "false"),
             new XElement(Itunes + "type", "episodic"),
             new XElement(Podcast + "locked", "yes"));
+
+        if (!string.IsNullOrWhiteSpace(podcast.ImageUrl))
+        {
+            channel.Add(new XElement(Itunes + "image", new XAttribute("href", podcast.ImageUrl)));
+        }
 
         if (!string.IsNullOrEmpty(podcast.FeedUrl))
         {
