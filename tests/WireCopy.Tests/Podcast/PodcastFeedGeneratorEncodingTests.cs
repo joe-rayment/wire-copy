@@ -36,10 +36,10 @@ public class PodcastFeedGeneratorEncodingTests
         Title = "Episode 1",
         Description = "First episode",
         PublishedAtUtc = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc),
-        AudioUrl = "https://example.com/ep1.m4b",
+        AudioUrl = "https://example.com/ep1.m4a",
         AudioSizeBytes = 1024000,
         Duration = TimeSpan.FromMinutes(15),
-        AudioMimeType = "audio/x-m4b",
+        AudioMimeType = "audio/x-m4a",
     };
 
     [Fact]

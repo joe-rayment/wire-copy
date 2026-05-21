@@ -5,9 +5,9 @@ using Microsoft.Extensions.Logging;
 namespace WireCopy.Infrastructure.Podcast;
 
 /// <summary>
-/// Removes podcast output files (*.m4b, *.mp3) older than a configurable TTL
-/// from the user's output folder. Behaves like the article-content cache TTL
-/// sweep, but scoped strictly to podcast outputs.
+/// Removes podcast output files (*.m4a, *.m4b, *.mp3, *.xml) older than a
+/// configurable TTL from the user's output folder. Behaves like the
+/// article-content cache TTL sweep, but scoped strictly to podcast outputs.
 /// </summary>
 internal sealed class OutputFolderPurger
 {
@@ -21,10 +21,10 @@ internal sealed class OutputFolderPurger
     }
 
     /// <summary>
-    /// Scans <paramref name="folder"/> for *.m4b/*.mp3 files older than <paramref name="ttl"/>
-    /// and deletes them. Other file types are left alone. Missing folders and
-    /// individual permission errors are swallowed so app startup never crashes
-    /// because of a janky filesystem.
+    /// Scans <paramref name="folder"/> for *.m4a/*.m4b/*.mp3/*.xml files older
+    /// than <paramref name="ttl"/> and deletes them. Other file types are left
+    /// alone. Missing folders and individual permission errors are swallowed so
+    /// app startup never crashes because of a janky filesystem.
     /// </summary>
     /// <returns>The number of files actually deleted.</returns>
     public Task<int> PurgeOldFilesAsync(string folder, TimeSpan ttl, CancellationToken ct = default)

@@ -116,8 +116,8 @@ public class PodcastPublisherTests : IDisposable
 
         await _storage.Received(1).UploadAsync(
             Arg.Any<string>(),
-            Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4b")),
-            "audio/x-m4b",
+            Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4a")),
+            "audio/x-m4a",
             Arg.Any<IProgress<long>?>(),
             Arg.Any<CancellationToken>());
 
@@ -219,8 +219,8 @@ public class PodcastPublisherTests : IDisposable
 
         await _storage.Received(1).UploadAsync(
             Arg.Any<string>(),
-            Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4b")),
-            "audio/x-m4b",
+            Arg.Is<string>(s => s.Contains("episodes/") && s.EndsWith(".m4a")),
+            "audio/x-m4a",
             Arg.Any<IProgress<long>?>(),
             Arg.Any<CancellationToken>());
     }

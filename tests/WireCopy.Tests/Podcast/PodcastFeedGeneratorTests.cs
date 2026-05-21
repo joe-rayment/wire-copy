@@ -35,10 +35,10 @@ public class PodcastFeedGeneratorTests
         Title = "Episode 1",
         Description = "Episode description",
         PublishedAtUtc = new DateTime(2024, 1, 15, 12, 0, 0, DateTimeKind.Utc),
-        AudioUrl = "https://storage.example.com/ep1.m4b",
+        AudioUrl = "https://storage.example.com/ep1.m4a",
         AudioSizeBytes = 1024000,
         Duration = TimeSpan.FromMinutes(15),
-        AudioMimeType = "audio/x-m4b",
+        AudioMimeType = "audio/x-m4a",
     };
 
     [Fact]
@@ -113,7 +113,7 @@ public class PodcastFeedGeneratorTests
 
         enclosure.Attribute("url")!.Value.Should().Be(episode.AudioUrl);
         enclosure.Attribute("length")!.Value.Should().Be(episode.AudioSizeBytes.ToString());
-        enclosure.Attribute("type")!.Value.Should().Be("audio/x-m4b");
+        enclosure.Attribute("type")!.Value.Should().Be("audio/x-m4a");
     }
 
     [Fact]

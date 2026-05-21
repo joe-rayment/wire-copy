@@ -73,7 +73,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     {
         var folder = ResolveEffectiveOutputFolder();
         Directory.CreateDirectory(folder);
-        return Path.Combine(folder, $"{SanitizeFileName(collectionName)}.m4b");
+        return Path.Combine(folder, $"{SanitizeFileName(collectionName)}.m4a");
     }
 
     /// <summary>

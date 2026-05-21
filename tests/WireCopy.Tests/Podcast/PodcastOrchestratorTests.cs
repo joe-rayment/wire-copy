@@ -1727,7 +1727,7 @@ public class PodcastOrchestratorTests : IDisposable
             var path = sut.GetOutputFilePath("Coll");
 
             path.Should().StartWith(abs, "absolute paths must be returned without tilde rewriting");
-            path.Should().EndWith("Coll.m4b");
+            path.Should().EndWith("Coll.m4a");
         }
         finally
         {
@@ -1759,8 +1759,8 @@ public class PodcastOrchestratorTests : IDisposable
 
             var path = sut.GetOutputFilePath("Coll");
 
-            // Path.Combine(rel, "Coll.m4b") — relative path is preserved.
-            path.Should().Be(Path.Combine(rel, "Coll.m4b"));
+            // Path.Combine(rel, "Coll.m4a") — relative path is preserved.
+            path.Should().Be(Path.Combine(rel, "Coll.m4a"));
         }
         finally
         {
@@ -1798,7 +1798,7 @@ public class PodcastOrchestratorTests : IDisposable
 
             var path = sut.GetOutputFilePath("Coll");
 
-            path.Should().Be(Path.Combine(configured, "Coll.m4b"),
+            path.Should().Be(Path.Combine(configured, "Coll.m4a"),
                 "with no override, the bound PodcastConfiguration must win");
         }
         finally
@@ -1837,7 +1837,7 @@ public class PodcastOrchestratorTests : IDisposable
 
             var path = sut.GetOutputFilePath("Coll");
 
-            path.Should().Be(Path.Combine(configured, "Coll.m4b"),
+            path.Should().Be(Path.Combine(configured, "Coll.m4a"),
                 "empty/whitespace overrides must be ignored (treated as unset)");
         }
         finally
@@ -1920,7 +1920,7 @@ public class PodcastOrchestratorTests : IDisposable
                 Arg.Any<IProgress<PublishProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(FeedPublishResult.Failure(
                 "Anonymous HTTP GET returned 403 — bucket may not grant allUsers:objectViewer.",
-                FeedPublishFailureClass.FeedNotReachable));
+                FeedPublishFailureClass.BucketNotPublic));
 
         var collection = CreateCollection(url);
         var result = await sut.GeneratePodcastAsync(collection);
@@ -1930,7 +1930,7 @@ public class PodcastOrchestratorTests : IDisposable
         result.Classification.Should().Be(PodcastResultClassification.TotalFailure);
         result.FailureDetail.Should().NotBeNull();
         result.FailureDetail!.Step.Should().Be("Publishing");
-        result.FailureDetail.FailureClass.Should().Be(FeedPublishFailureClass.FeedNotReachable);
+        result.FailureDetail.FailureClass.Should().Be(FeedPublishFailureClass.BucketNotPublic);
         result.FailureDetail.RemediationCopy.Should().Contain("allUsers:objectViewer",
             "Shape D's Fix line must direct the user to the bucket-public IAM grant");
         result.LocalFilePath.Should().NotBeNullOrEmpty(
