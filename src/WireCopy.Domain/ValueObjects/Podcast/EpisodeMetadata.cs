@@ -43,7 +43,7 @@ public record EpisodeMetadata
     public required TimeSpan Duration { get; init; }
 
     /// <summary>
-    /// Gets the audio MIME type (e.g., "audio/x-m4b", "audio/mp4").
+    /// Gets the audio MIME type (e.g., "audio/x-m4a", "audio/mpeg").
     /// </summary>
     public required string AudioMimeType { get; init; }
 

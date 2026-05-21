@@ -75,7 +75,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var episodeUuid = DeriveEpisodeId(episode.Title, episode.SourceUrl);
-                var objectPath = $"{feedBasePath}/episodes/{episodeUuid}.m4b";
+                var objectPath = $"{feedBasePath}/episodes/{episodeUuid}.m4a";
 
                 // workspace-z2om: the deterministic episode id is title+sourceUrl.
                 // For Reading List runs both can stay constant while the M4B
@@ -155,7 +155,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                     await _storage.UploadAsync(
                         episode.LocalAudioFilePath,
                         objectPath,
-                        "audio/x-m4b",
+                        "audio/x-m4a",
                         bytesProgress,
                         cancellationToken).ConfigureAwait(false);
 
@@ -186,7 +186,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                     AudioUrl = _storage.GetPublicUrl(objectPath),
                     AudioSizeBytes = fileInfo.Exists ? fileInfo.Length : 0,
                     Duration = episode.Duration,
-                    AudioMimeType = "audio/x-m4b",
+                    AudioMimeType = "audio/x-m4a",
                     Chapters = episode.Chapters,
                     SourceUrl = episode.SourceUrl,
                 });
@@ -395,9 +395,10 @@ internal sealed class PodcastPublisher : IPodcastPublisher
     }
 
     /// <summary>
-    /// Returns a short summary of the .m4b files alongside the missing audio
+    /// Returns a short summary of the audio files alongside the missing audio
     /// path so the error log gives a fighting chance at triaging a path
-    /// mismatch (workspace-mie2).
+    /// mismatch (workspace-mie2). Looks for both .m4a (current) and .m4b
+    /// (legacy) so stale outputs from older builds are still surfaced.
     /// </summary>
     private static string ProbeSiblingFiles(string missingPath)
     {
@@ -409,9 +410,12 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 return "(parent directory does not exist)";
             }
 
-            var siblings = Directory.GetFiles(dir, "*.m4b", SearchOption.TopDirectoryOnly);
+            var siblings = Directory.EnumerateFiles(dir, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(p => p.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase)
+                    || p.EndsWith(".m4b", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
             return siblings.Length == 0
-                ? "(no .m4b files in parent directory)"
+                ? "(no .m4a/.m4b files in parent directory)"
                 : string.Join(", ", siblings.Select(Path.GetFileName));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

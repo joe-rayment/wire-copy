@@ -100,7 +100,7 @@ public class PodcastConfiguration
     /// <summary>
     /// Gets the retention window for files in <see cref="OutputFolderPath"/>, in hours.
     /// Files older than this are auto-purged on app start. Default: 36.
-    /// Only *.m4b and *.mp3 files are eligible for purge.
+    /// Only *.m4a, *.m4b, *.mp3, and *.xml files are eligible for purge.
     /// </summary>
     public int OutputRetentionHours { get; init; } = 36;
 
