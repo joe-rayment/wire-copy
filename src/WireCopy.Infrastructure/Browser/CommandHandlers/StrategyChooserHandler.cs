@@ -75,33 +75,10 @@ internal static class StrategyChooserHandler
         var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
         var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
 
-        byte[]? screenshot = null;
-        if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
-        {
-            try
-            {
-                screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                ctx.Logger.LogDebug(ex, "Strategy chooser: screenshot capture failed");
-            }
-        }
-
-        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-        var savedConfig = configStore != null
-            ? await configStore.GetConfigAsync(page.Url).ConfigureAwait(false)
-            : null;
-
-        var stContext = new ScrapingStrategyContext
-        {
-            PageUrl = page.Url,
-            Html = html,
-            Links = links,
-            Screenshot = screenshot,
-            SavedConfig = savedConfig,
-        };
-
+        // workspace-1wm7: screenshot capture (0.5-3s) and savedConfig disk
+        // read are only needed by the per-strategy probes that fire AFTER
+        // the user confirms pre-flight. Defer both until after RunPreflightAsync
+        // returns true so the modal renders <100ms after Ctrl+L.
         // Build the overlay's row list up-front so the user sees every
         // registered strategy in the pre-flight checkbox modal — including
         // strategies that would be unavailable today (no key, etc.). This
@@ -162,6 +139,32 @@ internal static class StrategyChooserHandler
             {
                 overlay.Rows.Add(r);
             }
+
+            // workspace-1wm7: kick off screenshot + savedConfig IO in
+            // parallel here (deferred from the pre-flight phase). Render a
+            // "Preparing…" footnote so the user sees activity while the
+            // ~1-3s screenshot capture completes.
+            overlay.Footnote = "Preparing — capturing screenshot and loading saved config…";
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+            var screenshotTask = CaptureScreenshotSafelyAsync(scope, ctx.Logger);
+            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            var savedConfigTask = configStore != null
+                ? configStore.GetConfigAsync(page.Url)
+                : Task.FromResult<SiteHierarchyConfig?>(null);
+
+            await Task.WhenAll(screenshotTask, savedConfigTask).ConfigureAwait(false);
+            var screenshot = await screenshotTask.ConfigureAwait(false);
+            var savedConfig = await savedConfigTask.ConfigureAwait(false);
+
+            var stContext = new ScrapingStrategyContext
+            {
+                PageUrl = page.Url,
+                Html = html,
+                Links = links,
+                Screenshot = screenshot,
+                SavedConfig = savedConfig,
+            };
 
             overlay.Footnote = $"Probing {selectedRows.Count} strategy(ies) — up to {StrategyProbeBudget.TotalSeconds:0}s each.";
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -643,6 +646,32 @@ internal static class StrategyChooserHandler
         }
 
         return summary;
+    }
+
+    /// <summary>
+    /// workspace-1wm7: best-effort screenshot capture from the active
+    /// browser session. Returns null if no session is registered or the
+    /// capture throws — failures are logged at debug since the chooser can
+    /// proceed without a screenshot (only the AI Curated strategy uses it).
+    /// </summary>
+    private static async Task<byte[]?> CaptureScreenshotSafelyAsync(
+        IServiceScope scope,
+        ILogger logger)
+    {
+        if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is not IBrowserSession session)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await session.CaptureScreenshotAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Strategy chooser: screenshot capture failed");
+            return null;
+        }
     }
 
     private static string ExtractDomain(string url)
