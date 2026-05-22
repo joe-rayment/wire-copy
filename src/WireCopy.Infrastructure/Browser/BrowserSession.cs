@@ -182,8 +182,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // Un-minimize via CDP first (BringToFrontAsync alone doesn't restore
             // a CDP-minimized window on macOS)
             var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
-            var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
                 ["windowId"] = windowId,
@@ -216,8 +217,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         try
         {
             var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
-            var windowId = windowInfo.Value.GetProperty("windowId").GetInt32();
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
                 ["windowId"] = windowId,

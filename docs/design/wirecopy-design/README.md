@@ -1,6 +1,6 @@
 # Wire Copy Design System
 
-A better reading experience. **Wire Copy** is a .NET 9 terminal-based web browser and reader, built for long-form reading without the noise of a normal browser. It runs entirely inside a terminal emulator (Ghostty preferred), uses Helix-style keybindings (`j/k/h/l/gg/G`), and can turn a reading list into an M4B audiobook via ElevenLabs TTS.
+A better reading experience. **Wire Copy** is a .NET 10 terminal-based web browser and reader, built for long-form reading without the noise of a normal browser. It runs entirely inside a terminal emulator (Ghostty preferred), uses Helix-style keybindings (`j/k/h/l/gg/G`), and can turn a reading list into an M4B audiobook via ElevenLabs TTS.
 
 This design system is the single source of truth for how the product looks, reads, and feels. It's a phosphor-green CRT aesthetic with **playful pink** accents — serious about reading, not serious about itself.
 
