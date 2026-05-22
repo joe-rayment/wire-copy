@@ -389,8 +389,14 @@ internal class LauncherRenderer
         switch (lineIdx)
         {
             case 0:
-                // Blank padding — no accent bar, no bg fill. Matches link-tree:
-                // line 0 of a 5-line selected card is also a transparent gap.
+                if (isSelected)
+                {
+                    // workspace-mj9x: top padding fills with selBg so the
+                    // selection rectangle extends edge-to-edge top-to-bottom.
+                    // The accent bar sits inside the bg, no gap to the right.
+                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
+                }
+
                 return new string(' ', cellWidth);
 
             case 1:
@@ -405,22 +411,20 @@ internal class LauncherRenderer
                 var truncName = RenderHelpers.TruncateText(name, titleMax);
                 var gap = Math.Max(0, contentWidth - 1 - glyphWidth - truncName.Length - badgeZone);
 
-                var prefix = showAccentBar
-                    ? $"{accentBarColor}▌{Reset}"
-                    : " ";
-
                 if (isSelected)
                 {
-                    // Painted highlight: leading space + glyph + title + pad + badge
-                    // + trailing space, all inside selBg so the bar reads as a
-                    // continuous rectangle. The star's own SGR keeps selBg —
-                    // emitting Reset between glyph and title drops the bg, which
-                    // showed up as a black notch around the ★ (workspace-ktg4).
+                    // Painted highlight: bar (inside selBg) + leading space +
+                    // glyph + title + pad + badge + trailing space, all inside
+                    // selBg so the box reads as a continuous rectangle. The
+                    // star's own SGR keeps selBg — emitting Reset between glyph
+                    // and title drops the bg (workspace-ktg4). The accent bar
+                    // is also inside selBg so column 0 isn't a black gap
+                    // (workspace-mj9x).
                     var glyphPainted = isReadingList
                         ? $"{selBg}{accentFg}{ReadingListGlyph}{selFg} "
                         : string.Empty;
                     var sb = new System.Text.StringBuilder();
-                    sb.Append(prefix);
+                    sb.Append($"{selBg}{accentBarColor}▌");
                     sb.Append($"{selBg}{selFg}{Bold} {glyphPainted}{truncName}{Reset}");
                     sb.Append($"{selBg}{new string(' ', gap)}");
                     if (badge.Length > 0)
@@ -435,6 +439,9 @@ internal class LauncherRenderer
                     return sb.ToString();
                 }
 
+                var prefix = showAccentBar
+                    ? $"{accentBarColor}▌{Reset}"
+                    : " ";
                 var glyph = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
                 var titleSegment = $"{Bold}{titleFg}{truncName}{Reset}";
                 if (badge.Length > 0)
@@ -450,19 +457,29 @@ internal class LauncherRenderer
                 // Subtitle row: optional accent bar + leading space + domain.
                 var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, contentWidth - 1));
                 var pad = Math.Max(0, contentWidth - 1 - truncDomain.Length);
-                var prefix = showAccentBar
-                    ? $"{accentBarColor}▌{Reset}"
-                    : " ";
 
                 if (isSelected)
                 {
-                    return $"{prefix}{selBg}{domainFg} {truncDomain}{new string(' ', pad)}{Reset}";
+                    // Bar inside selBg (workspace-mj9x) — no gap before the domain.
+                    return $"{selBg}{accentBarColor}▌{selBg}{domainFg} {truncDomain}{new string(' ', pad)}{Reset}";
                 }
 
+                var prefix = showAccentBar
+                    ? $"{accentBarColor}▌{Reset}"
+                    : " ";
                 return $"{prefix} {domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
             }
 
             case 3:
+                if (isSelected)
+                {
+                    // workspace-mj9x: inside the selection box, the separator
+                    // rule is suppressed — the rule belongs BETWEEN cards, not
+                    // inside a highlighted one. Bottom of the box fills with
+                    // selBg so the box closes flush.
+                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
+                }
+
                 // Separator rule, always rendered in dim secondary. Matches
                 // LinkTreeRenderer's separator (line 4 of a 5-line card).
                 return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";

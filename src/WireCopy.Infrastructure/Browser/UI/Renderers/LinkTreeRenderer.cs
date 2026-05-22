@@ -418,22 +418,17 @@ internal class LinkTreeRenderer
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
         var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
 
-        // Determine the content block range: titleLineIdx through last content slot.
-        // All lines in this range get accent bar + background, creating a consistent
-        // rectangular highlight regardless of whether individual lines have text.
-        var lastContentLineIdx = Math.Max(
-            titleLineIdx,
-            Math.Max(titleLine2Idx, Math.Max(authorDateLineIdx, metadataLineIdx)));
-        var isInContentBlock = lineIndex >= titleLineIdx && lineIndex <= lastContentLineIdx;
-
-        // Accent bar on content block lines; ✓ on title line when toggled
-        if (isInContentBlock && isToggled && lineIndex == titleLineIdx)
+        // workspace-mj9x: the selection rectangle covers the ENTIRE card —
+        // top padding, separator row, and any blank content slots all get
+        // selBg. The accent bar (or check on toggled title) sits inside selBg
+        // so column 0 isn't a black gap to the left of the highlight.
+        if (isToggled && lineIndex == titleLineIdx)
         {
-            sb.Append($"{palette.GetAccentFg().AnsiFg}\u2713{Reset}");
+            sb.Append($"{selBg}{palette.GetAccentFg().AnsiFg}\u2713");
         }
         else
         {
-            sb.Append(isInContentBlock ? $"{accentFg}\u258c{Reset}" : " ");
+            sb.Append($"{selBg}{accentFg}\u258c");
         }
 
         if (lineIndex == titleLineIdx)
@@ -473,15 +468,15 @@ internal class LinkTreeRenderer
                 sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
             }
         }
-        else if (isSeparator)
-        {
-            // Separator line — no highlight, matches unselected appearance
-            sb.Append($"{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', contentWidth)}{Reset}");
-        }
         else
         {
-            // Top padding — no highlight
-            sb.Append($"{new string(' ', contentWidth)}");
+            // workspace-mj9x: top padding (line 0) and separator (last line)
+            // both filled with selBg so the selection box reads as a flush
+            // rectangle — the dim rule belongs BETWEEN cards, not inside a
+            // highlighted one. Both rows collapse to the same selBg fill since
+            // they're content-free inside the selection.
+            _ = isSeparator;
+            sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
         return sb.ToString();
