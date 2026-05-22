@@ -11,9 +11,11 @@ Browse any website from your terminal with keyboard-only navigation, save articl
 ```bash
 git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
-dotnet build
-dotnet run --project src/WireCopy.API
+./dotnet build
+./dotnet run --project src/WireCopy.API
 ```
+
+The `./dotnet` wrapper bootstraps a workspace-local .NET 10 SDK into `./.dotnet/` on first use — no system-wide dotnet install required. If you'd rather type `dotnet` than `./dotnet`, add the repo root to your PATH: `export PATH="$PWD:$PATH"`.
 
 See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configuration.
 
@@ -176,8 +178,8 @@ docs/                           # Setup, testing, architecture, cookie encryptio
 ## Development
 
 ```bash
-# Build
-dotnet build
+# Build (workspace-vendored .NET 10 SDK, bootstrapped on first call)
+./dotnet build
 
 # Fast unit tests (~15s)
 ./scripts/test.sh

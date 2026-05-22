@@ -2,7 +2,6 @@
 
 ## Prerequisites
 
-- **.NET 10.0 SDK** — [download](https://dotnet.microsoft.com/download)
 - **FFmpeg** — required for podcast / audio assembly
   ```bash
   # macOS
@@ -12,26 +11,30 @@
   ```
 - **Chromium** — Patchright will download its own browser the first time you run WireCopy. On Linux, the host needs the usual Chromium dependencies (the [`Dockerfile`](../Dockerfile) lists them).
 
+You do **not** need a system-wide .NET install. The `./dotnet` wrapper at the repo root bootstraps a workspace-local .NET 10 SDK into `./.dotnet/` (~600 MB, gitignored) on first invocation via `scripts/bootstrap-dotnet.sh`.
+
 ## Build and run
 
 ```bash
 git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
-dotnet restore
-dotnet build
-dotnet run --project src/WireCopy.API
+./dotnet restore
+./dotnet build
+./dotnet run --project src/WireCopy.API
 ```
 
-The first run launches the bookmark grid. Press `?` from any screen for a help overlay.
+The first `./dotnet` call downloads the .NET 10 SDK. Subsequent calls reuse it. The first app run launches the bookmark grid. Press `?` from any screen for a help overlay.
+
+> **Prefer plain `dotnet`?** Add the repo root to your PATH: `export PATH="$PWD:$PATH"`. The wrapper still forwards to the vendored SDK so you don't pick up a stale system install.
 
 ## CLI
 
 ```bash
 # Default — open the launcher
-dotnet run --project src/WireCopy.API
+./dotnet run --project src/WireCopy.API
 
 # Open a specific URL directly
-dotnet run --project src/WireCopy.API -- browse https://news.ycombinator.com
+./dotnet run --project src/WireCopy.API -- browse https://news.ycombinator.com
 ```
 
 The single `browse` verb takes an optional URL argument. All other navigation happens inside the TUI.

@@ -29,7 +29,10 @@ import subprocess
 import sys
 import time
 
-DOTNET = os.environ.get("DOTNET_PATH", "/home/agent/.dotnet/dotnet")
+DOTNET = os.environ.get(
+    "DOTNET_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dotnet"),
+)
 PROJECT = os.environ.get("WIRECOPY_PROJECT", "src/WireCopy.API")
 BUILT_DLL = os.environ.get(
     "WIRECOPY_DLL",
