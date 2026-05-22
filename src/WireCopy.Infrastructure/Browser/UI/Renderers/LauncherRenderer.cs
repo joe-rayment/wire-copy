@@ -397,7 +397,6 @@ internal class LauncherRenderer
             {
                 // Title row: optional accent bar + leading space + glyph (RL only)
                 // + NAME + right-aligned [N] badge.
-                var glyph = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
                 var glyphWidth = isReadingList ? 2 : 0;
                 var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0;
 
@@ -414,10 +413,15 @@ internal class LauncherRenderer
                 {
                     // Painted highlight: leading space + glyph + title + pad + badge
                     // + trailing space, all inside selBg so the bar reads as a
-                    // continuous rectangle.
+                    // continuous rectangle. The star's own SGR keeps selBg —
+                    // emitting Reset between glyph and title drops the bg, which
+                    // showed up as a black notch around the ★ (workspace-ktg4).
+                    var glyphPainted = isReadingList
+                        ? $"{selBg}{accentFg}{ReadingListGlyph}{selFg} "
+                        : string.Empty;
                     var sb = new System.Text.StringBuilder();
                     sb.Append(prefix);
-                    sb.Append($"{selBg}{selFg}{Bold} {glyph}{selBg}{selFg}{Bold}{truncName}{Reset}");
+                    sb.Append($"{selBg}{selFg}{Bold} {glyphPainted}{truncName}{Reset}");
                     sb.Append($"{selBg}{new string(' ', gap)}");
                     if (badge.Length > 0)
                     {
@@ -431,6 +435,7 @@ internal class LauncherRenderer
                     return sb.ToString();
                 }
 
+                var glyph = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
                 var titleSegment = $"{Bold}{titleFg}{truncName}{Reset}";
                 if (badge.Length > 0)
                 {
