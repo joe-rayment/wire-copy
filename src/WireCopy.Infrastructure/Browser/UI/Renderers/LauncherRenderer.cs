@@ -389,14 +389,13 @@ internal class LauncherRenderer
         switch (lineIdx)
         {
             case 0:
-                if (isSelected)
-                {
-                    // workspace-mj9x: top padding fills with selBg so the
-                    // selection rectangle extends edge-to-edge top-to-bottom.
-                    // The accent bar sits inside the bg, no gap to the right.
-                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
-                }
-
+                // workspace-63jj: top padding is a transparent gap between
+                // adjacent cell rows even when selected — painting selBg here
+                // makes the highlight overshoot the cell's visible content
+                // area and break visual alignment with the unselected cell
+                // sharing the row. workspace-mj9x originally filled this row
+                // with selBg for an edge-to-edge look; user feedback said the
+                // box read as "off by one" and ate the row above.
                 return new string(' ', cellWidth);
 
             case 1:
@@ -471,17 +470,12 @@ internal class LauncherRenderer
             }
 
             case 3:
-                if (isSelected)
-                {
-                    // workspace-mj9x: inside the selection box, the separator
-                    // rule is suppressed — the rule belongs BETWEEN cards, not
-                    // inside a highlighted one. Bottom of the box fills with
-                    // selBg so the box closes flush.
-                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
-                }
-
-                // Separator rule, always rendered in dim secondary. Matches
-                // LinkTreeRenderer's separator (line 4 of a 5-line card).
+                // workspace-63jj: separator rule is rendered the same way for
+                // selected and unselected cells — it's the visual border
+                // between cell rows and must not be eaten by the selection
+                // box. The previous mj9x behaviour (selBg fill on this row)
+                // looked like a 1-row-too-tall highlight that punched through
+                // the divider that connects to the `┼` cross.
                 return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";
 
             default:

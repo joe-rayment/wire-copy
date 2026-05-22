@@ -601,18 +601,35 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Selected_SeparatorRule_FilledWithHighlightBg()
+    public void BuildCardLine_Selected_SeparatorRule_RendersDimRule()
     {
-        // workspace-mj9x: the selection rectangle now fills the ENTIRE card,
-        // including the last/separator row. The dim \u2500 rule belongs BETWEEN
-        // cards, not inside a highlighted one \u2014 so the separator line on a
-        // selected card is replaced with a selBg-filled blank.
+        // workspace-63jj: the separator row keeps the dim \u2500 rule even
+        // when the card is selected. Painting it with selBg (the previous
+        // workspace-mj9x behaviour) made the selection rectangle visually
+        // overshoot the cell box and eat the divider between cell rows.
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 2, 40, TestPalette);
 
-        line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
-        line.Should().NotContain("\u2500");
+        line.Should().NotContain(TestPalette.SelectedItemBg.AnsiBg);
+        line.Should().Contain("\u2500");
+    }
+
+    [Fact]
+    public void BuildCardLine_Selected_TopPadding_RendersBlank()
+    {
+        // workspace-63jj: the top-padding row (line 0 when the title sits at
+        // line 1) is blank space even when selected \u2014 the selection
+        // rectangle is bounded by the cell's content area so the previous
+        // cell row's separator stays visible above.
+        var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
+
+        // 5-line card: titleLineIdx=1, so lineIndex=0 is top padding.
+        var line = LinkTreeRenderer.BuildCardLine(node, true, 5, 0, 40, TestPalette);
+
+        line.Should().NotContain(TestPalette.SelectedItemBg.AnsiBg);
+        line.Should().NotContain("\u258c");
+        StripAnsi(line).Should().Be(new string(' ', 40));
     }
 
     #endregion
