@@ -274,8 +274,18 @@ public class PodcastCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleGeneratePodcast_UserConfirmsGeneration_CallsOrchestrator()
+    public async Task HandleGeneratePodcast_FullConfig_ReachesOrchestrator_LegacyInputQueue()
     {
+        // workspace-kuu7: this test originally asserted "user confirms generation"
+        // by navigating through the confirmation screen rows. After Phase 1 removed
+        // that screen, the test name and its SetupGenerateInputQueue preamble (5
+        // MoveDowns + 2 ActivateLinks for the row navigation) are anachronisms —
+        // the extra inputs are now silently consumed by the progress / completion
+        // screens. The new test that PROVES confirmation is gone is
+        // HandleGeneratePodcast_WithFullConfig_SkipsConfirmationScreen above; this
+        // remaining test is kept to verify the orchestrator still gets called with
+        // the legacy input queue (a back-compat sanity check that the extra
+        // keystrokes don't blow up the new flow).
         SetupCollectionView();
         _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
@@ -294,8 +304,6 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>())
             .Returns(result);
 
-        // After navigating to Generate + dismissing local-only warning:
-        //   progress (abandoned) + completion dismiss
         SetupGenerateInputQueue(
             Cmd(CommandType.ActivateLink),
             Cmd(CommandType.ActivateLink));

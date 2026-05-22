@@ -894,11 +894,15 @@ internal static class SettingsCommandHandler
 
         // --- FormField + probe loop (allows "Edit name" to reopen with the previous value) ---
         // workspace-ur5h: NO Console.Clear. Mirrors the OpenAI inline pattern.
-        // workspace-76ig: pre-fill with "{project_id}-wirecopy-feed" parsed
-        // from the saved SA-key JSON when the user has not yet typed a name.
-        // ResolveBucketSmartDefault returns null when no SA key is configured
-        // or the JSON cannot be parsed.
+        // workspace-spue: ask for the full public URL the feed will live at
+        // (https://storage.googleapis.com/{bucket}/feed.xml). The user's
+        // mental model is "this is where my feed will be exposed publicly",
+        // not "this is a bucket name." We still parse the bucket back out
+        // via BucketUrlParser before persisting.
+        // workspace-76ig: pre-fill the URL form of the smart default
+        // (https://storage.googleapis.com/{project_id}-wirecopy-feed/feed.xml).
         string? prefilledName = ResolveBucketSmartDefault(ctx);
+        string? prefilledInput = BucketUrlParser.BuildFeedUrl(prefilledName) ?? prefilledName;
 
         while (!ct.IsCancellationRequested)
         {
@@ -915,20 +919,20 @@ internal static class SettingsCommandHandler
             var field = new FormFieldConfig
             {
                 Label = GcsCopy.FitOrShorten(
-                    "Bucket name (e.g. joe-podcast-feed)",
-                    "Bucket name",
+                    "Public feed URL (where your feed will live)",
+                    "Public feed URL",
                     maxCopy),
                 Placeholder = GcsCopy.FitOrShorten(
-                    "wirecopy-podcasts-acme",
-                    "bucket-name",
+                    "https://storage.googleapis.com/your-bucket-name/feed.xml",
+                    "https://storage.googleapis.com/<bucket>/feed.xml",
                     Math.Max(10, fieldWidth - 4)),
                 HelpText = GcsCopy.FitOrShorten(
                     "? for help · Enter to verify · Esc to cancel",
                     "? help · Enter verify · Esc",
                     maxCopy),
                 IsSecret = false,
-                MaxLength = 63,
-                InitialValue = prefilledName,
+                MaxLength = 200,
+                InitialValue = prefilledInput,
                 Validate = ValidateBucketNameInput,
                 OnExtraKey = ch =>
                 {
@@ -972,7 +976,9 @@ internal static class SettingsCommandHandler
                 return;
             }
 
-            // Strip the optional gs:// prefix mirrored from the validator.
+            // workspace-spue: accept any of the four input shapes
+            // (path-style URL, virtual-host URL, gs://, bare). Validate already
+            // rejected un-parseable inputs so we can rely on the parser here.
             var name = NormalizeBucketName(entered);
 
             // --- Probe loop: probe → render state panel → (maybe) loop on Retry ---
@@ -988,7 +994,11 @@ internal static class SettingsCommandHandler
                     return;
 
                 case ProbeFollowUp.EditName:
-                    prefilledName = name;
+                    // Re-prompt with the canonical URL form of whatever the
+                    // user typed, so a retry looks like an edit rather than a
+                    // fresh start. If the previous input was already URL-shaped,
+                    // BuildFeedUrl + ParseBucketName gives us back the same URL.
+                    prefilledInput = BucketUrlParser.BuildFeedUrl(name) ?? name;
                     continue;
 
                 case ProbeFollowUp.Cancel:
@@ -1043,25 +1053,31 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// FormField validator for the GCS bucket name. Strips an optional
-    /// <c>gs://</c> prefix silently and rejects underscores, the
-    /// <c>goog</c> prefix, and <c>..</c> substrings on top of the
-    /// <see cref="GcsConfiguration.IsValidBucketName"/> regex check.
+    /// FormField validator for the bucket field. Accepts any of the four
+    /// shapes <see cref="BucketUrlParser"/> understands (workspace-spue):
+    /// the full storage.googleapis.com path-style or virtual-host URL, the
+    /// gs:// prefix, or a bare bucket name (back-compat). Parses to the
+    /// bare bucket then defers to <see cref="GcsConfiguration.ExplainBucketInvalid"/>.
     /// </summary>
     internal static string? ValidateBucketNameInput(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return "Bucket name cannot be empty";
+            return "Public feed URL cannot be empty";
         }
 
-        var s = raw.Trim();
-        if (s.StartsWith("gs://", StringComparison.Ordinal))
+        var bucket = BucketUrlParser.ParseBucketName(raw);
+        if (string.IsNullOrEmpty(bucket))
         {
-            s = s[5..];
+            // The user pasted something URL-shaped but we couldn't find a
+            // bucket — keep the URL frame in the error so they can spot what
+            // they typed vs. what we expected.
+            return BucketUrlParser.LooksLikeUrl(raw)
+                ? "Couldn't find a bucket name in that URL. Expected https://storage.googleapis.com/<bucket>/feed.xml"
+                : "Bucket name cannot be empty";
         }
 
-        return GcsConfiguration.ExplainBucketInvalid(s);
+        return GcsConfiguration.ExplainBucketInvalid(bucket);
     }
 
     /// <summary>
@@ -1113,8 +1129,12 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// Strip optional <c>gs://</c> prefix and trim whitespace so callers see
-    /// the bare bucket name.
+    /// Returns the bare bucket name parsed from any of the URL forms
+    /// described on <see cref="BucketUrlParser"/>, or the trimmed input
+    /// itself when the parser couldn't extract anything. Callers downstream
+    /// of <see cref="ValidateBucketNameInput"/> rely on the validator to
+    /// have rejected un-parseable inputs already; this method just unwraps
+    /// the canonical form.
     /// </summary>
     internal static string NormalizeBucketName(string raw)
     {
@@ -1123,13 +1143,7 @@ internal static class SettingsCommandHandler
             return string.Empty;
         }
 
-        var s = raw.Trim();
-        if (s.StartsWith("gs://", StringComparison.Ordinal))
-        {
-            s = s[5..];
-        }
-
-        return s;
+        return BucketUrlParser.ParseBucketName(raw) ?? raw.Trim();
     }
 
     private enum ProbeFollowUp

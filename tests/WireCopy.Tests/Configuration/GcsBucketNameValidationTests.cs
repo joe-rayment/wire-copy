@@ -130,10 +130,12 @@ public class GcsBucketNameValidationTests
     [Fact]
     public void Validator_Empty_ReturnsExactMessage()
     {
+        // workspace-spue: validator framing switched from "bucket name" to
+        // "public feed URL" so the empty-input error matches the prompt copy.
         SettingsCommandHandler.ValidateBucketNameInput("")
-            .Should().Be("Bucket name cannot be empty");
+            .Should().Be("Public feed URL cannot be empty");
         SettingsCommandHandler.ValidateBucketNameInput("   ")
-            .Should().Be("Bucket name cannot be empty");
+            .Should().Be("Public feed URL cannot be empty");
     }
 
     [Fact]
@@ -174,9 +176,23 @@ public class GcsBucketNameValidationTests
     [InlineData("gs://my-bucket")]
     [InlineData("my_bucket")]
     [InlineData("tr_list_reader")]
+    [InlineData("https://storage.googleapis.com/my-bucket/feed.xml")]
+    [InlineData("https://my-bucket.storage.googleapis.com/feed.xml")]
     public void Validator_AcceptsValid(string input)
     {
         SettingsCommandHandler.ValidateBucketNameInput(input).Should().BeNull();
+    }
+
+    [Fact]
+    public void Validator_UrlShapedButUnparseable_RetainsUrlFrame()
+    {
+        // workspace-spue: when the user pastes something URL-shaped that the
+        // parser can't unwrap, the error keeps the URL frame so they can spot
+        // the typo against the expected pattern.
+        var result = SettingsCommandHandler.ValidateBucketNameInput(
+            "https://storage.googleapis.com/");
+        result.Should().NotBeNull();
+        result.Should().Contain("https://storage.googleapis.com/<bucket>/feed.xml");
     }
 
     [Fact]
@@ -195,5 +211,14 @@ public class GcsBucketNameValidationTests
     public void NormalizeBucketName_LeavesBareNameUnchanged()
     {
         SettingsCommandHandler.NormalizeBucketName("my-bucket").Should().Be("my-bucket");
+    }
+
+    [Theory]
+    [InlineData("https://storage.googleapis.com/my-bucket/feed.xml", "my-bucket")]
+    [InlineData("https://my-bucket.storage.googleapis.com/feed.xml", "my-bucket")]
+    [InlineData("gs://my-bucket/feed.xml", "my-bucket")]
+    public void NormalizeBucketName_ExtractsBucketFromUrl(string input, string expected)
+    {
+        SettingsCommandHandler.NormalizeBucketName(input).Should().Be(expected);
     }
 }
