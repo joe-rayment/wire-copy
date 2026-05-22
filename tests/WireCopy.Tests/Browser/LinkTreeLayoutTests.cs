@@ -601,15 +601,18 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Selected_SeparatorRule_NoHighlightBg()
+    public void BuildCardLine_Selected_SeparatorRule_FilledWithHighlightBg()
     {
-        // Separator line should NOT have highlight background (matches unselected style)
+        // workspace-mj9x: the selection rectangle now fills the ENTIRE card,
+        // including the last/separator row. The dim \u2500 rule belongs BETWEEN
+        // cards, not inside a highlighted one \u2014 so the separator line on a
+        // selected card is replaced with a selBg-filled blank.
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
         var line = LinkTreeRenderer.BuildCardLine(node, true, 3, 2, 40, TestPalette);
 
-        line.Should().NotContain(TestPalette.SelectedItemBg.AnsiBg);
-        line.Should().Contain("\u2500");
+        line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        line.Should().NotContain("\u2500");
     }
 
     #endregion
