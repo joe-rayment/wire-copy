@@ -417,6 +417,23 @@ internal class LinkTreeRenderer
         var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
         var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
+        var isTopPadding = lineIndex == 0 && titleLineIdx > 0;
+
+        // workspace-63jj: top padding (line 0 when the title sits at line 1)
+        // and the separator row are NOT part of the selection rectangle. They
+        // render identically to the unselected versions so the visible cell
+        // borders survive between adjacent cells — selBg on those rows
+        // looked like the highlight was off by one and ate the divider
+        // above/below.
+        if (isTopPadding)
+        {
+            return new string(' ', width);
+        }
+
+        if (isSeparator)
+        {
+            return $"{palette.SecondaryText.AnsiFg}{Dim}{new string('─', width)}{Reset}";
+        }
 
         // workspace-mj9x: the selection rectangle covers the ENTIRE card —
         // top padding, separator row, and any blank content slots all get
@@ -470,12 +487,10 @@ internal class LinkTreeRenderer
         }
         else
         {
-            // workspace-mj9x: top padding (line 0) and separator (last line)
-            // both filled with selBg so the selection box reads as a flush
-            // rectangle — the dim rule belongs BETWEEN cards, not inside a
-            // highlighted one. Both rows collapse to the same selBg fill since
-            // they're content-free inside the selection.
-            _ = isSeparator;
+            // Defensive: any content-row line index that isn't recognised
+            // above falls through here with a plain selBg fill so the cell
+            // body stays a clean rectangle. (top-padding and separator are
+            // handled by the early returns at the top — workspace-63jj.)
             sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 
