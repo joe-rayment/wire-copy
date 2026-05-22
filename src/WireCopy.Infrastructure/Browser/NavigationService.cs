@@ -453,6 +453,22 @@ public class NavigationService : INavigationService
     }
 
     /// <summary>
+    /// workspace-ujxu: index of the candidate currently being previewed
+    /// (zero-based). -1 when not in preview mode. Used by the anchored
+    /// chooser overlay to highlight the active row alongside each page
+    /// re-render.
+    /// </summary>
+    public int GetCurrentPreviewIndex()
+    {
+        if (!_isInPreviewMode || _previewLayouts == null || _previewLayouts.Count == 0)
+        {
+            return -1;
+        }
+
+        return _previewIndex;
+    }
+
+    /// <summary>
     /// Toggles between Hierarchical and Readable view modes.
     /// Resets scroll offset to 0 when switching views.
     /// </summary>

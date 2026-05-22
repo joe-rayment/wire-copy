@@ -92,6 +92,15 @@ internal class CommandContext
     /// </summary>
     public required Func<string, RenderOptions, CancellationToken, Task> OpenInteractiveBrowserAsync { get; init; }
 
+    /// <summary>
+    /// workspace-ujxu: installs (or clears with <c>null</c>) an anchored
+    /// overlay painter invoked at the end of every page render. Used by
+    /// long-lived command handlers — most notably the Ctrl+L strategy
+    /// chooser — that want to keep a modal box visible alongside the page
+    /// as the user navigates inside the modal's interaction loop.
+    /// </summary>
+    public required Action<Action<RenderOptions>?> SetOverlayPainter { get; init; }
+
     public required Func<RenderOptions, CancellationToken, Task> RenderCurrentPageAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }

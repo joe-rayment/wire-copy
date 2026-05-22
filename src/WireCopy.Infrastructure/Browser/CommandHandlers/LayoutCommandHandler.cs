@@ -231,6 +231,11 @@ internal static class LayoutCommandHandler
         RenderOptions options,
         CancellationToken ct)
     {
+        // workspace-ujxu: clear the anchored chooser overlay on cancel —
+        // it stays installed across the entire preview phase and must be
+        // dropped before the link list re-renders without the modal.
+        StrategyChooserHandler.ClearOverlay(ctx);
+
         ctx.NavigationService.CancelPreview();
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }

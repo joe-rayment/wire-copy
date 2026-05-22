@@ -258,6 +258,7 @@ public class LauncherJumpToIndexTests
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
+            SetOverlayPainter = _ => { },
             RenderCurrentPageAsync = (_, _) =>
             {
                 _renderCalled = true;

@@ -6,6 +6,8 @@ using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Components;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -18,6 +20,14 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 internal static class StrategyChooserHandler
 {
     /// <summary>
+    /// workspace-ujxu: per-strategy preflight default (all selected). User
+    /// can deselect strategies they don't want to probe via Space in the
+    /// pre-flight overlay phase. State doesn't persist across invocations —
+    /// the chooser opens with all rows selected each time.
+    /// </summary>
+    private const bool PreflightDefaultSelected = true;
+
+    /// <summary>
     /// Per-strategy availability probe budget (workspace-in59). Previously a
     /// slow RSS probe could stall the whole chooser for ~3 minutes on
     /// macleans.ca and similar sites without an advertised feed. With a
@@ -26,17 +36,11 @@ internal static class StrategyChooserHandler
     /// </summary>
     private static readonly TimeSpan StrategyProbeBudget = TimeSpan.FromSeconds(5);
 
-    private static readonly string[] Spinner =
-    {
-        "⠋", "⠙", "⠹", "⠸",
-        "⠼", "⠴", "⠦", "⠧",
-        "⠇", "⠏",
-    };
-
     /// <summary>
     /// Opens the scraping-strategy chooser for the current page.
-    /// Builds a LayoutCandidate per available strategy, enters preview mode.
-    /// Document Order is always first; AI Curated and RSS appear when available.
+    /// Pre-flight phase: user picks which strategies to probe via Space.
+    /// Probing phase: live overlay shows ⠋/✓/✗ per row.
+    /// Preview phase: ◀/▶ cycles, overlay highlights the active row.
     /// </summary>
     public static async Task HandleOpenChooserAsync(
         CommandContext ctx,
@@ -51,204 +55,142 @@ internal static class StrategyChooserHandler
 
         if (ctx.NavigationService.IsInPreviewMode)
         {
+            ClearOverlay(ctx);
             ctx.NavigationService.CancelPreview();
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
-        ctx.NavigationService.SetStatusMessage("Loading scraping strategies…", TimeSpan.FromMinutes(1));
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetService<IScrapingStrategyRegistry>();
+        if (registry == null || registry.All.Count == 0)
+        {
+            ctx.NavigationService.SetStatusMessage("Strategy chooser unavailable");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
 
+        var page = navContext.CurrentPage;
+        var html = page.RawHtml ?? string.Empty;
+        var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
+        var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
+
+        byte[]? screenshot = null;
+        if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
+        {
+            try
+            {
+                screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogDebug(ex, "Strategy chooser: screenshot capture failed");
+            }
+        }
+
+        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        var savedConfig = configStore != null
+            ? await configStore.GetConfigAsync(page.Url).ConfigureAwait(false)
+            : null;
+
+        var stContext = new ScrapingStrategyContext
+        {
+            PageUrl = page.Url,
+            Html = html,
+            Links = links,
+            Screenshot = screenshot,
+            SavedConfig = savedConfig,
+        };
+
+        // Build the overlay's row list up-front so the user sees every
+        // registered strategy in the pre-flight checkbox modal — including
+        // strategies that would be unavailable today (no key, etc.). This
+        // is the discoverability surface workspace-33jw aimed at.
+        var overlay = new StrategyChooserOverlay.State
+        {
+            CurrentPhase = StrategyChooserOverlay.Phase.Preflight,
+            Footnote = "RSS probe can take up to 5s on sites without an advertised feed.",
+        };
+        foreach (var strategy in registry.All)
+        {
+            overlay.Rows.Add(new StrategyChooserOverlay.Row
+            {
+                Id = strategy.Id,
+                DisplayName = strategy.DisplayName,
+                Detail = strategy.Description,
+                Selected = PreflightDefaultSelected,
+                State = StrategyChooserOverlay.RowState.Pending,
+            });
+        }
+
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        ctx.SetOverlayPainter(opts =>
+        {
+            if (overlay.CurrentPhase == StrategyChooserOverlay.Phase.Preview)
+            {
+                var idx = ctx.NavigationService.GetCurrentPreviewIndex();
+                if (idx >= 0 && idx < overlay.Rows.Count)
+                {
+                    overlay.Cursor = idx;
+                }
+            }
+
+            StrategyChooserOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight);
+        });
+
+        var enteredPreviewMode = false;
         try
         {
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var registry = scope.ServiceProvider.GetService<IScrapingStrategyRegistry>();
-            if (registry == null || registry.All.Count == 0)
+            // PHASE 1: pre-flight selection
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            var confirmed = await RunPreflightAsync(ctx, overlay, options, ct).ConfigureAwait(false);
+            if (!confirmed)
             {
-                ctx.NavigationService.SetStatusMessage("Strategy chooser unavailable");
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
-            var page = navContext.CurrentPage;
-            var html = page.RawHtml ?? string.Empty;
-            var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
-            var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
+            // PHASE 2: probe only the selected strategies
+            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Probing;
+            var selectedRows = overlay.Rows.Where(r => r.Selected).ToList();
 
-            byte[]? screenshot = null;
-            if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
+            // Reshape the overlay rows to match the candidates list 1:1 —
+            // unselected strategies are dropped from the modal entirely
+            // (the user explicitly opted out, so they shouldn't appear in
+            // the preview-phase comparison list either).
+            overlay.Rows.Clear();
+            foreach (var r in selectedRows)
             {
-                try
-                {
-                    screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    ctx.Logger.LogDebug(ex, "Strategy chooser: screenshot capture failed");
-                }
+                overlay.Rows.Add(r);
             }
 
-            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-            var savedConfig = configStore != null
-                ? await configStore.GetConfigAsync(page.Url).ConfigureAwait(false)
-                : null;
+            overlay.Footnote = $"Probing {selectedRows.Count} strategy(ies) — up to {StrategyProbeBudget.TotalSeconds:0}s each.";
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            var stContext = new ScrapingStrategyContext
-            {
-                PageUrl = page.Url,
-                Html = html,
-                Links = links,
-                Screenshot = screenshot,
-                SavedConfig = savedConfig,
-            };
-
-            var candidates = new List<LayoutCandidate>();
-            var unavailable = new List<(string Name, string? Reason)>();
-            int spinnerFrame = 0;
-
-            foreach (var strategy in registry.All)
-            {
-                ctx.NavigationService.SetStatusMessage(
-                    $"{Spinner[spinnerFrame++ % Spinner.Length]} Probing {strategy.DisplayName}…",
-                    TimeSpan.FromMinutes(1));
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-
-                // workspace-in59: cap each strategy's availability probe at
-                // StrategyProbeBudget so a single slow probe (the
-                // ProbeWellKnownFeedsAsync hang on RSS-less domains) can't stall
-                // the entire chooser. A timed-out probe surfaces as "unavailable
-                // (probe timed out)" so the user still sees the strategy listed.
-                ScrapingStrategyAvailability availability;
-                try
-                {
-                    using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    probeCts.CancelAfter(StrategyProbeBudget);
-                    availability = await strategy.IsAvailableAsync(stContext, probeCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    ctx.Logger.LogWarning(
-                        "Strategy probe for {Id} exceeded {Budget}s budget",
-                        strategy.Id,
-                        StrategyProbeBudget.TotalSeconds);
-                    availability = new ScrapingStrategyAvailability
-                    {
-                        IsAvailable = false,
-                        ReasonWhenUnavailable = $"probe timed out after {StrategyProbeBudget.TotalSeconds:0}s",
-                    };
-                }
-
-                if (!availability.IsAvailable)
-                {
-                    unavailable.Add((strategy.DisplayName, availability.ReasonWhenUnavailable));
-
-                    // workspace-33jw: surface unavailable strategies in the chooser as
-                    // disabled rows so the user can DISCOVER them. Previously we silently
-                    // dropped them, leaving e.g. AI Curated invisible to anyone without
-                    // an OpenAI key. Cycling onto an unavailable row reverts the
-                    // preview to the page's existing tree (so the screen doesn't go
-                    // blank); applying it shows a hint rather than saving.
-                    var currentTreeForStub = page.LinkTree;
-                    if (currentTreeForStub != null)
-                    {
-                        var disabledStub = new SiteHierarchyConfig
-                        {
-                            Domain = ExtractDomain(page.Url),
-                            UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
-                            Sections = new List<HierarchySection>(),
-                            CreatedAt = DateTime.UtcNow,
-                            ModelVersion = "unavailable",
-                            Kind = LayoutKind.DocumentOrder,
-                            Version = 2,
-                            Strategy = strategy.Id,
-                        };
-                        candidates.Add(new LayoutCandidate
-                        {
-                            Config = disabledStub,
-                            Summary = $"✗ {strategy.DisplayName} · {availability.ReasonWhenUnavailable ?? "unavailable"}",
-                            PreviewTree = currentTreeForStub,
-                            IsUnavailable = true,
-                            UnavailableReason = availability.ReasonWhenUnavailable,
-                        });
-                    }
-
-                    continue;
-                }
-
-                // Document order is fast — always preview live.
-                // AI Curated only previews if cached; otherwise selecting it runs the analyzer.
-                // RSS previews live (parse-feed cost is acceptable).
-                bool canPreviewNow = strategy.Id != ScrapingStrategies.AiCuratedStrategy.StrategyId
-                    || (savedConfig?.AiResult != null);
-
-                if (!canPreviewNow)
-                {
-                    // Add a "stub" candidate using current tree as preview so the
-                    // user can still pick it — selection runs the analyzer.
-                    var currentTree = page.LinkTree;
-                    if (currentTree == null)
-                    {
-                        continue;
-                    }
-
-                    var stubConfig = new SiteHierarchyConfig
-                    {
-                        Domain = ExtractDomain(page.Url),
-                        UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
-                        Sections = new List<HierarchySection>(),
-                        CreatedAt = DateTime.UtcNow,
-                        ModelVersion = "ai-curated-pending",
-                        Kind = LayoutKind.AiCurated,
-                        Version = 2,
-                        Strategy = strategy.Id,
-                    };
-
-                    candidates.Add(new LayoutCandidate
-                    {
-                        Config = stubConfig,
-                        Summary = AppendGuidanceHintIfAi(
-                            $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
-                            strategy.Id),
-                        PreviewTree = currentTree,
-                    });
-                    continue;
-                }
-
-                try
-                {
-                    var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
-                    candidates.Add(new LayoutCandidate
-                    {
-                        Config = result.Config,
-                        Summary = AppendGuidanceHintIfAi(
-                            result.Summary
-                                ?? $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
-                            strategy.Id),
-                        PreviewTree = result.Tree,
-                    });
-                }
-                catch (Exception ex)
-                {
-                    ctx.Logger.LogWarning(ex, "Strategy {Id} failed to build tree", strategy.Id);
-                    unavailable.Add((strategy.DisplayName, ex.Message));
-                }
-            }
+            var candidates = await ProbeSelectedAsync(
+                ctx,
+                registry,
+                stContext,
+                page,
+                savedConfig,
+                overlay,
+                options,
+                ct).ConfigureAwait(false);
 
             if (candidates.Count == 0)
             {
-                var why = unavailable.Count > 0
-                    ? string.Join("; ", unavailable.Select(u => $"{u.Name}: {u.Reason}"))
-                    : "no strategies available";
-                ctx.NavigationService.SetStatusMessage($"Scraping strategies: {why}");
+                ctx.NavigationService.SetStatusMessage("Scraping strategies: no candidates available");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
 
-            ctx.NavigationService.SetStatusMessage(
-                $"✨ {candidates.Count} strategies ready · ◀/▶ to preview, Enter to apply, Esc to cancel");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            // PHASE 3: enter preview mode; painter stays installed and the
+            // cursor row tracks NavigationService.GetCurrentPreviewIndex.
+            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Preview;
+            overlay.Cursor = 0;
+            overlay.Footnote = $"{candidates.Count} candidates — ◀/▶ to compare, Enter to save the highlighted one.";
 
             ctx.NavigationService.EnterPreviewMode(candidates);
+            enteredPreviewMode = true;
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -260,6 +202,16 @@ internal static class StrategyChooserHandler
             ctx.Logger.LogError(ex, "Strategy chooser failed");
             ctx.NavigationService.SetStatusMessage("Strategy chooser failed");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // If we never reached the Preview phase, drop the painter now.
+            // Otherwise the orchestrator's preview-mode Apply/Cancel handlers
+            // clear it via ClearOverlay below.
+            if (!enteredPreviewMode)
+            {
+                ClearOverlay(ctx);
+            }
         }
     }
 
@@ -273,6 +225,12 @@ internal static class StrategyChooserHandler
         RenderOptions options,
         CancellationToken ct)
     {
+        // workspace-ujxu: clear the anchored chooser overlay as soon as
+        // the user commits — keeps the screen clean during the apply path
+        // (which may run the AI analyzer for 30-60s under its own status
+        // message) and on the post-apply re-render of the link tree.
+        ClearOverlay(ctx);
+
         var selected = ctx.NavigationService.ApplyPreview();
         if (selected == null)
         {
@@ -363,6 +321,16 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
+    /// workspace-ujxu: removes the anchored overlay painter. Called by the
+    /// preview-mode Apply / Cancel handlers and on early exits inside the
+    /// chooser itself.
+    /// </summary>
+    public static void ClearOverlay(CommandContext ctx)
+    {
+        ctx.SetOverlayPainter(null);
+    }
+
+    /// <summary>
     /// workspace-z5qz: handler for the `i` key pressed while a layout
     /// preview is active. If the currently-selected candidate is AI Curated,
     /// surface a "coming soon" status message pointing at workspace-99ve;
@@ -393,6 +361,219 @@ internal static class StrategyChooserHandler
     /// workspace-99ve; until then the key handler emits a "coming soon"
     /// status message.
     /// </summary>
+    /// <summary>
+    /// workspace-ujxu: pre-flight loop in the anchored modal. Space toggles
+    /// the selection at the cursor; ↑/↓ moves the cursor; Enter confirms
+    /// the selection and proceeds to probing; Esc cancels the chooser.
+    /// Returns true if the user confirmed, false on cancel.
+    /// </summary>
+    private static async Task<bool> RunPreflightAsync(
+        CommandContext ctx,
+        StrategyChooserOverlay.State overlay,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            switch (command.Type)
+            {
+                case CommandType.MoveDown or CommandType.ExpandNode:
+                    overlay.Cursor = (overlay.Cursor + 1) % overlay.Rows.Count;
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.MoveUp or CommandType.CollapseNode:
+                    overlay.Cursor = (overlay.Cursor - 1 + overlay.Rows.Count) % overlay.Rows.Count;
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.ToggleSelection:
+                    overlay.Rows[overlay.Cursor].Selected = !overlay.Rows[overlay.Cursor].Selected;
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.ActivateLink:
+                    if (overlay.Rows.Any(r => r.Selected))
+                    {
+                        return true;
+                    }
+
+                    overlay.Footnote = "Select at least one strategy with Space, then Enter.";
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.GoBack or CommandType.Quit:
+                    return false;
+                case CommandType.TerminalResized:
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// workspace-ujxu: probes each selected strategy, updating the overlay
+    /// row in place (Probing → Available/Unavailable). Mirrors the original
+    /// workspace-in59 + workspace-33jw semantics — every selected strategy
+    /// produces a LayoutCandidate (even unavailable ones get a disabled
+    /// stub so the user sees the row in the preview phase).
+    /// </summary>
+    private static async Task<List<LayoutCandidate>> ProbeSelectedAsync(
+        CommandContext ctx,
+        IScrapingStrategyRegistry registry,
+        ScrapingStrategyContext stContext,
+        Domain.Entities.Browser.Page page,
+        SiteHierarchyConfig? savedConfig,
+        StrategyChooserOverlay.State overlay,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var candidates = new List<LayoutCandidate>();
+
+        for (var rowIdx = 0; rowIdx < overlay.Rows.Count; rowIdx++)
+        {
+            var row = overlay.Rows[rowIdx];
+            var strategy = registry.GetById(row.Id);
+            if (strategy == null)
+            {
+                row.State = StrategyChooserOverlay.RowState.Unavailable;
+                row.Detail = "not registered";
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            row.State = StrategyChooserOverlay.RowState.Probing;
+            row.Detail = "probing…";
+            row.SpinnerFrame = 0;
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+            ScrapingStrategyAvailability availability;
+            try
+            {
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                probeCts.CancelAfter(StrategyProbeBudget);
+                availability = await strategy.IsAvailableAsync(stContext, probeCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                ctx.Logger.LogWarning(
+                    "Strategy probe for {Id} exceeded {Budget}s budget",
+                    strategy.Id,
+                    StrategyProbeBudget.TotalSeconds);
+                availability = new ScrapingStrategyAvailability
+                {
+                    IsAvailable = false,
+                    ReasonWhenUnavailable = $"probe timed out after {StrategyProbeBudget.TotalSeconds:0}s",
+                };
+            }
+
+            if (!availability.IsAvailable)
+            {
+                row.State = StrategyChooserOverlay.RowState.Unavailable;
+                row.Detail = availability.ReasonWhenUnavailable ?? "unavailable";
+
+                // workspace-33jw stub so the user can DISCOVER the strategy
+                // in the preview phase (cycling past it shows the reason).
+                var currentTreeForStub = page.LinkTree;
+                if (currentTreeForStub != null)
+                {
+                    var disabledStub = new SiteHierarchyConfig
+                    {
+                        Domain = ExtractDomain(page.Url),
+                        UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
+                        Sections = new List<HierarchySection>(),
+                        CreatedAt = DateTime.UtcNow,
+                        ModelVersion = "unavailable",
+                        Kind = LayoutKind.DocumentOrder,
+                        Version = 2,
+                        Strategy = strategy.Id,
+                    };
+                    candidates.Add(new LayoutCandidate
+                    {
+                        Config = disabledStub,
+                        Summary = $"✗ {strategy.DisplayName} · {availability.ReasonWhenUnavailable ?? "unavailable"}",
+                        PreviewTree = currentTreeForStub,
+                        IsUnavailable = true,
+                        UnavailableReason = availability.ReasonWhenUnavailable,
+                    });
+                }
+
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            // Document order is fast — always preview live.
+            // AI Curated only previews if cached; otherwise selecting it runs the analyzer.
+            // RSS previews live (parse-feed cost is acceptable).
+            bool canPreviewNow = strategy.Id != ScrapingStrategies.AiCuratedStrategy.StrategyId
+                || (savedConfig?.AiResult != null);
+
+            if (!canPreviewNow)
+            {
+                var currentTree = page.LinkTree;
+                if (currentTree == null)
+                {
+                    row.State = StrategyChooserOverlay.RowState.Unavailable;
+                    row.Detail = "no link tree";
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                var stubConfig = new SiteHierarchyConfig
+                {
+                    Domain = ExtractDomain(page.Url),
+                    UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
+                    Sections = new List<HierarchySection>(),
+                    CreatedAt = DateTime.UtcNow,
+                    ModelVersion = "ai-curated-pending",
+                    Kind = LayoutKind.AiCurated,
+                    Version = 2,
+                    Strategy = strategy.Id,
+                };
+
+                candidates.Add(new LayoutCandidate
+                {
+                    Config = stubConfig,
+                    Summary = AppendGuidanceHintIfAi(
+                        $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                        strategy.Id),
+                    PreviewTree = currentTree,
+                });
+
+                row.State = StrategyChooserOverlay.RowState.Available;
+                row.Detail = availability.StatusDetail ?? strategy.Description;
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            try
+            {
+                var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
+                candidates.Add(new LayoutCandidate
+                {
+                    Config = result.Config,
+                    Summary = AppendGuidanceHintIfAi(
+                        result.Summary
+                            ?? $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                        strategy.Id),
+                    PreviewTree = result.Tree,
+                });
+
+                row.State = StrategyChooserOverlay.RowState.Available;
+                row.Detail = result.Summary ?? availability.StatusDetail ?? strategy.Description;
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Strategy {Id} failed to build tree", strategy.Id);
+                row.State = StrategyChooserOverlay.RowState.Unavailable;
+                row.Detail = ex.Message;
+            }
+
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+
+        return candidates;
+    }
+
     private static string AppendGuidanceHintIfAi(string summary, string strategyId)
     {
         if (string.Equals(strategyId, ScrapingStrategies.AiCuratedStrategy.StrategyId, StringComparison.Ordinal))
