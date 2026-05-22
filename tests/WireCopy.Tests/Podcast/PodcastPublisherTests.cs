@@ -495,6 +495,91 @@ public class PodcastPublisherTests : IDisposable
     }
 
     /// <summary>
+    /// workspace-pl8f: when the underlying GCS auth wrapper surfaces a PKCS8
+    /// keying error (the actual string the SDK throws when the private_key
+    /// body is corrupt), the result-screen Reason must NOT contain "PKCS8"
+    /// or "Service account authentication failed:" — those are library
+    /// strings, not user copy.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_BadServiceAccountKey_ReasonHidesLibraryStrings()
+    {
+        _storage.UploadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<long>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new InvalidOperationException(
+                "Service account authentication failed: PKCS8 data must be contained within '-----BEGIN PRIVATE KEY-----' and '-----END PRIVATE KEY-----'"));
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().NotContain("PKCS8");
+        result.ErrorMessage.Should().NotContain("Service account authentication failed");
+        result.ErrorMessage.Should().Contain("service account key", "user-facing copy names the file in plain English");
+        result.ErrorMessage.Should().Contain("Setup", "the remediation must point the user at the Setup screen");
+    }
+
+    /// <summary>
+    /// workspace-pl8f: when EnsureBucketAsync runs into a missing-bucket path
+    /// and bails because ProjectId isn't configured, the Reason must not
+    /// expose the literal config key "Gcs:ProjectId" — that means nothing to
+    /// a user. The bucket name (when present) is echoed back so the user
+    /// knows exactly which entry to check.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_MissingBucket_ReasonNamesBucketAndHidesConfigKey()
+    {
+        _storage.BucketName.Returns("typo-bucket");
+        _storage.UploadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<long>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new InvalidOperationException(
+                "GCP Project ID is required to create buckets. Set 'Gcs:ProjectId' in configuration."));
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().NotContain("Gcs:ProjectId");
+        result.ErrorMessage.Should().NotContain("GCP Project ID");
+        result.ErrorMessage.Should().Contain("typo-bucket", "the bucket name is echoed so the user knows which entry to fix");
+        result.ErrorMessage.Should().Contain("Setup");
+    }
+
+    /// <summary>
+    /// workspace-pl8f: unknown publish exceptions still get the legacy
+    /// "Publish failed: {message}" envelope so existing diagnostics aren't
+    /// suppressed — only the two known library-leakage cases are rewritten.
+    /// </summary>
+    [Fact]
+    public async Task PublishFeedAsync_UnknownException_PassesThroughOriginalMessage()
+    {
+        _storage.UploadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<long>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new InvalidOperationException("disk full"));
+
+        var result = await _publisher.PublishFeedAsync(
+            CreateTestPodcast(),
+            [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Be("Publish failed: disk full");
+    }
+
+    /// <summary>
     /// workspace-p1px: when the storage client reports no BucketName (e.g.
     /// the user is mid-setup), don't attempt MakeBucketPublic at all — we
     /// have nothing to pass it. The original probe verdict stands.
