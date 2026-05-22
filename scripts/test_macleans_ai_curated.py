@@ -34,10 +34,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from termtest import TermTest
 
 
-SHOT_DIR = "/tmp/qa-shots-hrrf"
-LOG_DIR = "/workspace/.claude/worktrees/floofy-yawning-truffle/logs"
+SHOT_DIR = os.environ.get("SHOT_DIR", "/tmp/qa-shots-1izo")
+LOG_DIR = os.environ.get("WIRECOPY_LOG_DIR", "/workspace/logs")
 HIERARCHY_DIR = "/home/agent/.local/share/WireCopy/hierarchy"
-WORKTREE = "/workspace/.claude/worktrees/floofy-yawning-truffle"
+WORKTREE = os.environ.get("WIRECOPY_CWD", "/workspace")
+DOCS_TARGET = os.environ.get(
+    "DOCS_TARGET",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "qa", "workspace-hapr-live-results.md"),
+)
 
 
 def strip_ansi(s: str) -> str:
@@ -99,9 +103,8 @@ def main() -> int:
             with open(os.path.join(SHOT_DIR, "0_load_failed.txt"), "w") as f:
                 f.write(last_screen)
             # Write a stub results doc so the bead has SOMETHING.
-            docs_dir = os.path.join(WORKTREE, "docs", "qa")
-            os.makedirs(docs_dir, exist_ok=True)
-            out_path = os.path.join(docs_dir, "workspace-hapr-live-results.md")
+            out_path = os.path.abspath(DOCS_TARGET)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path, "w") as f:
                 f.write("# workspace-hapr live macleans.ca results\n\n")
                 f.write("**Outcome: macleans.ca could not be loaded for live verification.**\n\n")
@@ -129,13 +132,20 @@ def main() -> int:
 
         # 2. Open the layout chooser (Ctrl+L).
         subprocess.check_call(["tmux", "send-keys", "-t", "termtest", "C-l"])
-        # The chooser does an availability probe per strategy (~5s budget
-        # each) before the candidate list is ready. Wait for the "strategies
-        # ready" status message.
+        # The chooser probes strategies (5s budget each) then EnterPreviewMode
+        # renders the footer "Layout 1/N · <strategy> · M links · ◀/▶:cycle Enter:save Esc:cancel".
+        # Wait for that footer to appear OR for an unavailable banner.
         try:
-            t.wait_for_any("strategies ready", "Strategy chooser unavailable", timeout=30)
+            matched, _ = t.wait_for_any(
+                "◀/▶:cycle",                    # preview mode entered
+                "Scraping strategies:",          # no strategies available
+                "Strategy chooser unavailable",
+                "Strategy chooser failed",
+                timeout=60,
+            )
+            print(f"[2] Chooser state: matched '{matched}'")
         except TimeoutError:
-            print("[FAIL] Chooser status never reached 'strategies ready'")
+            print("[FAIL] Chooser never entered preview mode")
             with open(os.path.join(SHOT_DIR, "2_chooser_timeout.txt"), "w") as f:
                 f.write(t.capture(strip_ansi=False))
             return 1
@@ -208,9 +218,8 @@ def main() -> int:
                     ai_log_lines.append(line.strip())
 
         # 7. Write findings to docs/qa/workspace-hapr-live-results.md.
-        docs_dir = os.path.join(WORKTREE, "docs", "qa")
-        os.makedirs(docs_dir, exist_ok=True)
-        out_path = os.path.join(docs_dir, "workspace-hapr-live-results.md")
+        out_path = os.path.abspath(DOCS_TARGET)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
         write_results_doc(out_path, doc_titles, ai_titles, ai_log_lines)
         print(f"[5] Findings written to {out_path}")
 
@@ -253,7 +262,7 @@ def write_results_doc(path: str, doc_titles: list[str], ai_titles: list[str],
                        log_lines: list[str]) -> None:
     lines = []
     lines.append("# workspace-hapr live macleans.ca results\n")
-    lines.append("Captured: 2026-05-20 via `scripts/test_macleans_ai_curated.py`.\n\n")
+    lines.append(f"Captured: {time.strftime('%Y-%m-%d')} via `scripts/test_macleans_ai_curated.py` (workspace-1izo retry).\n\n")
     lines.append("This document records the live outcome the workspace-hrrf bead asked for: ")
     lines.append("did `AiCuratedStrategy.DetectDegenerateRanking` fire for macleans.ca, or did ")
     lines.append("the AI return a non-trivial-but-still-bad ranking that the detector missed?\n\n")
