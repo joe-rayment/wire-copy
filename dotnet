@@ -1,25 +1,50 @@
 #!/usr/bin/env bash
-# Workspace-local dotnet wrapper. Forwards every invocation to the
-# vendored .NET SDK at ./.dotnet/, bootstrapping it on first use so a
-# fresh clone can build with no system dotnet installed.
+# Workspace-local dotnet wrapper. Forwards every invocation to a vendored
+# .NET SDK under ./.dotnet/<os>-<arch>/, bootstrapping it on first use so
+# a fresh clone can build with no system dotnet installed.
 #
 #   ./dotnet build --configuration Release
 #   ./dotnet test
 #   ./dotnet run --project src/WireCopy.API
+#
+# The per-platform layout (e.g. .dotnet/osx-arm64/, .dotnet/linux-arm64/)
+# matters because /workspace may be a shared filesystem between hosts of
+# different architectures — one .dotnet/ tree per host.
 #
 # Add the repo root to PATH if you'd rather type `dotnet` than `./dotnet`:
 #   export PATH="$PWD:$PATH"
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTNET_BIN="$ROOT/.dotnet/dotnet"
+
+case "$(uname -s)" in
+  Darwin) os=osx ;;
+  Linux)  os=linux ;;
+  *)
+    echo "Unsupported OS: $(uname -s). Install .NET 10 manually and run 'dotnet' from PATH." >&2
+    exit 1
+    ;;
+esac
+
+case "$(uname -m)" in
+  x86_64|amd64) arch=x64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *)
+    echo "Unsupported CPU: $(uname -m). Install .NET 10 manually and run 'dotnet' from PATH." >&2
+    exit 1
+    ;;
+esac
+
+PLATFORM="${os}-${arch}"
+DOTNET_DIR="$ROOT/.dotnet/$PLATFORM"
+DOTNET_BIN="$DOTNET_DIR/dotnet"
 
 if [ ! -x "$DOTNET_BIN" ]; then
-  "$ROOT/scripts/bootstrap-dotnet.sh"
+  DOTNET_INSTALL_DIR="$DOTNET_DIR" "$ROOT/scripts/bootstrap-dotnet.sh"
 fi
 
-# Pin DOTNET_ROOT so child processes (MSBuild, dotnet-watch, etc.) find
-# the same toolchain rather than picking up a system install with a
+# Pin DOTNET_ROOT so child processes (MSBuild, dotnet-watch, etc.) stay
+# on the same toolchain rather than picking up a system install with a
 # different SDK / runtime version.
-export DOTNET_ROOT="$ROOT/.dotnet"
+export DOTNET_ROOT="$DOTNET_DIR"
 exec "$DOTNET_BIN" "$@"
