@@ -64,6 +64,7 @@ public class ViewCommandHandlerTests
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
+            SetOverlayPainter = _ => { },
             RenderCurrentPageAsync = (opts, _) =>
             {
                 _renderCalled = true;
@@ -298,6 +299,7 @@ public class ViewCommandHandlerTests
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
+            SetOverlayPainter = _ => { },
             RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
             RefreshCollectionsAsync = _ => Task.CompletedTask,
             RefreshBookmarksAsync = _ =>
@@ -422,6 +424,7 @@ public class ViewCommandHandlerTests
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
             OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
+            SetOverlayPainter = _ => { },
             RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
             RefreshCollectionsAsync = _ => Task.CompletedTask,
             RefreshBookmarksAsync = _ => Task.CompletedTask,
@@ -645,6 +648,7 @@ public class ViewCommandHandlerTests
             ForceRefreshAsync = _ctx.ForceRefreshAsync,
             InteractiveRefreshAsync = _ctx.InteractiveRefreshAsync,
             OpenInteractiveBrowserAsync = openInteractive,
+            SetOverlayPainter = _ => { },
             RenderCurrentPageAsync = _ctx.RenderCurrentPageAsync,
             RefreshCollectionsAsync = _ctx.RefreshCollectionsAsync,
             RefreshBookmarksAsync = _ctx.RefreshBookmarksAsync,

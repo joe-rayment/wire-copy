@@ -86,6 +86,13 @@ public partial class BrowserOrchestrator : IBrowserService
     // Shared context for command handlers (single source of truth for mutable state)
     private readonly CommandContext _commandContext;
 
+    // workspace-ujxu: optional anchored-overlay painter invoked at the end of
+    // RenderCurrentPageAsync. Set by long-lived command handlers (e.g. the
+    // layout strategy chooser) that want to paint an overlay alongside every
+    // page render — cycling preview candidates, showing probe progress, etc.
+    // Null when no overlay is active.
+    private Action<RenderOptions>? _activeOverlayPainter;
+
     public BrowserOrchestrator(
         IPageLoader pageLoader,
         ILinkExtractor linkExtractor,
@@ -149,6 +156,7 @@ public partial class BrowserOrchestrator : IBrowserService
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
             OpenInteractiveBrowserAsync = OpenInteractiveBrowserAsync,
+            SetOverlayPainter = painter => _activeOverlayPainter = painter,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,
@@ -1206,6 +1214,18 @@ public partial class BrowserOrchestrator : IBrowserService
             }
 
             await RenderAsync(page, viewMode, options, cancellationToken).ConfigureAwait(false);
+
+            // workspace-ujxu: long-lived chooser overlay paints over the
+            // bottom rows after the underlying page is rendered. Null when
+            // no chooser is active.
+            try
+            {
+                _activeOverlayPainter?.Invoke(options);
+            }
+            catch (Exception overlayEx)
+            {
+                _logger.LogDebug(overlayEx, "Overlay painter threw; ignoring");
+            }
         }
         catch (Exception ex)
         {

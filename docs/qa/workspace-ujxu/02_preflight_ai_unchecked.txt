@@ -1,0 +1,50 @@
+ ╭─ Wikipedia, the free encyclopedia ───────────────────────────────────────────╮
+ │ en.wikipedia.org · 348 links · 3 sections                                    │
+ ╰──────────────────────────────────────────────────────────────────────────────╯
+▌                                                                             │
+▌ Main page                                                                   │ Contents
+▌                                                                             │
+▌ Contributors to Wikimedia projects                                          │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Current events                                                               │ Random article
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ About Wikipedia                                                              │ Contact us
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Help                                                                         │ Learn to edit
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Community portal                                                             │ Recent changes
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Upload file                                                                  │ Special pages
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Create account                                                               │ Log in
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────
+                                                                              │
+ Talk                                                                         │ View source
+                                                                              │
+ Contributors to Wikimedia projects                                           │ Contributors to Wikimedia projects
+───────────────────────────────────────────────┌─ Layout strategies — choose which to probe ──────────────────────┐───────────────────────────────────────────
+                                               │ [x] Document Order   HTML order with basic ad filter (default)   │
+                                               │ [ ] AI Curated       AI-curated · removes ads, ranks stories     │
+                                               │ [x] RSS Feed         Replace links with the site's RSS feed      │
+                                               │ RSS probe can take up to 5s on sites without an advertised feed. │
+                                               │ Space:toggle  Enter:probe selected  Esc:cancel                   │
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+LinkView en.wikipedia.org                                                                                                                       2/47 ✓ ?:help
