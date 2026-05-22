@@ -417,19 +417,13 @@ internal class LinkTreeRenderer
         var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
         var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
         var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
-        var isTopPadding = lineIndex == 0 && titleLineIdx > 0;
 
-        // workspace-63jj: top padding (line 0 when the title sits at line 1)
-        // and the separator row are NOT part of the selection rectangle. They
-        // render identically to the unselected versions so the visible cell
-        // borders survive between adjacent cells — selBg on those rows
-        // looked like the highlight was off by one and ate the divider
-        // above/below.
-        if (isTopPadding)
-        {
-            return new string(' ', width);
-        }
-
+        // workspace-zlv0 (refines mj9x + 63jj): the selection rectangle fills
+        // every row of the cell EXCEPT the separator. The separator is the
+        // dim ─ rule that visually divides cell rows from each other — that
+        // divider is the cell's bottom border and must survive the highlight
+        // (workspace-63jj). Top padding, title rows, blank content slots, all
+        // get selBg so the green box still reaches the top edge.
         if (isSeparator)
         {
             return $"{palette.SecondaryText.AnsiFg}{Dim}{new string('─', width)}{Reset}";
@@ -487,10 +481,11 @@ internal class LinkTreeRenderer
         }
         else
         {
-            // Defensive: any content-row line index that isn't recognised
-            // above falls through here with a plain selBg fill so the cell
-            // body stays a clean rectangle. (top-padding and separator are
-            // handled by the early returns at the top — workspace-63jj.)
+            // Top padding (line 0 when title sits at line 1) and any other
+            // content-free line falls through here with a plain selBg fill so
+            // the cell body stays a clean rectangle reaching the top edge —
+            // workspace-zlv0. The separator row is the only exception and is
+            // handled by the early return at the top.
             sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
         }
 

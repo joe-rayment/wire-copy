@@ -616,20 +616,19 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Selected_TopPadding_RendersBlank()
+    public void BuildCardLine_Selected_TopPadding_FilledWithHighlightBg()
     {
-        // workspace-63jj: the top-padding row (line 0 when the title sits at
-        // line 1) is blank space even when selected \u2014 the selection
-        // rectangle is bounded by the cell's content area so the previous
-        // cell row's separator stays visible above.
+        // workspace-zlv0: the top-padding row IS part of the selection
+        // rectangle so the green box reaches the cell's top edge. Only the
+        // separator row (cell's bottom border, shared with the next row) is
+        // excluded \u2014 see BuildCardLine_Selected_SeparatorRule_RendersDimRule.
         var node = CreateLinkNode("Article", "https://example.com", LinkType.Content);
 
         // 5-line card: titleLineIdx=1, so lineIndex=0 is top padding.
         var line = LinkTreeRenderer.BuildCardLine(node, true, 5, 0, 40, TestPalette);
 
-        line.Should().NotContain(TestPalette.SelectedItemBg.AnsiBg);
-        line.Should().NotContain("\u258c");
-        StripAnsi(line).Should().Be(new string(' ', 40));
+        line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
+        line.Should().Contain("\u258c");
     }
 
     #endregion
