@@ -148,6 +148,7 @@ public partial class BrowserOrchestrator : IBrowserService
             NavigateToAsync = NavigateToAsync,
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
+            OpenInteractiveBrowserAsync = OpenInteractiveBrowserAsync,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,

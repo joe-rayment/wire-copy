@@ -58,6 +58,88 @@ public partial class BrowserOrchestrator
         }
     }
 
+    /// <summary>
+    /// workspace-kdda: navigates the app's headed browser to <paramref name="url"/>
+    /// so the user can clear an active CAPTCHA / login gate that the preload
+    /// service is reporting on the link list. Unlike
+    /// <see cref="InteractiveRefreshAsync"/>, the current TUI page is NOT
+    /// replaced — the user stays on the link list so they can continue
+    /// browsing after the gate is solved.
+    ///
+    /// <para>
+    /// System-browser <c>Process.Start</c> would land the user in a separate
+    /// browser context with no shared session/cookies; solving the gate
+    /// there has no effect on the in-app preloader, which is why the user
+    /// previously saw "blank page when I go to the browser" and had to drill
+    /// into an article to trigger a headed load.
+    /// </para>
+    ///
+    /// <para>
+    /// On resolution the headed cookies are saved + synced to the HTTP cookie
+    /// jar so pending preloads pick up the post-gate session, and the
+    /// preload service is notified to drop its sticky BlockedAction verdict.
+    /// </para>
+    /// </summary>
+    private async Task OpenInteractiveBrowserAsync(
+        string url,
+        RenderOptions options,
+        CancellationToken cancellationToken)
+    {
+        _preloadService.Pause();
+
+        try
+        {
+            _renderer.RenderLoading(url);
+
+            var loadResult = await _pageLoader.LoadAsync(
+                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
+                cancellationToken).ConfigureAwait(false);
+
+            if (_browserSession is IBrowserSession restoreSession)
+            {
+                await restoreSession.RestoreWindowAsync().ConfigureAwait(false);
+            }
+
+            // Run the same bot-challenge poll the interactive refresh uses.
+            // Returns null when the load didn't surface a challenge OR when
+            // the poll timed out — both are "no auto-clear" cases.
+            var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(
+                url,
+                loadResult,
+                cancellationToken,
+                headlessOverride: false).ConfigureAwait(false);
+
+            // Carry headed-browser cookies to the HTTP cookie jar so the
+            // preloader picks up the post-gate session. Best-effort.
+            await SaveBrowserCookiesAsync(cancellationToken).ConfigureAwait(false);
+
+            // Drop the sticky BlockedAction verdict when we have positive
+            // evidence the gate is cleared: either the bot-challenge poll
+            // confirmed resolution OR the initial headed load succeeded
+            // outright without a HITL signal.
+            var resolved = challengeResult != null
+                || (loadResult.Success && loadResult.RequiredAction == null);
+            if (resolved)
+            {
+                _preloadService.NotifyChallengeResolved(url);
+            }
+
+            if (_browserSession is IBrowserSession minSession)
+            {
+                await minSession.MinimizeWindowAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error opening interactive browser for {Url}", url);
+        }
+        finally
+        {
+            _preloadService.Resume();
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private async Task InteractiveRefreshAsync(string url, RenderOptions options, CancellationToken cancellationToken)
     {
         _preloadService.Pause();

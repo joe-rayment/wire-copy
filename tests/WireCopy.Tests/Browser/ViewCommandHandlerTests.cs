@@ -63,6 +63,7 @@ public class ViewCommandHandlerTests
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (opts, _) =>
             {
                 _renderCalled = true;
@@ -296,6 +297,7 @@ public class ViewCommandHandlerTests
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
             RefreshCollectionsAsync = _ => Task.CompletedTask,
             RefreshBookmarksAsync = _ =>
@@ -419,6 +421,7 @@ public class ViewCommandHandlerTests
             NavigateToAsync = (_, _, _) => Task.CompletedTask,
             ForceRefreshAsync = (_, _, _) => Task.CompletedTask,
             InteractiveRefreshAsync = (_, _, _) => Task.CompletedTask,
+            OpenInteractiveBrowserAsync = (_, _, _) => Task.CompletedTask,
             RenderCurrentPageAsync = (_, _) => Task.CompletedTask,
             RefreshCollectionsAsync = _ => Task.CompletedTask,
             RefreshBookmarksAsync = _ => Task.CompletedTask,
@@ -503,6 +506,155 @@ public class ViewCommandHandlerTests
                 Directory.Delete(tempDir, true);
             }
         }
+    }
+
+    #endregion
+
+    #region HandleOpenInBrowser (workspace-kdda)
+
+    [Fact]
+    public async Task HandleOpenInBrowser_BlockedActionOnMatchingDomain_RoutesToHeadedChrome()
+    {
+        // Arrange: link list on www.example.com with selected link, preload
+        // service reporting an active CAPTCHA on www.example.com.
+        var page = CreateLinkListPage(
+            pageUrl: "https://www.example.com/section",
+            linkUrl: "https://www.example.com/article",
+            linkType: LinkType.Content);
+        _navigationService.NavigateTo(page);
+        _navigationService.SetViewMode(ViewMode.Hierarchical);
+
+        var preload = Substitute.For<IPreloadService>();
+        preload.GetProgress().Returns(new PreloadProgress
+        {
+            BlockedAction = new HumanActionRequired(HumanActionVariant.Captcha, "www.example.com"),
+        });
+
+        string? interactiveOpenedUrl = null;
+
+        var ctx = WithOverrides(preload, (url, _, _) =>
+        {
+            interactiveOpenedUrl = url;
+            return Task.CompletedTask;
+        });
+
+        await ViewCommandHandler.HandleOpenInBrowser(ctx, _options, CancellationToken.None);
+
+        interactiveOpenedUrl.Should().Be("https://www.example.com/article",
+            "the selected article URL on the captcha-blocked domain should be opened through the app's headed browser, not Process.Start");
+    }
+
+    [Fact]
+    public async Task HandleOpenInBrowser_BlockedActionDifferentDomain_FallsThroughToSystemBrowser()
+    {
+        var page = CreateLinkListPage(
+            pageUrl: "https://www.example.com/section",
+            linkUrl: "https://otherdomain.example/article",
+            linkType: LinkType.External);
+        _navigationService.NavigateTo(page);
+        _navigationService.SetViewMode(ViewMode.Hierarchical);
+
+        var preload = Substitute.For<IPreloadService>();
+        preload.GetProgress().Returns(new PreloadProgress
+        {
+            // CAPTCHA is on a different domain than the link the user is
+            // about to open — don't hijack Shift+O for an unrelated URL.
+            BlockedAction = new HumanActionRequired(HumanActionVariant.Captcha, "www.example.com"),
+        });
+
+        var interactiveCalls = 0;
+        var ctx = WithOverrides(preload, (_, _, _) =>
+        {
+            interactiveCalls++;
+            return Task.CompletedTask;
+        });
+
+        await ViewCommandHandler.HandleOpenInBrowser(ctx, _options, CancellationToken.None);
+
+        interactiveCalls.Should().Be(0,
+            "the blocked-action domain doesn't match the URL the user is opening, so the headed-Chrome route must not be used");
+    }
+
+    [Fact]
+    public async Task HandleOpenInBrowser_NoBlockedAction_FallsThroughToSystemBrowser()
+    {
+        var page = CreateLinkListPage(
+            pageUrl: "https://www.example.com/section",
+            linkUrl: "https://www.example.com/article",
+            linkType: LinkType.Content);
+        _navigationService.NavigateTo(page);
+        _navigationService.SetViewMode(ViewMode.Hierarchical);
+
+        var preload = Substitute.For<IPreloadService>();
+        preload.GetProgress().Returns(new PreloadProgress
+        {
+            BlockedAction = null,
+        });
+
+        var interactiveCalls = 0;
+        var ctx = WithOverrides(preload, (_, _, _) =>
+        {
+            interactiveCalls++;
+            return Task.CompletedTask;
+        });
+
+        await ViewCommandHandler.HandleOpenInBrowser(ctx, _options, CancellationToken.None);
+
+        interactiveCalls.Should().Be(0,
+            "without a blocked action the old system-browser path should run, not the headed-Chrome route");
+    }
+
+    private static Domain.Entities.Browser.Page CreateLinkListPage(string pageUrl, string linkUrl, LinkType linkType)
+    {
+        var page = Domain.Entities.Browser.Page.Create(
+            pageUrl,
+            "<html/>",
+            new Domain.ValueObjects.Browser.PageMetadata { Title = "Section" });
+        var tree = Domain.Entities.Browser.NavigationTree.Build(
+            new List<Domain.ValueObjects.Browser.LinkInfo>
+            {
+                new()
+                {
+                    Url = linkUrl,
+                    DisplayText = "Test article",
+                    Type = linkType,
+                    ImportanceScore = 50,
+                },
+            });
+        page.SetLinkTree(tree);
+        return page;
+    }
+
+    private CommandContext WithOverrides(
+        IPreloadService preload,
+        Func<string, RenderOptions, CancellationToken, Task> openInteractive)
+    {
+        return new CommandContext
+        {
+            NavigationService = _ctx.NavigationService,
+            Renderer = _ctx.Renderer,
+            InputHandler = _ctx.InputHandler,
+            ScopeFactory = _ctx.ScopeFactory,
+            Logger = _ctx.Logger,
+            PageCache = _ctx.PageCache,
+            LineCacheManager = _ctx.LineCacheManager,
+            ThemeProvider = _ctx.ThemeProvider,
+            PreloadService = preload,
+            LayoutVariantProvider = _ctx.LayoutVariantProvider,
+            NavigateToAsync = _ctx.NavigateToAsync,
+            ForceRefreshAsync = _ctx.ForceRefreshAsync,
+            InteractiveRefreshAsync = _ctx.InteractiveRefreshAsync,
+            OpenInteractiveBrowserAsync = openInteractive,
+            RenderCurrentPageAsync = _ctx.RenderCurrentPageAsync,
+            RefreshCollectionsAsync = _ctx.RefreshCollectionsAsync,
+            RefreshBookmarksAsync = _ctx.RefreshBookmarksAsync,
+            GetCurrentRenderOptions = _ctx.GetCurrentRenderOptions,
+            CreateCollectionService = _ctx.CreateCollectionService,
+            GetReaderViewportHeight = _ctx.GetReaderViewportHeight,
+            GetHierarchicalViewportHeight = _ctx.GetHierarchicalViewportHeight,
+            AdjustScrollForSelection = _ctx.AdjustScrollForSelection,
+            ScrollToSearchMatch = _ctx.ScrollToSearchMatch,
+        };
     }
 
     #endregion
