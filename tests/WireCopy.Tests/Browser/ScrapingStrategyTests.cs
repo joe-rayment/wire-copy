@@ -92,7 +92,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCuratedResult
             {
                 ExcludedLinkKeys = excludedKeys,
@@ -136,7 +136,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCuratedResult
             {
                 ExcludedLinkKeys = links.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
@@ -188,7 +188,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCuratedResult
             {
                 ExcludedLinkKeys = excludedKeys,
@@ -222,7 +222,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCuratedResult
             {
                 ExcludedLinkKeys = allExcluded,
@@ -256,7 +256,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new AiCuratedResult
             {
                 ExcludedLinkKeys = links.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
@@ -463,7 +463,7 @@ public class ScrapingStrategyTests
     {
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns<AiCuratedResult>(_ => throw new InvalidOperationException("AI must NOT be called when cached result is fresh"));
 
         var links = BuildTechmemeFixture();
@@ -504,7 +504,7 @@ public class ScrapingStrategyTests
 
         result.Tree.TotalLinks.Should().Be(30);
         await analyzer.DidNotReceive().AnalyzeCuratedAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -519,7 +519,7 @@ public class ScrapingStrategyTests
 
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.IsConfigured.Returns(true);
-        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(freshResult);
 
         var savedConfig = new SiteHierarchyConfig
@@ -555,7 +555,139 @@ public class ScrapingStrategyTests
         });
 
         await analyzer.Received(1).AnalyzeCuratedAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_GuidanceChange_InvalidatesCacheAndPassesGuidance()
+    {
+        // workspace-99ve: cached result with no guidance must be re-analyzed
+        // when the user provides guidance; the new guidance is forwarded to
+        // the analyzer and stamped on the resulting AiCuratedResult.
+        var links = BuildTechmemeFixture();
+
+        var freshResult = new AiCuratedResult
+        {
+            ExcludedLinkKeys = new List<string>(),
+            StoryOrderLinkKeys = links.Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
+            AnalyzedAt = DateTime.UtcNow,
+        };
+
+        string? capturedGuidance = null;
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(
+                Arg.Any<byte[]?>(),
+                Arg.Any<List<LinkInfo>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedGuidance = call.ArgAt<string?>(3);
+                return Task.FromResult(freshResult);
+            });
+
+        var savedConfig = new SiteHierarchyConfig
+        {
+            Domain = "techmeme.com",
+            UrlPattern = "^https?://techmeme\\.com/?",
+            Sections = new List<HierarchySection>(),
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "ai-curated",
+            Kind = LayoutKind.AiCurated,
+            Version = 2,
+            Strategy = "AiCurated",
+            AiResult = new AiCuratedResult
+            {
+                ExcludedLinkKeys = new List<string>(),
+                StoryOrderLinkKeys = links.Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
+                AnalyzedAt = DateTime.UtcNow,
+                UserGuidance = null,  // previously cached without guidance
+            },
+        };
+
+        var strategy = new AiCuratedStrategy(
+            new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://techmeme.com/",
+            Html = string.Empty,
+            Links = links,
+            SavedConfig = savedConfig,
+            UserGuidance = "exclude opinion pieces",
+        });
+
+        capturedGuidance.Should().Be("exclude opinion pieces",
+            "the analyzer must receive the user's guidance as the new fourth parameter");
+        result.Config.AiResult.Should().NotBeNull();
+        result.Config.AiResult!.UserGuidance.Should().Be("exclude opinion pieces",
+            "guidance is stamped onto the result so the next cache match can compare against it");
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_SameGuidance_HitsCache()
+    {
+        // workspace-99ve: when the cached result's guidance matches the
+        // request, no re-analysis is triggered.
+        var links = BuildTechmemeFixture();
+
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(
+                Arg.Any<byte[]?>(),
+                Arg.Any<List<LinkInfo>>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns<AiCuratedResult>(_ => throw new InvalidOperationException(
+                "AI must NOT be called when cached guidance matches"));
+
+        var savedConfig = new SiteHierarchyConfig
+        {
+            Domain = "techmeme.com",
+            UrlPattern = "^https?://techmeme\\.com/?",
+            Sections = new List<HierarchySection>(),
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "ai-curated",
+            Kind = LayoutKind.AiCurated,
+            Version = 2,
+            Strategy = "AiCurated",
+            AiResult = new AiCuratedResult
+            {
+                ExcludedLinkKeys = new List<string>(),
+                StoryOrderLinkKeys = links.Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
+                AnalyzedAt = DateTime.UtcNow.AddDays(-1),
+                UserGuidance = "put covid first",
+            },
+        };
+
+        var strategy = new AiCuratedStrategy(
+            new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://techmeme.com/",
+            Html = string.Empty,
+            Links = links,
+            SavedConfig = savedConfig,
+            UserGuidance = "put covid first",
+        });
+
+        result.Config.AiResult!.UserGuidance.Should().Be("put covid first");
+        await analyzer.DidNotReceive().AnalyzeCuratedAsync(
+            Arg.Any<byte[]?>(),
+            Arg.Any<List<LinkInfo>>(),
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -117,29 +117,40 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
 
         var cached = context.SavedConfig?.AiResult;
         var ttl = TimeSpan.FromDays(Math.Max(1, _config.AiCuratedCacheDays));
+        var requestedGuidance = NormalizeGuidance(context.UserGuidance);
+        var cachedGuidance = NormalizeGuidance(cached?.UserGuidance);
+        var guidanceMatches = string.Equals(cachedGuidance, requestedGuidance, StringComparison.Ordinal);
 
-        if (cached != null && DateTime.UtcNow - cached.AnalyzedAt <= ttl)
+        if (cached != null && DateTime.UtcNow - cached.AnalyzedAt <= ttl && guidanceMatches)
         {
             curated = cached;
             fromCache = true;
             _logger.LogInformation(
-                "AiCuratedStrategy: using cached result for {Url} ({Age} old)",
+                "AiCuratedStrategy: using cached result for {Url} ({Age} old, guidance={Guidance})",
                 context.PageUrl,
-                DateTime.UtcNow - cached.AnalyzedAt);
+                DateTime.UtcNow - cached.AnalyzedAt,
+                requestedGuidance ?? "(none)");
         }
         else
         {
+            var ttlExpired = cached != null && DateTime.UtcNow - cached.AnalyzedAt > ttl;
             _logger.LogInformation(
-                "AiCuratedStrategy: invoking analyzer for {Url} (cached={HasCache}, ttlExpired={Expired})",
+                "AiCuratedStrategy: invoking analyzer for {Url} (cached={HasCache}, ttlExpired={Expired}, guidanceChanged={GuidanceChanged})",
                 context.PageUrl,
                 cached != null,
-                cached != null);
+                ttlExpired,
+                cached != null && !guidanceMatches);
 
             curated = await _analyzer.AnalyzeCuratedAsync(
                 context.Screenshot,
                 context.Links.ToList(),
                 context.PageUrl,
+                requestedGuidance,
                 cancellationToken).ConfigureAwait(false);
+
+            // workspace-99ve: stamp the guidance onto the result so the
+            // next read can detect a guidance change and re-run.
+            curated = curated with { UserGuidance = requestedGuidance };
 
             fromCache = false;
         }
@@ -290,5 +301,23 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
         {
             return "unknown";
         }
+    }
+
+    /// <summary>
+    /// workspace-99ve: normalises user guidance for both the analyzer call
+    /// and the cache-match comparison. Trim+collapse whitespace so trailing
+    /// newlines or extra spaces don't cause spurious cache misses; empty
+    /// string maps to null so cached results without guidance still match
+    /// new runs without guidance.
+    /// </summary>
+    private static string? NormalizeGuidance(string? guidance)
+    {
+        if (string.IsNullOrWhiteSpace(guidance))
+        {
+            return null;
+        }
+
+        var trimmed = guidance.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
     }
 }

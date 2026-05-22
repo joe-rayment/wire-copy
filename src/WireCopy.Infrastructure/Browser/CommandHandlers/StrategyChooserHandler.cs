@@ -261,7 +261,24 @@ internal static class StrategyChooserHandler
                 && configToSave.Strategy == ScrapingStrategies.AiCuratedStrategy.StrategyId
                 && configToSave.AiResult == null)
             {
-                ctx.NavigationService.SetStatusMessage("Running AI curation…", TimeSpan.FromMinutes(2));
+                // workspace-99ve: prompt for optional user guidance before
+                // running the analyzer. The FormField paints its own chrome
+                // — the chooser overlay was cleared at the top of this
+                // method via ClearOverlay so they don't fight for the
+                // bottom rows. Null = user pressed Esc to cancel apply.
+                var guidance = await PromptForGuidanceAsync(ctx, options, ct).ConfigureAwait(false);
+                if (guidance == null)
+                {
+                    ctx.NavigationService.SetStatusMessage("Cancelled — strategy not applied");
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                ctx.NavigationService.SetStatusMessage(
+                    string.IsNullOrWhiteSpace(guidance)
+                        ? "Running AI curation…"
+                        : $"Running AI curation with your guidance ({guidance.Length} chars)…",
+                    TimeSpan.FromMinutes(2));
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
                 var page = ctx.NavigationService.CurrentContext.CurrentPage;
@@ -292,6 +309,7 @@ internal static class StrategyChooserHandler
                             Links = links,
                             Screenshot = screenshot,
                             SavedConfig = configToSave,
+                            UserGuidance = string.IsNullOrWhiteSpace(guidance) ? null : guidance.Trim(),
                         };
 
                         var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
@@ -361,6 +379,44 @@ internal static class StrategyChooserHandler
     /// workspace-99ve; until then the key handler emits a "coming soon"
     /// status message.
     /// </summary>
+    /// <summary>
+    /// workspace-99ve: short text-field prompt for optional editorial
+    /// guidance to the AI Curated analyzer. Returns:
+    ///   <list type="bullet">
+    ///     <item>null — user pressed Esc, abort the apply.</item>
+    ///     <item>empty string — user accepted without typing, run with the
+    ///       default prompt.</item>
+    ///     <item>non-empty string — user-supplied guidance to pass through.</item>
+    ///   </list>
+    /// </summary>
+    private static async Task<string?> PromptForGuidanceAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new UI.Components.FormFieldConfig
+        {
+            Label = "Anything you'd like to tell the AI? (optional)",
+            Subtitle = "e.g. 'exclude opinion pieces', 'put COVID first', 'group by section'",
+            Placeholder = "Press Enter to use the default curation prompt, Esc to cancel.",
+        };
+
+        var fieldWidth = Math.Min(80, Math.Max(40, options.TerminalWidth - 6));
+        var fieldHeight = UI.Components.FormField.HeightFor(field);
+        var startRow = Math.Max(0, options.TerminalHeight - fieldHeight - 1);
+
+        var input = await UI.Components.FormField.PromptAsync(
+            ctx.InputHandler,
+            field,
+            palette,
+            startRow,
+            fieldWidth,
+            ct).ConfigureAwait(false);
+
+        return input;
+    }
+
     /// <summary>
     /// workspace-ujxu: pre-flight loop in the anchored modal. Space toggles
     /// the selection at the cursor; ↑/↓ moves the cursor; Enter confirms
