@@ -1,6 +1,6 @@
 # WireCopy
 
-A .NET 9 terminal-based web browser with Helix-style keybindings, a distraction-free reader view, and an optional pipeline that turns saved articles into M4B audiobooks.
+A .NET 10 terminal-based web browser with Helix-style keybindings, a distraction-free reader view, and an optional pipeline that turns saved articles into M4B audiobooks.
 
 Browse any website from your terminal with keyboard-only navigation, save articles to reading lists, and (optionally) generate narrated audio with chapter markers from your collections.
 
@@ -221,7 +221,7 @@ bd close <id>
 
 ## Technology Stack
 
-- **.NET 9.0** with C# 12
+- **.NET 10.0** with C# 14
 - **[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-dotnet)** — patched Playwright for .NET (CDP-leak patched, ARM64-native)
 - **HtmlAgilityPack** for HTML parsing and content extraction
 - **OpenAI .NET SDK** for text-to-speech

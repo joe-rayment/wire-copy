@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **.NET 9.0 SDK** — [download](https://dotnet.microsoft.com/download)
+- **.NET 10.0 SDK** — [download](https://dotnet.microsoft.com/download)
 - **FFmpeg** — required for podcast / audio assembly
   ```bash
   # macOS
