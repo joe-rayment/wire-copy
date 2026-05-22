@@ -219,6 +219,20 @@ internal static class ViewCommandHandler
             return;
         }
 
+        // workspace-kdda: when the preloader is sitting on a CAPTCHA / login
+        // gate, the system browser (Process.Start) lands in a separate
+        // context with no shared session — solving the gate there has no
+        // effect on the in-app preloader (the user previously saw a blank
+        // page on switching to Chrome). Route through the orchestrator's
+        // headed-Chrome flow so the user is solving in the SAME browser
+        // session the preloader uses.
+        var blocked = ctx.PreloadService.GetProgress().BlockedAction;
+        if (blocked != null && UrlMatchesDomain(url, blocked.Domain))
+        {
+            await ctx.OpenInteractiveBrowserAsync(url, options, ct).ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true };
@@ -232,5 +246,15 @@ internal static class ViewCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    private static bool UrlMatchesDomain(string url, string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Host, domain, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -83,6 +83,15 @@ internal class CommandContext
 
     public required Func<string, RenderOptions, CancellationToken, Task> InteractiveRefreshAsync { get; init; }
 
+    /// <summary>
+    /// workspace-kdda: opens the URL in the app's headed Chrome (the session
+    /// the preloader shares) so the user can clear an active CAPTCHA / login
+    /// gate without replacing the current TUI page. Used by Shift+O on the
+    /// link list when the preload service is reporting an active
+    /// <c>BlockedAction</c>.
+    /// </summary>
+    public required Func<string, RenderOptions, CancellationToken, Task> OpenInteractiveBrowserAsync { get; init; }
+
     public required Func<RenderOptions, CancellationToken, Task> RenderCurrentPageAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }
