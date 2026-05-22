@@ -389,13 +389,16 @@ internal class LauncherRenderer
         switch (lineIdx)
         {
             case 0:
-                // workspace-63jj: top padding is a transparent gap between
-                // adjacent cell rows even when selected — painting selBg here
-                // makes the highlight overshoot the cell's visible content
-                // area and break visual alignment with the unselected cell
-                // sharing the row. workspace-mj9x originally filled this row
-                // with selBg for an edge-to-edge look; user feedback said the
-                // box read as "off by one" and ate the row above.
+                if (isSelected)
+                {
+                    // workspace-zlv0 (refines mj9x + 63jj): top padding fills
+                    // with selBg so the green box reaches the cell's top edge.
+                    // The cell's BOTTOM edge is the separator row (line 3)
+                    // which stays as the dim ─ rule — that's the real divider
+                    // between cell rows and must survive.
+                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
+                }
+
                 return new string(' ', cellWidth);
 
             case 1:
