@@ -366,7 +366,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to publish podcast feed: {Message}", ex.Message);
-            return FeedPublishResult.Failure($"Publish failed: {ex.Message}");
+            return FeedPublishResult.Failure(MapPublishExceptionToReason(ex, _storage.BucketName));
         }
     }
 
@@ -484,6 +484,35 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         }
 
         return merged.Values.OrderBy(e => e.PublishedAtUtc).ToList();
+    }
+
+    /// <summary>
+    /// workspace-pl8f: rewrites library-level exception strings (PKCS8 keying
+    /// errors from <c>GoogleCredential.FromFile</c>, "GCP Project ID is
+    /// required" hints from the auto-bucket-create path) into user-facing
+    /// copy. The raw exception still goes to the structured log for
+    /// debugging; the user sees a short remediation sentence on the result
+    /// screen's <c>Reason:</c> row.
+    /// </summary>
+    private static string MapPublishExceptionToReason(Exception ex, string? bucketName)
+    {
+        var message = ex.Message ?? string.Empty;
+
+        if (message.Contains("Service account authentication failed", StringComparison.Ordinal)
+            || message.Contains("PKCS8", StringComparison.Ordinal))
+        {
+            return "Your GCS service account key file looks invalid. "
+                + "Re-download the JSON key from Google Cloud Console and re-add it in Setup.";
+        }
+
+        if (message.Contains("GCP Project ID is required", StringComparison.Ordinal))
+        {
+            var displayName = string.IsNullOrWhiteSpace(bucketName) ? "(none)" : bucketName;
+            return $"The bucket '{displayName}' doesn't exist or your service account can't see it. "
+                + "Check the bucket name in Setup.";
+        }
+
+        return $"Publish failed: {message}";
     }
 
     private static string DeriveEpisodeId(string title, string? sourceUrl)
