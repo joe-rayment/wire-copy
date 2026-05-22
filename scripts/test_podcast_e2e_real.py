@@ -36,7 +36,10 @@ import urllib.error
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from termtest import TermTest
 
-WORKTREE = "/workspace/.claude/worktrees/floofy-yawning-truffle"
+WORKTREE = os.environ.get(
+    "WIRECOPY_WORKTREE",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+)
 DATA_DIR = "/home/agent/.local/share/WireCopy"
 OUTPUT_DIR = os.path.join(DATA_DIR, "output")
 SHOTS_DIR = os.environ.get(

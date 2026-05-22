@@ -163,6 +163,13 @@ public partial class BrowserOrchestrator
             if (_navigationService.CurrentPage?.Url == url)
             {
                 _renderer.RenderHumanAction(hitl.RequiredAction, url);
+
+                // workspace-iv9g: start the headed-browser watcher so the app
+                // auto-loads content as soon as the user solves the gate in
+                // their browser window. No-op in headless mode and for
+                // variants that can't resolve via headed interaction
+                // (Paywall, RegionBlock, Generic).
+                StartHumanActionWatcher(url, hitl.RequiredAction, cancellationToken);
             }
         }
         catch (Exception ex)
