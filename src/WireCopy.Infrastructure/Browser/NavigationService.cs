@@ -437,6 +437,22 @@ public class NavigationService : INavigationService
     }
 
     /// <summary>
+    /// workspace-z5qz: exposes the currently-previewed candidate to the
+    /// orchestrator's preview-mode dispatch so it can vary keybinding
+    /// behaviour per strategy (e.g. <c>i:guidance</c> only fires when AI
+    /// Curated is selected).
+    /// </summary>
+    public LayoutCandidate? GetCurrentPreviewCandidate()
+    {
+        if (!_isInPreviewMode || _previewLayouts == null || _previewLayouts.Count == 0)
+        {
+            return null;
+        }
+
+        return _previewLayouts[_previewIndex];
+    }
+
+    /// <summary>
     /// Toggles between Hierarchical and Readable view modes.
     /// Resets scroll offset to 0 when switching views.
     /// </summary>

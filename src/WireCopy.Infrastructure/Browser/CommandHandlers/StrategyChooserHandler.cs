@@ -206,7 +206,9 @@ internal static class StrategyChooserHandler
                     candidates.Add(new LayoutCandidate
                     {
                         Config = stubConfig,
-                        Summary = $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                        Summary = AppendGuidanceHintIfAi(
+                            $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                            strategy.Id),
                         PreviewTree = currentTree,
                     });
                     continue;
@@ -218,8 +220,10 @@ internal static class StrategyChooserHandler
                     candidates.Add(new LayoutCandidate
                     {
                         Config = result.Config,
-                        Summary = result.Summary
-                            ?? $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                        Summary = AppendGuidanceHintIfAi(
+                            result.Summary
+                                ?? $"{strategy.DisplayName} · {availability.StatusDetail ?? strategy.Description}",
+                            strategy.Id),
                         PreviewTree = result.Tree,
                     });
                 }
@@ -356,6 +360,52 @@ internal static class StrategyChooserHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// workspace-z5qz: handler for the `i` key pressed while a layout
+    /// preview is active. If the currently-selected candidate is AI Curated,
+    /// surface a "coming soon" status message pointing at workspace-99ve;
+    /// otherwise no-op. The affordance is hinted in
+    /// <see cref="AppendGuidanceHintIfAi"/>'s row-summary suffix.
+    /// </summary>
+    public static async Task HandleGuidanceRequestAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var candidate = ctx.NavigationService.GetCurrentPreviewCandidate();
+        if (candidate?.Config.Strategy == ScrapingStrategies.AiCuratedStrategy.StrategyId)
+        {
+            // Keep the message short so it survives status-bar truncation
+            // alongside the preview label + cache indicator. The detailed
+            // affordance lives in the AI Curated row's summary suffix
+            // (AppendGuidanceHintIfAi).
+            ctx.NavigationService.SetStatusMessage("AI guidance — coming soon");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// workspace-z5qz: surfaces the upcoming "i for guidance" affordance on
+    /// the AI Curated row's summary so the user knows they can pass
+    /// editorial guidance to the analyzer. The actual prompt input ships in
+    /// workspace-99ve; until then the key handler emits a "coming soon"
+    /// status message.
+    /// </summary>
+    private static string AppendGuidanceHintIfAi(string summary, string strategyId)
+    {
+        if (string.Equals(strategyId, ScrapingStrategies.AiCuratedStrategy.StrategyId, StringComparison.Ordinal))
+        {
+            // Shift+I (capitalised to match the existing Shift+I:open
+            // convention in StatusBarRenderer / KeybindingPopup) opens the
+            // upcoming guidance prompt. The 'i' shortcut isn't free —
+            // lowercase i has no global binding today and mapping it here
+            // would shadow the (currently NoOp) raw key elsewhere.
+            return $"{summary} · I:guidance";
+        }
+
+        return summary;
     }
 
     private static string ExtractDomain(string url)

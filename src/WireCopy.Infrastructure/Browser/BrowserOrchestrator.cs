@@ -868,6 +868,14 @@ public partial class BrowserOrchestrator : IBrowserService
                     case CommandType.GoBack:
                         await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
+                    case CommandType.InteractiveRefresh:
+                        // workspace-z5qz: `i` on an AI Curated preview row is
+                        // reserved for the upcoming user-guidance prompt
+                        // (workspace-99ve). Until that ships, surface a clear
+                        // "coming soon" message so the affordance hinted in
+                        // the row summary doesn't just no-op silently.
+                        await StrategyChooserHandler.HandleGuidanceRequestAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                        return true;
                     case CommandType.Quit:
                         return false;
                     case CommandType.TerminalResized:
