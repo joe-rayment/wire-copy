@@ -1,3 +1,7 @@
+# Workspace-local vendored .NET SDK (bootstrapped by ./scripts/bootstrap-dotnet.sh)
+/.dotnet
+/.dotnet/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Workspace-local dotnet wrapper. Forwards every invocation to the
+# vendored .NET SDK at ./.dotnet/, bootstrapping it on first use so a
+# fresh clone can build with no system dotnet installed.
+#
+#   ./dotnet build --configuration Release
+#   ./dotnet test
+#   ./dotnet run --project src/WireCopy.API
+#
+# Add the repo root to PATH if you'd rather type `dotnet` than `./dotnet`:
+#   export PATH="$PWD:$PATH"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTNET_BIN="$ROOT/.dotnet/dotnet"
+
+if [ ! -x "$DOTNET_BIN" ]; then
+  "$ROOT/scripts/bootstrap-dotnet.sh"
+fi
+
+# Pin DOTNET_ROOT so child processes (MSBuild, dotnet-watch, etc.) find
+# the same toolchain rather than picking up a system install with a
+# different SDK / runtime version.
+export DOTNET_ROOT="$ROOT/.dotnet"
+exec "$DOTNET_BIN" "$@"

@@ -10,7 +10,10 @@
 
 set -uo pipefail
 
-DOTNET="${DOTNET:-dotnet}"
+SCRIPT_DIR_FOR_DOTNET="$(cd "$(dirname "$0")/.." && pwd)"
+# Prefer the workspace-local wrapper so we always pick up the vendored
+# .NET 10 SDK rather than whatever the user happens to have on PATH.
+DOTNET="${DOTNET:-${SCRIPT_DIR_FOR_DOTNET}/dotnet}"
 PROJECT="tests/WireCopy.Tests/WireCopy.Tests.csproj"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
