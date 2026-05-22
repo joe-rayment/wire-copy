@@ -1,101 +1,86 @@
-# workspace-hapr live verification results
+# workspace-hapr live verification results (workspace-1izo retry)
 
-**Date:** 2026-05-20
-**Bead:** workspace-hrrf (live macleans.ca verification of AI Curated diagnostics)
-**Outcome:** Partial — automated live verification was blocked by upstream
-page-load issues. Documented for follow-up.
+**Captured:** 2026-05-22
+**Bead:** workspace-1izo (retry of workspace-hrrf after workspace-j0b8 unblocked macleans loading)
+**Script:** `scripts/test_macleans_ai_curated.py`
+**Outcome:** AI Curated diagnostics + analyzer logging verified live on a substitute site (BBC News). macleans.ca itself still unreachable from this CI IP — see "Why a substitute" below.
 
-## What was attempted
+## Why a substitute
 
-`scripts/test_macleans_ai_curated.py` drives the app to a target URL via
-`scripts/termtest.py`, opens the strategy chooser (Ctrl+L), navigates to AI
-Curated, and captures both the rendered tree and the
-`AiCuratedStrategy result` INFO log line.
-
-Default target is `https://macleans.ca` (the bead's named site). A
-`TARGET_URL` env var allows substituting a different site.
-
-## Blockers observed
-
-### 1. macleans.ca consistently fails to load
-
-Three back-to-back attempts (initial + 2× Shift+R) all produced:
+The workspace-1izo retry first attempted the bead-named site `https://macleans.ca`. With workspace-j0b8's headless-fallback (auto-fall-back when `LaunchBrowserAsync` hits "Missing X server") the page now loads far enough for `HumanActionDetector` to fire — the screen shows:
 
 ```
-╭──────────────────────────────────────────────────────────╮
-│ Something went wrong                                     │
-│ Failed to load page: Page navigated mid-load (e.g. af…   │
-│ https://macleans.ca                                      │
-│ b:back  Shift+R:retry                                    │
-╰──────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────╮
+│ ⡇ Site is showing a CAPTCHA                    │
+│ Solve it in the browser window, then press R   │
+│ https://macleans.ca                            │
+│ macleans.ca — Shift+O:open  b:back             │
+╰────────────────────────────────────────────────╯
 ```
 
-This is a `BrowserOrchestrator` page-load timing issue — likely the same
-class of bug as the early-NYT-redirect failures fixed in workspace-pxeb /
-ofdh, but on macleans.ca's redirect chain. The bug is **independent** of
-workspace-hapr's diagnostics + degenerate detection: until macleans.ca
-itself loads, we can't observe how the analyzer ranks it.
+j0b8 fixed the original "Page navigated mid-load" symptom, but the underlying issue is now site-side bot blocking on this CI IP (same class as NYT blocking — known per `feedback_selenium_setup.md`). workspace-iv9g's HumanActionWatcher polled (`logs/wirecopy-20260522.log:11:04:57.958 [INF] Human-action watcher: gate resolved for https://macleans.ca`) then re-detected the captcha on retry. No human is available to solve in headless mode, so this CI cannot exercise macleans.
 
-### 2. Strategy chooser navigation under tmux is brittle
+To still validate the workspace-hapr deliverable (diagnostic INFO line + `DetectDegenerateRanking`), the retry ran with `TARGET_URL=https://www.bbc.com/news`. BBC News is a comparable article-list page (≥100 content links, multi-section layout) that's not bot-blocked in this CI.
 
-On a substitute load (cbc.ca via `TARGET_URL`), the page DID load
-successfully (LinkView footer: "Layout 1/3 · Document order · 106 links")
-but `Ctrl+L` did not reliably produce the chooser's "Analyzing page
-structure…" or "strategies ready" status banner within 30s. The capture
-continued to show the regular LinkView page.
+## Live capture — Document Order baseline (BBC News)
 
-The harness IS sending `C-l` via tmux send-keys (the standard ctrl-L
-encoding), so this might be:
+128 links across 3 sections. Top of the rendered tree:
 
-- A race between Ctrl+L delivery and the page's "Hierarchical view +
-  loaded" precondition for `LayoutCommandHandler.HandleChooseLayout`.
-- A tmux key-translation edge case under certain terminal profiles.
+```
+╭─ Home - BBC News ────────────────────────────────────────────────────────────╮
+│ www.bbc.co.uk · 128 links · 3 sections                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
 
-Either way, the chooser couldn't be reliably driven from this harness
-in this session.
+First five visible link titles (heuristic capture from rendered tree, two-column layout):
 
-## What we CAN say with confidence
+1. Live. 'My job not necessarily to select the 26 most talented players' - Tuchel on England squad
+2. Parents of Southport survivors say anonymity has erased their girls from the story
+3. Andrew investigation could look into sexual misconduct allegations
+4. Stop blaming young people for being unemployed, says Amazon's UK boss
+5. Guardiola says 'nothing is eternal' as Man City confirm exit after 10 years
 
-The workspace-hapr diagnostics + degenerate detection are **unit-tested
-in isolation** with 3 load-bearing tests in
-`tests/WireCopy.Tests/Browser/ScrapingStrategyTests.cs`:
+Full capture: `/tmp/qa-shots-1izo-bbc2/1_doc_order.txt`.
 
-- `AiCuratedStrategy_MatchesDocumentOrder_SummaryFlagsNoReordering` —
-  pins the macleans-like failure shape.
-- `AiCuratedStrategy_EmptyRanking_SummaryFlagsEmpty` —
-  pins the all-excluded edge case.
-- `AiCuratedStrategy_GenuineReorder_NoDegenerateFlag` —
-  inverse pin for the happy path.
+## Live capture — AI Curated (BBC News)
 
-`BuildSummary()` and `DetectDegenerateRanking()` are deterministic
-functions of `(AiCuratedResult, contentLinks)` — they produce the same
-output for the same inputs regardless of whether they're called from a
-unit test or from `AiCuratedStrategy.BuildTreeAsync` at runtime. So if
-the AI's response on a live macleans.ca run happens to match the
-surviving document order, the user WILL see "(no reordering — matches
-document order)" in the strategy summary.
+Re-organized into 5 AI-detected sections. Top section: **"Top live coverage & sport (8)"**. First five visible link titles:
 
-## Recommendation
+1. Live. 'My job not necessarily to select the 26 most talented players' - Tuchel on England squad
+2. Live. Heat warnings upgraded as parts of UK to be hit by bank holiday heatwave
+3. Live. Guardiola statement after he steps down as Man City boss
+4. Guardiola says 'nothing is eternal' as Man City confirm exit after 10 years
+5. Carrick confirmed as Man Utd permanent boss
 
-File two follow-up beads:
+Full capture: `/tmp/qa-shots-1izo-bbc2/4_after_ai_curated.txt`.
 
-1. **Fix the macleans.ca page-load failure.** Look at the redirect chain
-   via existing `BrowserOrchestrator` instrumentation; compare against
-   working-redirect sites (e.g. nytimes.com which was fixed in
-   workspace-pxeb). This unblocks the workspace-hrrf acceptance.
-2. **Make `scripts/test_macleans_ai_curated.py` reliable under tmux.**
-   The script reliably gets to the loaded LinkView state on cbc.ca but
-   the Ctrl+L step is flaky. Diagnose with verbose input-handler logs
-   on a known-good run.
+**Top-5 comparison: DIFFERENT.** The AI ranking promoted live-coverage entries to the top and merged the football/sport block, distinct from doc-order's mixed politics/sport/health ordering. Section headers also changed (DocumentOrder had its own 3 sections; AI Curated produced 5).
 
-Once both are unblocked, re-run `scripts/test_macleans_ai_curated.py`
-without `TARGET_URL` (default macleans.ca) and append findings here.
+## AiCuratedStrategy log line (live INFO from workspace-hapr's diagnostic)
 
-## Test artifacts
+```
+2026-05-22 11:09:24.775 +00:00 [INF] AiCuratedStrategy: invoking analyzer for https://www.bbc.co.uk/news (cached=false, ttlExpired=false)
+2026-05-22 11:09:30.130 +00:00 [INF] AiCuratedStrategy result for https://www.bbc.co.uk/news: 37 ranked stories, 17 excluded, 5 sections, fromCache=false. First10=url:https://www.bbc.co.uk/sport/football/live/cd6pwdj0v90t,url:https://www.bbc.co.uk/news/live/cr4pkz6z0gpt,url:https://www.bbc.co.uk/sport/football/live/c0m2pvzp420t,url:https://www.bbc.co.uk/sport/football/articles/cx21y7023qxo,url:https://www.bbc.co.uk/sport/football/articles/cd9pk7g3kelo,url:https://www.bbc.co.uk/sport/football/articles/ce9p4v50pkko,url:https://www.bbc.co.uk/news/articles/c0j2q988x17o,url:https://www.bbc.co.uk/news/articles/c707l2jx0z4o,url:https://www.bbc.co.uk/news/articles/c0l2x5351n4o,url:https://www.bbc.co.uk/news/articles/c4g0ryrewdxo
+```
 
-- `/tmp/qa-shots-hrrf/0_load_failed.txt` — last screen at the moment
-  the load-detection loop gave up on macleans.ca (initial run).
-- `/tmp/qa-shots-hrrf/1_doc_order.txt` — cbc.ca Document Order baseline
-  (substitute target).
-- `/tmp/qa-shots-hrrf/2_chooser_timeout.txt` — cbc.ca screen 30s after
-  Ctrl+L was sent, showing the chooser status banner did NOT appear.
+## Verdict against the bead's acceptance criteria
+
+workspace-hapr asked: "Does `DetectDegenerateRanking` fire for the real macleans output, or does the AI return a non-trivial-but-still-bad ranking that the detector missed?"
+
+**On BBC News (substitute):** `DetectDegenerateRanking` would return `None` — the AI produced 37 ranked + 17 excluded + 5 sections, with a top-5 that differs from doc order. The detector correctly stays silent for a non-degenerate result. The diagnostic INFO line (workspace-hapr's first deliverable) is emitted with all 10 First10 keys + the (counts, fromCache) tuple, exactly as designed.
+
+**On macleans.ca specifically:** the question cannot be answered from this CI because the site is bot-blocked at the network layer. If macleans.ca is the site where the user originally observed the "no reorder" complaint, the reproduction needs to happen on the user's machine where their browser session/cookies bypass the CAPTCHA. The diagnostic log line will surface the (cached, ranked, excluded, sections) tuple in that environment too.
+
+## Open follow-ups
+
+- No degenerate-output observation yet exists for a real site (only synthetic unit-test inputs). If the user reproduces the original macleans symptom on their machine, capture `logs/wirecopy-*.log` for the `AiCuratedStrategy result` line and the rendered tree. The (ranked, excluded, sections) tuple in the INFO line distinguishes the failure shape.
+- If a future site DOES produce `MatchesDocumentOrder` or `EmptyRanking`, the user-visible Summary should read e.g. `AI curated · N stories (no reordering — matches document order)` per workspace-hapr's wiring. That branch of the user-visible copy remains unobserved in live capture.
+
+## Artifacts
+
+- `/tmp/qa-shots-1izo-bbc2/1_doc_order.txt` — Document Order baseline (BBC News).
+- `/tmp/qa-shots-1izo-bbc2/2_chooser.txt` — chooser at open after Ctrl+L.
+- `/tmp/qa-shots-1izo-bbc2/3_ai_curated_preview.txt` — preview frame when AI Curated rotated into the chooser.
+- `/tmp/qa-shots-1izo-bbc2/4_after_ai_curated.txt` — AI Curated rendered tree (final state after Enter).
+- `/tmp/qa-shots-1izo/0_load_failed.txt` — original macleans.ca attempt that hit the CAPTCHA.
+- `/workspace/logs/wirecopy-20260522.log` — full app log including the INFO line above and the macleans HumanActionWatcher events.
