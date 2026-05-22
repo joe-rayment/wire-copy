@@ -61,6 +61,16 @@ public partial class BrowserOrchestrator : IBrowserService
     private Task<PageLoadPipelineResult>? _qualityRetryTask;
     private string? _qualityRetryUrl;
 
+    // workspace-iv9g: background watcher that polls the headed browser after
+    // a captcha / login / cookie-consent verdict is rendered. When the user
+    // solves the gate in their browser window, the watcher detects the
+    // arrival of real content and re-runs the page load so the app picks it
+    // up automatically — no manual Shift+R / back+reload step. Null when no
+    // human action is currently being awaited.
+    private Task<PageLoadResult?>? _humanActionWatcher;
+    private string? _humanActionWatcherUrl;
+    private CancellationTokenSource? _humanActionWatcherCts;
+
     // Lazily resolved TTS service for checking IsConfigured state
     private ITtsService? _ttsService;
     private bool _ttsServiceResolved;
@@ -368,6 +378,14 @@ public partial class BrowserOrchestrator : IBrowserService
                     raceTasks.Add(_qualityRetryTask);
                 }
 
+                // workspace-iv9g: race the human-action watcher (captcha auto-
+                // resume) so the main loop wakes immediately when the user
+                // solves the gate in their browser window.
+                if (_humanActionWatcher != null)
+                {
+                    raceTasks.Add(_humanActionWatcher);
+                }
+
                 // Persist speed reading timer across iterations (like pendingInput)
                 // so it isn't reset by the 500ms status timer firing first.
                 if (_navigationService.IsSpeedReadActive
@@ -396,6 +414,13 @@ public partial class BrowserOrchestrator : IBrowserService
                 {
                     // Background load completed — replace skeleton with real page
                     await CompleteBackgroundLoadAsync(options, cancellationToken).ConfigureAwait(false);
+                }
+                else if (completed == _humanActionWatcher)
+                {
+                    // workspace-iv9g: the watcher finished — user either solved
+                    // the gate (success result) or it timed out / cancelled
+                    // (null). CompleteHumanActionWatcherAsync handles both.
+                    await CompleteHumanActionWatcherAsync(options, cancellationToken).ConfigureAwait(false);
                 }
                 else if (completed == _qualityRetryTask)
                 {
