@@ -94,9 +94,10 @@ internal static class GcsHelpOverlays
     }
 
     /// <summary>
-    /// Renders the verbose plain-language overlay for the GCS bucket name
-    /// field. Mirrors the SA-key overlay structure so both feel like
-    /// siblings.
+    /// Renders the verbose plain-language overlay for the GCS bucket field.
+    /// workspace-spue: this prompt asks for the full PUBLIC URL the feed
+    /// will live at, not a bare bucket name — the overlay must explain
+    /// both the URL form and the bucket-name-naming rules underneath it.
     /// </summary>
     public static void RenderBucketHelp(ThemePalette palette, int startRow)
     {
@@ -109,44 +110,45 @@ internal static class GcsHelpOverlays
 
         var lines = new List<string>
         {
-            $"{palette.HeaderTitleFg.AnsiFg}Google Cloud Storage bucket — what is this?{Reset}",
+            $"{palette.HeaderTitleFg.AnsiFg}Public feed URL — what is this?{Reset}",
             string.Empty,
             $"{palette.PrimaryText.AnsiFg}Plain-English version{Reset}",
         };
         lines.AddRange(WrapBody(
             palette,
-            "A bucket is a folder in Google Cloud Storage that holds your podcast " +
-            "audio files and RSS feed. The bucket name is part of the public URL.",
+            "This is the address where your podcast RSS feed will live publicly. " +
+            "Anyone (Apple Podcasts, Overcast, you) subscribes by pasting this URL.",
             maxCopy));
 
         lines.Add(string.Empty);
-        lines.Add($"{palette.PrimaryText.AnsiFg}Naming rules{Reset}");
+        lines.Add($"{palette.PrimaryText.AnsiFg}Accepted forms{Reset}");
         lines.AddRange(WrapBody(
             palette,
-            "Lowercase letters, numbers, hyphens, underscores, dots. 3-63 characters. " +
+            "https://storage.googleapis.com/<bucket>/feed.xml  (recommended)",
+            maxCopy));
+        lines.AddRange(WrapBody(
+            palette,
+            "https://<bucket>.storage.googleapis.com/feed.xml",
+            maxCopy));
+        lines.AddRange(WrapBody(
+            palette,
+            "gs://<bucket>/feed.xml   ·   <bucket>   (also accepted)",
+            maxCopy));
+
+        lines.Add(string.Empty);
+        lines.Add($"{palette.PrimaryText.AnsiFg}Bucket naming rules{Reset}");
+        lines.AddRange(WrapBody(
+            palette,
+            "Lowercase letters, numbers, hyphens, underscores, dots. 3-63 chars. " +
             "Must start and end with a letter or number. Globally unique.",
             maxCopy));
 
         lines.Add(string.Empty);
-        lines.Add($"{palette.PrimaryText.AnsiFg}Examples{Reset}");
+        lines.Add($"{palette.PrimaryText.AnsiFg}Don't have a bucket yet?{Reset}");
         lines.AddRange(WrapBody(
             palette,
-            "joe-podcast-feed · acmecorp-podcasts-prod · tr_list_reader",
-            maxCopy));
-
-        lines.Add(string.Empty);
-        lines.Add($"{palette.PrimaryText.AnsiFg}Don't have one yet?{Reset}");
-        lines.AddRange(WrapBody(
-            palette,
-            "Type the name you want and press Enter. We'll create it in your project.",
-            maxCopy));
-
-        lines.Add(string.Empty);
-        lines.Add($"{palette.PrimaryText.AnsiFg}Where to find an existing one{Reset}");
-        lines.AddRange(WrapBody(
-            palette,
-            "console.cloud.google.com -> Cloud Storage -> Buckets. Copy the value " +
-            "in the Name column (not the URL). gs:// prefix is fine — we'll strip it.",
+            "Accept the suggested URL with Enter — we'll create the bucket in " +
+            "your project. Or pick your own name inside the URL form above.",
             maxCopy));
 
         lines.Add(string.Empty);
