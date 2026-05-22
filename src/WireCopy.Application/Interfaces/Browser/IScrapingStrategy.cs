@@ -78,6 +78,14 @@ public sealed record ScrapingStrategyContext
     /// the cached AI result or RSS URL stored on this record.
     /// </summary>
     public SiteHierarchyConfig? SavedConfig { get; init; }
+
+    /// <summary>
+    /// workspace-99ve: optional user-supplied editorial guidance forwarded
+    /// to AI-based strategies (e.g. "exclude opinion pieces"). Trimmed +
+    /// null when empty so the analyzer's cache invalidation lines up with
+    /// the cached <see cref="AiCuratedResult.UserGuidance"/>.
+    /// </summary>
+    public string? UserGuidance { get; init; }
 }
 
 /// <summary>

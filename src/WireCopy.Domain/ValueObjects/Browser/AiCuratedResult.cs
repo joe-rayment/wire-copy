@@ -33,6 +33,14 @@ public record AiCuratedResult
     public required DateTime AnalyzedAt { get; init; }
 
     /// <summary>
+    /// workspace-99ve: optional user-supplied editorial guidance that
+    /// steered the analyzer (e.g. "exclude opinion", "put COVID first").
+    /// Stored on the result so the cache layer can invalidate when the
+    /// guidance changes — same page + different guidance = re-run.
+    /// </summary>
+    public string? UserGuidance { get; init; }
+
+    /// <summary>
     /// Build a stable key for a link. Currently keyed by URL.
     /// </summary>
     public static string KeyFor(string url) => $"url:{url}";

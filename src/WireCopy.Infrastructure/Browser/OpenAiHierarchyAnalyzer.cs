@@ -209,6 +209,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         byte[]? screenshot,
         List<LinkInfo> links,
         string pageUrl,
+        string? userGuidance = null,
         CancellationToken cancellationToken = default)
     {
         var apiKey = GetApiKey()
@@ -221,6 +222,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         var systemPrompt = BuildCuratedSystemPrompt();
         var userPrompt = BuildCuratedUserPrompt(contentLinks, pageUrl);
+
+        // workspace-99ve: append user-supplied editorial guidance to the
+        // user message so the analyzer steers toward the requested outcome
+        // ("exclude opinion pieces", "put COVID first", etc.). Empty /
+        // whitespace = no guidance, behave as before.
+        if (!string.IsNullOrWhiteSpace(userGuidance))
+        {
+            var sb = new StringBuilder(userPrompt);
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("USER GUIDANCE — please weight this when ranking and excluding:");
+            sb.AppendLine(userGuidance.Trim());
+            userPrompt = sb.ToString();
+        }
 
         _logger.LogInformation(
             "AI curated analysis for {Url} ({Count} content links, screenshot={HasShot}) via {Model}",

@@ -19,5 +19,6 @@ public interface IHierarchyAnalyzer
         byte[]? screenshot,
         List<LinkInfo> links,
         string pageUrl,
+        string? userGuidance = null,
         CancellationToken cancellationToken = default);
 }
