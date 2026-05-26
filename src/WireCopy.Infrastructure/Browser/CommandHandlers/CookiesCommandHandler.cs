@@ -145,7 +145,7 @@ internal static class CookiesCommandHandler
             if (!browserSession.HasBrowserContext)
             {
                 ctx.NavigationService.SetStatusMessage(
-                    "Browser session not active. Open a paywalled site (e.g. nytimes.com) and log in first.");
+                    "Browser session not active. Open a paywalled site you subscribe to (e.g. wsj.com, nytimes.com) and log in first.");
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return;
             }
