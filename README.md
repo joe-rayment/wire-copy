@@ -3,11 +3,11 @@
 A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers, no noise.
 
 <p align="center">
-  <a href="docs/assets/wirecopy.mp4">
+  <a href="https://cdn.jsdelivr.net/gh/joe-rayment/wire-copy@main/docs/assets/wirecopy.mp4">
     <img src="docs/assets/title-card.png" alt="Wire Copy — a better reading experience. Click to watch the demo." width="900" />
   </a>
 </p>
-<p align="center"><sub><a href="docs/assets/wirecopy.mp4">▶ Watch the demo (1m 10s)</a></sub></p>
+<p align="center"><sub><a href="https://cdn.jsdelivr.net/gh/joe-rayment/wire-copy@main/docs/assets/wirecopy.mp4">▶ Watch the demo (1m 10s)</a></sub></p>
 
 ## What you can do with it
 
