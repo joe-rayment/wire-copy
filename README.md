@@ -1,8 +1,17 @@
 # WireCopy
 
-A .NET 10 terminal-based web browser with Helix-style keybindings, a distraction-free reader view, and an optional pipeline that turns saved articles into M4B audiobooks.
+A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers, no noise.
 
-Browse any website from your terminal with keyboard-only navigation, save articles to reading lists, and (optionally) generate narrated audio with chapter markers from your collections.
+## What you can do with it
+
+- **Bookmark your favourite news sites and blogs** and jump straight back to them — no tab bar to wrangle, just a grid of named cards on the launcher.
+- **Browse pages from the keyboard** — articles, link lists, and headers show up as a clean tree without ads, cookie banners, share widgets, or layout chrome.
+- **Read articles in a focused reader view** — pick a comfortable width, search inside the page, and turn on speed-reading when you want to skim.
+- **Save articles to reading lists** for later, with read / unread tracking and per-item caching so everything still works after you've closed the tab.
+- **Turn a reading list into a narrated audiobook** — generate an M4B with chapter markers and (optionally) publish it as a podcast feed so you can subscribe in your podcast app and listen on the go.
+- *(advanced)* **Anti-detection browsing** via patched Playwright for sites that block bots, and **paste-once login cookies** (encrypted at rest) for paywalled sources you already pay for.
+
+For the technically curious: a .NET 10 terminal browser with Helix-style keybindings (`j`/`k`/`h`/`l`/`gg`/`G`), a distraction-free reader view, and a pipeline that turns saved articles into M4B audiobooks with chapter markers and an optional GCS-hosted RSS feed.
 
 > **Note:** When scraping websites, always respect robots.txt and Terms of Service. This project is for educational and personal use.
 
@@ -53,6 +62,8 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 | `o` | Go to URL |
 | `a` | Add bookmark |
 | `d` | Delete bookmark |
+| `Shift+J` / `Shift+K` | Reorder selected bookmark down / up |
+| `c` | Open Reading List |
 | `1`-`9` | Jump to bookmark by number |
 | `?` | Help |
 
@@ -64,10 +75,13 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 | `h` / `l` | Collapse / expand sections |
 | `Enter` | Follow selected link |
 | `s` | Save to collection |
-| `v` | Switch to reader view |
-| `R` | Refresh page |
-| `b` | Go back |
-| `/` | Search |
+| `v` / `Tab` | Switch to reader view |
+| `t` | Switch to link tree view |
+| `Shift+R` | Force refresh (bypass cache) |
+| `b` / `Backspace` | Go back |
+| `Shift+L` | Go forward |
+| `/` `n` `N` | Search · next / previous match |
+| `:` | Command line |
 | `?` | Help |
 
 ### Reader View
@@ -75,13 +89,19 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 | Key | Action |
 |-----|--------|
 | `j` / `k` or arrows | Scroll |
-| `h` / `l` | Decrease / increase content width |
 | `Ctrl+d` / `Ctrl+u` | Page down / up |
+| `+` / `=` / `]` | Increase content width |
+| `-` / `_` / `[` | Decrease content width |
+| `0` | Reset width |
+| `f` | Toggle speed reading |
+| `<` / `>` | Slower / faster WPM (speed reading) |
+| `Shift+E` | Regenerate article layout (re-run AI extractor) |
 | `s` | Save to collection |
 | `o` | Open in system browser |
 | `/` | Search |
-| `v` | Switch to link tree |
-| `b` | Go back |
+| `:` | Command line |
+| `v` / `Tab` | Switch to link tree |
+| `b` / `Backspace` | Go back |
 | `?` | Help |
 
 ### Collections
@@ -90,49 +110,55 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 |-----|--------|
 | `Enter` | Open item |
 | `d` | Remove item |
-| `J` / `K` | Reorder items |
+| `Shift+J` / `Shift+K` | Reorder items |
+| `Shift+X` | Clear list (with confirmation) |
 | `p` | Generate podcast |
-| `b` | Go back |
+| `b` / `Backspace` | Go back |
 
 ### All Screens
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+L` | Cycle layout variant |
+| `Ctrl+L` | Open layout-strategy chooser (Document Order / AI Curated / RSS Feed) |
+| `Ctrl+P` | Cycle theme |
+| `Ctrl+C` | Quit |
 | `gg` / `G` | Jump to top / bottom |
 | `q` | Quit |
 | `?` | Help |
 
-## Layout Variants
+## Layout strategies
 
-Each screen supports alternative layouts, toggled with `Ctrl+L`:
+Sites vary wildly in how they structure their link lists. WireCopy ships three scraping strategies and lets you pick the one that produces the cleanest tree per domain. Press `Ctrl+L` on any page to open the chooser:
 
-- **Launcher**: Grid (2-column) or List (single-column)
-- **Link Tree**: Cards (2-column) or Dense List (1 line per item)
-- **Reader**: Comfortable (80-char width) or Full Width
-- **Collection Items**: Standard (2-line) or Compact (1-line)
+- **Document Order** — fast, deterministic; renders links in the order they appear in the HTML with a basic ad/footer filter. Best default.
+- **AI Curated** — sends the page to OpenAI (`gpt-5-mini`) to group stories into sections and prune chrome. Cached per-domain for 30 days. Costs a few cents on first visit; free after that.
+- **RSS Feed** — replaces the link list with the site's advertised RSS or Atom feed. Probe times out after 5s on sites without a feed.
 
-Layout preferences persist between sessions.
+In the chooser modal: deselect any strategies you don't want to probe, press Enter, then use `◀`/`▶` to preview each candidate's link tree live. Enter again saves the highlighted strategy as the default for that domain. The choice persists across sessions.
+
+The command line equivalent is `:layout` (open chooser) and `:layout clear` (forget the saved strategy for the current site).
 
 ## Audio / Podcast Mode
 
-Generate narrated M4B files from your saved articles. Two API keys are required:
+Generate narrated M4B files from your saved articles. A single **OpenAI** API key powers both text-to-speech (`gpt-4o-mini-tts`, `nova` voice by default) and the AI-curated article extractor (`gpt-5-mini`).
 
-- **OpenAI** — text-to-speech (`tts-1`, `nova` voice by default)
-- **Anthropic** — page-structure analysis for cleaner article extraction
+### Setup
+
+The fastest path is the in-app setup screen — launch WireCopy, press `:` to open the command line, type `config`, then walk through the rows. Keys are stored encrypted (ASP.NET DataProtection) in `UserSettingsStore` at `$LOCALAPPDATA/WireCopy/settings.json` (on Linux/macOS: `~/.local/share/WireCopy/settings.json`).
+
+If you prefer `dotnet user-secrets` (e.g. during development), that path still works and is read on startup:
 
 ```bash
 cd src/WireCopy.API
-dotnet user-secrets init
-dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
-dotnet user-secrets set "Anthropic:ApiKey" "sk-ant-..."
+./dotnet user-secrets init
+./dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
 ```
 
-Cloud publishing of podcast feeds via Google Cloud Storage is supported but optional — see [docs/cookie-encryption.md](docs/cookie-encryption.md) and [docs/data-storage.md](docs/data-storage.md) for details on credential handling.
+Cloud publishing of podcast feeds via Google Cloud Storage is optional. To enable it, set `Gcs:BucketName` and either `Gcs:ServiceAccountKeyPath` (path to a JSON service-account key) or grant default credentials. See [docs/cookie-encryption.md](docs/cookie-encryption.md) and [docs/data-storage.md](docs/data-storage.md) for credential handling.
 
 ### Cost management
 
-Both APIs enforce per-session budget limits configured in `appsettings.json` (`OpenAiTts:MaxBudgetUsd`, `Anthropic:MaxBudgetUsd`). Generated audio is cached on disk to avoid regeneration when re-running with the same content.
+OpenAI calls enforce per-session budget limits configured in `appsettings.json` (`OpenAiTts:MaxBudgetUsd`) and a monthly token cap for the analyzer (`OpenAiHierarchy:MonthlyTokenBudget`). Generated audio and AI-curated layouts are cached on disk to avoid regeneration when re-running with the same content.
 
 ## Authentication for paywalled sites
 
@@ -142,17 +168,23 @@ For sites requiring login, WireCopy supports paste-once session cookies that are
 
 Configuration is loaded from `appsettings.json` and can be overridden with environment variables, `dotnet user-secrets`, or a local `secrets.json` (gitignored — see [`secrets.json.example`](secrets.json.example)).
 
+**Runtime overrides.** The in-app `:config` setup screen and the `:set <key> <value>` slash command write to `UserSettingsStore` (`$LOCALAPPDATA/WireCopy/settings.json`), which takes precedence over `appsettings.json` for the keys it covers (API keys, GCS bucket, voice, etc.).
+
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `OpenAiTts:ApiKey` | OpenAI API key | (required for audio) |
+| `OpenAiTts:ApiKey` | OpenAI API key (shared with the analyzer) | (required for audio + AI curation) |
+| `OpenAiTts:Model` | TTS model | `gpt-4o-mini-tts` |
 | `OpenAiTts:Voice` | TTS voice | `nova` |
-| `OpenAiTts:MaxBudgetUsd` | Max spend per session | `1.00` |
-| `Anthropic:ApiKey` | Anthropic API key | (required for audio) |
-| `Anthropic:Model` | Claude model for analysis | see `appsettings.json` |
-| `Anthropic:MaxBudgetUsd` | Max spend per session | `0.10` |
+| `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
+| `OpenAiHierarchy:Model` | Chat model for AI-curated layout / extraction | `gpt-5-mini` |
+| `OpenAiHierarchy:ReasoningEffort` | Reasoning tier (`minimal` / `low` / `medium`) | `minimal` |
+| `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Headless` | Run browser headless | `false` |
 | `Browser:ImplicitWaitSeconds` | Page-element timeout | `30` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
+| `Gcs:BucketName` | GCS bucket for podcast feed publishing | (unset → local-only mode) |
+| `Gcs:ServiceAccountKeyPath` | Path to GCS service-account JSON key | (unset → default credentials) |
+| `Gcs:BucketLocation` | Region used when auto-creating the bucket | `US` |
 
 ## Project Structure
 
@@ -199,7 +231,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 docker build -t wirecopy:latest .
 docker run --rm \
   -e OpenAiTts__ApiKey="sk-..." \
-  -e Anthropic__ApiKey="sk-ant-..." \
   -v $(pwd)/output:/app/output \
   wirecopy:latest
 ```
@@ -226,14 +257,13 @@ bd close <id>
 - **.NET 10.0** with C# 14
 - **[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-dotnet)** — patched Playwright for .NET (CDP-leak patched, ARM64-native)
 - **HtmlAgilityPack** for HTML parsing and content extraction
-- **OpenAI .NET SDK** for text-to-speech
-- **Anthropic .NET SDK** for page-structure analysis
+- **OpenAI .NET SDK** — powers both TTS (`gpt-4o-mini-tts`) and AI-curated layout / article extraction (`gpt-5-mini`)
 - **FFMpegCore** for audio processing
 - **z440.atl.core** (ATL.NET) for M4B chapter markers
-- **Entity Framework Core 9** + **SQLite** for local persistence
+- **Entity Framework Core 10** + **SQLite** for local persistence
 - **ASP.NET DataProtection** for cookie / credential encryption at rest
 - **Google.Cloud.Storage** for optional podcast feed publishing
-- **Terminal.Gui 2** for the terminal UI shell
+- **Terminal.Gui 2.2** for the terminal UI shell
 - **Serilog** for structured logging
 
 ## License
