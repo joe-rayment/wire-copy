@@ -53,6 +53,14 @@ public record EpisodeMetadata
     public IReadOnlyList<ChapterMark>? Chapters { get; init; }
 
     /// <summary>
+    /// Optional public URL of the Podcasting 2.0 chapters JSON sidecar
+    /// for this episode (workspace-2g70). When set, the feed serializes a
+    /// <c>&lt;podcast:chapters url="…" type="application/json+chapters"/&gt;</c>
+    /// element that Apple Podcasts / Pocket Casts / Spotify all read.
+    /// </summary>
+    public string? ChaptersJsonUrl { get; init; }
+
+    /// <summary>
     /// Gets the optional URL to the original source article.
     /// </summary>
     public string? SourceUrl { get; init; }

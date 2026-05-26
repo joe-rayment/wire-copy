@@ -122,7 +122,19 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
             new XElement(Itunes + "duration", FormatDuration(episode.Duration)),
             new XElement(Itunes + "summary", new XCData(episode.Description)));
 
-        // Podlove Simple Chapters
+        // Podcasting 2.0 chapters JSON sidecar (workspace-2g70). Read by
+        // Apple Podcasts / Pocket Casts / Spotify; preferred over the
+        // psc:chapters fallback below by every modern app we care about.
+        if (!string.IsNullOrWhiteSpace(episode.ChaptersJsonUrl))
+        {
+            item.Add(new XElement(Podcast + "chapters",
+                new XAttribute("url", episode.ChaptersJsonUrl!),
+                new XAttribute("type", "application/json+chapters")));
+        }
+
+        // Podlove Simple Chapters — kept as a fallback for AntennaPod /
+        // Podlove-aware clients that read the inline form but skip the
+        // Podcasting 2.0 namespace.
         if (episode.Chapters is { Count: > 0 })
         {
             var chaptersElement = new XElement(Psc + "chapters",

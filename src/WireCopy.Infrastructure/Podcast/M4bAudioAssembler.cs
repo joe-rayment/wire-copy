@@ -179,11 +179,46 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Phases D+E: Write Nero chapter markers and file metadata via ATL.NET
-            _logger.LogInformation("Writing chapters and metadata...");
+            // Phase D: Embed chapters via an ffmpeg ffmetadata post-pass.
+            // workspace-2g70: ATL.NET's track.Chapters.Add → track.Save() flow
+            // writes chapter atoms but with a broken tref → chap reference
+            // (audio track points only at the chapter PICTURE sub-track, not
+            // the TEXT sub-track), so Apple Podcasts can't find the titles.
+            // ffmpeg's ffmetadata input produces a correctly-linked Quicktime
+            // chapter text track. We run a second ffmpeg pass that copies the
+            // audio stream verbatim and merges in the chapter metadata.
+            var ffmpegChaptersWritten = false;
+            if (chapters.Count > 0)
+            {
+                try
+                {
+                    await InjectChaptersWithFfmpegAsync(
+                        request.OutputPath,
+                        chapters,
+                        cancellationToken).ConfigureAwait(false);
+                    ffmpegChaptersWritten = true;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "ffmpeg chapter injection failed; falling back to ATL.NET Nero chapters");
+                }
+            }
+
+            // Phase E: Write non-chapter metadata (title/artist/comment + cover
+            // art) via ATL.NET. When ffmpeg already embedded chapters, pass
+            // chapters=null so we don't write a duplicate Nero atom. When the
+            // ffmpeg pass failed, fall back to ATL.NET Nero chapters — some
+            // players (foobar2000, AntennaPod) still pick those up.
+            _logger.LogInformation("Writing metadata...");
+            List<AudioChapterMarker>? chaptersForAtl = null;
+            if (!ffmpegChaptersWritten && _config.UseNeroChapters)
+            {
+                chaptersForAtl = chapters;
+            }
+
             WriteChaptersAndMetadata(
                 request.OutputPath,
-                _config.UseNeroChapters ? chapters : null,
+                chaptersForAtl,
                 request.Metadata);
 
             // Get final file info
@@ -315,5 +350,141 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         // Parse "64k" -> 64, "128k" -> 128
         var numStr = bitrate.TrimEnd('k', 'K');
         return int.TryParse(numStr, out var value) ? value : 64;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup; the temp file will rot harmlessly otherwise.
+        }
+    }
+
+    /// <summary>
+    /// Builds an ffmpeg ffmetadata document containing one [CHAPTER] block
+    /// per <see cref="AudioChapterMarker"/>. Titles are escaped per the
+    /// ffmetadata grammar (backslash before <c>=</c>, <c>;</c>, <c>#</c>,
+    /// backslash, and newline). Timebase is fixed at 1/1000 so the START
+    /// and END values can be expressed as millisecond integers.
+    /// </summary>
+    private static string BuildFfmetadataChapters(IReadOnlyList<AudioChapterMarker> chapters)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(";FFMETADATA1\n");
+        foreach (var c in chapters)
+        {
+            var startMs = (long)Math.Max(0, c.StartTime.TotalMilliseconds);
+            var endMs = c.EndTime.HasValue
+                ? (long)Math.Max(startMs + 1, c.EndTime.Value.TotalMilliseconds)
+                : startMs + 1000;
+            sb.Append("\n[CHAPTER]\n");
+            sb.Append("TIMEBASE=1/1000\n");
+            sb.Append("START=").Append(startMs).Append('\n');
+            sb.Append("END=").Append(endMs).Append('\n');
+            sb.Append("title=").Append(EscapeFfmetadata(c.Title)).Append('\n');
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeFfmetadata(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            switch (ch)
+            {
+                case '\\':
+                case '=':
+                case ';':
+                case '#':
+                    sb.Append('\\').Append(ch);
+                    break;
+                case '\n':
+                    sb.Append("\\\n");
+                    break;
+                default:
+                    sb.Append(ch);
+                    break;
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// workspace-2g70: write an ffmetadata chapters file next to the m4b and
+    /// run an ffmpeg post-pass that maps the audio stream verbatim and
+    /// merges the chapter metadata in. ffmpeg writes a Quicktime chapter
+    /// text track with the audio track's <c>tref → chap</c> reference
+    /// pointing at the text track — the structurally-correct layout that
+    /// Apple Podcasts / Overcast / Pocket Casts all read.
+    /// </summary>
+    private async Task InjectChaptersWithFfmpegAsync(
+        string outputPath,
+        IReadOnlyList<AudioChapterMarker> chapters,
+        CancellationToken cancellationToken)
+    {
+        var tempDir = Path.GetDirectoryName(outputPath) ?? Path.GetTempPath();
+        var metadataPath = Path.Combine(tempDir, $".chapters-{Guid.NewGuid():N}.ffm");
+        var withChaptersPath = Path.Combine(tempDir, $".m4b-chap-{Guid.NewGuid():N}.m4a");
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                metadataPath,
+                BuildFfmetadataChapters(chapters),
+                cancellationToken).ConfigureAwait(false);
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(outputPath);
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(metadataPath);
+            psi.ArgumentList.Add("-map_metadata");
+            psi.ArgumentList.Add("1");
+            psi.ArgumentList.Add("-map");
+            psi.ArgumentList.Add("0:a");
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("copy");
+            psi.ArgumentList.Add("-movflags");
+            psi.ArgumentList.Add("+faststart");
+            psi.ArgumentList.Add(withChaptersPath);
+
+            using var process = System.Diagnostics.Process.Start(psi)
+                ?? throw new InvalidOperationException("ffmpeg process failed to start");
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            if (process.ExitCode != 0)
+            {
+                var stderr = await stderrTask.ConfigureAwait(false);
+                throw new InvalidOperationException(
+                    $"ffmpeg chapter-injection pass failed (exit {process.ExitCode}): {stderr}");
+            }
+
+            // Atomic replace: overwrite the original m4b with the chaptered copy.
+            File.Move(withChaptersPath, outputPath, overwrite: true);
+            _logger.LogInformation("Embedded {Count} chapters via ffmpeg ffmetadata", chapters.Count);
+        }
+        finally
+        {
+            TryDelete(metadataPath);
+            TryDelete(withChaptersPath);
+        }
     }
 }
