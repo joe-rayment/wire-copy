@@ -43,7 +43,7 @@ public class ProgressScreenFooterTests
 
     [Fact]
     [Trait("Collection", "ConsoleOutput")]
-    public void RendersBothLines_WhenFeedUrlProvided()
+    public void RendersSubscribePanel_WhenFeedUrlProvided()
     {
         var targets = new PodcastTargets
         {
@@ -53,15 +53,26 @@ public class ProgressScreenFooterTests
 
         var output = CaptureRender(h => PodcastProgressScreens.RenderDestinationFooter(h, Palette, targets, width: 100));
 
-        output.Should().Contain("Will save to");
+        // workspace-0v31: subscribe URL is the new headline. The label
+        // "Subscribe" leads, the full URL is rendered (not middle-elided
+        // at width 100), and the friendly walk-away copy appears above.
+        output.Should().Contain("Subscribe",
+            because: "the feed URL must be advertised as a subscribe action, not buried under 'Will publish at'");
+        output.Should().Contain("storage.googleapis.com",
+            because: "the host part of the feed URL must stay visible");
+        output.Should().Contain("/feed.xml",
+            because: "the tail of the feed URL must stay visible so the user can copy the full address");
+        output.Should().Contain("Takes",
+            because: "the friendly walk-away copy must explain the run takes a few minutes");
+        output.Should().Contain("podcast app",
+            because: "the walk-away copy must direct the user to subscribe in their podcast app");
+        output.Should().Contain("Will save to",
+            because: "the local-file destination stays in the footer as a secondary line");
         output.Should().Contain("reading-list.m4b");
-        output.Should().Contain("Will publish at");
-        output.Should().Contain("storage.googleapis.com");
-        // workspace-vkhr Phase D: footer now reflects the detach affordance
-        // (D frees the screen) but still warns that the terminal owns the
-        // lifecycle — full-process survival is Phase F.
+        // workspace-vkhr Phase D: footer still advertises the detach
+        // affordance and warns that the terminal owns the lifecycle.
         output.Should().Contain("Press D to free the screen",
-            because: "the footer must advertise the new detach keystroke");
+            because: "the footer must advertise the detach keystroke");
         output.Should().Contain("Closing this terminal still cancels",
             because: "the user must still be warned that the process owns the run");
     }

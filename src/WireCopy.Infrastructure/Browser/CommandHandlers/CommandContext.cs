@@ -68,6 +68,14 @@ internal class CommandContext
     public double PodcastGenerationProgress { get; set; }
 
     /// <summary>
+    /// Public RSS feed URL of the active podcast generation job, or null
+    /// when no job is running or the job is local-only (no GCS bucket).
+    /// workspace-y41e: surfaced on the reading-list CTA's Generating state
+    /// so the user can subscribe in their podcast app before walking away.
+    /// </summary>
+    public string? PodcastFeedUrl { get; set; }
+
+    /// <summary>
     /// When true, the prefetch detail overlay (workspace-v75w renderer) is
     /// drawn on top of the active view. Toggled by the backslash keybind
     /// (workspace-c8v3); dismissed by toggling again or by Esc/GoBack while

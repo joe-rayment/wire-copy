@@ -83,7 +83,7 @@ internal class PodcastCtaRenderer
         {
             if (height >= HeroHeightThreshold && width >= 50)
             {
-                RenderGeneratingHeroBox(width, p, progressFraction, articleCount);
+                RenderGeneratingHeroBox(width, p, progressFraction, articleCount, options.PodcastFeedUrl);
             }
             else if (height >= CompactHeightThreshold && width >= 35)
             {
@@ -109,6 +109,25 @@ internal class PodcastCtaRenderer
         {
             RenderInline(width, p, state);
         }
+    }
+
+    /// <summary>
+    /// Middle-elide a URL so the host and the final path segment both stay
+    /// visible — e.g. <c>https://storage…/feed.xml</c>. Used by the hero
+    /// box when the subscribe URL would overflow the row.
+    /// </summary>
+    private static string TruncateMiddleForRow(string url, int budget)
+    {
+        const string Ellipsis = "…";
+        if (budget <= Ellipsis.Length + 2)
+        {
+            return url[..Math.Min(url.Length, budget)];
+        }
+
+        var keep = budget - Ellipsis.Length;
+        var headLen = keep / 2;
+        var tailLen = keep - headLen;
+        return string.Concat(url.AsSpan(0, headLen), Ellipsis, url.AsSpan(url.Length - tailLen));
     }
 
     private static int ComputeButtonWidth(int terminalWidth)
@@ -239,12 +258,18 @@ internal class PodcastCtaRenderer
     /// <summary>
     /// Generating state in hero box: shows progress bar instead of metadata.
     /// </summary>
-    private void RenderGeneratingHeroBox(int width, ThemePalette p, double progressFraction, int articleCount)
+    private void RenderGeneratingHeroBox(
+        int width,
+        ThemePalette p,
+        double progressFraction,
+        int articleCount,
+        string? feedUrl)
     {
         var (innerWidth, padStr) = ComputeHeroBox(width);
         var borderFg = p.GetCelebrationFg().AnsiFg;
         var titleFg = p.GetCelebrationFg().AnsiFg;
         var subtitleFg = p.GetSuccessFg().AnsiFg;
+        var accentFg = p.GetAccentFg().AnsiFg;
         var contentIndent = 6;
 
         var percent = (int)(Math.Clamp(progressFraction, 0.0, 1.0) * 100);
@@ -274,17 +299,49 @@ internal class PodcastCtaRenderer
             $"{new string(' ', genTitlePad)}" +
             $"{borderFg}\u2502{Reset}");
 
-        // Line 4: subtitle
-        var subPad = Math.Max(0, innerWidth - contentIndent - subText.Length);
-        _helpers.WriteLine(
-            $"{padStr}{borderFg}\u2502{Reset}" +
-            $"{new string(' ', contentIndent)}" +
-            $"{subtitleFg}{subText}{Reset}" +
-            $"{new string(' ', subPad)}" +
-            $"{borderFg}\u2502{Reset}");
+        // Lines 4-5: walk-away copy + Subscribe URL when a feed URL is set
+        // (workspace-y41e); fall back to the original 'mixing N articles'
+        // subtitle + blank when this is a local-only run.
+        var availableForRow = Math.Max(10, innerWidth - contentIndent);
+        if (!string.IsNullOrEmpty(feedUrl))
+        {
+            const string walkAway = "Takes a few min \u2014 subscribe in your podcast app and step away.";
+            var walkText = walkAway.Length > availableForRow ? walkAway[..availableForRow] : walkAway;
+            var walkPad = Math.Max(0, innerWidth - contentIndent - walkText.Length);
+            _helpers.WriteLine(
+                $"{padStr}{borderFg}\u2502{Reset}" +
+                $"{new string(' ', contentIndent)}" +
+                $"{subtitleFg}{walkText}{Reset}" +
+                $"{new string(' ', walkPad)}" +
+                $"{borderFg}\u2502{Reset}");
 
-        // Line 5: blank
-        _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+            const string subscribeLabel = "Subscribe: ";
+            var urlBudget = Math.Max(10, availableForRow - subscribeLabel.Length);
+            var urlText = feedUrl!.Length <= urlBudget
+                ? feedUrl
+                : TruncateMiddleForRow(feedUrl, urlBudget);
+            var urlRowLen = subscribeLabel.Length + urlText.Length;
+            var urlPad = Math.Max(0, innerWidth - contentIndent - urlRowLen);
+            _helpers.WriteLine(
+                $"{padStr}{borderFg}\u2502{Reset}" +
+                $"{new string(' ', contentIndent)}" +
+                $"{subtitleFg}{subscribeLabel}{Reset}" +
+                $"{accentFg}{Bold}{urlText}{Reset}" +
+                $"{new string(' ', urlPad)}" +
+                $"{borderFg}\u2502{Reset}");
+        }
+        else
+        {
+            var subPad = Math.Max(0, innerWidth - contentIndent - subText.Length);
+            _helpers.WriteLine(
+                $"{padStr}{borderFg}\u2502{Reset}" +
+                $"{new string(' ', contentIndent)}" +
+                $"{subtitleFg}{subText}{Reset}" +
+                $"{new string(' ', subPad)}" +
+                $"{borderFg}\u2502{Reset}");
+
+            _helpers.WriteLine($"{padStr}{borderFg}\u2502{Reset}{new string(' ', innerWidth)}{borderFg}\u2502{Reset}");
+        }
 
         // Line 6: progress bar + percentage
         // bar is already ANSI-colored; we need to pad to fill innerWidth

@@ -75,6 +75,14 @@ public record RenderOptions
     public int PodcastArticleCount { get; init; }
 
     /// <summary>
+    /// Public RSS feed URL of the active podcast generation job, or null
+    /// when no job is active or the job is local-only (no GCS bucket).
+    /// workspace-y41e: surfaced on the reading-list CTA's Generating state
+    /// so the user can subscribe in their podcast app before walking away.
+    /// </summary>
+    public string? PodcastFeedUrl { get; init; }
+
+    /// <summary>
     /// Memory cache usage percentage (0-100). Used by the status bar to show
     /// a warning indicator when the cache is nearly full.
     /// </summary>
