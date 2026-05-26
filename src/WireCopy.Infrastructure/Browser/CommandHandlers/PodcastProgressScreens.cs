@@ -130,6 +130,7 @@ internal static class PodcastProgressScreens
         // Signal generating state so the CTA renders with progress bar
         ctx.IsPodcastGenerating = true;
         ctx.PodcastGenerationProgress = 0.0;
+        ctx.PodcastFeedUrl = targets?.FeedUrl;
 
         PodcastProgress? latestProgress = null;
         var animFrame = 0;
@@ -408,6 +409,7 @@ internal static class PodcastProgressScreens
             {
                 ctx.IsPodcastGenerating = false;
                 ctx.PodcastGenerationProgress = 0.0;
+                ctx.PodcastFeedUrl = null;
 
                 if (!generationTask.IsCompleted)
                 {
@@ -586,6 +588,7 @@ internal static class PodcastProgressScreens
         // detach so this is largely a no-op, but explicit is safer than
         // implicit.
         ctx.IsPodcastGenerating = true;
+        ctx.PodcastFeedUrl = targets?.FeedUrl;
 
         Task<NavigationCommand>? pendingKeyTask = null;
 
@@ -718,6 +721,7 @@ internal static class PodcastProgressScreens
             {
                 ctx.IsPodcastGenerating = false;
                 ctx.PodcastGenerationProgress = 0.0;
+                ctx.PodcastFeedUrl = null;
                 if (jobManager.HasActiveJob)
                 {
                     jobManager.Clear();
@@ -1470,9 +1474,13 @@ internal static class PodcastProgressScreens
     }
 
     /// <summary>
-    /// Renders the destination footer beneath the per-article progress list
-    /// (workspace-zh3u). Two lines for "will save / will publish" + an
-    /// ephemerality line warning the user that closing the terminal cancels.
+    /// Renders the destination footer beneath the per-article progress list.
+    /// workspace-0v31: when a feed URL is set, the subscribe panel headlines
+    /// the footer — a friendly walk-away message followed by 'Subscribe' +
+    /// the full feed URL — with the local file path demoted underneath.
+    /// When no feed URL is set (local-only mode), shows the original local
+    /// path line + the local-only notice; the walk-away copy is suppressed
+    /// (nothing to subscribe to).
     /// </summary>
     internal static void RenderDestinationFooter(
         RenderHelpers helpers,
@@ -1480,36 +1488,85 @@ internal static class PodcastProgressScreens
         PodcastTargets targets,
         int width)
     {
+        const string SubscribeLabel = "Subscribe";
         const string LocalLabel = "Will save to";
-        const string FeedLabel = "Will publish at";
-
-        var labelWidth = FeedLabel.Length;
-        var available = Math.Max(20, width - labelWidth - 6);
-
-        var localDisplay = PodcastSetupHelpers.TruncateMiddle(targets.LocalFilePath, available);
-        helpers.WriteLine(
-            $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
-            $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
 
         if (!string.IsNullOrEmpty(targets.FeedUrl))
         {
-            var feedDisplay = PodcastSetupHelpers.TruncateMiddle(targets.FeedUrl, available);
+            // workspace-0v31: friendly walk-away copy as the headline. Tells
+            // the user (a) this takes a few minutes, (b) it's safe to step
+            // away, and (c) the action they should take right now is to
+            // subscribe in their podcast app — the episode lands there
+            // automatically when generation finishes.
             helpers.WriteLine(
-                $"  {p.SecondaryText.AnsiFg}{FeedLabel.PadRight(labelWidth)}{Reset}  " +
-                $"{p.PrimaryText.AnsiFg}{feedDisplay}{Reset}");
+                $"  {p.GetAccentFg().AnsiFg}Takes 3–5 minutes. Subscribe in your podcast app now — " +
+                $"the episode will appear there as soon as it's ready.{Reset}");
+            helpers.WriteLine();
+
+            // Render the full feed URL — copy-friendly, never middle-elided.
+            // Wrap to a second line at a slash boundary when the URL is too
+            // long to fit on one line at the current terminal width.
+            var feedUrl = targets.FeedUrl!;
+            var labelText = $"{SubscribeLabel}: ";
+            var firstLineWidth = Math.Max(20, width - labelText.Length - 4);
+
+            if (feedUrl.Length <= firstLineWidth)
+            {
+                helpers.WriteLine(
+                    $"  {p.SecondaryText.AnsiFg}{labelText}{Reset}" +
+                    $"{p.GetSuccessFg().AnsiFg}{feedUrl}{Reset}");
+            }
+            else
+            {
+                // Wrap at the last '/' that fits the first line so each line
+                // is a recognisable URL fragment, not a mid-word cut.
+                var breakPoint = feedUrl.LastIndexOf('/', Math.Min(feedUrl.Length - 1, firstLineWidth));
+                if (breakPoint <= 0)
+                {
+                    breakPoint = firstLineWidth;
+                }
+
+                var head = feedUrl[..breakPoint];
+                var tail = feedUrl[breakPoint..];
+                helpers.WriteLine(
+                    $"  {p.SecondaryText.AnsiFg}{labelText}{Reset}" +
+                    $"{p.GetSuccessFg().AnsiFg}{head}{Reset}");
+
+                // Continuation line indented under the URL start so it reads
+                // as a single value spanning two lines.
+                var indent = new string(' ', 2 + labelText.Length);
+                helpers.WriteLine(
+                    $"{indent}{p.GetSuccessFg().AnsiFg}{tail}{Reset}");
+            }
+
+            helpers.WriteLine();
+
+            // Local path is informational now, not the headline.
+            var localLabelWidth = SubscribeLabel.Length + 1;
+            var localAvailable = Math.Max(20, width - localLabelWidth - 6);
+            var localDisplay = PodcastSetupHelpers.TruncateMiddle(targets.LocalFilePath, localAvailable);
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(localLabelWidth)}{Reset}  " +
+                $"{p.SecondaryText.AnsiFg}{localDisplay}{Reset}");
         }
         else
         {
+            // Local-only mode: no subscribe URL, no walk-away copy.
+            var labelWidth = "Will save to".Length;
+            var available = Math.Max(20, width - labelWidth - 6);
+            var localDisplay = PodcastSetupHelpers.TruncateMiddle(targets.LocalFilePath, available);
+            helpers.WriteLine(
+                $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
+                $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
             helpers.WriteLine(
                 $"  {p.SecondaryText.AnsiFg}(no GCS bucket configured — generating locally only){Reset}");
         }
 
         helpers.WriteLine();
 
-        // workspace-vkhr Phase D: the detach affordance is the headline of
-        // the in-progress footer now — the user CAN free the screen and the
-        // job keeps running. Closing the terminal still cancels (that's
-        // Phase F).
+        // workspace-vkhr Phase D: the detach affordance stays — the user CAN
+        // free the screen and the job keeps running. Closing the terminal
+        // still cancels (that's Phase F).
         helpers.WriteLine(
             $"  {p.SecondaryText.AnsiFg}Running. Press D to free the screen — generation continues. " +
             $"Closing this terminal still cancels.{Reset}");

@@ -174,6 +174,86 @@ public class PodcastCtaRendererTests
 
     #endregion
 
+    #region workspace-y41e — generating hero box with subscribe URL
+
+    [Fact]
+    public void Render_GeneratingHeroBox_WithFeedUrl_ShowsWalkAwayAndSubscribeUrl()
+    {
+        var captured = CaptureRender(opts =>
+            opts with
+            {
+                PodcastButtonState = (int)PodcastCtaState.Generating,
+                PodcastProgressFraction = 0.42,
+                PodcastFeedUrl = "https://storage.googleapis.com/my-bucket/podcasts/abc123/feed.xml",
+            });
+
+        captured.Should().Contain("GENERATING",
+            because: "the existing hero title row must stay during generating state");
+        captured.Should().Contain("Takes a few min",
+            because: "the walk-away copy must surface so users know it's safe to step away");
+        captured.Should().Contain("subscribe in your podcast app",
+            because: "the walk-away copy must direct the user to subscribe");
+        captured.Should().Contain("Subscribe:",
+            because: "the new subscribe row must label the URL");
+        // The URL is long enough that it ends up middle-elided at width 80; either
+        // the host or the tail must remain visible so the user can recognise it.
+        var hasHost = captured.Contains("storage.googleapis.com");
+        var hasTail = captured.Contains("feed.xml");
+        (hasHost || hasTail).Should().BeTrue(
+            because: "the host or the final segment of the URL must survive truncation");
+        captured.Should().NotContain("mixing 1 article",
+            because: "the local-only subtitle is replaced when a feed URL is present");
+    }
+
+    [Fact]
+    public void Render_GeneratingHeroBox_WithoutFeedUrl_FallsBackToOriginalSubtitle()
+    {
+        var captured = CaptureRender(opts =>
+            opts with
+            {
+                PodcastButtonState = (int)PodcastCtaState.Generating,
+                PodcastProgressFraction = 0.42,
+                PodcastArticleCount = 3,
+                PodcastFeedUrl = null,
+            });
+
+        captured.Should().Contain("GENERATING",
+            because: "title row stays the same");
+        captured.Should().Contain("mixing 3 articles",
+            because: "local-only mode keeps the original subtitle so the box doesn't resize");
+        captured.Should().NotContain("Subscribe:",
+            because: "no feed URL means no subscribe row");
+        captured.Should().NotContain("Takes a few min",
+            because: "no feed URL means no walk-away copy (nothing to subscribe to)");
+    }
+
+    private static string CaptureRender(Func<RenderOptions, RenderOptions> mutateOptions)
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 50 };
+        var renderer = new PodcastCtaRenderer(helpers, themeProvider);
+
+        var options = mutateOptions(CreateOptions(80, 40));
+        var state = (PodcastCtaState)options.PodcastButtonState;
+
+        var originalOut = Console.Out;
+        using var sw = new StringWriter();
+        Console.SetOut(sw);
+        try
+        {
+            renderer.Render(options, state, articleCount: options.PodcastArticleCount);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        return sw.ToString();
+    }
+
+    #endregion
+
     #region Helpers
 
     private static RenderOptions CreateOptions(int terminalWidth = 80, int terminalHeight = 40)

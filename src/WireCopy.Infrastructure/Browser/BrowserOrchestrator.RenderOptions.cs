@@ -61,6 +61,7 @@ public partial class BrowserOrchestrator
             PodcastButtonState = isLauncher ? 0 : GetPodcastButtonState(),
             PodcastProgressFraction = isLauncher ? 0 : _commandContext.PodcastGenerationProgress,
             PodcastArticleCount = isLauncher ? 0 : GetPodcastArticleCount(),
+            PodcastFeedUrl = isLauncher ? null : _commandContext.PodcastFeedUrl,
             CacheUsagePercent = isLauncher ? 0 : GetCacheUsagePercent(),
             LayoutVariantLabel = isLauncher ? null : GetLayoutVariantLabel(),
             LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
