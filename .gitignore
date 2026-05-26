@@ -163,5 +163,19 @@ CLAUDE.md
 # Local issue tracker (untracked; local copy persists across pulls)
 .beads/
 
+# Internal QA / verification artifacts (untracked; local copies persist across pulls)
+docs/qa/
+docs/screenshots/
+scripts/regenerate_feed_xml_only.py
+scripts/test_cost_gate_handoff.py
+scripts/test_macleans_ai_curated.py
+scripts/test_nyt_cache.py
+scripts/test_podcast_e2e_real.py
+scripts/test_podcast_screen.py
+scripts/test_sfhy_default_focus.py
+scripts/test_u6di_apple_play_predictors.py
+scripts/test_vkhr_detach_restore.py
+scripts/test_yib5_first_time_setup.py
+
 # Credential files (local only)
 creds/
