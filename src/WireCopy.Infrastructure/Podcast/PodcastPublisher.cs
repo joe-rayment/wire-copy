@@ -243,10 +243,22 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             // Step 4: Merge new episodes with existing ones (new episodes replace duplicates by ID)
             var mergedEpisodes = MergeEpisodes(existingEpisodes, newEpisodeMetadata);
 
+            // Step 4.5: Upload the cover PNG once per feed (idempotent: skipped
+            // when the remote object size matches the local file). The returned
+            // public URL drives the <itunes:image href="..."> element in the
+            // RSS feed below (workspace-yg9l).
+            var coverImageUrl = await EnsureCoverUploadedAsync(
+                feedBasePath,
+                cancellationToken).ConfigureAwait(false);
+
             // Step 5: Generate feed XML with all episodes
             var feedObjectPath = $"{feedBasePath}/feed.xml";
             var feedUrl = _storage.GetPublicUrl(feedObjectPath);
-            var enrichedPodcast = podcast with { FeedUrl = feedUrl };
+            var enrichedPodcast = podcast with
+            {
+                FeedUrl = feedUrl,
+                ImageUrl = coverImageUrl ?? podcast.ImageUrl,
+            };
 
             var feedXml = await _feedGenerator.GenerateFeedXmlAsync(
                 enrichedPodcast,
@@ -549,6 +561,53 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return $"(directory probe failed: {ex.Message})";
+        }
+    }
+
+    /// <summary>
+    /// workspace-yg9l: idempotently upload the workspace-vendored cover PNG
+    /// to <c>{feedBasePath}/cover.png</c>. Skipped when the remote object's
+    /// size matches the local file (same skip-if-exists pattern the episode
+    /// upload uses, workspace-z2om). Returns the public URL on success, or
+    /// null when the asset can't be located on disk or the upload fails —
+    /// in either case the feed simply omits <c>&lt;itunes:image&gt;</c>.
+    /// </summary>
+    private async Task<string?> EnsureCoverUploadedAsync(
+        string feedBasePath,
+        CancellationToken cancellationToken)
+    {
+        var localCover = Path.Combine(AppContext.BaseDirectory, "assets", "podcast-cover.png");
+        if (!File.Exists(localCover))
+        {
+            _logger.LogDebug("Cover art not found at {Path}; feed will omit itunes:image", localCover);
+            return null;
+        }
+
+        var objectPath = $"{feedBasePath}/cover.png";
+        try
+        {
+            var localSize = new FileInfo(localCover).Length;
+            var remoteSize = await _storage.GetObjectSizeAsync(objectPath, cancellationToken).ConfigureAwait(false);
+            if (remoteSize.HasValue && remoteSize.Value == localSize)
+            {
+                _logger.LogDebug("Cover already uploaded at expected size, skipping");
+                return _storage.GetPublicUrl(objectPath);
+            }
+
+            await _storage.UploadAsync(
+                localCover,
+                objectPath,
+                "image/png",
+                progress: null,
+                cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("Uploaded podcast cover art to {Path}", objectPath);
+            return _storage.GetPublicUrl(objectPath);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to upload cover art; feed will omit itunes:image");
+            return null;
         }
     }
 

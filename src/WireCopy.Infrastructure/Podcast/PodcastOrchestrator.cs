@@ -257,6 +257,25 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
 
+    /// <summary>
+    /// workspace-yg9l: locate the workspace-vendored podcast cover PNG so
+    /// the M4B and (later) the RSS feed can advertise consistent cover art.
+    /// Returns null when the asset can't be found rather than failing the
+    /// run — the M4B assembler tolerates a missing CoverArtPath.
+    /// </summary>
+    private static string? ResolveCoverArtPath()
+    {
+        try
+        {
+            var candidate = Path.Combine(AppContext.BaseDirectory, "assets", "podcast-cover.png");
+            return File.Exists(candidate) ? candidate : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string ExpandUserPath(string path)
     {
         if (path.StartsWith("~/", StringComparison.Ordinal) || path == "~")
@@ -672,6 +691,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     Author = _podcastConfig.Author,
                     Description = _podcastConfig.Description,
                     Genre = "Podcast",
+
+                    // workspace-yg9l: embed the WIRE COPY cover art into the
+                    // M4B's user-data box so macOS Music / Apple Podcasts /
+                    // VLC render the wordmark as album art. Path resolves
+                    // relative to the running binary (Content item in
+                    // WireCopy.API.csproj copies assets/ to the bin dir).
+                    CoverArtPath = ResolveCoverArtPath(),
                 },
             };
 
