@@ -9,6 +9,8 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Podcast.Cache;
 
 namespace WireCopy.Infrastructure.Browser;
@@ -36,6 +38,7 @@ public class PageLoadPipeline
     private readonly IPageCache _pageCache;
     private readonly IPreloadService _preloadService;
     private readonly ICookieManager _cookieManager;
+    private readonly IThemeProvider _themeProvider;
     private readonly ILogger<PageLoadPipeline> _logger;
 
     // Lazily resolved article content cache (may not be registered if podcast services are disabled)
@@ -69,6 +72,7 @@ public class PageLoadPipeline
         IPageCache pageCache,
         IPreloadService preloadService,
         ICookieManager cookieManager,
+        IThemeProvider themeProvider,
         Configuration.BrowserConfiguration browserConfig,
         ILogger<PageLoadPipeline> logger)
     {
@@ -84,6 +88,7 @@ public class PageLoadPipeline
         _pageCache = pageCache;
         _preloadService = preloadService;
         _cookieManager = cookieManager;
+        _themeProvider = themeProvider;
         _browserConfig = browserConfig;
         _logger = logger;
     }
@@ -608,6 +613,11 @@ public class PageLoadPipeline
         var challengeTimeout = TimeSpan.FromMinutes(2);
         var sw = Stopwatch.StartNew();
         var resolved = false;
+
+        // Design-system spec: breathing bar runs while the app waits on a human
+        // (bot-challenge / login). Loops at ~3.6s/cycle in AccentFg until disposed.
+        using var breathingBar = BreathingBarAnimation.StartForBotChallenge(
+            BuiltInThemes.Get(_themeProvider.CurrentTheme));
 
         while (sw.Elapsed < challengeTimeout && !cancellationToken.IsCancellationRequested)
         {
