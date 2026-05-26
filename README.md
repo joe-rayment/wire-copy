@@ -2,6 +2,10 @@
 
 A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers, no noise.
 
+<p align="center">
+  <img src="docs/assets/wirecopy.gif" alt="WireCopy demo" width="720" />
+</p>
+
 ## What you can do with it
 
 - **Bookmark your favourite news sites and blogs** and jump straight back to them — no tab bar to wrangle, just a grid of named cards on the launcher.
