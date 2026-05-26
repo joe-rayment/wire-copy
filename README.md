@@ -17,7 +17,7 @@ A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers,
 
 For the technically curious: a .NET 10 terminal browser with Helix-style keybindings (`j`/`k`/`h`/`l`/`gg`/`G`), a distraction-free reader view, and a pipeline that turns saved articles into M4B audiobooks with chapter markers and an optional GCS-hosted RSS feed.
 
-> **Note:** When scraping websites, always respect robots.txt and Terms of Service. This project is for educational and personal use.
+> **Note:** When browsing websites with this tool, respect each site's robots.txt and Terms of Service. WireCopy is for educational and personal use.
 
 ## Quick Start
 
@@ -132,7 +132,7 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 
 ## Layout strategies
 
-Sites vary wildly in how they structure their link lists. WireCopy ships three scraping strategies and lets you pick the one that produces the cleanest tree per domain. Press `Ctrl+L` on any page to open the chooser:
+Sites vary wildly in how they structure their link lists. WireCopy ships three extraction strategies and lets you pick the one that produces the cleanest tree per domain. Press `Ctrl+L` on any page to open the chooser:
 
 - **Document Order** — fast, deterministic; renders links in the order they appear in the HTML with a basic ad/footer filter. Best default.
 - **AI Curated** — sends the page to OpenAI (`gpt-5-mini`) to group stories into sections and prune chrome. Cached per-domain for 30 days. Costs a few cents on first visit; free after that.
