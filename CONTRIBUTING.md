@@ -44,8 +44,4 @@ Keep commits atomic — one logical change per commit.
 
 ## Reporting issues
 
-Open a GitHub issue with steps to reproduce, expected vs actual behavior, and your platform.
-
-## Security
-
-Please report security issues privately — see [SECURITY.md](SECURITY.md).
+Open a GitHub issue with steps to reproduce, expected vs actual behavior, and your platform. For sensitive issues (credential leakage, code execution, etc.), use GitHub's [private vulnerability reporting](https://github.com/joe-rayment/wire-copy/security/advisories/new) instead of a public issue.
