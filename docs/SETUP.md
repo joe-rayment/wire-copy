@@ -94,4 +94,3 @@ Both `OpenAiTts` and `Anthropic` configurations have a `MaxBudgetUsd` per sessio
 
 - `secrets.json`, `appsettings.*.json` (except the base `appsettings.json`), `cookies.json`, `*.db*`, and `keys/` are all gitignored.
 - Don't commit real credentials. CI / public builds should source secrets from environment variables or vault integrations.
-- See [SECURITY.md](../SECURITY.md) for vulnerability reporting.
