@@ -173,15 +173,20 @@ public class CompletionScreenShapeTests
             return new[] { stripped };
         }).ToList();
 
-        // The two chunks of the path (path[..63] + path[63..]) should each
-        // appear as a substring in some line.
+        // The path must be reconstructible across the value column's chunks:
+        // join every line from the File row onward, trim continuation indent,
+        // and the full path must appear as a substring. This is resilient to
+        // exactly where the chunk boundary lands (which moves with the path
+        // length) — the contract is "no character is dropped", not "the
+        // boundary is at byte N".
         const string FullPath = "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b";
-        var firstChunkLength = 63;
-        var firstChunk = FullPath[..Math.Min(firstChunkLength, FullPath.Length)];
-        pathParts.Should().Contain(p => p.Contains(firstChunk),
-            because: "the first chunk of the path must appear unbroken on a line");
-        pathParts.Should().Contain(p => p.Contains("m4b"),
-            because: "the tail of the path must survive on the continuation line");
+        var pathSpan = string.Concat(
+            pathParts
+                .Skip(fileRowIndex)
+                .TakeWhile((l, i) => i == 0 || l.TrimStart().Length > 0 && !l.Contains("Duration"))
+                .Select(l => l.TrimStart()));
+        pathSpan.Should().Contain(FullPath,
+            because: "the path must survive the wrap unbroken when chunks are rejoined");
     }
 
     [Fact]
