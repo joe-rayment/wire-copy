@@ -108,6 +108,7 @@ internal static class BrowserOrchestratorTestHelper
             pageCache,
             preloadService,
             Substitute.For<ICookieManager>(),
+            Substitute.For<IThemeProvider>(),
             browserConfig ?? new BrowserConfiguration(),
             Substitute.For<ILogger<PageLoadPipeline>>());
     }

@@ -242,6 +242,7 @@ public static class BrowserDependencyInjection
             var pageCache = sp.GetRequiredService<IPageCache>();
             var preloadService = sp.GetRequiredService<IPreloadService>();
             var cookieManager = sp.GetRequiredService<ICookieManager>();
+            var themeProvider = sp.GetRequiredService<IThemeProvider>();
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
             var pipelineLogger = sp.GetRequiredService<ILogger<PageLoadPipeline>>();
 
@@ -258,6 +259,7 @@ public static class BrowserDependencyInjection
                 pageCache,
                 preloadService,
                 cookieManager,
+                themeProvider,
                 browserConfig.Value,
                 pipelineLogger);
         });

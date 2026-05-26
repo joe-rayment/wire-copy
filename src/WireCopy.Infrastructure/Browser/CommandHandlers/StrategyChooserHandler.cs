@@ -7,6 +7,7 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Browser.UI.Components;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
@@ -331,6 +332,15 @@ internal static class StrategyChooserHandler
             {
                 ctx.NavigationService.SetStatusMessage($"✔ Applied · {selected.Summary}");
             }
+
+            // Design-system spec: 500ms centered "Layout flash" on apply.
+            // Runs after the persistent status message is queued so the
+            // post-flash render picks up the new layout + status text.
+            LayoutFlashAnimation.Play(
+                selected.Summary,
+                BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
+                options.TerminalWidth,
+                options.TerminalHeight);
         }
         catch (Exception ex)
         {
