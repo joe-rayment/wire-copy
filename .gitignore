@@ -160,5 +160,8 @@ drops/
 AGENTS.md
 CLAUDE.md
 
+# Local issue tracker (untracked; local copy persists across pulls)
+.beads/
+
 # Credential files (local only)
 creds/

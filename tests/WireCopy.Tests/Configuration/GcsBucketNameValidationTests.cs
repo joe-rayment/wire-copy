@@ -21,7 +21,7 @@ public class GcsBucketNameValidationTests
         // workspace-wooa: underscores ARE valid per GCS naming rules as long
         // as the name does not also contain dots (the DNS-style restriction).
         GcsConfiguration.IsValidBucketName("my_bucket_name").Should().BeTrue();
-        GcsConfiguration.IsValidBucketName("tr_list_reader").Should().BeTrue();
+        GcsConfiguration.IsValidBucketName("example_list_reader").Should().BeTrue();
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class GcsBucketNameValidationTests
     [InlineData("a-b-c")]
     [InlineData("abc.def.ghi")]
     [InlineData("my_bucket_name")]
-    [InlineData("tr_list_reader")]
+    [InlineData("example_list_reader")]
     public void IsValidBucketName_AcceptsLowercaseDigitsHyphensUnderscoresDots(string name)
     {
         GcsConfiguration.IsValidBucketName(name).Should().BeTrue();
@@ -118,7 +118,7 @@ public class GcsBucketNameValidationTests
     [Theory]
     [InlineData("my-bucket")]
     [InlineData("my_bucket")]
-    [InlineData("tr_list_reader")]
+    [InlineData("example_list_reader")]
     [InlineData("abc.def.ghi")]
     public void Explain_Valid_ReturnsNull(string name)
     {
@@ -175,7 +175,7 @@ public class GcsBucketNameValidationTests
     [InlineData("my-bucket")]
     [InlineData("gs://my-bucket")]
     [InlineData("my_bucket")]
-    [InlineData("tr_list_reader")]
+    [InlineData("example_list_reader")]
     [InlineData("https://storage.googleapis.com/my-bucket/feed.xml")]
     [InlineData("https://my-bucket.storage.googleapis.com/feed.xml")]
     public void Validator_AcceptsValid(string input)

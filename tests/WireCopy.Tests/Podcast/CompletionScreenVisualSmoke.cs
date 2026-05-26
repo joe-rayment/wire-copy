@@ -70,7 +70,7 @@ public sealed class CompletionScreenVisualSmoke
                 "SHAPE A — FULL SUCCESS + PUBLISH",
                 PodcastResult.Successful(
                     feedUrl: "https://storage.googleapis.com/my-bucket/feed.xml",
-                    localFilePath: "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
+                    localFilePath: "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
                     totalDuration: TimeSpan.FromMinutes(38),
                     articlesProcessed: 12,
                     articlesFailed: 0,
@@ -85,7 +85,7 @@ public sealed class CompletionScreenVisualSmoke
                 "SHAPE B — LOCAL-ONLY SUCCESS",
                 PodcastResult.Successful(
                     feedUrl: null,
-                    localFilePath: "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
+                    localFilePath: "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
                     totalDuration: TimeSpan.FromMinutes(38),
                     articlesProcessed: 12,
                     articlesFailed: 0,
@@ -105,7 +105,7 @@ public sealed class CompletionScreenVisualSmoke
                 "SHAPE C — PARTIAL FAILURE (2 articles failed)",
                 PodcastResult.Successful(
                     feedUrl: null,
-                    localFilePath: "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
+                    localFilePath: "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
                     totalDuration: TimeSpan.FromMinutes(32),
                     articlesProcessed: 10,
                     articlesFailed: 2,

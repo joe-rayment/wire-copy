@@ -29,7 +29,7 @@ public class CompletionScreenShapeTests
     {
         return PodcastResult.Successful(
             feedUrl: feedUrl,
-            localFilePath: "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
+            localFilePath: "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b",
             totalDuration: TimeSpan.FromMinutes(38),
             articlesProcessed: 12,
             articlesFailed: failed,
@@ -175,7 +175,7 @@ public class CompletionScreenShapeTests
 
         // The two chunks of the path (path[..63] + path[63..]) should each
         // appear as a substring in some line.
-        const string FullPath = "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b";
+        const string FullPath = "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b";
         var firstChunkLength = 63;
         var firstChunk = FullPath[..Math.Min(firstChunkLength, FullPath.Length)];
         pathParts.Should().Contain(p => p.Contains(firstChunk),
@@ -233,7 +233,7 @@ public class CompletionScreenShapeTests
         // workspace-n49i Acceptance: "Path display is monospace and
         // copy-friendly (no truncation)". The full path must appear in the
         // output as-is so the user can copy/paste it.
-        const string FullPath = "/home/agent/.local/share/WireCopy/output/reading-list-2026-05-20.m4b";
+        const string FullPath = "/home/user/.local/share/WireCopy/output/reading-list-2026-05-20.m4b";
 
         foreach (var (shape, result) in new[]
         {
