@@ -235,10 +235,6 @@ docker run --rm \
   wirecopy:latest
 ```
 
-## Design
-
-A comprehensive design specification covering color palettes, spacing rules, component catalog, and animation specs is maintained in [`docs/design/design-system.md`](docs/design/design-system.md). Visual mockups for all screens are in [`docs/design/mockups/`](docs/design/mockups/).
-
 ## Issue Tracking (Beads)
 
 This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored locally in the `.beads/` directory alongside the code — no external service required. Beads is optional for contributors; you can also open standard GitHub issues.
