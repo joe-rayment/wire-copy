@@ -209,6 +209,16 @@ internal sealed class PodcastPublisher : IPodcastPublisher
 
                 var fileInfo = new FileInfo(episode.LocalAudioFilePath);
 
+                // workspace-2g70: upload a Podcasting 2.0 chapters JSON sidecar
+                // alongside the audio so the feed can advertise <podcast:chapters>.
+                // Best-effort — failure leaves ChaptersJsonUrl null and the feed
+                // falls back to psc:chapters only.
+                var chaptersJsonUrl = await EnsureChaptersJsonUploadedAsync(
+                    feedBasePath,
+                    episodeUuid,
+                    episode.Chapters,
+                    cancellationToken).ConfigureAwait(false);
+
                 newEpisodeMetadata.Add(new EpisodeMetadata
                 {
                     Id = episodeUuid,
@@ -220,6 +230,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                     Duration = episode.Duration,
                     AudioMimeType = "audio/x-m4a",
                     Chapters = episode.Chapters,
+                    ChaptersJsonUrl = chaptersJsonUrl,
                     SourceUrl = episode.SourceUrl,
                 });
             }
@@ -479,6 +490,26 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         return _storage.GetPublicUrl($"podcasts/{feedUuid}/feed.xml");
     }
 
+    /// <summary>
+    /// Serialises chapter markers to the Podcasting 2.0 chapters JSON shape
+    /// (<c>version: "1.2.0"</c>, <c>chapters: [{ startTime, title }, …]</c>).
+    /// startTime is in seconds (per the spec); titles are passed through as-is.
+    /// </summary>
+    private static string BuildChaptersJson(IReadOnlyList<ChapterMark> chapters)
+    {
+        var doc = new
+        {
+            version = "1.2.0",
+            chapters = chapters.Select(c => new
+            {
+                startTime = c.StartTime.TotalSeconds,
+                title = c.Title,
+            }).ToList(),
+        };
+
+        return JsonSerializer.Serialize(doc, JsonOptions);
+    }
+
     private static IReadOnlyList<EpisodeMetadata> MergeEpisodes(
         IReadOnlyList<EpisodeMetadata> existing,
         IReadOnlyList<EpisodeMetadata> incoming)
@@ -607,6 +638,42 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Failed to upload cover art; feed will omit itunes:image");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// workspace-2g70: build the Podcasting 2.0 chapters JSON sidecar for an
+    /// episode and upload it to <c>{feedBasePath}/episodes/{episodeId}.chapters.json</c>.
+    /// Returns the public URL on success, or null when the episode has no
+    /// chapters or the upload fails — in that case the feed falls back to
+    /// the psc:chapters inline form alone.
+    /// </summary>
+    private async Task<string?> EnsureChaptersJsonUploadedAsync(
+        string feedBasePath,
+        string episodeUuid,
+        IReadOnlyList<ChapterMark>? chapters,
+        CancellationToken cancellationToken)
+    {
+        if (chapters is null || chapters.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = BuildChaptersJson(chapters);
+            var objectPath = $"{feedBasePath}/episodes/{episodeUuid}.chapters.json";
+            return await _storage.UploadStringAsync(
+                json,
+                objectPath,
+                "application/json+chapters",
+                FeedCacheControl,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to upload chapters JSON sidecar; feed will fall back to psc:chapters");
             return null;
         }
     }
