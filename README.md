@@ -235,18 +235,9 @@ docker run --rm \
   wirecopy:latest
 ```
 
-## Issue Tracking (Beads)
+## Issue Tracking
 
-This project uses [Beads](https://github.com/steveyegge/beads) for issue tracking. Issues are stored locally in the `.beads/` directory alongside the code — no external service required. Beads is optional for contributors; you can also open standard GitHub issues.
-
-```bash
-bd ready                  # Issues ready to work on
-bd list --status=open     # All open issues
-bd show <id>              # Issue details
-bd create --title="..." --description="..." --type=bug --priority=2
-bd update <id> --status=in_progress
-bd close <id>
-```
+Please use [GitHub Issues](../../issues) to report bugs or request features.
 
 ## Technology Stack
 

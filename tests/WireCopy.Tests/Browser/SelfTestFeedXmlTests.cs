@@ -69,9 +69,9 @@ public class SelfTestFeedXmlTests
     public void BuildSelfTestFeedXml_HandlesUnderscoreBucketNames()
     {
         // workspace-wooa: underscores are valid in bucket names.
-        var xml = PodcastGcsWizard.BuildSelfTestFeedXml("tr_list_reader", FixedTime);
+        var xml = PodcastGcsWizard.BuildSelfTestFeedXml("example_list_reader", FixedTime);
         var doc = XDocument.Parse(xml);
         var link = doc.Root!.Element("channel")!.Element("link")!.Value;
-        link.Should().Be("https://storage.googleapis.com/tr_list_reader/feed.xml");
+        link.Should().Be("https://storage.googleapis.com/example_list_reader/feed.xml");
     }
 }

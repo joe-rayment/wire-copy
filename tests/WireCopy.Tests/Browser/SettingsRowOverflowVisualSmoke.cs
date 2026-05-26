@@ -38,7 +38,7 @@ public sealed class SettingsRowOverflowVisualSmoke
         var dumpPath = Path.Combine(Path.GetTempPath(), "wirecopy-settings-row-l6w0.txt");
         using var dump = new StreamWriter(dumpPath);
 
-        const string longPath = "/home/agent/.local/share/WireCopy/podcasts/reading-list.m4b";
+        const string longPath = "/home/user/.local/share/WireCopy/podcasts/reading-list.m4b";
 
         foreach (var (label, width) in new[] { ("WIDTH 70", 70), ("WIDTH 80", 80), ("WIDTH 100", 100) })
         {
