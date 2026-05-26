@@ -23,6 +23,12 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- workspace-yg9l: podcast cover art is shipped alongside the binary
+         so PodcastOrchestrator can resolve it relative to AppContext.BaseDirectory
+         without needing the source tree to be present at runtime. -->
+    <Content Include="..\..\assets\podcast-cover.png" Link="assets\podcast-cover.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <PropertyGroup>
