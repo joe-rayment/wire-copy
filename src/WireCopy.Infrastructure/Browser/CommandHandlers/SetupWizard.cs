@@ -38,6 +38,7 @@ internal static class SetupWizard
         byte[]? screenshot,
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
+        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
@@ -55,8 +56,9 @@ internal static class SetupWizard
 
         var proposal = await analyzer.ProposeSetupQuestionsAsync(screenshot, links, pageUrl, ct).ConfigureAwait(false);
 
-        // ---- Overview card: confirm the proposed pattern (or bail to doc order) ----
-        var overview = BuildOverviewCard(proposal);
+        // ---- Overview card: confirm the proposed pattern (or bail to doc order,
+        // or point at the main story yourself when a tree picker is wired) ----
+        var overview = BuildOverviewCard(proposal, allowPick: pickLeadFromTree != null);
         var ovChoice = await RunCardAsync(input, render, overlay, overview, ct).ConfigureAwait(false);
         if (ovChoice < 0)
         {
@@ -67,6 +69,14 @@ internal static class SetupWizard
         {
             // "Use plain document order instead"
             return new Result { UseDocumentOrder = true };
+        }
+
+        // workspace-5oe9.9: "Let me point at the main story" — the user highlights
+        // a real link in the previewed tree; we re-infer once with that override.
+        LinkInfo? pickedLead = null;
+        if (ovChoice == 2 && pickLeadFromTree != null)
+        {
+            pickedLead = await pickLeadFromTree(ct).ConfigureAwait(false);
         }
 
         // ---- Up to MaxStructuredQuestions confirm-the-pattern cards ----
@@ -108,7 +118,91 @@ internal static class SetupWizard
         var config = await analyzer.InferPatternFromAnswersAsync(
             screenshot, links, pageUrl, proposal, answers, ct).ConfigureAwait(false);
 
+        // workspace-5oe9.9: apply a point-at-a-link lead override with exactly
+        // one extra re-inference (budget-guarded). Header/synthetic picks are
+        // rejected by RefineWithPickedLeadAsync and leave the base config.
+        if (pickedLead != null)
+        {
+            var refined = await RefineWithPickedLeadAsync(
+                analyzer, screenshot, links, pageUrl, proposal, answers, pickedLead, budget, ct).ConfigureAwait(false);
+            if (refined != null)
+            {
+                config = refined;
+            }
+        }
+
         return new Result { Config = config };
+    }
+
+    /// <summary>
+    /// workspace-5oe9.9: maps a link the user pointed at into a durable
+    /// <see cref="HierarchySection"/> via <see cref="SelectorDerivation"/>.
+    /// Returns null for a synthetic header/group node (the caller shows "pick a
+    /// story, not a header") or when no durable identifier can be derived.
+    /// </summary>
+    internal static HierarchySection? SectionFromPickedLink(LinkInfo link, string name)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        if (link.IsGroupHeader)
+        {
+            return null;
+        }
+
+        var selectors = SelectorDerivation.DeriveParentSelectors(new[] { link });
+        var urlPatterns = SelectorDerivation.DeriveUrlPatterns(new[] { link });
+        if (selectors.Count == 0 && urlPatterns.Count == 0)
+        {
+            return null;
+        }
+
+        return new HierarchySection
+        {
+            Name = name,
+            SortOrder = 0,
+            ParentSelectors = selectors,
+            UrlPatterns = urlPatterns,
+        };
+    }
+
+    /// <summary>
+    /// workspace-5oe9.9: re-infers the durable config with the user's
+    /// point-at-a-link lead override appended as an answer — the single permitted
+    /// extra round-trip (guarded by <paramref name="budget"/>). Returns null when
+    /// the pick is invalid (header / no identifier) or the budget is exhausted,
+    /// so the caller keeps the base config.
+    /// </summary>
+    internal static async Task<SiteHierarchyConfig?> RefineWithPickedLeadAsync(
+        IHierarchyAnalyzer analyzer,
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        SiteSetupProposal proposal,
+        IReadOnlyList<SetupAnswer> answers,
+        LinkInfo pickedLead,
+        ModelRoundTripBudget budget,
+        CancellationToken ct)
+    {
+        var section = SectionFromPickedLink(pickedLead, "Top Story");
+        if (section == null)
+        {
+            return null;
+        }
+
+        if (!budget.TrySpend())
+        {
+            return null;
+        }
+
+        var identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns));
+        var refined = answers.Append(new SetupAnswer
+        {
+            QuestionId = "lead-override",
+            Answer = $"The single main/lead story is the link matching {identifier} (\"{pickedLead.DisplayText}\"). " +
+                     "Put it alone in the Top Story section.",
+        }).ToList();
+
+        return await analyzer.InferPatternFromAnswersAsync(
+            screenshot, links, pageUrl, proposal, refined, ct).ConfigureAwait(false);
     }
 
     private static async Task<int> RunCardAsync(
@@ -149,7 +243,7 @@ internal static class SetupWizard
         return -1;
     }
 
-    private static SetupWizardOverlay.WizardCard BuildOverviewCard(SiteSetupProposal proposal)
+    private static SetupWizardOverlay.WizardCard BuildOverviewCard(SiteSetupProposal proposal, bool allowPick)
     {
         var top = proposal.ProposedPattern.TopStory;
         var tierCount = proposal.ProposedPattern.Tiers.Count;
@@ -157,19 +251,27 @@ internal static class SetupWizard
 
         var footnote = $"{tierCount} story tier(s) · {excludeCount} group(s) to hide";
 
+        var options = new List<SetupWizardOverlay.CardOption>
+        {
+            new()
+            {
+                Label = top != null ? $"Looks good — main story: \"{Truncate(top.Label, 36)}\"" : "Looks good — set it up",
+                Identifier = top != null ? FormatIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
+            },
+            new() { Label = "Use plain document order instead" },
+        };
+
+        // Index 2 (only when a tree picker is wired): point at the main story.
+        if (allowPick)
+        {
+            options.Add(new SetupWizardOverlay.CardOption { Label = "Let me point at the main story" });
+        }
+
         return new SetupWizardOverlay.WizardCard
         {
             Title = "Set up this site with AI",
             Prompt = "Here's the layout I inferred — does it look right?",
-            Options =
-            {
-                new SetupWizardOverlay.CardOption
-                {
-                    Label = top != null ? $"Looks good — main story: \"{Truncate(top.Label, 36)}\"" : "Looks good — set it up",
-                    Identifier = top != null ? FormatIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
-                },
-                new SetupWizardOverlay.CardOption { Label = "Use plain document order instead" },
-            },
+            Options = options,
             Footnote = footnote,
             Hint = "↑/↓ choose · Enter confirm · Esc cancel",
         };
