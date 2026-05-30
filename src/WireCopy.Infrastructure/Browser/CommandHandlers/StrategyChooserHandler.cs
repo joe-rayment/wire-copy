@@ -464,7 +464,13 @@ internal static class StrategyChooserHandler
 
         var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
         var links = buildCache?.Links ?? new List<LinkInfo>();
-        var screenshot = await CaptureScreenshotSafelyAsync(scope, ctx.Logger).ConfigureAwait(false);
+
+        // workspace-5oe9.11: the wizard's single screenshot, bounded so a slow
+        // Playwright capture never stalls the AI path — go text-only past the cap.
+        var screenshot = await ScreenshotCapture.WithCapAsync(
+            () => CaptureScreenshotSafelyAsync(scope, ctx.Logger),
+            ScreenshotCapture.DefaultCap,
+            ct).ConfigureAwait(false);
 
         var overlay = new UI.Components.SetupWizardOverlay.State();
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
