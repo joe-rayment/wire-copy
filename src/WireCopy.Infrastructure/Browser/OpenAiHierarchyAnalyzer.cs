@@ -210,6 +210,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         List<LinkInfo> links,
         string pageUrl,
         string? userGuidance = null,
+        string? reasoningEffortOverride = null,
         CancellationToken cancellationToken = default)
     {
         var apiKey = GetApiKey()
@@ -252,7 +253,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 var options = BuildOptions(
                     schemaName: "ai_curated_layout",
                     schema: CuratedSchema,
-                    schemaDescription: "Editorial split of links into excluded promos vs ranked stories.");
+                    schemaDescription: "Editorial split of links into excluded promos vs ranked stories.",
+                    reasoningEffortOverride: reasoningEffortOverride);
 
                 var responseText = await _chatCompleter(
                     apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
@@ -323,18 +325,35 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     private static string BuildCuratedSystemPrompt()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are curating a webpage's links for a terminal-based news reader.");
+        sb.AppendLine("You are curating a news homepage's links for a terminal-based reader.");
+        sb.AppendLine();
+        sb.AppendLine("Each link is given with a `score` (0-100) — an upstream estimate of");
+        sb.AppendLine("visual/editorial prominence (higher = larger/more featured on the page)");
+        sb.AppendLine("— and a `sect` (the nearest section heading above the link, or '-' when");
+        sb.AppendLine("none). Use `score`, `sect`, the link text, the URL path, the parent CSS");
+        sb.AppendLine("selector, and the screenshot together to judge prominence.");
         sb.AppendLine();
         sb.AppendLine("Do TWO things:");
         sb.AppendLine();
-        sb.AppendLine("1. EXCLUDE: identify links that are ads, sponsored content, promos,");
-        sb.AppendLine("   newsletter sign-ups, login prompts, navigation/utility links, or any");
-        sb.AppendLine("   non-editorial entry. Return their numeric indices in `excluded`.");
-        sb.AppendLine("   Be aggressive — if it's not a story, it goes here.");
+        sb.AppendLine("1. EXCLUDE: identify links that are NOT individual news stories. Return");
+        sb.AppendLine("   their numeric indices in `excluded`. Typical non-editorial links on a");
+        sb.AppendLine("   homepage include:");
+        sb.AppendLine("     - \"Subscribe\" / newsletter / account / sign-in / app-download CTAs");
+        sb.AppendLine("     - section index/hub pages (e.g. a bare \"/opinion\" or \"/sports\" link)");
+        sb.AppendLine("     - author/byline pages and tag/topic landing pages");
+        sb.AppendLine("     - /video/ or podcast hub links, live-blog index shells");
+        sb.AppendLine("     - social, share, login, and other navigation/utility links");
+        sb.AppendLine("   A real homepage usually contains a NON-TRIVIAL share of such links —");
+        sb.AppendLine("   expect to exclude several. Be aggressive: if it is not a specific");
+        sb.AppendLine("   story, it goes in `excluded`. But do NOT invent exclusions for links");
+        sb.AppendLine("   that ARE stories just to pad the list.");
         sb.AppendLine();
         sb.AppendLine("2. RANK: of the REMAINING links (the actual stories), order them by");
-        sb.AppendLine("   editorial prominence on the page. Lead/hero items first, then main");
-        sb.AppendLine("   feed, then secondary, then sidebar. Return indices in `stories`.");
+        sb.AppendLine("   editorial prominence. The single most prominent lead/hero story first,");
+        sb.AppendLine("   then the main feed, then secondary, then sidebar. Prefer higher-`score`");
+        sb.AppendLine("   items near the top. Return indices in `stories`. This ordering should");
+        sb.AppendLine("   reflect a human editor's front page — it will usually DIFFER from the");
+        sb.AppendLine("   raw input order.");
         sb.AppendLine();
         sb.AppendLine("3. (optional) propose named SECTIONS that group the stories. Return an");
         sb.AppendLine("   empty array when no useful grouping exists.");
@@ -349,12 +368,15 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var sb = new StringBuilder();
         sb.AppendLine($"Page URL: {pageUrl}");
         sb.AppendLine();
-        sb.AppendLine("Content links extracted from the page (numbered for reference):");
+        sb.AppendLine("Content links extracted from the page (numbered for reference;");
+        sb.AppendLine("URLs shown as path only):");
         sb.AppendLine();
         for (int i = 0; i < contentLinks.Count; i++)
         {
             var link = contentLinks[i];
-            sb.AppendLine($"[{i}] \"{link.DisplayText}\" -> {link.Url}");
+            var sect = string.IsNullOrWhiteSpace(link.SectionTitle) ? "-" : link.SectionTitle;
+            sb.AppendLine(
+                $"[{i}] score={link.ImportanceScore} sect=\"{sect}\" \"{link.DisplayText}\" -> {ToPathOnly(link.Url)}");
             if (!string.IsNullOrEmpty(link.ParentSelector))
             {
                 sb.AppendLine($"    parent: {link.ParentSelector}");
@@ -362,6 +384,19 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// workspace-5oe9.4: strips scheme + host from an absolute URL, leaving the
+    /// path (and query). Saves prompt tokens and surfaces the path patterns the
+    /// model uses to spot section hubs. Returns the input unchanged when it is
+    /// not an absolute URL.
+    /// </summary>
+    private static string ToPathOnly(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? uri.PathAndQuery
+            : url;
     }
 
     private static List<ChatMessage> BuildMessages(string systemPrompt, string userPrompt, byte[]? screenshot)
@@ -383,7 +418,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         };
     }
 
-    private ChatCompletionOptions BuildOptions(string schemaName, BinaryData schema, string schemaDescription)
+    private ChatCompletionOptions BuildOptions(
+        string schemaName,
+        BinaryData schema,
+        string schemaDescription,
+        string? reasoningEffortOverride = null)
     {
         var options = new ChatCompletionOptions
         {
@@ -398,8 +437,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         // ReasoningEffortLevel is gpt-5 / o-series only; the SDK's "Minimal"
         // member is marked experimental but is exactly the right knob for
         // classification work. Anything else falls back to no override.
+        // workspace-5oe9.4: a per-call override lets the one-time AI setup
+        // request a higher effort (e.g. "low") for genuine reordering while the
+        // config default stays "minimal" for cheap revisits.
+        var effort = string.IsNullOrWhiteSpace(reasoningEffortOverride)
+            ? _config.ReasoningEffort
+            : reasoningEffortOverride;
 #pragma warning disable OPENAI001 // Experimental API
-        if (TryMapReasoningEffort(_config.ReasoningEffort, out var level))
+        if (TryMapReasoningEffort(effort, out var level))
         {
             options.ReasoningEffortLevel = level;
         }
