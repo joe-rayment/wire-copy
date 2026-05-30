@@ -347,11 +347,10 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
-    /// workspace-z5qz: handler for the `i` key pressed while a layout
-    /// preview is active. If the currently-selected candidate is AI Curated,
-    /// surface a "coming soon" status message pointing at workspace-99ve;
-    /// otherwise no-op. The affordance is hinted in
-    /// <see cref="AppendGuidanceHintIfAi"/>'s row-summary suffix.
+    /// workspace-5oe9.10: Shift+I while previewing the AI Curated row launches
+    /// the question-driven setup wizard (identical to pressing Enter on that
+    /// row). Replaces the old stub — the wizard shipped in workspace-5oe9.8.
+    /// No-op for non-AI rows.
     /// </summary>
     public static async Task HandleGuidanceRequestAsync(
         CommandContext ctx,
@@ -361,22 +360,10 @@ internal static class StrategyChooserHandler
         var candidate = ctx.NavigationService.GetCurrentPreviewCandidate();
         if (candidate?.Config.Strategy == ScrapingStrategies.AiCuratedStrategy.StrategyId)
         {
-            // Keep the message short so it survives status-bar truncation
-            // alongside the preview label + cache indicator. The detailed
-            // affordance lives in the AI Curated row's summary suffix
-            // (AppendGuidanceHintIfAi).
-            ctx.NavigationService.SetStatusMessage("AI guidance — coming soon");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            await HandleApplyAsync(ctx, options, ct).ConfigureAwait(false);
         }
     }
 
-    /// <summary>
-    /// workspace-z5qz: surfaces the upcoming "i for guidance" affordance on
-    /// the AI Curated row's summary so the user knows they can pass
-    /// editorial guidance to the analyzer. The actual prompt input ships in
-    /// workspace-99ve; until then the key handler emits a "coming soon"
-    /// status message.
-    /// </summary>
     /// <summary>
     /// workspace-99ve: short text-field prompt for optional editorial
     /// guidance to the AI Curated analyzer. Returns:
@@ -744,7 +731,7 @@ internal static class StrategyChooserHandler
             // upcoming guidance prompt. The 'i' shortcut isn't free —
             // lowercase i has no global binding today and mapping it here
             // would shadow the (currently NoOp) raw key elsewhere.
-            return $"{summary} · I:guidance";
+            return $"{summary} · Shift+I:set up";
         }
 
         return summary;

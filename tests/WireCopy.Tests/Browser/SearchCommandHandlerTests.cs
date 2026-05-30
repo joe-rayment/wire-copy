@@ -229,6 +229,19 @@ public class SearchCommandHandlerTests
     }
 
     [Fact]
+    public async Task HandleCommandLineInput_LayoutCommand_RoutesToChooser_NotUrlNavigation()
+    {
+        // workspace-5oe9.10: ':layout' is consolidated onto the strategy chooser
+        // (StrategyChooserHandler) — it must be handled, not fall through to URL
+        // navigation, and must not throw with the chooser's services absent.
+        var handled = await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "layout", _options, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        _navigatedUrl.Should().BeNull("':layout' opens the chooser, it is not a URL");
+    }
+
+    [Fact]
     public async Task HandleCommandLineInput_GoCommand_NavigatesToUrl()
     {
         await SearchCommandHandler.HandleCommandLineInput(

@@ -156,7 +156,6 @@ public static class BrowserDependencyInjection
         services.AddSingleton<ISelectorBasedArticleExtractor, SelectorBasedArticleExtractor>();
         services.AddSingleton<IAiArticleExtractor, OpenAiArticleExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
-        services.AddSingleton<ILayoutCandidateGenerator, LayoutCandidateGenerator>();
 
         // Scraping strategies (per-domain WHICH-links chooser).
         services.AddSingleton<IScrapingStrategy, ScrapingStrategies.DocumentOrderStrategy>();

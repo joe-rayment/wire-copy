@@ -877,11 +877,8 @@ public partial class BrowserOrchestrator : IBrowserService
                         await LayoutCommandHandler.HandleCancel(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.InteractiveRefresh:
-                        // workspace-z5qz: `i` on an AI Curated preview row is
-                        // reserved for the upcoming user-guidance prompt
-                        // (workspace-99ve). Until that ships, surface a clear
-                        // "coming soon" message so the affordance hinted in
-                        // the row summary doesn't just no-op silently.
+                        // workspace-5oe9.10: Shift+I on an AI Curated preview row
+                        // launches the question-driven setup wizard.
                         await StrategyChooserHandler.HandleGuidanceRequestAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
                         return true;
                     case CommandType.Quit:

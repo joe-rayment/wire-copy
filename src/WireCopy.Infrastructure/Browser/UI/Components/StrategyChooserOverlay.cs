@@ -83,7 +83,7 @@ internal static class StrategyChooserOverlay
         {
             Phase.Preflight => "Space:toggle  Enter:probe selected  Esc:cancel",
             Phase.Probing => "Probing…",
-            Phase.Preview => "◀/▶:cycle  Enter:save  Esc:cancel  Shift+I:guidance (AI)",
+            Phase.Preview => "◀/▶:cycle  Enter:save  Esc:cancel  Shift+I:set up (AI)",
             _ => string.Empty,
         };
 
