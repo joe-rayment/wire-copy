@@ -136,6 +136,41 @@ internal static class SelectorDerivation
             .ToList();
     }
 
+    /// <summary>
+    /// The discriminating (class/id/attribute) CSS tokens in a single selector.
+    /// Used by exclusion-rule derivation, which unions per-link signals rather
+    /// than intersecting them. Empty for a null/blank or all-generic selector.
+    /// </summary>
+    public static IEnumerable<string> DiscriminatingTokens(string? selector)
+    {
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        return SelectorSplit.Split(selector.Trim())
+            .Where(t => t.Length > 0)
+            .Where(IsDiscriminating);
+    }
+
+    /// <summary>
+    /// The non-numeric path segments of a URL (lowercased), e.g.
+    /// <c>/opinion/2026/05/a</c> → <c>opinion</c>, <c>a</c>. Numeric (date/id)
+    /// segments are dropped. Empty for a non-absolute URL.
+    /// </summary>
+    public static IEnumerable<string> MeaningfulPathSegments(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        return uri.AbsolutePath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.ToLowerInvariant())
+            .Where(s => !IsNumeric(s));
+    }
+
     private static bool IsDiscriminating(string token) =>
         token.Contains('.', StringComparison.Ordinal)
         || token.Contains('#', StringComparison.Ordinal)

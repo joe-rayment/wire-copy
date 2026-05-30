@@ -388,23 +388,25 @@ public class PageLoadPipeline
         NavigationTree tree;
         var hierarchyConfig = await TryGetOrAnalyzeHierarchyAsync(links, finalUrl).ConfigureAwait(false);
 
-        if (hierarchyConfig != null
-            && (hierarchyConfig.Kind == LayoutKind.AiCurated
-                || string.Equals(hierarchyConfig.Strategy, "AiCurated", StringComparison.Ordinal))
-            && hierarchyConfig.AiResult != null)
+        // workspace-5oe9.5: route on the shared decision. Durable Sections win
+        // FIRST and store-agnostically, so an AiCurated config (or one
+        // rehydrated from the build cache without Kind/AiResult) re-applies the
+        // generalizing pattern path instead of decaying to the stale URL
+        // snapshot.
+        var route = HierarchyRouteResolver.Decide(hierarchyConfig);
+        if (route == HierarchyRoute.PatternConfig)
         {
-            // Saved AI-Curated strategy with cached result: filter ads, reorder by AI ranks.
-            tree = await _treeBuilder.BuildFromAiResultAsync(
-                links, hierarchyConfig.AiResult, cancellationToken).ConfigureAwait(false);
+            tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig!, cancellationToken).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
-            _navigationService.SetStatusMessage(
-                $"AI curated · {hierarchyConfig.AiResult.StoryOrderLinkKeys.Count} stories");
+            if (hierarchyConfig!.NeedsReanalyze)
+            {
+                _navigationService.SetStatusMessage("Saved layout is a legacy snapshot · Ctrl+l to re-run AI setup");
+            }
         }
-        else if (hierarchyConfig != null && hierarchyConfig.Kind == LayoutKind.RssFeed
-            && !string.IsNullOrEmpty(hierarchyConfig.RssFeedUrl))
+        else if (route == HierarchyRoute.RssFeed)
         {
             // Saved RSS layout: fetch feed and build tree from feed items
-            var feedItems = await _feedDetector.ParseFeedAsync(hierarchyConfig.RssFeedUrl, cancellationToken).ConfigureAwait(false);
+            var feedItems = await _feedDetector.ParseFeedAsync(hierarchyConfig!.RssFeedUrl!, cancellationToken).ConfigureAwait(false);
             if (feedItems.Count > 0)
             {
                 tree = await _treeBuilder.BuildTreeAsync(feedItems, cancellationToken).ConfigureAwait(false);
@@ -419,10 +421,15 @@ public class PageLoadPipeline
                 _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+l to reconfigure");
             }
         }
-        else if (hierarchyConfig != null)
+        else if (route == HierarchyRoute.AiSnapshot)
         {
-            tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig, cancellationToken).ConfigureAwait(false);
+            // Legacy per-URL snapshot (no durable Sections): filter ads, reorder
+            // by AI ranks. Decays as URLs rotate — flagged for re-analysis.
+            tree = await _treeBuilder.BuildFromAiResultAsync(
+                links, hierarchyConfig!.AiResult!, cancellationToken).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
+            _navigationService.SetStatusMessage(
+                $"AI curated · {hierarchyConfig.AiResult!.StoryOrderLinkKeys.Count} stories");
         }
         else
         {
@@ -544,17 +551,22 @@ public class PageLoadPipeline
     {
         var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
 
+        // workspace-5oe9.5: identical store-agnostic routing as BuildPage.
+        // Durable Sections route to the pattern path FIRST — a build-cache
+        // rehydrate drops Kind/Strategy/AiResult, so keying on Sections.Count>0
+        // is what keeps a configured site curated after a restart.
         NavigationTree tree;
-        if (cache.HierarchyConfig != null
-            && (cache.HierarchyConfig.Kind == LayoutKind.AiCurated
-                || string.Equals(cache.HierarchyConfig.Strategy, "AiCurated", StringComparison.Ordinal))
-            && cache.HierarchyConfig.AiResult != null)
+        var route = HierarchyRouteResolver.Decide(cache.HierarchyConfig);
+        if (route == HierarchyRoute.AiSnapshot)
         {
-            tree = await _treeBuilder.BuildFromAiResultAsync(cache.Links, cache.HierarchyConfig.AiResult).ConfigureAwait(false);
+            tree = await _treeBuilder.BuildFromAiResultAsync(cache.Links, cache.HierarchyConfig!.AiResult!).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
         else if (cache.HierarchyConfig != null)
         {
+            // PatternConfig (or an RSS/other config in cache): the generalizing
+            // hierarchy builder. Build cache cannot replay an RSS fetch, so a
+            // cached RSS config renders its grouped links here.
             tree = await _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
