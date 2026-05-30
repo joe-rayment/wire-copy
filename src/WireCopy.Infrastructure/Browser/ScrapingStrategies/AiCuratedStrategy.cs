@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Configuration;
@@ -186,23 +187,74 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
                 degenerate);
         }
 
-        var tree = await _treeBuilder.BuildFromAiResultAsync(
-            context.Links.ToList(), curated, cancellationToken).ConfigureAwait(false);
+        // workspace-5oe9.5: turn the (snapshot) ranking into a DURABLE,
+        // pattern-based config. Derive selector/url-pattern sections from the
+        // AI's buckets so the layout re-applies on every revisit as article
+        // URLs rotate, instead of decaying to document order.
+        var allLinks = context.Links.ToList();
+        var (sections, excludeSelectors, excludeUrlPatterns) =
+            DeriveDurableConfig(contentLinks, curated);
 
         var domain = ExtractDomain(context.PageUrl);
-        var config = new SiteHierarchyConfig
+        var baseConfig = new SiteHierarchyConfig
         {
             Domain = domain,
             UrlPattern = DocumentOrderStrategy.BuildUrlPattern(context.PageUrl),
-            Sections = new List<HierarchySection>(),
+            Sections = sections,
+            ExcludeSelectors = excludeSelectors,
+            ExcludeUrlPatterns = excludeUrlPatterns,
             CreatedAt = DateTime.UtcNow,
             ModelVersion = _config.Model,
             Kind = LayoutKind.AiCurated,
-            Version = 2,
+            Version = 3,
             Strategy = StrategyId,
             AiResult = curated,
             StructuralSignature = $"ai-curated:{curated.StoryOrderLinkKeys.Count}",
         };
+
+        // SELF-TEST GATE: only persist the durable pattern if re-applying it to
+        // THESE links reproduces the AI's curation (lead captured, most stories
+        // kept, no excluded ad leaks). Otherwise fall back to the in-session
+        // snapshot and flag the config for re-analysis so it doesn't silently
+        // rot on the next visit.
+        NavigationTree tree;
+        SiteHierarchyConfig config;
+        var selfTestPasses = sections.Count > 0
+            && degenerate == AiCuratedDegenerateReason.None
+            && await PatternReproducesCurationAsync(_treeBuilder, allLinks, baseConfig, curated, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (selfTestPasses)
+        {
+            // First visit renders the SAME pattern tree every later visit will,
+            // so the experience is consistent.
+            tree = await _treeBuilder.BuildTreeAsync(allLinks, baseConfig, cancellationToken).ConfigureAwait(false);
+            config = baseConfig;
+            _logger.LogInformation(
+                "AiCuratedStrategy durable config for {Url}: {Sections} sections, selectors=[{Selectors}], urlPatterns=[{UrlPatterns}], exclude=[{ExclSel}|{ExclUrl}]",
+                context.PageUrl,
+                sections.Count,
+                string.Join(";", sections.SelectMany(s => s.ParentSelectors)),
+                string.Join(";", sections.SelectMany(s => s.UrlPatterns)),
+                string.Join(";", excludeSelectors),
+                string.Join(";", excludeUrlPatterns));
+        }
+        else
+        {
+            tree = await _treeBuilder.BuildFromAiResultAsync(allLinks, curated, cancellationToken).ConfigureAwait(false);
+            config = baseConfig with
+            {
+                Sections = new List<HierarchySection>(),
+                ExcludeSelectors = new List<string>(),
+                ExcludeUrlPatterns = new List<string>(),
+                NeedsReanalyze = true,
+            };
+            _logger.LogWarning(
+                "AiCuratedStrategy: derived pattern failed self-test for {Url} (sections={Sections}, degenerate={Degenerate}) — persisting snapshot + NeedsReanalyze",
+                context.PageUrl,
+                sections.Count,
+                degenerate);
+        }
 
         var summary = BuildSummary(curated, degenerate, fromCache);
 
@@ -212,6 +264,95 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             Config = config,
             Summary = summary,
         };
+    }
+
+    /// <summary>
+    /// workspace-5oe9.5: builds durable <see cref="HierarchySection"/>s + exclude
+    /// rules from the AI's curated result. The curated schema returns story
+    /// INDICES (not selectors), so identifiers are derived from each bucket's
+    /// links via <see cref="SelectorDerivation"/>. A "Top Story" section is
+    /// pinned from the #1 ranked link; remaining stories form the AI's named
+    /// sections (when present) or a single "Stories" tier. Exclude rules are the
+    /// discriminating signals unique to the excluded bucket (never shared with a
+    /// kept story, so no story is accidentally dropped).
+    /// </summary>
+    internal static (List<HierarchySection> Sections, List<string> ExcludeSelectors, List<string> ExcludeUrlPatterns)
+        DeriveDurableConfig(IReadOnlyList<LinkInfo> contentLinks, AiCuratedResult curated)
+    {
+        var byKey = new Dictionary<string, LinkInfo>(StringComparer.Ordinal);
+        foreach (var link in contentLinks)
+        {
+            byKey.TryAdd(AiCuratedResult.KeyFor(link.Url), link);
+        }
+
+        List<LinkInfo> Resolve(IEnumerable<string> keys) =>
+            keys.Select(k => byKey.TryGetValue(k, out var l) ? l : null)
+                .Where(l => l != null)
+                .Cast<LinkInfo>()
+                .ToList();
+
+        var storyLinks = Resolve(curated.StoryOrderLinkKeys);
+        var excludedLinks = Resolve(curated.ExcludedLinkKeys);
+
+        var sections = new List<HierarchySection>();
+
+        if (storyLinks.Count > 0)
+        {
+            var lead = storyLinks[0];
+            sections.Add(new HierarchySection
+            {
+                Name = "Top Story",
+                SortOrder = sections.Count,
+                ParentSelectors = SelectorDerivation.DeriveParentSelectors(new[] { lead }),
+                UrlPatterns = SelectorDerivation.DeriveUrlPatterns(new[] { lead }),
+            });
+        }
+
+        var assigned = new HashSet<string>(StringComparer.Ordinal);
+        if (storyLinks.Count > 0)
+        {
+            assigned.Add(AiCuratedResult.KeyFor(storyLinks[0].Url));
+        }
+
+        if (curated.Sections.Count > 0)
+        {
+            foreach (var aiSection in curated.Sections)
+            {
+                var members = Resolve(aiSection.StoryLinkKeys)
+                    .Where(l => assigned.Add(AiCuratedResult.KeyFor(l.Url)))
+                    .ToList();
+                if (members.Count == 0)
+                {
+                    continue;
+                }
+
+                sections.Add(new HierarchySection
+                {
+                    Name = string.IsNullOrWhiteSpace(aiSection.Name) ? "Stories" : aiSection.Name,
+                    SortOrder = sections.Count,
+                    ParentSelectors = SelectorDerivation.DeriveParentSelectors(members),
+                    UrlPatterns = SelectorDerivation.DeriveUrlPatterns(members),
+                    StartCollapsed = aiSection.StartCollapsed,
+                });
+            }
+        }
+
+        // Any ranked stories not placed in an AI section form a single "Stories"
+        // tier below the lead.
+        var remaining = storyLinks.Where(l => !assigned.Contains(AiCuratedResult.KeyFor(l.Url))).ToList();
+        if (remaining.Count > 0)
+        {
+            sections.Add(new HierarchySection
+            {
+                Name = "Stories",
+                SortOrder = sections.Count,
+                ParentSelectors = SelectorDerivation.DeriveParentSelectors(remaining),
+                UrlPatterns = SelectorDerivation.DeriveUrlPatterns(remaining),
+            });
+        }
+
+        var (excludeSelectors, excludeUrlPatterns) = DeriveExclusionRules(storyLinks, excludedLinks);
+        return (sections, excludeSelectors, excludeUrlPatterns);
     }
 
     /// <summary>
@@ -289,6 +430,85 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
                 $"AI curated · {statsBody} (no reordering — matches document order){cachedSuffix}",
             _ => $"AI curated · {statsBody}{cachedSuffix}",
         };
+    }
+
+    /// <summary>
+    /// workspace-5oe9.5: derives exclude selectors/url-patterns that identify
+    /// the excluded bucket WITHOUT overlapping any kept story's signal — so the
+    /// durable exclusion never drops a real story. (Unmatched links are dropped
+    /// by the section builder anyway; these rules are the belt-and-suspenders
+    /// for ads that share a container with stories.)
+    /// </summary>
+    private static (List<string> Selectors, List<string> UrlPatterns) DeriveExclusionRules(
+        IReadOnlyList<LinkInfo> storyLinks,
+        IReadOnlyList<LinkInfo> excludedLinks)
+    {
+        var storyTokens = storyLinks
+            .SelectMany(l => SelectorDerivation.DiscriminatingTokens(l.ParentSelector))
+            .ToHashSet(StringComparer.Ordinal);
+        var storySegments = storyLinks
+            .SelectMany(l => SelectorDerivation.MeaningfulPathSegments(l.Url))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var selectors = excludedLinks
+            .SelectMany(l => SelectorDerivation.DiscriminatingTokens(l.ParentSelector))
+            .Where(t => !storyTokens.Contains(t))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToList();
+
+        var urlPatterns = excludedLinks
+            .SelectMany(l => SelectorDerivation.MeaningfulPathSegments(l.Url))
+            .Where(s => !storySegments.Contains(s))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .Select(s => $"/{s}/")
+            .ToList();
+
+        return (selectors, urlPatterns);
+    }
+
+    /// <summary>
+    /// workspace-5oe9.5 self-test: re-applies the derived pattern config to the
+    /// same links and checks it reproduces the AI's curation — the lead is
+    /// kept, at least 70% of ranked stories survive, and no excluded link leaks
+    /// in. Guards against over-generic or empty derived selectors before a
+    /// config is trusted for future visits.
+    /// </summary>
+    private static async Task<bool> PatternReproducesCurationAsync(
+        INavigationTreeBuilder treeBuilder,
+        List<LinkInfo> allLinks,
+        SiteHierarchyConfig config,
+        AiCuratedResult curated,
+        CancellationToken cancellationToken)
+    {
+        var patternTree = await treeBuilder.BuildTreeAsync(allLinks, config, cancellationToken).ConfigureAwait(false);
+        var patternKeys = patternTree.GetAllNodes()
+            .Where(n => !n.IsGroupHeader && n.Link.Type == LinkType.Content)
+            .Select(n => AiCuratedResult.KeyFor(n.Link.Url))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var excluded = new HashSet<string>(curated.ExcludedLinkKeys, StringComparer.Ordinal);
+        var expectedStories = curated.StoryOrderLinkKeys.Where(k => !excluded.Contains(k)).ToList();
+        if (expectedStories.Count == 0)
+        {
+            return false;
+        }
+
+        // No excluded ad may appear in the curated tree.
+        if (patternKeys.Overlaps(excluded))
+        {
+            return false;
+        }
+
+        // The lead must survive.
+        if (!patternKeys.Contains(expectedStories[0]))
+        {
+            return false;
+        }
+
+        var captured = expectedStories.Count(patternKeys.Contains);
+        return captured * 10 >= expectedStories.Count * 7; // >= 70%
     }
 
     private static string ExtractDomain(string pageUrl)

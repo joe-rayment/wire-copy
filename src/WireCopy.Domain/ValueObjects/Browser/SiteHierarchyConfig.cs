@@ -41,6 +41,16 @@ public record SiteHierarchyConfig
     /// across visits — see <see cref="ExcludeSelectors"/>.
     /// </summary>
     public List<string> ExcludeUrlPatterns { get; init; } = new();
+
+    /// <summary>
+    /// workspace-5oe9.5/.6: set when this config cannot be trusted to curate
+    /// durably on a revisit — either a legacy per-URL snapshot (Version&lt;3,
+    /// empty Sections, AiResult present) or a fresh analysis whose derived
+    /// selectors failed the self-test. The UI surfaces it as a "re-run AI
+    /// setup" nudge; a passive revisit never silently rots into document order
+    /// without telling the user.
+    /// </summary>
+    public bool NeedsReanalyze { get; init; }
 }
 
 public record HierarchySection

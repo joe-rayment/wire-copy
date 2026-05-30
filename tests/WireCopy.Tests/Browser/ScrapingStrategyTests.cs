@@ -122,6 +122,129 @@ public class ScrapingStrategyTests
         result.Config.AiResult!.ExcludedLinkKeys.Should().HaveCount(8);
     }
 
+    // workspace-5oe9.5: a fixture WHOSE LINKS CARRY STRUCTURE (parent selectors)
+    // so the strategy can derive a durable, generalizing pattern config.
+    private static List<LinkInfo> BuildStructuredFixture(string datePath)
+    {
+        LinkInfo L(string slug, string text, int score, string parent) => new()
+        {
+            Url = $"https://news.example.com/{datePath}/{slug}",
+            DisplayText = text,
+            Type = LinkType.Content,
+            ImportanceScore = score,
+            ParentSelector = parent,
+        };
+
+        // Document order deliberately does NOT match editorial prominence (the
+        // lead sits mid-document), so a by-prominence ranking is non-degenerate.
+        return new List<LinkInfo>
+        {
+            L("feed-a", "Feed A", 70, "main section.feed li a"),
+            L("feed-b", "Feed B", 65, "main section.feed li a"),
+            L("lead", "Lead story", 95, "main section.lead > h1 > a"),
+            L("feed-c", "Feed C", 60, "main section.feed li a"),
+            L("promo-1", "Subscribe now", 30, "aside.promo a"),
+            L("promo-2", "Download the app", 20, "aside.promo a"),
+        };
+    }
+
+    private static IHierarchyAnalyzer FakeAnalyzerFor(List<LinkInfo> links, int adCount)
+    {
+        var excluded = links.TakeLast(adCount).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+        // Rank stories by prominence (descending score) so the lead is #1 and the
+        // ranking differs from document order.
+        var stories = links.Take(links.Count - adCount)
+            .OrderByDescending(l => l.ImportanceScore)
+            .Select(l => AiCuratedResult.KeyFor(l.Url))
+            .ToList();
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new AiCuratedResult
+            {
+                ExcludedLinkKeys = excluded,
+                StoryOrderLinkKeys = stories,
+                AnalyzedAt = DateTime.UtcNow,
+            });
+        return analyzer;
+    }
+
+    private static AiCuratedStrategy NewStrategy(IHierarchyAnalyzer analyzer, NavigationTreeBuilder? builder = null) =>
+        new(
+            builder ?? new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>()),
+            analyzer,
+            Options.Create(new OpenAiHierarchyConfiguration()),
+            Substitute.For<ILogger<AiCuratedStrategy>>());
+
+    [Fact]
+    public async Task AiCuratedStrategy_StructuredPage_EmitsDurablePatternConfig()
+    {
+        var links = BuildStructuredFixture("2026/05/30");
+        var strategy = NewStrategy(FakeAnalyzerFor(links, adCount: 2));
+        var ctx = new ScrapingStrategyContext { PageUrl = "https://news.example.com/", Html = string.Empty, Links = links };
+
+        var result = await strategy.BuildTreeAsync(ctx);
+
+        result.Config.Version.Should().Be(3);
+        result.Config.Strategy.Should().Be("AiCurated");
+        result.Config.Sections.Should().NotBeEmpty();
+        // Durable identifiers, NOT per-URL "url:" snapshot keys.
+        var allSelectors = result.Config.Sections.SelectMany(s => s.ParentSelectors).ToList();
+        allSelectors.Should().Contain(s => s.Contains("section.lead", StringComparison.Ordinal));
+        allSelectors.Should().Contain(s => s.Contains("section.feed", StringComparison.Ordinal));
+        allSelectors.Should().NotContain(s => s.StartsWith("url:", StringComparison.Ordinal));
+        result.Config.ExcludeSelectors.Should().Contain("aside.promo");
+        result.Config.NeedsReanalyze.Should().BeFalse();
+
+        // First visit renders the PATTERN tree (has a "Top Story" section header),
+        // not the flat AiResult snapshot.
+        result.Tree.GetAllNodes().Should().Contain(n => n.IsGroupHeader && n.Link.DisplayText == "Top Story");
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_DurableConfig_SurvivesDisjointRevisit()
+    {
+        // Build the config while looking at snapshot A...
+        var snapshotA = BuildStructuredFixture("2026/05/30");
+        var strategy = NewStrategy(FakeAnalyzerFor(snapshotA, adCount: 2));
+        var config = (await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://news.example.com/", Html = string.Empty, Links = snapshotA,
+        })).Config;
+        config.Sections.Should().NotBeEmpty();
+
+        // ...then apply it to snapshot B with ENTIRELY different URLs.
+        var snapshotB = BuildStructuredFixture("2026/06/15");
+        snapshotA.Select(l => l.Url).Should().NotIntersectWith(snapshotB.Select(l => l.Url));
+
+        var builder = new NavigationTreeBuilder(Substitute.For<ILogger<NavigationTreeBuilder>>());
+        var tree = await builder.BuildTreeAsync(snapshotB, config);
+
+        var lead = tree.Root.Children.First(n => n.IsGroupHeader && n.Link.DisplayText == "Top Story");
+        lead.Children.Should().ContainSingle()
+            .Which.Link.Url.Should().Be("https://news.example.com/2026/06/15/lead");
+        // The promos are excluded on the new snapshot too (durable rule).
+        tree.GetAllNodes().Select(n => n.Link.Url)
+            .Should().NotContain(u => u.Contains("/promo-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_UnstructuredPage_FallsBackToSnapshotAndFlagsReanalyze()
+    {
+        // No parent selectors + unique slugs => no durable identifier can be
+        // derived => self-test fails => snapshot fallback + NeedsReanalyze.
+        var links = BuildTechmemeFixture();
+        var strategy = NewStrategy(FakeAnalyzerFor(links, adCount: 8));
+        var ctx = new ScrapingStrategyContext { PageUrl = "https://techmeme.com/", Html = string.Empty, Links = links };
+
+        var result = await strategy.BuildTreeAsync(ctx);
+
+        result.Config.Sections.Should().BeEmpty();
+        result.Config.NeedsReanalyze.Should().BeTrue();
+        result.Config.AiResult.Should().NotBeNull("the snapshot is kept as the in-session fallback");
+        result.Tree.TotalLinks.Should().Be(30, "the snapshot path still renders the 30 stories this session");
+    }
+
     [Fact]
     public async Task AiCuratedStrategy_OrdersByPrompted()
     {
