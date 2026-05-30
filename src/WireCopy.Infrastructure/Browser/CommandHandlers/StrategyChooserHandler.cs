@@ -260,65 +260,50 @@ internal static class StrategyChooserHandler
 
             var configToSave = selected.Config;
 
-            // If the user selected an AI-Curated stub, run the analyzer now.
+            // workspace-5oe9.8: if the user selected the AI-Curated stub, run the
+            // question-driven setup wizard now (replaces the old one-shot guidance
+            // prompt). The wizard proposes a pattern, asks a bounded set of
+            // confirm-the-pattern questions (each showing the durable identifier),
+            // and infers the final durable config.
             if (registry != null
                 && configToSave.Strategy == ScrapingStrategies.AiCuratedStrategy.StrategyId
                 && configToSave.AiResult == null)
             {
-                // workspace-99ve: prompt for optional user guidance before
-                // running the analyzer. The FormField paints its own chrome
-                // — the chooser overlay was cleared at the top of this
-                // method via ClearOverlay so they don't fight for the
-                // bottom rows. Null = user pressed Esc to cancel apply.
-                var guidance = await PromptForGuidanceAsync(ctx, options, ct).ConfigureAwait(false);
-                if (guidance == null)
-                {
-                    ctx.NavigationService.SetStatusMessage("Cancelled — strategy not applied");
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    return;
-                }
-
-                ctx.NavigationService.SetStatusMessage(
-                    string.IsNullOrWhiteSpace(guidance)
-                        ? "Running AI curation…"
-                        : $"Running AI curation with your guidance ({guidance.Length} chars)…",
-                    TimeSpan.FromMinutes(2));
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-
                 var page = ctx.NavigationService.CurrentContext.CurrentPage;
                 if (page != null)
                 {
-                    var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
-                    var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
-                    byte[]? screenshot = null;
-                    if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
+                    var wizardResult = await RunSetupWizardAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
+                    if (wizardResult.Cancelled)
                     {
-                        try
-                        {
-                            screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            // best-effort
-                        }
+                        ctx.NavigationService.SetStatusMessage("Cancelled — strategy not applied");
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        return;
                     }
 
-                    var strategy = registry.GetById(ScrapingStrategies.AiCuratedStrategy.StrategyId);
-                    if (strategy != null)
-                    {
-                        var stContext = new ScrapingStrategyContext
-                        {
-                            PageUrl = page.Url,
-                            Html = page.RawHtml ?? string.Empty,
-                            Links = links,
-                            Screenshot = screenshot,
-                            SavedConfig = configToSave,
-                            UserGuidance = string.IsNullOrWhiteSpace(guidance) ? null : guidance.Trim(),
-                        };
+                    var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
+                    var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
 
-                        var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
-                        configToSave = result.Config;
-                        page.SetLinkTree(result.Tree);
+                    if (wizardResult.UseDocumentOrder)
+                    {
+                        var docStrategy = registry.GetById(ScrapingStrategies.DocumentOrderStrategy.StrategyId);
+                        if (docStrategy != null)
+                        {
+                            var docContext = new ScrapingStrategyContext
+                            {
+                                PageUrl = page.Url,
+                                Html = page.RawHtml ?? string.Empty,
+                                Links = links,
+                            };
+                            var docResult = await docStrategy.BuildTreeAsync(docContext, ct).ConfigureAwait(false);
+                            configToSave = docResult.Config;
+                            page.SetLinkTree(docResult.Tree);
+                        }
+                    }
+                    else if (wizardResult.Config != null && treeBuilder != null)
+                    {
+                        configToSave = wizardResult.Config;
+                        var tree = await treeBuilder.BuildTreeAsync(links, configToSave, ct).ConfigureAwait(false);
+                        page.SetLinkTree(tree);
                     }
                 }
             }
@@ -428,6 +413,55 @@ internal static class StrategyChooserHandler
             ct).ConfigureAwait(false);
 
         return input;
+    }
+
+    /// <summary>
+    /// workspace-5oe9.8: runs the question-driven AI setup wizard for the
+    /// current page, painting its card overlay. Returns the wizard's outcome
+    /// (durable config, document-order escape, or cancel).
+    /// </summary>
+    private static async Task<SetupWizard.Result> RunSetupWizardAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        Domain.Entities.Browser.Page page,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+        if (analyzer == null || !analyzer.IsConfigured)
+        {
+            ctx.NavigationService.SetStatusMessage("AI Curated needs an OpenAI key · press c on the launcher");
+            return new SetupWizard.Result { Cancelled = true };
+        }
+
+        var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
+        var links = buildCache?.Links ?? new List<LinkInfo>();
+        var screenshot = await CaptureScreenshotSafelyAsync(scope, ctx.Logger).ConfigureAwait(false);
+
+        var overlay = new UI.Components.SetupWizardOverlay.State();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        ctx.SetOverlayPainter(opts =>
+            UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+
+        try
+        {
+            var budget = new ModelRoundTripBudget();
+            return await SetupWizard.RunAsync(
+                analyzer,
+                ctx.InputHandler,
+                c => ctx.RenderCurrentPageAsync(options, c),
+                overlay,
+                links,
+                page.Url,
+                screenshot,
+                budget,
+                c => PromptForGuidanceAsync(ctx, options, c),
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            ClearOverlay(ctx);
+        }
     }
 
     /// <summary>
