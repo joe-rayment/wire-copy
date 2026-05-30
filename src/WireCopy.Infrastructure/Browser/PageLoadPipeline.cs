@@ -429,7 +429,9 @@ public class PageLoadPipeline
                 links, hierarchyConfig!.AiResult!, cancellationToken).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
             _navigationService.SetStatusMessage(
-                $"AI curated · {hierarchyConfig.AiResult!.StoryOrderLinkKeys.Count} stories");
+                ConfigMigration.NeedsReanalysis(hierarchyConfig)
+                    ? "AI curated (legacy snapshot) · Ctrl+l to re-run so it survives revisits"
+                    : $"AI curated · {hierarchyConfig.AiResult!.StoryOrderLinkKeys.Count} stories");
         }
         else
         {

@@ -357,6 +357,14 @@ internal sealed class DiskCacheStore
                 // exclusion survives a build-cache rehydrate.
                 persisted.HierarchyExcludeSelectors = buildCache.HierarchyConfig.ExcludeSelectors.ToList();
                 persisted.HierarchyExcludeUrlPatterns = buildCache.HierarchyConfig.ExcludeUrlPatterns.ToList();
+
+                // workspace-5oe9.6: persist Kind/Strategy so a rehydrated config
+                // is honest about its origin (routing is Sections-first and
+                // store-agnostic, but diagnostics + the configured-site summary
+                // rely on these being accurate rather than defaulted).
+                persisted.HierarchyKind = (int)buildCache.HierarchyConfig.Kind;
+                persisted.HierarchyStrategy = buildCache.HierarchyConfig.Strategy;
+                persisted.HierarchyVersion = buildCache.HierarchyConfig.Version;
             }
 
             var json = JsonSerializer.Serialize(persisted, JsonOptions);
@@ -448,6 +456,13 @@ internal sealed class DiskCacheStore
                         // a build-cache rehydrate keeps hiding ads/promos.
                         ExcludeSelectors = persisted.HierarchyExcludeSelectors ?? new List<string>(),
                         ExcludeUrlPatterns = persisted.HierarchyExcludeUrlPatterns ?? new List<string>(),
+
+                        // workspace-5oe9.6: restore Kind/Strategy/Version (older
+                        // cache files predate these — default to the prior
+                        // disk-cache shape).
+                        Kind = persisted.HierarchyKind is { } k ? (LayoutKind)k : LayoutKind.AiHierarchical,
+                        Strategy = persisted.HierarchyStrategy,
+                        Version = persisted.HierarchyVersion is { } v ? v : 1,
                     };
                 }
 
@@ -650,6 +665,14 @@ internal sealed class DiskCacheStore
         public List<string>? HierarchyExcludeSelectors { get; set; }
 
         public List<string>? HierarchyExcludeUrlPatterns { get; set; }
+
+        // workspace-5oe9.6: strategy identity (nullable so older cache files
+        // load cleanly).
+        public int? HierarchyKind { get; set; }
+
+        public string? HierarchyStrategy { get; set; }
+
+        public int? HierarchyVersion { get; set; }
 
         // ReadableContent fields (article text for reader view)
         public string? ReadableTitle { get; set; }

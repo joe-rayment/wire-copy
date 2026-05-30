@@ -241,6 +241,41 @@ public class DiskCacheStoreTests : IDisposable
     }
 
     [Fact]
+    public void WriteBuildCache_PersistsKindStrategyVersion()
+    {
+        // workspace-5oe9.6: a rehydrated config must be honest about its origin.
+        var url = "https://news.example.com/home";
+        var buildCache = new PageBuildCache
+        {
+            Links = new List<LinkInfo> { new() { Url = url + "/s", DisplayText = "S", Type = LinkType.Content, ImportanceScore = 80 } },
+            Metadata = new PageMetadata { Title = "Home" },
+            FinalUrl = url,
+            Classification = PageClassification.LinkList,
+            CachedAt = DateTime.UtcNow,
+            HierarchyConfig = new SiteHierarchyConfig
+            {
+                Domain = "news.example.com",
+                UrlPattern = "^https?://news\\.example\\.com/home$",
+                Sections = new List<HierarchySection> { new() { Name = "Lead", SortOrder = 0, ParentSelectors = new List<string> { "section.lead" } } },
+                CreatedAt = DateTime.UtcNow,
+                ModelVersion = "gpt-5-mini",
+                Kind = LayoutKind.AiCurated,
+                Strategy = "AiCurated",
+                Version = 3,
+            },
+        };
+
+        _store.WriteBuildCache(url, buildCache);
+
+        var loaded = _store.LoadAllBuildCaches();
+        var cfg = loaded[UrlNormalizer.Normalize(url)].HierarchyConfig;
+        cfg.Should().NotBeNull();
+        cfg!.Kind.Should().Be(LayoutKind.AiCurated, "Kind must not default to AiHierarchical on rehydrate");
+        cfg.Strategy.Should().Be("AiCurated");
+        cfg.Version.Should().Be(3);
+    }
+
+    [Fact]
     public void Write_MultipleEntries_LoadAll_ReturnsAll()
     {
         for (int i = 0; i < 5; i++)

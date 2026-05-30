@@ -150,6 +150,44 @@ public class HierarchyConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ClearLegacySnapshotsAsync_RemovesOnlySnapshotConfigs()
+    {
+        // A legacy snapshot (Version 2, AiCurated, no sections, AiResult set)
+        // and a durable Version-3 pattern config share a domain file.
+        var legacy = new SiteHierarchyConfig
+        {
+            Domain = "test-hierarchy.example.com",
+            UrlPattern = "^https?://test-hierarchy\\.example\\.com/page1$",
+            Sections = new List<HierarchySection>(),
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "gpt-5-mini",
+            Kind = LayoutKind.AiCurated,
+            Strategy = "AiCurated",
+            Version = 2,
+            AiResult = new AiCuratedResult
+            {
+                ExcludedLinkKeys = new(),
+                StoryOrderLinkKeys = new() { "url:https://test-hierarchy.example.com/old" },
+                AnalyzedAt = DateTime.UtcNow,
+            },
+        };
+        var durable = CreateTestConfig(urlPattern: "^https?://test-hierarchy\\.example\\.com/page2$") with
+        {
+            Kind = LayoutKind.AiCurated,
+            Strategy = "AiCurated",
+            Version = 3,
+        };
+        await _store.SaveConfigAsync(legacy);
+        await _store.SaveConfigAsync(durable);
+
+        var removed = await _store.ClearLegacySnapshotsAsync();
+
+        removed.Should().Be(1);
+        (await _store.GetConfigAsync("https://test-hierarchy.example.com/page1")).Should().BeNull("the snapshot is purged");
+        (await _store.GetConfigAsync("https://test-hierarchy.example.com/page2")).Should().NotBeNull("the durable config survives");
+    }
+
+    [Fact]
     public async Task GetConfigAsync_NonMatchingUrl_ReturnsNull()
     {
         var config = CreateTestConfig();

@@ -36,4 +36,11 @@ public interface IHierarchyConfigStore
     /// Gets the total number of saved hierarchy configs across all domains.
     /// </summary>
     Task<int> GetConfigCountAsync();
+
+    /// <summary>
+    /// workspace-5oe9.6: purges legacy per-URL AiCurated snapshot configs
+    /// (Version&lt;3, no durable sections) across all domains. Version-3
+    /// pattern configs are left intact. Returns the number removed.
+    /// </summary>
+    Task<int> ClearLegacySnapshotsAsync();
 }

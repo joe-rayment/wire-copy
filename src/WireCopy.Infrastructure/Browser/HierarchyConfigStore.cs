@@ -217,6 +217,54 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         }
     }
 
+    public Task<int> ClearLegacySnapshotsAsync()
+    {
+        var removed = 0;
+        try
+        {
+            if (!Directory.Exists(_storagePath))
+            {
+                return Task.FromResult(0);
+            }
+
+            lock (_lock)
+            {
+                foreach (var file in Directory.GetFiles(_storagePath, "*.json"))
+                {
+                    var configs = LoadConfigsFromFile(file);
+                    var kept = configs.Where(c => !ConfigMigration.IsLegacySnapshot(c)).ToList();
+                    if (kept.Count == configs.Count)
+                    {
+                        continue;
+                    }
+
+                    removed += configs.Count - kept.Count;
+                    if (kept.Count == 0)
+                    {
+                        File.Delete(file);
+                    }
+                    else
+                    {
+                        var tempPath = file + ".tmp";
+                        File.WriteAllText(tempPath, JsonSerializer.Serialize(kept, JsonOptions));
+                        File.Move(tempPath, file, overwrite: true);
+                    }
+                }
+            }
+
+            if (removed > 0)
+            {
+                _logger.LogInformation("Cleared {Count} legacy snapshot hierarchy config(s)", removed);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear legacy snapshot configs");
+        }
+
+        return Task.FromResult(removed);
+    }
+
     private static string? ExtractDomain(string url)
     {
         try
