@@ -146,7 +146,7 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
                 context.Links.ToList(),
                 context.PageUrl,
                 requestedGuidance,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             // workspace-99ve: stamp the guidance onto the result so the
             // next read can detect a guidance change and re-run.

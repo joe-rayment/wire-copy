@@ -20,5 +20,6 @@ public interface IHierarchyAnalyzer
         List<LinkInfo> links,
         string pageUrl,
         string? userGuidance = null,
+        string? reasoningEffortOverride = null,
         CancellationToken cancellationToken = default);
 }

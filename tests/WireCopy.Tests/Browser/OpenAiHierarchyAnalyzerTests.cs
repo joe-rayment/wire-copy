@@ -332,6 +332,105 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public async Task AnalyzeCuratedAsync_EnrichedPrompt_IncludesScoreSectionAndPathOnlyUrls()
+    {
+        // workspace-5oe9.4: the curated user prompt must surface ImportanceScore
+        // and SectionTitle (the two prominence signals) and strip scheme+host
+        // from link URLs so the model sees path patterns, not host noise.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        List<ChatMessage>? captured = null;
+        OpenAiHierarchyAnalyzer.ChatCompleter completer = (_, _, messages, _, _) =>
+        {
+            captured = messages.ToList();
+            return Task.FromResult("{\"excluded\":[],\"stories\":[0,1],\"sections\":[]}");
+        };
+
+        var analyzer = CreateAnalyzer(completer);
+        var links = new List<LinkInfo>
+        {
+            new LinkInfo
+            {
+                Url = "https://example.com/article1",
+                DisplayText = "Article 1",
+                Type = LinkType.Content,
+                ImportanceScore = 80,
+                ParentSelector = "section.lead > a",
+                SectionTitle = "Top Story",
+            },
+            new LinkInfo
+            {
+                Url = "https://example.com/article2",
+                DisplayText = "Article 2",
+                Type = LinkType.Content,
+                ImportanceScore = 40,
+            },
+        };
+
+        await analyzer.AnalyzeCuratedAsync(screenshot: null, links, "https://example.com/");
+
+        var userText = string.Join(
+            "\n",
+            captured!.SelectMany(m => m.Content)
+                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                .Select(p => p.Text));
+
+        userText.Should().Contain("score=80");
+        userText.Should().Contain("sect=\"Top Story\"");
+        userText.Should().Contain("/article1");
+        userText.Should().NotContain("https://example.com/article1",
+            "link URLs are emitted path-only to save tokens and surface path patterns");
+    }
+
+    [Fact]
+    public async Task AnalyzeCuratedAsync_ReasoningEffortOverride_ReachesOptions()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        ChatCompletionOptions? capturedWith = null;
+        ChatCompletionOptions? capturedWithout = null;
+
+        var analyzerWith = CreateAnalyzer((_, _, _, options, _) =>
+        {
+            capturedWith = options;
+            return Task.FromResult("{\"excluded\":[],\"stories\":[0,1],\"sections\":[]}");
+        });
+        await analyzerWith.AnalyzeCuratedAsync(
+            screenshot: null, CreateSampleLinks(), "https://example.com/", reasoningEffortOverride: "low");
+
+        var analyzerWithout = CreateAnalyzer((_, _, _, options, _) =>
+        {
+            capturedWithout = options;
+            return Task.FromResult("{\"excluded\":[],\"stories\":[0,1],\"sections\":[]}");
+        });
+        await analyzerWithout.AnalyzeCuratedAsync(
+            screenshot: null, CreateSampleLinks(), "https://example.com/");
+
+#pragma warning disable OPENAI001 // Experimental reasoning-effort surface
+        capturedWith!.ReasoningEffortLevel.Should().Be(ChatReasoningEffortLevel.Low,
+            "an explicit override must reach the request options");
+        capturedWithout!.ReasoningEffortLevel.Should().Be(ChatReasoningEffortLevel.Minimal,
+            "with no override the configured default ('minimal') is used");
+#pragma warning restore OPENAI001
+    }
+
+    [Fact]
+    public void ParseCuratedResponse_IntegerIndexMapping_Unchanged()
+    {
+        // Regression guard (workspace-5oe9.4): the prompt enrichment must NOT
+        // disturb the excluded/stories integer[] -> URL-key mapping that
+        // DetectDegenerateRanking and BuildFromAiCuratedResult depend on.
+        var json = "{\"excluded\":[1],\"stories\":[0],\"sections\":[]}";
+
+        var result = OpenAiHierarchyAnalyzer.ParseCuratedResponse(json, CreateSampleLinks());
+
+        result.ExcludedLinkKeys.Should().ContainSingle()
+            .Which.Should().Be(AiCuratedResult.KeyFor("https://example.com/article2"));
+        result.StoryOrderLinkKeys.Should().ContainSingle()
+            .Which.Should().Be(AiCuratedResult.KeyFor("https://example.com/article1"));
+    }
+
+    [Fact]
     public void ParseCuratedResponse_StaticHelper_FiltersOutOfRangeIndices()
     {
         var json = "{\"excluded\":[99],\"stories\":[0,1,42],\"sections\":[]}";
