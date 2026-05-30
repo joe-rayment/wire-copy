@@ -430,6 +430,170 @@ public class OpenAiHierarchyAnalyzerTests
             .Which.Should().Be(AiCuratedResult.KeyFor("https://example.com/article1"));
     }
 
+    // ---- workspace-5oe9.7: clarifying-questions model contract ----
+
+    private static List<LinkInfo> SetupLinks() => new()
+    {
+        new LinkInfo { Url = "https://x.com/lead", DisplayText = "Lead", Type = LinkType.Content, ImportanceScore = 95, ParentSelector = "section.lead a" },
+        new LinkInfo { Url = "https://x.com/feed-1", DisplayText = "Feed 1", Type = LinkType.Content, ImportanceScore = 70, ParentSelector = "section.feed a" },
+        new LinkInfo { Url = "https://x.com/feed-2", DisplayText = "Feed 2", Type = LinkType.Content, ImportanceScore = 65, ParentSelector = "section.feed a" },
+        new LinkInfo { Url = "https://x.com/promo", DisplayText = "Subscribe", Type = LinkType.Content, ImportanceScore = 20, ParentSelector = "aside.promo a" },
+    };
+
+    private const string InferPatternJson =
+        "{\"sections\":[" +
+        "{\"name\":\"Top Story\",\"parent_selectors\":[\"section.lead\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+        "{\"name\":\"Feed\",\"parent_selectors\":[\"section.feed\"],\"url_patterns\":[],\"story_indices\":[1,2],\"start_collapsed\":false}]," +
+        "\"exclude_selectors\":[\"aside.promo\"],\"exclude_url_patterns\":[],\"exclude_indices\":[3]}";
+
+    private static string ProposalJson(int questionCount)
+    {
+        var qs = string.Join(",", Enumerable.Range(0, questionCount).Select(i =>
+            $"{{\"id\":\"q{i}\",\"prompt\":\"Question {i}?\",\"kind\":\"pick_main\",\"default_answer\":\"yes\"," +
+            "\"options\":[{\"label\":\"Opt\",\"parent_selector\":\"section.lead\",\"url_pattern\":\"\",\"example_link_indices\":[0]}]}"));
+        return "{\"proposed_pattern\":{" +
+            "\"top_story\":{\"label\":\"Lead\",\"parent_selector\":\"section.lead\",\"url_pattern\":\"\",\"example_link_indices\":[0]}," +
+            "\"tiers\":[{\"label\":\"Feed\",\"parent_selector\":\"section.feed\",\"url_pattern\":\"\",\"example_link_indices\":[1,2]}]," +
+            "\"exclude\":[{\"label\":\"Ads\",\"parent_selector\":\"aside.promo\",\"url_pattern\":\"\",\"example_link_indices\":[3]}]}," +
+            $"\"questions\":[{qs}]}}";
+    }
+
+    [Fact]
+    public async Task ProposeSetupQuestionsAsync_ClampsToMaxQuestions()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        // MaxSetupQuestions defaults to 4.
+
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult(ProposalJson(20)));
+
+        var proposal = await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        proposal.Questions.Should().HaveCountLessThanOrEqualTo(4, "the question count is clamped in code");
+        proposal.ProposedPattern.TopStory!.ParentSelector.Should().Be("section.lead");
+    }
+
+    [Fact]
+    public async Task InferPatternFromAnswersAsync_ReturnsSelectorSections_NotUrlKeys_AndPassesAnswersIntoPrompt()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        List<ChatMessage>? captured = null;
+        var analyzer = CreateAnalyzer((_, _, messages, _, _) =>
+        {
+            captured = messages.ToList();
+            return Task.FromResult(InferPatternJson);
+        });
+
+        var proposal = new SiteSetupProposal
+        {
+            ProposedPattern = new ProposedPattern(),
+            Questions = new List<SetupQuestion>
+            {
+                new() { Id = "q0", Prompt = "Which is the lead story?", Kind = SetupQuestionKind.PickMain, DefaultAnswer = "Lead" },
+            },
+        };
+        var answers = new List<SetupAnswer> { new() { QuestionId = "q0", Answer = "the budget vote story" } };
+
+        var config = await analyzer.InferPatternFromAnswersAsync(null, SetupLinks(), "https://x.com/", proposal, answers);
+
+        config.Version.Should().Be(3);
+        config.Sections.Should().HaveCount(2);
+        config.Sections.SelectMany(s => s.ParentSelectors).Should().Contain("section.lead").And.Contain("section.feed");
+        config.Sections.SelectMany(s => s.ParentSelectors).Should().NotContain(s => s.StartsWith("url:", StringComparison.Ordinal));
+        config.ExcludeSelectors.Should().Contain("aside.promo");
+
+        var userText = string.Join("\n", captured!.SelectMany(m => m.Content)
+            .Where(p => p.Kind == ChatMessageContentPartKind.Text).Select(p => p.Text));
+        userText.Should().Contain("the budget vote story", "the user's answer must reach the round-2 prompt");
+    }
+
+    [Fact]
+    public async Task SetupContract_AcceptAllPath_PerformsExactlyTwoRoundTrips()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        var calls = 0;
+        var analyzer = CreateAnalyzer((_, _, _, _, _) =>
+        {
+            calls++;
+            return Task.FromResult(calls == 1 ? ProposalJson(2) : InferPatternJson);
+        });
+
+        var proposal = await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+        var answers = proposal.Questions.Select(q => new SetupAnswer { QuestionId = q.Id, Answer = q.DefaultAnswer }).ToList();
+        await analyzer.InferPatternFromAnswersAsync(null, SetupLinks(), "https://x.com/", proposal, answers);
+
+        calls.Should().Be(2, "the setup contract is exactly two model round-trips: propose + infer");
+    }
+
+    [Fact]
+    public async Task ProposeSetupQuestionsAsync_MalformedJson_RetriesThenSucceeds()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        var attempt = 0;
+        var analyzer = CreateAnalyzer((_, _, _, _, _) =>
+        {
+            attempt++;
+            return Task.FromResult(attempt == 1 ? "not json" : ProposalJson(1));
+        });
+
+        var proposal = await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        attempt.Should().Be(2);
+        proposal.Questions.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void ParseSetupQuestions_ClampsQuestionsOptionsAndIndices()
+    {
+        // 20 questions in, default cap 4 out; option/index clamps applied.
+        var result = OpenAiHierarchyAnalyzer.ParseSetupQuestions(ProposalJson(20), maxQuestions: 4);
+        result.Questions.Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_DerivesSelectorsWhenModelOmitsThem()
+    {
+        // Model returns story_indices but EMPTY selectors → B3 fallback derives them.
+        var json =
+            "{\"sections\":[{\"name\":\"Lead\",\"parent_selectors\":[],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[3]}";
+
+        var config = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, SetupLinks(), "https://x.com/", "gpt-5-mini");
+
+        config.Sections.Should().ContainSingle();
+        config.Sections[0].ParentSelectors.Should().Contain("section.lead", "derived as a B3 fallback from story_indices");
+        config.ExcludeSelectors.Should().Contain("aside.promo");
+    }
+
+    [Fact]
+    public void EstimateSetupOutputTokens_ScalesWithQuestionCapAndStaysGenerous()
+    {
+        OpenAiHierarchyAnalyzer.EstimateSetupOutputTokens(0).Should().BeGreaterThan(0);
+        OpenAiHierarchyAnalyzer.EstimateSetupOutputTokens(4)
+            .Should().BeGreaterThan(OpenAiHierarchyAnalyzer.EstimateSetupOutputTokens(1));
+    }
+
+    [Fact]
+    public async Task ProposeSetupQuestionsAsync_RequestsAtLeastTheEstimatedTokenBudget()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        // MaxSetupQuestions defaults to 4.
+
+        ChatCompletionOptions? captured = null;
+        var analyzer = CreateAnalyzer((_, _, _, options, _) =>
+        {
+            captured = options;
+            return Task.FromResult(ProposalJson(2));
+        });
+
+        await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        captured!.MaxOutputTokenCount.Should()
+            .BeGreaterThanOrEqualTo(OpenAiHierarchyAnalyzer.EstimateSetupOutputTokens(4));
+    }
+
     [Fact]
     public void ParseCuratedResponse_StaticHelper_FiltersOutOfRangeIndices()
     {
