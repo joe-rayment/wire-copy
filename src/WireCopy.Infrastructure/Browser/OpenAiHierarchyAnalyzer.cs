@@ -32,6 +32,12 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 {
+    /// <summary>Clamp: options offered per question (keeps the modal + token cost bounded).</summary>
+    internal const int MaxOptionsPerQuestion = 6;
+
+    /// <summary>Clamp: example link indices carried per option.</summary>
+    internal const int MaxExampleIndicesPerOption = 5;
+
     private static readonly JsonSerializerOptions ParseOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -87,6 +93,84 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             }
           },
           "required": ["excluded", "stories", "sections"]
+        }
+        """);
+
+    private static readonly BinaryData SetupQuestionsSchema = BinaryData.FromString(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proposed_pattern": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "top_story": { "$ref": "#/$defs/option" },
+                "tiers": { "type": "array", "items": { "$ref": "#/$defs/option" } },
+                "exclude": { "type": "array", "items": { "$ref": "#/$defs/option" } }
+              },
+              "required": ["top_story", "tiers", "exclude"]
+            },
+            "questions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string" },
+                  "prompt": { "type": "string" },
+                  "kind": { "type": "string", "enum": ["pick_main", "confirm_exclude", "confirm_order", "group_by"] },
+                  "default_answer": { "type": "string" },
+                  "options": { "type": "array", "items": { "$ref": "#/$defs/option" } }
+                },
+                "required": ["id", "prompt", "kind", "default_answer", "options"]
+              }
+            }
+          },
+          "required": ["proposed_pattern", "questions"],
+          "$defs": {
+            "option": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": { "type": "string" },
+                "parent_selector": { "type": "string" },
+                "url_pattern": { "type": "string" },
+                "example_link_indices": { "type": "array", "items": { "type": "integer" } }
+              },
+              "required": ["label", "parent_selector", "url_pattern", "example_link_indices"]
+            }
+          }
+        }
+        """);
+
+    private static readonly BinaryData SetupPatternSchema = BinaryData.FromString(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "parent_selectors": { "type": "array", "items": { "type": "string" } },
+                  "url_patterns": { "type": "array", "items": { "type": "string" } },
+                  "story_indices": { "type": "array", "items": { "type": "integer" } },
+                  "start_collapsed": { "type": "boolean" }
+                },
+                "required": ["name", "parent_selectors", "url_patterns", "story_indices", "start_collapsed"]
+              }
+            },
+            "exclude_selectors": { "type": "array", "items": { "type": "string" } },
+            "exclude_url_patterns": { "type": "array", "items": { "type": "string" } },
+            "exclude_indices": { "type": "array", "items": { "type": "integer" } }
+          },
+          "required": ["sections", "exclude_selectors", "exclude_url_patterns", "exclude_indices"]
         }
         """);
 
@@ -273,6 +357,109 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         throw new InvalidOperationException("Failed to parse AI curated response after retries");
     }
 
+    /// <inheritdoc />
+    public async Task<SiteSetupProposal> ProposeSetupQuestionsAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var apiKey = GetApiKey()
+            ?? throw new InvalidOperationException(
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
+
+        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        var systemPrompt = BuildSetupQuestionsSystemPrompt(_config.MaxSetupQuestions);
+        var userPrompt = BuildCuratedUserPrompt(contentLinks, pageUrl);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+                var options = BuildOptions(
+                    schemaName: "site_setup_questions",
+                    schema: SetupQuestionsSchema,
+                    schemaDescription: "A proposed layout pattern plus a bounded set of clarifying questions.",
+                    reasoningEffortOverride: "low",
+                    maxOutputTokensOverride: EstimateSetupOutputTokens(_config.MaxSetupQuestions));
+
+                var responseText = await _chatCompleter(
+                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+
+                return ParseSetupQuestions(responseText, _config.MaxSetupQuestions);
+            }
+            catch (JsonException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(ex, "Malformed JSON in setup-questions response, retrying");
+                userPrompt = new StringBuilder(userPrompt)
+                    .Append("\n\nIMPORTANT: respond with ONLY the JSON object — no commentary.")
+                    .ToString();
+            }
+        }
+
+        throw new InvalidOperationException("Failed to parse setup-questions response after retries");
+    }
+
+    /// <inheritdoc />
+    public async Task<SiteHierarchyConfig> InferPatternFromAnswersAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        SiteSetupProposal proposal,
+        IReadOnlyList<SetupAnswer> answers,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(answers);
+
+        var apiKey = GetApiKey()
+            ?? throw new InvalidOperationException(
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
+
+        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        var systemPrompt = BuildInferPatternSystemPrompt();
+        var userPrompt = BuildInferPatternUserPrompt(contentLinks, pageUrl, proposal, answers);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+                var options = BuildOptions(
+                    schemaName: "site_pattern",
+                    schema: SetupPatternSchema,
+                    schemaDescription: "Durable selector/url-pattern sections + exclusion rules.");
+
+                var responseText = await _chatCompleter(
+                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+
+                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+            }
+            catch (JsonException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(ex, "Malformed JSON in infer-pattern response, retrying");
+                userPrompt = new StringBuilder(userPrompt)
+                    .Append("\n\nIMPORTANT: respond with ONLY the JSON object — no commentary.")
+                    .ToString();
+            }
+        }
+
+        throw new InvalidOperationException("Failed to parse infer-pattern response after retries");
+    }
+
+    /// <summary>
+    /// workspace-5oe9.7: a generous output-token budget for the proposal call,
+    /// scaled to the question cap. Always at least the configured MaxTokens.
+    /// </summary>
+    internal static int EstimateSetupOutputTokens(int maxQuestions)
+    {
+        // proposed_pattern (~400) + maxQuestions * (MaxOptionsPerQuestion options
+        // * ~60 tokens each + ~80 framing).
+        var perQuestion = (MaxOptionsPerQuestion * 60) + 80;
+        return 400 + (Math.Max(1, maxQuestions) * perQuestion);
+    }
+
     private static string BuildHierarchySystemPrompt()
     {
         var sb = new StringBuilder();
@@ -399,6 +586,118 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             : url;
     }
 
+    private static string BuildSetupQuestionsSystemPrompt(int maxQuestions)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are setting up a news homepage for a terminal reader by inferring a REUSABLE pattern.");
+        sb.AppendLine("Each link has a score (0-100 prominence), a sect (nearest heading or '-'), text, and a path-only URL.");
+        sb.AppendLine();
+        sb.AppendLine("Return TWO things:");
+        sb.AppendLine();
+        sb.AppendLine("1. proposed_pattern: your best initial reading —");
+        sb.AppendLine("   - top_story: the single most prominent lead story;");
+        sb.AppendLine("   - tiers: ordered groups of remaining stories (most prominent first);");
+        sb.AppendLine("   - exclude: links that are NOT stories (subscribe/newsletter CTAs, section");
+        sb.AppendLine("     hub/index pages, author/tag pages, video hubs, sign-in, social/nav).");
+        sb.AppendLine("   For EVERY option set a DURABLE identifier: parent_selector = the shortest");
+        sb.AppendLine("   class/id-bearing CSS fragment shared by those links (e.g. 'section.lead',");
+        sb.AppendLine("   'section.feed'); url_pattern = a shared path segment like '/opinion/' when one");
+        sb.AppendLine("   exists; else empty string. Always fill example_link_indices with the link");
+        sb.AppendLine("   numbers the option refers to. These identifiers must generalize to a LATER");
+        sb.AppendLine("   visit when the article URLs have changed — never identify a story by its");
+        sb.AppendLine("   exact URL.");
+        sb.AppendLine();
+        sb.AppendLine($"2. questions: AT MOST {maxQuestions} short clarifying questions to confirm the");
+        sb.AppendLine("   pattern. Ask ONLY where you are genuinely unsure. Each question MUST set");
+        sb.AppendLine("   default_answer to your best guess so the user can just press Enter. Use kind:");
+        sb.AppendLine("   pick_main (which is the lead), confirm_exclude (hide these non-stories?),");
+        sb.AppendLine("   confirm_order (is this section order right?), group_by (group into sections?).");
+        sb.AppendLine("   Each option carries the same durable identifier fields as above.");
+        sb.AppendLine();
+        sb.Append("Prefer FEWER questions. If the pattern is obvious, return an empty questions array.");
+        return sb.ToString();
+    }
+
+    private static string BuildInferPatternSystemPrompt()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are finalizing a REUSABLE homepage layout pattern from the user's answers.");
+        sb.AppendLine();
+        sb.AppendLine("Return durable sections (most prominent first):");
+        sb.AppendLine("- name: short label (the first/lead section should be the single top story);");
+        sb.AppendLine("- parent_selectors: shortest class/id-bearing CSS fragments identifying the");
+        sb.AppendLine("  section's links (e.g. 'section.lead'); url_patterns: shared path segments");
+        sb.AppendLine("  (e.g. '/opinion/'); set at least one of the two per section so it generalizes;");
+        sb.AppendLine("- story_indices: the link numbers currently in this section (so the identifier");
+        sb.AppendLine("  can be re-derived if needed);");
+        sb.AppendLine("- start_collapsed: true for low-priority sections.");
+        sb.AppendLine();
+        sb.AppendLine("Also return exclude_selectors / exclude_url_patterns (durable identifiers for the");
+        sb.AppendLine("non-stories to hide) and exclude_indices (their link numbers). NEVER identify a");
+        sb.Append("link by its exact URL — only by selector or path pattern. Honour the user's answers.");
+        return sb.ToString();
+    }
+
+    private static string BuildInferPatternUserPrompt(
+        List<LinkInfo> contentLinks,
+        string pageUrl,
+        SiteSetupProposal proposal,
+        IReadOnlyList<SetupAnswer> answers)
+    {
+        var sb = new StringBuilder();
+        sb.Append(BuildCuratedUserPrompt(contentLinks, pageUrl));
+        sb.AppendLine();
+        sb.AppendLine("Your proposed pattern was:");
+        if (proposal.ProposedPattern.TopStory is { } top)
+        {
+            sb.AppendLine($"  top_story: {DescribeOption(top)}");
+        }
+
+        foreach (var tier in proposal.ProposedPattern.Tiers)
+        {
+            sb.AppendLine($"  tier: {DescribeOption(tier)}");
+        }
+
+        foreach (var ex in proposal.ProposedPattern.Exclude)
+        {
+            sb.AppendLine($"  exclude: {DescribeOption(ex)}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("The user answered your questions as follows:");
+        var byId = proposal.Questions.ToDictionary(q => q.Id, q => q, StringComparer.Ordinal);
+        foreach (var answer in answers)
+        {
+            var promptText = byId.TryGetValue(answer.QuestionId, out var q) ? q.Prompt : answer.QuestionId;
+            sb.AppendLine($"  Q: {promptText}");
+            sb.AppendLine($"  A: {answer.Answer}");
+        }
+
+        sb.AppendLine();
+        sb.Append("Produce the final durable pattern, honouring these answers.");
+        return sb.ToString();
+    }
+
+    private static string DescribeOption(SetupOption option)
+    {
+        var idParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(option.ParentSelector))
+        {
+            idParts.Add($"selector={option.ParentSelector}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(option.UrlPattern))
+        {
+            idParts.Add($"url={option.UrlPattern}");
+        }
+
+        var idText = idParts.Count > 0 ? $" [{string.Join(", ", idParts)}]" : string.Empty;
+        var indices = option.ExampleLinkIndices.Count > 0
+            ? $" (links {string.Join(",", option.ExampleLinkIndices)})"
+            : string.Empty;
+        return $"{option.Label}{idText}{indices}";
+    }
+
     private static List<ChatMessage> BuildMessages(string systemPrompt, string userPrompt, byte[]? screenshot)
     {
         var userParts = new List<ChatMessageContentPart>();
@@ -422,7 +721,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         string schemaName,
         BinaryData schema,
         string schemaDescription,
-        string? reasoningEffortOverride = null)
+        string? reasoningEffortOverride = null,
+        int? maxOutputTokensOverride = null)
     {
         var options = new ChatCompletionOptions
         {
@@ -431,7 +731,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 jsonSchema: schema,
                 jsonSchemaFormatDescription: schemaDescription,
                 jsonSchemaIsStrict: true),
-            MaxOutputTokenCount = _config.MaxTokens,
+            MaxOutputTokenCount = maxOutputTokensOverride is > 0
+                ? Math.Max(_config.MaxTokens, maxOutputTokensOverride.Value)
+                : _config.MaxTokens,
         };
 
         // ReasoningEffortLevel is gpt-5 / o-series only; the SDK's "Minimal"
@@ -651,6 +953,167 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             AnalyzedAt = DateTime.UtcNow,
         };
     }
+
+    /// <summary>
+    /// workspace-5oe9.7: parses the round-1 setup response and CLAMPS it to the
+    /// configured limits — at most <paramref name="maxQuestions"/> questions,
+    /// at most <see cref="MaxOptionsPerQuestion"/> options each, and at most
+    /// <see cref="MaxExampleIndicesPerOption"/> indices per option — so a
+    /// misbehaving model can never blow past the wizard's bounds.
+    /// </summary>
+    internal static SiteSetupProposal ParseSetupQuestions(string responseText, int maxQuestions)
+    {
+        var jsonText = StripOptionalFences(responseText);
+        var parsed = JsonSerializer.Deserialize<SetupQuestionsResponse>(jsonText, ParseOptions)
+            ?? throw new JsonException("Failed to deserialize setup-questions response");
+
+        var pattern = parsed.ProposedPattern ?? new ProposedPatternResponse();
+        var proposed = new ProposedPattern
+        {
+            TopStory = pattern.TopStory != null ? MapOption(pattern.TopStory) : null,
+            Tiers = (pattern.Tiers ?? new()).Select(MapOption).ToList(),
+            Exclude = (pattern.Exclude ?? new()).Select(MapOption).ToList(),
+        };
+
+        var questions = (parsed.Questions ?? new())
+            .Take(Math.Max(0, maxQuestions))
+            .Select(q => new SetupQuestion
+            {
+                Id = string.IsNullOrWhiteSpace(q.Id) ? Guid.NewGuid().ToString("N")[..8] : q.Id!,
+                Prompt = q.Prompt ?? string.Empty,
+                Kind = MapQuestionKind(q.Kind),
+                DefaultAnswer = q.DefaultAnswer ?? string.Empty,
+                Options = (q.Options ?? new())
+                    .Take(MaxOptionsPerQuestion)
+                    .Select(MapOption)
+                    .ToList(),
+            })
+            .ToList();
+
+        return new SiteSetupProposal { ProposedPattern = proposed, Questions = questions };
+    }
+
+    /// <summary>
+    /// workspace-5oe9.7: parses the round-2 response into a durable
+    /// <see cref="SiteHierarchyConfig"/>. Prefers model-returned selectors;
+    /// falls back to <see cref="SelectorDerivation"/> over a section's
+    /// story_indices when the model omitted them.
+    /// </summary>
+    internal static SiteHierarchyConfig ParsePatternFromAnswers(
+        string responseText, List<LinkInfo> contentLinks, string pageUrl, string modelVersion)
+    {
+        var jsonText = StripOptionalFences(responseText);
+        var parsed = JsonSerializer.Deserialize<SetupPatternResponse>(jsonText, ParseOptions)
+            ?? throw new JsonException("Failed to deserialize infer-pattern response");
+
+        List<LinkInfo> LinksAt(IEnumerable<int>? indices) =>
+            (indices ?? Enumerable.Empty<int>())
+                .Where(i => i >= 0 && i < contentLinks.Count)
+                .Select(i => contentLinks[i])
+                .ToList();
+
+        var sections = new List<HierarchySection>();
+        foreach (var s in parsed.Sections ?? new())
+        {
+            var members = LinksAt(s.StoryIndices);
+            var selectors = (s.ParentSelectors ?? new()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+            var urlPatterns = (s.UrlPatterns ?? new()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+
+            // B3 fallback only when the model omitted durable identifiers.
+            if (selectors.Count == 0 && members.Count > 0)
+            {
+                selectors = SelectorDerivation.DeriveParentSelectors(members);
+            }
+
+            if (urlPatterns.Count == 0 && members.Count > 0)
+            {
+                urlPatterns = SelectorDerivation.DeriveUrlPatterns(members);
+            }
+
+            if (selectors.Count == 0 && urlPatterns.Count == 0)
+            {
+                continue; // no durable identifier — skip this section
+            }
+
+            sections.Add(new HierarchySection
+            {
+                Name = string.IsNullOrWhiteSpace(s.Name) ? $"Section {sections.Count + 1}" : s.Name!,
+                SortOrder = sections.Count,
+                ParentSelectors = selectors,
+                UrlPatterns = urlPatterns,
+                StartCollapsed = s.StartCollapsed,
+            });
+        }
+
+        var excludeSelectors = (parsed.ExcludeSelectors ?? new())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var excludeUrlPatterns = (parsed.ExcludeUrlPatterns ?? new())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        // Fall back to deriving exclude identifiers from indices when the model
+        // gave none.
+        if (excludeSelectors.Count == 0 && excludeUrlPatterns.Count == 0)
+        {
+            var excludedLinks = LinksAt(parsed.ExcludeIndices);
+            excludeSelectors = excludedLinks
+                .SelectMany(l => SelectorDerivation.DiscriminatingTokens(l.ParentSelector))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            excludeUrlPatterns = excludedLinks
+                .SelectMany(l => SelectorDerivation.MeaningfulPathSegments(l.Url))
+                .Distinct(StringComparer.Ordinal)
+                .Select(s => $"/{s}/")
+                .ToList();
+        }
+
+        var domain = SafeHost(pageUrl);
+        return new SiteHierarchyConfig
+        {
+            Domain = domain,
+            UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(pageUrl),
+            Sections = sections,
+            ExcludeSelectors = excludeSelectors,
+            ExcludeUrlPatterns = excludeUrlPatterns,
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = modelVersion,
+            Kind = LayoutKind.AiCurated,
+            Version = 3,
+            Strategy = ScrapingStrategies.AiCuratedStrategy.StrategyId,
+        };
+    }
+
+    private static SetupOption MapOption(OptionResponse o) => new()
+    {
+        Label = o.Label ?? string.Empty,
+        ParentSelector = o.ParentSelector ?? string.Empty,
+        UrlPattern = o.UrlPattern ?? string.Empty,
+        ExampleLinkIndices = (o.ExampleLinkIndices ?? new()).Take(MaxExampleIndicesPerOption).ToList(),
+    };
+
+    private static SetupQuestionKind MapQuestionKind(string? kind) => kind switch
+    {
+        "pick_main" => SetupQuestionKind.PickMain,
+        "confirm_exclude" => SetupQuestionKind.ConfirmExclude,
+        "confirm_order" => SetupQuestionKind.ConfirmOrder,
+        "group_by" => SetupQuestionKind.GroupBy,
+        _ => SetupQuestionKind.PickMain,
+    };
+
+    private static string SafeHost(string url)
+    {
+        try
+        {
+            return new Uri(url).Host.ToLowerInvariant();
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
 #pragma warning restore SA1202
 
     /// <summary>
@@ -756,5 +1219,104 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         [JsonPropertyName("start_collapsed")]
         public bool StartCollapsed { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class OptionResponse
+    {
+        [JsonPropertyName("label")]
+        public string? Label { get; set; }
+
+        [JsonPropertyName("parent_selector")]
+        public string? ParentSelector { get; set; }
+
+        [JsonPropertyName("url_pattern")]
+        public string? UrlPattern { get; set; }
+
+        [JsonPropertyName("example_link_indices")]
+        public List<int>? ExampleLinkIndices { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class ProposedPatternResponse
+    {
+        [JsonPropertyName("top_story")]
+        public OptionResponse? TopStory { get; set; }
+
+        [JsonPropertyName("tiers")]
+        public List<OptionResponse>? Tiers { get; set; }
+
+        [JsonPropertyName("exclude")]
+        public List<OptionResponse>? Exclude { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class SetupQuestionResponse
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("prompt")]
+        public string? Prompt { get; set; }
+
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
+
+        [JsonPropertyName("default_answer")]
+        public string? DefaultAnswer { get; set; }
+
+        [JsonPropertyName("options")]
+        public List<OptionResponse>? Options { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class SetupQuestionsResponse
+    {
+        [JsonPropertyName("proposed_pattern")]
+        public ProposedPatternResponse? ProposedPattern { get; set; }
+
+        [JsonPropertyName("questions")]
+        public List<SetupQuestionResponse>? Questions { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class SetupSectionResponse
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("parent_selectors")]
+        public List<string>? ParentSelectors { get; set; }
+
+        [JsonPropertyName("url_patterns")]
+        public List<string>? UrlPatterns { get; set; }
+
+        [JsonPropertyName("story_indices")]
+        public List<int>? StoryIndices { get; set; }
+
+        [JsonPropertyName("start_collapsed")]
+        public bool StartCollapsed { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S3459:Unassigned members should be removed", Justification = "Assigned by JSON deserialization")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("SonarAnalyzer.CSharp", "S1144:Unused private types or members should be removed", Justification = "Read by deserialization")]
+    private sealed class SetupPatternResponse
+    {
+        [JsonPropertyName("sections")]
+        public List<SetupSectionResponse>? Sections { get; set; }
+
+        [JsonPropertyName("exclude_selectors")]
+        public List<string>? ExcludeSelectors { get; set; }
+
+        [JsonPropertyName("exclude_url_patterns")]
+        public List<string>? ExcludeUrlPatterns { get; set; }
+
+        [JsonPropertyName("exclude_indices")]
+        public List<int>? ExcludeIndices { get; set; }
     }
 }

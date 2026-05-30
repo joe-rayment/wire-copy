@@ -50,4 +50,13 @@ public class OpenAiHierarchyConfiguration
     /// and rotates automatically. Set to <c>0</c> to disable the cap.
     /// </summary>
     public int MonthlyTokenBudget { get; init; } = 200_000;
+
+    /// <summary>
+    /// workspace-5oe9.7: hard cap on the number of clarifying questions the AI
+    /// setup wizard asks. Enforced both in the prompt and by a code clamp so a
+    /// misbehaving model can never make the user answer 20 things. Each question
+    /// is pre-filled with the model's best guess, so the common path is
+    /// "Enter, Enter, Enter".
+    /// </summary>
+    public int MaxSetupQuestions { get; init; } = 4;
 }
