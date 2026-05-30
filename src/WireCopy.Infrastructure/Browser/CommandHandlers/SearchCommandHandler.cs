@@ -500,7 +500,13 @@ internal static class SearchCommandHandler
             }
 
             page.SetLinkTree(result.Tree);
-            ctx.NavigationService.SetStatusMessage($"✔ Re-analyzed · {result.Summary}");
+
+            // workspace-5oe9.13: a degenerate fresh analysis (even after retry)
+            // must not read as success — nudge the user to the question-driven
+            // setup instead of silently shipping document order.
+            ctx.NavigationService.SetStatusMessage(result.NeedsClarification
+                ? "AI couldn't find a clear structure — press Ctrl+l to set it up with questions"
+                : $"✔ Re-analyzed · {result.Summary}");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (Exception ex)

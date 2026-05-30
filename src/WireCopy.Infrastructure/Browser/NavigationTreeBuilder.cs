@@ -269,6 +269,18 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             .Where(byKey.ContainsKey)
             .Distinct(StringComparer.Ordinal)
             .ToList();
+
+        // workspace-5oe9.13 revisit safety-net: when a snapshot's ranked keys
+        // match NONE of today's links, the snapshot has decayed as article URLs
+        // rotated. Log it so the staleness is visible instead of silently
+        // rendering document order. The durable pattern path is the real fix.
+        if (orderedKeys.Count == 0 && curated.StoryOrderLinkKeys.Count > 0)
+        {
+            _logger.LogWarning(
+                "AI-curated snapshot matched 0 of {Total} ranked links — stale snapshot, rendering document order; reconfigure via Ctrl+l",
+                curated.StoryOrderLinkKeys.Count);
+        }
+
         var orderedKeySet = new HashSet<string>(orderedKeys, StringComparer.Ordinal);
 
         var orderedContent = new List<LinkInfo>(contentLinks.Count);

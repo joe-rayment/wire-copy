@@ -179,12 +179,48 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
         //       indistinguishable from no curation.
         var contentLinks = context.Links.Where(l => l.Type == LinkType.Content).ToList();
         var degenerate = DetectDegenerateRanking(curated, contentLinks);
+
+        // workspace-5oe9.13: a FRESH degenerate result gets ONE higher-effort
+        // retry before we give up — minimal/low reasoning sometimes just echoes
+        // document order. The retry is bounded to a single extra call.
+        if (degenerate != AiCuratedDegenerateReason.None && !fromCache)
+        {
+            _logger.LogInformation(
+                "AiCuratedStrategy: degenerate fresh result for {Url} ({Reason}) — retrying once at higher reasoning effort",
+                context.PageUrl,
+                degenerate);
+
+            var retry = await _analyzer.AnalyzeCuratedAsync(
+                context.Screenshot,
+                context.Links.ToList(),
+                context.PageUrl,
+                requestedGuidance,
+                reasoningEffortOverride: "medium",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            retry = retry with { UserGuidance = requestedGuidance };
+
+            var retryDegenerate = DetectDegenerateRanking(retry, contentLinks);
+            if (retryDegenerate == AiCuratedDegenerateReason.None)
+            {
+                curated = retry;
+                degenerate = AiCuratedDegenerateReason.None;
+            }
+            else
+            {
+                degenerate = retryDegenerate;
+            }
+        }
+
+        // workspace-5oe9.13: a still-degenerate FRESH result must NOT silently
+        // persist as document order — flag it so the chooser asks the user.
+        var needsClarification = degenerate != AiCuratedDegenerateReason.None && !fromCache;
         if (degenerate != AiCuratedDegenerateReason.None)
         {
             _logger.LogWarning(
-                "AiCuratedStrategy: degenerate result for {Url} — {Reason}. User-visible layout will match document order.",
+                "AiCuratedStrategy: degenerate result for {Url} — {Reason}. Needs clarification: {NeedsClarification}.",
                 context.PageUrl,
-                degenerate);
+                degenerate,
+                needsClarification);
         }
 
         // workspace-5oe9.5: turn the (snapshot) ranking into a DURABLE,
@@ -263,6 +299,7 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
             Tree = tree,
             Config = config,
             Summary = summary,
+            NeedsClarification = needsClarification,
         };
     }
 
