@@ -441,6 +441,7 @@ internal static class SearchCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            var registry = scope.ServiceProvider.GetService<IScrapingStrategyRegistry>();
             var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
 
             if (analyzer == null || !analyzer.IsConfigured)
@@ -450,16 +451,55 @@ internal static class SearchCommandHandler
                 return;
             }
 
-            // Delete existing config for this URL
-            if (configStore != null)
+            var strategy = registry?.GetById(ScrapingStrategies.AiCuratedStrategy.StrategyId);
+            if (strategy == null)
             {
-                await configStore.DeleteConfigAsync(page.Url).ConfigureAwait(false);
+                ctx.NavigationService.SetStatusMessage("AI Curated strategy unavailable");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
             }
 
-            // Force refresh will re-trigger AI analysis since config is now deleted
-            ctx.NavigationService.SetStatusMessage("Re-analyzing page hierarchy...");
+            // workspace-5oe9.6: :reanalyze is the FAST one-shot path — run the
+            // AiCurated strategy directly (SavedConfig=null forces a fresh
+            // analysis, never the cache) so it produces a durable Version-3
+            // pattern config (B5). Ctrl+L (B9) is the question-driven path.
+            ctx.NavigationService.SetStatusMessage("Re-analyzing page hierarchy…", TimeSpan.FromMinutes(2));
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            await ctx.ForceRefreshAsync(page.Url, options, ct).ConfigureAwait(false);
+
+            var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
+            var links = (IReadOnlyList<Domain.ValueObjects.Browser.LinkInfo>)(buildCache?.Links
+                ?? new List<Domain.ValueObjects.Browser.LinkInfo>());
+            byte[]? screenshot = null;
+            if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is IBrowserSession session)
+            {
+                try
+                {
+                    screenshot = await session.CaptureScreenshotAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // best-effort; AI curation works without a screenshot
+                }
+            }
+
+            var stContext = new ScrapingStrategyContext
+            {
+                PageUrl = page.Url,
+                Html = page.RawHtml ?? string.Empty,
+                Links = links,
+                Screenshot = screenshot,
+                SavedConfig = null,
+            };
+
+            var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
+            if (configStore != null)
+            {
+                await configStore.SaveConfigAsync(result.Config).ConfigureAwait(false);
+            }
+
+            page.SetLinkTree(result.Tree);
+            ctx.NavigationService.SetStatusMessage($"✔ Re-analyzed · {result.Summary}");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
