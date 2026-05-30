@@ -45,16 +45,17 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(budget);
 
         // ---- Round 1: propose pattern + questions ----
-        overlay.Mode = SetupWizardOverlay.Mode.Analyzing;
-        overlay.AnalyzingLabel = "Reading the page…";
-        await render(ct).ConfigureAwait(false);
-
         if (!budget.TrySpend())
         {
             return new Result { Cancelled = true };
         }
 
-        var proposal = await analyzer.ProposeSetupQuestionsAsync(screenshot, links, pageUrl, ct).ConfigureAwait(false);
+        var proposal = await RunWithProgressAsync(
+            analyzer.ProposeSetupQuestionsAsync(screenshot, links, pageUrl, ct),
+            "Reading the page",
+            overlay,
+            render,
+            ct).ConfigureAwait(false);
 
         // ---- Overview card: confirm the proposed pattern (or bail to doc order,
         // or point at the main story yourself when a tree picker is wired) ----
@@ -106,17 +107,17 @@ internal static class SetupWizard
         }
 
         // ---- Round 2: infer the durable pattern from the answers ----
-        overlay.Mode = SetupWizardOverlay.Mode.Analyzing;
-        overlay.AnalyzingLabel = "Building your layout…";
-        await render(ct).ConfigureAwait(false);
-
         if (!budget.TrySpend())
         {
             return new Result { Cancelled = true };
         }
 
-        var config = await analyzer.InferPatternFromAnswersAsync(
-            screenshot, links, pageUrl, proposal, answers, ct).ConfigureAwait(false);
+        var config = await RunWithProgressAsync(
+            analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
+            "Building your layout",
+            overlay,
+            render,
+            ct).ConfigureAwait(false);
 
         // workspace-5oe9.9: apply a point-at-a-link lead override with exactly
         // one extra re-inference (budget-guarded). Header/synthetic picks are
@@ -241,6 +242,35 @@ internal static class SetupWizard
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// workspace-5oe9.13: awaits a model round-trip while keeping the "Analyzing…"
+    /// card live via a caller-tick await-pump — the spinner advances and an
+    /// elapsed-seconds label updates every ~250ms while the call is pending, and
+    /// the box stops the instant the call returns (no background timer).
+    /// </summary>
+    private static async Task<T> RunWithProgressAsync<T>(
+        Task<T> modelCall,
+        string label,
+        SetupWizardOverlay.State overlay,
+        Func<CancellationToken, Task> render,
+        CancellationToken ct)
+    {
+        overlay.Mode = SetupWizardOverlay.Mode.Analyzing;
+        overlay.AnalyzingLabel = $"{label}…";
+        await render(ct).ConfigureAwait(false);
+
+        return await ProgressPump.RunAsync(
+            modelCall,
+            async elapsed =>
+            {
+                overlay.SpinnerFrame++;
+                overlay.AnalyzingLabel = $"{label}… {elapsed.TotalSeconds:0}s";
+                await render(ct).ConfigureAwait(false);
+            },
+            ProgressPump.DefaultInterval,
+            ct).ConfigureAwait(false);
     }
 
     private static SetupWizardOverlay.WizardCard BuildOverviewCard(SiteSetupProposal proposal, bool allowPick)
