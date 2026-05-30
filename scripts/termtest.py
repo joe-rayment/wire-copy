@@ -36,7 +36,10 @@ DOTNET = os.environ.get(
 PROJECT = os.environ.get("WIRECOPY_PROJECT", "src/WireCopy.API")
 BUILT_DLL = os.environ.get(
     "WIRECOPY_DLL",
-    "src/WireCopy.API/bin/Release/net9.0/WireCopy.API.dll",
+    # workspace-5oe9.15: the project targets net10.0 — the old net9.0 default
+    # silently launched a stale DLL (or fell back to a slow `dotnet run`),
+    # masking the build under test.
+    "src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll",
 )
 SESSION_NAME = "termtest"
 DEFAULT_WIDTH = 100
