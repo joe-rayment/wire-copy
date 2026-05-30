@@ -198,6 +198,49 @@ public class DiskCacheStoreTests : IDisposable
     }
 
     [Fact]
+    public void WriteBuildCache_WithExcludeRules_RoundTripsThroughDisk()
+    {
+        // workspace-5oe9.1: the config-level exclude lists live as top-level
+        // fields on the persisted build cache (NOT per-section) and must
+        // survive a build-cache rehydrate.
+        var url = "https://example.com/homepage";
+        var buildCache = new PageBuildCache
+        {
+            Links = new List<LinkInfo>
+            {
+                new LinkInfo { Url = url + "/story", DisplayText = "Story", Type = LinkType.Content, ImportanceScore = 80 },
+            },
+            Metadata = new PageMetadata { Title = "Home" },
+            FinalUrl = url,
+            Classification = PageClassification.LinkList,
+            ClassificationVersion = 1,
+            CachedAt = DateTime.UtcNow,
+            HierarchyConfig = new SiteHierarchyConfig
+            {
+                Domain = "example.com",
+                UrlPattern = "^https?://example\\.com/homepage$",
+                Sections = new List<HierarchySection>
+                {
+                    new HierarchySection { Name = "Lead", SortOrder = 0, ParentSelectors = new List<string> { "main .lead" } },
+                },
+                CreatedAt = DateTime.UtcNow,
+                ModelVersion = "gpt-5-mini",
+                ExcludeSelectors = new List<string> { ".promo", "aside.ad" },
+                ExcludeUrlPatterns = new List<string> { "/sponsored/" },
+            },
+        };
+
+        _store.WriteBuildCache(url, buildCache);
+
+        var loaded = _store.LoadAllBuildCaches();
+        var key = UrlNormalizer.Normalize(url);
+        loaded.Should().ContainKey(key);
+        loaded[key].HierarchyConfig.Should().NotBeNull();
+        loaded[key].HierarchyConfig!.ExcludeSelectors.Should().BeEquivalentTo(new[] { ".promo", "aside.ad" });
+        loaded[key].HierarchyConfig!.ExcludeUrlPatterns.Should().BeEquivalentTo(new[] { "/sponsored/" });
+    }
+
+    [Fact]
     public void Write_MultipleEntries_LoadAll_ReturnsAll()
     {
         for (int i = 0; i < 5; i++)
