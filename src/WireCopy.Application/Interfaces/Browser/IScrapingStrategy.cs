@@ -125,4 +125,13 @@ public sealed record ScrapingStrategyResult
 
     /// <summary>Human-readable summary for status messages.</summary>
     public string? Summary { get; init; }
+
+    /// <summary>
+    /// workspace-5oe9.13: set when a FRESH AI analysis stayed degenerate (no
+    /// reordering / nothing excluded) even after a higher-effort retry. The
+    /// chooser interprets this as "ask the user instead of silently shipping
+    /// document order" — routing into the question-driven setup rather than
+    /// persisting a doc-order-equivalent config.
+    /// </summary>
+    public bool NeedsClarification { get; init; }
 }

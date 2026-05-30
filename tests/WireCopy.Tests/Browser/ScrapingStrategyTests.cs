@@ -245,6 +245,84 @@ public class ScrapingStrategyTests
         result.Tree.TotalLinks.Should().Be(30, "the snapshot path still renders the 30 stories this session");
     }
 
+    // workspace-5oe9.13: degenerate fresh analysis → retry → clarification.
+    private static AiCuratedResult DocOrderResult(List<LinkInfo> links)
+    {
+        var keys = links.Where(l => l.Type == LinkType.Content).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+        return new AiCuratedResult { ExcludedLinkKeys = new(), StoryOrderLinkKeys = keys, AnalyzedAt = DateTime.UtcNow };
+    }
+
+    private static AiCuratedResult GoodResult(List<LinkInfo> links)
+    {
+        var content = links.Where(l => l.Type == LinkType.Content).ToList();
+        var excluded = content.Where(l => l.Url.Contains("/promo-", StringComparison.Ordinal)).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+        var stories = content.Where(l => !l.Url.Contains("/promo-", StringComparison.Ordinal))
+            .OrderByDescending(l => l.ImportanceScore).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList();
+        return new AiCuratedResult { ExcludedLinkKeys = excluded, StoryOrderLinkKeys = stories, AnalyzedAt = DateTime.UtcNow };
+    }
+
+    private static IHierarchyAnalyzer AnalyzerReturning(params AiCuratedResult[] sequence)
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.IsConfigured.Returns(true);
+        analyzer.AnalyzeCuratedAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(sequence[0], sequence.Skip(1).ToArray());
+        return analyzer;
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_DegenerateFresh_RetriesAtHigherEffort_ThenFlagsClarification()
+    {
+        var links = BuildStructuredFixture("2026/05/30");
+        var analyzer = AnalyzerReturning(DocOrderResult(links), DocOrderResult(links)); // degenerate twice
+        var strategy = NewStrategy(analyzer);
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://news.example.com/", Html = string.Empty, Links = links,
+        });
+
+        // Retried once at higher effort.
+        await analyzer.Received(1).AnalyzeCuratedAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), "medium", Arg.Any<CancellationToken>());
+        result.NeedsClarification.Should().BeTrue();
+        result.Config.Sections.Should().BeEmpty("a degenerate result must not persist a doc-order-equivalent pattern");
+        result.Config.NeedsReanalyze.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_DegenerateFresh_RescuedByRetry_NoClarification()
+    {
+        var links = BuildStructuredFixture("2026/05/30");
+        var analyzer = AnalyzerReturning(DocOrderResult(links), GoodResult(links)); // degenerate, then good
+        var strategy = NewStrategy(analyzer);
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://news.example.com/", Html = string.Empty, Links = links,
+        });
+
+        result.NeedsClarification.Should().BeFalse("the higher-effort retry produced a real curation");
+        result.Config.Sections.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task AiCuratedStrategy_GoodFirstResult_DoesNotRetry()
+    {
+        var links = BuildStructuredFixture("2026/05/30");
+        var analyzer = AnalyzerReturning(GoodResult(links));
+        var strategy = NewStrategy(analyzer);
+
+        var result = await strategy.BuildTreeAsync(new ScrapingStrategyContext
+        {
+            PageUrl = "https://news.example.com/", Html = string.Empty, Links = links,
+        });
+
+        await analyzer.Received(1).AnalyzeCuratedAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        result.NeedsClarification.Should().BeFalse();
+    }
+
     [Fact]
     public async Task AiCuratedStrategy_OrdersByPrompted()
     {
@@ -633,10 +711,14 @@ public class ScrapingStrategyTests
     [Fact]
     public async Task AiCuratedStrategy_CachedResultExpired_RunsAnalyzerAgain()
     {
+        var liveLinks = BuildTechmemeFixture();
+        // Non-degenerate (reversed order, ads excluded) so the workspace-5oe9.13
+        // degenerate-retry does not fire — the assertion here is "expired cache
+        // re-runs the analyzer exactly once".
         var freshResult = new AiCuratedResult
         {
-            ExcludedLinkKeys = new List<string>(),
-            StoryOrderLinkKeys = new List<string>(),
+            ExcludedLinkKeys = liveLinks.Take(8).Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
+            StoryOrderLinkKeys = liveLinks.Skip(8).Reverse().Select(l => AiCuratedResult.KeyFor(l.Url)).ToList(),
             AnalyzedAt = DateTime.UtcNow,
         };
 
@@ -673,7 +755,7 @@ public class ScrapingStrategyTests
         {
             PageUrl = "https://techmeme.com/",
             Html = string.Empty,
-            Links = BuildTechmemeFixture(),
+            Links = liveLinks,
             SavedConfig = savedConfig,
         });
 
