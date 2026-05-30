@@ -38,10 +38,10 @@ internal static class StrategyChooserHandler
     private static readonly TimeSpan StrategyProbeBudget = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Opens the scraping-strategy chooser for the current page.
-    /// Pre-flight phase: user picks which strategies to probe via Space.
-    /// Probing phase: live overlay shows ⠋/✓/✗ per row.
-    /// Preview phase: ◀/▶ cycles, overlay highlights the active row.
+    /// workspace-5oe9.9: Ctrl+L entry. An UNCONFIGURED link-list page opens
+    /// AI-first ("Set up this site"); an already-configured page opens a compact
+    /// summary. The multi-strategy preflight/probe/preview modal lives behind the
+    /// entry's "Compare all strategies" option (<see cref="RunCompareModeAsync"/>).
     /// </summary>
     public static async Task HandleOpenChooserAsync(
         CommandContext ctx,
@@ -72,151 +72,18 @@ internal static class StrategyChooserHandler
         }
 
         var page = navContext.CurrentPage;
-        var html = page.RawHtml ?? string.Empty;
-        var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
-        var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
+        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        var savedConfig = configStore != null
+            ? await configStore.GetConfigAsync(page.Url).ConfigureAwait(false)
+            : null;
 
-        // workspace-1wm7: screenshot capture (0.5-3s) and savedConfig disk
-        // read are only needed by the per-strategy probes that fire AFTER
-        // the user confirms pre-flight. Defer both until after RunPreflightAsync
-        // returns true so the modal renders <100ms after Ctrl+L.
-        // Build the overlay's row list up-front so the user sees every
-        // registered strategy in the pre-flight checkbox modal — including
-        // strategies that would be unavailable today (no key, etc.). This
-        // is the discoverability surface workspace-33jw aimed at.
-        var overlay = new StrategyChooserOverlay.State
+        if (ChooserEntry.Decide(savedConfig) == ChooserEntry.Mode.ConfiguredSummary && savedConfig != null)
         {
-            CurrentPhase = StrategyChooserOverlay.Phase.Preflight,
-            Footnote = "RSS probe can take up to 5s on sites without an advertised feed.",
-        };
-        foreach (var strategy in registry.All)
-        {
-            overlay.Rows.Add(new StrategyChooserOverlay.Row
-            {
-                Id = strategy.Id,
-                DisplayName = strategy.DisplayName,
-                Detail = strategy.Description,
-                Selected = PreflightDefaultSelected,
-                State = StrategyChooserOverlay.RowState.Pending,
-            });
+            await RunConfiguredSummaryAsync(ctx, scope, page, savedConfig, options, ct).ConfigureAwait(false);
+            return;
         }
 
-        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        ctx.SetOverlayPainter(opts =>
-        {
-            if (overlay.CurrentPhase == StrategyChooserOverlay.Phase.Preview)
-            {
-                var idx = ctx.NavigationService.GetCurrentPreviewIndex();
-                if (idx >= 0 && idx < overlay.Rows.Count)
-                {
-                    overlay.Cursor = idx;
-                }
-            }
-
-            StrategyChooserOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight);
-        });
-
-        var enteredPreviewMode = false;
-        try
-        {
-            // PHASE 1: pre-flight selection
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            var confirmed = await RunPreflightAsync(ctx, overlay, options, ct).ConfigureAwait(false);
-            if (!confirmed)
-            {
-                return;
-            }
-
-            // PHASE 2: probe only the selected strategies
-            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Probing;
-            var selectedRows = overlay.Rows.Where(r => r.Selected).ToList();
-
-            // Reshape the overlay rows to match the candidates list 1:1 —
-            // unselected strategies are dropped from the modal entirely
-            // (the user explicitly opted out, so they shouldn't appear in
-            // the preview-phase comparison list either).
-            overlay.Rows.Clear();
-            foreach (var r in selectedRows)
-            {
-                overlay.Rows.Add(r);
-            }
-
-            // workspace-1wm7: kick off screenshot + savedConfig IO in
-            // parallel here (deferred from the pre-flight phase). Render a
-            // "Preparing…" footnote so the user sees activity while the
-            // ~1-3s screenshot capture completes.
-            overlay.Footnote = "Preparing — capturing screenshot and loading saved config…";
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-
-            var screenshotTask = CaptureScreenshotSafelyAsync(scope, ctx.Logger);
-            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-            var savedConfigTask = configStore != null
-                ? configStore.GetConfigAsync(page.Url)
-                : Task.FromResult<SiteHierarchyConfig?>(null);
-
-            await Task.WhenAll(screenshotTask, savedConfigTask).ConfigureAwait(false);
-            var screenshot = await screenshotTask.ConfigureAwait(false);
-            var savedConfig = await savedConfigTask.ConfigureAwait(false);
-
-            var stContext = new ScrapingStrategyContext
-            {
-                PageUrl = page.Url,
-                Html = html,
-                Links = links,
-                Screenshot = screenshot,
-                SavedConfig = savedConfig,
-            };
-
-            overlay.Footnote = $"Probing {selectedRows.Count} strategy(ies) — up to {StrategyProbeBudget.TotalSeconds:0}s each.";
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-
-            var candidates = await ProbeSelectedAsync(
-                ctx,
-                registry,
-                stContext,
-                page,
-                savedConfig,
-                overlay,
-                options,
-                ct).ConfigureAwait(false);
-
-            if (candidates.Count == 0)
-            {
-                ctx.NavigationService.SetStatusMessage("Scraping strategies: no candidates available");
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return;
-            }
-
-            // PHASE 3: enter preview mode; painter stays installed and the
-            // cursor row tracks NavigationService.GetCurrentPreviewIndex.
-            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Preview;
-            overlay.Cursor = 0;
-            overlay.Footnote = $"{candidates.Count} candidates — ◀/▶ to compare, Enter to save the highlighted one.";
-
-            ctx.NavigationService.EnterPreviewMode(candidates);
-            enteredPreviewMode = true;
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // user cancelled; clean exit
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.LogError(ex, "Strategy chooser failed");
-            ctx.NavigationService.SetStatusMessage("Strategy chooser failed");
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            // If we never reached the Preview phase, drop the painter now.
-            // Otherwise the orchestrator's preview-mode Apply/Cancel handlers
-            // clear it via ClearOverlay below.
-            if (!enteredPreviewMode)
-            {
-                ClearOverlay(ctx);
-            }
-        }
+        await RunSetupEntryAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -403,6 +270,180 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
+    /// Opens the scraping-strategy chooser for the current page.
+    /// Pre-flight phase: user picks which strategies to probe via Space.
+    /// Probing phase: live overlay shows ⠋/✓/✗ per row.
+    /// Preview phase: ◀/▶ cycles, overlay highlights the active row.
+    /// </summary>
+    private static async Task RunCompareModeAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var navContext = ctx.NavigationService.CurrentContext;
+        if (navContext.ViewMode != ViewMode.Hierarchical || navContext.CurrentPage == null)
+        {
+            return;
+        }
+
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetService<IScrapingStrategyRegistry>();
+        if (registry == null || registry.All.Count == 0)
+        {
+            ctx.NavigationService.SetStatusMessage("Strategy chooser unavailable");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var page = navContext.CurrentPage;
+        var html = page.RawHtml ?? string.Empty;
+        var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
+        var links = (IReadOnlyList<LinkInfo>)(buildCache?.Links ?? new List<LinkInfo>());
+
+        // workspace-1wm7: screenshot capture (0.5-3s) and savedConfig disk
+        // read are only needed by the per-strategy probes that fire AFTER
+        // the user confirms pre-flight. Defer both until after RunPreflightAsync
+        // returns true so the modal renders <100ms after Ctrl+L.
+        // Build the overlay's row list up-front so the user sees every
+        // registered strategy in the pre-flight checkbox modal — including
+        // strategies that would be unavailable today (no key, etc.). This
+        // is the discoverability surface workspace-33jw aimed at.
+        var overlay = new StrategyChooserOverlay.State
+        {
+            CurrentPhase = StrategyChooserOverlay.Phase.Preflight,
+            Footnote = "RSS probe can take up to 5s on sites without an advertised feed.",
+        };
+        foreach (var strategy in registry.All)
+        {
+            overlay.Rows.Add(new StrategyChooserOverlay.Row
+            {
+                Id = strategy.Id,
+                DisplayName = strategy.DisplayName,
+                Detail = strategy.Description,
+                Selected = PreflightDefaultSelected,
+                State = StrategyChooserOverlay.RowState.Pending,
+            });
+        }
+
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        ctx.SetOverlayPainter(opts =>
+        {
+            if (overlay.CurrentPhase == StrategyChooserOverlay.Phase.Preview)
+            {
+                var idx = ctx.NavigationService.GetCurrentPreviewIndex();
+                if (idx >= 0 && idx < overlay.Rows.Count)
+                {
+                    overlay.Cursor = idx;
+                }
+            }
+
+            StrategyChooserOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight);
+        });
+
+        var enteredPreviewMode = false;
+        try
+        {
+            // PHASE 1: pre-flight selection
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            var confirmed = await RunPreflightAsync(ctx, overlay, options, ct).ConfigureAwait(false);
+            if (!confirmed)
+            {
+                return;
+            }
+
+            // PHASE 2: probe only the selected strategies
+            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Probing;
+            var selectedRows = overlay.Rows.Where(r => r.Selected).ToList();
+
+            // Reshape the overlay rows to match the candidates list 1:1 —
+            // unselected strategies are dropped from the modal entirely
+            // (the user explicitly opted out, so they shouldn't appear in
+            // the preview-phase comparison list either).
+            overlay.Rows.Clear();
+            foreach (var r in selectedRows)
+            {
+                overlay.Rows.Add(r);
+            }
+
+            // workspace-1wm7: kick off screenshot + savedConfig IO in
+            // parallel here (deferred from the pre-flight phase). Render a
+            // "Preparing…" footnote so the user sees activity while the
+            // ~1-3s screenshot capture completes.
+            overlay.Footnote = "Preparing — capturing screenshot and loading saved config…";
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+            var screenshotTask = CaptureScreenshotSafelyAsync(scope, ctx.Logger);
+            var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+            var savedConfigTask = configStore != null
+                ? configStore.GetConfigAsync(page.Url)
+                : Task.FromResult<SiteHierarchyConfig?>(null);
+
+            await Task.WhenAll(screenshotTask, savedConfigTask).ConfigureAwait(false);
+            var screenshot = await screenshotTask.ConfigureAwait(false);
+            var savedConfig = await savedConfigTask.ConfigureAwait(false);
+
+            var stContext = new ScrapingStrategyContext
+            {
+                PageUrl = page.Url,
+                Html = html,
+                Links = links,
+                Screenshot = screenshot,
+                SavedConfig = savedConfig,
+            };
+
+            overlay.Footnote = $"Probing {selectedRows.Count} strategy(ies) — up to {StrategyProbeBudget.TotalSeconds:0}s each.";
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+            var candidates = await ProbeSelectedAsync(
+                ctx,
+                registry,
+                stContext,
+                page,
+                savedConfig,
+                overlay,
+                options,
+                ct).ConfigureAwait(false);
+
+            if (candidates.Count == 0)
+            {
+                ctx.NavigationService.SetStatusMessage("Scraping strategies: no candidates available");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            // PHASE 3: enter preview mode; painter stays installed and the
+            // cursor row tracks NavigationService.GetCurrentPreviewIndex.
+            overlay.CurrentPhase = StrategyChooserOverlay.Phase.Preview;
+            overlay.Cursor = 0;
+            overlay.Footnote = $"{candidates.Count} candidates — ◀/▶ to compare, Enter to save the highlighted one.";
+
+            ctx.NavigationService.EnterPreviewMode(candidates);
+            enteredPreviewMode = true;
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // user cancelled; clean exit
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogError(ex, "Strategy chooser failed");
+            ctx.NavigationService.SetStatusMessage("Strategy chooser failed");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // If we never reached the Preview phase, drop the painter now.
+            // Otherwise the orchestrator's preview-mode Apply/Cancel handlers
+            // clear it via ClearOverlay below.
+            if (!enteredPreviewMode)
+            {
+                ClearOverlay(ctx);
+            }
+        }
+    }
+
+    /// <summary>
     /// workspace-5oe9.8: runs the question-driven AI setup wizard for the
     /// current page, painting its card overlay. Returns the wizard's outcome
     /// (durable config, document-order escape, or cancel).
@@ -507,6 +548,266 @@ internal static class StrategyChooserHandler
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// workspace-5oe9.9: AI-first entry for an unconfigured page. AI is the
+    /// highlighted primary action (dim + key-hint when no OpenAI key); Document
+    /// Order and "Compare all strategies" are secondary. No probe runs here.
+    /// </summary>
+    private static async Task RunSetupEntryAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        Domain.Entities.Browser.Page page,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+        var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
+        var contentCount = (buildCache?.Links ?? new List<LinkInfo>())
+            .Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
+        var aiAvailable = ChooserEntry.AiSetupAvailable(analyzer?.IsConfigured ?? false, contentCount);
+
+        var overlay = new UI.Components.SetupWizardOverlay.State();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        ctx.SetOverlayPainter(opts =>
+            UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+
+        int choice;
+        try
+        {
+            var card = new UI.Components.SetupWizardOverlay.WizardCard
+            {
+                Title = "Set up this site",
+                Prompt = "How should WireCopy read this site?",
+                Options =
+                {
+                    new UI.Components.SetupWizardOverlay.CardOption
+                    {
+                        Label = aiAvailable
+                            ? "✨ Let AI find the stories (recommended)"
+                            : "AI setup — add an OpenAI key first (press c on the launcher)",
+                    },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Document order — show every link" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
+                },
+                Cursor = aiAvailable ? 0 : 1,
+                Hint = "↑/↓ choose · Enter select · Esc cancel",
+            };
+            choice = await RunEntryCardAsync(ctx, overlay, card, options, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            ClearOverlay(ctx);
+        }
+
+        switch (choice)
+        {
+            case 0 when aiAvailable:
+                await RunAiSetupAndApplyAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
+                break;
+            case 0:
+                ctx.NavigationService.SetStatusMessage("AI setup needs an OpenAI key — press c on the launcher to add one");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                break;
+            case 1:
+                await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
+                break;
+            case 2:
+                await RunCompareModeAsync(ctx, options, ct).ConfigureAwait(false);
+                break;
+            default:
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// workspace-5oe9.9: compact summary for an already-configured page. Shows
+    /// the current strategy (surfacing a legacy-snapshot re-run nudge) and offers
+    /// reconfigure / reset / compare instead of re-running setup unprompted.
+    /// </summary>
+    private static async Task RunConfiguredSummaryAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        Domain.Entities.Browser.Page page,
+        SiteHierarchyConfig config,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var overlay = new UI.Components.SetupWizardOverlay.State();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        ctx.SetOverlayPainter(opts =>
+            UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+
+        int choice;
+        try
+        {
+            var card = new UI.Components.SetupWizardOverlay.WizardCard
+            {
+                Title = "Layout",
+                Prompt = ChooserEntry.DescribeConfig(config),
+                Options =
+                {
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Reconfigure with AI" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Reset to document order" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Close" },
+                },
+                Cursor = ConfigMigration.NeedsReanalysis(config) ? 0 : 3,
+                Hint = "↑/↓ choose · Enter select · Esc close",
+            };
+            choice = await RunEntryCardAsync(ctx, overlay, card, options, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            ClearOverlay(ctx);
+        }
+
+        switch (choice)
+        {
+            case 0:
+                await RunAiSetupAndApplyAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
+                break;
+            case 1:
+                var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+                if (configStore != null)
+                {
+                    await configStore.DeleteConfigAsync(page.Url).ConfigureAwait(false);
+                }
+
+                await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
+                break;
+            case 2:
+                await RunCompareModeAsync(ctx, options, ct).ConfigureAwait(false);
+                break;
+            default:
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                break;
+        }
+    }
+
+    /// <summary>Runs the AI setup wizard from the entry, then saves + applies its result.</summary>
+    private static async Task RunAiSetupAndApplyAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        Domain.Entities.Browser.Page page,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var wizardResult = await RunSetupWizardAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
+        if (wizardResult.Cancelled)
+        {
+            ctx.NavigationService.SetStatusMessage("Cancelled — site not configured");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (wizardResult.UseDocumentOrder)
+        {
+            await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (wizardResult.Config == null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
+        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
+        if (treeBuilder != null)
+        {
+            var tree = await treeBuilder.BuildTreeAsync(links, wizardResult.Config, ct).ConfigureAwait(false);
+            page.SetLinkTree(tree);
+        }
+
+        if (configStore != null)
+        {
+            await configStore.SaveConfigAsync(wizardResult.Config).ConfigureAwait(false);
+        }
+
+        ctx.NavigationService.SetStatusMessage($"✔ Site set up · AI Curated · {wizardResult.Config.Sections.Count} section(s)");
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs a single named strategy directly (no probe) and saves + applies it.</summary>
+    private static async Task RunStrategyAndApplyAsync(
+        CommandContext ctx,
+        IServiceScope scope,
+        Domain.Entities.Browser.Page page,
+        string strategyId,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var registry = scope.ServiceProvider.GetService<IScrapingStrategyRegistry>();
+        var strategy = registry?.GetById(strategyId);
+        if (strategy == null)
+        {
+            ctx.NavigationService.SetStatusMessage("Strategy unavailable");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
+        var stContext = new ScrapingStrategyContext
+        {
+            PageUrl = page.Url,
+            Html = page.RawHtml ?? string.Empty,
+            Links = links,
+        };
+
+        var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
+        if (configStore != null)
+        {
+            await configStore.SaveConfigAsync(result.Config).ConfigureAwait(false);
+        }
+
+        page.SetLinkTree(result.Tree);
+        ctx.NavigationService.SetStatusMessage($"✔ {result.Summary}");
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>workspace-5oe9.9: ↑/↓/Enter loop over a single entry/summary card. Returns the chosen index or -1.</summary>
+    private static async Task<int> RunEntryCardAsync(
+        CommandContext ctx,
+        UI.Components.SetupWizardOverlay.State overlay,
+        UI.Components.SetupWizardOverlay.WizardCard card,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        overlay.Mode = UI.Components.SetupWizardOverlay.Mode.Card;
+        overlay.Card = card;
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+        var count = Math.Max(1, card.Options.Count);
+        while (!ct.IsCancellationRequested)
+        {
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            switch (command.Type)
+            {
+                case CommandType.MoveDown or CommandType.ExpandNode:
+                    card.Cursor = (card.Cursor + 1) % count;
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.MoveUp or CommandType.CollapseNode:
+                    card.Cursor = (card.Cursor - 1 + count) % count;
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.ActivateLink:
+                    return card.Cursor;
+                case CommandType.GoBack or CommandType.Quit:
+                    return -1;
+                case CommandType.TerminalResized:
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>

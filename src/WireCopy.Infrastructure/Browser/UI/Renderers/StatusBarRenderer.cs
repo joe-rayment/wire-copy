@@ -469,11 +469,13 @@ internal class StatusBarRenderer
                 parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
             }
 
-            // Layout chooser hint — always visible on link list pages in hierarchical view
+            // Layout chooser hint — always visible on link list pages in hierarchical view.
+            // workspace-5oe9.9: nudge "set up" until the site has an AI layout configured.
             if (mode == ViewMode.Hierarchical &&
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
-                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+l{Reset}{p.GetDimFg().AnsiFg}:layout{Reset}");
+                var layoutHint = context.IsAiHierarchy ? ":layout" : ":set up";
+                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+l{Reset}{p.GetDimFg().AnsiFg}{layoutHint}{Reset}");
             }
 
             // Layout variant indicator (e.g., "Grid 1/3")
