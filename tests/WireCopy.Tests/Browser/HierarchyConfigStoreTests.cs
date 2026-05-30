@@ -109,6 +109,47 @@ public class HierarchyConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAndGetConfig_RoundTrip_PreservesExcludeRules()
+    {
+        // workspace-5oe9.1: the durable exclude lists are the persistence the
+        // AI-curated pattern config (B5/B6) relies on — they MUST survive a
+        // save/load round-trip verbatim.
+        var config = CreateTestConfig() with
+        {
+            ExcludeSelectors = new List<string> { ".promo", "aside.ad" },
+            ExcludeUrlPatterns = new List<string> { "/sponsored/", "/newsletter" },
+        };
+        await _store.SaveConfigAsync(config);
+
+        var result = await _store.GetConfigAsync("https://test-hierarchy.example.com/");
+
+        result.Should().NotBeNull();
+        result!.ExcludeSelectors.Should().BeEquivalentTo(new[] { ".promo", "aside.ad" });
+        result.ExcludeUrlPatterns.Should().BeEquivalentTo(new[] { "/sponsored/", "/newsletter" });
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_LegacyJsonWithoutExcludeFields_DeserializesToEmptyLists()
+    {
+        // Backward-compat: a config file written before the exclude fields
+        // existed must load without throwing and present empty (non-null) lists.
+        var legacyJson =
+            "[{\"domain\":\"test-hierarchy.example.com\"," +
+            "\"urlPattern\":\"^https?://test-hierarchy\\\\.example\\\\.com/?$\"," +
+            "\"sections\":[{\"name\":\"Top\",\"sortOrder\":0,\"parentSelectors\":[],\"urlPatterns\":[],\"startCollapsed\":false}]," +
+            "\"createdAt\":\"2026-03-17T12:00:00Z\",\"modelVersion\":\"gpt-5-mini\"}]";
+        Directory.CreateDirectory(_storagePath);
+        await File.WriteAllTextAsync(
+            Path.Combine(_storagePath, "test-hierarchy.example.com.json"), legacyJson);
+
+        var result = await _store.GetConfigAsync("https://test-hierarchy.example.com/");
+
+        result.Should().NotBeNull();
+        result!.ExcludeSelectors.Should().NotBeNull().And.BeEmpty();
+        result.ExcludeUrlPatterns.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
     public async Task GetConfigAsync_NonMatchingUrl_ReturnsNull()
     {
         var config = CreateTestConfig();

@@ -23,6 +23,24 @@ public record SiteHierarchyConfig
     public int Version { get; init; } = 1;
     public string? Strategy { get; init; }
     public AiCuratedResult? AiResult { get; init; }
+
+    /// <summary>
+    /// Durable exclusion rules (workspace-5oe9.1): content links whose
+    /// <see cref="LinkInfo.ParentSelector"/> contains any of these fragments are
+    /// dropped from the tree entirely. Unlike <see cref="AiCuratedResult.ExcludedLinkKeys"/>
+    /// — which stores per-visit absolute URLs that go stale the moment the page
+    /// changes — these selectors generalize across visits, so an AI-configured
+    /// site keeps hiding ads/promos as the underlying articles rotate.
+    /// </summary>
+    public List<string> ExcludeSelectors { get; init; } = new();
+
+    /// <summary>
+    /// Durable exclusion rules (workspace-5oe9.1): content links whose
+    /// <see cref="LinkInfo.Url"/> contains any of these substrings are dropped
+    /// from the tree entirely (e.g. "/sponsored/", "/newsletter"). Generalizes
+    /// across visits — see <see cref="ExcludeSelectors"/>.
+    /// </summary>
+    public List<string> ExcludeUrlPatterns { get; init; } = new();
 }
 
 public record HierarchySection

@@ -351,6 +351,12 @@ internal sealed class DiskCacheStore
                     UrlPatterns = s.UrlPatterns.ToList(),
                     StartCollapsed = s.StartCollapsed,
                 }).ToList();
+
+                // workspace-5oe9.1: config-level exclude rules are top-level on
+                // PersistedBuildCache (not per-section) so the durable
+                // exclusion survives a build-cache rehydrate.
+                persisted.HierarchyExcludeSelectors = buildCache.HierarchyConfig.ExcludeSelectors.ToList();
+                persisted.HierarchyExcludeUrlPatterns = buildCache.HierarchyConfig.ExcludeUrlPatterns.ToList();
             }
 
             var json = JsonSerializer.Serialize(persisted, JsonOptions);
@@ -437,6 +443,11 @@ internal sealed class DiskCacheStore
                             UrlPatterns = s.UrlPatterns,
                             StartCollapsed = s.StartCollapsed,
                         }).ToList(),
+
+                        // workspace-5oe9.1: restore the durable exclude rules so
+                        // a build-cache rehydrate keeps hiding ads/promos.
+                        ExcludeSelectors = persisted.HierarchyExcludeSelectors ?? new List<string>(),
+                        ExcludeUrlPatterns = persisted.HierarchyExcludeUrlPatterns ?? new List<string>(),
                     };
                 }
 
@@ -632,6 +643,13 @@ internal sealed class DiskCacheStore
         public string? HierarchyUrlPattern { get; set; }
 
         public List<PersistedHierarchySection>? HierarchySections { get; set; }
+
+        // workspace-5oe9.1: config-level durable exclude rules (top-level, not
+        // per-section). Nullable so cache files written before this field
+        // deserialize cleanly to empty lists.
+        public List<string>? HierarchyExcludeSelectors { get; set; }
+
+        public List<string>? HierarchyExcludeUrlPatterns { get; set; }
 
         // ReadableContent fields (article text for reader view)
         public string? ReadableTitle { get; set; }

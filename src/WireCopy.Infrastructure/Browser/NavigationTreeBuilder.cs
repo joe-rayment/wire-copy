@@ -69,6 +69,35 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         return tree;
     }
 
+    /// <summary>
+    /// workspace-5oe9.1: durable exclusion test. A content link is dropped when
+    /// its <see cref="LinkInfo.ParentSelector"/> contains any configured
+    /// <see cref="SiteHierarchyConfig.ExcludeSelectors"/> fragment, or its
+    /// <see cref="LinkInfo.Url"/> contains any
+    /// <see cref="SiteHierarchyConfig.ExcludeUrlPatterns"/> substring
+    /// (OrdinalIgnoreCase, mirroring <see cref="MatchesSection"/>).
+    /// </summary>
+    private static bool IsExcluded(LinkInfo link, SiteHierarchyConfig config)
+    {
+        if (link.ParentSelector != null && config.ExcludeSelectors.Count > 0 &&
+            config.ExcludeSelectors.Any(s =>
+                !string.IsNullOrEmpty(s) &&
+                link.ParentSelector.Contains(s, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (config.ExcludeUrlPatterns.Count > 0 &&
+            config.ExcludeUrlPatterns.Any(p =>
+                !string.IsNullOrEmpty(p) &&
+                link.Url.Contains(p, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool MatchesSection(LinkInfo link, HierarchySection section)
     {
         if (link.ParentSelector != null && section.ParentSelectors.Count > 0 &&
@@ -111,6 +140,25 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             ? allContentLinks.Take(MaxContentLinks).ToList()
             : allContentLinks;
         var nonContentLinks = links.Where(l => l.Type != LinkType.Content).ToList();
+
+        // workspace-5oe9.1: apply durable exclusion rules BEFORE tiering so
+        // ads/promos identified by selector/url-pattern are dropped on every
+        // visit (not just the snapshot the AI was run on). Uses the same
+        // Contains semantics as MatchesSection.
+        if (hierarchyConfig.ExcludeSelectors.Count > 0 || hierarchyConfig.ExcludeUrlPatterns.Count > 0)
+        {
+            var beforeExclude = contentLinks.Count;
+            contentLinks = contentLinks.Where(l => !IsExcluded(l, hierarchyConfig)).ToList();
+            var excludedCount = beforeExclude - contentLinks.Count;
+            if (excludedCount > 0)
+            {
+                _logger.LogInformation(
+                    "Excluded {Count} content link(s) via durable rules ({Selectors} selectors, {UrlPatterns} url-patterns)",
+                    excludedCount,
+                    hierarchyConfig.ExcludeSelectors.Count,
+                    hierarchyConfig.ExcludeUrlPatterns.Count);
+            }
+        }
 
         foreach (var section in orderedSections)
         {

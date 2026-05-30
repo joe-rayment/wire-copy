@@ -88,6 +88,44 @@ public class NavigationTreeBuilderHierarchyTests
     }
 
     [Fact]
+    public async Task BuildTreeAsync_WithConfig_DropsLinksMatchingExcludeRules()
+    {
+        // workspace-5oe9.1: durable exclusion drops ads/promos by selector and
+        // url-pattern BEFORE tiering, so they never reach the tree.
+        var links = new List<LinkInfo>
+        {
+            CreateContentLink(url: "https://example.com/story1", text: "Real Story", parentSelector: "main .lead a"),
+            CreateContentLink(url: "https://example.com/sponsored/ad1", text: "Sponsored", parentSelector: "main .lead a"),
+            CreateContentLink(url: "https://example.com/story2", text: "Promo Box", parentSelector: "div.promo a"),
+        };
+
+        var config = CreateConfig(
+            new HierarchySection
+            {
+                Name = "Lead",
+                SortOrder = 0,
+                ParentSelectors = new List<string> { "main .lead" },
+            }) with
+        {
+            ExcludeUrlPatterns = new List<string> { "/sponsored/" },
+            ExcludeSelectors = new List<string> { ".promo" },
+        };
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        var allText = tree.GetAllNodes().Select(n => n.Link.DisplayText).ToList();
+        allText.Should().Contain("Real Story");
+        allText.Should().NotContain("Sponsored");
+        allText.Should().NotContain("Promo Box");
+
+        var leadHeader = tree.GetAllNodes()
+            .FirstOrDefault(n => n.IsGroupHeader && n.Link.DisplayText == "Lead");
+        leadHeader.Should().NotBeNull();
+        leadHeader!.Children.Should().HaveCount(1);
+        leadHeader.Children[0].Link.DisplayText.Should().Be("Real Story");
+    }
+
+    [Fact]
     public async Task BuildTreeAsync_WithConfig_MatchesByUrlPattern()
     {
         var links = new List<LinkInfo>
