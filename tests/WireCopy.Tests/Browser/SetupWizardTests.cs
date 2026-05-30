@@ -92,6 +92,7 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, Render, overlay, Links(), "https://x.com/", screenshot: null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
@@ -124,7 +125,7 @@ public class SetupWizardTests
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, overlay, Links(), "https://x.com/", null, budget,
-            _ => Task.FromResult<string?>(string.Empty), CancellationToken.None);
+            _ => Task.FromResult<string?>(string.Empty), pickLeadFromTree: null, CancellationToken.None);
 
         result.UseDocumentOrder.Should().BeTrue();
         result.Config.Should().BeNull();
@@ -143,10 +144,116 @@ public class SetupWizardTests
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
-            Links(), "https://x.com/", null, spent, _ => Task.FromResult<string?>(string.Empty), CancellationToken.None);
+            Links(), "https://x.com/", null, spent, _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, CancellationToken.None);
 
         result.Cancelled.Should().BeTrue();
         await analyzer.DidNotReceive().ProposeSetupQuestionsAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ---- workspace-5oe9.9: point-at-a-link pick mode ----
+
+    [Fact]
+    public void SectionFromPickedLink_ContentNode_YieldsSectionWithItsIdentifier()
+    {
+        var link = new LinkInfo
+        {
+            Url = "https://x.com/2026/05/30/headline",
+            DisplayText = "Headline",
+            Type = LinkType.Content,
+            ImportanceScore = 90,
+            ParentSelector = "main section.lead > h1 > a",
+        };
+
+        var section = SetupWizard.SectionFromPickedLink(link, "Top Story");
+
+        section.Should().NotBeNull();
+        section!.ParentSelectors.Should().Contain(s => s.Contains("section.lead", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SectionFromPickedLink_HeaderNode_IsRejected()
+    {
+        var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
+        SetupWizard.SectionFromPickedLink(header, "Top Story").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PickLeadOverride_ContentNode_PerformsExactlyOneExtraRoundTrip()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => SomeConfig());
+
+        var input = Substitute.For<IInputHandler>();
+        // Overview: Down ×2 to the "point at the main story" option (index 2), then Enter.
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NavigationCommand { Type = CommandType.MoveDown },
+                new NavigationCommand { Type = CommandType.MoveDown },
+                new NavigationCommand { Type = CommandType.ActivateLink });
+
+        var pickedLink = new LinkInfo
+        {
+            Url = "https://x.com/2026/05/30/the-real-lead",
+            DisplayText = "The real lead",
+            Type = LinkType.Content,
+            ImportanceScore = 99,
+            ParentSelector = "main section.hero a",
+        };
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        budget.Used.Should().Be(3, "propose + infer + one re-inference for the override");
+        await analyzer.Received(2).InferPatternFromAnswersAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PickLeadOverride_HeaderNode_DoesNotReInfer()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => SomeConfig());
+
+        var input = Substitute.For<IInputHandler>();
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NavigationCommand { Type = CommandType.MoveDown },
+                new NavigationCommand { Type = CommandType.MoveDown },
+                new NavigationCommand { Type = CommandType.ActivateLink });
+
+        var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
+        var budget = new ModelRoundTripBudget();
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(header),
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull("a rejected pick keeps the base config");
+        budget.Used.Should().Be(2, "a header pick is rejected before any re-inference");
+        await analyzer.Received(1).InferPatternFromAnswersAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
     }
 }

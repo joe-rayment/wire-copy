@@ -456,12 +456,70 @@ internal static class StrategyChooserHandler
                 screenshot,
                 budget,
                 c => PromptForGuidanceAsync(ctx, options, c),
+                c => PickLeadFromTreeAsync(ctx, page, options, c),
                 ct).ConfigureAwait(false);
         }
         finally
         {
             ClearOverlay(ctx);
         }
+    }
+
+    /// <summary>
+    /// workspace-5oe9.9: lets the user point at the main story in the previewed
+    /// link tree. j/k move the tree cursor; Enter sets the highlighted link as
+    /// the lead (rejecting synthetic section headers); Esc cancels the pick.
+    /// Returns the chosen <see cref="LinkInfo"/> or null.
+    /// </summary>
+    private static async Task<LinkInfo?> PickLeadFromTreeAsync(
+        CommandContext ctx,
+        Domain.Entities.Browser.Page page,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var tree = page.LinkTree;
+        if (tree == null)
+        {
+            return null;
+        }
+
+        // Visibly distinct footer so the pick mode is unmistakable.
+        ClearOverlay(ctx);
+        ctx.NavigationService.SetStatusMessage("Pick the main story — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+        while (!ct.IsCancellationRequested)
+        {
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            switch (command.Type)
+            {
+                case CommandType.MoveDown or CommandType.ExpandNode:
+                    tree.SelectNext();
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.MoveUp or CommandType.CollapseNode:
+                    tree.SelectPrevious();
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.ActivateLink:
+                    var node = tree.GetSelectedNode();
+                    if (node == null || node.IsGroupHeader)
+                    {
+                        ctx.NavigationService.SetStatusMessage("Pick a story, not a section header — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        break;
+                    }
+
+                    return node.Link;
+                case CommandType.GoBack or CommandType.Quit:
+                    return null;
+                case CommandType.TerminalResized:
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
