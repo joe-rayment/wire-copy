@@ -77,7 +77,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     /// <see cref="SiteHierarchyConfig.ExcludeUrlPatterns"/> substring
     /// (OrdinalIgnoreCase, mirroring <see cref="MatchesSection"/>).
     /// </summary>
-    private static bool IsExcluded(LinkInfo link, SiteHierarchyConfig config)
+    internal static bool IsExcluded(LinkInfo link, SiteHierarchyConfig config)
     {
         if (link.ParentSelector != null && config.ExcludeSelectors.Count > 0 &&
             config.ExcludeSelectors.Any(s =>
@@ -98,28 +98,26 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         return false;
     }
 
-    private static bool MatchesSection(LinkInfo link, HierarchySection section)
-    {
-        if (link.ParentSelector != null && section.ParentSelectors.Count > 0 &&
-            section.ParentSelectors.Any(s => link.ParentSelector.Contains(s, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
+    // workspace-frpl.3: MatchesSection is factored into three per-criterion
+    // predicates so the scheduling SectionResolver can both MATCH and CLASSIFY
+    // the match tier (Selector / UrlPattern / HeadingName) using the EXACT same
+    // logic — no divergence between the tree builder and the resolver.
+    internal static bool MatchesByParentSelector(LinkInfo link, HierarchySection section) =>
+        link.ParentSelector != null && section.ParentSelectors.Count > 0 &&
+        section.ParentSelectors.Any(s => link.ParentSelector.Contains(s, StringComparison.OrdinalIgnoreCase));
 
-        if (section.UrlPatterns.Count > 0 &&
-            section.UrlPatterns.Any(p => link.Url.Contains(p, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
+    internal static bool MatchesByUrlPattern(LinkInfo link, HierarchySection section) =>
+        section.UrlPatterns.Count > 0 &&
+        section.UrlPatterns.Any(p => link.Url.Contains(p, StringComparison.OrdinalIgnoreCase));
 
-        if (link.SectionTitle != null &&
-            string.Equals(link.SectionTitle, section.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+    internal static bool MatchesBySectionTitle(LinkInfo link, HierarchySection section) =>
+        link.SectionTitle != null &&
+        string.Equals(link.SectionTitle, section.Name, StringComparison.OrdinalIgnoreCase);
 
-        return false;
-    }
+    internal static bool MatchesSection(LinkInfo link, HierarchySection section) =>
+        MatchesByParentSelector(link, section)
+        || MatchesByUrlPattern(link, section)
+        || MatchesBySectionTitle(link, section);
 
     private NavigationTree BuildWithHierarchyConfig(List<LinkInfo> links, SiteHierarchyConfig hierarchyConfig)
     {
