@@ -153,6 +153,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _ => items,
     };
 
+    /// <summary>Best-effort host for a human diagnostic (falls back to the raw url).</summary>
+    private static string HostOf(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
+
     /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
     /// Returns the run-time status string, the section match count, and a diagnostic.
@@ -166,7 +170,15 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         var load = await _loader.LoadLinksAndConfigAsync(step.SourceUrl, cancellationToken).ConfigureAwait(false);
         if (load.Outcome != LoadOutcome.Ok)
         {
-            return (load.Outcome.ToString(), 0, $"Headless load returned {load.Outcome} for {step.SourceUrl}");
+            // workspace-frpl.11 (B8): a Blocked load is a logged-out/paywalled session,
+            // not a transient error — give the user an actionable, human diagnostic
+            // (surfaced by B11) instead of producing a silent empty episode. We never
+            // attempt headless re-auth; the user refreshes by browsing the site once.
+            var diagnostic = load.Outcome == LoadOutcome.Blocked
+                ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
+                  "The scheduled run skipped this step rather than publish an empty episode."
+                : $"Headless load failed ({load.Outcome}) for {step.SourceUrl}.";
+            return (load.Outcome.ToString(), 0, diagnostic);
         }
 
         if (load.Config is null)

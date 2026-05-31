@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Scheduling;
+using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Scheduling;
 
@@ -20,15 +21,18 @@ internal sealed class HeadlessSectionLoadAdapter : IHeadlessSectionLoader
     private readonly IPreloadService _preloadService;
     private readonly ILinkExtractor _linkExtractor;
     private readonly IHierarchyConfigStore _configStore;
+    private readonly IAutoCookieRefresher? _cookieRefresher;
 
     public HeadlessSectionLoadAdapter(
         IPreloadService preloadService,
         ILinkExtractor linkExtractor,
-        IHierarchyConfigStore configStore)
+        IHierarchyConfigStore configStore,
+        IAutoCookieRefresher? cookieRefresher = null)
     {
         _preloadService = preloadService;
         _linkExtractor = linkExtractor;
         _configStore = configStore;
+        _cookieRefresher = cookieRefresher;
     }
 
     public async Task<HeadlessSectionLoad> LoadLinksAndConfigAsync(string sourceUrl, CancellationToken cancellationToken = default)
@@ -40,6 +44,18 @@ internal sealed class HeadlessSectionLoadAdapter : IHeadlessSectionLoader
         }
 
         var finalUrl = string.IsNullOrEmpty(load.FinalUrl) ? sourceUrl : load.FinalUrl;
+
+        // workspace-frpl.11 (B8): a scheduled load that rendered a logged-in-looking
+        // page is an opportunity to refresh cookies.json from the foreground session
+        // so SUBSEQUENT scheduled runs stay authenticated. The refresher is
+        // conservative (paywalled-domain + logged-in markup + 24h cooldown gates) and
+        // swallows its own failures, so this never blocks or fails the load. It does
+        // NOT attempt headless re-authentication.
+        if (_cookieRefresher != null)
+        {
+            await _cookieRefresher.MaybeRefreshAsync(finalUrl, load.Html, cancellationToken).ConfigureAwait(false);
+        }
+
         var links = await _linkExtractor.ExtractLinksAsync(load.Html, finalUrl, cancellationToken).ConfigureAwait(false);
         var config = await _configStore.GetConfigAsync(sourceUrl).ConfigureAwait(false);
 
