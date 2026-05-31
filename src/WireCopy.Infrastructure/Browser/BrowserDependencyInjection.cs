@@ -172,6 +172,10 @@ public static class BrowserDependencyInjection
         // workspace-frpl.3 (B2): durable section resolver for scheduled recipes.
         services.AddSingleton<Application.Interfaces.Scheduling.ISectionResolver, Scheduling.SectionResolver>();
 
+        // workspace-frpl.10 (B9b): budgeted, confidence-gated semantic recovery tier
+        // (between B9a re-derivation and the loud skip) for drifted scheduled sections.
+        services.AddSingleton<Application.Interfaces.Scheduling.ISemanticSectionRecovery, Scheduling.SemanticSectionRecovery>();
+
         // Scraping strategies (per-domain WHICH-links chooser).
         services.AddSingleton<IScrapingStrategy, ScrapingStrategies.DocumentOrderStrategy>();
         services.AddSingleton<IScrapingStrategy, ScrapingStrategies.AiCuratedStrategy>();

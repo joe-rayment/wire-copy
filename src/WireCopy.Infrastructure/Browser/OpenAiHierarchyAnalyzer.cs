@@ -96,6 +96,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
         """);
 
+    // workspace-frpl.10 (B9b): single-label section classification for run-time recovery.
+    private static readonly BinaryData SectionClassificationSchema = BinaryData.FromString(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": { "type": ["string", "null"] },
+            "confidence": { "type": "number" }
+          },
+          "required": ["label", "confidence"]
+        }
+        """);
+
     private static readonly BinaryData SetupQuestionsSchema = BinaryData.FromString(
         """
         {
@@ -446,6 +460,79 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         throw new InvalidOperationException("Failed to parse infer-pattern response after retries");
+    }
+
+    /// <inheritdoc />
+    public async Task<SectionClassification> ClassifySectionAsync(
+        IReadOnlyList<string> candidateLabels,
+        string intent,
+        CancellationToken cancellationToken = default)
+    {
+        if (candidateLabels is null || candidateLabels.Count == 0 || string.IsNullOrWhiteSpace(intent))
+        {
+            return SectionClassification.None;
+        }
+
+        var apiKey = GetApiKey()
+            ?? throw new InvalidOperationException(
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
+
+        var systemPrompt =
+            "You map a wanted news section to the section headings actually present on a page today. " +
+            "Pick the SINGLE present heading that best matches the wanted section's meaning, or null if none does. " +
+            "Return only the heading text exactly as given, plus a 0..1 confidence. Be conservative: " +
+            "return null (or a low confidence) when the match is ambiguous or weak.";
+        var sb = new StringBuilder();
+        sb.AppendLine($"Wanted section: {intent.Trim()}");
+        sb.AppendLine("Headings present today (choose exactly one or null):");
+        foreach (var label in candidateLabels)
+        {
+            sb.AppendLine($"- {label}");
+        }
+
+        var messages = BuildMessages(systemPrompt, sb.ToString(), screenshot: null);
+        var options = BuildOptions(
+            schemaName: "section_classification",
+            schema: SectionClassificationSchema,
+            schemaDescription: "The single present heading that best matches the wanted section, with confidence.",
+            reasoningEffortOverride: "minimal");
+
+        var responseText = await _chatCompleter(
+            apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+
+        return ParseSectionClassification(responseText, candidateLabels);
+    }
+
+    /// <summary>
+    /// workspace-frpl.10: parses the classify response and CLAMPS it — the label
+    /// must be one of the offered candidates (case-insensitive) or it is treated as
+    /// "no match" (guards against a hallucinated heading), and confidence is clamped
+    /// to [0,1]. The recovery tier then applies its own confidence gate + self-test.
+    /// </summary>
+    internal static SectionClassification ParseSectionClassification(
+        string responseText, IReadOnlyList<string> candidateLabels)
+    {
+        var jsonText = StripOptionalFences(responseText);
+        var parsed = JsonSerializer.Deserialize<SectionClassificationResponse>(jsonText, ParseOptions)
+            ?? throw new JsonException("Failed to deserialize section-classification response");
+
+        if (string.IsNullOrWhiteSpace(parsed.Label))
+        {
+            return SectionClassification.None;
+        }
+
+        var match = candidateLabels.FirstOrDefault(
+            c => string.Equals(c, parsed.Label, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            return SectionClassification.None; // hallucinated label not in the offered set
+        }
+
+        return new SectionClassification
+        {
+            CandidateLabel = match,
+            Confidence = Math.Clamp(parsed.Confidence, 0.0, 1.0),
+        };
     }
 
     /// <summary>
@@ -1199,6 +1286,16 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         [JsonPropertyName("sections")]
         public List<AiCuratedSectionResponse>? Sections { get; set; }
+    }
+
+    // workspace-frpl.10 (B9b): single-label classify response.
+    private sealed class SectionClassificationResponse
+    {
+        [JsonPropertyName("label")]
+        public string? Label { get; set; }
+
+        [JsonPropertyName("confidence")]
+        public double Confidence { get; set; }
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
