@@ -65,6 +65,10 @@ public static class PodcastDependencyInjection
         services.AddHostedService<PodcastJobLifecycleService>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
 
+        // workspace-frpl.1 (B0): one process-wide generation gate shared by the
+        // manual modal and the scheduler so podcast runs never overlap.
+        services.AddSingleton<IPodcastGenerationGate, PodcastGenerationGate>();
+
         return services;
     }
 }
