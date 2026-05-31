@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Scheduling;
@@ -356,6 +357,80 @@ internal static class ScheduleCommandHandler
         return null;
     }
 
+    /// <summary>
+    /// workspace-frpl.15 (B12b) — set an UNCONFIGURED bookmarked site up inline: confirm,
+    /// load it headlessly through B5's preload-context-serialized path, run the SAME
+    /// SetupWizard the Ctrl+L flow uses (headless adapters, null screenshot), and persist
+    /// the resulting durable config so its section becomes pickable. Returns the saved
+    /// config, or null if AI is unavailable / the user cancelled / no config was produced.
+    /// </summary>
+    private static async Task<SiteHierarchyConfig?> TryInlineSetupAsync(
+        CommandContext ctx,
+        SetupWizardOverlay.State overlay,
+        ThemePalette palette,
+        RenderOptions options,
+        Bookmark bookmark,
+        CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
+        var loader = scope.ServiceProvider.GetService<IHeadlessSectionLoader>();
+        var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        if (analyzer is null || loader is null || configStore is null)
+        {
+            return null;
+        }
+
+        if (!analyzer.IsConfigured)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                $"'{bookmark.Name}' isn't set up yet — inline AI setup needs an OpenAI key (press c on the launcher), or configure the site via Ctrl+L.",
+                TimeSpan.FromSeconds(10));
+            return null;
+        }
+
+        var setup = await PickAsync(ctx, overlay, options, "Set up this site?", $"'{bookmark.Name}' has no saved layout. Set it up now with AI over a headless load? Enter select · Esc back", new List<string> { "Set up with AI now", "Cancel" }, 0, ct).ConfigureAwait(false);
+        if (setup.Cancelled || setup.Index != 0)
+        {
+            return null;
+        }
+
+        // Headless load (B5 serializes against the preload loop); show a static spinner card.
+        overlay.Mode = SetupWizardOverlay.Mode.Analyzing;
+        overlay.AnalyzingLabel = $"Loading {bookmark.Name}…";
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        var load = await loader.LoadLinksAndConfigAsync(bookmark.Url, ct).ConfigureAwait(false);
+        if (load.Outcome != LoadOutcome.Ok || load.Links.Count == 0)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                $"Couldn't load {bookmark.Name} headlessly ({load.Outcome}) — try opening it once in WireCopy first.",
+                TimeSpan.FromSeconds(8));
+            return null;
+        }
+
+        var result = await SetupWizard.RunAsync(
+            analyzer,
+            ctx.InputHandler,
+            c => ctx.RenderCurrentPageAsync(options, c),
+            overlay,
+            load.Links.ToList(),
+            bookmark.Url,
+            screenshot: null,
+            new ModelRoundTripBudget(),
+            c => PromptTextAsync(ctx, palette, "Your answer", null, c),
+            pickLeadFromTree: null,
+            ct).ConfigureAwait(false);
+
+        if (result.Cancelled || result.Config is null)
+        {
+            return null;
+        }
+
+        await configStore.SaveConfigAsync(result.Config).ConfigureAwait(false);
+        ctx.NavigationService.SetStatusMessage($"✔ Saved a layout for {bookmark.Name} — pick its section.", TimeSpan.FromSeconds(5));
+        return result.Config;
+    }
+
     private static async Task<RecipeStep?> AddStepAsync(
         CommandContext ctx,
         SetupWizardOverlay.State overlay,
@@ -382,11 +457,15 @@ internal static class ScheduleCommandHandler
         var config = await configStore.GetConfigAsync(bookmark.Url).ConfigureAwait(false);
         if (!ScheduleEditing.CanPinSection(config))
         {
-            // Never persist an unpinned section — the site must be configured first.
-            ctx.NavigationService.SetStatusMessage(
-                $"'{bookmark.Name}' has no usable layout yet — open it and run AI setup (Ctrl+L), then add it here. (Inline setup: B12b)",
-                TimeSpan.FromSeconds(10));
-            return null;
+            // workspace-frpl.15 (B12b): rather than dead-end, offer to set the site up
+            // INLINE over a headless load. Returns a freshly-saved config (now pinnable)
+            // or null if the user backed out / setup didn't produce one. Still never
+            // persists an unpinned section.
+            config = await TryInlineSetupAsync(ctx, overlay, palette, options, bookmark, ct).ConfigureAwait(false);
+            if (!ScheduleEditing.CanPinSection(config))
+            {
+                return null;
+            }
         }
 
         var sections = config!.Sections.OrderBy(s => s.SortOrder).ToList();
