@@ -41,6 +41,15 @@ public class Program
             return await RunBrowseAsync(new BrowseOptions { Url = url });
         }
 
+        // workspace-frpl.18 (B14): headless section-resolution debug verb. Loads a URL
+        // via the same headless path scheduled runs use and prints the resolution
+        // (status, match tier, items, sample link selectors) as JSON so the durability
+        // gate can assert selector-tier resolution, render parity, and drift-skip.
+        if (args.Length >= 1 && args[0].Equals("resolve-section", StringComparison.OrdinalIgnoreCase))
+        {
+            return await RunResolveSectionAsync(args);
+        }
+
         // Single arg that looks like a URL: shortcut for browse <url>
         if (args.Length == 1 && !args[0].StartsWith('-') &&
             Uri.TryCreate(args[0], UriKind.Absolute, out var uri) &&
@@ -56,6 +65,104 @@ public class Program
         return await result.MapResult(
             async (BrowseOptions opts) => await RunBrowseAsync(opts),
             errs => Task.FromResult(1));
+    }
+
+    private static async Task<int> RunResolveSectionAsync(string[] args)
+    {
+        Environment.SetEnvironmentVariable("npm_config_loglevel", "silent");
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("usage: resolve-section <url> <sectionName> [configUrlPattern]");
+            return 2;
+        }
+
+        var url = args[1];
+        var sectionName = args[2];
+        var configUrlPattern = args.Length > 3 ? args[3] : string.Empty;
+
+        // Information level so the durability gate can grep the log for any stray
+        // analyzer invocation during a (config-cached) headless resolution.
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .WriteTo.File("logs/wirecopy-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .CreateLogger();
+
+        var host = CreateBrowseHostBuilder().Build();
+        try
+        {
+            await host.StartAsync();
+            using (var scope = host.Services.CreateScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+            }
+
+            var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
+            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
+            if (browserConfig.Headless && browserSession.IsBrowserAvailable)
+            {
+                await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
+            }
+
+            var loader = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IHeadlessSectionLoader>();
+            var resolver = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.ISectionResolver>();
+
+            var load = await loader.LoadLinksAndConfigAsync(url);
+            object payload;
+            if (load.Outcome != WireCopy.Application.DTOs.Scheduling.LoadOutcome.Ok || load.Config is null)
+            {
+                payload = new
+                {
+                    loadOutcome = load.Outcome.ToString(),
+                    status = load.Config is null ? "NoConfig" : "LoadNotOk",
+                    hasConfig = load.Config is not null,
+                };
+            }
+            else
+            {
+                var domain = new Uri(url).Host;
+                var step = WireCopy.Domain.ValueObjects.Scheduling.RecipeStep.Create(
+                    url, domain, configUrlPattern, sectionName, required: true);
+                var res = resolver.Resolve(load.Config, load.Links, step);
+                var sample = load.Links
+                    .Where(l => l.Type == WireCopy.Domain.Enums.Browser.LinkType.Content && !l.IsGroupHeader)
+                    .Take(6)
+                    .Select(l => new { url = l.Url, parentSelector = l.ParentSelector, sectionTitle = l.SectionTitle })
+                    .ToList();
+                payload = new
+                {
+                    loadOutcome = "Ok",
+                    status = res.Status.ToString(),
+                    tier = res.Tier?.ToString(),
+                    matchCount = res.MatchCount,
+                    items = res.Items.Select(i => new { url = i.Url, title = i.Title }).ToList(),
+                    diagnostic = res.Diagnostic,
+                    sampleContentLinks = sample,
+                };
+            }
+
+            Console.WriteLine("RESOLVE_JSON:" + System.Text.Json.JsonSerializer.Serialize(payload));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("RESOLVE_JSON:" + System.Text.Json.JsonSerializer.Serialize(new { status = "Error", error = ex.Message }));
+            return 1;
+        }
+        finally
+        {
+            try
+            {
+                await host.StopAsync();
+            }
+            catch (Exception)
+            {
+                // shutting down
+            }
+
+            host.Dispose();
+        }
     }
 
     private static async Task<int> RunBrowseAsync(BrowseOptions options)
