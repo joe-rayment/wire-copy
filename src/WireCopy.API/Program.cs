@@ -14,6 +14,7 @@ using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Collections;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
+using WireCopy.Infrastructure.Scheduling;
 using WireCopy.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -177,5 +178,6 @@ public class Program
                 services.AddCollections();
                 services.AddBookmarks();
                 services.AddPodcast();
+                services.AddScheduling();
             });
 }
