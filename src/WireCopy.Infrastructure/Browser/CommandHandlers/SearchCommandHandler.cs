@@ -297,6 +297,11 @@ internal static class SearchCommandHandler
                 await LayoutCommandHandler.HandleClearLayout(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
+            case "schedules" or "schedule":
+                // workspace-frpl.14 (B12a): the recurring-recipe → auto-podcast screen.
+                await ScheduleCommandHandler.HandleSchedulesAsync(ctx, options, ct).ConfigureAwait(false);
+                return true;
+
             default:
                 var navigateUrl = NormalizeUrl(input);
                 await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);

@@ -25,6 +25,10 @@ public static class ScheduleDependencyInjection
         // wrote the Running row also finalizes it).
         services.AddScoped<IRecipeRunPipeline, RecipeRunPipeline>();
 
+        // workspace-frpl.14 (B12a): user-triggered "run now" from the Schedules screen,
+        // reusing the scheduler's gate + Running-row admission protocol.
+        services.AddSingleton<IScheduleRunNow, ScheduleRunNow>();
+
         // workspace-frpl.7 (B6): the in-process scheduler tick loop.
         services.AddHostedService<SchedulerHostedService>();
         return services;
