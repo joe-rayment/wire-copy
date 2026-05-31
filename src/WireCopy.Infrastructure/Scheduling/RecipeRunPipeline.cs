@@ -178,7 +178,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         }
 
         var resolution = _resolver.Resolve(load.Config, load.Links, step);
-        if (resolution.Status != ResolutionStatus.Resolved)
+
+        // Resolved AND Recovered (B9a run-local re-derivation) both carry items; any
+        // other status contributed nothing this occurrence.
+        if (resolution.Status is not (ResolutionStatus.Resolved or ResolutionStatus.Recovered))
         {
             return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic);
         }

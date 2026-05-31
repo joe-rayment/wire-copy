@@ -66,6 +66,30 @@ internal sealed class SectionResolver : ISectionResolver
             }
         }
 
+        // workspace-frpl.9 (B9a) Tier-1 RECOVERY: the saved selectors are over-specific
+        // (a hashed CSS class rotated, so the full saved selector no longer substring-
+        // matches), but one of their stable discriminating TOKENS still does. Generalize
+        // to the live tokens, re-match, and flag the result Recovered (run-LOCAL only —
+        // never written back to the shared config; B11 asks the user to ratify it).
+        // Deterministic, no model call.
+        var recoveredSelectors = new List<string>();
+        if (matched.Count == 0)
+        {
+            recoveredSelectors = LiveSelectorTokens(section, content);
+            if (recoveredSelectors.Count > 0)
+            {
+                var recoveredSection = new HierarchySection
+                {
+                    Name = section.Name,
+                    SortOrder = section.SortOrder,
+                    ParentSelectors = recoveredSelectors,
+                };
+                matched = content.Where(l => NavigationTreeBuilder.MatchesSection(l, recoveredSection)).ToList();
+            }
+        }
+
+        var recovered = matched.Count > 0 && recoveredSelectors.Count > 0;
+
         if (matched.Count == 0)
         {
             return new SectionResolution
@@ -87,12 +111,35 @@ internal sealed class SectionResolver : ISectionResolver
         var items = taken.Select(l => (l.Url, Title: string.IsNullOrWhiteSpace(l.DisplayText) ? l.Url : l.DisplayText)).ToList();
         return new SectionResolution
         {
-            Status = ResolutionStatus.Resolved,
+            Status = recovered ? ResolutionStatus.Recovered : ResolutionStatus.Resolved,
             Items = items,
             MatchCount = matched.Count,
-            Tier = tier,
+            Tier = recovered ? SectionMatchTier.Selector : tier,
+            Diagnostic = recovered
+                ? $"Recovered '{section.Name}' on {config.Domain} via re-derived selector(s) " +
+                  $"[{string.Join(", ", recoveredSelectors)}] after the saved selector matched 0 today — " +
+                  "ratify the layout in Schedules (the recovery is not saved)."
+                : null,
         };
     }
+
+    /// <summary>
+    /// The section's saved-selector discriminating tokens (e.g. <c>section.business</c>)
+    /// that STILL substring-match ≥1 of today's content links. A non-empty result means
+    /// the saved selector was merely over-specific (a sibling token rotated) and can be
+    /// safely loosened for THIS run; an empty result means there is no live anchor and the
+    /// section is genuinely unresolvable today. A single-token saved selector that already
+    /// failed yields nothing here (the token equals the full selector), so a clean
+    /// ZeroMatch never spuriously "recovers".
+    /// </summary>
+    private static List<string> LiveSelectorTokens(HierarchySection section, IReadOnlyList<LinkInfo> content) =>
+        section.ParentSelectors
+            .SelectMany(SelectorDerivation.DiscriminatingTokens)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(token => content.Any(l =>
+                l.ParentSelector != null &&
+                l.ParentSelector.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
 
     private static SectionMatchTier ClassifyTier(IEnumerable<LinkInfo> matched, HierarchySection section)
     {
