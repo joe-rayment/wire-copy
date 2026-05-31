@@ -155,7 +155,22 @@ public class Program
         }
     }
 
-    private static IHostBuilder CreateBrowseHostBuilder() =>
+    /// <summary>
+    /// workspace-frpl.19 (B15) — host shutdown grace for the in-process scheduler.
+    /// On Ctrl+C / host StopAsync, the BackgroundService stoppingToken is cancelled
+    /// and the host waits at most this long for <see cref="WireCopy.Infrastructure.Scheduling.SchedulerHostedService"/>
+    /// to unwind. That is enough for an in-flight scheduled run to observe the linked
+    /// token, abort TTS/publish, finalize its ScheduledRun row to Interrupted (NOT
+    /// leave it Running for the next-startup orphan sweep), and release the B0
+    /// generation gate. It is deliberately a CANCELLATION budget, not a
+    /// run-to-completion budget (a full generation can take minutes; we cancel, we
+    /// don't wait it out). The startup-only OutputFolderPurgeStartupService never
+    /// runs on shutdown, so a just-finished artifact is never purged out from under
+    /// a published feed on the way down.
+    /// </summary>
+    internal static readonly TimeSpan SchedulerShutdownTimeout = TimeSpan.FromSeconds(45);
+
+    internal static IHostBuilder CreateBrowseHostBuilder() =>
         Host.CreateDefaultBuilder()
             .UseSerilog()
             .ConfigureLogging(logging => logging.ClearProviders())
@@ -179,5 +194,10 @@ public class Program
                 services.AddBookmarks();
                 services.AddPodcast();
                 services.AddScheduling();
+
+                // workspace-frpl.19 (B15): give the scheduler time to cancel an
+                // in-flight run gracefully (finalize Interrupted + release the gate)
+                // on host shutdown instead of being abandoned mid-generation.
+                services.Configure<HostOptions>(o => o.ShutdownTimeout = SchedulerShutdownTimeout);
             });
 }
