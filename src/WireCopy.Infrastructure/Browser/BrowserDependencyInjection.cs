@@ -157,6 +157,9 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IAiArticleExtractor, OpenAiArticleExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
 
+        // workspace-frpl.3 (B2): durable section resolver for scheduled recipes.
+        services.AddSingleton<Application.Interfaces.Scheduling.ISectionResolver, Scheduling.SectionResolver>();
+
         // Scraping strategies (per-domain WHICH-links chooser).
         services.AddSingleton<IScrapingStrategy, ScrapingStrategies.DocumentOrderStrategy>();
         services.AddSingleton<IScrapingStrategy, ScrapingStrategies.AiCuratedStrategy>();
