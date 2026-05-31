@@ -92,14 +92,19 @@ internal static class PodcastProgressScreens
         // null, the modal degrades to the pre-Phase-D behaviour: no detach,
         // generation cancelled if the modal exits.
         IPodcastBackgroundJobManager? jobManager = null;
+        IPodcastGenerationGate? generationGate = null;
         try
         {
             using var managerScope = ctx.ScopeFactory.CreateScope();
             jobManager = managerScope.ServiceProvider.GetService<IPodcastBackgroundJobManager>();
+
+            // workspace-frpl.1 (B0): the process-wide generation gate (singleton —
+            // survives this scope) so a manual run can't overlap a scheduled one.
+            generationGate = managerScope.ServiceProvider.GetService<IPodcastGenerationGate>();
         }
         catch (Exception ex)
         {
-            ctx.Logger.LogDebug(ex, "Podcast background job manager unavailable (test path?)");
+            ctx.Logger.LogDebug(ex, "Podcast background job manager/gate unavailable (test path?)");
         }
 
         // workspace-zh3u: resolve destination paths up-front so the in-progress
@@ -226,6 +231,19 @@ internal static class PodcastProgressScreens
             }
         });
 
+        // workspace-frpl.1 (B0): take the generation gate at the moment generation
+        // STARTS (not at StartJob/detach) so a manual run and a scheduled run can
+        // never contend for the shared foreground page or the same output M4B.
+        // If the gate is already held (e.g. a scheduled run is mid-flight), bail
+        // with a status message rather than starting a second generation.
+        IDisposable? generationLease = null;
+        if (generationGate is not null && !generationGate.TryAcquire(out generationLease))
+        {
+            ctx.NavigationService.SetStatusMessage(
+                "A podcast is already being generated — please wait for it to finish.");
+            return null;
+        }
+
         // workspace-vkhr Phase D: do NOT wrap genCts in a `using` here — when
         // the user presses 'D' to detach, ownership of the CTS transfers to
         // the background job manager, and disposing it would cancel the run.
@@ -233,6 +251,20 @@ internal static class PodcastProgressScreens
         // disposes it in the finally block below.
         var genCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var generationTask = orchestrator.GeneratePodcastAsync(collection, progress, genCts.Token);
+
+        // workspace-frpl.1 (B0): release the gate exactly when the generation TASK
+        // completes — success, failure, or cancellation — so the lease lives with
+        // the work, not the modal. This survives detach (the background task keeps
+        // the gate until it finishes) and double-dispose is a no-op.
+        if (generationLease is not null)
+        {
+            var leaseToRelease = generationLease;
+            _ = generationTask.ContinueWith(
+                _ => leaseToRelease.Dispose(),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
 
         // Detach flag — set when 'D' is pressed during an active run. Drives
         // both the early loop exit and the finally-block cleanup decisions.
