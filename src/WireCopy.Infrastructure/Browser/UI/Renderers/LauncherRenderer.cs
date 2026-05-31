@@ -108,9 +108,16 @@ internal class LauncherRenderer
     /// so the eye lands on Enter first. Version is no longer shown here —
     /// it lives under the tagline in the header card (workspace-m8x2).
     /// </summary>
-    public void RenderFooter(int width)
+    public void RenderFooter(int width, string? scheduledRunBadge = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+
+        // workspace-frpl.13 (B11): a scheduled run that failed/recovered while the user
+        // was away surfaces here on next focus — never silent, collapsed when many.
+        if (!string.IsNullOrEmpty(scheduledRunBadge))
+        {
+            _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
+        }
 
         var hints = FormatPrimaryKbdHint("Enter", "open", p) + "  " +
                     FormatMutedKbdHint("o", "go to url", p) + "  " +

@@ -70,6 +70,7 @@ public partial class BrowserOrchestrator
                 : _preloadService.GetMissingPaywalledCookieDomains(
                     _navigationService.CurrentContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
+            ScheduledRunBadge = isLauncher ? GetScheduledRunBadge() : null,
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
             RequiredAction = requiredAction,
             ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
@@ -96,6 +97,33 @@ public partial class BrowserOrchestrator
         {
             _logger.LogDebug(ex, "Failed to read Reading List item count for launcher subtitle");
             return 0;
+        }
+    }
+
+    /// <summary>
+    /// workspace-frpl.13 (B11) — the launcher badge for unacknowledged scheduled-run
+    /// failures/recoveries (null when nothing needs attention). Read on each launcher
+    /// frame so a run that finished while the user was away surfaces on next focus.
+    /// </summary>
+    private string? GetScheduledRunBadge()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var repo = scope.ServiceProvider
+                .GetService<Application.Interfaces.Scheduling.IScheduledRunRepository>();
+            if (repo is null)
+            {
+                return null;
+            }
+
+            var unacked = repo.GetUnacknowledgedFinishedRunsAsync().GetAwaiter().GetResult();
+            return Scheduling.ScheduledRunBadge.Describe(unacked);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read scheduled-run badge for launcher");
+            return null;
         }
     }
 

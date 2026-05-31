@@ -390,7 +390,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.Clear();
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _launcherRenderer.RenderFooter(options.TerminalWidth);
+        _launcherRenderer.RenderFooter(options.TerminalWidth, options.ScheduledRunBadge);
         RenderPreloadDetailOverlay(options);
     }
 
