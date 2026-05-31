@@ -50,6 +50,14 @@ public class Program
             return await RunResolveSectionAsync(args);
         }
 
+        // workspace-frpl.17 (B13): run a saved recipe to completion (the SAME gate +
+        // RecipeRunPipeline + orchestrator + real publish path the scheduler/run-now use)
+        // and print the finalized run's feed URL — a reliable, non-interactive e2e entry.
+        if (args.Length >= 1 && args[0].Equals("run-recipe", StringComparison.OrdinalIgnoreCase))
+        {
+            return await RunRecipeAsync(args);
+        }
+
         // Single arg that looks like a URL: shortcut for browse <url>
         if (args.Length == 1 && !args[0].StartsWith('-') &&
             Uri.TryCreate(args[0], UriKind.Absolute, out var uri) &&
@@ -65,6 +73,82 @@ public class Program
         return await result.MapResult(
             async (BrowseOptions opts) => await RunBrowseAsync(opts),
             errs => Task.FromResult(1));
+    }
+
+    private static async Task<int> RunRecipeAsync(string[] args)
+    {
+        Environment.SetEnvironmentVariable("npm_config_loglevel", "silent");
+        var recipeName = args.Length > 1 ? args[1] : null;
+
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .WriteTo.File("logs/wirecopy-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .CreateLogger();
+
+        var host = CreateBrowseHostBuilder().Build();
+        try
+        {
+            await host.StartAsync();
+            using (var scope = host.Services.CreateScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+            }
+
+            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
+            if (host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.Headless && browserSession.IsBrowserAvailable)
+            {
+                await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
+            }
+
+            var store = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduleStore>();
+            var recipes = await store.GetAllAsync();
+            var recipe = recipeName is null
+                ? recipes.FirstOrDefault()
+                : recipes.FirstOrDefault(r => string.Equals(r.Name, recipeName, StringComparison.OrdinalIgnoreCase));
+            if (recipe is null)
+            {
+                Console.WriteLine("RUN_RESULT:" + System.Text.Json.JsonSerializer.Serialize(new { status = "NoRecipe", recipeName }));
+                return 2;
+            }
+
+            var runNow = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduleRunNow>();
+            await runNow.RunAsync(recipe);
+
+            var repo = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduledRunRepository>();
+            var finished = (await repo.GetUnacknowledgedFinishedRunsAsync())
+                .Where(r => r.RecipeId == recipe.Id)
+                .OrderByDescending(r => r.StartedAtUtc)
+                .FirstOrDefault();
+            Console.WriteLine("RUN_RESULT:" + System.Text.Json.JsonSerializer.Serialize(new
+            {
+                status = finished?.Status.ToString() ?? "Unknown",
+                feedUrl = finished?.TargetFeedUrl,
+                localPath = finished?.TargetLocalPath,
+                itemCount = finished?.ItemCount ?? 0,
+                error = finished?.ErrorMessage,
+            }));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("RUN_RESULT:" + System.Text.Json.JsonSerializer.Serialize(new { status = "Error", error = ex.Message }));
+            return 1;
+        }
+        finally
+        {
+            try
+            {
+                await host.StopAsync();
+            }
+            catch (Exception)
+            {
+                // shutting down
+            }
+
+            host.Dispose();
+        }
     }
 
     private static async Task<int> RunResolveSectionAsync(string[] args)
