@@ -2,6 +2,7 @@
 
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Application.Interfaces;
@@ -12,6 +13,7 @@ using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Scheduling;
 using WireCopy.Domain.ValueObjects.Scheduling;
+using WireCopy.Infrastructure.Configuration;
 
 namespace WireCopy.Infrastructure.Scheduling;
 
@@ -46,6 +48,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly IScheduleStore _scheduleStore;
     private readonly ILogger<RecipeRunPipeline> _logger;
     private readonly ISemanticSectionRecovery? _semanticRecovery;
+    private readonly IOptions<GcsConfiguration>? _gcsOptions;
+    private readonly IUserSettingsStore? _settingsStore;
 
     public RecipeRunPipeline(
         IHeadlessSectionLoader loader,
@@ -56,7 +60,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         IUnitOfWork unitOfWork,
         IScheduleStore scheduleStore,
         ILogger<RecipeRunPipeline> logger,
-        ISemanticSectionRecovery? semanticRecovery = null)
+        ISemanticSectionRecovery? semanticRecovery = null,
+        IOptions<GcsConfiguration>? gcsOptions = null,
+        IUserSettingsStore? settingsStore = null)
     {
         _loader = loader;
         _resolver = resolver;
@@ -67,6 +73,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _scheduleStore = scheduleStore;
         _logger = logger;
         _semanticRecovery = semanticRecovery;
+        _gcsOptions = gcsOptions;
+        _settingsStore = settingsStore;
     }
 
     public async Task RunAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken cancellationToken = default)
@@ -161,6 +169,31 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
 
     /// <summary>
+    /// workspace-frpl.17 (B13): the manual flow bridges the user's GcsBucketName setting
+    /// into the (config-bound) GcsConfiguration before publishing (PodcastCommandHandler);
+    /// the scheduler/run-now path must do the SAME or scheduled runs publish to a null
+    /// bucket. Idempotent + best-effort; the manual path already does this when active.
+    /// </summary>
+    private void BridgeGcsBucketFromSettings()
+    {
+        if (_gcsOptions?.Value is not { } gcs || _settingsStore is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(gcs.BucketName))
+        {
+            return;
+        }
+
+        var savedBucket = _settingsStore.Get("GcsBucketName");
+        if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
+        {
+            gcs.BucketName = savedBucket;
+        }
+    }
+
+    /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
     /// Returns the run-time status string, the section match count, and a diagnostic.
     /// </summary>
@@ -240,6 +273,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         var occurrenceToken = run.OccurrenceKey.Replace(':', '.');
         var collection = Collection.Create($"{recipe.OutputCollectionName} {occurrenceToken}");
         collection.AddItemsAtEnd(assembled);
+
+        BridgeGcsBucketFromSettings();
 
         var targets = await _orchestrator.ResolveTargetsAsync(collection, cancellationToken).ConfigureAwait(false);
 
