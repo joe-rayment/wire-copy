@@ -20,6 +20,11 @@ public static class ScheduleDependencyInjection
         // workspace-frpl.6 (B5): headless section loader for scheduled runs.
         services.AddSingleton<IHeadlessSectionLoader, HeadlessSectionLoadAdapter>();
 
+        // workspace-frpl.8 (B7): the per-occurrence run pipeline. SCOPED so it shares
+        // the same EF unit-of-work as the scheduler's per-tick scope (the scope that
+        // wrote the Running row also finalizes it).
+        services.AddScoped<IRecipeRunPipeline, RecipeRunPipeline>();
+
         // workspace-frpl.7 (B6): the in-process scheduler tick loop.
         services.AddHostedService<SchedulerHostedService>();
         return services;
