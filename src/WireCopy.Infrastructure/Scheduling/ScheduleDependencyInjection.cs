@@ -16,6 +16,9 @@ public static class ScheduleDependencyInjection
 
         // workspace-frpl.12 (B10): startup orphan sweep for scheduled runs.
         services.AddHostedService<ScheduledRunLifecycleService>();
+
+        // workspace-frpl.6 (B5): headless section loader for scheduled runs.
+        services.AddSingleton<IHeadlessSectionLoader, HeadlessSectionLoadAdapter>();
         return services;
     }
 }

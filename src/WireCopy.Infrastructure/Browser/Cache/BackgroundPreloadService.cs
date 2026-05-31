@@ -387,6 +387,141 @@ internal sealed class BackgroundPreloadService : IPreloadService
         SignalQueueChanged();
     }
 
+    /// <inheritdoc />
+    public async Task<Application.DTOs.Scheduling.RenderedLoad> LoadRenderedHtmlAsync(
+        string url, CancellationToken cancellationToken = default)
+    {
+        if (_browserSession == null)
+        {
+            return new Application.DTOs.Scheduling.RenderedLoad
+            {
+                Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
+                FinalUrl = url,
+            };
+        }
+
+        // workspace-frpl.6: quiesce the preload loop and run on an ISOLATED page
+        // in the preload context (NewPageAsync), so a scheduled load and any
+        // in-flight preload never share a page. The scheduler (B6) also gates
+        // generation, so this stays a single concurrent heavy navigation.
+        var wasPaused = _paused;
+        Pause();
+        Microsoft.Playwright.IPage? page = null;
+        try
+        {
+            page = await _browserSession.CreateBackgroundPageAsync().ConfigureAwait(false);
+            if (page == null)
+            {
+                return new Application.DTOs.Scheduling.RenderedLoad
+                {
+                    Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
+                    FinalUrl = url,
+                };
+            }
+
+            try
+            {
+                await _browserSession.MinimizeWindowAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Minimize before scheduled load failed (non-fatal)");
+            }
+
+            await page.GotoAsync(url, new Microsoft.Playwright.PageGotoOptions
+            {
+                Timeout = 15000,
+                WaitUntil = Microsoft.Playwright.WaitUntilState.DOMContentLoaded,
+            }).ConfigureAwait(false);
+
+            try
+            {
+                await _browserSession.MinimizeWindowAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Minimize after scheduled load failed (non-fatal)");
+            }
+
+            try
+            {
+                await page.WaitForFunctionAsync(
+                    @"() => {
+                        if (document.querySelector('[role=""main""] a, main a, article a')) return true;
+                        return document.body && document.body.innerHTML.length > 5000;
+                    }",
+                    null,
+                    new Microsoft.Playwright.PageWaitForFunctionOptions { Timeout = 4000 }).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogDebug("Scheduled load render wait timed out for {Url}", url);
+            }
+            catch (Microsoft.Playwright.PlaywrightException)
+            {
+                _logger.LogDebug("Scheduled load render wait failed for {Url}", url);
+            }
+
+            await PageLoader.DismissOverlaysAsync(page, _logger).ConfigureAwait(false);
+
+            var html = await page.ContentAsync().ConfigureAwait(false);
+            var finalUrl = page.Url;
+
+            if (HumanActionDetector.Detect(html, finalUrl, statusCode: 0) != null || PageLoader.IsBotChallengePage(html))
+            {
+                return new Application.DTOs.Scheduling.RenderedLoad
+                {
+                    Outcome = Application.DTOs.Scheduling.LoadOutcome.Blocked,
+                    Html = html,
+                    FinalUrl = finalUrl,
+                };
+            }
+
+            return new Application.DTOs.Scheduling.RenderedLoad
+            {
+                Outcome = Application.DTOs.Scheduling.LoadOutcome.Ok,
+                Html = html,
+                FinalUrl = finalUrl,
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            return new Application.DTOs.Scheduling.RenderedLoad
+            {
+                Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
+                FinalUrl = url,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Scheduled rendered load failed for {Url}", url);
+            return new Application.DTOs.Scheduling.RenderedLoad
+            {
+                Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
+                FinalUrl = url,
+            };
+        }
+        finally
+        {
+            if (page != null)
+            {
+                try
+                {
+                    await page.CloseAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Closing scheduled-load page failed (non-fatal)");
+                }
+            }
+
+            if (!wasPaused)
+            {
+                Resume();
+            }
+        }
+    }
+
     public PreloadProgress GetProgress()
     {
         List<string> eligible;

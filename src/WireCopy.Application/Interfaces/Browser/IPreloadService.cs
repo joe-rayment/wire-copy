@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Domain.Entities.Browser;
 
 namespace WireCopy.Application.Interfaces.Browser;
@@ -126,4 +127,14 @@ public interface IPreloadService : IDisposable
     /// domains are configured.
     /// </returns>
     IReadOnlyList<string> GetMissingPaywalledCookieDomains(string? currentPageUrl);
+
+    /// <summary>
+    /// workspace-frpl.6 — performs a one-off RENDERED load of <paramref name="url"/>
+    /// for the scheduler (same goto/render-wait/dismiss recipe as preload) on an
+    /// ISOLATED page in the preload context, pausing the preload loop for the
+    /// duration so the two never contend. Returns the rendered HTML or a
+    /// Blocked/LoadFailed classification — never hangs, never touches the
+    /// foreground page or NavigationService.
+    /// </summary>
+    Task<RenderedLoad> LoadRenderedHtmlAsync(string url, CancellationToken cancellationToken = default);
 }
