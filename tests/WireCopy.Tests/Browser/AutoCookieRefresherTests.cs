@@ -244,19 +244,6 @@ public class AutoCookieRefresherTests
         LoggedInPaywallDetector.LooksLoggedIn("   ").Should().BeFalse();
     }
 
-    private sealed class FakeTimeProvider : TimeProvider
-    {
-        private DateTimeOffset _now;
-
-        public FakeTimeProvider(DateTime utcNow)
-        {
-            _now = new DateTimeOffset(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc));
-        }
-
-        public override DateTimeOffset GetUtcNow() => _now;
-
-        public void Advance(TimeSpan span) => _now = _now.Add(span);
-    }
 }
 
 /// <summary>

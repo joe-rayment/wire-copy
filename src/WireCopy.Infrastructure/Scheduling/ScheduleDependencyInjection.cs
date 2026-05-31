@@ -19,6 +19,9 @@ public static class ScheduleDependencyInjection
 
         // workspace-frpl.6 (B5): headless section loader for scheduled runs.
         services.AddSingleton<IHeadlessSectionLoader, HeadlessSectionLoadAdapter>();
+
+        // workspace-frpl.7 (B6): the in-process scheduler tick loop.
+        services.AddHostedService<SchedulerHostedService>();
         return services;
     }
 }
