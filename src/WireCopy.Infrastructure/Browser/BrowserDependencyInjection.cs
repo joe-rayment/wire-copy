@@ -157,6 +157,18 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IAiArticleExtractor, OpenAiArticleExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
 
+        // workspace-frpl.11 (B8): opportunistic cookie freshness — a headless scheduled
+        // load that renders a logged-in page refreshes cookies.json from the foreground
+        // session so later runs stay authenticated. Previously the class existed but was
+        // unregistered; the HeadlessSectionLoadAdapter consumes it via IAutoCookieRefresher.
+        services.AddSingleton<IAutoCookieRefresher>(sp => new AutoCookieRefresher(
+            sp.GetRequiredService<IBrowserSession>(),
+            sp.GetRequiredService<ICookieManager>(),
+            sp.GetRequiredService<IHttpCookieRefresher>(),
+            sp.GetRequiredService<IOptions<BrowserConfiguration>>().Value,
+            sp.GetRequiredService<NavigationService>(),
+            sp.GetRequiredService<ILogger<AutoCookieRefresher>>()));
+
         // workspace-frpl.3 (B2): durable section resolver for scheduled recipes.
         services.AddSingleton<Application.Interfaces.Scheduling.ISectionResolver, Scheduling.SectionResolver>();
 

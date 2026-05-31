@@ -76,6 +76,8 @@ public class HeadlessSectionLoadAdapterTests
             .GetConstructors().Single().GetParameters().Select(p => p.ParameterType.Name).ToList();
         paramTypes.Should().NotContain(n => n.Contains("NavigationService", StringComparison.Ordinal));
         paramTypes.Should().NotContain(n => n.Contains("PageAccessQueue", StringComparison.Ordinal));
-        paramTypes.Should().BeEquivalentTo(new[] { "IPreloadService", "ILinkExtractor", "IHierarchyConfigStore" });
+        // workspace-frpl.11 (B8): IAutoCookieRefresher is an abstraction — the adapter
+        // still names NO foreground/NavigationService type directly.
+        paramTypes.Should().BeEquivalentTo(new[] { "IPreloadService", "ILinkExtractor", "IHierarchyConfigStore", "IAutoCookieRefresher" });
     }
 }
