@@ -36,6 +36,11 @@ internal static class ScheduleCommandHandler
         var configStore = scope.ServiceProvider.GetRequiredService<IHierarchyConfigStore>();
         var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
         var runNow = scope.ServiceProvider.GetRequiredService<IScheduleRunNow>();
+
+        // workspace-frpl.13 (B11): opening the screen means the user has now SEEN the
+        // results, so acknowledge unacknowledged finished runs — this clears the
+        // launcher badge. Best-effort; a failure here must not block the screen.
+        await AcknowledgeFinishedRunsAsync(scope, ct).ConfigureAwait(false);
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var overlay = new SetupWizardOverlay.State();
         ctx.SetOverlayPainter(opts => SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
@@ -192,6 +197,36 @@ internal static class ScheduleCommandHandler
         RunStatus.Skipped => "— last run skipped",
         _ => "— never run",
     };
+
+    private static async Task AcknowledgeFinishedRunsAsync(IServiceScope scope, CancellationToken ct)
+    {
+        try
+        {
+            var repo = scope.ServiceProvider.GetService<IScheduledRunRepository>();
+            if (repo is null)
+            {
+                return;
+            }
+
+            var unacked = await repo.GetUnacknowledgedFinishedRunsAsync(ct).ConfigureAwait(false);
+            if (unacked.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var run in unacked)
+            {
+                run.Acknowledge();
+                await repo.UpdateAsync(run, ct).ConfigureAwait(false);
+            }
+
+            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // best-effort: never block the screen on a badge-clear failure
+        }
+    }
 
     private static async Task<bool> AnyStepNeedsReconfigureAsync(ScheduleRecipe recipe, IHierarchyConfigStore configStore)
     {

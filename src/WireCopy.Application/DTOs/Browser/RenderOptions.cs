@@ -130,6 +130,14 @@ public record RenderOptions
     public bool ShowSetupHint { get; init; }
 
     /// <summary>
+    /// workspace-frpl.13 (B11) — launcher badge text for unacknowledged scheduled-run
+    /// failures/recoveries, or null when nothing needs attention. Surfaced on the
+    /// launcher footer so a scheduled run that failed while the user was away is never
+    /// silent. Populated only in launcher mode.
+    /// </summary>
+    public string? ScheduledRunBadge { get; init; }
+
+    /// <summary>
     /// Number of items currently saved to the Reading List collection. Surfaced
     /// to the launcher's Reading List tile (workspace-fbcn) so its subtitle can
     /// read "{N} saved articles" when populated, or the empty-state copy when
