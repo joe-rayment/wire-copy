@@ -31,6 +31,12 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- workspace-frpl.19 (B15): the shutdown-contract test asserts the configured
+         HostOptions.ShutdownTimeout off the real CreateBrowseHostBuilder(). -->
+    <InternalsVisibleTo Include="WireCopy.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
