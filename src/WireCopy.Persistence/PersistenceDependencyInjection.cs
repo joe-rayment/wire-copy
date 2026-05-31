@@ -30,6 +30,7 @@ public static class PersistenceDependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ISiteCredentialRepository, SiteCredentialRepository>();
         services.AddScoped<IPodcastJobRepository, PodcastJobRepository>();
+        services.AddScoped<Application.Interfaces.Scheduling.IScheduledRunRepository, ScheduledRunRepository>();
 
         return services;
     }

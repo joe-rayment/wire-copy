@@ -13,6 +13,9 @@ public static class ScheduleDependencyInjection
     {
         services.AddSingleton<IScheduleStore>(sp =>
             new ScheduleStore(storageDirectory: null, sp.GetService<ILogger<ScheduleStore>>()));
+
+        // workspace-frpl.12 (B10): startup orphan sweep for scheduled runs.
+        services.AddHostedService<ScheduledRunLifecycleService>();
         return services;
     }
 }
