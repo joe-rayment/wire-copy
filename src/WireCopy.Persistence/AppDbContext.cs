@@ -30,6 +30,9 @@ public class AppDbContext : DbContext
 
     public DbSet<PodcastJob> PodcastJobs => Set<PodcastJob>();
 
+    public DbSet<WireCopy.Domain.Entities.Scheduling.ScheduledRun> ScheduledRuns =>
+        Set<WireCopy.Domain.Entities.Scheduling.ScheduledRun>();
+
     /// <summary>
     /// Ensures the database is created and all migrations are applied.
     /// Handles upgrade from legacy EnsureCreatedAsync-based databases.
