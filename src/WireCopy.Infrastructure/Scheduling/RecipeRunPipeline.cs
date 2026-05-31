@@ -45,6 +45,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly IUnitOfWork _unitOfWork;
     private readonly IScheduleStore _scheduleStore;
     private readonly ILogger<RecipeRunPipeline> _logger;
+    private readonly ISemanticSectionRecovery? _semanticRecovery;
 
     public RecipeRunPipeline(
         IHeadlessSectionLoader loader,
@@ -54,7 +55,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         IScheduledRunRepository runRepository,
         IUnitOfWork unitOfWork,
         IScheduleStore scheduleStore,
-        ILogger<RecipeRunPipeline> logger)
+        ILogger<RecipeRunPipeline> logger,
+        ISemanticSectionRecovery? semanticRecovery = null)
     {
         _loader = loader;
         _resolver = resolver;
@@ -64,6 +66,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _unitOfWork = unitOfWork;
         _scheduleStore = scheduleStore;
         _logger = logger;
+        _semanticRecovery = semanticRecovery;
     }
 
     public async Task RunAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken cancellationToken = default)
@@ -191,8 +194,24 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         var resolution = _resolver.Resolve(load.Config, load.Links, step);
 
-        // Resolved AND Recovered (B9a run-local re-derivation) both carry items; any
-        // other status contributed nothing this occurrence.
+        // workspace-frpl.10 (B9b): when the durable match AND B9a's deterministic
+        // re-derivation both yielded 0, try the budgeted semantic recovery tier as a
+        // last resort before skipping. It returns a Recovered resolution only when a
+        // single high-confidence model classification ALSO passes a self-test; null
+        // otherwise (the loud ZeroMatch then stands and the quality floor handles it).
+        if (resolution.Status == ResolutionStatus.ZeroMatch && _semanticRecovery != null)
+        {
+            var recovered = await _semanticRecovery
+                .TryRecoverAsync(load.Config, load.Links, step, cancellationToken)
+                .ConfigureAwait(false);
+            if (recovered != null)
+            {
+                resolution = recovered;
+            }
+        }
+
+        // Resolved AND Recovered (B9a re-derivation or B9b semantic recovery) both
+        // carry items; any other status contributed nothing this occurrence.
         if (resolution.Status is not (ResolutionStatus.Resolved or ResolutionStatus.Recovered))
         {
             return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic);

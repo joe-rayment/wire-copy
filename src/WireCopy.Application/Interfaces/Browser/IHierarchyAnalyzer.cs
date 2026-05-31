@@ -49,4 +49,18 @@ public interface IHierarchyAnalyzer
         SiteSetupProposal proposal,
         IReadOnlyList<SetupAnswer> answers,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// workspace-frpl.10 (B9b) — a NEW single-label classify (distinct from the
+    /// interactive-wizard surface above): given the section headings present on a
+    /// page today and a durable intent (the recipe step's section name + aliases),
+    /// returns the ONE candidate heading that best matches, with a 0..1 confidence,
+    /// or <see cref="SectionClassification.None"/> when nothing maps. Used only as
+    /// the budgeted, confidence-gated, self-tested last-resort recovery tier for a
+    /// scheduled run whose durable section drifted beyond deterministic re-derivation.
+    /// </summary>
+    Task<SectionClassification> ClassifySectionAsync(
+        IReadOnlyList<string> candidateLabels,
+        string intent,
+        CancellationToken cancellationToken = default);
 }
