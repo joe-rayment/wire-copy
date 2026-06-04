@@ -149,6 +149,17 @@ public static class HumanActionDetector
         var domain = ExtractDomain(url);
         var bodyLower = html ?? string.Empty;
 
+        // 0. RedirectLoop: a 3xx as the FINAL response is unambiguous — the HTTP
+        //    client follows redirects automatically (AllowAutoRedirect, capped at
+        //    MaxAutomaticRedirections), so the only way a 3xx survives to the caller
+        //    is the redirect budget being exhausted by a loop / over-long chain
+        //    (workspace-odn5: Cloudflare consent/bot bounce on macleans.ca). Callers
+        //    that don't have a status code pass 0, so HTML-only detection skips this.
+        if (statusCode >= 300 && statusCode < 400)
+        {
+            return new HumanActionRequired(HumanActionVariant.RedirectLoop, domain, $"HTTP {statusCode}");
+        }
+
         // 1. RegionBlock: HTTP 451 is unambiguous; geo-restriction text is high-confidence.
         if (statusCode == 451)
         {

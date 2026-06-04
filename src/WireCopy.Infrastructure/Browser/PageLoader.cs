@@ -569,6 +569,56 @@ public class PageLoader : IPageLoader
     }
 #pragma warning restore SA1202, SA1204
 
+#pragma warning disable SA1202, SA1204 // helper kept adjacent to its sole caller for readability (workspace-odn5).
+    /// <summary>
+    /// Heuristic: did this Playwright failure look like a redirect loop? Chromium
+    /// surfaces an unresolvable redirect cycle as
+    /// <c>net::ERR_TOO_MANY_REDIRECTS at &lt;url&gt;</c> (confirmed live against a
+    /// 302-looping origin and intermittently on Cloudflare-fronted macleans.ca).
+    /// Used by <see cref="BrowserFetchOnceAsync"/> to surface a typed
+    /// <see cref="HumanActionVariant.RedirectLoop"/> verdict instead of a raw
+    /// "Browser error: net::ERR_TOO_MANY_REDIRECTS" string (workspace-odn5).
+    /// </summary>
+    internal static bool LooksLikeRedirectLoop(string? errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            return false;
+        }
+
+        // Match both the Chromium net-error token and the humanised phrasing that
+        // some wrappers emit for the same redirect-cycle condition.
+        return errorMessage.Contains("ERR_TOO_MANY_REDIRECTS", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("too many redirects", StringComparison.OrdinalIgnoreCase);
+    }
+#pragma warning restore SA1202, SA1204
+
+#pragma warning disable SA1202, SA1204 // helper kept adjacent to its sole caller for readability (workspace-odn5).
+    /// <summary>
+    /// Heuristic: did this Playwright failure look like a navigation that got
+    /// bounced into the browser's own error page? Chromium reports this as
+    /// <c>Navigation to "X" is interrupted by another navigation to
+    /// "chrome-error://chromewebdata/"</c> — observed live as a sibling of the
+    /// redirect-cycle on Cloudflare-fronted macleans.ca (the consent/bot bounce
+    /// supersedes the real navigation and lands on an error page). Requires BOTH
+    /// markers so it never fires on a healthy client-side redirect (those
+    /// interrupt to a real URL and succeed, never reaching this catch). Surfaced
+    /// as the deliberately non-committal <see cref="HumanActionVariant.Generic"/>
+    /// verdict — the root cause is genuinely ambiguous, and the workspace-0b9s
+    /// rule is to prefer generic actionable copy over a guessed specific cause.
+    /// </summary>
+    internal static bool LooksLikeInterruptedNavigation(string? errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage))
+        {
+            return false;
+        }
+
+        return errorMessage.Contains("interrupted by another navigation", StringComparison.OrdinalIgnoreCase)
+            && errorMessage.Contains("chrome-error", StringComparison.OrdinalIgnoreCase);
+    }
+#pragma warning restore SA1202, SA1204
+
     private async Task<PageLoadResult> BrowserFetchOnceAsync(PageLoadRequest request, CancellationToken cancellationToken)
     {
         if (!_browserSession.IsBrowserAvailable)
@@ -638,6 +688,35 @@ public class PageLoader : IPageLoader
         catch (PlaywrightException ex)
         {
             _logger.LogError(ex, "Browser error loading page: {Url}", request.Url);
+
+            // workspace-odn5: a redirect cycle (net::ERR_TOO_MANY_REDIRECTS) is a
+            // typed, actionable condition — almost always a cookie/consent or
+            // Cloudflare bot bounce that won't settle in our session. Surface a
+            // RedirectLoop verdict so the orchestrator renders the "open in your
+            // browser, then press R" box instead of a raw Playwright error string.
+            // Checked before the stale-page heuristic (a loop is not a stale page,
+            // so this never steals the workspace-m7nc retry path).
+            if (LooksLikeRedirectLoop(ex.Message))
+            {
+                var domain = ExtractDomainSafe(request.Url);
+                _logger.LogWarning("Redirect loop loading {Url} via browser, surfacing RedirectLoop verdict", request.Url);
+                return PageLoadResult.Failure(
+                    new HumanActionRequired(HumanActionVariant.RedirectLoop, domain, "redirect loop"),
+                    "Redirect loop");
+            }
+
+            // workspace-odn5: the same Cloudflare bounce sometimes supersedes the
+            // navigation and lands on chrome-error:// instead of looping. Surface a
+            // Generic ("uncertain interruption") verdict so the user still gets an
+            // actionable box rather than a raw multi-line Playwright error string.
+            if (LooksLikeInterruptedNavigation(ex.Message))
+            {
+                var domain = ExtractDomainSafe(request.Url);
+                _logger.LogWarning("Navigation interrupted into an error page loading {Url} via browser, surfacing Generic verdict", request.Url);
+                return PageLoadResult.Failure(
+                    new HumanActionRequired(HumanActionVariant.Generic, domain, "navigation interrupted"),
+                    "Navigation interrupted");
+            }
 
             // workspace-m7nc: stale-page detection happens in the outer
             // BrowserFetchAsync — preserve the raw Playwright message here so

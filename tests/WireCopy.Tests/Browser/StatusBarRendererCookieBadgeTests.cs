@@ -218,6 +218,7 @@ public class StatusBarRendererActionBadgeTests
     [InlineData(HumanActionVariant.TwoFactor, "2FA at")]
     [InlineData(HumanActionVariant.Paywall, "paywall at")]
     [InlineData(HumanActionVariant.RegionBlock, "region-block at")]
+    [InlineData(HumanActionVariant.RedirectLoop, "redirect loop at")]
     public void StatusBar_SpecificVariants_AllUseVerbLedCopy(HumanActionVariant variant, string expected)
     {
         var context = new NavigationContext { ViewMode = ViewMode.Hierarchical };

@@ -85,7 +85,10 @@ public partial class BrowserOrchestrator
     /// one a user can plausibly clear in their headed browser
     /// (CAPTCHA / Login / CookieConsent / TwoFactor). No-op for variants
     /// that don't resolve via headed interaction (Paywall, RegionBlock,
-    /// Generic) and for headless runs where there is no visible window.
+    /// RedirectLoop, Generic) and for headless runs where there is no visible
+    /// window. (A RedirectLoop throws before any pollable page exists and a
+    /// Cloudflare bounce won't settle on its own — the user must open it in
+    /// their real browser and press R.)
     /// </summary>
     private void StartHumanActionWatcher(
         string url,
