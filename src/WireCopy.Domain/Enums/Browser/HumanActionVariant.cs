@@ -48,6 +48,17 @@ public enum HumanActionVariant
     RegionBlock,
 
     /// <summary>
+    /// Site is stuck in a redirect loop — the browser hit
+    /// <c>net::ERR_TOO_MANY_REDIRECTS</c> or the HTTP client exhausted its
+    /// automatic-redirect budget and returned a final 3xx. Almost always a
+    /// cookie/consent or bot-management (Cloudflare) bounce that never settles
+    /// in our session (workspace-odn5: macleans.ca). Surfaced so the user gets
+    /// an actionable "open in your browser, then press R" box instead of an
+    /// opaque <c>net::ERR_TOO_MANY_REDIRECTS</c> / <c>HTTP 302</c> string.
+    /// </summary>
+    RedirectLoop,
+
+    /// <summary>
     /// Generic fallback when the detector saw HITL-like signals but could not classify them
     /// with high confidence. Triggers low-specificity copy ("Something on {domain} needs
     /// your attention").

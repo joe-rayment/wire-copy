@@ -39,6 +39,7 @@ public class RenderAllVariantsScreenshotTest
     [InlineData(HumanActionVariant.TwoFactor)]
     [InlineData(HumanActionVariant.Paywall)]
     [InlineData(HumanActionVariant.RegionBlock)]
+    [InlineData(HumanActionVariant.RedirectLoop)]
     [InlineData(HumanActionVariant.Generic)]
     public void RenderHumanAction_EmitsClosedBoxForEveryVariant(HumanActionVariant variant)
     {

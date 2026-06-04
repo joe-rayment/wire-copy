@@ -96,6 +96,39 @@ public class HumanActionDetectorTests
         verdict.Detail.Should().Be("HTTP 451");
     }
 
+    [Theory]
+    [InlineData(301)]
+    [InlineData(302)]
+    [InlineData(303)]
+    [InlineData(307)]
+    [InlineData(308)]
+    public void Detect_Final3xxStatus_ReturnsRedirectLoopVariant(int statusCode)
+    {
+        // workspace-odn5: the HTTP client follows redirects automatically up to its
+        // budget, so a 3xx surviving to the caller means the budget was exhausted by
+        // a loop / over-long chain. The HTTP path (PageLoader.TryHttpFetchAsync) feeds
+        // that status straight into Detect, which must surface a typed RedirectLoop
+        // verdict instead of the bare "HTTP 302" string.
+        var verdict = HumanActionDetector.Detect(html: string.Empty, "https://macleans.ca/", statusCode);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.RedirectLoop);
+        verdict.Domain.Should().Be("macleans.ca");
+        verdict.Detail.Should().Be($"HTTP {statusCode}");
+    }
+
+    [Fact]
+    public void Detect_NoStatusCode_DoesNotFalselyFlagRedirectLoop()
+    {
+        // HTML-only callers pass statusCode 0 — a clean page must never be mistaken
+        // for a redirect loop just because no status was supplied.
+        const string html = "<html><body><p>An ordinary article paragraph with real content.</p></body></html>";
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/page", statusCode: 0);
+
+        verdict.Should().BeNull();
+    }
+
     [Fact]
     public void Detect_RegionBlockText_ReturnsRegionBlockVariant()
     {
@@ -331,6 +364,7 @@ public class HumanActionDetectorTests
     [InlineData(HumanActionVariant.TwoFactor, "Two-factor code required at nytimes.com")]
     [InlineData(HumanActionVariant.Paywall, "Article is paywalled at nytimes.com")]
     [InlineData(HumanActionVariant.RegionBlock, "Site blocks this region (HTTP 451)")]
+    [InlineData(HumanActionVariant.RedirectLoop, "Site is stuck in a redirect loop")]
     [InlineData(HumanActionVariant.Generic, "Action needed at nytimes.com")]
     public void GetHumanActionCopy_RendersVariantSpecificHeadline(HumanActionVariant variant, string expectedHeadline)
     {
@@ -386,6 +420,7 @@ public class HumanActionDetectorTests
     [InlineData(HumanActionVariant.TwoFactor)]
     [InlineData(HumanActionVariant.Paywall)]
     [InlineData(HumanActionVariant.RegionBlock)]
+    [InlineData(HumanActionVariant.RedirectLoop)]
     [InlineData(HumanActionVariant.Generic)]
     public void GetHumanActionCopy_AllVariantsFitWithinBoxWidth(HumanActionVariant variant)
     {

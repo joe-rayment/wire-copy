@@ -84,6 +84,35 @@ public class PageLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_PreferBrowser_HttpFallbackReturns3xx_SurfacesRedirectLoopVerdict()
+    {
+        // workspace-odn5: end-to-end coverage of the HTTP-path redirect-loop seam.
+        // The podcast ReadingListContentProvider loads with PreferBrowser=true; when
+        // the browser leg fails and the HTTP fallback hits a redirect loop, the
+        // HttpClientHandler exhausts its auto-redirect budget and returns a FINAL 3xx.
+        // That status must surface end-to-end as a typed RedirectLoop verdict
+        // (TryHttpFetchAsync -> HumanActionDetector.Detect), not a bare "HTTP 302"
+        // string. FakeHttpMessageHandler returns the status verbatim, standing in for
+        // the post-budget 3xx response.
+        var httpClient = CreateMockHttpClient(HttpStatusCode.Redirect, string.Empty); // 302
+        var sut = CreateSut(httpClient);
+
+        // Force the browser leg to fail so PreferBrowser falls back to HTTP.
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
+
+        var request = new PageLoadRequest { Url = "https://macleans.ca/", PreferBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeFalse();
+        result.RequiredAction.Should().NotBeNull(
+            "a final 3xx after the redirect budget is exhausted is a redirect loop, not an opaque HTTP error");
+        result.RequiredAction!.Variant.Should().Be(HumanActionVariant.RedirectLoop);
+        result.RequiredAction.Domain.Should().Be("macleans.ca");
+    }
+
+    [Fact]
     public async Task LoadAsync_WithHttpClient_CloudflareChallenge_FallsBackToBrowser()
     {
         // Arrange - Cloudflare challenge HTML should trigger JS-required detection
@@ -896,5 +925,108 @@ public class PageLoaderRetryOnStalePageTests
         result.ErrorMessage.Should().Contain("net::ERR_NAME_NOT_RESOLVED");
         await _browserSession.DidNotReceive().InvalidatePageAsync();
         await _browserSession.Received(1).GetOrCreatePageAsync(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BrowserFetch_RedirectLoop_SurfacesTypedRedirectLoopVerdict()
+    {
+        // workspace-odn5: a Chromium redirect cycle (net::ERR_TOO_MANY_REDIRECTS,
+        // confirmed live as the Playwright wrapping of a 302-looping origin and
+        // intermittently on Cloudflare-fronted macleans.ca) must surface a typed
+        // RedirectLoop verdict — so the orchestrator renders the actionable
+        // "open in your browser, then press R" box — rather than the raw
+        // "Browser error: net::ERR_TOO_MANY_REDIRECTS" string. It must NOT trigger
+        // the workspace-m7nc stale-page retry (a loop is not a stale target).
+        var loopingPage = CreateThrowingPage("net::ERR_TOO_MANY_REDIRECTS at https://macleans.ca/");
+
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns(Task.FromResult(loopingPage));
+
+        var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
+        var request = new PageLoadRequest { Url = "https://macleans.ca/", ForceBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeFalse();
+        result.RequiredAction.Should().NotBeNull(
+            "a redirect loop is an actionable human-in-the-loop condition, not an opaque error");
+        result.RequiredAction!.Variant.Should().Be(HumanActionVariant.RedirectLoop);
+        result.RequiredAction.Domain.Should().Be("macleans.ca");
+        result.ErrorMessage.Should().NotContain("ERR_TOO_MANY_REDIRECTS",
+            "the raw Chromium net-error string must not leak into the user-facing failure message");
+
+        // A loop is not a stale target — no wasted invalidate-and-retry round-trip.
+        await _browserSession.DidNotReceive().InvalidatePageAsync();
+        await _browserSession.Received(1).GetOrCreatePageAsync(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BrowserFetch_NavigationInterruptedIntoErrorPage_SurfacesGenericVerdict()
+    {
+        // workspace-odn5: a sibling of the redirect cycle observed live on
+        // macleans.ca — the Cloudflare consent/bot bounce supersedes the real
+        // navigation and lands on chrome-error://chromewebdata/. Surface the
+        // deliberately non-committal Generic verdict (root cause is ambiguous)
+        // so the user still gets an actionable box instead of the raw multi-line
+        // Playwright "interrupted by another navigation" string.
+        var bouncedPage = CreateThrowingPage(
+            "Navigation to \"https://macleans.ca/\" is interrupted by another navigation to \"chrome-error://chromewebdata/\"");
+
+        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+            .Returns(Task.FromResult(bouncedPage));
+
+        var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
+        var request = new PageLoadRequest { Url = "https://macleans.ca/", ForceBrowser = true };
+
+        var result = await sut.LoadAsync(request);
+
+        result.Success.Should().BeFalse();
+        result.RequiredAction.Should().NotBeNull();
+        result.RequiredAction!.Variant.Should().Be(HumanActionVariant.Generic);
+        result.RequiredAction.Domain.Should().Be("macleans.ca");
+        result.ErrorMessage.Should().NotContain("chrome-error",
+            "the raw Playwright navigation-interruption string must not leak into the user-facing message");
+        await _browserSession.DidNotReceive().InvalidatePageAsync();
+    }
+}
+
+/// <summary>
+/// Unit tests for the redirect-loop heuristic
+/// (<see cref="PageLoader.LooksLikeRedirectLoop"/>) that drives the workspace-odn5
+/// typed-verdict path. Recognises the Chromium <c>net::ERR_TOO_MANY_REDIRECTS</c>
+/// net error (and the humanised "too many redirects" phrasing) so the loader can
+/// surface a <see cref="HumanActionVariant.RedirectLoop"/> box instead of a raw
+/// browser-error string.
+/// </summary>
+[Trait("Category", "Unit")]
+public class PageLoaderRedirectLoopHeuristicTests
+{
+    [Theory]
+    [InlineData("net::ERR_TOO_MANY_REDIRECTS at https://macleans.ca/", true)]
+    [InlineData("Page.goto: net::ERR_TOO_MANY_REDIRECTS at https://www.macleans.ca/", true)]
+    [InlineData("err_too_many_redirects", true)] // case-insensitive
+    [InlineData("The site reported too many redirects", true)] // humanised phrasing
+    [InlineData("net::ERR_NAME_NOT_RESOLVED at https://invalid.example", false)]
+    [InlineData("Target page, context or browser has been closed", false)]
+    [InlineData("Timeout 30000ms exceeded", false)]
+    [InlineData("", false)]
+    public void LooksLikeRedirectLoop_RecognisesTooManyRedirects(string errorMessage, bool expected)
+    {
+        PageLoader.LooksLikeRedirectLoop(errorMessage).Should().Be(expected);
+    }
+
+    [Theory]
+    // Failed bounce — BOTH markers present (the macleans.ca shape captured live).
+    [InlineData("Navigation to \"https://macleans.ca/\" is interrupted by another navigation to \"chrome-error://chromewebdata/\"", true)]
+    [InlineData("INTERRUPTED BY ANOTHER NAVIGATION to CHROME-ERROR://x", true)] // case-insensitive
+    // Healthy fast redirect — interrupted, but to a real URL (no chrome-error): must NOT fire.
+    [InlineData("Navigation to \"https://a.com/\" is interrupted by another navigation to \"https://a.com/home\"", false)]
+    // chrome-error alone, without the interruption phrasing: must NOT fire.
+    [InlineData("net::ERR_FAILED at chrome-error://chromewebdata/", false)]
+    [InlineData("net::ERR_TOO_MANY_REDIRECTS at https://macleans.ca/", false)]
+    [InlineData("", false)]
+    public void LooksLikeInterruptedNavigation_RequiresBothMarkers(string errorMessage, bool expected)
+    {
+        PageLoader.LooksLikeInterruptedNavigation(errorMessage).Should().Be(expected);
     }
 }

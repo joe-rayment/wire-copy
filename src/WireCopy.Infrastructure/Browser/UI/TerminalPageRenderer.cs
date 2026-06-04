@@ -315,6 +315,10 @@ public class TerminalPageRenderer : IPageRenderer
                 "Site blocks this region (HTTP 451)",
                 "Try a different network or VPN",
                 "b:back"),
+            Domain.Enums.Browser.HumanActionVariant.RedirectLoop => (
+                "Site is stuck in a redirect loop",
+                "Open it in your browser, then press R",
+                $"{d} \u2014 Shift+O:open  b:back"),
             _ => (
                 $"Action needed at {d}",
                 "Open it in your browser, then press R",
