@@ -57,6 +57,23 @@ public class CollectionRepository : ICollectionRepository
         return collection;
     }
 
+    public async Task<int> CountReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        // Single COUNT over CollectionItems joined to their parent collection.
+        // Excludes items older than the cutoff so the count matches the list the
+        // user sees after expired items are purged (workspace-hlzy). The legacy
+        // "Read Later" name is included to cover users not yet migrated.
+        var cutoff = DateTime.UtcNow - maxAge;
+        return await (
+            from item in _context.Set<CollectionItem>()
+            join collection in _context.Set<Collection>()
+                on item.CollectionId equals collection.Id
+            where item.SavedAt >= cutoff
+                && (collection.Name == DefaultCollectionName || collection.Name == "Read Later")
+            select item)
+            .CountAsync(cancellationToken);
+    }
+
     public Task AddAsync(Collection collection, CancellationToken cancellationToken = default)
     {
         _context.Set<Collection>().Add(collection);

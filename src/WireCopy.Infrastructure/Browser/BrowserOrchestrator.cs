@@ -26,6 +26,12 @@ public partial class BrowserOrchestrator : IBrowserService
     private const int MinContentWidth = 40;
     private const int MaxContentWidth = 120;
 
+    // TTL for Reading List items. Items older than this are purged on the
+    // collection-load path (RefreshCollectionsAsync) and excluded from the
+    // launcher card's saved-count (GetReadingListItemCount) so the tile
+    // subtitle agrees with what the Reading List view shows (workspace-hlzy).
+    private const int ReadingListExpiryHours = 16;
+
     private readonly IPageLoader _pageLoader;
     private readonly INavigationTreeBuilder _treeBuilder;
     private readonly IReadableContentExtractor _contentExtractor;
@@ -1518,9 +1524,9 @@ public partial class BrowserOrchestrator : IBrowserService
             using var scope = _scopeFactory.CreateScope();
             var collectionService = CreateCollectionService(scope);
 
-            // Purge expired reading list items (16-hour TTL) before loading
+            // Purge expired reading list items before loading
             await collectionService.PurgeExpiredReadingListItemsAsync(
-                TimeSpan.FromHours(16), cancellationToken).ConfigureAwait(false);
+                TimeSpan.FromHours(ReadingListExpiryHours), cancellationToken).ConfigureAwait(false);
 
             var allCollections = await collectionService.GetAllCollectionsAsync(cancellationToken).ConfigureAwait(false);
             _commandContext.Collections = allCollections.ToList();

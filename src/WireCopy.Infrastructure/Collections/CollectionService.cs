@@ -196,6 +196,11 @@ public class CollectionService : ICollectionService
         return removed;
     }
 
+    public Task<int> CountReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+    {
+        return _repository.CountReadingListItemsAsync(maxAge, cancellationToken);
+    }
+
     private async Task MergeLegacyReadLaterAsync(CancellationToken cancellationToken)
     {
         var legacy = await _repository.GetByNameAsync("Read Later", cancellationToken).ConfigureAwait(false);

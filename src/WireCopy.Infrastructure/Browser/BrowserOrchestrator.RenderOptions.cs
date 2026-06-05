@@ -78,11 +78,14 @@ public partial class BrowserOrchestrator
     }
 
     /// <summary>
-    /// Returns the saved-item count for the Reading List collection, used by
-    /// the launcher tile's subtitle (workspace-fbcn). Sync wait over SQLite is
-    /// fine here — single indexed read on a local file, sub-millisecond. On
-    /// failure (DB unavailable etc.) returns 0 so the empty-state copy renders
-    /// rather than letting the launcher fail to render.
+    /// Returns the live non-expired saved-item count for the Reading List, used
+    /// by the launcher tile's subtitle (workspace-fbcn). Counts only items within
+    /// the same TTL the purge uses (<see cref="ReadingListExpiryHours"/>) so the
+    /// subtitle never shows a stale total for items that have since expired
+    /// (workspace-hlzy). Backed by a single COUNT query — no row materialization —
+    /// so the sync wait over SQLite is sub-millisecond. On failure (DB unavailable
+    /// etc.) returns 0 so the empty-state copy renders rather than letting the
+    /// launcher fail to render.
     /// </summary>
     private int GetReadingListItemCount()
     {
@@ -90,8 +93,9 @@ public partial class BrowserOrchestrator
         {
             using var scope = _scopeFactory.CreateScope();
             var collections = scope.ServiceProvider.GetRequiredService<ICollectionService>();
-            var readingList = collections.GetReadingListAsync().GetAwaiter().GetResult();
-            return readingList.Items.Count;
+            return collections
+                .CountReadingListItemsAsync(TimeSpan.FromHours(ReadingListExpiryHours))
+                .GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {

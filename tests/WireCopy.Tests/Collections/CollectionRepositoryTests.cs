@@ -170,6 +170,78 @@ public class CollectionRepositoryTests : TestDatabaseFixture
 
     #endregion
 
+    #region CountReadingListItemsAsync
+
+    [Fact]
+    public async Task CountReadingListItemsAsync_CountsRecentItemsInReadingList()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://a.com", "A");
+        collection.AddItem("https://b.com", "B");
+        await _sut.AddAsync(collection);
+        await DbContext.SaveChangesAsync();
+
+        var count = await _sut.CountReadingListItemsAsync(TimeSpan.FromHours(16));
+
+        count.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CountReadingListItemsAsync_ExcludesItemsOlderThanMaxAge()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://a.com", "A");
+        await _sut.AddAsync(collection);
+        await DbContext.SaveChangesAsync();
+
+        // maxAge of zero => cutoff is "now"; items saved a moment ago are older
+        // than the cutoff and are therefore excluded. This is the core fix for
+        // workspace-hlzy: the card no longer counts items past their TTL.
+        var count = await _sut.CountReadingListItemsAsync(TimeSpan.Zero);
+
+        count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CountReadingListItemsAsync_IgnoresItemsInOtherCollections()
+    {
+        var readingList = Collection.Create("Reading List");
+        readingList.AddItem("https://a.com", "A");
+        var other = Collection.Create("Work");
+        other.AddItem("https://b.com", "B");
+        other.AddItem("https://c.com", "C");
+        await _sut.AddAsync(readingList);
+        await _sut.AddAsync(other);
+        await DbContext.SaveChangesAsync();
+
+        var count = await _sut.CountReadingListItemsAsync(TimeSpan.FromHours(16));
+
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CountReadingListItemsAsync_IncludesLegacyReadLater()
+    {
+        var legacy = Collection.Create("Read Later");
+        legacy.AddItem("https://a.com", "A");
+        await _sut.AddAsync(legacy);
+        await DbContext.SaveChangesAsync();
+
+        var count = await _sut.CountReadingListItemsAsync(TimeSpan.FromHours(16));
+
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CountReadingListItemsAsync_NoReadingList_ReturnsZero()
+    {
+        var count = await _sut.CountReadingListItemsAsync(TimeSpan.FromHours(16));
+
+        count.Should().Be(0);
+    }
+
+    #endregion
+
     #region AddAsync and DeleteAsync
 
     [Fact]
