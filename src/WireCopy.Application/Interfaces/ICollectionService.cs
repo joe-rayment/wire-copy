@@ -93,4 +93,11 @@ public interface ICollectionService
     /// Removes expired items from the Reading List.
     /// </summary>
     Task<int> PurgeExpiredReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts the non-expired items in the Reading List in a low-overhead way
+    /// (single COUNT query). Used by the launcher tile's subtitle so the count
+    /// reflects the live database rather than a stale snapshot (workspace-hlzy).
+    /// </summary>
+    Task<int> CountReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
 }

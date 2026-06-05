@@ -30,6 +30,15 @@ public interface ICollectionRepository
     Task<Collection> GetOrCreateDefaultAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Counts the non-expired items in the Reading List (including the legacy
+    /// "Read Later" collection) via a single COUNT query — no row materialization.
+    /// An item is non-expired when its <c>SavedAt</c> is within <paramref name="maxAge"/>
+    /// of now, matching the cutoff used by <see cref="ICollectionService.PurgeExpiredReadingListItemsAsync"/>
+    /// so the launcher tile's count agrees with what the Reading List view shows.
+    /// </summary>
+    Task<int> CountReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a new collection.
     /// </summary>
     Task AddAsync(Collection collection, CancellationToken cancellationToken = default);
