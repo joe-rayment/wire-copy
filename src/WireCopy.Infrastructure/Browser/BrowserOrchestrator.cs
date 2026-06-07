@@ -32,6 +32,14 @@ public partial class BrowserOrchestrator : IBrowserService
     // subtitle agrees with what the Reading List view shows (workspace-hlzy).
     private const int ReadingListExpiryHours = 16;
 
+    // Opt-in page-load profiling. Set WIRECOPY_PROFILE_LOAD=1 to log a per-stage
+    // timing breakdown for every foreground article load (cache check -> preload
+    // wait -> browser navigation -> extraction -> retries). Lets a real session
+    // show where the multi-second "opening articles" wait actually goes. Off by
+    // default (zero overhead); mirrors the WIRECOPY_DEBUG_RENDER_FRAMES pattern.
+    private static readonly bool ProfileLoadStages =
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_PROFILE_LOAD"));
+
     private readonly IPageLoader _pageLoader;
     private readonly INavigationTreeBuilder _treeBuilder;
     private readonly IReadableContentExtractor _contentExtractor;
@@ -178,14 +186,42 @@ public partial class BrowserOrchestrator : IBrowserService
     public async Task<Page> LoadPageAsync(string url, CancellationToken cancellationToken = default)
     {
         var loadTimer = System.Diagnostics.Stopwatch.StartNew();
-        void ReportStage(string stage) => _loadingStatus = new LoadingStatus
+        var lastStageMs = 0L;
+        void ReportStage(string stage)
         {
-            Stage = stage,
-            ElapsedMs = loadTimer.ElapsedMilliseconds,
-            Url = url,
-        };
+            var nowMs = loadTimer.ElapsedMilliseconds;
+            if (ProfileLoadStages)
+            {
+                // Delta = time spent in the PREVIOUS stage; total = wall-clock so far.
+                _logger.LogInformation(
+                    "[load-profile] {Stage,-24} +{DeltaMs,5}ms  (t={TotalMs}ms)  {Url}",
+                    stage,
+                    nowMs - lastStageMs,
+                    nowMs,
+                    url);
+            }
+
+            lastStageMs = nowMs;
+            _loadingStatus = new LoadingStatus
+            {
+                Stage = stage,
+                ElapsedMs = nowMs,
+                Url = url,
+            };
+        }
 
         var result = await _pipeline.LoadAsync(url, ReportStage, cancellationToken).ConfigureAwait(false);
+        if (ProfileLoadStages)
+        {
+            _logger.LogInformation(
+                "[load-profile] {Stage,-24} +{DeltaMs,5}ms  (t={TotalMs}ms)  via={Method}  {Url}",
+                "DONE",
+                loadTimer.ElapsedMilliseconds - lastStageMs,
+                loadTimer.ElapsedMilliseconds,
+                result.FetchMethod,
+                url);
+        }
+
         _lastLoadFetchMethod = result.FetchMethod;
 
         // Store background quality retry task if the pipeline scheduled one
