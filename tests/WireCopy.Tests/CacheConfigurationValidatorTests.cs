@@ -23,6 +23,16 @@ public class CacheConfigurationValidatorTests
     }
 
     [Fact]
+    public void DefaultConfig_PreloadUseBrowser_IsTrue()
+    {
+        // Browser-first background prefetch is the default; HTTP is a per-URL fallback.
+        var config = new CacheConfiguration();
+
+        config.PreloadUseBrowser.Should().BeTrue(
+            "background prefetch routes through the browser preload context by default");
+    }
+
+    [Fact]
     public void Validate_ZeroMaxEntries_Fails()
     {
         var config = new CacheConfiguration { MaxEntries = 0 };

@@ -147,9 +147,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
     /// <inheritdoc />
     public event Action? ProgressChanged;
 
-    private bool CanBrowserPreload => _browserSession?.HasBrowserContext == true && _hasPaywalledCookies;
+    // Eligibility is gated on the PRELOAD context, not the foreground _context,
+    // so default-on prefetch does not require the user to navigate once in the
+    // foreground first. HasPreloadContext is true whenever the session is alive;
+    // the preload context itself is launched lazily on first background page.
+    private bool CanBrowserPreload => _browserSession?.HasPreloadContext == true && _hasPaywalledCookies;
 
-    private bool CanBrowserPreloadGeneral => _browserSession?.HasBrowserContext == true;
+    private bool CanBrowserPreloadGeneral => _browserSession?.HasPreloadContext == true;
+
+    // Master switch for browser-first prefetch of non-paywalled, non-section URLs.
+    // When false the feature reverts to today's HTTP-by-default routing (kill switch).
+    private bool BrowserPrefetchEnabled =>
+        _config.PreloadUseBrowser && _browserSession?.HasPreloadContext == true;
 
     public void NotifyPageLoaded(Page page)
     {
@@ -1152,6 +1161,18 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        // Browser-first by default: route the URL that would otherwise fall through
+        // to a plain HTTP preload through the persistent preload context instead.
+        // The dispatch loop branches on NeedsBrowser and the per-URL browser nav
+        // falls back to HTTP on failure (BrowserPreloadUrlAsync).
+        // Section/link-list pages stay on the fast HTTP path: the browser nav is
+        // slower and unnecessary for free section pages, and they change frequently.
+        if (BrowserPrefetchEnabled && !PageClassifier.IsSectionUrlPattern(url))
+        {
+            items.Add(new PreloadItem(url, listIndex, NeedsBrowser: true));
+            return;
+        }
+
         items.Add(new PreloadItem(url, listIndex));
     }
 
@@ -1615,11 +1636,6 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     private async Task BrowserPreloadUrlAsync(string url, CancellationToken cancellationToken)
     {
-        if (_browserSession == null)
-        {
-            return;
-        }
-
         if (IsPaywalledDomain(url) && _paywalledPreloadCount >= _config.MaxPaywalledPreloads)
         {
             _logger.LogDebug(
@@ -1640,10 +1656,58 @@ internal sealed class BackgroundPreloadService : IPreloadService
             return;
         }
 
+        // Register in-flight BEFORE navigation, mirroring the HTTP path
+        // (PreloadUrlAsync). This lets a foreground Enter for the same URL await
+        // the browser nav via WaitForInFlightAsync instead of re-navigating, and
+        // de-duplicates concurrent preloads. Every exit path must complete the TCS
+        // or the foreground would block up to its cap and DequeueNext would treat
+        // the URL as permanently in-flight.
+        var normalizedUrl = UrlNormalizer.Normalize(url);
+        var tcs = new TaskCompletionSource<PageLoadResult>();
+        if (_inFlight.GetOrAdd(normalizedUrl, tcs.Task) != tcs.Task)
+        {
+            _logger.LogDebug("Skipping duplicate browser pre-load for {Url}", url);
+            return;
+        }
+
+        // workspace-7xw0 history parity with the HTTP path.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = PreloadOutcome.Failed;
+        string? outcomeReason = null;
+        var fellBackToHttp = false;
+
+        // HTTP fallback used when the browser transport is unavailable or a nav
+        // fails. We must complete + remove the browser TCS BEFORE delegating, or
+        // PreloadUrlAsync's own _inFlight.GetOrAdd would observe the browser TCS,
+        // log "duplicate", and return without fetching. The HTTP path registers
+        // its own in-flight entry and runs the full caching/HITL gauntlet.
+        async Task FallbackToHttpAsync(string reason)
+        {
+            if (fellBackToHttp || !_config.PreloadUseBrowser)
+            {
+                return;
+            }
+
+            fellBackToHttp = true;
+            _inFlight.TryRemove(normalizedUrl, out _);
+            tcs.TrySetResult(PageLoadResult.Failure(reason));
+            outcome = PreloadOutcome.Skipped;
+            outcomeReason = reason;
+            _logger.LogDebug("Browser preload falling back to HTTP for {Url}: {Reason}", url, reason);
+            await PreloadUrlAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
+            if (_browserSession == null)
+            {
+                await FallbackToHttpAsync("browser session unavailable").ConfigureAwait(false);
+                return;
+            }
+
             _currentlyFetchingUrl = url;
             Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, DateTime.UtcNow.Ticks);
+            _currentStage = PreloadStage.Fetching;
             _logger.LogDebug("Browser pre-loading: {Url}", url);
 
             // Lazily create background page on first use.
@@ -1662,6 +1726,7 @@ internal sealed class BackgroundPreloadService : IPreloadService
             if (_backgroundPage == null)
             {
                 _logger.LogWarning("Browser context not available for background preload of {Url}", url);
+                await FallbackToHttpAsync("background page unavailable").ConfigureAwait(false);
                 return;
             }
 
@@ -1722,6 +1787,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
             var html = await _backgroundPage.ContentAsync().ConfigureAwait(false);
             var finalUrl = _backgroundPage.Url;
 
+            _currentStage = PreloadStage.Detecting;
+
             // Typed HITL detection on the browser preload path (workspace-0b9s QA #3).
             // Previously this branch only called IsBotChallengePage(html), set the
             // circuit breaker, and returned silently — so the NYT scenario named in
@@ -1748,6 +1815,14 @@ internal sealed class BackgroundPreloadService : IPreloadService
                     NotifyProgressChanged();
                 }
 
+                // Complete in-flight with a non-Success result so a foreground
+                // WaitForInFlightAsync returns cleanly and falls through to its own
+                // load path instead of blocking. Do NOT fall back to HTTP here —
+                // a HITL wall is a genuine block, not a transport failure.
+                tcs.TrySetResult(PageLoadResult.Failure(
+                    browserDetection?.Variant.ToString() ?? "bot detection"));
+                outcome = PreloadOutcome.Skipped;
+                outcomeReason = browserDetection?.Variant.ToString() ?? "bot detection";
                 return;
             }
 
@@ -1758,15 +1833,24 @@ internal sealed class BackgroundPreloadService : IPreloadService
             if (!CachingPageLoader.HasSufficientContent(html, MinPaywalledWordCount))
             {
                 _logger.LogDebug("Browser preload content below threshold for {Url}", url);
+                tcs.TrySetResult(PageLoadResult.Failure("insufficient content"));
+                outcome = PreloadOutcome.Skipped;
+                outcomeReason = "insufficient content";
                 return;
             }
 
-            // Cache the rendered HTML
+            // Cache the rendered HTML. Tag the transport as Browser and warm the
+            // PageBuildCache for navigation parity with the HTTP path — otherwise a
+            // foreground Enter would re-extract (SearchCommandHandler /
+            // StrategyChooserHandler / PageLoadPipeline all read TryGetBuildCache).
             var metadata = ExtractMetadata(html);
-            var result = PageLoadResult.Successful(finalUrl, html, metadata);
+            var result = PageLoadResult.Successful(finalUrl, html, metadata, FetchMethod.Browser);
+            _currentStage = PreloadStage.PersistingCache;
             _cache.Put(url, result);
+            await TryBuildAndCachePageAsync(url, result, cancellationToken).ConfigureAwait(false);
 
             // Extract article content for the article cache
+            _currentStage = PreloadStage.ExtractingContent;
             if (_contentExtractor != null && _articleContentCache != null)
             {
                 try
@@ -1809,6 +1893,15 @@ internal sealed class BackgroundPreloadService : IPreloadService
             // the same clear-on-same-origin-success rule applies regardless of whether
             // the preload that succeeds went through HTTP or the browser path.
             ClearBlockedActionForOriginIfMatches(url);
+
+            tcs.TrySetResult(result);
+            outcome = PreloadOutcome.Cached;
+            outcomeReason = null;
+        }
+        catch (OperationCanceledException)
+        {
+            tcs.TrySetCanceled(cancellationToken);
+            throw;
         }
         catch (PlaywrightException ex)
         {
@@ -1816,13 +1909,28 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
             // Page may have crashed — null it so next call creates a fresh one
             _backgroundPage = null;
+
+            // A transient browser nav failure should not drop the URL — give it
+            // one HTTP attempt with full in-flight + caching semantics.
+            await FallbackToHttpAsync("browser nav failed").ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogDebug(ex, "Browser preload error for {Url}", url);
+            tcs.TrySetResult(PageLoadResult.Failure(ex.Message));
+            outcome = PreloadOutcome.Failed;
+            outcomeReason = ex.Message;
         }
         finally
         {
+            // Backstop: if any branch above forgot to complete the TCS, complete it
+            // now so a foreground waiter never hangs and DequeueNext doesn't treat
+            // the URL as permanently in-flight.
+            tcs.TrySetResult(PageLoadResult.Failure("browser preload did not complete"));
+            _inFlight.TryRemove(normalizedUrl, out _);
+            sw.Stop();
+            _currentStage = PreloadStage.Idle;
+            AppendHistory(url, outcome, sw.ElapsedMilliseconds, outcomeReason);
             _currentlyFetchingUrl = null;
             Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, long.MinValue);
             NotifyProgressChanged();
