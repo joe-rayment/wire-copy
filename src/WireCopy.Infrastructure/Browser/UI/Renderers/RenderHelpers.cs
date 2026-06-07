@@ -394,76 +394,15 @@ internal class RenderHelpers
     }
 
     public void WriteLine(string text = "")
-    {
-        try
-        {
-            if (_linesWritten >= TerminalHeight)
-            {
-                return;
-            }
-
-            // Clear full line first when using left margin (centered content)
-            EmitCursorPos(0, _linesWritten);
-            EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
-            {
-                EmitCursorPos(LeftMargin, _linesWritten);
-            }
-
-            EmitWrite(text);
-            LogDebugFrame("WriteLine", _linesWritten, text);
-            _linesWritten++;
-        }
-        catch
-        {
-            Console.WriteLine(text);
-            _linesWritten++;
-        }
-    }
+        => WriteLineCore(text, "WriteLine", text, () => EmitWrite(text));
 
     public void WriteLineWithHighlight(string text, string searchQuery, ThemePalette palette)
-    {
-        try
-        {
-            if (_linesWritten >= TerminalHeight)
-            {
-                return;
-            }
-
-            EmitCursorPos(0, _linesWritten);
-            EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
-            {
-                EmitCursorPos(LeftMargin, _linesWritten);
-            }
-
-            WriteSearchHighlightedContent(text, searchQuery, palette);
-            LogDebugFrame("WriteLineWithHighlight", _linesWritten, text);
-            _linesWritten++;
-        }
-        catch
-        {
-            Console.WriteLine(text);
-            _linesWritten++;
-        }
-    }
+        => WriteLineCore(text, "WriteLineWithHighlight", text, () =>
+            WriteSearchHighlightedContent(text, searchQuery, palette));
 
     public void WriteLineWithIndicator(string text, string indicatorAnsi, string? searchQuery, ThemePalette? palette)
-    {
-        try
+        => WriteLineCore(text, "WriteLineWithIndicator", indicatorAnsi + text, () =>
         {
-            if (_linesWritten >= TerminalHeight)
-            {
-                return;
-            }
-
-            EmitCursorPos(0, _linesWritten);
-            EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
-            {
-                EmitCursorPos(LeftMargin, _linesWritten);
-            }
-
             // Write the indicator prefix
             EmitWrite(indicatorAnsi);
 
@@ -478,16 +417,7 @@ internal class RenderHelpers
             {
                 EmitWrite(content);
             }
-
-            LogDebugFrame("WriteLineWithIndicator", _linesWritten, indicatorAnsi + text);
-            _linesWritten++;
-        }
-        catch
-        {
-            Console.WriteLine(text);
-            _linesWritten++;
-        }
-    }
+        });
 
     /// <summary>
     /// Writes a line with a paragraph indicator and optional underline for the cursor line.
@@ -502,21 +432,8 @@ internal class RenderHelpers
         ThemePalette? palette,
         int terminalWidth = 0,
         ThemeColor? cursorColor = null)
-    {
-        try
+        => WriteLineCore(text, "WriteLineWithDualIndicator", text, () =>
         {
-            if (_linesWritten >= TerminalHeight)
-            {
-                return;
-            }
-
-            EmitCursorPos(0, _linesWritten);
-            EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
-            {
-                EmitCursorPos(LeftMargin, _linesWritten);
-            }
-
             var cursorFg = isCursorLine && cursorColor != null ? cursorColor.Value.AnsiFg : string.Empty;
             var cursorFgOff = isCursorLine && cursorColor != null ? "\x1b[0m" : string.Empty;
 
@@ -596,44 +513,14 @@ internal class RenderHelpers
             }
 
             EmitWrite("\x1b[K");
-            LogDebugFrame("WriteLineWithDualIndicator", _linesWritten, text);
-            _linesWritten++;
-        }
-        catch
-        {
-            Console.WriteLine(text);
-            _linesWritten++;
-        }
-    }
+        });
 
     public void WriteLineWithFocusHighlight(string text, ThemePalette palette)
-    {
-        try
+        => WriteLineCore(text, "WriteLineWithFocusHighlight", text, () =>
         {
-            if (_linesWritten >= TerminalHeight)
-            {
-                return;
-            }
-
-            EmitCursorPos(0, _linesWritten);
-            EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
-            {
-                EmitCursorPos(LeftMargin, _linesWritten);
-            }
-
             EmitWrite($"{palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{text}{AnsiCodes.Reset}");
-
             EmitWrite("\x1b[K");
-            LogDebugFrame("WriteLineWithFocusHighlight", _linesWritten, text);
-            _linesWritten++;
-        }
-        catch
-        {
-            Console.WriteLine(text);
-            _linesWritten++;
-        }
-    }
+        });
 
     /// <summary>
     /// Logs a rendered line to the debug frame file when WIRECOPY_DEBUG_RENDER_FRAMES is set.
@@ -758,6 +645,41 @@ internal class RenderHelpers
         }
 
         return text[startIndex..];
+    }
+
+    /// <summary>
+    /// Shared frame-line writer. Owns the viewport guard, cursor positioning,
+    /// left-margin line-clear, debug-frame logging, line-count bookkeeping, and
+    /// the non-TTY catch fallback that every WriteLine* variant repeats. Each
+    /// variant supplies only its body (<paramref name="emitBody"/>) plus the text
+    /// used for debug logging and the fallback Console.WriteLine.
+    /// </summary>
+    private void WriteLineCore(string fallbackText, string debugSource, string debugText, Action emitBody)
+    {
+        try
+        {
+            if (_linesWritten >= TerminalHeight)
+            {
+                return;
+            }
+
+            // Clear full line first when using left margin (centered content)
+            EmitCursorPos(0, _linesWritten);
+            EmitWrite("\x1b[K");
+            if (LeftMargin > 0)
+            {
+                EmitCursorPos(LeftMargin, _linesWritten);
+            }
+
+            emitBody();
+            LogDebugFrame(debugSource, _linesWritten, debugText);
+            _linesWritten++;
+        }
+        catch
+        {
+            Console.WriteLine(fallbackText);
+            _linesWritten++;
+        }
     }
 
     /// <summary>
