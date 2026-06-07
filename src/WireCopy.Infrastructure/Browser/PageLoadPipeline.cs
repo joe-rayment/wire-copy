@@ -300,18 +300,14 @@ public class PageLoadPipeline
                 loadResult.FetchMethod,
                 url);
 
-            _pageCache.Remove(url);
             reportStage?.Invoke("Retrying with browser...");
-
-            var retryResult = await _pageLoader.LoadAsync(
+            (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
+                url,
                 new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                page,
+                lastBuildResult,
+                fetchMethod,
                 cancellationToken).ConfigureAwait(false);
-
-            if (retryResult.Success)
-            {
-                fetchMethod = retryResult.FetchMethod;
-                (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken).ConfigureAwait(false);
-            }
         }
 
         _logger.LogInformation("Page loaded: {Title} - {LinkCount} links, {HasReadable} readable",
@@ -682,6 +678,33 @@ public class PageLoadPipeline
     }
 
     /// <summary>
+    /// The recurring recovery step shared by the load/quality-retry ladders:
+    /// evict <paramref name="url"/> from the cache, re-load it with
+    /// <paramref name="request"/>, and — only if that load succeeds — rebuild the
+    /// page. On success returns the rebuilt page, its build cache, and the new
+    /// fetch method; on failure returns the supplied current values unchanged
+    /// (the cache is evicted either way, matching the original inline blocks).
+    /// </summary>
+    private async Task<(Page Page, PageBuildCache? Build, FetchMethod FetchMethod)> RetryLoadAndBuildAsync(
+        string url,
+        PageLoadRequest request,
+        Page currentPage,
+        PageBuildCache? currentBuild,
+        FetchMethod currentFetchMethod,
+        CancellationToken cancellationToken)
+    {
+        _pageCache.Remove(url);
+        var retryResult = await _pageLoader.LoadAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!retryResult.Success)
+        {
+            return (currentPage, currentBuild, currentFetchMethod);
+        }
+
+        var (page, build) = await BuildPageAsync(retryResult, url, cancellationToken).ConfigureAwait(false);
+        return (page, build, retryResult.FetchMethod);
+    }
+
+    /// <summary>
     /// Determines whether the page needs background quality improvement retries.
     /// </summary>
     private bool NeedsQualityRetry(
@@ -768,16 +791,13 @@ public class PageLoadPipeline
                                     }
                                 }
 
-                                _pageCache.Remove(url);
-                                var autoLoginRetryResult = await _pageLoader.LoadAsync(
+                                (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
+                                    url,
                                     new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                                    page,
+                                    lastBuildResult,
+                                    fetchMethod,
                                     cancellationToken).ConfigureAwait(false);
-
-                                if (autoLoginRetryResult.Success)
-                                {
-                                    fetchMethod = autoLoginRetryResult.FetchMethod;
-                                    (page, lastBuildResult) = await BuildPageAsync(autoLoginRetryResult, url, cancellationToken).ConfigureAwait(false);
-                                }
                             }
                         }
                     }
@@ -797,16 +817,13 @@ public class PageLoadPipeline
                 _logger.LogInformation(
                     "Quality retry: article with no content after browser, retrying: {Url}", url);
 
-                _pageCache.Remove(url);
-                var retryResult = await _pageLoader.LoadAsync(
+                (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
+                    url,
                     new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    page,
+                    lastBuildResult,
+                    fetchMethod,
                     cancellationToken).ConfigureAwait(false);
-
-                if (retryResult.Success)
-                {
-                    fetchMethod = retryResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(retryResult, url, cancellationToken).ConfigureAwait(false);
-                }
             }
 
             // Headless challenge fallback — applies to ALL classifications.
@@ -819,16 +836,13 @@ public class PageLoadPipeline
                 _logger.LogWarning(
                     "Quality retry: bot challenge in headless, retrying headed: {Url}", url);
 
-                _pageCache.Remove(url);
-                var headedResult = await _pageLoader.LoadAsync(
+                (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
+                    url,
                     new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                    page,
+                    lastBuildResult,
+                    fetchMethod,
                     cancellationToken).ConfigureAwait(false);
-
-                if (headedResult.Success)
-                {
-                    fetchMethod = headedResult.FetchMethod;
-                    (page, lastBuildResult) = await BuildPageAsync(headedResult, url, cancellationToken).ConfigureAwait(false);
-                }
             }
 
             // Guide user if still paywalled
