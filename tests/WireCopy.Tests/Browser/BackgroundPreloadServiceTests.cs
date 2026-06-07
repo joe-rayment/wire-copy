@@ -1785,6 +1785,7 @@ public class BackgroundPreloadServiceTests : IDisposable
 
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
@@ -1896,6 +1897,7 @@ public class BackgroundPreloadServiceTests : IDisposable
 
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
@@ -1966,6 +1968,7 @@ public class BackgroundPreloadServiceTests : IDisposable
 
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
@@ -1994,20 +1997,23 @@ public class BackgroundPreloadServiceTests : IDisposable
     [Fact]
     public void BuildQueue_NonPaywalledDomain_StaysOnHttpEvenWithBrowserAndCookies()
     {
-        // Non-paywalled domains (e.g., theverge.com) should never be routed to the
-        // browser preload — HTTP works fine and is much faster.
+        // Legacy HTTP-by-default routing (kill switch): with PreloadUseBrowser=false,
+        // non-paywalled domains stay on the fast HTTP path even when a browser+cookies
+        // are available. (When PreloadUseBrowser is on — the new default — these route
+        // to the browser; see BuildQueue_NonPaywalledDomain_BrowserFirstDefault_RoutesToBrowser.)
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.GetCookieInfoAsync().Returns(new CookieInfo { Exists = true, IsExpired = false });
 
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
             Substitute.For<IIdleDetector>(),
             new HttpClient(),
-            new CacheConfiguration(),
+            new CacheConfiguration { PreloadUseBrowser = false },
             NullLogger<BackgroundPreloadService>.Instance,
             browserConfig: browserConfig,
             cookieManager: cookieManager,
@@ -2037,6 +2043,7 @@ public class BackgroundPreloadServiceTests : IDisposable
         var browserConfig = new BrowserConfiguration { PaywalledDomains = ["nytimes.com"] };
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
@@ -2064,6 +2071,7 @@ public class BackgroundPreloadServiceTests : IDisposable
 
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.HasBrowserContext.Returns(true);
+        browserSession.HasPreloadContext.Returns(true);
 
         using var service = new BackgroundPreloadService(
             Substitute.For<IPageCache>(),
@@ -2090,8 +2098,69 @@ public class BackgroundPreloadServiceTests : IDisposable
         queue.Should().HaveCount(2);
         queue.Single(i => i.Url.Contains("nytimes")).NeedsBrowser.Should().BeTrue(
             "paywalled NYT article in a collection must route to browser preload");
-        queue.Single(i => i.Url.Contains("theverge")).NeedsBrowser.Should().BeFalse(
-            "non-paywalled article in a collection must stay on HTTP");
+        queue.Single(i => i.Url.Contains("theverge")).NeedsBrowser.Should().BeTrue(
+            "with browser-first prefetch on by default, a non-paywalled non-section article " +
+            "now routes to the browser preload too (HTTP becomes the per-URL fallback)");
+    }
+
+    #endregion
+
+    #region Browser-First Default Routing (PreloadUseBrowser)
+
+    [Fact]
+    public void BuildQueue_NonPaywalledDomain_BrowserFirstDefault_RoutesToBrowser()
+    {
+        // Browser-first prefetch is on by default. A non-paywalled, non-section
+        // article URL that today would fall through to a plain HTTP preload is now
+        // promoted to the browser preload path (NeedsBrowser == true) so the
+        // foreground Enter can be served from cache without a second navigation.
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasPreloadContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration(), // PreloadUseBrowser defaults to true
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserSession: browserSession);
+
+        var nodes = CreateContentNodes(
+            "https://www.theverge.com/2026/01/article-one",
+            "https://www.theverge.com/2026/01/article-two");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.theverge.com");
+
+        queue.Should().HaveCount(2);
+        queue.Should().OnlyContain(item => item.NeedsBrowser,
+            "with PreloadUseBrowser on (default) the browser becomes the primary prefetch transport");
+    }
+
+    [Fact]
+    public void BuildQueue_PreloadUseBrowserFalse_StaysOnHttp()
+    {
+        // Kill switch: with PreloadUseBrowser disabled, routing reverts to today's
+        // HTTP-by-default behaviour even when the preload context is reachable.
+        var browserSession = Substitute.For<IBrowserSession>();
+        browserSession.HasPreloadContext.Returns(true);
+
+        using var service = new BackgroundPreloadService(
+            Substitute.For<IPageCache>(),
+            Substitute.For<IIdleDetector>(),
+            new HttpClient(),
+            new CacheConfiguration { PreloadUseBrowser = false },
+            NullLogger<BackgroundPreloadService>.Instance,
+            browserSession: browserSession);
+
+        var nodes = CreateContentNodes(
+            "https://www.theverge.com/2026/01/article-one",
+            "https://www.theverge.com/2026/01/article-two");
+
+        var queue = service.BuildQueue(0, nodes, "https://www.theverge.com");
+
+        queue.Should().HaveCount(2);
+        queue.Should().OnlyContain(item => !item.NeedsBrowser,
+            "with the kill switch off the feature reverts to HTTP-by-default routing");
     }
 
     #endregion

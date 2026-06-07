@@ -31,6 +31,17 @@ public interface IBrowserSession : IBrowserSessionControl
     bool IsBrowserAvailable { get; }
 
     /// <summary>
+    /// Gets a value indicating whether a background page can be created in the
+    /// dedicated headless preload context. Unlike <see cref="HasBrowserContext"/>
+    /// this does NOT require the foreground browser to have been launched first:
+    /// the preload context is launched lazily on demand by
+    /// <see cref="CreateBackgroundPageAsync"/>, so 'reachable' simply means the
+    /// session has not been disposed. Used by default-on background prefetch so
+    /// it does not have to wait for the user to navigate once in the foreground.
+    /// </summary>
+    bool HasPreloadContext { get; }
+
+    /// <summary>
     /// Gets or creates a Playwright page instance. Returns the existing page
     /// if one is active, or creates a new one if none exists or the previous
     /// session has crashed.

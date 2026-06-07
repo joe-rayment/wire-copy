@@ -79,9 +79,17 @@ public class CacheConfiguration
 
     /// <summary>
     /// Maximum number of pages to pre-load via browser per session for non-paywalled
-    /// JS-heavy domains. Default: 20.
+    /// JS-heavy domains. Default: 50.
+    /// Raised from 20 so the now-global browser cap matches <see cref="MaxPreloadLinks"/>
+    /// when <see cref="PreloadUseBrowser"/> is on and the browser bounds all non-paywalled prefetch.
     /// </summary>
-    public int MaxBrowserPreloads { get; init; } = 20;
+    public int MaxBrowserPreloads { get; init; } = 50;
+
+    /// <summary>
+    /// Use the full browser (preload context) for background prefetch by default;
+    /// HTTP becomes a per-URL fallback. Default: true.
+    /// </summary>
+    public bool PreloadUseBrowser { get; init; } = true;
 
     /// <summary>
     /// Maximum number of links to pre-load per page/collection. Default: 50.

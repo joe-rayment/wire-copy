@@ -61,6 +61,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public bool HasBrowserContext => !_disposed && _context != null;
 
     /// <inheritdoc />
+    // The preload context is launched lazily on first use by
+    // CreateBackgroundPageAsync (with its own 2s retry), so we must NOT require
+    // _preloadContext to be pre-launched here — doing so would deadlock first use.
+    // 'Reachable' = the session is not disposed.
+    public bool HasPreloadContext => !_disposed;
+
+    /// <inheritdoc />
     public bool IsBrowserAvailable => true;
 
     /// <inheritdoc />
