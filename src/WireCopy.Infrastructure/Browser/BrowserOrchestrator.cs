@@ -958,20 +958,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     // Spacebar: toggle speed read in Readable view, toggle selection in Hierarchical
                     if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable)
                     {
-                        if (_navigationService.IsSpeedReadActive)
-                        {
-                            _navigationService.StopSpeedRead();
-                        }
-                        else if (_navigationService.CurrentPage?.HasReadableContent() == true)
-                        {
-                            _navigationService.StartSpeedRead();
-                        }
-                        else
-                        {
-                            _navigationService.SetStatusMessage("No readable content for speed reading");
-                        }
-
-                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                        await ToggleSpeedReadAndRenderAsync(options, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
@@ -1145,32 +1132,15 @@ public partial class BrowserOrchestrator : IBrowserService
                 case CommandType.ToggleSpeedRead:
                     if (_navigationService.CurrentContext.ViewMode == ViewMode.Readable)
                     {
-                        if (_navigationService.IsSpeedReadActive)
-                        {
-                            _navigationService.StopSpeedRead();
-                        }
-                        else if (_navigationService.CurrentPage?.HasReadableContent() == true)
-                        {
-                            _navigationService.StartSpeedRead();
-                        }
-                        else
-                        {
-                            _navigationService.SetStatusMessage("No readable content for speed reading");
-                        }
-
-                        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                        await ToggleSpeedReadAndRenderAsync(options, cancellationToken).ConfigureAwait(false);
                     }
 
                     break;
                 case CommandType.SpeedReadFaster:
-                    _navigationService.AdjustSpeedReadWpm(25);
-                    _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
-                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                    await AdjustSpeedReadAsync(25, options, cancellationToken).ConfigureAwait(false);
                     break;
                 case CommandType.SpeedReadSlower:
-                    _navigationService.AdjustSpeedReadWpm(-25);
-                    _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
-                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                    await AdjustSpeedReadAsync(-25, options, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case CommandType.RegenerateArticleLayout:
@@ -1193,6 +1163,41 @@ public partial class BrowserOrchestrator : IBrowserService
             _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
             return true;
         }
+    }
+
+    /// <summary>
+    /// Toggles speed reading in Readable view and re-renders. Shared by the
+    /// Spacebar (ToggleSelection in Readable) and 'f' (ToggleSpeedRead) commands,
+    /// which previously inlined the identical start/stop/no-content logic.
+    /// Callers gate on ViewMode == Readable.
+    /// </summary>
+    private async Task ToggleSpeedReadAndRenderAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        if (_navigationService.IsSpeedReadActive)
+        {
+            _navigationService.StopSpeedRead();
+        }
+        else if (_navigationService.CurrentPage?.HasReadableContent() == true)
+        {
+            _navigationService.StartSpeedRead();
+        }
+        else
+        {
+            _navigationService.SetStatusMessage("No readable content for speed reading");
+        }
+
+        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adjusts the speed-reading WPM by <paramref name="delta"/>, surfaces the new
+    /// rate in the status bar, and re-renders. Shared by SpeedReadFaster/Slower.
+    /// </summary>
+    private async Task AdjustSpeedReadAsync(int delta, RenderOptions options, CancellationToken cancellationToken)
+    {
+        _navigationService.AdjustSpeedReadWpm(delta);
+        _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
+        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
     }
 
     #pragma warning disable S1172 // Parameter kept for delegate signature compatibility
