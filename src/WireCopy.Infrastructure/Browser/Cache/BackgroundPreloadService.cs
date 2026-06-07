@@ -149,8 +149,8 @@ internal sealed class BackgroundPreloadService : IPreloadService
 
     // Eligibility is gated on the PRELOAD context, not the foreground _context,
     // so default-on prefetch does not require the user to navigate once in the
-    // foreground first. HasPreloadContext is true whenever the session is alive;
-    // the preload context itself is launched lazily on first background page.
+    // foreground first. The preload flag stays usable while the session is alive,
+    // and the preload context itself launches lazily on the first background page.
     private bool CanBrowserPreload => _browserSession?.HasPreloadContext == true && _hasPaywalledCookies;
 
     private bool CanBrowserPreloadGeneral => _browserSession?.HasPreloadContext == true;
