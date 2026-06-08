@@ -29,6 +29,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private IPage? _page;
     private IBrowserContext? _preloadContext;
     private bool _pageIsHeadless;
+    private bool _isDocked;
     private bool _disposed;
     private bool _browsersInstalled;
     private long _lastRefocusTicks;
@@ -221,6 +222,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        _isDocked = false;
+
         try
         {
             var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
@@ -240,6 +243,65 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         // Refocus the terminal app so keyboard input works immediately
         await RefocusTerminalAsync().ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<BrowserWindowState?> ToggleWindowDockAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return null;
+        }
+
+        if (_isDocked)
+        {
+            await MinimizeWindowAsync().ConfigureAwait(false); // also clears _isDocked
+            return BrowserWindowState.Minimized;
+        }
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
+
+            // CDP forbids combining windowState with explicit bounds, so un-minimize
+            // in one call before positioning in the next.
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
+            }).ConfigureAwait(false);
+
+            // Right half of the available screen area (as the page sees it).
+            var screen = await _page.EvaluateAsync<int[]>(
+                "() => [window.screen.availWidth, window.screen.availHeight]").ConfigureAwait(false);
+            var screenWidth = screen is { Length: > 0 } ? screen[0] : 1280;
+            var screenHeight = screen is { Length: > 1 } ? screen[1] : 800;
+            var halfWidth = screenWidth / 2;
+
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object>
+                {
+                    ["left"] = halfWidth,
+                    ["top"] = 0,
+                    ["width"] = screenWidth - halfWidth,
+                    ["height"] = screenHeight,
+                },
+            }).ConfigureAwait(false);
+
+            await _page.BringToFrontAsync().ConfigureAwait(false);
+            _isDocked = true;
+            return BrowserWindowState.Docked;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to dock browser window right (non-fatal)");
+            return null;
+        }
     }
 
     /// <inheritdoc />

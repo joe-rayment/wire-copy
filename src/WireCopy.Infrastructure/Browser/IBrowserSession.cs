@@ -81,6 +81,14 @@ public interface IBrowserSession : IBrowserSessionControl
     Task MinimizeWindowAsync();
 
     /// <summary>
+    /// Toggles the headed browser window between docked — pinned to the right half
+    /// of the screen so the terminal "lens" and the live page sit side by side —
+    /// and minimized (full-TUI). Returns the resulting state, or <c>null</c> when
+    /// there is no headed window to toggle (headless or no active page).
+    /// </summary>
+    Task<BrowserWindowState?> ToggleWindowDockAsync();
+
+    /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.
     /// Returns null if no active page or capture fails.
     /// </summary>

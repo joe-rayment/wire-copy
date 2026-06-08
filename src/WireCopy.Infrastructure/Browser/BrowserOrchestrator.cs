@@ -1121,6 +1121,10 @@ public partial class BrowserOrchestrator : IBrowserService
                     await ViewCommandHandler.HandleOpenInBrowser(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
+                case CommandType.ToggleBrowserDock:
+                    await HandleToggleBrowserDockAsync(options, cancellationToken).ConfigureAwait(false);
+                    break;
+
                 case CommandType.AddBookmark:
                     // Only handle in launcher mode (handled above), ignore in other views
                     break;
@@ -1163,6 +1167,28 @@ public partial class BrowserOrchestrator : IBrowserService
             _renderer.RenderError(ex.Message, _navigationService.CurrentPage?.Url ?? "unknown");
             return true;
         }
+    }
+
+    /// <summary>
+    /// Switcher: docks the headed browser to the right half of the screen (the
+    /// "concert" view — terminal lens beside the live page) or minimizes it back to
+    /// full-TUI. Surfaces the resulting state in the status bar; a no-op hint when
+    /// no headed browser window exists yet.
+    /// </summary>
+    private async Task HandleToggleBrowserDockAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        if (_browserSession is IBrowserSession session)
+        {
+            var state = await session.ToggleWindowDockAsync().ConfigureAwait(false);
+            _navigationService.SetStatusMessage(state switch
+            {
+                BrowserWindowState.Docked => "Browser docked right ⇉  app + page side by side",
+                BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
+                _ => "No browser window to dock yet — open a page that uses the browser first",
+            });
+        }
+
+        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
