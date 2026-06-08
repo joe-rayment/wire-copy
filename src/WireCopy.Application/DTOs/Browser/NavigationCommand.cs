@@ -120,6 +120,7 @@ public enum CommandType
     // Browser
     OpenInBrowser,
     GoToUrl,
+    ToggleBrowserDock,
 
     // Layout
     ChooseLayout,
