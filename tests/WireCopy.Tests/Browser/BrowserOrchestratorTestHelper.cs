@@ -75,7 +75,23 @@ internal static class BrowserOrchestratorTestHelper
             browserConfig,
             logger,
             pipeline,
-            Substitute.For<ILayoutVariantProvider>());
+            Substitute.For<ILayoutVariantProvider>(),
+            CreateDockSpotlight());
+    }
+
+    /// <summary>
+    /// DockSpotlight whose session is never docked, so the spotlight enqueues
+    /// nothing and orchestrator tests stay free of background page access.
+    /// </summary>
+    public static DockSpotlight CreateDockSpotlight()
+    {
+        var session = Substitute.For<IBrowserSession>();
+        session.IsDocked.Returns(false);
+        session.HasActiveBrowser.Returns(false);
+        return new DockSpotlight(
+            session,
+            Substitute.For<IPageAccessQueue>(),
+            Substitute.For<ILogger<DockSpotlight>>());
     }
 
     /// <summary>

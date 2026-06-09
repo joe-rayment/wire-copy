@@ -102,7 +102,8 @@ public class CacheServingFlowTests
             browserConfig,
             logger,
             pipeline,
-            Substitute.For<ILayoutVariantProvider>());
+            Substitute.For<ILayoutVariantProvider>(),
+            BrowserOrchestratorTestHelper.CreateDockSpotlight());
     }
 
     #region Loading screen skip for cache hits

@@ -39,7 +39,7 @@ internal static class KeybindingPopup
                 ("R", "refresh (bypass cache)"),
                 ("I", "interactive refresh (login)"),
                 ("o", "open URL bar"),
-                ("O", "dock / undock browser (right)"),
+                ("O", "dock browser right (follows selection)"),
                 ("b", "go back"),
                 ("q", "quit"),
             ],

@@ -72,6 +72,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public bool IsBrowserAvailable => true;
 
     /// <inheritdoc />
+    // Same atomic-read rationale as HasActiveBrowser: a momentarily stale value
+    // is acceptable for this probe — the spotlight re-checks on every sync.
+    public bool IsDocked => !_disposed && _isDocked && _page != null && !_pageIsHeadless;
+
+    /// <inheritdoc />
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

@@ -106,6 +106,11 @@ public static class BrowserDependencyInjection
         // Register page access priority queue (serializes foreground/background access)
         services.AddSingleton<IPageAccessQueue, PageAccessQueue>();
 
+        // Concert-view spotlight: mirrors the link-tree selection onto the docked
+        // headed browser (highlight + scroll-follow). Singleton so the latest-wins
+        // pump and overlay state survive across the whole session.
+        services.AddSingleton<DockSpotlight>();
+
         // Register auto-login service (uses IServiceScopeFactory for scoped ISiteCredentialRepository)
         services.AddSingleton<IAutoLoginService, AutoLoginService>();
 
