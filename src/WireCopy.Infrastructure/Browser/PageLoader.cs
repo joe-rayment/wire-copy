@@ -24,17 +24,25 @@ public class PageLoader : IPageLoader
     private readonly ILogger<PageLoader> _logger;
     private readonly HttpClient? _httpClient;
     private readonly IBrowserSession _browserSession;
+    private readonly IPageAccessQueue? _pageAccessQueue;
 
     public PageLoader(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<PageLoader> logger,
         IBrowserSession browserSession,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        IPageAccessQueue? pageAccessQueue = null)
     {
         _browserConfig = browserConfig.Value;
         _logger = logger;
         _browserSession = browserSession;
         _httpClient = httpClient;
+
+        // workspace-u4o9: when provided, every browser fetch runs under a Foreground
+        // lease so it can never interleave with another navigator of the shared fetch
+        // page (interactive-refresh, human-action watcher reloads). Null keeps the
+        // legacy direct path for tests and standalone use.
+        _pageAccessQueue = pageAccessQueue;
     }
 
     /// <summary>
@@ -630,17 +638,34 @@ public class PageLoader : IPageLoader
         try
         {
             IPage page;
+            PageLease? lease = null;
             try
             {
                 using var pageCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 pageCts.CancelAfter(TimeSpan.FromSeconds(30));
-                page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token).ConfigureAwait(false);
+
+                // workspace-u4o9: hold the Foreground lease for the WHOLE fetch
+                // (navigation through content read) so nothing else can navigate the
+                // fetch page out from under us mid-load.
+                if (_pageAccessQueue != null)
+                {
+                    lease = await _pageAccessQueue
+                        .AcquireAsync(PageAccessPriority.Foreground, request.Headless, pageCts.Token)
+                        .ConfigureAwait(false);
+                    page = lease.Page;
+                }
+                else
+                {
+                    page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning("Browser session creation timed out after 30s for {Url}", request.Url);
                 return PageLoadResult.Failure("Browser launch timed out");
             }
+
+            using var heldLease = lease;
 
             _logger.LogDebug("Navigating to {Url}", request.Url);
             await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs }).ConfigureAwait(false);

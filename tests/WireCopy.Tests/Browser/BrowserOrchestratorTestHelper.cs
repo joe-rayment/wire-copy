@@ -90,7 +90,6 @@ internal static class BrowserOrchestratorTestHelper
         session.HasActiveBrowser.Returns(false);
         return new DockSpotlight(
             session,
-            Substitute.For<IPageAccessQueue>(),
             Substitute.For<ILogger<DockSpotlight>>());
     }
 

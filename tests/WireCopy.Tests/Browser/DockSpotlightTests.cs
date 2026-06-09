@@ -104,35 +104,31 @@ public class DockSpotlightTests
     // ---- Request pump: not-docked bail and coalescing ----
 
     [Fact]
-    public async Task RequestSync_WhenNotDocked_NeverTouchesThePageQueue()
+    public async Task RequestSync_WhenNotDocked_NeverTouchesTheLensPage()
     {
         var session = Substitute.For<IBrowserSession>();
         session.IsDocked.Returns(false);
         session.HasActiveBrowser.Returns(true);
-        var queue = Substitute.For<IPageAccessQueue>();
 
-        await using var spotlight = CreateSpotlight(session, queue);
+        await using var spotlight = CreateSpotlight(session);
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/1", "one"));
         await Task.Delay(200);
 
-        await queue.DidNotReceiveWithAnyArgs()
-            .AcquireAsync(default, default, default);
+        await session.DidNotReceive().GetLensPageAsync();
     }
 
     [Fact]
-    public async Task RequestClear_WhenNothingApplied_NeverTouchesThePageQueue()
+    public async Task RequestClear_WhenNothingApplied_NeverTouchesTheLensPage()
     {
         var session = Substitute.For<IBrowserSession>();
         session.IsDocked.Returns(true);
         session.HasActiveBrowser.Returns(true);
-        var queue = Substitute.For<IPageAccessQueue>();
 
-        await using var spotlight = CreateSpotlight(session, queue);
+        await using var spotlight = CreateSpotlight(session);
         spotlight.RequestClear();
         await Task.Delay(200);
 
-        await queue.DidNotReceiveWithAnyArgs()
-            .AcquireAsync(default, default, default);
+        await session.DidNotReceive().GetLensPageAsync();
     }
 
     [Fact]
@@ -142,13 +138,12 @@ public class DockSpotlightTests
         session.IsDocked.Returns(true);
         session.HasActiveBrowser.Returns(true);
 
-        // A queue whose first acquisition blocks until released lets the test
+        // A lens lookup whose first call blocks until released lets the test
         // pile up a burst behind an in-flight sync, then observe what drains.
         var firstAcquireEntered = new TaskCompletionSource();
         var releaseFirstAcquire = new TaskCompletionSource();
         var acquisitions = 0;
-        var queue = Substitute.For<IPageAccessQueue>();
-        queue.AcquireAsync(default, default, default).ReturnsForAnyArgs(async _ =>
+        session.GetLensPageAsync().Returns(async _ =>
         {
             var n = Interlocked.Increment(ref acquisitions);
             if (n == 1)
@@ -162,12 +157,12 @@ public class DockSpotlightTests
             throw new InvalidOperationException("no page in unit test");
         });
 
-        await using var spotlight = CreateSpotlight(session, queue);
+        await using var spotlight = CreateSpotlight(session);
 
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/1", "one"));
         await firstAcquireEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Burst arrives while sync #1 is stuck in AcquireAsync.
+        // Burst arrives while sync #1 is stuck in GetLensPageAsync.
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/2", "two"));
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/3", "three"));
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/4", "four"));
@@ -183,7 +178,7 @@ public class DockSpotlightTests
     public async Task DisposeAsync_WithIdlePump_CompletesQuickly()
     {
         var session = Substitute.For<IBrowserSession>();
-        var spotlight = CreateSpotlight(session, Substitute.For<IPageAccessQueue>());
+        var spotlight = CreateSpotlight(session);
 
         var dispose = spotlight.DisposeAsync().AsTask();
         var finished = await Task.WhenAny(dispose, Task.Delay(TimeSpan.FromSeconds(5)));
@@ -191,8 +186,8 @@ public class DockSpotlightTests
         finished.Should().BeSameAs(dispose, "an idle pump must not block disposal");
     }
 
-    private static DockSpotlight CreateSpotlight(IBrowserSession session, IPageAccessQueue queue)
-        => new(session, queue, NullLogger<DockSpotlight>.Instance);
+    private static DockSpotlight CreateSpotlight(IBrowserSession session)
+        => new(session, NullLogger<DockSpotlight>.Instance);
 
     private static async Task WaitForAsync(Func<bool> condition)
     {

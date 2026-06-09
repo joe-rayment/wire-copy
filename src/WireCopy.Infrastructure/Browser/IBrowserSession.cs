@@ -77,6 +77,16 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<IPage> GetOrCreatePageAsync(bool headless);
 
     /// <summary>
+    /// Gets (lazily creating) the dedicated LENS tab — the page the docked sidecar
+    /// displays and the ONLY page the dock spotlight navigates (workspace-qigc).
+    /// Fetch traffic stays on the page returned by <see cref="GetOrCreatePageAsync"/>,
+    /// so follow-navigation and page loads can never interrupt each other. Returns
+    /// null when no headed context exists (headless session, no display, disposed) —
+    /// callers that need a window summon one first.
+    /// </summary>
+    Task<IPage?> GetLensPageAsync();
+
+    /// <summary>
     /// Releases the current page reference without disposing it,
     /// allowing it to be reused by subsequent calls.
     /// </summary>

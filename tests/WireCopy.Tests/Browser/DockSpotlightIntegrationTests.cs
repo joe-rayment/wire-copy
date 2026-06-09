@@ -60,17 +60,21 @@ public class DockSpotlightIntegrationTests
             return;
         }
 
-        using var queue = new PageAccessQueue(session, NullLogger<PageAccessQueue>.Instance);
-        await using var spotlight = new DockSpotlight(session, queue, NullLogger<DockSpotlight>.Instance);
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
 
-        await page.GotoAsync(urlA);
         (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
         session.IsDocked.Should().BeTrue();
 
+        // workspace-qigc: the spotlight drives the dedicated LENS tab, never the
+        // fetch page — all probes target the lens.
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull("a docked headed session must provide a lens tab");
+
         // --- 1. Highlight a story far below the fold: overlay appears AND the
-        //        anchor is scrolled into the viewport (off-screen = failure). ---
+        //        anchor is scrolled into the viewport (off-screen = failure).
+        //        The lens starts blank, so this also exercises follow-navigation. ---
         spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-77", "Story 77"));
-        var probe77 = await WaitForSpotlightAsync(page, "story-77");
+        var probe77 = await WaitForSpotlightAsync(lens!, "story-77");
         _out.WriteLine($"story-77 probe: {probe77}");
         probe77.OverlayPresent.Should().BeTrue("the spotlight overlay must exist");
         probe77.AnchorInViewport.Should().BeTrue(
@@ -79,24 +83,74 @@ public class DockSpotlightIntegrationTests
 
         // --- 2. Move the selection: the overlay follows and stays visible. ---
         spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-5", "Story 5"));
-        var probe5 = await WaitForSpotlightAsync(page, "story-5");
+        var probe5 = await WaitForSpotlightAsync(lens!, "story-5");
         _out.WriteLine($"story-5 probe : {probe5}");
         probe5.AnchorInViewport.Should().BeTrue();
         probe5.OverlayWrapsAnchor.Should().BeTrue();
 
-        // --- 3. Follow-navigation: the TUI shows page B (cache hit — the live
-        //        browser was never navigated), the spotlight navigates it. ---
+        // --- 3. Follow-navigation: the TUI shows page B (cache hit — the lens
+        //        was never navigated), the spotlight navigates it. ---
         spotlight.RequestSync(new SpotlightTarget(urlB, $"{urlB}b-story-3", "B-Story 3"));
-        var probeB = await WaitForSpotlightAsync(page, "b-story-3");
-        _out.WriteLine($"b-story-3 probe: {probeB}, live URL: {page.Url}");
-        page.Url.Should().StartWith(urlB, "the live page must follow the TUI to page B");
+        var probeB = await WaitForSpotlightAsync(lens!, "b-story-3");
+        _out.WriteLine($"b-story-3 probe: {probeB}, lens URL: {lens!.Url}");
+        lens.Url.Should().StartWith(urlB, "the lens must follow the TUI to page B");
         probeB.AnchorInViewport.Should().BeTrue();
         probeB.OverlayWrapsAnchor.Should().BeTrue();
 
-        // --- 4. Clear removes the overlay. ---
+        // --- 4. The fetch page was never touched by any of the above. ---
+        page.Url.Should().NotStartWith(urlB, "the spotlight must never navigate the fetch page");
+
+        // --- 5. Clear removes the overlay. ---
         spotlight.RequestClear();
-        await WaitUntilAsync(async () => !(await ProbeAsync(page, "b-story-3")).OverlayPresent);
-        (await ProbeAsync(page, "b-story-3")).OverlayPresent.Should().BeFalse();
+        await WaitUntilAsync(async () => !(await ProbeAsync(lens, "b-story-3")).OverlayPresent);
+        (await ProbeAsync(lens, "b-story-3")).OverlayPresent.Should().BeFalse();
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task SpotlightFollowNav_DoesNotDisturbAConcurrentFetch()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlA = server.UrlFor("a");
+        var urlB = server.UrlFor("b");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        Microsoft.Playwright.IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // workspace-u4o9 regression: kick off a fetch on the foreground page and a
+        // spotlight follow-navigation at the same moment — with the lens tab the two
+        // must be fully independent; before, the follow-nav interrupted the load.
+        var fetch = page.GotoAsync(urlA, new Microsoft.Playwright.PageGotoOptions { Timeout = 15000 });
+        spotlight.RequestSync(new SpotlightTarget(urlB, $"{urlB}b-story-3", "B-Story 3"));
+
+        var response = await fetch;
+        response!.Ok.Should().BeTrue("the fetch must complete normally despite the concurrent follow-nav");
+        page.Url.Should().StartWith(urlA);
+
+        await WaitUntilAsync(() => Task.FromResult(lens!.Url.StartsWith(urlB, StringComparison.Ordinal)));
+        lens!.Url.Should().StartWith(urlB, "the lens follows independently");
     }
 
     [SkippableFact]
@@ -127,27 +181,27 @@ public class DockSpotlightIntegrationTests
             return;
         }
 
-        using var queue = new PageAccessQueue(session, NullLogger<PageAccessQueue>.Instance);
-        await using var spotlight = new DockSpotlight(session, queue, NullLogger<DockSpotlight>.Instance);
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
 
-        await page.GotoAsync(urlA);
         (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
 
         // Light up a story on page A so there is a stale overlay for the follow to clear.
         spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-5", "Story 5"));
-        await WaitForSpotlightAsync(page, "story-5");
+        await WaitForSpotlightAsync(lens!, "story-5");
 
         // workspace-nqqs: reader view emits a follow-only target (page url, no anchor). The
-        // live window must FOLLOW to page B (the article the terminal is now reading — a
-        // cache hit never navigated the live window) AND drop the stale highlight, because
-        // in reader view the page itself is the content so nothing should be boxed.
+        // lens must FOLLOW to page B (the article the terminal is now reading — a cache hit
+        // never navigated the lens) AND drop the stale highlight, because in reader view
+        // the page itself is the content so nothing should be boxed.
         spotlight.RequestSync(new SpotlightTarget(urlB, urlB, string.Empty, FollowPageOnly: true));
         await WaitUntilAsync(async () =>
-            page.Url.StartsWith(urlB, StringComparison.Ordinal)
-            && !(await ProbeAsync(page, "b-story-3")).OverlayPresent);
+            lens!.Url.StartsWith(urlB, StringComparison.Ordinal)
+            && !(await ProbeAsync(lens, "b-story-3")).OverlayPresent);
 
-        page.Url.Should().StartWith(urlB, "the live page must follow the reader view to the article being read");
-        (await ProbeAsync(page, "b-story-3")).OverlayPresent.Should().BeFalse(
+        lens!.Url.Should().StartWith(urlB, "the lens must follow the reader view to the article being read");
+        (await ProbeAsync(lens, "b-story-3")).OverlayPresent.Should().BeFalse(
             "follow-only reader view draws no highlight box — the page itself is the content");
     }
 

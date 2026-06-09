@@ -27,6 +27,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
+
+    // workspace-qigc: dedicated LENS tab — the page the docked sidecar shows and the
+    // dock spotlight navigates. Fetches (PageLoader) keep _page to themselves, so a
+    // follow-navigation can never interrupt a load and a load can never blank the
+    // page the user is reading beside the terminal.
+    private IPage? _lensPage;
     private IBrowserContext? _preloadContext;
     private bool _pageIsHeadless;
     private bool _isDocked;
@@ -92,6 +98,53 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     /// <inheritdoc />
     public bool WantsSidecar => !_disposed && _userWantsDock;
+
+    /// <inheritdoc />
+    public async Task<IPage?> GetLensPageAsync()
+    {
+        if (_disposed)
+        {
+            return null;
+        }
+
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed || _context == null || _pageIsHeadless)
+            {
+                // The lens only exists beside a HEADED window; callers that need one
+                // summon it first (SummonAndDockAsync → GetOrCreatePageAsync(false)).
+                return null;
+            }
+
+            if (_lensPage != null)
+            {
+                try
+                {
+                    _ = _lensPage.Url;
+                    return _lensPage;
+                }
+                catch (PlaywrightException)
+                {
+                    _lensPage = null; // dead tab — recreate below
+                }
+            }
+
+            _lensPage = await _context.NewPageAsync().ConfigureAwait(false);
+            _lensPage.Close += OnLensPageClosed;
+            _logger.LogDebug("Lens tab created");
+            return _lensPage;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to create lens tab (non-fatal)");
+            return null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
 
     /// <inheritdoc />
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
@@ -316,42 +369,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // Ensure a HEADED window exists (switches headless→headed if a headless
             // page is currently serving the reader). The dedicated preload context is
             // untouched, so background prefetch keeps running on its own headless tabs.
-            var page = await GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
+            await GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
 
-            // Point the live window at the same URL the terminal is reading — unless it
-            // is already there (the live fetch used this very window), where re-navigating
-            // would only flash and reload the page (workspace-exbz). Commit-level wait
-            // keeps the "opening…" gap short; the page keeps loading visibly after.
-            var alreadyOnUrl = false;
-            try
-            {
-                alreadyOnUrl = string.Equals(
-                    Cache.UrlNormalizer.Normalize(page.Url),
-                    Cache.UrlNormalizer.Normalize(url),
-                    StringComparison.Ordinal);
-            }
-            catch (PlaywrightException)
-            {
-                // Stale page probe — treat as not-there and navigate below.
-            }
-
-            if (!alreadyOnUrl)
-            {
-                try
-                {
-                    await page.GotoAsync(url, new PageGotoOptions
-                    {
-                        WaitUntil = WaitUntilState.Commit,
-                        Timeout = _browserConfig.PageLoadTimeoutSeconds * 1000,
-                    }).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    // Navigation latency / timeout is non-fatal — still dock the window so
-                    // the user sees the page finish loading beside the terminal.
-                    _logger.LogDebug(ex, "SummonAndDock navigation to {Url} did not fully settle (non-fatal)", url);
-                }
-            }
+            // Make sure the lens tab exists — docking activates it. The summon does NOT
+            // navigate anymore (workspace-u4o9): navigation is the dock spotlight's job
+            // (it follow-navigates the lens right after the post-dock render), and that
+            // single ownership is what guarantees a summon can never interrupt a fetch
+            // in flight on the foreground page.
+            await GetLensPageAsync().ConfigureAwait(false);
 
             // A freshly (re)launched headed window starts minimized (LaunchBrowserAsync),
             // so force-dock rather than toggle.
@@ -1110,7 +1135,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 },
             }).ConfigureAwait(false);
 
-            await _page.BringToFrontAsync().ConfigureAwait(false);
+            // Activate the LENS tab in the docked window when it exists — the sidecar
+            // shows the lens, never the fetch tab (workspace-qigc). Fall back to the
+            // fetch page so the pre-lens dock paths keep working.
+            var front = _lensPage ?? _page;
+            await front.BringToFrontAsync().ConfigureAwait(false);
             _isDocked = true;
             _userWantsDock = true;
 
@@ -1135,8 +1164,30 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         _logger.LogDebug("Headed browser window closed/crashed — cleared docked state");
     }
 
+    // workspace-qigc: lens tab closed (by the user or a context teardown) — drop the
+    // reference so the next GetLensPageAsync recreates it.
+    private void OnLensPageClosed(object? sender, IPage e)
+    {
+        _lensPage = null;
+        _logger.LogDebug("Lens tab closed — will recreate on next use");
+    }
+
     private async Task DisposeContextUnsafeAsync()
     {
+        if (_lensPage != null)
+        {
+            try
+            {
+                await _lensPage.CloseAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error closing lens tab during cleanup");
+            }
+
+            _lensPage = null;
+        }
+
         if (_page != null)
         {
             try

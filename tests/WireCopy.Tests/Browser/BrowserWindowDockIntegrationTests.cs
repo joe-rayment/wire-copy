@@ -117,10 +117,13 @@ public class BrowserWindowDockIntegrationTests
 
         toggled.Should().BeNull("there is no headed window to toggle before the first summon");
 
-        // …but summoning a live URL must open a headed window, navigate it, and dock right.
-        // A data: URL keeps the test network-free while still exercising real navigation.
-        var state = await session.SummonAndDockAsync("data:text/html,<title>lens</title><body>summon test</body>");
+        // …but summoning must open a headed window WITH a lens tab and dock right.
+        // workspace-u4o9: the summon no longer navigates — follow-navigation is the
+        // dock spotlight's job — so the assertion is lens existence + dock geometry.
+        var state = await session.SummonAndDockAsync("https://example.com/");
         state.Should().Be(BrowserWindowState.Docked);
+
+        (await session.GetLensPageAsync()).Should().NotBeNull("the summon must create the lens tab");
 
         var page = await session.GetOrCreatePageAsync(headless: false);
         var screen = await page.EvaluateAsync<int[]>(

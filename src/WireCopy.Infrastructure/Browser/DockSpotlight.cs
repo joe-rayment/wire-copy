@@ -17,10 +17,12 @@ namespace WireCopy.Infrastructure.Browser;
 /// Requests arrive synchronously from the render path on every selection change
 /// and are coalesced by a latest-wins, single-flight pump: rapid j/j/j collapses
 /// to one sync of the newest target, and the input loop is never blocked. Each
-/// sync runs under a Foreground <see cref="IPageAccessQueue"/> lease; when the
-/// live page's URL differs from the TUI's current page (cache hits and headless
-/// preloads never touch the foreground window), the spotlight follow-navigates
-/// first so the lens metaphor holds.
+/// sync drives the session's dedicated LENS tab (workspace-qigc) — the spotlight
+/// is the lens tab's only navigator, and fetches never touch it, so a follow-
+/// navigation can neither interrupt a load nor be interrupted by one. When the
+/// lens URL differs from the TUI's current page (cache hits and HTTP fetches
+/// never navigate any visible page), the spotlight follow-navigates first so
+/// the lens metaphor holds.
 /// </para>
 ///
 /// <para>
@@ -35,7 +37,6 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     private static readonly TimeSpan FollowNavigationTimeout = TimeSpan.FromSeconds(15);
 
     private readonly IBrowserSession _session;
-    private readonly IPageAccessQueue _pageAccessQueue;
     private readonly ILogger<DockSpotlight> _logger;
     private readonly object _gate = new();
     private readonly SemaphoreSlim _signal = new(0, 1);
@@ -63,11 +64,9 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
     public DockSpotlight(
         IBrowserSession session,
-        IPageAccessQueue pageAccessQueue,
         ILogger<DockSpotlight> logger)
     {
         _session = session;
-        _pageAccessQueue = pageAccessQueue;
         _logger = logger;
         _pump = Task.Run(PumpAsync);
     }
@@ -259,11 +258,11 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     {
                         if (isClear)
                         {
-                            await ClearAsync(ct).ConfigureAwait(false);
+                            await ClearAsync().ConfigureAwait(false);
                         }
                         else if (target is { } t)
                         {
-                            await SyncAsync(t, ct).ConfigureAwait(false);
+                            await SyncAsync(t).ConfigureAwait(false);
                         }
                     }
                     finally
@@ -293,7 +292,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         }
     }
 
-    private async Task SyncAsync(SpotlightTarget target, CancellationToken ct)
+    private async Task SyncAsync(SpotlightTarget target)
     {
         if (!_session.IsDocked || !_session.HasActiveBrowser)
         {
@@ -303,9 +302,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         try
         {
-            using var lease = await _pageAccessQueue
-                .AcquireAsync(PageAccessPriority.Foreground, headless: false, ct)
-                .ConfigureAwait(false);
+            var page = await _session.GetLensPageAsync().ConfigureAwait(false);
+            if (page == null)
+            {
+                _applied = null;
+                return;
+            }
 
             // Superseded while waiting for the page — the newer request will run next.
             if (HasNewerPending())
@@ -313,7 +315,6 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                 return;
             }
 
-            var page = lease.Page;
             if (!UrlsMatch(page.Url, target.PageUrl))
             {
                 _logger.LogDebug(
@@ -368,7 +369,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         }
     }
 
-    private async Task ClearAsync(CancellationToken ct)
+    private async Task ClearAsync()
     {
         if (_applied == null || !_session.HasActiveBrowser)
         {
@@ -378,10 +379,11 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         try
         {
-            using var lease = await _pageAccessQueue
-                .AcquireAsync(PageAccessPriority.Foreground, headless: false, ct)
-                .ConfigureAwait(false);
-            await lease.Page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
+            var page = await _session.GetLensPageAsync().ConfigureAwait(false);
+            if (page != null)
+            {
+                await page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {

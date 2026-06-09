@@ -146,7 +146,8 @@ public static class BrowserDependencyInjection
             var browserConfig = sp.GetRequiredService<IOptions<BrowserConfiguration>>();
             var pageLoaderLogger = sp.GetRequiredService<ILogger<PageLoader>>();
             var browserSession = sp.GetRequiredService<IBrowserSession>();
-            var innerLoader = new PageLoader(browserConfig, pageLoaderLogger, browserSession, httpClient);
+            var pageAccessQueue = sp.GetRequiredService<IPageAccessQueue>();
+            var innerLoader = new PageLoader(browserConfig, pageLoaderLogger, browserSession, httpClient, pageAccessQueue);
 
             var cache = sp.GetRequiredService<IPageCache>();
             var cachingLogger = sp.GetRequiredService<ILogger<CachingPageLoader>>();
