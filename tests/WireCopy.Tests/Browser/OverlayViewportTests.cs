@@ -52,23 +52,4 @@ public class OverlayViewportTests
             OverlayViewport.SetProvider(null);
         }
     }
-
-    [Fact]
-    public void LeftDockGeometry_PutsOverlaysInTheRightColumns()
-    {
-        // The provider the orchestrator wires uses DockedContentLayout — prove the
-        // composed shape: left dock pushes the overlay origin past the seam so
-        // modals land beside the browser, never under it (workspace-s621).
-        var (offset, width) = DockGeometry.DockedContentLayout(150, DockSide.Left, 0.5);
-        try
-        {
-            OverlayViewport.SetProvider(() => (offset, width));
-            OverlayViewport.Left.Should().BeGreaterThan(70, "the browser covers the left half");
-            (OverlayViewport.Left + OverlayViewport.Width).Should().BeLessThanOrEqualTo(150);
-        }
-        finally
-        {
-            OverlayViewport.SetProvider(null);
-        }
-    }
 }

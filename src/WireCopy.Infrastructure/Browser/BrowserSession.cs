@@ -1121,7 +1121,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             var availLeft = screen is { Length: > 2 } ? screen[2] : 0;
             var availTop = screen is { Length: > 3 } ? screen[3] : 0;
             var bounds = DockGeometry.Compute(
-                screenWidth, screenHeight, availLeft, availTop, _browserConfig.DockSide, _browserConfig.DockFraction);
+                screenWidth,
+                screenHeight,
+                availLeft,
+                availTop,
+                _browserConfig.DockSide,
+                _browserConfig.DockFraction,
+                _browserConfig.DockWidthPx);
 
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
@@ -1140,6 +1146,24 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // fetch page so the pre-lens dock paths keep working.
             var front = _lensPage ?? _page;
             await front.BringToFrontAsync().ConfigureAwait(false);
+
+            // Phone-shaped lens (workspace-o5yf): pin the lens viewport to a mobile CSS
+            // width so responsive sites collapse to one column and the spotlight's
+            // targets are always on-screen. Height tracks the window minus chrome.
+            if (_lensPage != null && _browserConfig.LensViewportWidth > 0)
+            {
+                try
+                {
+                    await _lensPage.SetViewportSizeAsync(
+                        _browserConfig.LensViewportWidth,
+                        Math.Max(600, bounds.Height - 110)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to set lens viewport (non-fatal)");
+                }
+            }
+
             _isDocked = true;
             _userWantsDock = true;
 

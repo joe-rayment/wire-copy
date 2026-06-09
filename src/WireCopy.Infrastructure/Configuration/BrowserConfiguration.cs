@@ -26,10 +26,25 @@ public class BrowserConfiguration
     public DockSide DockSide { get; init; } = DockSide.Right;
 
     /// <summary>
-    /// Fraction of the screen width the docked browser window occupies (the terminal
-    /// gets the rest). Default 0.5 (an even split). Clamped to [0.2, 0.8] at use.
+    /// Fraction of the screen width the docked browser window occupies. Used only
+    /// as a CLAMP/fallback when <see cref="DockWidthPx"/> is unset or larger than
+    /// the screen allows. Clamped to [0.2, 0.8] at use.
     /// </summary>
     public double DockFraction { get; init; } = 0.5;
+
+    /// <summary>
+    /// Preferred docked window width in physical pixels (workspace-o5yf). A phone-
+    /// shaped sidecar: responsive sites collapse to a single column, the followed
+    /// article is always on-screen, and most of the screen stays with the terminal.
+    /// 0 disables and falls back to <see cref="DockFraction"/>.
+    /// </summary>
+    public int DockWidthPx { get; init; } = 430;
+
+    /// <summary>
+    /// CSS viewport width applied to the LENS tab (workspace-o5yf) so pages render
+    /// mobile-width regardless of exact window chrome. 0 leaves the viewport fluid.
+    /// </summary>
+    public int LensViewportWidth { get; init; } = 414;
 
     /// <summary>
     /// Whether the sidecar — the docked live browser window beside the terminal —

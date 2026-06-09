@@ -165,16 +165,11 @@ public partial class BrowserOrchestrator : IBrowserService
         _dockSpotlight = dockSpotlight;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
-        // workspace-s621: absolute-positioned overlays (dialogs, wizards, settings
-        // panels) draw through OverlayViewport so they land in the uncovered columns
-        // while the sidecar is docked — same geometry as GetCurrentRenderOptions.
-        UI.OverlayViewport.SetProvider(() =>
-        {
-            var width = Console.WindowWidth;
-            return (_browserSession as IBrowserSession)?.IsWindowDocked == true
-                ? DockGeometry.DockedContentLayout(width, _browserConfig.DockSide, _browserConfig.DockFraction)
-                : (0, width);
-        });
+        // workspace-vzmr: overlays render to the full window again — the overlap
+        // model is gone, so OverlayViewport's default (full-window) provider applies.
+        // The accessor stays wired through every overlay, so a future constrained-
+        // viewport mode is a one-line provider away.
+        UI.OverlayViewport.SetProvider(null);
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
         // Subscribe to preload progress changes for live status bar updates

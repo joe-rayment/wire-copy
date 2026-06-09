@@ -27,17 +27,13 @@ public partial class BrowserOrchestrator
         var width = Console.WindowWidth;
         var height = Console.WindowHeight;
 
-        // workspace-8fkv: the app can't move/resize the terminal (it's the user's
-        // emulator), so when the headed browser is docked OVER part of the terminal we
-        // render only within the UNCOVERED columns. Each rendered line is cursor-shifted to
-        // the content origin and ends with an erase-to-end-of-line, which blanks the columns
-        // the browser sits over, so the page and the app appear side by side instead of the
-        // browser covering content. A right dock keeps content flush left and the browser
-        // covers the right, while a left dock pushes content into the right columns.
+        // workspace-vzmr: the app renders to its REAL terminal size, always. The old
+        // overlap model (browser docked over the terminal, app squeezed into the
+        // uncovered columns) is gone — the user owns window placement; the dock only
+        // positions the slim browser window beside the terminal. The flag still feeds
+        // the status bar's docked affordance; it no longer affects layout.
         var browserDocked = (_browserSession as IBrowserSession)?.IsWindowDocked ?? false;
-        var (contentLeftOffset, renderWidth) = browserDocked
-            ? DockGeometry.DockedContentLayout(width, _browserConfig.DockSide, _browserConfig.DockFraction)
-            : (0, width);
+        var (contentLeftOffset, renderWidth) = (0, width);
 
         var colorTerm = Environment.GetEnvironmentVariable("COLORTERM");
         var use256 = string.Equals(colorTerm, "truecolor", StringComparison.OrdinalIgnoreCase)

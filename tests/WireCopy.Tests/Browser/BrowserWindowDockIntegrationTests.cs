@@ -67,13 +67,14 @@ public class BrowserWindowDockIntegrationTests
         var afterDock = await ReadBoundsAsync(page);
         _out.WriteLine($"after dock : {afterDock}");
 
-        var expectedLeft = screenW / 2;
-        var expectedWidth = screenW - expectedLeft;
+        // workspace-o5yf: the sidecar is phone-shaped now (DockWidthPx default 430).
+        var expectedWidth = 430;
+        var expectedLeft = screenW - expectedWidth;
         afterDock.State.Should().Be("normal");
         afterDock.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the window should be pinned to the right half horizontally");
+            "the window should be pinned to the right edge");
         afterDock.Width.Should().BeCloseTo(expectedWidth, 80,
-            "the window should span ~half the screen width");
+            "the window should be phone-shaped (DockWidthPx default)");
 
         // --- Toggle back: minimize ---
         var minimized = await session.ToggleWindowDockAsync();
@@ -123,22 +124,29 @@ public class BrowserWindowDockIntegrationTests
         var state = await session.SummonAndDockAsync("https://example.com/");
         state.Should().Be(BrowserWindowState.Docked);
 
-        (await session.GetLensPageAsync()).Should().NotBeNull("the summon must create the lens tab");
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull("the summon must create the lens tab");
+
+        // workspace-o5yf: the lens renders phone-shaped so responsive sites collapse
+        // to a single column and spotlight targets are always on-screen.
+        lens!.ViewportSize.Should().NotBeNull();
+        lens.ViewportSize!.Width.Should().Be(414, "the lens viewport is pinned to mobile width");
 
         var page = await session.GetOrCreatePageAsync(headless: false);
         var screen = await page.EvaluateAsync<int[]>(
             "() => [window.screen.availWidth, window.screen.availHeight]");
         var screenW = screen[0];
-        var expectedLeft = screenW / 2;
-        var expectedWidth = screenW - expectedLeft;
+        // workspace-o5yf: the sidecar is phone-shaped now (DockWidthPx default 430).
+        var expectedWidth = 430;
+        var expectedLeft = screenW - expectedWidth;
 
         var bounds = await ReadBoundsAsync(page);
         _out.WriteLine($"after summon+dock : {bounds}");
         bounds.State.Should().Be("normal");
         bounds.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the summoned window should be pinned to the right half horizontally");
+            "the summoned window should be pinned to the right edge");
         bounds.Width.Should().BeCloseTo(expectedWidth, 80,
-            "the summoned window should span ~half the screen width");
+            "the summoned window should be phone-shaped (DockWidthPx default)");
     }
 
     [SkippableFact]
@@ -226,8 +234,8 @@ public class BrowserWindowDockIntegrationTests
         afterDock.State.Should().Be("normal");
         afterDock.Left.Should().BeCloseTo(availLeft, 60,
             "left-dock pins the window to the display's left work-area edge");
-        afterDock.Width.Should().BeCloseTo(screenW / 2, 80,
-            "the window should span ~half the screen width");
+        afterDock.Width.Should().BeCloseTo(430, 80,
+            "the window should be phone-shaped (DockWidthPx default)");
     }
 
     [SkippableFact]
@@ -263,13 +271,13 @@ public class BrowserWindowDockIntegrationTests
         var screen = await page.EvaluateAsync<int[]>(
             "() => [window.screen.availWidth, window.screen.availHeight]");
         var screenW = screen[0];
-        var expectedLeft = screenW / 2;
+        var expectedLeft = screenW - 430;
 
         var bounds = await ReadBoundsAsync(page);
         _out.WriteLine($"after sidecar launch : {bounds}");
         bounds.State.Should().Be("normal", "the window must NOT launch minimized in sidecar mode");
         bounds.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the auto-docked window should be pinned to the right half");
+            "the auto-docked window should be pinned phone-width to the right edge");
 
         // Background quieting (the preload service re-minimizes around every prefetch)
         // must NOT strip a dock the user wants — workspace-exbz regression: the dock
