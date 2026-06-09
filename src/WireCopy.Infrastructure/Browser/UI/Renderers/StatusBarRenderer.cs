@@ -546,6 +546,13 @@ internal class StatusBarRenderer
                     return $"{p.SecondaryText.AnsiFg}\u2713 cached{Reset}";
                 }
 
+                // workspace-mya7: the user grabbed the shared browser — prefetch is
+                // waiting for it to go quiet, then resumes from its checkpoint.
+                if (progress.PausedByUser)
+                {
+                    return $"{p.SecondaryText.AnsiFg}⏸ {progress.CachedCount}/{progress.TotalCacheableLinks} · paused — you're using the browser{Reset}";
+                }
+
                 if (progress.IsActivelyFetching)
                 {
                     return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, true, progress.CurrentlyFetchingUrl);

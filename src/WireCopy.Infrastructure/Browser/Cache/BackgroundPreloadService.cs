@@ -64,6 +64,11 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     private readonly Timer _debounceTimer;
     private List<PreloadItem> _queue = [];
     private volatile bool _paused;
+
+    // workspace-mya7: true while prefetch yields to a HUMAN using the shared
+    // browser. Distinct from _paused (app-driven): entered on browser input,
+    // exits only after the browser stays quiet for TakeoverResumeIdleSeconds.
+    private volatile bool _pausedByUser;
     private volatile bool _eagerMode;
     private volatile bool _disposed;
     private volatile string? _currentlyFetchingUrl;
@@ -312,8 +317,44 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     {
         _logger.LogInformation("Background pre-load service started");
 
+        // workspace-mya7: resume interrupted work across restarts — a checkpoint
+        // written when the user took over the browser re-seeds the queue (already-
+        // cached items fall out naturally during processing).
+        var restored = PreloadCheckpoint.Load(PreloadCheckpoint.DefaultPath, _logger);
+        if (restored != null)
+        {
+            lock (_queueLock)
+            {
+                _queue.AddRange(restored.RemainingUrls.Select(
+                    (url, i) => new PreloadItem(url, i, NeedsBrowser: IsDomainNeedsJs(url))));
+            }
+
+            _logger.LogInformation(
+                "Prefetch checkpoint restored: {Count} items from {Page}",
+                restored.RemainingUrls.Count,
+                restored.PageUrl);
+            SignalQueueChanged();
+        }
+
         while (!cancellationToken.IsCancellationRequested && !_disposed)
         {
+            // workspace-mya7: while user-paused, wait for the browser to go quiet,
+            // then resume from where we left off.
+            if (_pausedByUser)
+            {
+                if (await CanResumeFromUserPauseAsync().ConfigureAwait(false))
+                {
+                    _pausedByUser = false;
+                    _logger.LogInformation("Browser is quiet again — prefetch resuming from checkpoint");
+                    NotifyProgressChanged();
+                }
+                else
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+            }
+
             try
             {
                 // Wait once for user to become idle before starting a batch (skip in eager mode)
@@ -324,8 +365,17 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
 
                 // Process the entire queue while user stays idle (or eager mode is active)
                 var processedAny = false;
-                while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && (_eagerMode || _idleDetector.IsIdle))
+                while (!cancellationToken.IsCancellationRequested && !_disposed && !_paused && !_pausedByUser && (_eagerMode || _idleDetector.IsIdle))
                 {
+                    // workspace-mya7: the user always wins — input anywhere in the
+                    // shared browser pauses prefetch at an item boundary and
+                    // checkpoints what remains.
+                    if (await IsBrowserUserActiveAsync().ConfigureAwait(false))
+                    {
+                        EnterUserPause();
+                        break;
+                    }
+
                     var item = DequeueNext();
                     if (item == null)
                     {
@@ -366,6 +416,11 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
                 if (processedAny && HasUncachedEligibleUrls())
                 {
                     RequestQueueRebuild();
+                }
+                else if (processedAny)
+                {
+                    // Queue fully drained — the interrupted-work record is obsolete.
+                    PreloadCheckpoint.Delete(PreloadCheckpoint.DefaultPath, _logger);
                 }
 
                 // Either queue is empty, user is active, or paused — wait for signal before next batch
@@ -553,6 +608,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
 
         var cachedCount = eligible.Count(url => _cache.Contains(url) || IsInArticleCache(url));
         var hasQueuedWork = _queue.Count > 0 || !_inFlight.IsEmpty;
+        var pausedByUser = _pausedByUser;
 
         // workspace-7xw0: snapshot history under _historyLock so a concurrent
         // AppendHistory cannot tear the read.
@@ -588,7 +644,8 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             CachedCount = cachedCount,
             NeedsBrowserCount = needsJs.Count,
             PaywalledLinkCount = _paywalledLinkCount,
-            IsActivelyFetching = hasQueuedWork && !_paused,
+            IsActivelyFetching = hasQueuedWork && !_paused && !pausedByUser,
+            PausedByUser = pausedByUser,
             CurrentlyFetchingUrl = fetchingUrlSnapshot,
             BlockedAction = _lastBlockedAction,
             CurrentStage = _currentStage,
@@ -1102,6 +1159,72 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         {
             throw;
         }
+    }
+
+    /// <summary>
+    /// True when a human used the shared browser within the configured input
+    /// window (workspace-mya7). Conservative on errors: never blocks prefetch.
+    /// </summary>
+    private async Task<bool> IsBrowserUserActiveAsync()
+    {
+        if (_browserSession == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var last = await _browserSession.ReadLastUserInputAsync().ConfigureAwait(false);
+            var window = TimeSpan.FromSeconds(_browserConfig?.TakeoverInputWindowSeconds ?? 10);
+            return BrowserOwnershipArbiter.IsUserActive(last, DateTimeOffset.UtcNow, window);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Takeover probe failed (non-fatal)");
+            return false;
+        }
+    }
+
+    private async Task<bool> CanResumeFromUserPauseAsync()
+    {
+        if (_browserSession == null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var last = await _browserSession.ReadLastUserInputAsync().ConfigureAwait(false);
+            var quiet = TimeSpan.FromSeconds(_browserConfig?.TakeoverResumeIdleSeconds ?? 25);
+            return BrowserOwnershipArbiter.CanResume(last, DateTimeOffset.UtcNow, quiet);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Takeover resume probe failed (non-fatal)");
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Pause for a human takeover: checkpoint the remaining queue (so 'where it
+    /// left off' survives even a restart) and surface the state in the UI.
+    /// </summary>
+    private void EnterUserPause()
+    {
+        _pausedByUser = true;
+        List<string> remaining;
+        string? pageUrl;
+        lock (_queueLock)
+        {
+            remaining = _queue.Select(i => i.Url).ToList();
+            pageUrl = _pendingCurrentPageUrl;
+        }
+
+        PreloadCheckpoint.Save(PreloadCheckpoint.DefaultPath, pageUrl, remaining, _logger);
+        _logger.LogInformation(
+            "Prefetch paused — you're using the browser ({Count} items remaining)",
+            remaining.Count);
+        NotifyProgressChanged();
     }
 
     private PreloadItem? DequeueNext()

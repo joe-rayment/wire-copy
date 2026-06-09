@@ -91,6 +91,52 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public bool WantsSidecar => !_disposed && _userWantsDock;
 
     /// <inheritdoc />
+    public async Task<DateTimeOffset?> ReadLastUserInputAsync()
+    {
+        if (_disposed)
+        {
+            return null;
+        }
+
+        // Test seam (workspace-mya7): e2e harnesses cannot inject real input into
+        // the app-owned browser, so an mtime-touched file stands in for it.
+        var seam = Environment.GetEnvironmentVariable("WIRECOPY_TEST_USERINPUT_FILE");
+        DateTimeOffset? latest = null;
+        if (!string.IsNullOrEmpty(seam) && File.Exists(seam))
+        {
+            latest = File.GetLastWriteTimeUtc(seam);
+        }
+
+        var ctx = _context;
+        if (ctx == null)
+        {
+            return latest;
+        }
+
+        foreach (var page in ctx.Pages)
+        {
+            try
+            {
+                var ms = await page.EvaluateAsync<double>("() => window.__wcLastUserInput || 0").ConfigureAwait(false);
+                if (ms > 0)
+                {
+                    var ts = DateTimeOffset.FromUnixTimeMilliseconds((long)ms);
+                    if (latest == null || ts > latest)
+                    {
+                        latest = ts;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Mid-navigation/closed page — skip; the next poll re-reads.
+            }
+        }
+
+        return latest;
+    }
+
+    /// <inheritdoc />
     public async Task<IPage?> GetLensPageAsync()
     {
         if (_disposed)
@@ -778,6 +824,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             _context = await launchTask.ConfigureAwait(false);
 
             await _context.AddInitScriptAsync(@"
+                // workspace-mya7: takeover detection — note when a HUMAN uses any
+                // page of the shared browser so prefetch can yield instantly.
+                (() => {
+                    const mark = () => { window.__wcLastUserInput = Date.now(); };
+                    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'pointermove']
+                        .forEach((e) => window.addEventListener(e, mark, { capture: true, passive: true }));
+                })();
+
                 // Patch navigator.webdriver (primary automation indicator)
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 

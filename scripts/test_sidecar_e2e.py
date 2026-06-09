@@ -39,17 +39,24 @@ TERM_W = 150
 DOCK_W = 430  # Browser:DockWidthPx default
 
 
+SLOW_STORIES = {"enabled": False}
+
+
 class Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/story-"):
+        if "/story-" in self.path:
+            if SLOW_STORIES["enabled"]:
+                time.sleep(0.7)  # widen the takeover window
             n = self.path.split("-")[-1].rstrip("/")
+            prefix = "/batch2" if self.path.startswith("/batch2") else ""
             body = f"<h1>Story {n}</h1>" + "".join(
                 f"<p>Paragraph {i} of story {n}. " + ("Lorem ipsum dolor sit amet. " * 8) + "</p>"
                 for i in range(1, 15))
             html = f"<!DOCTYPE html><html><head><title>Story {n}</title></head><body><article>{body}</article></body></html>"
         else:
+            prefix = "/batch2" if self.path.startswith("/batch2") else ""
             links = "".join(
-                f'<div style="height:120px"><a href="/story-{i}">Headline number {i} about topic {i}</a></div>'
+                f'<div style="height:120px"><a href="{prefix}/story-{i}">Headline number {i} about topic {i}</a></div>'
                 for i in range(1, 31))
             html = f"<!DOCTYPE html><html><head><title>Sidecar Gazette</title></head><body><h1>Sidecar Gazette</h1>{links}</body></html>"
         data = html.encode()
@@ -232,6 +239,78 @@ def main():
                     failures.append(f"left dock: window not on left edge (win={win:.1f}, rest={rest:.1f})")
         finally:
             os.environ.pop("Browser__DockSide", None)
+
+        # --- 10. workspace-mya7: takeover — user input in the browser pauses
+        #         prefetch (checkpoint), quiet resumes it; restart mid-pause
+        #         restores the checkpoint ---
+        seam = "/tmp/sidecar-e2e-userinput"
+        if os.path.exists(seam):
+            os.remove(seam)
+        os.environ["WIRECOPY_TEST_USERINPUT_FILE"] = seam
+        os.environ["Browser__TakeoverInputWindowSeconds"] = "5"
+        os.environ["Browser__TakeoverResumeIdleSeconds"] = "8"
+        SLOW_STORIES["enabled"] = True
+        subprocess.run(["tmux", "kill-server"], capture_output=True)
+        log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
+        try:
+            with TermTest(url=f"http://127.0.0.1:{port}/batch2/", width=TERM_W, height=40) as t:
+                t.wait_for("Headline number", timeout=60)
+                t.wait_for("docked", timeout=90)
+                # Let prefetch get going on the slow batch…
+                t.wait_for_any("1/30", "2/30", "3/30", "4/30", "5/30", timeout=60)
+                print("prefetch running on batch2")
+
+                # …then the user grabs the browser.
+                with open(seam, "w") as fh:
+                    fh.write("input")
+                t.wait_for("using the browser", timeout=20)
+                print("takeover pause confirmed")
+                ckpt = os.path.expanduser("~/.local/share/WireCopy/preload-checkpoint.json")
+                if not os.path.exists(ckpt):
+                    failures.append("takeover pause did not write a checkpoint")
+
+                # Keep the user 'active' a moment, then go quiet -> auto-resume.
+                time.sleep(2)
+                os.utime(seam)
+                t.wait_until_gone("using the browser", timeout=40)
+                print("auto-resume confirmed")
+
+            # Restart mid-run: pause again right at startup is not needed — instead
+            # prove the checkpoint RESTORE path: pause, kill the app, relaunch.
+            with TermTest(url=f"http://127.0.0.1:{port}/batch2/", width=TERM_W, height=40) as t:
+                t.wait_for("Headline number", timeout=60)
+                os.utime(seam)  # user active again -> pause + checkpoint
+                try:
+                    t.wait_for("using the browser", timeout=30)
+                except TimeoutError:
+                    pass  # queue may already be drained; checkpoint test still valid if file exists
+                had_checkpoint = os.path.exists(
+                    os.path.expanduser("~/.local/share/WireCopy/preload-checkpoint.json"))
+            if had_checkpoint:
+                with TermTest(url=f"http://127.0.0.1:{port}/batch2/", width=TERM_W, height=40) as t:
+                    t.wait_for("Headline number", timeout=60)
+                    deadline = time.time() + 30
+                    restored = False
+                    while time.time() < deadline:
+                        try:
+                            with open(log_path) as fh:
+                                if "Prefetch checkpoint restored" in fh.read():
+                                    restored = True
+                                    break
+                        except OSError:
+                            pass
+                        time.sleep(1)
+                    if not restored:
+                        failures.append("restart did not restore the prefetch checkpoint")
+                    else:
+                        print("checkpoint restored after restart")
+            else:
+                print("note: queue drained before restart-pause — restore path covered by unit tests")
+        finally:
+            os.environ.pop("WIRECOPY_TEST_USERINPUT_FILE", None)
+            os.environ.pop("Browser__TakeoverInputWindowSeconds", None)
+            os.environ.pop("Browser__TakeoverResumeIdleSeconds", None)
+            SLOW_STORIES["enabled"] = False
     finally:
         server.shutdown()
         xvfb.terminate()

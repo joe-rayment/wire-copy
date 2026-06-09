@@ -81,6 +81,18 @@ public class BrowserConfiguration
     public bool Sidecar { get; init; } = true;
 
     /// <summary>
+    /// Browser-side input within this window means the user is ACTIVELY using the
+    /// shared browser — prefetch pauses immediately (workspace-mya7).
+    /// </summary>
+    public int TakeoverInputWindowSeconds { get; init; } = 10;
+
+    /// <summary>
+    /// The browser must be quiet for this long before a user-paused prefetch
+    /// resumes from its checkpoint (workspace-mya7).
+    /// </summary>
+    public int TakeoverResumeIdleSeconds { get; init; } = 25;
+
+    /// <summary>
     /// Gets implicit wait timeout in seconds. Pages with heavy JavaScript and dynamic content
     /// require longer waits. Recommended: 30+ seconds for reliable element detection.
     /// </summary>

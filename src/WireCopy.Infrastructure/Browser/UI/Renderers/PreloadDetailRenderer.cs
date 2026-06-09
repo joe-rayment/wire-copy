@@ -250,7 +250,15 @@ internal sealed class PreloadDetailRenderer
         var total = Math.Max(progress.TotalCacheableLinks, 0);
         var cached = Math.Max(progress.CachedCount, 0);
         var queued = progress.UpcomingUrls.Count;
-        var state = progress.IsActivelyFetching ? "running" : "paused";
+        string state;
+        if (progress.PausedByUser)
+        {
+            state = "paused (you're using the browser)";
+        }
+        else
+        {
+            state = progress.IsActivelyFetching ? "running" : "paused";
+        }
 
         var stateColor = progress.IsActivelyFetching ? palette.GetAccentFg().AnsiFg : palette.GetDimFg().AnsiFg;
         var sep = $"{palette.GetDimFg().AnsiFg} · {Reset}";

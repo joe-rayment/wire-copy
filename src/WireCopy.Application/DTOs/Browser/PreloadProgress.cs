@@ -65,6 +65,12 @@ public record PreloadProgress
     public PreloadStage CurrentStage { get; init; } = PreloadStage.Idle;
 
     /// <summary>
+    /// True while prefetch is paused because the USER is using the shared browser
+    /// (workspace-mya7); it resumes automatically once the browser goes quiet.
+    /// </summary>
+    public bool PausedByUser { get; init; }
+
+    /// <summary>
     /// Snapshot of the next URLs queued for prefetch (workspace-7xw0). Used
     /// by the prefetch detail panel'\''s "up next" list. Empty when the queue
     /// is drained or has been throttled by an idle-detect / circuit-break.

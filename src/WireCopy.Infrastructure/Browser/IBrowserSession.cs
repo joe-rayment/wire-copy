@@ -87,6 +87,14 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<IPage?> GetLensPageAsync();
 
     /// <summary>
+    /// Reads the most recent HUMAN input timestamp observed anywhere in the shared
+    /// browser (workspace-mya7) — pointer/key/wheel/touch listeners injected at
+    /// context launch, plus the e2e test seam. Null when no input has been seen
+    /// (or no context exists). Drives the takeover arbiter: the user always wins.
+    /// </summary>
+    Task<DateTimeOffset?> ReadLastUserInputAsync();
+
+    /// <summary>
     /// Releases the current page reference without disposing it,
     /// allowing it to be reused by subsequent calls.
     /// </summary>
