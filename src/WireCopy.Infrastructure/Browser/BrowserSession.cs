@@ -987,9 +987,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     {
                         await _preloadContext.CloseAsync().ConfigureAwait(false);
                     }
-                    catch
+                    catch (Exception closeEx)
                     {
-                        // best-effort cleanup
+                        // Best-effort cleanup after a failed preload-context launch. Swallow
+                        // but log so the failure is not invisible to diagnostics (workspace-3v8z).
+                        _logger.LogDebug(closeEx, "Failed to close preload context during launch-failure cleanup");
                     }
 
                     _preloadContext = null;
