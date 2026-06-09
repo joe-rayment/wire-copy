@@ -578,7 +578,9 @@ public class TerminalInputHandler : IInputHandler
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
             'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },
-            'w' => new NavigationCommand { Type = CommandType.ToggleBrowserDock },
+            // 'O' (not a vim motion; pairs with 'o' = open-in-browser). Avoids the
+            // vim word-motion key 'w' so the dock switcher doesn't shadow navigation.
+            'O' => new NavigationCommand { Type = CommandType.ToggleBrowserDock },
             'z' => new NavigationCommand { Type = CommandType.Undo },
             'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
             '<' => new NavigationCommand { Type = CommandType.SpeedReadSlower },
