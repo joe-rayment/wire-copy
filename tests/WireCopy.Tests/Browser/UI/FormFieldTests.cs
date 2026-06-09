@@ -11,7 +11,7 @@ using Xunit;
 namespace WireCopy.Tests.Browser.UI;
 
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class FormFieldTests
 {
     [Fact]

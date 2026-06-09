@@ -23,7 +23,7 @@ namespace WireCopy.Tests.Browser;
 /// and key hint styling for each theme x screen combination.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ScreenRenderingSnapshotTests
 {
     private const string AnsiReset = "\x1b[0m";

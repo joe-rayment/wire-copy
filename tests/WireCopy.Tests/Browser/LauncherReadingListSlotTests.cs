@@ -30,7 +30,7 @@ namespace WireCopy.Tests.Browser;
 /// digit `2`.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherReadingListSlotTests
 {
     private const int LargeTerminalWidth = 100;

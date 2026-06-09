@@ -21,7 +21,7 @@ namespace WireCopy.Tests.Browser;
 /// model — it is chrome, not a grid item.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherSetupHintTests
 {
     [Fact]

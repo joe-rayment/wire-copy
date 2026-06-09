@@ -21,7 +21,7 @@ namespace WireCopy.Tests.Browser;
 /// with a representative <see cref="PreloadProgress"/>.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class PreloadDetailRendererTests
 {
     private static readonly ThemePalette Palette = BuiltInThemes.Get(ThemeName.Phosphor);

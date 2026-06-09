@@ -22,7 +22,7 @@ namespace WireCopy.Tests.Browser;
 /// URL bar scroll off the top as the user navigates down through the list.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherPageScrollTests
 {
     // termtest harness defaults — large wordmark variant.

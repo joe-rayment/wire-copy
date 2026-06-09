@@ -17,7 +17,7 @@ namespace WireCopy.Tests.Browser;
 /// row must be computed dynamically — a stale hard-coded value caused the bug.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherUrlBarRowTests
 {
     // Matches WordmarkWidth (87) constant in LauncherRenderer.

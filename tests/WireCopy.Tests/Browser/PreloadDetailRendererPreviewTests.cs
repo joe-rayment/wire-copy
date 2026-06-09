@@ -25,6 +25,7 @@ namespace WireCopy.Tests.Browser;
 /// chrome that the snapshot is supposed to verify (QA punch-list item 1).
 /// </summary>
 [Trait("Category", "Preview")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)] // workspace-dl21: serializes Console.Out swap
 public class PreloadDetailRendererPreviewTests
 {
     private static readonly Regex AnsiCsi = new("\x1b\\[[0-9;]*[A-Za-z]", RegexOptions.Compiled);

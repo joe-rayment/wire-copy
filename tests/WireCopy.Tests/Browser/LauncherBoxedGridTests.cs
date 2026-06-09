@@ -30,7 +30,7 @@ namespace WireCopy.Tests.Browser;
 /// command (lower fixture).
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherBoxedGridTests
 {
     private const int LargeTerminalWidth = 100;

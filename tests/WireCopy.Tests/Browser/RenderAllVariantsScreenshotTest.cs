@@ -22,7 +22,7 @@ namespace WireCopy.Tests.Browser;
 /// /tmp/wirecopy-screenshots/ — see workspace-0b9s QA punch-list #1 / #4.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class RenderAllVariantsScreenshotTest
 {
     private readonly ITestOutputHelper _output;
