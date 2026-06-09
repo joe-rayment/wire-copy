@@ -60,31 +60,36 @@ internal static class DockGeometry
     }
 
     /// <summary>
-    /// The terminal COLUMNS the app should draw within while the browser is docked over
-    /// part of the terminal (workspace-8fkv). The app can't move the terminal, so it
-    /// instead renders inside the uncovered columns and lets each line's trailing
-    /// <c>\x1b[K</c> blank the freed columns the browser sits over — yielding a true
-    /// side-by-side view instead of the page covering content.
+    /// The column the app should START at and the COLUMNS it should draw within while the
+    /// browser is docked over part of the terminal (workspace-8fkv). The app can't move the
+    /// terminal, so it renders inside the uncovered columns and lets each line's leading
+    /// cursor-shift plus a full-width <c>\x1b[K</c> blank the columns the browser sits over —
+    /// yielding a true side-by-side view instead of the page covering content.
     ///
     /// <para>
-    /// Right-dock shrinks to the left <c>(1 - fraction)</c> of the columns, minus a
-    /// one-column seam gutter, floored at <see cref="MinDockedRenderWidth"/>. Assumes the
-    /// terminal spans ~the full screen width (the same assumption the pixel geometry makes),
-    /// so the column fraction tracks the screen fraction; <paramref name="fraction"/> is the
-    /// user-tunable knob and is clamped to [<see cref="MinFraction"/>, <see cref="MaxFraction"/>].
-    /// Left-dock needs a content OFFSET (not just a width) which the renderers don't support
-    /// globally yet, so it returns <paramref name="fullWidth"/> unchanged for now.
+    /// The app always gets the complement of the browser's <paramref name="fraction"/>, minus
+    /// a one-column seam gutter, floored at <see cref="MinDockedRenderWidth"/> — the SAME width
+    /// on either side. Only the start column differs: right-dock keeps content flush-left
+    /// (<c>Offset == 0</c>; the browser covers the right), while left-dock pushes content
+    /// flush-right (<c>Offset == fullWidth - Width</c>; the browser covers the blanked left).
+    /// Assumes the terminal spans ~the full screen width (the same assumption the pixel
+    /// geometry makes), so the column fraction tracks the screen fraction;
+    /// <paramref name="fraction"/> is the user-tunable knob, clamped to
+    /// [<see cref="MinFraction"/>, <see cref="MaxFraction"/>].
     /// </para>
     /// </summary>
-    public static int UncoveredWidth(int fullWidth, DockSide side, double fraction)
+    public static (int Offset, int Width) DockedContentLayout(int fullWidth, DockSide side, double fraction)
     {
-        if (side != DockSide.Right || fullWidth <= 0)
+        if (fullWidth <= 0)
         {
-            return fullWidth;
+            return (0, fullWidth);
         }
 
         var appFraction = 1.0 - Math.Clamp(fraction, MinFraction, MaxFraction);
         var appWidth = (int)Math.Floor(fullWidth * appFraction) - 1; // -1: a seam gutter at the dock edge
-        return Math.Clamp(appWidth, Math.Min(MinDockedRenderWidth, fullWidth), fullWidth);
+        appWidth = Math.Clamp(appWidth, Math.Min(MinDockedRenderWidth, fullWidth), fullWidth);
+
+        var offset = side == DockSide.Left ? fullWidth - appWidth : 0;
+        return (offset, appWidth);
     }
 }

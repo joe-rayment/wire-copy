@@ -29,13 +29,15 @@ public partial class BrowserOrchestrator
 
         // workspace-8fkv: the app can't move/resize the terminal (it's the user's
         // emulator), so when the headed browser is docked OVER part of the terminal we
-        // shrink our own render width to the UNCOVERED columns. Each rendered line ends
-        // with \x1b[K, which blanks the freed columns the browser then sits over — so the
-        // page and the app appear side by side instead of the browser covering content.
+        // render only within the UNCOVERED columns. Each rendered line is cursor-shifted to
+        // the content origin and ends with an erase-to-end-of-line, which blanks the columns
+        // the browser sits over, so the page and the app appear side by side instead of the
+        // browser covering content. A right dock keeps content flush left and the browser
+        // covers the right, while a left dock pushes content into the right columns.
         var browserDocked = (_browserSession as IBrowserSession)?.IsWindowDocked ?? false;
-        var renderWidth = browserDocked
-            ? DockGeometry.UncoveredWidth(width, _browserConfig.DockSide, _browserConfig.DockFraction)
-            : width;
+        var (contentLeftOffset, renderWidth) = browserDocked
+            ? DockGeometry.DockedContentLayout(width, _browserConfig.DockSide, _browserConfig.DockFraction)
+            : (0, width);
 
         var colorTerm = Environment.GetEnvironmentVariable("COLORTERM");
         var use256 = string.Equals(colorTerm, "truecolor", StringComparison.OrdinalIgnoreCase)
@@ -86,6 +88,7 @@ public partial class BrowserOrchestrator
             RequiredAction = requiredAction,
             ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
             BrowserDocked = browserDocked,
+            ContentLeftOffset = contentLeftOffset,
         };
     }
 

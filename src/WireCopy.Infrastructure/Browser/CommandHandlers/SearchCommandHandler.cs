@@ -27,7 +27,11 @@ internal static class SearchCommandHandler
             return;
         }
 
-        var query = await ctx.InputHandler.PromptForInputAsync("/", ct).ConfigureAwait(false);
+        // workspace-8fkv: start the search prompt at the docked content origin so a
+        // left-docked browser doesn't sit over it. Only override the default column when a
+        // left dock actually shifts the origin, so the undocked / right-dock call is unchanged.
+        var query = await ctx.InputHandler.PromptForInputAsync(
+            "/", ct, col: options.ContentLeftOffset > 0 ? options.ContentLeftOffset : null).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(query))
         {
             ctx.NavigationService.SetSearchQuery(query);
@@ -69,7 +73,11 @@ internal static class SearchCommandHandler
 
     public static async Task<bool> HandleOpenCommandLine(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var input = await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
+        // workspace-8fkv: start the command line at the docked content origin so a
+        // left-docked browser doesn't sit over it. Only override the default column when a
+        // left dock actually shifts the origin, so the undocked / right-dock call is unchanged.
+        var input = await ctx.InputHandler.PromptForInputAsync(
+            ":", ct, col: options.ContentLeftOffset > 0 ? options.ContentLeftOffset : null).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(input))
         {
             return await HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);

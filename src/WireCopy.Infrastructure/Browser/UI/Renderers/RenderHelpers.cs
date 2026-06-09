@@ -53,6 +53,16 @@ internal class RenderHelpers
     public int LeftMargin { get; set; }
 
     /// <summary>
+    /// Global left column offset applied to every WriteLine* line ON TOP of
+    /// <see cref="LeftMargin"/> (workspace-8fkv). Non-zero only when the headed browser is
+    /// docked to the LEFT: it pushes the app's whole frame into the uncovered right columns
+    /// while each line's full-width <c>\x1b[K</c> blanks the left columns the browser covers.
+    /// Reset to zero by <see cref="Clear"/> so a dock offset never leaks into a full-screen
+    /// view (loading/error boxes) that did not opt in.
+    /// </summary>
+    public int ColumnOffset { get; set; }
+
+    /// <summary>
     /// Returns the display width of a character, accounting for East Asian wide characters.
     /// CJK characters and most emoji occupy 2 columns in a terminal.
     /// </summary>
@@ -274,6 +284,9 @@ internal class RenderHelpers
 
     public void Clear()
     {
+        // Per-frame reset: the dock offset is opted into by the side-by-side views after
+        // Clear(), so zeroing it here keeps it from leaking into a full-screen takeover.
+        ColumnOffset = 0;
         try
         {
             EmitCursorPos(0, 0);
@@ -663,12 +676,15 @@ internal class RenderHelpers
                 return;
             }
 
-            // Clear full line first when using left margin (centered content)
+            // Clear the full line first, then shift to the content origin. The full-width
+            // \x1b[K blanks the columns a left-docked browser sits over (ColumnOffset) and
+            // any reader-centering margin (LeftMargin); the shift starts content there.
             EmitCursorPos(0, _linesWritten);
             EmitWrite("\x1b[K");
-            if (LeftMargin > 0)
+            var startCol = ColumnOffset + LeftMargin;
+            if (startCol > 0)
             {
-                EmitCursorPos(LeftMargin, _linesWritten);
+                EmitCursorPos(startCol, _linesWritten);
             }
 
             emitBody();

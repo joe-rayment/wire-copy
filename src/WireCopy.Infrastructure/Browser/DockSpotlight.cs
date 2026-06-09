@@ -78,13 +78,34 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     public Action<string>? StatusMessageSink { get; set; }
 
     /// <summary>
-    /// Derives the spotlight target from the current view state. Returns null
-    /// (meaning "clear") for anything that is not a concrete link selected in
-    /// the link-tree view: reader view, launcher, collections, group headers.
+    /// Derives the spotlight target from the current view state:
+    /// <list type="bullet">
+    /// <item>link-tree view with a concrete link selected → highlight that anchor;</item>
+    /// <item>reader view → a follow-only target that keeps the live window on the SAME
+    /// article the terminal is reading, with no highlight box (workspace-nqqs);</item>
+    /// <item>everything else (launcher, collections, group headers) → null = clear.</item>
+    /// </list>
     /// </summary>
     public static SpotlightTarget? ResolveTarget(ViewMode viewMode, Page? page, NavigationTree? tree)
     {
-        if (viewMode != ViewMode.Hierarchical || page == null)
+        if (page == null)
+        {
+            return null;
+        }
+
+        // Reader view: the whole article IS the content, so there is no anchor to
+        // highlight — just keep the live page on the url the terminal is reading. This is
+        // the lens-coupling case main's link-tree spotlight didn't cover: cache hits and
+        // headless preloads never navigate the foreground window, so without this the
+        // docked page stays stale while you read (workspace-nqqs).
+        if (viewMode == ViewMode.Readable)
+        {
+            return string.IsNullOrEmpty(page.Url)
+                ? null
+                : new SpotlightTarget(page.Url, page.Url, string.Empty, FollowPageOnly: true);
+        }
+
+        if (viewMode != ViewMode.Hierarchical)
         {
             return null;
         }
@@ -290,6 +311,16 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
                 }).ConfigureAwait(false);
+            }
+
+            // Reader view (workspace-nqqs): the follow-navigation above IS the whole job —
+            // the page is the content, so there is no anchor to light up. Drop any box left
+            // over from a prior link selection and treat the navigation alone as success.
+            if (target.FollowPageOnly)
+            {
+                await page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
+                _applied = target;
+                return;
             }
 
             var result = await page.EvaluateAsync<string>(

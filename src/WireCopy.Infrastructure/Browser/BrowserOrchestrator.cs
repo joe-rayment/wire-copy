@@ -1217,9 +1217,16 @@ public partial class BrowserOrchestrator : IBrowserService
                 _dockSpotlight.RequestClear();
             }
 
+            // workspace-8fkv: the dock side is configurable now, so the message must reflect
+            // it rather than hardcoding "right" (which was always true while left-dock was a
+            // no-op, but is wrong once left-dock actually shifts content to the right columns).
+            var dockedMessage = _browserConfig.DockSide == WireCopy.Infrastructure.Configuration.DockSide.Left
+                ? "Browser docked left ⇇  live page follows + highlights your selection"
+                : "Browser docked right ⇉  live page follows + highlights your selection";
+
             _navigationService.SetStatusMessage(state switch
             {
-                BrowserWindowState.Docked => "Browser docked right ⇉  live page follows + highlights your selection",
+                BrowserWindowState.Docked => dockedMessage,
                 BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
                 _ => "No live page to dock yet — open an article first",
             });
@@ -1396,8 +1403,9 @@ public partial class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Derives the current spotlight target from view state and hands it to the
-    /// dock spotlight: a concrete link selected in the link tree syncs; anything
-    /// else (reader view, launcher, collections, group headers) clears.
+    /// dock spotlight: a concrete link selected in the link tree highlights; reader view
+    /// keeps the live page following the article being read (workspace-nqqs); anything
+    /// else (launcher, collections, group headers) clears.
     /// </summary>
     private void SyncDockSpotlight()
     {

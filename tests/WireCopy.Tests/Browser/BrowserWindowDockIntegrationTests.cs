@@ -20,6 +20,7 @@ namespace WireCopy.Tests.Browser;
 /// headed browser cannot launch in the environment).
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(WireCopy.Tests.HeadedBrowserSerialCollection.Name)]
 public class BrowserWindowDockIntegrationTests
 {
     private readonly ITestOutputHelper _out;
@@ -174,6 +175,54 @@ public class BrowserWindowDockIntegrationTests
         }
 
         session.IsWindowDocked.Should().BeFalse("closing the headed window must clear the docked state");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task ToggleWindowDock_LeftDock_PinsHeadedWindowToLeftHalf()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // workspace-8fkv / workspace-nqqs: DockSide.Left must pin the live window to the
+        // display's LEFT edge (the terminal then keeps the right columns). Same CDP path as
+        // right-dock, only the computed bounds differ — verified here against a real window.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, DockSide = DockSide.Left });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync("data:text/html,<title>dock</title><body>left dock test</body>");
+
+        var screen = await page.EvaluateAsync<int[]>(
+            "() => [window.screen.availWidth, window.screen.availHeight, Math.round(window.screen.availLeft || 0)]");
+        var screenW = screen[0];
+        var availLeft = screen[2];
+        _out.WriteLine($"screen.availWidth = {screenW}, availLeft = {availLeft}");
+
+        var docked = await session.ToggleWindowDockAsync();
+        docked.Should().Be(BrowserWindowState.Docked);
+
+        var afterDock = await ReadBoundsAsync(page);
+        _out.WriteLine($"after left dock : {afterDock}");
+
+        afterDock.State.Should().Be("normal");
+        afterDock.Left.Should().BeCloseTo(availLeft, 60,
+            "left-dock pins the window to the display's left work-area edge");
+        afterDock.Width.Should().BeCloseTo(screenW / 2, 80,
+            "the window should span ~half the screen width");
     }
 
     private static async Task<WindowBounds> ReadBoundsAsync(IPage page)

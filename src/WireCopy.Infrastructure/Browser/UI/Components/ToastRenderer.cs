@@ -79,7 +79,10 @@ internal static class ToastRenderer
         var actualContentWidth = iconWidth + 1 + RenderHelpers.GetDisplayWidth(truncatedText);
         var innerWidth = Math.Max(actualContentWidth, 1);
         var boxWidth = innerWidth + BoxPadding + BorderChars;
-        var startCol = Math.Max(0, terminalWidth - boxWidth - RightMargin);
+
+        // workspace-8fkv: terminalWidth is already the uncovered width when docked, so add
+        // the content origin to keep a left-docked browser from sitting over the toast.
+        var startCol = (writer?.ColumnOffset ?? 0) + Math.Max(0, terminalWidth - boxWidth - RightMargin);
 
         // Split truncated text back into message and detail for coloring
         string renderedMessage;

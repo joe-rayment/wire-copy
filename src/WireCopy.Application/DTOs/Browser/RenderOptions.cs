@@ -119,6 +119,17 @@ public record RenderOptions
     public bool BrowserDocked { get; init; }
 
     /// <summary>
+    /// Column the app's content should start at while the browser is docked over part of
+    /// the terminal (workspace-8fkv). Zero for the undocked and right-dock cases (content
+    /// stays flush-left; the browser covers the right), positive for left-dock (content is
+    /// pushed into the uncovered RIGHT columns and the browser covers the blanked left).
+    /// Applied as a global left shift by the renderers ON TOP of any per-view left margin
+    /// (e.g. reader centering). Paired with <see cref="TerminalWidth"/>, which is already
+    /// the uncovered width when docked.
+    /// </summary>
+    public int ContentLeftOffset { get; init; }
+
+    /// <summary>
     /// Typed human-action signal currently active for the page being rendered
     /// (CAPTCHA, login wall, cookie consent, 2FA, paywall, region block, generic).
     /// When non-null, the status bar replaces the legacy <see cref="MissingCookieDomains"/>

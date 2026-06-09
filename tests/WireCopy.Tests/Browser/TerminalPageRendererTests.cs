@@ -107,6 +107,50 @@ public class TerminalPageRendererTests
         };
     }
 
+    // workspace-8fkv: capture a buffered frame so cursor-position escapes (which go to the
+    // frame buffer, not Console.SetCursorPosition) land in the StringWriter and can be asserted.
+    private string CaptureFrame(Action render)
+    {
+        var originalOut = Console.Out;
+        try
+        {
+            using var sw = new StringWriter();
+            Console.SetOut(sw);
+            _sut.BeginFrame();
+            render();
+            _sut.EndFrame();
+            return sw.ToString();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    [Fact]
+    public void RenderHierarchical_ContentLeftOffset_ShiftsFrameIntoUncoveredColumns()
+    {
+        // workspace-8fkv end-to-end: ContentLeftOffset on RenderOptions must flow through the
+        // real render path (TerminalPageRenderer sets _helpers.ColumnOffset, WriteLineCore
+        // shifts each line) so a left-docked browser sits over blanked columns instead of
+        // covering content. Differential: the same page renders WITHOUT the offset flush-left.
+        var page = CreateTestPage(withLinks: true);
+        RenderOptions Opts(int offset) => new()
+        {
+            TerminalWidth = 60,
+            TerminalHeight = 24,
+            MaxContentWidth = 58,
+            ContentLeftOffset = offset,
+        };
+
+        var shifted = CaptureFrame(() => _sut.RenderHierarchical(page, CreateContext(), Opts(20)));
+        var flush = CaptureFrame(() => _sut.RenderHierarchical(page, CreateContext(), Opts(0)));
+
+        // Column 20 (0-based) is CUP column 21 (1-based). Only the offset frame shifts there.
+        shifted.Should().Contain(";21H", "docked-left content is shifted to the offset column");
+        flush.Should().NotContain(";21H", "undocked content stays flush-left at column 1");
+    }
+
     [Fact]
     public void RenderHierarchical_WithValidPage_DoesNotThrow()
     {

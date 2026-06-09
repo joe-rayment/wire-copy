@@ -49,15 +49,29 @@ public class DockSpotlightTests
     }
 
     [Theory]
-    [InlineData(ViewMode.Readable)]
     [InlineData(ViewMode.Launcher)]
     [InlineData(ViewMode.CollectionList)]
     [InlineData(ViewMode.CollectionItems)]
-    public void ResolveTarget_NonHierarchicalViews_ReturnNull(ViewMode viewMode)
+    public void ResolveTarget_NonFollowingViews_ReturnNull(ViewMode viewMode)
     {
         var page = CreatePage("https://news.example.com/");
 
         DockSpotlight.ResolveTarget(viewMode, page, page.LinkTree).Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveTarget_ReaderView_ReturnsFollowOnlyTarget()
+    {
+        // workspace-nqqs: reader view has no anchor to highlight, but the live page should
+        // still follow the article being read (the lens). The target carries the page url
+        // as both page and link and is flagged follow-only so no highlight box is drawn.
+        var page = CreatePage("https://news.example.com/article");
+
+        var target = DockSpotlight.ResolveTarget(ViewMode.Readable, page, page.LinkTree);
+
+        target.Should().NotBeNull();
+        target!.Value.FollowPageOnly.Should().BeTrue();
+        target.Value.PageUrl.Should().Be("https://news.example.com/article");
     }
 
     [Fact]

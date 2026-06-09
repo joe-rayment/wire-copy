@@ -126,49 +126,69 @@ public class DockGeometryTests
         explicitOrigin.Should().Be(legacy);
     }
 
-    // workspace-8fkv: shrink the app's render width to the uncovered columns when docked
-    // so the browser sits beside content instead of covering it.
+    // workspace-8fkv: render the app within the uncovered columns when docked so the
+    // browser sits beside content instead of covering it. The app gets the SAME width on
+    // either side (complement of the browser fraction, minus a seam gutter); only the start
+    // column differs — flush-left for right-dock, pushed right for left-dock.
 
     [Theory]
     [InlineData(200, 0.5, 99)]   // left half minus a 1-col seam gutter
     [InlineData(200, 0.6, 79)]   // browser takes 60% → app gets 40% (80) - 1
     [InlineData(200, 0.3, 139)]  // browser takes 30% → app gets 70% (140) - 1
-    public void UncoveredWidth_RightDock_ShrinksToComplementOfFraction(int fullWidth, double fraction, int expected)
+    public void DockedContentLayout_ShrinksToComplementOfFraction(int fullWidth, double fraction, int expectedWidth)
     {
-        DockGeometry.UncoveredWidth(fullWidth, DockSide.Right, fraction).Should().Be(expected);
+        // Width is side-independent: both dock sides leave the app the same usable columns.
+        DockGeometry.DockedContentLayout(fullWidth, DockSide.Right, fraction).Width.Should().Be(expectedWidth);
+        DockGeometry.DockedContentLayout(fullWidth, DockSide.Left, fraction).Width.Should().Be(expectedWidth);
     }
 
     [Fact]
-    public void UncoveredWidth_ClampsFractionBeforeComplementing()
+    public void DockedContentLayout_RightDock_KeepsContentFlushLeft()
+    {
+        var (offset, _) = DockGeometry.DockedContentLayout(200, DockSide.Right, 0.5);
+        offset.Should().Be(0, "right-dock leaves content at column 0 and the browser covers the right");
+    }
+
+    [Fact]
+    public void DockedContentLayout_LeftDock_PushesContentFlushRight()
+    {
+        // Left-dock offsets content into the uncovered RIGHT columns: offset + width fills
+        // the terminal, so the blanked left columns (which the browser covers) = the offset.
+        var (offset, width) = DockGeometry.DockedContentLayout(200, DockSide.Left, 0.5);
+        width.Should().Be(99);
+        offset.Should().Be(200 - 99);
+        (offset + width).Should().Be(200, "content is flush against the right terminal edge");
+    }
+
+    [Fact]
+    public void DockedContentLayout_ClampsFractionBeforeComplementing()
     {
         // Out-of-range fractions clamp to [MinFraction, MaxFraction], so they yield the
         // same width as the boundary fraction (asserted by equality rather than a
         // hardcoded float-derived magic number, which is off-by-one due to 1.0-0.8 etc.).
-        DockGeometry.UncoveredWidth(200, DockSide.Right, 0.95)
-            .Should().Be(DockGeometry.UncoveredWidth(200, DockSide.Right, DockGeometry.MaxFraction));
-        DockGeometry.UncoveredWidth(200, DockSide.Right, 0.05)
-            .Should().Be(DockGeometry.UncoveredWidth(200, DockSide.Right, DockGeometry.MinFraction));
+        DockGeometry.DockedContentLayout(200, DockSide.Right, 0.95).Width
+            .Should().Be(DockGeometry.DockedContentLayout(200, DockSide.Right, DockGeometry.MaxFraction).Width);
+        DockGeometry.DockedContentLayout(200, DockSide.Right, 0.05).Width
+            .Should().Be(DockGeometry.DockedContentLayout(200, DockSide.Right, DockGeometry.MinFraction).Width);
 
         // ...and the magnitudes are sane: a large browser fraction leaves the app a small
         // slice (~0.2*200), a small one leaves it most of the screen (~0.8*200).
-        DockGeometry.UncoveredWidth(200, DockSide.Right, 0.95).Should().BeInRange(35, 41);
-        DockGeometry.UncoveredWidth(200, DockSide.Right, 0.05).Should().BeInRange(155, 161);
+        DockGeometry.DockedContentLayout(200, DockSide.Right, 0.95).Width.Should().BeInRange(35, 41);
+        DockGeometry.DockedContentLayout(200, DockSide.Right, 0.05).Width.Should().BeInRange(155, 161);
     }
 
     [Fact]
-    public void UncoveredWidth_LeftDock_ReturnsFullWidth_UntilOffsetSupported()
-    {
-        // Left-dock needs a content offset (not just a narrower width); until that exists
-        // the helper leaves the width untouched rather than pushing content UNDER the browser.
-        DockGeometry.UncoveredWidth(200, DockSide.Left, 0.5).Should().Be(200);
-    }
-
-    [Fact]
-    public void UncoveredWidth_NeverShrinksBelowFloor_OnTinyTerminals()
+    public void DockedContentLayout_NeverShrinksBelowFloor_OnTinyTerminals()
     {
         // A very narrow terminal must not collapse to an unusable sliver.
-        var result = DockGeometry.UncoveredWidth(30, DockSide.Right, 0.5);
-        result.Should().BeLessThanOrEqualTo(30);
-        result.Should().BeGreaterThanOrEqualTo(Math.Min(DockGeometry.MinDockedRenderWidth, 30));
+        var (_, width) = DockGeometry.DockedContentLayout(30, DockSide.Right, 0.5);
+        width.Should().BeLessThanOrEqualTo(30);
+        width.Should().BeGreaterThanOrEqualTo(Math.Min(DockGeometry.MinDockedRenderWidth, 30));
+    }
+
+    [Fact]
+    public void DockedContentLayout_NonPositiveWidth_IsANoOp()
+    {
+        DockGeometry.DockedContentLayout(0, DockSide.Left, 0.5).Should().Be((0, 0));
     }
 }

@@ -70,6 +70,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
 
         var linkCount = page.LinkTree?.TotalLinks ?? 0;
         var sectionCount = page.LinkTree?.Root.Children.Count(c => c.IsGroupHeader) ?? 0;
@@ -107,6 +108,7 @@ public class TerminalPageRenderer : IPageRenderer
         _paragraphSpans = null; // Consume — set fresh each render cycle
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
 
         // Title bar matching LinkView format: "Title                              domain"
         var titleText = page.ReadableContent?.Title ?? page.Metadata?.Title ?? "Untitled";
@@ -374,6 +376,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
@@ -383,6 +386,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
         _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel);
@@ -393,6 +397,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
         _launcherRenderer.RenderFooter(options.TerminalWidth, options.ScheduledRunBadge);

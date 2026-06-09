@@ -24,6 +24,7 @@ namespace WireCopy.Tests.Browser;
 ///   xvfb-run -a ./dotnet test --filter DockSpotlight
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(WireCopy.Tests.HeadedBrowserSerialCollection.Name)]
 public class DockSpotlightIntegrationTests
 {
     private readonly ITestOutputHelper _out;
@@ -95,6 +96,58 @@ public class DockSpotlightIntegrationTests
         spotlight.RequestClear();
         await WaitUntilAsync(async () => !(await ProbeAsync(page, "b-story-3")).OverlayPresent);
         (await ProbeAsync(page, "b-story-3")).OverlayPresent.Should().BeFalse();
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task Spotlight_ReaderViewFollowOnly_NavigatesLivePageAndClearsHighlight()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlA = server.UrlFor("a");
+        var urlB = server.UrlFor("b");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        Microsoft.Playwright.IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        using var queue = new PageAccessQueue(session, NullLogger<PageAccessQueue>.Instance);
+        await using var spotlight = new DockSpotlight(session, queue, NullLogger<DockSpotlight>.Instance);
+
+        await page.GotoAsync(urlA);
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+
+        // Light up a story on page A so there is a stale overlay for the follow to clear.
+        spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-5", "Story 5"));
+        await WaitForSpotlightAsync(page, "story-5");
+
+        // workspace-nqqs: reader view emits a follow-only target (page url, no anchor). The
+        // live window must FOLLOW to page B (the article the terminal is now reading — a
+        // cache hit never navigated the live window) AND drop the stale highlight, because
+        // in reader view the page itself is the content so nothing should be boxed.
+        spotlight.RequestSync(new SpotlightTarget(urlB, urlB, string.Empty, FollowPageOnly: true));
+        await WaitUntilAsync(async () =>
+            page.Url.StartsWith(urlB, StringComparison.Ordinal)
+            && !(await ProbeAsync(page, "b-story-3")).OverlayPresent);
+
+        page.Url.Should().StartWith(urlB, "the live page must follow the reader view to the article being read");
+        (await ProbeAsync(page, "b-story-3")).OverlayPresent.Should().BeFalse(
+            "follow-only reader view draws no highlight box — the page itself is the content");
     }
 
     private static async Task<SpotlightProbe> WaitForSpotlightAsync(Microsoft.Playwright.IPage page, string storySlug)
