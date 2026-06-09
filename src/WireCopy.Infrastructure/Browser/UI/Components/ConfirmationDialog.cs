@@ -33,7 +33,10 @@ internal static class ConfirmationDialog
         CancellationToken ct,
         bool isDestructive = false)
     {
-        var termWidth = Math.Max(40, Console.WindowWidth);
+        // workspace-s621: draw inside the dock-aware viewport so the dialog is
+        // never hidden under a docked sidecar browser.
+        var left = OverlayViewport.Left;
+        var termWidth = Math.Max(40, OverlayViewport.Width);
         var boxWidth = Math.Min(termWidth - 4, 60);
         var borderColor = isDestructive ? palette.ErrorFg : palette.HeaderBorderFg;
 
@@ -43,9 +46,9 @@ internal static class ConfirmationDialog
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
 
         // Title bar
-        var titlePart = $"\u2500 {title} ";
+        var titlePart = $"─ {title} ";
         var remainingRule = Math.Max(0, boxWidth - titlePart.Length - 2);
-        Console.SetCursorPosition(2, startRow);
+        Console.SetCursorPosition(left + 2, startRow);
         Console.Write(
             $"{borderColor.AnsiFg}\u256d{titlePart}" +
             $"{new string('\u2500', remainingRule)}\u256e{Reset}");
@@ -56,7 +59,7 @@ internal static class ConfirmationDialog
         var row = startRow + 1;
         foreach (var line in lines)
         {
-            Console.SetCursorPosition(2, row);
+            Console.SetCursorPosition(left + 2, row);
             var textColor = isDestructive ? palette.ErrorFg : palette.PrimaryText;
             Console.Write(
                 $"{borderColor.AnsiFg}\u2502 " +
@@ -66,12 +69,12 @@ internal static class ConfirmationDialog
         }
 
         // Bottom border
-        Console.SetCursorPosition(2, row);
-        Console.Write($"{borderColor.AnsiFg}\u2570{new string('\u2500', boxWidth - 2)}\u256f{Reset}");
+        Console.SetCursorPosition(left + 2, row);
+        Console.Write($"{borderColor.AnsiFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
         row += 2;
 
         // Key hints
-        Console.SetCursorPosition(4, row);
+        Console.SetCursorPosition(left + 4, row);
         Console.Write(
             $"{palette.GetAccentFg().AnsiFg}y{palette.SecondaryText.AnsiFg}: confirm   " +
             $"{palette.GetAccentFg().AnsiFg}Esc{palette.SecondaryText.AnsiFg}: cancel{Reset}");
@@ -95,7 +98,8 @@ internal static class ConfirmationDialog
         int terminalHeight,
         CancellationToken ct)
     {
-        var termWidth = Math.Max(40, Console.WindowWidth);
+        var left = OverlayViewport.Left;
+        var termWidth = Math.Max(40, OverlayViewport.Width);
         var boxWidth = Math.Min(termWidth - 4, 60);
         var fieldWidth = boxWidth;
 
@@ -104,9 +108,9 @@ internal static class ConfirmationDialog
         var row = 1;
 
         // Title bar (error-colored for destructive)
-        var titlePart = $"\u2500 {title} ";
+        var titlePart = $"─ {title} ";
         var remainingRule = Math.Max(0, boxWidth - titlePart.Length - 2);
-        Console.SetCursorPosition(2, row);
+        Console.SetCursorPosition(left + 2, row);
         Console.Write(
             $"{palette.ErrorFg.AnsiFg}\u256d{titlePart}" +
             $"{new string('\u2500', remainingRule)}\u256e{Reset}");
@@ -117,7 +121,7 @@ internal static class ConfirmationDialog
         var msgLines = WrapText(message, innerWidth);
         foreach (var line in msgLines)
         {
-            Console.SetCursorPosition(2, row);
+            Console.SetCursorPosition(left + 2, row);
             Console.Write(
                 $"{palette.ErrorFg.AnsiFg}\u2502 " +
                 $"{palette.ErrorFg.AnsiFg}{line.PadRight(innerWidth)}" +
@@ -126,14 +130,14 @@ internal static class ConfirmationDialog
         }
 
         // Bottom border of title box
-        Console.SetCursorPosition(2, row);
+        Console.SetCursorPosition(left + 2, row);
         Console.Write($"{palette.ErrorFg.AnsiFg}\u2570{new string('\u2500', boxWidth - 2)}\u256f{Reset}");
         row += 2;
 
         // Affected items list (if provided)
         if (affectedItems is { Count: > 0 })
         {
-            Console.SetCursorPosition(4, row);
+            Console.SetCursorPosition(left + 4, row);
             Console.Write($"{palette.SecondaryText.AnsiFg}Items to remove:{Reset}");
             row++;
 
@@ -146,14 +150,14 @@ internal static class ConfirmationDialog
                 var displayTitle = affectedItems[i].Length > innerWidth - 4
                     ? affectedItems[i][..(innerWidth - 4)]
                     : affectedItems[i];
-                Console.SetCursorPosition(6, row);
-                Console.Write($"{palette.ErrorFg.AnsiFg}\u2022{Reset} {palette.PrimaryText.AnsiFg}{displayTitle}{Reset}");
+                Console.SetCursorPosition(left + 6, row);
+                Console.Write($"{palette.ErrorFg.AnsiFg}•{Reset} {palette.PrimaryText.AnsiFg}{displayTitle}{Reset}");
                 row++;
             }
 
             if (affectedItems.Count > displayCount)
             {
-                Console.SetCursorPosition(6, row);
+                Console.SetCursorPosition(left + 6, row);
                 Console.Write($"{palette.SecondaryText.AnsiFg}... and {affectedItems.Count - displayCount} more{Reset}");
                 row++;
             }

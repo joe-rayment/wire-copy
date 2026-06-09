@@ -76,7 +76,7 @@ internal static class FormField
             // input cell. Bumping inputCol to 4 keeps the left border intact
             // when the input handler clears the row.
             var inputRow = startRow + topBorderOffset + 1; // label[+sub], top border, then input
-            var inputCol = 4;
+            var inputCol = OverlayViewport.Left + 4; // workspace-s621: dock-aware origin
 
             // Wrap the field's optional OnExtraKey so that after the caller
             // handles the keystroke (typically by drawing an overlay) we can
@@ -197,11 +197,12 @@ internal static class FormField
         string? errorMessage)
     {
         var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
+        var left = OverlayViewport.Left; // workspace-s621: dock-aware origin
 
         // Row 0: Label
-        Console.SetCursorPosition(0, startRow);
+        Console.SetCursorPosition(left, startRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, startRow);
+        Console.SetCursorPosition(left + 2, startRow);
         Console.Write($"{palette.PrimaryText.AnsiFg}{field.Label}{Reset}");
 
         var nextRow = startRow + 1;
@@ -210,9 +211,9 @@ internal static class FormField
         // directly under the label so users see it BEFORE they start typing.
         if (hasSubtitle)
         {
-            Console.SetCursorPosition(0, nextRow);
+            Console.SetCursorPosition(left, nextRow);
             ClearLine(boxWidth + 2);
-            Console.SetCursorPosition(2, nextRow);
+            Console.SetCursorPosition(left + 2, nextRow);
             var maxSubLen = Math.Max(1, boxWidth);
             var sub = field.Subtitle!;
             if (sub.Length > maxSubLen)
@@ -225,23 +226,23 @@ internal static class FormField
         }
 
         // Top border
-        Console.SetCursorPosition(0, nextRow);
+        Console.SetCursorPosition(left, nextRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, nextRow);
+        Console.SetCursorPosition(left + 2, nextRow);
         Console.Write($"{palette.HeaderBorderFg.AnsiFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
         nextRow++;
 
         // Input row
-        Console.SetCursorPosition(0, nextRow);
+        Console.SetCursorPosition(left, nextRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, nextRow);
+        Console.SetCursorPosition(left + 2, nextRow);
         WriteInputRow(palette, field, innerWidth);
         nextRow++;
 
         // Bottom border
-        Console.SetCursorPosition(0, nextRow);
+        Console.SetCursorPosition(left, nextRow);
         ClearLine(boxWidth + 2);
-        Console.SetCursorPosition(2, nextRow);
+        Console.SetCursorPosition(left + 2, nextRow);
         Console.Write($"{palette.HeaderBorderFg.AnsiFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
         nextRow++;
 
@@ -286,9 +287,10 @@ internal static class FormField
     private static void RenderValidationMessage(
         ThemePalette palette, int row, int width, string? errorMessage, string? helpText)
     {
-        Console.SetCursorPosition(0, row);
+        var left = OverlayViewport.Left;
+        Console.SetCursorPosition(left, row);
         ClearLine(width + 2);
-        Console.SetCursorPosition(2, row);
+        Console.SetCursorPosition(left + 2, row);
 
         if (errorMessage != null)
         {
@@ -311,7 +313,7 @@ internal static class FormField
         var height = hasSubtitle ? Height + 1 : Height;
         for (var i = 0; i < height; i++)
         {
-            Console.SetCursorPosition(0, startRow + i);
+            Console.SetCursorPosition(OverlayViewport.Left, startRow + i);
             ClearLine(width + 2);
         }
     }

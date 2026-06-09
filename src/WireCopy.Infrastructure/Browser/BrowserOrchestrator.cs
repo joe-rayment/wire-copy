@@ -164,6 +164,17 @@ public partial class BrowserOrchestrator : IBrowserService
         _themeProvider = themeProvider;
         _dockSpotlight = dockSpotlight;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
+
+        // workspace-s621: absolute-positioned overlays (dialogs, wizards, settings
+        // panels) draw through OverlayViewport so they land in the uncovered columns
+        // while the sidecar is docked — same geometry as GetCurrentRenderOptions.
+        UI.OverlayViewport.SetProvider(() =>
+        {
+            var width = Console.WindowWidth;
+            return (_browserSession as IBrowserSession)?.IsWindowDocked == true
+                ? DockGeometry.DockedContentLayout(width, _browserConfig.DockSide, _browserConfig.DockFraction)
+                : (0, width);
+        });
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
         // Subscribe to preload progress changes for live status bar updates

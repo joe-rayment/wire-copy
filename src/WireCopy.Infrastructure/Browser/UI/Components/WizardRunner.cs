@@ -48,7 +48,7 @@ internal static class WizardRunner
         {
             var step = steps[stepIndex];
             var totalSteps = steps.Count;
-            var termWidth = Math.Max(40, Console.WindowWidth);
+            var termWidth = Math.Max(40, OverlayViewport.Width); // workspace-s621: dock-aware
             var fieldWidth = Math.Min(termWidth - 6, 60);
 
             // Clear screen and render step header
@@ -152,12 +152,12 @@ internal static class WizardRunner
                 {
                     // Show error and retry this step
                     ClearLine(validationRow, fieldWidth + 6);
-                    Console.SetCursorPosition(2, validationRow);
-                    Console.Write($"{palette.ErrorFg.AnsiFg}\u2717 {error}{Reset}");
+                    Console.SetCursorPosition(OverlayViewport.Left + 2, validationRow);
+                    Console.Write($"{palette.ErrorFg.AnsiFg}✗ {error}{Reset}");
 
                     // Wait for keypress before retrying
                     await input.PromptForInputAsync(
-                        string.Empty, ct, row: validationRow + 1, col: 2).ConfigureAwait(false);
+                        string.Empty, ct, row: validationRow + 1, col: OverlayViewport.Left + 2).ConfigureAwait(false);
 
                     // Don't advance — re-render this step
                     continue;
@@ -199,7 +199,7 @@ internal static class WizardRunner
         var remainingRule = Math.Max(0, fieldWidth - headerContent.Length - 2);
 
         // Row 0: Top border with title
-        Console.SetCursorPosition(2, 1);
+        Console.SetCursorPosition(OverlayViewport.Left + 2, 1);
         Console.Write(
             $"{palette.HeaderBorderFg.AnsiFg}\u256d{headerContent}" +
             $"{new string('\u2500', remainingRule)}\u256e{Reset}");
@@ -212,7 +212,7 @@ internal static class WizardRunner
             var desc = step.Description.Length > fieldWidth - 4
                 ? step.Description[..(fieldWidth - 4)]
                 : step.Description;
-            Console.SetCursorPosition(2, row);
+            Console.SetCursorPosition(OverlayViewport.Left + 2, row);
             Console.Write(
                 $"{palette.HeaderBorderFg.AnsiFg}\u2502 {palette.SecondaryText.AnsiFg}" +
                 $"{desc.PadRight(fieldWidth - 4)}" +
@@ -221,8 +221,8 @@ internal static class WizardRunner
         }
 
         // Bottom border
-        Console.SetCursorPosition(2, row);
-        Console.Write($"{palette.HeaderBorderFg.AnsiFg}\u2570{new string('\u2500', fieldWidth - 2)}\u256f{Reset}");
+        Console.SetCursorPosition(OverlayViewport.Left + 2, row);
+        Console.Write($"{palette.HeaderBorderFg.AnsiFg}╰{new string('─', fieldWidth - 2)}╯{Reset}");
         row++;
 
         return row;
@@ -243,10 +243,10 @@ internal static class WizardRunner
             ? new string('*', Math.Min(value.Length, 20))
             : value;
 
-        Console.SetCursorPosition(2, startRow);
+        Console.SetCursorPosition(OverlayViewport.Left + 2, startRow);
         Console.Write($"{palette.SecondaryText.AnsiFg}{field.Label}{Reset}");
 
-        Console.SetCursorPosition(2, startRow + 1);
+        Console.SetCursorPosition(OverlayViewport.Left + 2, startRow + 1);
         Console.Write($"{Dim}{palette.SecondaryText.AnsiFg}{display}{Reset}");
 
         return startRow + 3; // label + value + blank line
@@ -254,14 +254,14 @@ internal static class WizardRunner
 
     private static void RenderSpinner(ThemePalette palette, int row, string message)
     {
-        Console.SetCursorPosition(2, row);
-        Console.Write($"{palette.GetAccentFg().AnsiFg}\u2847 {message}{Reset}");
+        Console.SetCursorPosition(OverlayViewport.Left + 2, row);
+        Console.Write($"{palette.GetAccentFg().AnsiFg}⡇ {message}{Reset}");
     }
 
     private static void ClearLine(int row, int width)
     {
-        Console.SetCursorPosition(0, row);
-        var clearWidth = Math.Min(width, Console.WindowWidth - 1);
+        Console.SetCursorPosition(OverlayViewport.Left, row);
+        var clearWidth = Math.Min(width, OverlayViewport.Width - 1);
         Console.Write(new string(' ', Math.Max(0, clearWidth)));
     }
 }

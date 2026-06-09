@@ -190,6 +190,58 @@ def main():
             if not (right > 60 and right > left + 30):
                 failures.append(
                     f"browser window gone after cached revisit (left={left:.1f}, right={right:.1f})")
+
+            # --- 8. workspace-s621: '?' help popup must render inside the
+            #        uncovered LEFT columns while docked right ---
+            t.send_keys("?")
+            time.sleep(1.5)
+            screen = t.capture()
+            line = next((l for l in screen.split("\n") if "toggle expand" in l.lower()), None)
+            if line is None:
+                failures.append("right dock: '?' help popup did not render")
+            elif len(line.rstrip()) > TERM_W // 2 + 10:
+                failures.append(
+                    f"right dock: help popup spills under the browser (edge col {len(line.rstrip())})")
+            t.send_keys("Escape")
+            time.sleep(0.5)
+
+        # --- 9. workspace-s621 regression: LEFT dock — overlays must shift into
+        #        the RIGHT columns, beside the browser, never under it ---
+        os.environ["Browser__DockSide"] = "Left"
+        subprocess.run(["tmux", "kill-server"], capture_output=True)  # fresh private server picks up env
+        try:
+            with TermTest(url=f"http://127.0.0.1:{port}/", width=TERM_W, height=40) as t:
+                t.wait_for("Headline number", timeout=60)
+                t.wait_for("docked", timeout=90)
+                time.sleep(2)
+                screen = t.screenshot("left dock")
+                heads = [l for l in screen.split("\n") if "Headline number" in l]
+                starts = [len(l) - len(l.lstrip()) for l in heads]
+                if not starts or min(starts) < TERM_W // 2 - 10:
+                    failures.append(
+                        f"left dock: content not shifted right (min start col {min(starts) if starts else 'n/a'})")
+
+                shot = x_screenshot("06-left-docked.png")
+                left, right = half_luma(shot, "left"), half_luma(shot, "right")
+                print(f"left dock luma: left={left:.1f} right={right:.1f}")
+                if not (left > 60 and left > right + 30):
+                    failures.append(
+                        f"left dock: browser not on the left half (left={left:.1f}, right={right:.1f})")
+
+                t.send_keys("?")
+                time.sleep(1.5)
+                screen = t.capture()
+                line = next((l for l in screen.split("\n") if "toggle expand" in l.lower()), None)
+                if line is None:
+                    failures.append("left dock: '?' help popup did not render")
+                else:
+                    start = len(line) - len(line.lstrip())
+                    if start < TERM_W // 2 - 10:
+                        failures.append(
+                            f"left dock: help popup at col {start} — UNDER the browser (workspace-s621)")
+                x_screenshot("07-left-dock-popup.png")
+        finally:
+            os.environ.pop("Browser__DockSide", None)
     finally:
         server.shutdown()
         xvfb.terminate()

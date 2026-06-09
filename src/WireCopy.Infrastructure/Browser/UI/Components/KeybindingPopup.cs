@@ -129,7 +129,10 @@ internal static class KeybindingPopup
 
         var popupHeight = bindings.Length + 2; // +2 for top/bottom borders
         var startRow = Math.Max(0, terminalHeight - popupHeight - 1); // -1 for status bar
-        var startCol = Math.Max(0, (terminalWidth - innerWidth - 2) / 2); // center horizontally
+
+        // workspace-s621: center within the dock-aware viewport (terminalWidth is
+        // already the uncovered width; the origin shifts under a left dock).
+        var startCol = OverlayViewport.Left + Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
 
         var borderColor = $"{palette.SecondaryText.AnsiFg}";
         var keyColor = $"{palette.GetAccentFg().AnsiFg}";

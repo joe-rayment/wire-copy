@@ -42,7 +42,7 @@ internal static class GcsHelpOverlays
     {
         ArgumentNullException.ThrowIfNull(palette);
 
-        var fieldWidth = Math.Min(GcsCopy.MaxAbsoluteWidth, Math.Max(40, Console.WindowWidth) - 6);
+        var fieldWidth = Math.Min(GcsCopy.MaxAbsoluteWidth, Math.Max(40, UI.OverlayViewport.Width) - 6);
         var maxCopy = GcsCopy.MaxCopyWidth(fieldWidth);
 
         ClearOverlay(startRow, ServiceAccountOverlayRows);
@@ -103,7 +103,7 @@ internal static class GcsHelpOverlays
     {
         ArgumentNullException.ThrowIfNull(palette);
 
-        var fieldWidth = Math.Min(GcsCopy.MaxAbsoluteWidth, Math.Max(40, Console.WindowWidth) - 6);
+        var fieldWidth = Math.Min(GcsCopy.MaxAbsoluteWidth, Math.Max(40, UI.OverlayViewport.Width) - 6);
         var maxCopy = GcsCopy.MaxCopyWidth(fieldWidth);
 
         ClearOverlay(startRow, BucketOverlayRows);
@@ -166,7 +166,7 @@ internal static class GcsHelpOverlays
     /// </summary>
     public static void ClearOverlay(int startRow, int rowCount)
     {
-        var width = Math.Max(20, Console.WindowWidth - 1);
+        var width = Math.Max(20, UI.OverlayViewport.Width - 1);
         var available = Math.Max(1, Console.WindowHeight - 1);
         var actualStart = Math.Max(1, Math.Min(startRow, available - rowCount));
         var topRow = Math.Min(startRow, actualStart);
@@ -181,7 +181,7 @@ internal static class GcsHelpOverlays
 
             try
             {
-                Console.SetCursorPosition(0, r);
+                Console.SetCursorPosition(UI.OverlayViewport.Left, r);
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -218,7 +218,7 @@ internal static class GcsHelpOverlays
         {
             try
             {
-                Console.SetCursorPosition(2, startRow + i);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, startRow + i);
             }
             catch (ArgumentOutOfRangeException)
             {

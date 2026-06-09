@@ -521,7 +521,7 @@ internal static class SettingsCommandHandler
             await PodcastGcsWizard.RunVerifyStepAsync(ctx, gcsClient, palette, bucketName, panelRow, ct)
                 .ConfigureAwait(false);
 
-            Console.SetCursorPosition(2, panelRow + 7);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + 7);
             Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return…{Reset}");
             try
             {
@@ -540,14 +540,14 @@ internal static class SettingsCommandHandler
             {
                 try
                 {
-                    Console.SetCursorPosition(0, panelRow + i);
+                    Console.SetCursorPosition(UI.OverlayViewport.Left, panelRow + i);
                 }
                 catch (ArgumentOutOfRangeException)
                 {
                     break;
                 }
 
-                Console.Write(new string(' ', Math.Max(20, Console.WindowWidth - 1)));
+                Console.Write(new string(' ', Math.Max(20, UI.OverlayViewport.Width - 1)));
             }
         }
     }
@@ -817,7 +817,7 @@ internal static class SettingsCommandHandler
         };
 
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Console.WindowWidth - 6, 60);
+        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
         var apiKey = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
 
         if (apiKey == null)
@@ -914,7 +914,7 @@ internal static class SettingsCommandHandler
         {
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-            var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+            var fieldWidth = Math.Min(Math.Max(40, UI.OverlayViewport.Width) - 6, 60);
 
             // No subtitle now — label + helptext alone keep the field at
             // FormField.Height (5 rows). The probe panel anchors directly
@@ -1046,14 +1046,14 @@ internal static class SettingsCommandHandler
             {
                 try
                 {
-                    Console.SetCursorPosition(0, startRow + i);
+                    Console.SetCursorPosition(UI.OverlayViewport.Left, startRow + i);
                 }
                 catch (ArgumentOutOfRangeException)
                 {
                     break;
                 }
 
-                Console.Write(new string(' ', Math.Max(20, Console.WindowWidth - 1)));
+                Console.Write(new string(' ', Math.Max(20, UI.OverlayViewport.Width - 1)));
             }
         }
     }
@@ -1473,20 +1473,20 @@ internal static class SettingsCommandHandler
         {
             try
             {
-                Console.SetCursorPosition(0, startRow + i);
+                Console.SetCursorPosition(UI.OverlayViewport.Left, startRow + i);
             }
             catch (ArgumentOutOfRangeException)
             {
                 break;
             }
 
-            var width = Math.Max(20, Console.WindowWidth - 1);
+            var width = Math.Max(20, UI.OverlayViewport.Width - 1);
             Console.Write(new string(' ', width));
         }
 
         try
         {
-            Console.SetCursorPosition(0, startRow);
+            Console.SetCursorPosition(UI.OverlayViewport.Left, startRow);
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -1516,7 +1516,7 @@ internal static class SettingsCommandHandler
         // void between the header and the input that the user reported
         // was "the wrong place for input."
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+        var fieldWidth = Math.Min(Math.Max(40, UI.OverlayViewport.Width) - 6, 60);
         var helpRow = startRow + FormField.Height + 1;
 
         // Width-aware copy. Every visible string is wrapped at

@@ -204,7 +204,7 @@ internal static class BucketProbePanel
     {
         ArgumentNullException.ThrowIfNull(palette);
         var row = startRow;
-        var width = Math.Min(80, Math.Max(40, Console.WindowWidth)) - 6;
+        var width = Math.Min(80, Math.Max(40, OverlayViewport.Width)) - 6;
 
         WriteAt(2, row++, $"{palette.PrimaryText.AnsiFg}Service account first.{Reset}");
 
@@ -424,7 +424,9 @@ internal static class BucketProbePanel
     {
         try
         {
-            Console.SetCursorPosition(Math.Max(0, col), Math.Max(0, row));
+            // workspace-s621: all panel drawing funnels through here — shift into
+            // the dock-aware viewport so the panel is never under a docked browser.
+            Console.SetCursorPosition(OverlayViewport.Left + Math.Max(0, col), Math.Max(0, row));
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -438,18 +440,18 @@ internal static class BucketProbePanel
     {
         try
         {
-            Console.SetCursorPosition(0, Math.Max(0, row));
+            Console.SetCursorPosition(OverlayViewport.Left, Math.Max(0, row));
         }
         catch (ArgumentOutOfRangeException)
         {
             return;
         }
 
-        var width = Math.Max(20, Console.WindowWidth - 1);
+        var width = Math.Max(20, OverlayViewport.Width - 1);
         Console.Write(new string(' ', width));
         try
         {
-            Console.SetCursorPosition(0, Math.Max(0, row));
+            Console.SetCursorPosition(OverlayViewport.Left, Math.Max(0, row));
         }
         catch (ArgumentOutOfRangeException)
         {

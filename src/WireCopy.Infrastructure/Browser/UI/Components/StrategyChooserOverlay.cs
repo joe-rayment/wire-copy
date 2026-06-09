@@ -116,7 +116,9 @@ internal static class StrategyChooserOverlay
 
         var boxHeight = contentLines + 2; // +2 for borders
         var startRow = Math.Max(1, terminalHeight - boxHeight - 1); // -1 for status bar
-        var startCol = Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
+
+        // workspace-s621: terminalWidth is the dock-aware width; add the dock origin.
+        var startCol = OverlayViewport.Left + Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
 
         var borderColor = palette.SecondaryText.AnsiFg;
         var titleColor = palette.StatusBarTextFg.AnsiFg;

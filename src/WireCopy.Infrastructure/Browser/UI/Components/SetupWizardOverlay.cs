@@ -41,7 +41,9 @@ internal static class SetupWizardOverlay
 
         var boxHeight = lines.Count + 2;
         var startRow = Math.Max(1, terminalHeight - boxHeight - 1);
-        var startCol = Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
+
+        // workspace-s621: terminalWidth is the dock-aware width; add the dock origin.
+        var startCol = OverlayViewport.Left + Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
 
         var border = palette.SecondaryText.AnsiFg;
         var titleColor = palette.StatusBarTextFg.AnsiFg;

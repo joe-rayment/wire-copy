@@ -726,7 +726,7 @@ internal static class ScheduleCommandHandler
             Validate = validate,
         };
         var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(Math.Max(20, Console.WindowWidth - 6), 70);
+        var fieldWidth = Math.Min(Math.Max(20, UI.OverlayViewport.Width - 6), 70);
         return await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
     }
 

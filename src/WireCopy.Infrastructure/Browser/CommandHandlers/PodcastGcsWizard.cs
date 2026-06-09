@@ -291,7 +291,7 @@ internal static class PodcastGcsWizard
         CancellationToken ct)
     {
         var result = new GcsWizardResult();
-        var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+        var fieldWidth = Math.Min(Math.Max(40, UI.OverlayViewport.Width) - 6, 60);
 
         // --- Step 1: Do you have a key? (choice screen) ---
         while (!ct.IsCancellationRequested)
@@ -306,17 +306,17 @@ internal static class PodcastGcsWizard
                 fieldWidth);
             row++;
 
-            Console.SetCursorPosition(4, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 4, row);
             Console.Write($"{p.PrimaryText.AnsiFg}Do you have a GCP service account JSON key?{Reset}");
             row += 2;
 
-            Console.SetCursorPosition(6, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 6, row);
             Console.Write($"{p.GetAccentFg().AnsiFg}y{p.SecondaryText.AnsiFg} — Yes, I have a JSON key ready{Reset}");
             row++;
-            Console.SetCursorPosition(6, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 6, row);
             Console.Write($"{p.GetAccentFg().AnsiFg}n{p.SecondaryText.AnsiFg} — No, show me how to create one{Reset}");
             row++;
-            Console.SetCursorPosition(6, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 6, row);
             Console.Write($"{p.GetAccentFg().AnsiFg}Esc{p.SecondaryText.AnsiFg} — Cancel{Reset}");
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
@@ -324,7 +324,7 @@ internal static class PodcastGcsWizard
             if (command.Type == CommandType.TerminalResized)
             {
                 options = ctx.GetCurrentRenderOptions();
-                fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+                fieldWidth = Math.Min(Math.Max(40, UI.OverlayViewport.Width) - 6, 60);
                 continue;
             }
 
@@ -388,7 +388,7 @@ internal static class PodcastGcsWizard
             // Show error below the field. Drain any stale keys from a partial paste
             // so the next iteration's prompt isn't pre-filled with leftover \r's
             // that would cascade through additional credential prompts.
-            Console.SetCursorPosition(2, row + FormField.HeightFor(keyField));
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, row + FormField.HeightFor(keyField));
             Console.Write($"{p.ErrorFg.AnsiFg}✗ {error}{Reset}");
             await Task.Delay(2000, ct).ConfigureAwait(false);
             ctx.InputHandler.DrainBufferedInput();
@@ -422,7 +422,7 @@ internal static class PodcastGcsWizard
 
             // Show success from previous step
             row++;
-            Console.SetCursorPosition(4, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 4, row);
             Console.Write($"{p.GetSuccessFg().AnsiFg}✔{Reset} Service account key saved");
             row += 2;
 
@@ -455,8 +455,8 @@ internal static class PodcastGcsWizard
 
             // Show spinner during async validation
             var spinnerRow = row + FormField.HeightFor(bucketField);
-            Console.SetCursorPosition(2, spinnerRow);
-            Console.Write($"{p.GetAccentFg().AnsiFg}⡇ Validating bucket...{Reset}");
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, spinnerRow);
+            Console.Write($"{p.GetAccentFg().AnsiFg}╇ Validating bucket...{Reset}");
 
             var (bucketSuccess, bucketUrl, bucketFeedExisted, bucketError) =
                 await ValidateAndBootstrapBucketAsync(ctx, options, trimmedBucket, gcsConfig, ct).ConfigureAwait(false);
@@ -493,7 +493,7 @@ internal static class PodcastGcsWizard
             }
 
             // Show error and retry
-            Console.SetCursorPosition(2, spinnerRow);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, spinnerRow);
             Console.Write($"{p.ErrorFg.AnsiFg}✗ {bucketError}{Reset}" + new string(' ', 20));
             await Task.Delay(2000, ct).ConfigureAwait(false);
         }
@@ -577,7 +577,7 @@ internal static class PodcastGcsWizard
         {
             // Show remediation copy underneath the four-line panel.
             var msgRow = panelRow + 5;
-            Console.SetCursorPosition(2, msgRow);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, msgRow);
             Console.Write($"{p.ErrorFg.AnsiFg}✗ {result.Message}{Reset}");
             ctx.Logger.LogWarning(
                 "GCS verify failed at {Step} ({Class}): {Diag}",
@@ -588,7 +588,7 @@ internal static class PodcastGcsWizard
         else
         {
             var msgRow = panelRow + 5;
-            Console.SetCursorPosition(2, msgRow);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, msgRow);
             Console.Write($"{p.GetSuccessFg().AnsiFg}✓ {result.Message}{Reset}");
 
             // workspace-nlq6: publish a placeholder feed.xml so the user can
@@ -599,17 +599,17 @@ internal static class PodcastGcsWizard
             try
             {
                 var feedUrl = await PublishSelfTestFeedAsync(gcsClient, bucketName, ct).ConfigureAwait(false);
-                Console.SetCursorPosition(2, msgRow + 1);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, msgRow + 1);
                 Console.Write(
                     $"{p.GetAccentFg().AnsiFg}↳ Test feed published at {feedUrl}{Reset}");
-                Console.SetCursorPosition(2, msgRow + 2);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, msgRow + 2);
                 Console.Write(
                     $"  {p.SecondaryText.AnsiFg}\x1b[2mOpen it in a browser to confirm.{Reset}");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 ctx.Logger.LogWarning(ex, "Self-test feed.xml publish failed; verify already succeeded");
-                Console.SetCursorPosition(2, msgRow + 1);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, msgRow + 1);
                 Console.Write(
                     $"{p.SecondaryText.AnsiFg}\x1b[2m(self-test feed publish skipped: {ex.Message}){Reset}");
             }
@@ -714,7 +714,7 @@ internal static class PodcastGcsWizard
         var headerContent = titlePart + stepIndicator;
         var remainingRule = Math.Max(0, fieldWidth - headerContent.Length - 2);
 
-        Console.SetCursorPosition(2, 1);
+        Console.SetCursorPosition(UI.OverlayViewport.Left + 2, 1);
         Console.Write(
             $"{p.HeaderBorderFg.AnsiFg}╭{headerContent}" +
             $"{new string('─', remainingRule)}╮{Reset}");
@@ -725,7 +725,7 @@ internal static class PodcastGcsWizard
             var desc = description.Length > fieldWidth - 4
                 ? description[..(fieldWidth - 4)]
                 : description;
-            Console.SetCursorPosition(2, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 2, row);
             Console.Write(
                 $"{p.HeaderBorderFg.AnsiFg}│ {p.SecondaryText.AnsiFg}" +
                 $"{desc.PadRight(fieldWidth - 4)}" +
@@ -733,7 +733,7 @@ internal static class PodcastGcsWizard
             row++;
         }
 
-        Console.SetCursorPosition(2, row);
+        Console.SetCursorPosition(UI.OverlayViewport.Left + 2, row);
         Console.Write($"{p.HeaderBorderFg.AnsiFg}╰{new string('─', fieldWidth - 2)}╯{Reset}");
         return row + 1;
     }
@@ -749,7 +749,7 @@ internal static class PodcastGcsWizard
         while (!ct.IsCancellationRequested)
         {
             Console.Clear();
-            var fieldWidth = Math.Min(Math.Max(40, Console.WindowWidth) - 6, 60);
+            var fieldWidth = Math.Min(Math.Max(40, UI.OverlayViewport.Width) - 6, 60);
             var row = RenderWizardStepHeader(p, "Creating a GCS Service Account Key", 0, 0, null, fieldWidth);
             row++;
 
@@ -766,15 +766,15 @@ internal static class PodcastGcsWizard
 
             for (var i = 0; i < steps.Length; i++)
             {
-                Console.SetCursorPosition(4, row);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 4, row);
                 Console.Write($"{p.PrimaryText.AnsiFg}{i + 1}.{Reset} {p.PrimaryText.AnsiFg}{steps[i].Item1}{Reset}");
                 row++;
-                Console.SetCursorPosition(7, row);
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 7, row);
                 Console.Write($"{p.SecondaryText.AnsiFg}{steps[i].Item2}{Reset}");
                 row += 2;
             }
 
-            Console.SetCursorPosition(4, row);
+            Console.SetCursorPosition(UI.OverlayViewport.Left + 4, row);
             Console.Write($"{p.SecondaryText.AnsiFg}Press any key to go back{Reset}");
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
