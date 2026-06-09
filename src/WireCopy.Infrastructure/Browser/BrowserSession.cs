@@ -21,9 +21,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
     private readonly string _userDataDir;
-    private readonly string _preloadUserDataDir;
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private readonly SemaphoreSlim _preloadLock = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
@@ -33,7 +31,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // follow-navigation can never interrupt a load and a load can never blank the
     // page the user is reading beside the terminal.
     private IPage? _lensPage;
-    private IBrowserContext? _preloadContext;
     private bool _pageIsHeadless;
     private bool _isDocked;
 
@@ -63,10 +60,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WireCopy",
             "browser-profile");
-        _preloadUserDataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "WireCopy",
-            "preload-profile");
     }
 
     /// <inheritdoc />
@@ -82,10 +75,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public bool HasBrowserContext => !_disposed && _context != null;
 
     /// <inheritdoc />
-    // The preload context is launched lazily on first use by
-    // CreateBackgroundPageAsync (with its own 2s retry), so we must NOT require
-    // _preloadContext to be pre-launched here — doing so would deadlock first use.
-    // 'Reachable' = the session is not disposed.
+    // Background tabs are created lazily in the SHARED context by
+    // CreateBackgroundPageAsync (workspace-wo4q); 'reachable' = not disposed.
     public bool HasPreloadContext => !_disposed;
 
     /// <inheritdoc />
@@ -297,19 +288,15 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        // Sidecar mode (workspace-exbz): "get out of the way" means BACK TO THE DOCK,
-        // not hidden. Background quieting (preload re-minimizes, post-captcha cleanup)
-        // must not undo a dock the user wants — the preload service calls this every
-        // few seconds while prefetching, which previously stripped the dock moments
-        // after it engaged. The explicit un-dock path (ToggleWindowDockAsync) clears
-        // _userWantsDock BEFORE calling this, so a real minimize still goes through.
+        // Sidecar mode (workspace-exbz): "get out of the way" means STAY AS YOU ARE,
+        // never hide a dock the user wants — background quieting (preload, post-
+        // captcha cleanup) previously stripped the dock moments after it engaged.
+        // And it must never SUMMON either (workspace-wo4q): if the user closed the
+        // window, a background minimize call must not pop it back. The explicit
+        // un-dock path (ToggleWindowDockAsync) clears _userWantsDock BEFORE calling
+        // this, so a real minimize still goes through.
         if (_userWantsDock)
         {
-            if (!_isDocked)
-            {
-                await DockWindowAsync().ConfigureAwait(false);
-            }
-
             return;
         }
 
@@ -426,86 +413,60 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
-            var ctx = await EnsurePreloadContextAsync().ConfigureAwait(false);
+            // workspace-wo4q: background pages are TABS of the user's ONE real
+            // browser — one profile, one cookie jar, prefetch visible to anyone who
+            // brings the window up. Ensure the main context exists at the resolved
+            // visibility; never launch a second context.
+            if (_context == null)
+            {
+                await GetOrCreatePageAsync(_browserConfig.EffectiveHeadless).ConfigureAwait(false);
+            }
+
+            var ctx = _context;
             if (ctx == null)
             {
                 return null;
             }
 
             var page = await ctx.NewPageAsync().ConfigureAwait(false);
+
+            // Tab etiquette: creating a tab activates it in a headed window — hand
+            // the window straight back to the lens/fetch tab so prefetch never
+            // steals the page the user is reading (workspace-wo4q).
+            var front = _lensPage ?? _page;
+            if (!_pageIsHeadless && front != null)
+            {
+                try
+                {
+                    await front.BringToFrontAsync().ConfigureAwait(false);
+                }
+                catch (PlaywrightException ex)
+                {
+                    _logger.LogDebug(ex, "Could not re-activate the front tab after creating a background tab");
+                }
+            }
+
             _logger.LogDebug(
-                "Created background page in preload context (total pages: {Count})",
+                "Created background tab in the shared context (total pages: {Count})",
                 ctx.Pages.Count);
             return page;
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to create background page in preload context");
+            _logger.LogDebug(ex, "Failed to create background tab");
             return null;
         }
     }
 
     /// <inheritdoc />
-    public async Task<int> SyncCookiesToPreloadContextAsync(IReadOnlyList<StoredCookie> cookies)
+    public Task<int> SyncCookiesToPreloadContextAsync(IReadOnlyList<StoredCookie> cookies)
     {
-        if (_disposed || cookies == null || cookies.Count == 0)
-        {
-            return 0;
-        }
-
-        await _preloadLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            // Deliberately do NOT launch the preload context just to push cookies.
-            // If preload hasn't started yet, the cookies will be picked up at
-            // launch via InjectStoredCookiesAsync (which reads cookies.json).
-            if (_preloadContext == null)
-            {
-                _logger.LogDebug(
-                    "Preload context not yet launched — cookie sync deferred (will load from cookies.json on launch)");
-                return 0;
-            }
-
-            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var pwCookies = cookies
-                .Select(c => new Cookie
-                {
-                    Name = c.Name,
-                    Value = c.Value,
-                    Domain = c.Domain,
-                    Path = c.Path,
-                    Expires = c.Expiry.HasValue
-                        ? new DateTimeOffset(c.Expiry.Value).ToUnixTimeSeconds()
-                        : -1,
-                })
-                .Where(c => c.Expires < 0 || c.Expires > now)
-                .ToList();
-
-            if (pwCookies.Count == 0)
-            {
-                return 0;
-            }
-
-            try
-            {
-                await _preloadContext.AddCookiesAsync(pwCookies).ConfigureAwait(false);
-                _logger.LogDebug(
-                    "Synced {Count} cookies into preload context",
-                    pwCookies.Count);
-                return pwCookies.Count;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Failed to sync cookies into preload context (non-fatal — will reload on next preload launch)");
-                return 0;
-            }
-        }
-        finally
-        {
-            _preloadLock.Release();
-        }
+        // workspace-wo4q: single-context mode — background prefetch shares the ONE
+        // browser profile, so cookies imported into the foreground context are
+        // already visible to prefetch. Nothing to sync; kept for interface
+        // compatibility with the cookie-import flow.
+        _logger.LogDebug("Cookie sync skipped — prefetch shares the foreground browser context");
+        return Task.FromResult(0);
     }
 
     /// <inheritdoc />
@@ -629,7 +590,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _lock.Dispose();
-            _preloadLock.Dispose();
         }
     }
 
@@ -703,6 +663,26 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         await DisposeContextUnsafeAsync().ConfigureAwait(false);
 
         Directory.CreateDirectory(_userDataDir);
+
+        // workspace-wo4q migration: the separate always-headless preload profile is
+        // retired (prefetch shares the ONE browser profile). Sweep the orphan dir so
+        // stale cookies/cache don't linger on disk. Best-effort, once per launch.
+        try
+        {
+            var orphanProfile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WireCopy",
+                "preload-profile");
+            if (Directory.Exists(orphanProfile))
+            {
+                Directory.Delete(orphanProfile, recursive: true);
+                _logger.LogInformation("Removed the retired preload-profile directory (single-context mode)");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not remove the retired preload-profile directory (non-fatal)");
+        }
 
         // Ensure Playwright browsers are installed (idempotent — skips if already present).
         // Redirect stdout/stderr so install progress doesn't corrupt the TUI alternate screen.
@@ -941,144 +921,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <summary>
-    /// Lazily launches a SECOND, always-headless Playwright persistent context
-    /// at <c>{LocalAppData}/WireCopy/preload-profile</c>. This context is
-    /// used exclusively for background pre-fetching so the user's foreground
-    /// browser window and tab strip are never touched by preload activity.
-    /// </summary>
-    private async Task<IBrowserContext?> EnsurePreloadContextAsync()
-    {
-        if (_disposed)
-        {
-            return null;
-        }
-
-        if (_preloadContext != null)
-        {
-            return _preloadContext;
-        }
-
-        await _preloadLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (_disposed)
-            {
-                return null;
-            }
-
-            if (_preloadContext != null)
-            {
-                return _preloadContext;
-            }
-
-            // Reuse the already-launched Playwright instance from the foreground
-            // context so we don't spin up a second node.js process. Falls back to
-            // creating one if the foreground hasn't launched yet (e.g., a preload
-            // is requested before the user opens any page).
-            if (_playwright == null)
-            {
-                _logger.LogDebug(
-                    "Preload context: launching standalone Playwright instance "
-                    + "(foreground context not yet active)");
-                var createTask = Playwright.CreateAsync();
-                if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)
-                {
-                    _logger.LogWarning("Preload Playwright.CreateAsync timed out");
-                    return null;
-                }
-
-                _playwright = await createTask.ConfigureAwait(false);
-            }
-
-            Directory.CreateDirectory(_preloadUserDataDir);
-
-            var args = new List<string>
-            {
-                "--disable-blink-features=AutomationControlled",
-                "--disable-infobars",
-            };
-            if (OperatingSystem.IsLinux())
-            {
-                args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
-            }
-
-            try
-            {
-                var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(
-                    _preloadUserDataDir,
-                    new BrowserTypeLaunchPersistentContextOptions
-                    {
-                        Headless = true,
-                        Args = args.ToArray(),
-                        Timeout = 30000,
-                        UserAgent = _browserConfig.UserAgent,
-                        ViewportSize = new ViewportSize { Width = 1400, Height = 900 },
-                        IgnoreHTTPSErrors = true,
-                    });
-
-                if (await Task.WhenAny(launchTask, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(false) != launchTask)
-                {
-                    _logger.LogWarning("Preload context launch timed out");
-                    return null;
-                }
-
-                _preloadContext = await launchTask.ConfigureAwait(false);
-
-                await _preloadContext.AddInitScriptAsync(@"
-                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                    if (!window.chrome) window.chrome = {};
-                    if (!window.chrome.runtime) window.chrome.runtime = {};
-                    const originalQuery = window.navigator.permissions?.query;
-                    if (originalQuery) {
-                        window.navigator.permissions.query = (parameters) =>
-                            parameters.name === 'notifications'
-                                ? Promise.resolve({ state: Notification.permission })
-                                : originalQuery(parameters);
-                    }
-                    if (navigator.plugins.length === 0) {
-                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-                    }
-                    if (!navigator.languages || navigator.languages.length === 0) {
-                        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-                    }
-                ").ConfigureAwait(false);
-
-                await InjectStoredCookiesIntoAsync(_preloadContext, "preload").ConfigureAwait(false);
-
-                _logger.LogInformation(
-                    "Preload context launched (headless, profile={Profile})",
-                    _preloadUserDataDir);
-                return _preloadContext;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to launch preload context");
-                if (_preloadContext != null)
-                {
-                    try
-                    {
-                        await _preloadContext.CloseAsync().ConfigureAwait(false);
-                    }
-                    catch (Exception closeEx)
-                    {
-                        // Best-effort cleanup after a failed preload-context launch. Swallow
-                        // but log so the failure is not invisible to diagnostics (workspace-3v8z).
-                        _logger.LogDebug(closeEx, "Failed to close preload context during launch-failure cleanup");
-                    }
-
-                    _preloadContext = null;
-                }
-
-                return null;
-            }
-        }
-        finally
-        {
-            _preloadLock.Release();
-        }
-    }
-
-    /// <summary>
     /// Positions the headed window on the configured side/fraction of the available
     /// screen (default right half) and marks it docked. Shared by the toggle path and
     /// the lens-on-demand summon path. Assumes a live headed <see cref="_page"/>;
@@ -1238,23 +1080,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _context = null;
-        }
-
-        // Tear down the preload context too — it shares the Playwright handle
-        // and must be closed before _playwright.Dispose() to avoid leaking the
-        // Chromium child process.
-        if (_preloadContext != null)
-        {
-            try
-            {
-                await _preloadContext.CloseAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error closing Playwright preload context during cleanup");
-            }
-
-            _preloadContext = null;
         }
 
         if (_playwright != null)
