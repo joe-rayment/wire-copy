@@ -26,6 +26,16 @@ public partial class BrowserOrchestrator
     /// </summary>
     internal const int DefaultRenderOverheadMs = 100;
 
+    // workspace-opnh: opt-in diagnostic for the reported 5-10s speed-read startup delay.
+    // Static analysis (incl. this session) found NO multi-second op on the activation path
+    // — the line cache is eagerly built at the Readable render, WrapText is O(n), input is
+    // picked up promptly, and the first tick is ~30ms — so the delay needs a live capture.
+    // Set WIRECOPY_DEBUG_SPEEDREAD_TIMING to log (a) the activation-render duration and
+    // (b) activation→first-cursor-advance wall-clock. Read once; zero cost when unset
+    // (mirrors the WIRECOPY_DEBUG_RENDER_FRAMES pattern).
+    private static readonly bool SpeedReadTimingEnabled =
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_DEBUG_SPEEDREAD_TIMING"));
+
     /// <summary>
     /// Measured wall-clock duration (ms) of the most recent speed-read render
     /// (advance cursor + RenderCurrentPageAsync). Subtracted from the next
@@ -34,6 +44,10 @@ public partial class BrowserOrchestrator
     /// whenever speed reading is (re)started.
     /// </summary>
     private int _lastLineRenderMs = DefaultRenderOverheadMs;
+
+    // workspace-opnh: started when speed-read is activated; consumed on the first cursor
+    // advance to report activation→first-advance wall-clock (only when SpeedReadTimingEnabled).
+    private System.Diagnostics.Stopwatch? _speedReadActivationSw;
 
     /// <summary>
     /// Computes the delay in milliseconds for a given line during speed reading.
