@@ -259,6 +259,64 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return BrowserWindowState.Minimized;
         }
 
+        return await DockWindowRightAsync().ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<BrowserWindowState?> SummonAndDockAsync(string url)
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        try
+        {
+            // Ensure a HEADED window exists (switches headless→headed if a headless
+            // page is currently serving the reader). The dedicated preload context is
+            // untouched, so background prefetch keeps running on its own headless tabs.
+            var page = await GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
+
+            // Point the live window at the same URL the terminal is reading. Commit-level
+            // wait keeps the "opening…" gap short; the page keeps loading visibly after.
+            try
+            {
+                await page.GotoAsync(url, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.Commit,
+                    Timeout = _browserConfig.PageLoadTimeoutSeconds * 1000,
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Navigation latency / timeout is non-fatal — still dock the window so
+                // the user sees the page finish loading beside the terminal.
+                _logger.LogDebug(ex, "SummonAndDock navigation to {Url} did not fully settle (non-fatal)", url);
+            }
+
+            // A freshly (re)launched headed window starts minimized (LaunchBrowserAsync),
+            // so force-dock rather than toggle.
+            return await DockWindowRightAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "SummonAndDockAsync failed for {Url} (non-fatal)", url);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Positions the headed window on the right half of the available screen and marks
+    /// it docked. Shared by the toggle path and the lens-on-demand summon path. Assumes
+    /// a live headed <see cref="_page"/>; returns null (and logs) if CDP positioning fails.
+    /// </summary>
+    private async Task<BrowserWindowState?> DockWindowRightAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return null;
+        }
+
         try
         {
             var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);

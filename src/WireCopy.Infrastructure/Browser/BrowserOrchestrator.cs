@@ -1179,12 +1179,24 @@ public partial class BrowserOrchestrator : IBrowserService
     {
         if (_browserSession is IBrowserSession session)
         {
-            var state = await session.ToggleWindowDockAsync().ConfigureAwait(false);
+            // Lens-on-demand (workspace-ziky): toggle an existing headed window, or summon
+            // the live page beside the terminal when none exists yet. The summon path is
+            // slow (launch + navigate), so paint an "opening…" status before awaiting it.
+            var currentUrl = _navigationService.CurrentPage?.Url;
+            var state = await BrowserDockCommandHandler.ResolveAsync(
+                session,
+                currentUrl,
+                onSummoning: async () =>
+                {
+                    _navigationService.SetStatusMessage("Opening the live page beside the app…");
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                }).ConfigureAwait(false);
+
             _navigationService.SetStatusMessage(state switch
             {
                 BrowserWindowState.Docked => "Browser docked right ⇉  app + page side by side",
                 BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
-                _ => "No browser window to dock yet — open a page that uses the browser first",
+                _ => "No live page to dock yet — open an article first",
             });
         }
 

@@ -89,6 +89,19 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<BrowserWindowState?> ToggleWindowDockAsync();
 
     /// <summary>
+    /// Lens-on-demand: ensures a headed browser window showing <paramref name="url"/>
+    /// and docks it to the right half of the screen. Unlike
+    /// <see cref="ToggleWindowDockAsync"/> — which only toggles an EXISTING headed
+    /// window — this opens (or switches a headless page to) a headed window, navigates
+    /// it to the URL, then docks. So pressing the dock key while reading a cached or
+    /// headless article summons the live page beside the terminal. The dedicated
+    /// headless preload context is left untouched. Returns the resulting window state,
+    /// or <c>null</c> when no URL is supplied or the summon fails.
+    /// </summary>
+    /// <param name="url">URL to open in the headed window (the page the terminal is reading).</param>
+    Task<BrowserWindowState?> SummonAndDockAsync(string url);
+
+    /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.
     /// Returns null if no active page or capture fails.
     /// </summary>
