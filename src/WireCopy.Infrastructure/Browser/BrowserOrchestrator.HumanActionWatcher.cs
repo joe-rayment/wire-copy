@@ -95,7 +95,7 @@ public partial class BrowserOrchestrator
         Application.DTOs.Browser.HumanActionRequired action,
         CancellationToken cancellationToken)
     {
-        if (_browserConfig.Headless)
+        if (_browserConfig.EffectiveHeadless)
         {
             _logger.LogDebug("Skipping human-action watcher: headless mode, no visible window to poll");
             return;

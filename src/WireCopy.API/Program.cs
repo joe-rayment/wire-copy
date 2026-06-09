@@ -97,7 +97,10 @@ public class Program
             }
 
             var browserSession = host.Services.GetRequiredService<IBrowserSession>();
-            if (host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.Headless && browserSession.IsBrowserAvailable)
+            host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger("BrowserVisibility")
+                .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
+            if (host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.EffectiveHeadless && browserSession.IsBrowserAvailable)
             {
                 await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
             }
@@ -184,7 +187,10 @@ public class Program
 
             var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
             var browserSession = host.Services.GetRequiredService<IBrowserSession>();
-            if (browserConfig.Headless && browserSession.IsBrowserAvailable)
+            host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger("BrowserVisibility")
+                .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
+            if (browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
             {
                 await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
             }
@@ -307,7 +313,10 @@ public class Program
             // before the user navigates anywhere.
             var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
             var browserSession = host.Services.GetRequiredService<IBrowserSession>();
-            if (browserConfig.Headless && browserSession.IsBrowserAvailable)
+            host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger("BrowserVisibility")
+                .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
+            if (browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
             {
                 var session = host.Services.GetRequiredService<IBrowserSessionControl>();
                 Console.WriteLine("Preparing browser…");

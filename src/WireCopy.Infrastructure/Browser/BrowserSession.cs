@@ -214,8 +214,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// <inheritdoc />
     public async Task WarmUpAsync()
     {
-        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.Headless);
-        await GetOrCreatePageAsync(_browserConfig.Headless).ConfigureAwait(false);
+        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.EffectiveHeadless);
+        await GetOrCreatePageAsync(_browserConfig.EffectiveHeadless).ConfigureAwait(false);
         _logger.LogDebug("Browser session warm-up complete");
     }
 

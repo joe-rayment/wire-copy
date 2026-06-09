@@ -295,7 +295,7 @@ internal sealed class ReadingListContentProvider
             var request = new PageLoadRequest { Url = item.Url, PreferBrowser = true };
 
             using (var lease = await _pageAccessQueue.AcquireAsync(
-                PageAccessPriority.Background, _browserConfig.Headless, cancellationToken).ConfigureAwait(false))
+                PageAccessPriority.Background, _browserConfig.EffectiveHeadless, cancellationToken).ConfigureAwait(false))
             {
                 lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken).ConfigureAwait(false);
             }
@@ -333,13 +333,13 @@ internal sealed class ReadingListContentProvider
                     item.Url);
 
                 using (var lease = await _pageAccessQueue.AcquireAsync(
-                    PageAccessPriority.Background, _browserConfig.Headless, cancellationToken).ConfigureAwait(false))
+                    PageAccessPriority.Background, _browserConfig.EffectiveHeadless, cancellationToken).ConfigureAwait(false))
                 {
                     lastLoadResult = await _pageLoader.LoadAsync(
                         new PageLoadRequest
                         {
                             Url = item.Url,
-                            Headless = _browserConfig.Headless,
+                            Headless = _browserConfig.EffectiveHeadless,
                             PreferBrowser = true,
                             ForceRefresh = true,
                         },

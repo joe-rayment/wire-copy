@@ -108,7 +108,7 @@ public class PageLoadPipeline
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading page: {Url}", url);
-        _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.Headless);
+        _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.EffectiveHeadless);
 
 #pragma warning disable S1854 // Required by definite assignment rules
         var fetchMethod = FetchMethod.Http;
@@ -246,7 +246,7 @@ public class PageLoadPipeline
         reportStage?.Invoke("Loading via browser...");
 
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceBrowser = true },
+            new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceBrowser = true },
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
@@ -303,7 +303,7 @@ public class PageLoadPipeline
             reportStage?.Invoke("Retrying with browser...");
             (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                 url,
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
                 page,
                 lastBuildResult,
                 fetchMethod,
@@ -601,7 +601,7 @@ public class PageLoadPipeline
         CancellationToken cancellationToken,
         bool? headlessOverride = null)
     {
-        var headless = headlessOverride ?? _browserConfig.Headless;
+        var headless = headlessOverride ?? _browserConfig.EffectiveHeadless;
 
         if (loadResult.FetchMethod != FetchMethod.Browser ||
             !PageLoader.IsBotChallengePage(loadResult.Html) ||
@@ -728,7 +728,7 @@ public class PageLoadPipeline
 
         // Bot challenge in headless mode — retry headed so user can solve CAPTCHA
         if (fetchMethod == FetchMethod.Browser &&
-            _browserConfig.Headless &&
+            _browserConfig.EffectiveHeadless &&
             PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
         {
             return true;
@@ -793,7 +793,7 @@ public class PageLoadPipeline
 
                                 (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                                     url,
-                                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                                    new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
                                     page,
                                     lastBuildResult,
                                     fetchMethod,
@@ -819,7 +819,7 @@ public class PageLoadPipeline
 
                 (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                     url,
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true, ForceBrowser = true },
+                    new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true, ForceBrowser = true },
                     page,
                     lastBuildResult,
                     fetchMethod,
@@ -830,7 +830,7 @@ public class PageLoadPipeline
             // Cloudflare-protected homepages get classified as LinkList from URL alone,
             // but the HTML is a challenge page with no real content.
             if (loadResult.FetchMethod == FetchMethod.Browser &&
-                _browserConfig.Headless &&
+                _browserConfig.EffectiveHeadless &&
                 PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
             {
                 _logger.LogWarning(

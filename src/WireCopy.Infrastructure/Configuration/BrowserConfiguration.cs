@@ -6,11 +6,35 @@ public class BrowserConfiguration
 {
     public const string SectionName = "Browser";
 
+    private bool? _effectiveHeadless;
+
     public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
 
     public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
 
+    /// <summary>
+    /// SUPERSEDED by <see cref="Visibility"/> (workspace-8cf2) and no longer read by
+    /// the app — kept only so existing settings files bind without error.
+    /// </summary>
     public bool Headless { get; init; } = true;
+
+    /// <summary>
+    /// The browser visibility policy (workspace-8cf2). Default <see cref="BrowserVisibility.Auto"/>:
+    /// interactive session with a display → visible browser everywhere (fetches, prefetch,
+    /// sidecar); unattended or display-less → headless. See <see cref="EffectiveHeadless"/>.
+    /// </summary>
+    public BrowserVisibility Visibility { get; init; } = BrowserVisibility.Auto;
+
+    /// <summary>
+    /// The RESOLVED headless decision for this process — the only thing fetch/warmup
+    /// code should read. Cached on first evaluation.
+    /// </summary>
+    public bool EffectiveHeadless => _effectiveHeadless ??= Visibility switch
+    {
+        BrowserVisibility.Visible => false,
+        BrowserVisibility.Headless => true,
+        _ => !(IsInteractiveSession() && HasDisplay()),
+    };
 
     /// <summary>
     /// When true, disables all UI animations. The timer-tick mechanism in the input handler
@@ -133,5 +157,41 @@ public class BrowserConfiguration
         {
             return false;
         }
+    }
+
+    /// <summary>One-line explanation of the resolution, logged at startup (workspace-8cf2).</summary>
+    public string DescribeVisibilityResolution()
+    {
+        var mode = EffectiveHeadless ? "HEADLESS" : "VISIBLE";
+        var why = Visibility switch
+        {
+            BrowserVisibility.Visible => "Visibility=Visible",
+            BrowserVisibility.Headless => "Visibility=Headless",
+            _ => $"Visibility=Auto (interactive={IsInteractiveSession()}, display={HasDisplay()})",
+        };
+        return $"Browser mode: {mode} — {why}";
+    }
+
+    private static bool IsInteractiveSession()
+    {
+        try
+        {
+            return !Console.IsInputRedirected && !Console.IsOutputRedirected;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasDisplay()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return true; // macOS / Windows always have a display server
+        }
+
+        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))
+            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
     }
 }
