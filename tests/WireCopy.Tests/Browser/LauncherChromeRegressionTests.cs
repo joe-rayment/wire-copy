@@ -23,7 +23,7 @@ namespace WireCopy.Tests.Browser;
 /// appear.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class LauncherChromeRegressionTests
 {
     private static readonly string[] LeakMarkers =

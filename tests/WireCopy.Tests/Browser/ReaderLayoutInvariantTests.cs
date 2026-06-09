@@ -31,7 +31,7 @@ namespace WireCopy.Tests.Browser;
 /// </para>
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ReaderLayoutInvariantTests
 {
     [Fact]

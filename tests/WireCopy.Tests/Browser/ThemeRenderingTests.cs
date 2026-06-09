@@ -19,7 +19,7 @@ namespace WireCopy.Tests.Browser;
 /// neon-green, hardcoded-white, or wrong palette roles leak back in.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ThemeRenderingTests
 {
     private readonly IThemeProvider _themeProvider;

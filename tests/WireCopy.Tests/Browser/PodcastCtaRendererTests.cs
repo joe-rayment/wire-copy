@@ -11,6 +11,7 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 [Trait("Category", "Unit")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)] // workspace-dl21: serializes Console.Out swap
 public class PodcastCtaRendererTests
 {
     private readonly PodcastCtaRenderer _renderer;

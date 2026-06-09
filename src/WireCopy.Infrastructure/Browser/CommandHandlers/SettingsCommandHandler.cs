@@ -677,6 +677,9 @@ internal static class SettingsCommandHandler
         }
         catch
         {
+            // Broad by design (workspace-3v8z). Resolves a config display value and must
+            // degrade to the fallback on any options or DI failure. Narrowing risks aborting
+            // the settings render on an unexpected exception type. No logger in this helper.
             return fallback;
         }
     }
@@ -696,6 +699,9 @@ internal static class SettingsCommandHandler
         }
         catch
         {
+            // Broad by design (workspace-3v8z). A config read for the retention default that
+            // must degrade to 36 hours on any options validation or DI failure rather than
+            // throwing out of the settings screen. No logger is available in this helper.
             return 36;
         }
     }
@@ -1422,6 +1428,11 @@ internal static class SettingsCommandHandler
         }
         catch
         {
+            // KEEP broad (workspace-3v8z): this feeds a DISPLAY-only "(unknown)" fallback.
+            // A prior narrowing attempt to (IOException|UnauthorizedAccessException|
+            // InvalidOperationException) let SecurityException escape and broke the
+            // bucket-probe access-denied flow. The full thrown set is not known/small, so
+            // a catch-all is the correct, behaviour-preserving choice here.
             return "(unknown)";
         }
     }

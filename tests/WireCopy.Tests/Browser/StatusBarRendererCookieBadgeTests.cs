@@ -18,7 +18,7 @@ namespace WireCopy.Tests.Browser;
 /// recover via <c>:cookies import</c> (or <c>Shift+I</c>). Bead: workspace-siu3.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class StatusBarRendererCookieBadgeTests
 {
     private readonly StatusBarRenderer _statusBar;
@@ -142,7 +142,7 @@ public class StatusBarRendererCookieBadgeTests
 /// their verb-led copy (captcha / login / paywall / etc.) unchanged.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class StatusBarRendererActionBadgeTests
 {
     private readonly StatusBarRenderer _statusBar;

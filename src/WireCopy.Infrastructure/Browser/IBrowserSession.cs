@@ -18,6 +18,14 @@ public interface IBrowserSession : IBrowserSessionControl
     bool HasActiveBrowser { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the headed browser window is currently docked
+    /// beside the terminal. Drives the persistent "⇉ docked" status-bar affordance so
+    /// the "concert" state is always visible (workspace-v7mb). False when headless,
+    /// minimized, closed, or no window exists.
+    /// </summary>
+    bool IsWindowDocked { get; }
+
+    /// <summary>
     /// Gets a value indicating whether a browser context exists (even if no page is open).
     /// This is true after the browser is launched, before any page is created.
     /// Used by background preloading to determine if a background tab can be opened.
@@ -95,6 +103,19 @@ public interface IBrowserSession : IBrowserSessionControl
     /// there is no headed window to toggle (headless or no active page).
     /// </summary>
     Task<BrowserWindowState?> ToggleWindowDockAsync();
+
+    /// <summary>
+    /// Lens-on-demand: ensures a headed browser window showing <paramref name="url"/>
+    /// and docks it to the right half of the screen. Unlike
+    /// <see cref="ToggleWindowDockAsync"/> — which only toggles an EXISTING headed
+    /// window — this opens (or switches a headless page to) a headed window, navigates
+    /// it to the URL, then docks. So pressing the dock key while reading a cached or
+    /// headless article summons the live page beside the terminal. The dedicated
+    /// headless preload context is left untouched. Returns the resulting window state,
+    /// or <c>null</c> when no URL is supplied or the summon fails.
+    /// </summary>
+    /// <param name="url">URL to open in the headed window (the page the terminal is reading).</param>
+    Task<BrowserWindowState?> SummonAndDockAsync(string url);
 
     /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.

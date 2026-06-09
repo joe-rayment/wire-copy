@@ -26,7 +26,7 @@ namespace WireCopy.Tests.Browser;
 ///   dotnet test --filter "FullyQualifiedName~RenderPerfBenchmark"
 /// </summary>
 [Trait("Category", "Benchmark")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class RenderPerfBenchmark
 {
     private readonly ITestOutputHelper _out;

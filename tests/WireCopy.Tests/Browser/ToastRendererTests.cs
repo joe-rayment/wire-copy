@@ -15,7 +15,7 @@ namespace WireCopy.Tests.Browser;
 /// so these tests verify it handles various inputs without throwing.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class ToastRendererTests
 {
     private readonly ThemePalette _palette = BuiltInThemes.Get(ThemeName.Phosphor);

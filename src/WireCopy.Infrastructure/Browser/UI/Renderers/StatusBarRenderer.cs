@@ -54,7 +54,8 @@ internal class StatusBarRenderer
         int readerViewportHeight = 0,
         string? layoutVariantLabel = null,
         IReadOnlyList<string>? missingCookieDomains = null,
-        HumanActionRequired? requiredAction = null)
+        HumanActionRequired? requiredAction = null,
+        bool browserDocked = false)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
@@ -70,7 +71,7 @@ internal class StatusBarRenderer
         var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
         var leftWidth = RenderHelpers.GetDisplayWidth(left);
 
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction, _podcastJobManager);
+        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction, browserDocked, _podcastJobManager);
         var rightWidth = RenderHelpers.GetDisplayWidth(right);
 
         // Responsive help hint: show preview controls or standard help
@@ -388,9 +389,18 @@ internal class StatusBarRenderer
         string? layoutVariantLabel = null,
         IReadOnlyList<string>? missingCookieDomains = null,
         HumanActionRequired? requiredAction = null,
+        bool browserDocked = false,
         IPodcastBackgroundJobManager? podcastJobManager = null)
     {
         var parts = new List<string>();
+
+        // Persistent dock affordance (workspace-v7mb): while the headed browser is
+        // docked beside the terminal, always show "⇉ docked" so the side-by-side
+        // "concert" state stays visible after the transient status message fades.
+        if (browserDocked)
+        {
+            parts.Add($"{p.GetAccentFg().AnsiFg}⇉{Reset} {p.SecondaryText.AnsiFg}docked{Reset}");
+        }
 
         // workspace-vkhr Phase D: when a podcast job is generating in the
         // background (modal detached), surface a "🎧 Generating XX%" badge

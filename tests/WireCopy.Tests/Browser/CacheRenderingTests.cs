@@ -17,7 +17,7 @@ namespace WireCopy.Tests.Browser;
 /// Uses Console.Out redirect to capture rendered text.
 /// </summary>
 [Trait("Category", "Unit")]
-[Collection("ConsoleOutput")]
+[Collection(WireCopy.Tests.ConsoleSerialCollection.Name)]
 public class CacheRenderingTests
 {
     private readonly IThemeProvider _themeProvider;

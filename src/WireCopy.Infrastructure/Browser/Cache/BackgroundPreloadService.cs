@@ -882,9 +882,12 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
                 host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
                 host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
         }
-        catch
+        catch (Exception ex) when (ex is UriFormatException or ArgumentNullException)
         {
-            // Malformed URL — no domain to extract
+            // Malformed or null URL — no domain to extract. Narrowed from a bare catch
+            // (workspace-3v8z): the only throwers in the try are new Uri(...) (the LINQ
+            // predicate over the config array is pure), so any OTHER exception is
+            // unexpected and should surface rather than be silently swallowed.
             return string.Empty;
         }
     }

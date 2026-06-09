@@ -461,6 +461,10 @@ public partial class BrowserOrchestrator : IBrowserService
                     // Reset measured render overhead so the next speed-read session
                     // starts from the default estimate rather than a stale value.
                     _lastLineRenderMs = DefaultRenderOverheadMs;
+
+                    // workspace-opnh: drop a stale activation timer if speed-read stopped
+                    // before the first advance fired.
+                    _speedReadActivationSw = null;
                 }
 
                 var completed = await Task.WhenAny(raceTasks).ConfigureAwait(false);
@@ -489,6 +493,17 @@ public partial class BrowserOrchestrator : IBrowserService
                     // can subtract real overhead (not a fixed 100ms guess) and
                     // the effective WPM matches the configured setting.
                     speedReadDelay = null; // Allow next line's timer to be created
+
+                    // workspace-opnh: report wall-clock from activation to the FIRST advance
+                    // (non-null only when the opt-in timing diagnostic is enabled).
+                    if (_speedReadActivationSw != null)
+                    {
+                        _logger.LogInformation(
+                            "[speedread-timing] activation → first cursor advance {Ms}ms",
+                            _speedReadActivationSw.ElapsedMilliseconds);
+                        _speedReadActivationSw = null;
+                    }
+
                     var renderStopwatch = Stopwatch.StartNew();
                     if (!AdvanceSpeedReadCursor(options))
                     {
@@ -1183,7 +1198,18 @@ public partial class BrowserOrchestrator : IBrowserService
     {
         if (_browserSession is IBrowserSession session)
         {
-            var state = await session.ToggleWindowDockAsync().ConfigureAwait(false);
+            // Lens-on-demand (workspace-ziky): toggle an existing headed window, or summon
+            // the live page beside the terminal when none exists yet. The summon path is
+            // slow (launch + navigate), so paint an "opening…" status before awaiting it.
+            var currentUrl = _navigationService.CurrentPage?.Url;
+            var state = await BrowserDockCommandHandler.ResolveAsync(
+                session,
+                currentUrl,
+                onSummoning: async () =>
+                {
+                    _navigationService.SetStatusMessage("Opening the live page beside the app…");
+                    await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                }).ConfigureAwait(false);
             if (state == BrowserWindowState.Minimized)
             {
                 // Remove the highlight now so a later re-dock never reveals a
@@ -1195,7 +1221,7 @@ public partial class BrowserOrchestrator : IBrowserService
             {
                 BrowserWindowState.Docked => "Browser docked right ⇉  live page follows + highlights your selection",
                 BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
-                _ => "No browser window to dock yet — open a page that uses the browser first",
+                _ => "No live page to dock yet — open an article first",
             });
         }
 
@@ -1212,6 +1238,7 @@ public partial class BrowserOrchestrator : IBrowserService
     /// </summary>
     private async Task ToggleSpeedReadAndRenderAsync(RenderOptions options, CancellationToken cancellationToken)
     {
+        var startingSpeedRead = false;
         if (_navigationService.IsSpeedReadActive)
         {
             _navigationService.StopSpeedRead();
@@ -1219,10 +1246,29 @@ public partial class BrowserOrchestrator : IBrowserService
         else if (_navigationService.CurrentPage?.HasReadableContent() == true)
         {
             _navigationService.StartSpeedRead();
+            startingSpeedRead = true;
         }
         else
         {
             _navigationService.SetStatusMessage("No readable content for speed reading");
+        }
+
+        // workspace-opnh: opt-in timing of the activation render, and arm the activation
+        // stopwatch so the main loop can report time-to-first-cursor-advance. Off (and free)
+        // unless WIRECOPY_DEBUG_SPEEDREAD_TIMING is set.
+        if (startingSpeedRead && SpeedReadTimingEnabled)
+        {
+            var activationRenderSw = System.Diagnostics.Stopwatch.StartNew();
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+            activationRenderSw.Stop();
+            _logger.LogInformation(
+                "[speedread-timing] activation render {Ms}ms (cursorLine={Line}, contentWidth={Width}, docked={Docked})",
+                activationRenderSw.ElapsedMilliseconds,
+                _navigationService.ReaderCursorLine,
+                options.MaxContentWidth,
+                options.BrowserDocked);
+            _speedReadActivationSw = System.Diagnostics.Stopwatch.StartNew();
+            return;
         }
 
         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
