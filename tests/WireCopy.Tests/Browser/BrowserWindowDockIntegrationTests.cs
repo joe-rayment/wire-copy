@@ -34,7 +34,8 @@ public class BrowserWindowDockIntegrationTests
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
             "Headed browser requires an X display — run under xvfb-run.");
 
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        // Sidecar=false: this test exercises the explicit toggle from a minimized start.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
@@ -94,7 +95,8 @@ public class BrowserWindowDockIntegrationTests
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
             "Headed browser requires an X display — run under xvfb-run.");
 
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        // Sidecar=false: the summon must dock on its own merits, not via launch auto-dock.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
@@ -143,7 +145,7 @@ public class BrowserWindowDockIntegrationTests
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
             "Headed browser requires an X display — run under xvfb-run.");
 
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
@@ -187,7 +189,7 @@ public class BrowserWindowDockIntegrationTests
         // workspace-8fkv / workspace-nqqs: DockSide.Left must pin the live window to the
         // display's LEFT edge (the terminal then keeps the right columns). Same CDP path as
         // right-dock, only the computed bounds differ — verified here against a real window.
-        var config = Options.Create(new BrowserConfiguration { Headless = false, DockSide = DockSide.Left });
+        var config = Options.Create(new BrowserConfiguration { Headless = false, DockSide = DockSide.Left, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
@@ -223,6 +225,64 @@ public class BrowserWindowDockIntegrationTests
             "left-dock pins the window to the display's left work-area edge");
         afterDock.Width.Should().BeCloseTo(screenW / 2, 80,
             "the window should span ~half the screen width");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task HeadedLaunch_SidecarOn_AutoDocksInsteadOfMinimizing()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // workspace-exbz: with sidecar mode on (the default), a headed launch must dock
+        // beside the terminal instead of minimizing into the void with a blank page.
+        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        session.WantsSidecar.Should().BeTrue("sidecar mode defaults on");
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        session.IsWindowDocked.Should().BeTrue(
+            "sidecar mode docks the headed window at launch instead of minimizing it");
+
+        var screen = await page.EvaluateAsync<int[]>(
+            "() => [window.screen.availWidth, window.screen.availHeight]");
+        var screenW = screen[0];
+        var expectedLeft = screenW / 2;
+
+        var bounds = await ReadBoundsAsync(page);
+        _out.WriteLine($"after sidecar launch : {bounds}");
+        bounds.State.Should().Be("normal", "the window must NOT launch minimized in sidecar mode");
+        bounds.Left.Should().BeCloseTo(expectedLeft, 60,
+            "the auto-docked window should be pinned to the right half");
+
+        // Background quieting (the preload service re-minimizes around every prefetch)
+        // must NOT strip a dock the user wants — workspace-exbz regression: the dock
+        // engaged and was minimized away 3 seconds later by the first preload tick.
+        await session.MinimizeWindowAsync();
+        session.IsWindowDocked.Should().BeTrue(
+            "a background minimize must keep the sidecar docked while the user wants it");
+        (await ReadBoundsAsync(page)).State.Should().Be("normal");
+
+        // The explicit toggle is the real un-dock: it clears the intent first.
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Minimized);
+        session.IsWindowDocked.Should().BeFalse();
+
+        // And with the intent cleared, a background minimize stays minimized.
+        await session.MinimizeWindowAsync();
+        session.IsWindowDocked.Should().BeFalse();
     }
 
     private static async Task<WindowBounds> ReadBoundsAsync(IPage page)

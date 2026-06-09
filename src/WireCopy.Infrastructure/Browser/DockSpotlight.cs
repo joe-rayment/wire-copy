@@ -100,9 +100,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         // docked page stays stale while you read (workspace-nqqs).
         if (viewMode == ViewMode.Readable)
         {
-            return string.IsNullOrEmpty(page.Url)
-                ? null
-                : new SpotlightTarget(page.Url, page.Url, string.Empty, FollowPageOnly: true);
+            return FollowPageTarget(page.Url);
         }
 
         if (viewMode != ViewMode.Hierarchical)
@@ -113,7 +111,11 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         var selected = tree?.CurrentSelection;
         if (selected == null || selected.IsGroupHeader || string.IsNullOrEmpty(selected.Link.Url))
         {
-            return null;
+            // No concrete story selected (fresh link list, group header) — still keep
+            // the live window ON this page. Cache hits and HTTP fetches never navigate
+            // the foreground window, so without this the sidecar would sit on the
+            // previous page until a concrete link is picked (workspace-exbz).
+            return FollowPageTarget(page.Url);
         }
 
         return new SpotlightTarget(page.Url, selected.Link.Url, selected.Link.DisplayText);
@@ -198,6 +200,18 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         _disposeCts.Dispose();
         _signal.Dispose();
+    }
+
+    /// <summary>
+    /// Follow-only target for <paramref name="pageUrl"/>: keep the live window on the
+    /// page the terminal is showing, no highlight box. Null for non-web URLs (launcher,
+    /// skeleton, data:) where navigating a live window is meaningless.
+    /// </summary>
+    private static SpotlightTarget? FollowPageTarget(string pageUrl)
+    {
+        return CommandHandlers.BrowserDockCommandHandler.IsSummonableUrl(pageUrl)
+            ? new SpotlightTarget(pageUrl, pageUrl, string.Empty, FollowPageOnly: true)
+            : null;
     }
 
     private static bool UrlsMatch(string? liveUrl, string targetPageUrl)

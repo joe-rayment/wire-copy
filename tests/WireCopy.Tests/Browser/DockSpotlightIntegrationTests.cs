@@ -42,7 +42,8 @@ public class DockSpotlightIntegrationTests
         var urlA = server.UrlFor("a");
         var urlB = server.UrlFor("b");
 
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        // Sidecar=false: these tests dock explicitly via the toggle below.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
@@ -109,7 +110,7 @@ public class DockSpotlightIntegrationTests
         var urlA = server.UrlFor("a");
         var urlB = server.UrlFor("b");
 
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 

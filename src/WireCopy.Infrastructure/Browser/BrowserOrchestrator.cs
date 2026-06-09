@@ -32,6 +32,11 @@ public partial class BrowserOrchestrator : IBrowserService
     // subtitle agrees with what the Reading List view shows (workspace-hlzy).
     private const int ReadingListExpiryHours = 16;
 
+    // workspace-exbz: cap on failed sidecar summons before the auto-engage gives up
+    // for the session, so navigation never degrades into slow launch attempts on
+    // every page open (no display, broken WM).
+    private const int MaxSidecarSummonFailures = 2;
+
     // Opt-in page-load profiling. Set WIRECOPY_PROFILE_LOAD=1 to log a per-stage
     // timing breakdown for every foreground article load (cache check -> preload
     // wait -> browser navigation -> extraction -> retries). Lets a real session
@@ -64,6 +69,13 @@ public partial class BrowserOrchestrator : IBrowserService
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
+
+    // workspace-exbz: sidecar auto-engage state. The sidecar (docked live window)
+    // engages on navigation completion while the user wants it; failures count up
+    // to MaxSidecarSummonFailures before disabling for the session.
+    private int _sidecarSummonFailures;
+    private bool _sidecarUnavailable;
+    private bool _sidecarHintShown;
 
     // Background page load state for non-blocking navigation (Phase 2)
     private Task<Page>? _backgroundPageLoad;
@@ -798,6 +810,11 @@ public partial class BrowserOrchestrator : IBrowserService
 
             PlayDecryptRevealAnimation(page);
 
+            // workspace-exbz: engage the sidecar BEFORE the headless warmup below — the
+            // summon switches the session headed, which turns the warmup into a cheap
+            // reuse instead of a headless launch the summon would throw away.
+            await EnsureSidecarEngagedAsync(CancellationToken.None).ConfigureAwait(false);
+
             // Eagerly warm up the browser for paywalled or JS-heavy domains
             var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
             var needsBrowserWarmup = _browserConfig.IsPaywalledDomain(url) || _preloadService.IsDomainNeedsJs(url);
@@ -1217,24 +1234,109 @@ public partial class BrowserOrchestrator : IBrowserService
                 _dockSpotlight.RequestClear();
             }
 
-            // workspace-8fkv: the dock side is configurable now, so the message must reflect
-            // it rather than hardcoding "right" (which was always true while left-dock was a
-            // no-op, but is wrong once left-dock actually shifts content to the right columns).
-            var dockedMessage = _browserConfig.DockSide == WireCopy.Infrastructure.Configuration.DockSide.Left
-                ? "Browser docked left ⇇  live page follows + highlights your selection"
-                : "Browser docked right ⇉  live page follows + highlights your selection";
-
             _navigationService.SetStatusMessage(state switch
             {
-                BrowserWindowState.Docked => dockedMessage,
-                BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
-                _ => "No live page to dock yet — open an article first",
+                BrowserWindowState.Docked => DockedStatusMessage(),
+                BrowserWindowState.Minimized => "Immersive view · O: sidecar",
+                _ => "No live page to show beside the app yet — open an article first",
             });
         }
 
         // The render below runs the spotlight hook, so docking immediately
         // syncs the live page to the current selection.
         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Side-aware status line shown whenever the sidecar docks (toggle or auto-engage).
+    /// workspace-8fkv: the dock side is configurable, so the copy must reflect it.
+    /// </summary>
+    private string DockedStatusMessage()
+    {
+        // Kept short: when docked the status bar has only the uncovered columns.
+        return _browserConfig.DockSide == WireCopy.Infrastructure.Configuration.DockSide.Left
+            ? "Sidecar open ⇇ · O: immersive view"
+            : "Sidecar open ⇉ · O: immersive view";
+    }
+
+    /// <summary>
+    /// Engages the sidecar after a completed navigation (workspace-exbz): when sidecar
+    /// mode is on (config default; the dock key toggles it off into the immersive view)
+    /// and the headed window is not docked yet, summon the live page beside the app and
+    /// re-render at the docked width. Cache-served pages get this too — once docked,
+    /// the dock spotlight follow-navigates the live window on every selection or page
+    /// change. No-ops fast in the steady state (already docked / immersive / non-web
+    /// page / non-interactive run).
+    /// </summary>
+    private async Task EnsureSidecarEngagedAsync(CancellationToken cancellationToken)
+    {
+        if (_sidecarUnavailable
+            || !_inputHandler.IsInteractive
+            || _browserSession is not IBrowserSession session
+            || !session.WantsSidecar)
+        {
+            return;
+        }
+
+        if (session.IsDocked)
+        {
+            // Already engaged (a headed fetch launch auto-docks) — just surface the
+            // sidecar hint once so the user learns the O switch exists.
+            if (!_sidecarHintShown)
+            {
+                _sidecarHintShown = true;
+                _navigationService.SetStatusMessage(DockedStatusMessage());
+                await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var url = _navigationService.CurrentPage?.Url;
+        if (!BrowserDockCommandHandler.IsSummonableUrl(url))
+        {
+            return;
+        }
+
+        // A headed window cannot exist without a display — don't pay a doomed launch
+        // attempt per navigation on headless hosts (CI, SSH, containers).
+        if (OperatingSystem.IsLinux()
+            && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))
+            && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+        {
+            _sidecarUnavailable = true;
+            _logger.LogInformation("Sidecar disabled for this session: no display (DISPLAY/WAYLAND_DISPLAY unset)");
+            return;
+        }
+
+        // The first summon launches/switches a headed browser — slow — so paint an
+        // "opening…" status before awaiting it (mirrors the manual dock-key path).
+        _navigationService.SetStatusMessage("Opening the live page beside the app…");
+        await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
+
+        var state = await session.SummonAndDockAsync(url!).ConfigureAwait(false);
+        if (state == BrowserWindowState.Docked)
+        {
+            _sidecarSummonFailures = 0;
+            _sidecarHintShown = true;
+            _navigationService.SetStatusMessage(DockedStatusMessage());
+        }
+        else
+        {
+            _navigationService.SetStatusMessage("Couldn't open the live page beside the app");
+            if (++_sidecarSummonFailures >= MaxSidecarSummonFailures)
+            {
+                _sidecarUnavailable = true;
+                _logger.LogWarning(
+                    "Sidecar disabled for this session after {Count} failed summons",
+                    _sidecarSummonFailures);
+            }
+        }
+
+        // Re-render so the app immediately shrinks into the uncovered columns (or
+        // clears the "opening…" status on failure); the render hook then syncs the
+        // spotlight, which follow-navigates and highlights the current selection.
+        await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

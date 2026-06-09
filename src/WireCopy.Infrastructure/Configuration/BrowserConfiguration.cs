@@ -32,6 +32,16 @@ public class BrowserConfiguration
     public double DockFraction { get; init; } = 0.5;
 
     /// <summary>
+    /// Whether the sidecar — the docked live browser window beside the terminal —
+    /// engages automatically when a page opens (workspace-exbz). When true, completing
+    /// a navigation (live OR cache-served) summons the headed window to the configured
+    /// <see cref="DockSide"/>/<see cref="DockFraction"/> and the dock spotlight keeps
+    /// it following the selection; the dock key switches to the immersive (full-width)
+    /// view and back. When false, the sidecar only appears on an explicit dock keystroke.
+    /// </summary>
+    public bool Sidecar { get; init; } = true;
+
+    /// <summary>
     /// Gets implicit wait timeout in seconds. Pages with heavy JavaScript and dynamic content
     /// require longer waits. Recommended: 30+ seconds for reliable element detection.
     /// </summary>

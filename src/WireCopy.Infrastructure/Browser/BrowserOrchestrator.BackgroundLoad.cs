@@ -144,6 +144,10 @@ public partial class BrowserOrchestrator
             await RenderCurrentPageAsync(loadOptions, cancellationToken).ConfigureAwait(false);
 
             PlayDecryptRevealAnimation(page);
+
+            // workspace-exbz: background loads (full cache miss → skeleton → load)
+            // complete here, not in CompleteNavigation — engage the sidecar too.
+            await EnsureSidecarEngagedAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

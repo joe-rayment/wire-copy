@@ -38,14 +38,35 @@ public class DockSpotlightTests
     }
 
     [Fact]
-    public void ResolveTarget_GroupHeaderSelected_ReturnsNull()
+    public void ResolveTarget_GroupHeaderSelected_FollowsPageOnly()
     {
+        // workspace-exbz: no concrete story selected — the live window must still keep
+        // FOLLOWING the page the terminal shows (cache hits never navigate it), it just
+        // draws no highlight box.
         var page = CreatePage("https://news.example.com/");
         var tree = page.LinkTree!;
         var header = tree.GetVisibleNodes().First(n => n.IsGroupHeader);
         tree.SelectNodeById(header.Id);
 
+        var target = DockSpotlight.ResolveTarget(ViewMode.Hierarchical, page, tree);
+
+        target.Should().NotBeNull();
+        target!.Value.FollowPageOnly.Should().BeTrue();
+        target.Value.PageUrl.Should().Be("https://news.example.com/");
+    }
+
+    [Fact]
+    public void ResolveTarget_NonWebPageUrl_ReturnsNull()
+    {
+        // Follow-only targets are meaningless for non-web URLs (launcher, skeleton,
+        // data:) — navigating the live window there would show garbage.
+        var page = CreatePage("file:///tmp/snapshot.html");
+        var tree = page.LinkTree!;
+        var header = tree.GetVisibleNodes().First(n => n.IsGroupHeader);
+        tree.SelectNodeById(header.Id);
+
         DockSpotlight.ResolveTarget(ViewMode.Hierarchical, page, tree).Should().BeNull();
+        DockSpotlight.ResolveTarget(ViewMode.Readable, page, tree).Should().BeNull();
     }
 
     [Theory]

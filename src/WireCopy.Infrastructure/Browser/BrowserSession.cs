@@ -48,6 +48,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         _browserConfig = browserConfig.Value;
         _logger = logger;
         _cookieManager = cookieManager;
+
+        // Sidecar mode starts in the configured state (workspace-exbz): when on, the
+        // first headed launch docks beside the terminal instead of minimizing into the
+        // void; the dock toggle drops to the immersive view by clearing this intent.
+        _userWantsDock = _browserConfig.Sidecar;
         _userDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WireCopy",
@@ -84,6 +89,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // Same atomic-read rationale as HasActiveBrowser: a momentarily stale value
     // is acceptable for this probe — the spotlight re-checks on every sync.
     public bool IsDocked => !_disposed && _isDocked && _page != null && !_pageIsHeadless;
+
+    /// <inheritdoc />
+    public bool WantsSidecar => !_disposed && _userWantsDock;
 
     /// <inheritdoc />
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
@@ -236,6 +244,22 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        // Sidecar mode (workspace-exbz): "get out of the way" means BACK TO THE DOCK,
+        // not hidden. Background quieting (preload re-minimizes, post-captcha cleanup)
+        // must not undo a dock the user wants — the preload service calls this every
+        // few seconds while prefetching, which previously stripped the dock moments
+        // after it engaged. The explicit un-dock path (ToggleWindowDockAsync) clears
+        // _userWantsDock BEFORE calling this, so a real minimize still goes through.
+        if (_userWantsDock)
+        {
+            if (!_isDocked)
+            {
+                await DockWindowAsync().ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         _isDocked = false;
 
         try
@@ -294,21 +318,39 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // untouched, so background prefetch keeps running on its own headless tabs.
             var page = await GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
 
-            // Point the live window at the same URL the terminal is reading. Commit-level
-            // wait keeps the "opening…" gap short; the page keeps loading visibly after.
+            // Point the live window at the same URL the terminal is reading — unless it
+            // is already there (the live fetch used this very window), where re-navigating
+            // would only flash and reload the page (workspace-exbz). Commit-level wait
+            // keeps the "opening…" gap short; the page keeps loading visibly after.
+            var alreadyOnUrl = false;
             try
             {
-                await page.GotoAsync(url, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.Commit,
-                    Timeout = _browserConfig.PageLoadTimeoutSeconds * 1000,
-                }).ConfigureAwait(false);
+                alreadyOnUrl = string.Equals(
+                    Cache.UrlNormalizer.Normalize(page.Url),
+                    Cache.UrlNormalizer.Normalize(url),
+                    StringComparison.Ordinal);
             }
-            catch (Exception ex)
+            catch (PlaywrightException)
             {
-                // Navigation latency / timeout is non-fatal — still dock the window so
-                // the user sees the page finish loading beside the terminal.
-                _logger.LogDebug(ex, "SummonAndDock navigation to {Url} did not fully settle (non-fatal)", url);
+                // Stale page probe — treat as not-there and navigate below.
+            }
+
+            if (!alreadyOnUrl)
+            {
+                try
+                {
+                    await page.GotoAsync(url, new PageGotoOptions
+                    {
+                        WaitUntil = WaitUntilState.Commit,
+                        Timeout = _browserConfig.PageLoadTimeoutSeconds * 1000,
+                    }).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Navigation latency / timeout is non-fatal — still dock the window so
+                    // the user sees the page finish loading beside the terminal.
+                    _logger.LogDebug(ex, "SummonAndDock navigation to {Url} did not fully settle (non-fatal)", url);
+                }
             }
 
             // A freshly (re)launched headed window starts minimized (LaunchBrowserAsync),
@@ -1071,6 +1113,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             await _page.BringToFrontAsync().ConfigureAwait(false);
             _isDocked = true;
             _userWantsDock = true;
+
+            // The sidecar is a companion view, not a focus target — hand keyboard
+            // focus straight back to the terminal (macOS-only; no-op elsewhere).
+            await RefocusTerminalAsync().ConfigureAwait(false);
             return BrowserWindowState.Docked;
         }
         catch (Exception ex)

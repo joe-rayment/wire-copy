@@ -304,6 +304,10 @@ public partial class BrowserOrchestrator
             await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
             PlayDecryptRevealAnimation(page);
 
+            // workspace-exbz: gate-resolution loads complete here — engage the sidecar
+            // (usually a no-op: solving the gate means a headed window already exists).
+            await EnsureSidecarEngagedAsync(cancellationToken).ConfigureAwait(false);
+
             _logger.LogInformation(
                 "Human-action watcher: auto-loaded resolved content for {Url}",
                 url);

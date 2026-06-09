@@ -47,6 +47,16 @@ public interface IBrowserSession : IBrowserSessionControl
     bool IsDocked { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the user currently wants the sidecar (docked
+    /// live window) — the sticky intent behind <see cref="IsDocked"/>. Starts as the
+    /// configured <c>Browser:Sidecar</c> default; flipped off when the user toggles
+    /// into the immersive view, back on when they dock again. Navigation completion
+    /// uses it to auto-engage the sidecar without a manual dock keystroke
+    /// (workspace-exbz).
+    /// </summary>
+    bool WantsSidecar { get; }
+
+    /// <summary>
     /// Gets a value indicating whether a background page can be created in the
     /// dedicated headless preload context. Unlike <see cref="HasBrowserContext"/>
     /// this does NOT require the foreground browser to have been launched first:
@@ -91,8 +101,10 @@ public interface IBrowserSession : IBrowserSessionControl
     Task RestoreWindowAsync();
 
     /// <summary>
-    /// Minimizes the browser window so it doesn't cover the terminal.
-    /// No-op if headless or no active page.
+    /// Returns the browser window to its background state so it doesn't cover the
+    /// terminal: minimized normally, but RE-DOCKED when the user wants the sidecar
+    /// (workspace-exbz) — background quieting must not strip a dock the user asked
+    /// for. No-op if headless or no active page.
     /// </summary>
     Task MinimizeWindowAsync();
 
