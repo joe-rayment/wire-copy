@@ -477,6 +477,19 @@ public class LinkExtractor : ILinkExtractor
             return (null, null);
         }
 
+        // workspace-opnh perf: ExtractAuthor/ExtractPublishedDate run descendant-wide XPath
+        // scans (.//span | .//p, .//*[contains(...)], .//time) over the entire container
+        // subtree. On a single-article page an inline reference link's container can resolve
+        // to the whole article body, and doing that scan for each of thousands of links froze
+        // the page load ~10s (measured: 10.8s for a 5171-link Wikipedia article — which is
+        // also what made speed-read appear to lag, a buffered keypress waiting behind the
+        // load). Genuine per-link bylines live in small, card-sized containers, so skip
+        // containers too large to be a card. The check early-exits, so it stays cheap.
+        if (!IsCardSizedContainer(container))
+        {
+            return (null, null);
+        }
+
         var author = ExtractAuthor(container);
         var pubDate = ExtractPublishedDate(container);
 
@@ -750,6 +763,20 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return null;
+    }
+
+    // workspace-opnh: true when the container has at most MaxCardDescendants descendants —
+    // i.e. it is plausibly an article card rather than a whole page section or body. Bounds
+    // the cost of the per-link metadata XPath scans, which were O(subtree) and froze the
+    // load on link-heavy single-article pages. Early-exits at the cap so it stays O(cap), not
+    // O(subtree), on the huge containers that caused the freeze.
+    private static bool IsCardSizedContainer(HtmlNode container)
+    {
+        const int maxCardDescendants = 150;
+
+        // Skip+Any enumerates at most (cap + 1) descendants lazily, then short-circuits —
+        // so this never walks the full subtree of a large page section or body.
+        return !container.Descendants().Skip(maxCardDescendants).Any();
     }
 
     private static HtmlNode? FindContainer(HtmlNode node)
