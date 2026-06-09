@@ -31,6 +31,14 @@ public interface IBrowserSession : IBrowserSessionControl
     bool IsBrowserAvailable { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the headed browser window is currently
+    /// docked to the right half of the screen (concert view). False when
+    /// minimized, headless, or no page is active. Used by the dock spotlight
+    /// to decide whether selection-follow highlighting should run at all.
+    /// </summary>
+    bool IsDocked { get; }
+
+    /// <summary>
     /// Gets a value indicating whether a background page can be created in the
     /// dedicated headless preload context. Unlike <see cref="HasBrowserContext"/>
     /// this does NOT require the foreground browser to have been launched first:
