@@ -96,7 +96,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
         RenderPreloadDetailOverlay(options);
         RenderToastOverlay(context, options.TerminalWidth);
     }
@@ -128,7 +128,7 @@ public class TerminalPageRenderer : IPageRenderer
             }
 
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
             RenderPreloadDetailOverlay(options);
             RenderToastOverlay(context, options.TerminalWidth);
             return;
@@ -161,7 +161,8 @@ public class TerminalPageRenderer : IPageRenderer
                 readerViewportHeight: viewportHeight,
                 layoutVariantLabel: options.LayoutVariantLabel,
                 missingCookieDomains: options.MissingCookieDomains,
-                requiredAction: options.RequiredAction);
+                requiredAction: options.RequiredAction,
+                browserDocked: options.BrowserDocked);
         }
         else
         {
@@ -169,7 +170,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
         }
 
         RenderPreloadDetailOverlay(options);

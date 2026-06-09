@@ -20,6 +20,18 @@ public class BrowserConfiguration
     public bool DisableAnimations { get; init; }
 
     /// <summary>
+    /// Which side of the screen the headed browser docks to when toggled into the
+    /// side-by-side "concert" view. Right (default) keeps the terminal on the left.
+    /// </summary>
+    public DockSide DockSide { get; init; } = DockSide.Right;
+
+    /// <summary>
+    /// Fraction of the screen width the docked browser window occupies (the terminal
+    /// gets the rest). Default 0.5 (an even split). Clamped to [0.2, 0.8] at use.
+    /// </summary>
+    public double DockFraction { get; init; } = 0.5;
+
+    /// <summary>
     /// Gets implicit wait timeout in seconds. Pages with heavy JavaScript and dynamic content
     /// require longer waits. Recommended: 30+ seconds for reliable element detection.
     /// </summary>

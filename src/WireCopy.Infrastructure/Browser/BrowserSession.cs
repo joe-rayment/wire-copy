@@ -30,6 +30,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private IBrowserContext? _preloadContext;
     private bool _pageIsHeadless;
     private bool _isDocked;
+
+    // Sticky user intent (workspace-v7mb): distinct from _isDocked (the window's current
+    // visible state). Set when the user docks, cleared when they explicitly minimize via
+    // the toggle. Survives the auto-minimize at launch so a headed window that reappears
+    // (e.g. after a headless→headed switch or a crash recovery) re-docks itself.
+    private bool _userWantsDock;
     private bool _disposed;
     private bool _browsersInstalled;
     private long _lastRefocusTicks;
@@ -57,6 +63,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // just to ask "is this currently non-null?" The reader may observe the prior
     // state if a launch/disposal is mid-flight, which is acceptable for this probe.
     public bool HasActiveBrowser => !_disposed && _page != null;
+
+    /// <inheritdoc />
+    public bool IsWindowDocked => !_disposed && _isDocked;
 
     /// <inheritdoc />
     public bool HasBrowserContext => !_disposed && _context != null;
@@ -255,11 +264,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         if (_isDocked)
         {
+            // The user explicitly un-docked: drop the sticky intent so a future headed
+            // relaunch does NOT auto-re-dock against their wishes.
+            _userWantsDock = false;
             await MinimizeWindowAsync().ConfigureAwait(false); // also clears _isDocked
             return BrowserWindowState.Minimized;
         }
 
-        return await DockWindowRightAsync().ConfigureAwait(false);
+        return await DockWindowAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -296,68 +308,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             // A freshly (re)launched headed window starts minimized (LaunchBrowserAsync),
             // so force-dock rather than toggle.
-            return await DockWindowRightAsync().ConfigureAwait(false);
+            return await DockWindowAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "SummonAndDockAsync failed for {Url} (non-fatal)", url);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Positions the headed window on the right half of the available screen and marks
-    /// it docked. Shared by the toggle path and the lens-on-demand summon path. Assumes
-    /// a live headed <see cref="_page"/>; returns null (and logs) if CDP positioning fails.
-    /// </summary>
-    private async Task<BrowserWindowState?> DockWindowRightAsync()
-    {
-        if (_disposed || _page == null || _pageIsHeadless)
-        {
-            return null;
-        }
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-
-            // CDP forbids combining windowState with explicit bounds, so un-minimize
-            // in one call before positioning in the next.
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-            }).ConfigureAwait(false);
-
-            // Right half of the available screen area (as the page sees it).
-            var screen = await _page.EvaluateAsync<int[]>(
-                "() => [window.screen.availWidth, window.screen.availHeight]").ConfigureAwait(false);
-            var screenWidth = screen is { Length: > 0 } ? screen[0] : 1280;
-            var screenHeight = screen is { Length: > 1 } ? screen[1] : 800;
-            var halfWidth = screenWidth / 2;
-
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object>
-                {
-                    ["left"] = halfWidth,
-                    ["top"] = 0,
-                    ["width"] = screenWidth - halfWidth,
-                    ["height"] = screenHeight,
-                },
-            }).ConfigureAwait(false);
-
-            await _page.BringToFrontAsync().ConfigureAwait(false);
-            _isDocked = true;
-            return BrowserWindowState.Docked;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to dock browser window right (non-fatal)");
             return null;
         }
     }
@@ -808,16 +763,31 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // (e.g., Shift+I login) are picked up on browser restart.
             await InjectStoredCookiesAsync().ConfigureAwait(false);
 
-            // Minimize headed browser so it stays in the background.
-            // RestoreWindowAsync (BringToFront) is called when user interaction is needed.
+            // Set the mode flag BEFORE any window positioning below: Minimize/Dock guard
+            // on _pageIsHeadless, and the failable launch work (install, context launch,
+            // page creation, cookie injection) has already succeeded by this point. If
+            // that earlier work throws, the flag stays stale so the next call retries the
+            // mode switch; the positioning calls below swallow their own exceptions.
+            _pageIsHeadless = headless;
+
             if (!headless)
             {
-                await MinimizeWindowAsync().ConfigureAwait(false);
-            }
+                // Reset the docked flag if THIS headed window is later closed/crashes so
+                // the persistent "docked" affordance can't lie (workspace-v7mb).
+                _page!.Close += OnHeadedPageClosed;
 
-            // Set mode flag only on success — if launch throws, the flag stays
-            // stale so the next call correctly retries the mode switch.
-            _pageIsHeadless = headless;
+                // Re-dock automatically when the headed browser reappears if the user was
+                // in docked mode; otherwise minimize it into the background.
+                // RestoreWindowAsync (BringToFront) is called when interaction is needed.
+                if (_userWantsDock)
+                {
+                    await DockWindowAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await MinimizeWindowAsync().ConfigureAwait(false);
+                }
+            }
         }
         catch
         {
@@ -1032,6 +1002,76 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             _preloadLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Positions the headed window on the configured side/fraction of the available
+    /// screen (default right half) and marks it docked. Shared by the toggle path and
+    /// the lens-on-demand summon path. Assumes a live headed <see cref="_page"/>;
+    /// returns null (and logs) if CDP positioning fails.
+    /// </summary>
+    private async Task<BrowserWindowState?> DockWindowAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return null;
+        }
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
+
+            // CDP forbids combining windowState with explicit bounds, so un-minimize
+            // in one call before positioning in the next.
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
+            }).ConfigureAwait(false);
+
+            // Position on the configured side/fraction of the available screen area
+            // (as the page sees it). Defaults to the right half (workspace-v7mb).
+            var screen = await _page.EvaluateAsync<int[]>(
+                "() => [window.screen.availWidth, window.screen.availHeight]").ConfigureAwait(false);
+            var screenWidth = screen is { Length: > 0 } ? screen[0] : 1280;
+            var screenHeight = screen is { Length: > 1 } ? screen[1] : 800;
+            var bounds = DockGeometry.Compute(
+                screenWidth, screenHeight, _browserConfig.DockSide, _browserConfig.DockFraction);
+
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object>
+                {
+                    ["left"] = bounds.Left,
+                    ["top"] = bounds.Top,
+                    ["width"] = bounds.Width,
+                    ["height"] = bounds.Height,
+                },
+            }).ConfigureAwait(false);
+
+            await _page.BringToFrontAsync().ConfigureAwait(false);
+            _isDocked = true;
+            _userWantsDock = true;
+            return BrowserWindowState.Docked;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to dock browser window (non-fatal)");
+            return null;
+        }
+    }
+
+    // workspace-v7mb: fired by Playwright when the headed window is closed or the tab
+    // crashes. Clears only the visible-state flag — _userWantsDock is preserved so a
+    // subsequent headed relaunch re-docks if the user was in docked mode.
+    private void OnHeadedPageClosed(object? sender, IPage e)
+    {
+        _isDocked = false;
+        _logger.LogDebug("Headed browser window closed/crashed — cleared docked state");
     }
 
     private async Task DisposeContextUnsafeAsync()

@@ -112,6 +112,13 @@ public record RenderOptions
     public IReadOnlyList<string>? MissingCookieDomains { get; init; }
 
     /// <summary>
+    /// Whether the headed browser window is currently docked beside the terminal.
+    /// Drives the persistent "⇉ docked" status-bar affordance (workspace-v7mb) so the
+    /// side-by-side "concert" state stays visible after the transient status message fades.
+    /// </summary>
+    public bool BrowserDocked { get; init; }
+
+    /// <summary>
     /// Typed human-action signal currently active for the page being rendered
     /// (CAPTCHA, login wall, cookie consent, 2FA, paywall, region block, generic).
     /// When non-null, the status bar replaces the legacy <see cref="MissingCookieDomains"/>

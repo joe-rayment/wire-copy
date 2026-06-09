@@ -18,6 +18,14 @@ public interface IBrowserSession : IBrowserSessionControl
     bool HasActiveBrowser { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the headed browser window is currently docked
+    /// beside the terminal. Drives the persistent "⇉ docked" status-bar affordance so
+    /// the "concert" state is always visible (workspace-v7mb). False when headless,
+    /// minimized, closed, or no window exists.
+    /// </summary>
+    bool IsWindowDocked { get; }
+
+    /// <summary>
     /// Gets a value indicating whether a browser context exists (even if no page is open).
     /// This is true after the browser is launched, before any page is created.
     /// Used by background preloading to determine if a background tab can be opened.

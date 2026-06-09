@@ -74,6 +74,7 @@ public partial class BrowserOrchestrator
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
             RequiredAction = requiredAction,
             ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
+            BrowserDocked = (_browserSession as IBrowserSession)?.IsWindowDocked ?? false,
         };
     }
 

@@ -135,6 +135,47 @@ public class BrowserWindowDockIntegrationTests
             "the summoned window should span ~half the screen width");
     }
 
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task IsWindowDocked_FlipsFalse_WhenHeadedWindowCloses()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync("data:text/html,<title>dock</title><body>dock test</body>");
+
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        session.IsWindowDocked.Should().BeTrue("the window was just docked");
+
+        // Simulate the user closing/crashing the headed window: the persistent affordance
+        // must not keep claiming "docked" (workspace-v7mb crash-reset wiring).
+        await page.CloseAsync();
+        // The Close event handler runs on Playwright's dispatch loop; give it a beat.
+        for (var i = 0; i < 50 && session.IsWindowDocked; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        session.IsWindowDocked.Should().BeFalse("closing the headed window must clear the docked state");
+    }
+
     private static async Task<WindowBounds> ReadBoundsAsync(IPage page)
     {
         var cdp = await page.Context.NewCDPSessionAsync(page);
