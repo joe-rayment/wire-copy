@@ -83,4 +83,46 @@ public class DockGeometryTests
         top.Should().Be(0);
         height.Should().Be(1440);
     }
+
+    // workspace-nqqs: multi-monitor work-area origin. availLeft/availTop offset the
+    // window into the display it actually lives on (virtual-screen coordinates).
+
+    [Fact]
+    public void Compute_SecondaryDisplayToTheRight_OffsetsByAvailLeft()
+    {
+        // Secondary 1920-wide display whose work area starts at x=2560 (right of a
+        // 2560-wide primary). Docking right should land near the secondary's right edge.
+        var (left, top, width, height) = DockGeometry.Compute(1920, 1080, 2560, 0, DockSide.Right, 0.5);
+        width.Should().Be(960);
+        left.Should().Be(2560 + 960, "right-dock = display origin + (width - halfWidth)");
+        top.Should().Be(0);
+        height.Should().Be(1080);
+    }
+
+    [Fact]
+    public void Compute_SecondaryDisplayToTheLeft_PinsToDisplayOrigin()
+    {
+        // Secondary display whose work area starts at x=-1920 (left of primary).
+        var (left, _, width, _) = DockGeometry.Compute(1920, 1080, -1920, 0, DockSide.Left, 0.5);
+        left.Should().Be(-1920, "left-dock pins to the display's own work-area origin");
+        width.Should().Be(960);
+    }
+
+    [Fact]
+    public void Compute_AvailTopOffset_AvoidsTopBarOverlap()
+    {
+        // A top menu/taskbar pushes the work area down (availTop = 25, e.g. macOS menu bar).
+        var (_, top, _, height) = DockGeometry.Compute(1440, 875, 0, 25, DockSide.Right, 0.5);
+        top.Should().Be(25, "the window starts below the reserved top bar");
+        height.Should().Be(875);
+    }
+
+    [Fact]
+    public void Compute_ZeroOrigin_MatchesLegacyOverload()
+    {
+        // The 4-arg overload must equal the 6-arg form with a zero origin.
+        var legacy = DockGeometry.Compute(1280, 800, DockSide.Right, 0.5);
+        var explicitOrigin = DockGeometry.Compute(1280, 800, 0, 0, DockSide.Right, 0.5);
+        explicitOrigin.Should().Be(legacy);
+    }
 }

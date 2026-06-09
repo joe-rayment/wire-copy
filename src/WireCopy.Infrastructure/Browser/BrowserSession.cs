@@ -1034,12 +1034,20 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             // Position on the configured side/fraction of the available screen area
             // (as the page sees it). Defaults to the right half (workspace-v7mb).
+            // Read the work-area ORIGIN too (availLeft/availTop) so the dock lands on the
+            // display the window actually sits on, not always the primary one
+            // (workspace-nqqs). CDP setWindowBounds and screen.avail* share the same
+            // virtual-screen coordinate space, so these compose correctly.
             var screen = await _page.EvaluateAsync<int[]>(
-                "() => [window.screen.availWidth, window.screen.availHeight]").ConfigureAwait(false);
+                "() => [window.screen.availWidth, window.screen.availHeight, " +
+                "Math.round(window.screen.availLeft || 0), Math.round(window.screen.availTop || 0)]")
+                .ConfigureAwait(false);
             var screenWidth = screen is { Length: > 0 } ? screen[0] : 1280;
             var screenHeight = screen is { Length: > 1 } ? screen[1] : 800;
+            var availLeft = screen is { Length: > 2 } ? screen[2] : 0;
+            var availTop = screen is { Length: > 3 } ? screen[3] : 0;
             var bounds = DockGeometry.Compute(
-                screenWidth, screenHeight, _browserConfig.DockSide, _browserConfig.DockFraction);
+                screenWidth, screenHeight, availLeft, availTop, _browserConfig.DockSide, _browserConfig.DockFraction);
 
             await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
             {
