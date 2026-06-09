@@ -1,0 +1,374 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+using Microsoft.Extensions.Logging;
+using Microsoft.Playwright;
+using WireCopy.Domain.Entities.Browser;
+using WireCopy.Domain.Enums.Browser;
+using WireCopy.Infrastructure.Browser.Cache;
+
+namespace WireCopy.Infrastructure.Browser;
+
+/// <summary>
+/// Concert-view spotlight: while the headed browser is docked (the 'O' switcher),
+/// mirrors the TUI link-tree selection onto the live page — DevTools-style
+/// highlight box plus a scroll that keeps the selected story centered on screen.
+///
+/// <para>
+/// Requests arrive synchronously from the render path on every selection change
+/// and are coalesced by a latest-wins, single-flight pump: rapid j/j/j collapses
+/// to one sync of the newest target, and the input loop is never blocked. Each
+/// sync runs under a Foreground <see cref="IPageAccessQueue"/> lease; when the
+/// live page's URL differs from the TUI's current page (cache hits and headless
+/// preloads never touch the foreground window), the spotlight follow-navigates
+/// first so the lens metaphor holds.
+/// </para>
+///
+/// <para>
+/// Failure semantics: a highlight that cannot be made visible on screen is a
+/// failure — the page-side script removes the overlay and reports
+/// <c>not-found</c>, and a throttled status hint (once per page) tells the user
+/// why nothing is lit up. A stale highlight is never left behind.
+/// </para>
+/// </summary>
+public sealed class DockSpotlight : IDisposable, IAsyncDisposable
+{
+    private static readonly TimeSpan FollowNavigationTimeout = TimeSpan.FromSeconds(15);
+
+    private readonly IBrowserSession _session;
+    private readonly IPageAccessQueue _pageAccessQueue;
+    private readonly ILogger<DockSpotlight> _logger;
+    private readonly object _gate = new();
+    private readonly SemaphoreSlim _signal = new(0, 1);
+    private readonly CancellationTokenSource _disposeCts = new();
+    private readonly Task _pump;
+
+    // Pending request slot: each new request overwrites the previous one.
+    private SpotlightTarget? _pendingTarget;
+    private bool _pendingIsClear;
+    private bool _hasPending;
+
+    // Last target applied successfully; used to dedupe unrelated re-renders
+    // (toasts, progress updates) and to make clears no-ops when nothing is lit.
+    private SpotlightTarget? _applied;
+
+    // True while the pump is processing a request. A clear that arrives mid-sync
+    // must be queued (not short-circuited on _applied == null) or the in-flight
+    // sync could land an overlay after the clear was "handled".
+    private volatile bool _busy;
+
+    // Throttle: at most one not-found hint per page URL.
+    private string? _lastHintPageUrl;
+
+    private bool _disposed;
+
+    public DockSpotlight(
+        IBrowserSession session,
+        IPageAccessQueue pageAccessQueue,
+        ILogger<DockSpotlight> logger)
+    {
+        _session = session;
+        _pageAccessQueue = pageAccessQueue;
+        _logger = logger;
+        _pump = Task.Run(PumpAsync);
+    }
+
+    /// <summary>
+    /// Sink for user-facing hints (wired to the status bar by the orchestrator).
+    /// </summary>
+    public Action<string>? StatusMessageSink { get; set; }
+
+    /// <summary>
+    /// Derives the spotlight target from the current view state. Returns null
+    /// (meaning "clear") for anything that is not a concrete link selected in
+    /// the link-tree view: reader view, launcher, collections, group headers.
+    /// </summary>
+    public static SpotlightTarget? ResolveTarget(ViewMode viewMode, Page? page, NavigationTree? tree)
+    {
+        if (viewMode != ViewMode.Hierarchical || page == null)
+        {
+            return null;
+        }
+
+        var selected = tree?.CurrentSelection;
+        if (selected == null || selected.IsGroupHeader || string.IsNullOrEmpty(selected.Link.Url))
+        {
+            return null;
+        }
+
+        return new SpotlightTarget(page.Url, selected.Link.Url, selected.Link.DisplayText);
+    }
+
+    /// <summary>
+    /// Requests that the live page highlight and scroll to the given target.
+    /// Cheap synchronous enqueue; no-op when the browser isn't docked.
+    /// </summary>
+    public void RequestSync(SpotlightTarget target)
+    {
+        if (_disposed || !_session.IsDocked || !_session.HasActiveBrowser)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            // Unrelated re-render with an unchanged selection — nothing to do.
+            if (!_hasPending && _applied == target)
+            {
+                return;
+            }
+
+            _pendingTarget = target;
+            _pendingIsClear = false;
+            _hasPending = true;
+        }
+
+        Wake();
+    }
+
+    /// <summary>
+    /// Requests removal of any highlight on the live page. Deliberately NOT
+    /// gated on <see cref="IBrowserSession.IsDocked"/>: the overlay must also be
+    /// cleared right after undocking so a later re-dock never shows a stale box.
+    /// </summary>
+    public void RequestClear()
+    {
+        if (_disposed || !_session.HasActiveBrowser)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            // Nothing lit, nothing queued, nothing in flight — skip the wakeup.
+            if (_applied == null && !_hasPending && !_busy)
+            {
+                return;
+            }
+
+            _pendingTarget = null;
+            _pendingIsClear = true;
+            _hasPending = true;
+        }
+
+        Wake();
+    }
+
+    // Sync disposal kept for containers that dispose synchronously (mirrors
+    // BrowserSession); DI prefers DisposeAsync when both are present.
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await _disposeCts.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            await _pump.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Pump is draining a sync against a possibly-dead page; don't block shutdown.
+        }
+
+        _disposeCts.Dispose();
+        _signal.Dispose();
+    }
+
+    private static bool UrlsMatch(string? liveUrl, string targetPageUrl)
+    {
+        if (string.IsNullOrEmpty(liveUrl))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            UrlNormalizer.Normalize(liveUrl),
+            UrlNormalizer.Normalize(targetPageUrl),
+            StringComparison.Ordinal);
+    }
+
+    private void Wake()
+    {
+        try
+        {
+            _signal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Already signaled — the pump will pick up the latest pending slot.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed during shutdown.
+        }
+    }
+
+    private async Task PumpAsync()
+    {
+        var ct = _disposeCts.Token;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await _signal.WaitAsync(ct).ConfigureAwait(false);
+
+                while (TryTakePending(out var target, out var isClear))
+                {
+                    _busy = true;
+                    try
+                    {
+                        if (isClear)
+                        {
+                            await ClearAsync(ct).ConfigureAwait(false);
+                        }
+                        else if (target is { } t)
+                        {
+                            await SyncAsync(t, ct).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _busy = false;
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown.
+        }
+    }
+
+    private bool TryTakePending(out SpotlightTarget? target, out bool isClear)
+    {
+        lock (_gate)
+        {
+            target = _pendingTarget;
+            isClear = _pendingIsClear;
+            var had = _hasPending;
+            _hasPending = false;
+            _pendingTarget = null;
+            _pendingIsClear = false;
+            return had;
+        }
+    }
+
+    private async Task SyncAsync(SpotlightTarget target, CancellationToken ct)
+    {
+        if (!_session.IsDocked || !_session.HasActiveBrowser)
+        {
+            _applied = null;
+            return;
+        }
+
+        try
+        {
+            using var lease = await _pageAccessQueue
+                .AcquireAsync(PageAccessPriority.Foreground, headless: false, ct)
+                .ConfigureAwait(false);
+
+            // Superseded while waiting for the page — the newer request will run next.
+            if (HasNewerPending())
+            {
+                return;
+            }
+
+            var page = lease.Page;
+            if (!UrlsMatch(page.Url, target.PageUrl))
+            {
+                _logger.LogDebug(
+                    "Dock spotlight: live page {LiveUrl} != TUI page {PageUrl}, follow-navigating",
+                    page.Url,
+                    target.PageUrl);
+                await page.GotoAsync(target.PageUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
+                }).ConfigureAwait(false);
+            }
+
+            var result = await page.EvaluateAsync<string>(
+                SpotlightScript.Sync,
+                new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
+
+            if (result == "ok")
+            {
+                _applied = target;
+                return;
+            }
+
+            _applied = null;
+            HintOncePerPage(target.PageUrl, "Selected story isn't visible on the live page — highlight skipped");
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown or lease-wait timeout; the next selection move retries.
+        }
+        catch (PlaywrightException ex) when (PageLoader.LooksLikeStalePlaywrightPage(ex.Message))
+        {
+            // Page navigated/closed out from under us — drop; next move retries.
+            _logger.LogDebug(ex, "Dock spotlight: stale page during sync, dropping");
+            _applied = null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Dock spotlight: sync failed for {LinkUrl}", target.LinkUrl);
+            _applied = null;
+            HintOncePerPage(target.PageUrl, "Couldn't sync the live page to your selection");
+        }
+    }
+
+    private async Task ClearAsync(CancellationToken ct)
+    {
+        if (_applied == null || !_session.HasActiveBrowser)
+        {
+            _applied = null;
+            return;
+        }
+
+        try
+        {
+            using var lease = await _pageAccessQueue
+                .AcquireAsync(PageAccessPriority.Foreground, headless: false, ct)
+                .ConfigureAwait(false);
+            await lease.Page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown.
+        }
+        catch (Exception ex)
+        {
+            // A failed clear is cosmetic at worst (window is hidden or page gone).
+            _logger.LogDebug(ex, "Dock spotlight: clear failed (non-fatal)");
+        }
+        finally
+        {
+            _applied = null;
+        }
+    }
+
+    private bool HasNewerPending()
+    {
+        lock (_gate)
+        {
+            return _hasPending;
+        }
+    }
+
+    private void HintOncePerPage(string pageUrl, string message)
+    {
+        if (string.Equals(_lastHintPageUrl, pageUrl, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastHintPageUrl = pageUrl;
+        StatusMessageSink?.Invoke(message);
+    }
+}

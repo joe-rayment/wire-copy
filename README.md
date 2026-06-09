@@ -82,6 +82,7 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 | `s` | Save to collection |
 | `v` / `Tab` | Switch to reader view |
 | `t` | Switch to link tree view |
+| `Shift+O` | Dock live browser to the right half — the page scrolls to and highlights whichever story you select |
 | `Shift+R` | Force refresh (bypass cache) |
 | `b` / `Backspace` | Go back |
 | `Shift+L` | Go forward |

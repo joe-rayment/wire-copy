@@ -60,6 +60,7 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly PageLoadPipeline _pipeline;
     private readonly ILayoutVariantProvider _layoutVariantProvider;
     private readonly IThemeProvider _themeProvider;
+    private readonly DockSpotlight _dockSpotlight;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
@@ -127,7 +128,8 @@ public partial class BrowserOrchestrator : IBrowserService
         IOptions<Configuration.BrowserConfiguration> browserConfig,
         ILogger<BrowserOrchestrator> logger,
         PageLoadPipeline pipeline,
-        ILayoutVariantProvider layoutVariantProvider)
+        ILayoutVariantProvider layoutVariantProvider,
+        DockSpotlight dockSpotlight)
     {
         _pageLoader = pageLoader;
         _treeBuilder = treeBuilder;
@@ -148,6 +150,8 @@ public partial class BrowserOrchestrator : IBrowserService
         _pipeline = pipeline;
         _layoutVariantProvider = layoutVariantProvider;
         _themeProvider = themeProvider;
+        _dockSpotlight = dockSpotlight;
+        _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
         _lineCacheManager = new LineCacheManager(navigationService, themeProvider);
 
         // Subscribe to preload progress changes for live status bar updates
@@ -1180,14 +1184,23 @@ public partial class BrowserOrchestrator : IBrowserService
         if (_browserSession is IBrowserSession session)
         {
             var state = await session.ToggleWindowDockAsync().ConfigureAwait(false);
+            if (state == BrowserWindowState.Minimized)
+            {
+                // Remove the highlight now so a later re-dock never reveals a
+                // stale box glued to a long-gone selection.
+                _dockSpotlight.RequestClear();
+            }
+
             _navigationService.SetStatusMessage(state switch
             {
-                BrowserWindowState.Docked => "Browser docked right ⇉  app + page side by side",
+                BrowserWindowState.Docked => "Browser docked right ⇉  live page follows + highlights your selection",
                 BrowserWindowState.Minimized => "Browser minimized — full screen for the app",
                 _ => "No browser window to dock yet — open a page that uses the browser first",
             });
         }
 
+        // The render below runs the spotlight hook, so docking immediately
+        // syncs the live page to the current selection.
         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
     }
 
@@ -1324,6 +1337,37 @@ public partial class BrowserOrchestrator : IBrowserService
                     // Terminal may be in an unusable state; swallow to avoid crash
                 }
             }
+        }
+        finally
+        {
+            // Concert-view spotlight: mirror the link-tree selection onto the
+            // docked live browser after every render (the render path is the
+            // single choke point all selection changes flow through). Cheap
+            // synchronous enqueue; DockSpotlight bails instantly when undocked.
+            SyncDockSpotlight();
+        }
+    }
+
+    /// <summary>
+    /// Derives the current spotlight target from view state and hands it to the
+    /// dock spotlight: a concrete link selected in the link tree syncs; anything
+    /// else (reader view, launcher, collections, group headers) clears.
+    /// </summary>
+    private void SyncDockSpotlight()
+    {
+        var page = _navigationService.CurrentPage;
+        var target = DockSpotlight.ResolveTarget(
+            _navigationService.CurrentContext.ViewMode,
+            page,
+            page?.LinkTree);
+
+        if (target is { } t)
+        {
+            _dockSpotlight.RequestSync(t);
+        }
+        else
+        {
+            _dockSpotlight.RequestClear();
         }
     }
 
