@@ -24,8 +24,10 @@ Needs: tmux, Xvfb, ffmpeg, a Release build of WireCopy.API.
 import http.server
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -114,6 +116,30 @@ def headline_lines(screen):
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+
+    # HERMETIC data dir: hierarchy configs are keyed by bare domain (port-blind),
+    # so a config saved by another live test against 127.0.0.1 would route this
+    # gate's pages through foreign selectors and blank the link list. A fresh
+    # XDG_DATA_HOME isolates the gate from the developer's real data and from
+    # other harnesses; one dir spans the whole run so the restart-mid-pause
+    # phase still finds its prefetch checkpoint.
+    data_home = tempfile.mkdtemp(prefix="wirecopy-sidecar-e2e-")
+    os.environ["XDG_DATA_HOME"] = data_home
+    app_data = os.path.join(data_home, "WireCopy")
+
+    # The app appends to a SHARED per-day log; earlier runs today (including
+    # legitimately-headless unit harnesses) would pollute string checks. Only
+    # ever scan the slice this run appended.
+    day_log = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
+    log_start = os.path.getsize(day_log) if os.path.exists(day_log) else 0
+
+    def run_log():
+        try:
+            with open(day_log) as fh:
+                fh.seek(log_start)
+                return fh.read()
+        except OSError:
+            return ""
 
     # PRIVATE tmux server (TMUX_TMPDIR): never touch the developer's tmux.
     os.environ.pop("TMUX", None)
@@ -245,7 +271,7 @@ def main():
             t.screenshot("tuner saved (toast)")
             t.send_keys("k")  # dismiss toast (harmless scroll in reader)
             time.sleep(0.5)
-            layout_dir = os.path.expanduser("~/.local/share/WireCopy/layouts")
+            layout_dir = os.path.join(app_data, "layouts")
             saved = [f for f in os.listdir(layout_dir)] if os.path.isdir(layout_dir) else []
             if not any("127.0.0.1" in f for f in saved):
                 failures.append(f"tuner did not persist a per-site config (dir: {saved})")
@@ -254,28 +280,20 @@ def main():
             t.send_keys("R")
             t.wait_for("Paragraph", timeout=40)
             time.sleep(1)
-            log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
-            try:
-                if "saved selector config" not in open(log_path).read():
-                    failures.append("refresh did not extract via the saved selector config")
-                else:
-                    print("tuned config used for re-extraction")
-            except OSError:
-                failures.append("could not read app log for tuner verification")
+            if "saved selector config" not in run_log():
+                failures.append("refresh did not extract via the saved selector config")
+            else:
+                print("tuned config used for re-extraction")
             t.send_keys("BSpace")
             t.wait_for("Headline number", timeout=25)
             time.sleep(0.5)
 
             # --- 7c. workspace-8cf2/5452: interactive session is NEVER headless ---
-            log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
-            try:
-                log = open(log_path).read()
-                if "Browser mode: VISIBLE" not in log:
-                    failures.append("startup did not log 'Browser mode: VISIBLE'")
-                if "headless=True" in log or "(headless=true)" in log:
-                    failures.append("a headless context was created in an interactive session")
-            except OSError:
-                failures.append(f"could not read app log at {log_path}")
+            log = run_log()
+            if "Browser mode: VISIBLE" not in log:
+                failures.append("startup did not log 'Browser mode: VISIBLE'")
+            if "headless=True" in log or "(headless=true)" in log:
+                failures.append("a headless context was created in an interactive session")
 
             # --- 8. '?' help popup renders (modal canary) ---
             t.send_keys("?")
@@ -318,7 +336,6 @@ def main():
         os.environ["Browser__TakeoverResumeIdleSeconds"] = "8"
         SLOW_STORIES["enabled"] = True
         subprocess.run(["tmux", "kill-server"], capture_output=True)
-        log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
         try:
             with TermTest(url=f"http://127.0.0.1:{port}/batch2/", width=TERM_W, height=40) as t:
                 t.wait_for("Headline number", timeout=60)
@@ -332,7 +349,7 @@ def main():
                     fh.write("input")
                 t.wait_for("using the browser", timeout=20)
                 print("takeover pause confirmed")
-                ckpt = os.path.expanduser("~/.local/share/WireCopy/preload-checkpoint.json")
+                ckpt = os.path.join(app_data, "preload-checkpoint.json")
                 if not os.path.exists(ckpt):
                     failures.append("takeover pause did not write a checkpoint")
 
@@ -352,20 +369,16 @@ def main():
                 except TimeoutError:
                     pass  # queue may already be drained; checkpoint test still valid if file exists
                 had_checkpoint = os.path.exists(
-                    os.path.expanduser("~/.local/share/WireCopy/preload-checkpoint.json"))
+                    os.path.join(app_data, "preload-checkpoint.json"))
             if had_checkpoint:
                 with TermTest(url=f"http://127.0.0.1:{port}/batch2/", width=TERM_W, height=40) as t:
                     t.wait_for("Headline number", timeout=60)
                     deadline = time.time() + 30
                     restored = False
                     while time.time() < deadline:
-                        try:
-                            with open(log_path) as fh:
-                                if "Prefetch checkpoint restored" in fh.read():
-                                    restored = True
-                                    break
-                        except OSError:
-                            pass
+                        if "Prefetch checkpoint restored" in run_log():
+                            restored = True
+                            break
                         time.sleep(1)
                     if not restored:
                         failures.append("restart did not restore the prefetch checkpoint")
@@ -382,6 +395,7 @@ def main():
         server.shutdown()
         xvfb.terminate()
         subprocess.run(["tmux", "kill-server"], capture_output=True)  # private server only
+        shutil.rmtree(data_home, ignore_errors=True)
 
     print()
     if failures:
