@@ -200,9 +200,9 @@ section.lead-story p.deck{margin:0;color:#4c463a}
 section.headline-list{border-bottom:1px solid #d6cfbd;padding:8px 4px}
 section.headline-list h3.section-name{font-variant:small-caps;letter-spacing:.1em;font-size:.95em;color:#6b6557;margin:6px 0}
 section.headline-list div.story{padding:7px 0;border-top:1px dotted #d6cfbd}
-aside.promo-rail{padding:10px 4px;background:#efe9d9;margin-top:10px}
-aside.promo-rail h3{font-size:.8em;color:#8a8270;text-transform:uppercase;margin:2px 0 6px}
-aside.promo-rail div{padding:4px 0;font-size:.92em}
+section.promo-rail,aside.promo-rail{padding:10px 4px;background:#efe9d9;margin-top:10px}
+section.promo-rail h3,aside.promo-rail h3{font-size:.8em;color:#8a8270;text-transform:uppercase;margin:2px 0 6px}
+section.promo-rail div,aside.promo-rail div{padding:4px 0;font-size:.92em}
 a{color:#15407a;text-decoration:none}a:hover{text-decoration:underline}
 article{max-width:680px;margin:0 auto;padding:18px 16px}
 article h1{font-size:1.6em;line-height:1.2;margin:.2em 0}
@@ -240,10 +240,13 @@ def front_page(masthead, tagline, lead, tiers, promos, depth=0):
             h.append(f"<div class=\"story\"><a href=\"{url}\">{html.escape(title)}</a></div>")
         h.append("</section>")
     if promos:
-        h.append("<aside class=\"promo-rail\"><h3>Advertisements</h3>")
+        # A labelled section (not a bare aside): the link-list heuristics group
+        # it like the story tiers, so it sorts LAST in document order instead of
+        # floating ungrouped to the top of the tree.
+        h.append("<section class=\"headline-list promo-rail\"><h3 class=\"section-name\">Advertisements</h3>")
         for url, txt in promos:
-            h.append(f"<div><a href=\"{url}\">{html.escape(txt)}</a></div>")
-        h.append("</aside>")
+            h.append(f"<div class=\"story\"><a href=\"{url}\">{html.escape(txt)}</a></div>")
+        h.append("</section>")
     h.append("</main>")
     return page(masthead, "".join(h), depth=depth)
 

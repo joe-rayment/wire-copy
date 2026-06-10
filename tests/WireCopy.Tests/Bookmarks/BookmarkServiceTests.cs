@@ -279,8 +279,8 @@ public class BookmarkServiceTests : TestDatabaseFixture, IDisposable
 
         var all = await _sut.GetAllBookmarksAsync();
         all.Should().NotBeEmpty();
-        all.Select(b => b.Url).Should().Contain("https://www.wired.com");
-        all.Select(b => b.Url).Should().Contain("https://www.newyorker.com");
+        all.Select(b => b.Url).Should().Contain("http://127.0.0.1:8642/");
+        all.Select(b => b.Url).Should().Contain("http://127.0.0.1:8642/science.html");
         File.Exists(_configStore.UserConfigPath).Should().BeTrue();
     }
 

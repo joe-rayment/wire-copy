@@ -1,14 +1,18 @@
 {
   "version": 1,
   "bookmarks": [
-    { "name": "Maclean's", "url": "https://macleans.ca" },
-    { "name": "CBC News", "url": "https://www.cbc.ca/news" },
-    { "name": "NYT Today's Paper", "url": "https://www.nytimes.com/section/todayspaper" },
-    { "name": "The Verge", "url": "https://www.theverge.com" },
-    { "name": "The Toronto Star", "url": "https://www.thestar.com" },
-    { "name": "Techmeme", "url": "https://www.techmeme.com" },
-    { "name": "Wall Street Journal", "url": "https://www.wsj.com" },
-    { "name": "Wired", "url": "https://www.wired.com" },
-    { "name": "The New Yorker", "url": "https://www.newyorker.com" }
+    { "name": "The Daily Gazette", "url": "http://127.0.0.1:8642/" },
+    { "name": "Foreign Desk — The War in Europe", "url": "http://127.0.0.1:8642/world.html" },
+    { "name": "Science & Industry", "url": "http://127.0.0.1:8642/science.html" },
+    { "name": "The Morning Chronicle — San Francisco Special", "url": "http://127.0.0.1:8642/disaster.html" },
+    { "name": "The Lighter Side (Punch)", "url": "http://127.0.0.1:8642/arts.html" },
+    { "name": "Read: The Titanic Strikes an Iceberg!", "url": "http://127.0.0.1:8642/news/the-titanic-strikes-an-iceberg.html" },
+    { "name": "Read: Women and Children First", "url": "http://127.0.0.1:8642/news/women-and-children-first.html" },
+    { "name": "Read: The Maiden Voyage of the Titanic", "url": "http://127.0.0.1:8642/news/the-maiden-voyage-of-the-titanic.html" },
+    { "name": "Read: Shaw — Common Sense About the War", "url": "http://127.0.0.1:8642/world/common-sense-about-the-war.html" },
+    { "name": "Read: San Francisco and Its Terrific Earthquake", "url": "http://127.0.0.1:8642/disaster/san-francisco-and-its-terrific-earthquake.html" },
+    { "name": "Read: The One Thousand Horse-Power Corliss Engine", "url": "http://127.0.0.1:8642/science/one-thousand-horse-power-corliss-engine.html" },
+    { "name": "Read: The Watch Dogs", "url": "http://127.0.0.1:8642/arts/the-watch-dogs.html" },
+    { "name": "Read: Fighting the Flames with Dynamite", "url": "http://127.0.0.1:8642/disaster/fighting-the-flames-with-dynamite.html" }
   ]
 }

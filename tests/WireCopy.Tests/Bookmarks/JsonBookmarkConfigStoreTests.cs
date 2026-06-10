@@ -39,15 +39,12 @@ public sealed class JsonBookmarkConfigStoreTests : IDisposable
         var urls = defaults.Bookmarks.Select(b => b.Url).ToList();
         urls.Should().Contain(new[]
         {
-            "https://macleans.ca",
-            "https://www.cbc.ca/news",
-            "https://www.nytimes.com/section/todayspaper",
-            "https://www.theverge.com",
-            "https://www.thestar.com",
-            "https://www.techmeme.com",
-            "https://www.wsj.com",
-            "https://www.wired.com",
-            "https://www.newyorker.com",
+            "http://127.0.0.1:8642/",
+            "http://127.0.0.1:8642/world.html",
+            "http://127.0.0.1:8642/science.html",
+            "http://127.0.0.1:8642/disaster.html",
+            "http://127.0.0.1:8642/arts.html",
+            "http://127.0.0.1:8642/news/the-titanic-strikes-an-iceberg.html",
         });
     }
 
@@ -57,8 +54,8 @@ public sealed class JsonBookmarkConfigStoreTests : IDisposable
         var defaults = await _sut.LoadShippedDefaultsAsync();
 
         // The array order IS the sort order.
-        defaults.Bookmarks[0].Name.Should().Be("Maclean's");
-        defaults.Bookmarks[^1].Name.Should().Be("The New Yorker");
+        defaults.Bookmarks[0].Name.Should().Be("The Daily Gazette");
+        defaults.Bookmarks[^1].Name.Should().Be("Read: Fighting the Flames with Dynamite");
     }
 
     [Fact]

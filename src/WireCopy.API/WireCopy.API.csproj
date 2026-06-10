@@ -46,4 +46,11 @@
     <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <!-- workspace-kt19.2: ship the public-domain demo pack beside the binary
+         so the loopback demo server finds it without a repo checkout. -->
+    <Content Include="..\..\demo\site\**" LinkBase="demo-site" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -54,14 +54,14 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         File.Exists(_configPath).Should().BeTrue();
         var dbBookmarks = await _repository.GetAllAsync();
         dbBookmarks.Should().NotBeEmpty();
-        dbBookmarks.Select(b => b.Url).Should().Contain("https://www.wired.com");
-        dbBookmarks.Select(b => b.Url).Should().Contain("https://www.newyorker.com");
+        dbBookmarks.Select(b => b.Url).Should().Contain("http://127.0.0.1:8642/");
+        dbBookmarks.Select(b => b.Url).Should().Contain("http://127.0.0.1:8642/science.html");
 
         // The user config should now mirror the shipped defaults.
         var config = await _configStore.LoadUserConfigAsync();
         config.Should().NotBeNull();
         config!.Version.Should().BeGreaterThan(0);
-        config.Bookmarks.Select(e => e.Url).Should().Contain("https://www.wired.com");
+        config.Bookmarks.Select(e => e.Url).Should().Contain("http://127.0.0.1:8642/");
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         var shipped = await _configStore.LoadShippedDefaultsAsync();
         var trimmed = new BookmarkConfigFile(
             shipped.Version,
-            shipped.Bookmarks.Where(e => e.Url != "https://www.wired.com").ToList());
+            shipped.Bookmarks.Where(e => e.Url != "http://127.0.0.1:8642/arts.html").ToList());
         await _configStore.SaveUserConfigAsync(trimmed);
 
         // Mirror that to the DB so the existing-user-upgrade branch isn't taken.
@@ -87,9 +87,9 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         await _sut.ReconcileAsync();
 
         var dbBookmarks = await _repository.GetAllAsync();
-        dbBookmarks.Select(b => b.Url).Should().NotContain("https://www.wired.com");
+        dbBookmarks.Select(b => b.Url).Should().NotContain("http://127.0.0.1:8642/arts.html");
         var config = await _configStore.LoadUserConfigAsync();
-        config!.Bookmarks.Select(e => e.Url).Should().NotContain("https://www.wired.com");
+        config!.Bookmarks.Select(e => e.Url).Should().NotContain("http://127.0.0.1:8642/arts.html");
         config.Bookmarks.Should().HaveCount(trimmed.Bookmarks.Count, "the user's file is untouched");
     }
 
@@ -108,7 +108,7 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         dbBookmarks.Select(b => b.Url).Should().Contain("https://my.site");
         // workspace-kt19.3: shipped defaults are seed-only — an existing config
         // never gains them.
-        dbBookmarks.Select(b => b.Url).Should().NotContain("https://www.wired.com");
+        dbBookmarks.Select(b => b.Url).Should().NotContain("http://127.0.0.1:8642/");
     }
 
     [Fact]
@@ -129,19 +129,19 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
     [Fact]
     public async Task Reconcile_BookmarkRenamedInConfig_NameUpdatedInDb()
     {
-        await _repository.AddAsync(Bookmark.Create("Wired", "https://www.wired.com", 0));
+        await _repository.AddAsync(Bookmark.Create("Gazette", "http://127.0.0.1:8642/", 0));
         await _unitOfWork.SaveChangesAsync();
 
         var renamed = new BookmarkConfigFile(
             JsonBookmarkConfigStore.CurrentSchemaVersion,
-            new List<BookmarkConfigEntry> { new("WIRED Magazine", "https://www.wired.com") });
+            new List<BookmarkConfigEntry> { new("The Daily Gazette", "http://127.0.0.1:8642/") });
         await _configStore.SaveUserConfigAsync(renamed);
 
         await _sut.ReconcileAsync();
 
         var dbBookmark = (await _repository.GetAllAsync())
-            .Single(b => b.Url == "https://www.wired.com");
-        dbBookmark.Name.Should().Be("WIRED Magazine");
+            .Single(b => b.Url == "http://127.0.0.1:8642/");
+        dbBookmark.Name.Should().Be("The Daily Gazette");
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         config!.Bookmarks.Select(e => e.Url).Should().Contain(new[] { "https://a.example", "https://b.example" });
         // workspace-kt19.3: the exported config is the user's data — shipped
         // defaults are not mixed in.
-        config.Bookmarks.Select(e => e.Url).Should().NotContain("https://www.wired.com");
+        config.Bookmarks.Select(e => e.Url).Should().NotContain("http://127.0.0.1:8642/");
     }
 
     [Fact]
