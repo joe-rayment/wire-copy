@@ -77,6 +77,9 @@ public partial class BrowserOrchestrator : IBrowserService
     private bool _sidecarUnavailable;
     private bool _sidecarHintShown;
 
+    // workspace-mctt: lens URL the user navigated to (adoption offer target).
+    private volatile string? _divergedLensUrl;
+
     // Background page load state for non-blocking navigation (Phase 2)
     private Task<Page>? _backgroundPageLoad;
     private string? _backgroundLoadUrl;
@@ -164,6 +167,14 @@ public partial class BrowserOrchestrator : IBrowserService
         _themeProvider = themeProvider;
         _dockSpotlight = dockSpotlight;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
+
+        // workspace-mctt: the user navigated the lens themselves — offer to read it
+        // here instead of yanking their page away. Shown on the next render tick.
+        _dockSpotlight.LensDiverged += url =>
+        {
+            _divergedLensUrl = url;
+            _navigationService.SetStatusMessage("Browser page changed · y: read it here");
+        };
 
         // workspace-vzmr: overlays render to the full window again — the overlap
         // model is gone, so OverlayViewport's default (full-window) provider applies.
@@ -1167,6 +1178,10 @@ public partial class BrowserOrchestrator : IBrowserService
                     await HandleToggleBrowserDockAsync(options, cancellationToken).ConfigureAwait(false);
                     break;
 
+                case CommandType.AdoptLensPage:
+                    await HandleAdoptLensPageAsync(options, cancellationToken).ConfigureAwait(false);
+                    break;
+
                 case CommandType.AddBookmark:
                     // Only handle in launcher mode (handled above), ignore in other views
                     break;
@@ -1251,6 +1266,26 @@ public partial class BrowserOrchestrator : IBrowserService
         // The render below runs the spotlight hook, so docking immediately
         // syncs the live page to the current selection.
         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adopts the page the user navigated the sidecar lens to (workspace-mctt):
+    /// 'y' after the divergence hint opens it in the app, re-aligning the lens
+    /// and the reader on the page the user chose.
+    /// </summary>
+    private async Task HandleAdoptLensPageAsync(RenderOptions options, CancellationToken cancellationToken)
+    {
+        var url = _divergedLensUrl;
+        if (string.IsNullOrEmpty(url))
+        {
+            _navigationService.SetStatusMessage("Nothing new in the browser to open");
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _divergedLensUrl = null;
+        _navigationService.SetStatusMessage("Opening the page from your browser…");
+        await NavigateToAsync(url, options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

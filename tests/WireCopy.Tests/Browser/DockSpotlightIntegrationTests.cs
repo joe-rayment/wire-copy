@@ -205,6 +205,63 @@ public class DockSpotlightIntegrationTests
             "follow-only reader view draws no highlight box — the page itself is the content");
     }
 
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task UserDrivenLensNavigation_IsNeverYankedBack_AndOffersAdoption()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlA = server.UrlFor("a");
+        var urlB = server.UrlFor("b");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        try
+        {
+            await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        var diverged = new List<string>();
+        spotlight.LensDiverged += diverged.Add;
+
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // 1. Normal follow to page A.
+        spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-5", "Story 5"));
+        await WaitForSpotlightAsync(lens!, "story-5");
+
+        // 2. The USER drives the lens to a story on page B.
+        var userUrl = $"{urlB}b-story-2";
+        await lens!.GotoAsync(userUrl);
+
+        // 3. App re-syncs the SAME page A target: the lens must NOT be yanked
+        //    back, and adoption must be offered exactly once.
+        spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-6", "Story 6"));
+        await Task.Delay(800);
+        spotlight.RequestSync(new SpotlightTarget(urlA, $"{urlA}story-7", "Story 7"));
+        await Task.Delay(800);
+        lens.Url.Should().StartWith(userUrl, "the user's page must never be yanked away");
+        diverged.Should().ContainSingle().Which.Should().StartWith(userUrl);
+
+        // 4. The app moves to a NEW page — the new page wins; following resumes.
+        spotlight.RequestSync(new SpotlightTarget(urlB, $"{urlB}b-story-9", "B-Story 9"));
+        await WaitForSpotlightAsync(lens, "b-story-9");
+        lens.Url.Should().StartWith(urlB);
+    }
+
     private static async Task<SpotlightProbe> WaitForSpotlightAsync(Microsoft.Playwright.IPage page, string storySlug)
     {
         SpotlightProbe probe = default;

@@ -122,6 +122,12 @@ public enum CommandType
     GoToUrl,
     ToggleBrowserDock,
 
+    /// <summary>
+    /// Adopt the page the USER navigated the sidecar lens to — open it in the app
+    /// (workspace-mctt). Offered via a status hint when the lens diverges.
+    /// </summary>
+    AdoptLensPage,
+
     // Layout
     ChooseLayout,
 

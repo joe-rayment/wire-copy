@@ -334,15 +334,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        // Sidecar mode (workspace-exbz): "get out of the way" means STAY AS YOU ARE,
-        // never hide a dock the user wants — background quieting (preload, post-
-        // captcha cleanup) previously stripped the dock moments after it engaged.
-        // And it must never SUMMON either (workspace-wo4q): if the user closed the
-        // window, a background minimize call must not pop it back. The explicit
-        // un-dock path (ToggleWindowDockAsync) clears _userWantsDock BEFORE calling
-        // this, so a real minimize still goes through.
+        // Sidecar mode (workspace-exbz): "get out of the way" never hides a dock the
+        // user wants and never SUMMONS a window they closed (workspace-wo4q). One
+        // exception (workspace-mctt): a window RESTORED for interaction (captcha /
+        // manual login brings the fetch tab forward) returns to the wanted dock —
+        // post-gate cleanup calls this exact method.
         if (_userWantsDock)
         {
+            if (!_isDocked && await GetWindowStateAsync().ConfigureAwait(false) == "normal")
+            {
+                await DockWindowAsync().ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -636,6 +639,31 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _lock.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Reads the headed window's CDP windowState ("normal" / "minimized" / …), or
+    /// null when unavailable. Used to distinguish a RESTORED window (re-dockable)
+    /// from a minimized/closed one (leave it alone).
+    /// </summary>
+    private async Task<string?> GetWindowStateAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return null;
+        }
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
+            return windowInfo?.GetProperty("bounds").GetProperty("windowState").GetString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read window state (non-fatal)");
+            return null;
         }
     }
 

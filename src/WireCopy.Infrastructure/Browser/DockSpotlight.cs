@@ -60,6 +60,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     // Throttle: at most one not-found hint per page URL.
     private string? _lastHintPageUrl;
 
+    // workspace-mctt: the last URL the SPOTLIGHT navigated the lens to. A lens
+    // URL matching neither this nor the current target means the USER drove the
+    // lens somewhere — never fight them; offer adoption instead.
+    private string? _lastLensNav;
+    private string? _divergedFromTarget;
+
     private bool _disposed;
 
     public DockSpotlight(
@@ -70,6 +76,14 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         _logger = logger;
         _pump = Task.Run(PumpAsync);
     }
+
+    /// <summary>
+    /// Raised (from the pump thread) when the USER navigated the lens somewhere
+    /// other than what the app is reading (workspace-mctt). Carries the lens URL;
+    /// the orchestrator offers adoption ('y'). Follow-navigation is suspended for
+    /// that target so the user's page is never yanked away.
+    /// </summary>
+    public event Action<string>? LensDiverged;
 
     /// <summary>
     /// Sink for user-facing hints (wired to the status bar by the orchestrator).
@@ -317,6 +331,30 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
             if (!UrlsMatch(page.Url, target.PageUrl))
             {
+                // workspace-mctt: a lens URL we did NOT navigate to means the user
+                // drove the lens themselves — don't yank their page away. Offer
+                // adoption once; keep honoring their choice while the app stays on
+                // the same page. The moment the app moves on, the NEW page wins
+                // and following resumes.
+                var userDroveLens = _lastLensNav != null
+                    && !UrlsMatch(page.Url, _lastLensNav)
+                    && CommandHandlers.BrowserDockCommandHandler.IsSummonableUrl(page.Url);
+                if (userDroveLens)
+                {
+                    if (_divergedFromTarget == null)
+                    {
+                        _divergedFromTarget = target.PageUrl;
+                        LensDiverged?.Invoke(page.Url);
+                        return;
+                    }
+
+                    if (UrlsMatch(target.PageUrl, _divergedFromTarget))
+                    {
+                        return;
+                    }
+                }
+
+                _divergedFromTarget = null;
                 _logger.LogDebug(
                     "Dock spotlight: live page {LiveUrl} != TUI page {PageUrl}, follow-navigating",
                     page.Url,
@@ -326,6 +364,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
                 }).ConfigureAwait(false);
+                _lastLensNav = target.PageUrl;
+            }
+            else
+            {
+                _divergedFromTarget = null;
+                _lastLensNav ??= target.PageUrl;
             }
 
             // Reader view (workspace-nqqs): the follow-navigation above IS the whole job —

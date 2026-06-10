@@ -582,6 +582,7 @@ public class TerminalInputHandler : IInputHandler
             // 'O' (not a vim motion; pairs with 'o' = open-in-browser). Avoids the
             // vim word-motion key 'w' so the dock switcher doesn't shadow navigation.
             'O' => new NavigationCommand { Type = CommandType.ToggleBrowserDock },
+            'y' => new NavigationCommand { Type = CommandType.AdoptLensPage },
             'z' => new NavigationCommand { Type = CommandType.Undo },
             'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
             '<' => new NavigationCommand { Type = CommandType.SpeedReadSlower },
