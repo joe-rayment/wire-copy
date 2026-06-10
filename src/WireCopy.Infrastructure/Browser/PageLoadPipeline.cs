@@ -441,7 +441,13 @@ public class PageLoadPipeline
         ReadableContent? readable = null;
         if (classification != PageClassification.LinkList)
         {
-            readable = await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
+            // workspace-8qyo: a SAVED per-domain layout (user-tuned via 'L' or an
+            // AI config that passed its self-test) is AUTHORITATIVE — apply it
+            // before generic readability so a tuned site never regresses to the
+            // heuristics it was tuned to fix. Misses fall through unchanged.
+            readable = await TrySavedSelectorConfigAsync(finalUrl, loadResult.Html).ConfigureAwait(false);
+
+            readable ??= await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
 
             // Escalate to the AI article-layout pipeline when the heuristic
             // extractor returns null for a URL that *looks* article-shaped
@@ -1149,6 +1155,45 @@ public class PageLoadPipeline
     /// non-empty content meeting the global quality gate are persisted.
     /// </summary>
     /// <returns>Extracted content or null if the chain produced nothing.</returns>
+    /// <summary>
+    /// Applies the saved per-domain selector config when one exists
+    /// (workspace-8qyo). Null when there is no config, no entry matches, or the
+    /// extraction misses its quality bar — callers fall through to generic
+    /// readability.
+    /// </summary>
+    private async Task<ReadableContent?> TrySavedSelectorConfigAsync(string url, string? html)
+    {
+        if (string.IsNullOrEmpty(html))
+        {
+            return null;
+        }
+
+        var store = ResolveArticleLayoutStore();
+        var selectorExtractor = ResolveSelectorExtractor();
+        var domain = ArticleLayoutDomains.FromUrl(url);
+        if (store is null || selectorExtractor is null || domain is null)
+        {
+            return null;
+        }
+
+        var savedConfig = await store.LoadAsync(domain).ConfigureAwait(false);
+        if (savedConfig == null)
+        {
+            return null;
+        }
+
+        var extracted = selectorExtractor.Extract(savedConfig, url, html);
+        if (extracted != null)
+        {
+            _logger.LogInformation(
+                "Article extracted via saved selector config for {Url} ({Words} words)",
+                url,
+                extracted.WordCount);
+        }
+
+        return extracted;
+    }
+
     private async Task<ReadableContent?> TryArticleSelectorEscalationAsync(
         string url,
         string html,
@@ -1166,12 +1211,8 @@ public class PageLoadPipeline
             return null;
         }
 
-        string? domain;
-        try
-        {
-            domain = new Uri(url).Host.ToLowerInvariant();
-        }
-        catch
+        var domain = ArticleLayoutDomains.FromUrl(url);
+        if (domain is null)
         {
             return null;
         }

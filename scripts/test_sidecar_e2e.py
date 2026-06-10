@@ -49,8 +49,20 @@ class Site(http.server.BaseHTTPRequestHandler):
                 time.sleep(0.7)  # widen the takeover window
             n = self.path.split("-")[-1].rstrip("/")
             prefix = "/batch2" if self.path.startswith("/batch2") else ""
+            words = ["harbor", "granite", "meadow", "lantern", "compass", "thicket",
+                     "ember", "current", "signal", "marble", "drift", "anchor",
+                     "summit", "hollow"]
+            # NOTE: stories must exceed the browser-preload sufficiency floor
+            # (MinPaywalledWordCount = 500 words) or prefetch silently skips them.
             body = f"<h1>Story {n}</h1>" + "".join(
-                f"<p>Paragraph {i} of story {n}. " + ("Lorem ipsum dolor sit amet. " * 8) + "</p>"
+                f"<p>{words[i % len(words)].capitalize()} reporting in paragraph {i} of story {n} "
+                f"explores the {words[(i + 3) % len(words)]} question while residents recall "
+                f"the {words[(i + 7) % len(words)]} years with measured detail across many "
+                f"interviews conducted this {words[(i + 5) % len(words)]} season, and the "
+                f"{words[(i + 2) % len(words)]} committee weighed the {words[(i + 9) % len(words)]} "
+                f"proposal against the {words[(i + 4) % len(words)]} budget while observers from "
+                f"the {words[(i + 6) % len(words)]} council documented every {words[(i + 8) % len(words)]} "
+                f"development for the public record of the {words[(i + 10) % len(words)]} district.</p>"
                 for i in range(1, 15))
             html = f"<!DOCTYPE html><html><head><title>Story {n}</title></head><body><article>{body}</article></body></html>"
         else:
@@ -209,6 +221,50 @@ def main():
                 t.wait_for("Headline number", timeout=25)
                 time.sleep(0.5)
             print("5 consecutive docked article opens: all loaded")
+
+            # --- 7d. workspace-8qyo: the article layout TUNER, frame by frame ---
+            t.send_keys("j", "Enter")
+            t.wait_for("Paragraph", timeout=25)
+            t.send_keys("L")
+            t.wait_for("1/3 Headline", timeout=20)
+            t.screenshot("tuner step 1 (headline)")
+            t.send_keys("j")          # cycle a candidate
+            time.sleep(0.8)
+            t.send_keys("Enter")      # confirm headline
+            t.wait_for("2/3 Body", timeout=15)
+            t.screenshot("tuner step 2 (body)")
+            t.send_keys("Enter")      # confirm body (densest candidate first)
+            matched, _ = t.wait_for_any(
+                "3/3 Ignore", "Layout tuned", "NOT saved", timeout=25)
+            if "3/3" in matched:
+                t.screenshot("tuner step 3 (ignore)")
+                t.send_keys("Enter")  # nothing to mark on this page — finish
+                matched, _ = t.wait_for_any("Layout tuned", "NOT saved", timeout=15)
+            if "NOT saved" in matched:
+                failures.append("tuner self-test rejected the confirmed selectors")
+            t.screenshot("tuner saved (toast)")
+            t.send_keys("k")  # dismiss toast (harmless scroll in reader)
+            time.sleep(0.5)
+            layout_dir = os.path.expanduser("~/.local/share/WireCopy/layouts")
+            saved = [f for f in os.listdir(layout_dir)] if os.path.isdir(layout_dir) else []
+            if not any("127.0.0.1" in f for f in saved):
+                failures.append(f"tuner did not persist a per-site config (dir: {saved})")
+
+            # Re-extract with the saved config: R bypasses the cache.
+            t.send_keys("R")
+            t.wait_for("Paragraph", timeout=40)
+            time.sleep(1)
+            log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
+            try:
+                if "saved selector config" not in open(log_path).read():
+                    failures.append("refresh did not extract via the saved selector config")
+                else:
+                    print("tuned config used for re-extraction")
+            except OSError:
+                failures.append("could not read app log for tuner verification")
+            t.send_keys("BSpace")
+            t.wait_for("Headline number", timeout=25)
+            time.sleep(0.5)
 
             # --- 7c. workspace-8cf2/5452: interactive session is NEVER headless ---
             log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"

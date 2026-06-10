@@ -1207,6 +1207,10 @@ public partial class BrowserOrchestrator : IBrowserService
                 case CommandType.RegenerateArticleLayout:
                     await ArticleLayoutCommandHandler.HandleRegenerateAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
+
+                case CommandType.TuneArticleLayout:
+                    await ArticleTunerHandler.HandleTuneAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                    break;
             }
 
             // Notify pre-loader of selection changes in hierarchical view

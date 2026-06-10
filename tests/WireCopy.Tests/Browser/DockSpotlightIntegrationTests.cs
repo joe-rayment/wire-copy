@@ -262,6 +262,51 @@ public class DockSpotlightIntegrationTests
         lens.Url.Should().StartWith(urlB);
     }
 
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task TunerScript_HighlightsBothDialects_AndClears()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        Microsoft.Playwright.IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync(server.UrlFor("a"));
+
+        // XPath dialect (article configs): all 100+1 story links carry hrefs.
+        var xCount = await page.EvaluateAsync<int>(
+            TunerScript.Highlight, new { selector = "//div/a", dialect = "xpath" });
+        xCount.Should().BeGreaterThan(50);
+        (await page.EvaluateAsync<int>(
+            "() => document.querySelectorAll('.__wirecopy-tuner-box').length")).Should().BeGreaterThan(50);
+
+        // CSS dialect (link-list sections): replaces the previous highlight set.
+        var cCount = await page.EvaluateAsync<int>(
+            TunerScript.Highlight, new { selector = "h1", dialect = "css" });
+        cCount.Should().Be(1);
+        (await page.EvaluateAsync<int>(
+            "() => document.querySelectorAll('.__wirecopy-tuner-box').length")).Should().Be(1);
+
+        (await page.EvaluateAsync<string>(TunerScript.Clear)).Should().Be("cleared");
+        (await page.EvaluateAsync<int>(
+            "() => document.querySelectorAll('.__wirecopy-tuner-box').length")).Should().Be(0);
+    }
+
     private static async Task<SpotlightProbe> WaitForSpotlightAsync(Microsoft.Playwright.IPage page, string storySlug)
     {
         SpotlightProbe probe = default;

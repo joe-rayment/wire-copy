@@ -305,6 +305,12 @@ internal static class SearchCommandHandler
                 await LayoutCommandHandler.HandleClearLayout(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
+            case "layout reset":
+                // workspace-8qyo: forget the tuned/AI ARTICLE selectors for the
+                // current domain (link-list layout has ':layout clear' above).
+                await ArticleLayoutResetHandler.HandleResetAsync(ctx, options, ct).ConfigureAwait(false);
+                return true;
+
             case "schedules" or "schedule":
                 // workspace-frpl.14 (B12a): the recurring-recipe → auto-podcast screen.
                 await ScheduleCommandHandler.HandleSchedulesAsync(ctx, options, ct).ConfigureAwait(false);

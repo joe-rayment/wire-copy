@@ -69,6 +69,9 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     // browser. Distinct from _paused (app-driven): entered on browser input,
     // exits only after the browser stays quiet for TakeoverResumeIdleSeconds.
     private volatile bool _pausedByUser;
+
+    // workspace-mya7: checkpoint loaded at startup, honored when its page reopens.
+    private PreloadCheckpoint? _restoredCheckpoint;
     private volatile bool _eagerMode;
     private volatile bool _disposed;
     private volatile string? _currentlyFetchingUrl;
@@ -171,6 +174,25 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     {
         // Page loaded — queue will be rebuilt on next selection change.
         _logger.LogDebug("Page loaded: {Url}", page.Url);
+
+        // workspace-mya7: the interrupted-work checkpoint is honored HERE — the
+        // user is back on the page it belongs to, and the queue rebuild derives
+        // the still-missing items from cache membership (always fresh, never a
+        // stale URL list). The record has served its purpose.
+        var restored = _restoredCheckpoint;
+        if (restored != null && !string.IsNullOrEmpty(restored.PageUrl)
+            && string.Equals(
+                UrlNormalizer.Normalize(page.Url),
+                UrlNormalizer.Normalize(restored.PageUrl),
+                StringComparison.Ordinal))
+        {
+            _restoredCheckpoint = null;
+            PreloadCheckpoint.Delete(PreloadCheckpoint.DefaultPath, _logger);
+            _logger.LogInformation(
+                "Prefetch checkpoint restored: continuing {Count} interrupted items for {Page}",
+                restored.RemainingUrls.Count,
+                restored.PageUrl);
+        }
 
         // workspace-m7nc: a successful page load with real content is the
         // strongest signal that any HITL verdict raised by prefetch was either
@@ -317,23 +339,18 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     {
         _logger.LogInformation("Background pre-load service started");
 
-        // workspace-mya7: resume interrupted work across restarts — a checkpoint
-        // written when the user took over the browser re-seeds the queue (already-
-        // cached items fall out naturally during processing).
-        var restored = PreloadCheckpoint.Load(PreloadCheckpoint.DefaultPath, _logger);
-        if (restored != null)
+        // workspace-mya7: an interrupted-work checkpoint BINDS TO ITS PAGE — it is
+        // honored when the user reopens that page (NotifyPageLoaded), where the
+        // normal queue rebuild derives the remaining work from cache membership.
+        // Never pre-seed the queue from stored URLs: a stale checkpoint (dead host,
+        // rotated session) would starve fresh work behind connection timeouts.
+        _restoredCheckpoint = PreloadCheckpoint.Load(PreloadCheckpoint.DefaultPath, _logger);
+        if (_restoredCheckpoint != null)
         {
-            lock (_queueLock)
-            {
-                _queue.AddRange(restored.RemainingUrls.Select(
-                    (url, i) => new PreloadItem(url, i, NeedsBrowser: IsDomainNeedsJs(url))));
-            }
-
             _logger.LogInformation(
-                "Prefetch checkpoint restored: {Count} items from {Page}",
-                restored.RemainingUrls.Count,
-                restored.PageUrl);
-            SignalQueueChanged();
+                "Prefetch checkpoint found: {Count} items pending for {Page} (resumes when that page opens)",
+                _restoredCheckpoint.RemainingUrls.Count,
+                _restoredCheckpoint.PageUrl);
         }
 
         while (!cancellationToken.IsCancellationRequested && !_disposed)

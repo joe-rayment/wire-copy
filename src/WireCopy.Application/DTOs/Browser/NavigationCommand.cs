@@ -128,6 +128,12 @@ public enum CommandType
     /// </summary>
     AdoptLensPage,
 
+    /// <summary>
+    /// Interactive article-layout tuner (workspace-8qyo): headline/body/ignore
+    /// selectors confirmed visually via the sidecar lens, persisted per site.
+    /// </summary>
+    TuneArticleLayout,
+
     // Layout
     ChooseLayout,
 

@@ -50,6 +50,7 @@ internal static class KeybindingPopup
                 ("o", "open in browser"),
                 ("O", "dock / undock browser (right)"),
                 ("y", "open the browser's page here"),
+                ("L", "tune article layout (visual)"),
                 ("[ / ]", "narrow / widen width"),
                 ("0", "reset width"),
                 ("f", "speed read on/off"),
