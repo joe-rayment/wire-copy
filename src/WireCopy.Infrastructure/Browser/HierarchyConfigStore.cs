@@ -265,18 +265,7 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         return Task.FromResult(removed);
     }
 
-    private static string? ExtractDomain(string url)
-    {
-        try
-        {
-            var uri = new Uri(url);
-            return uri.Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static string? ExtractDomain(string url) => HierarchyDomainKey.TryFromUrl(url);
 
     private string GetFilePath(string domain)
     {

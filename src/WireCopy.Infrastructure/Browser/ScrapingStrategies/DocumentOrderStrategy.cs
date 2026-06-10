@@ -81,10 +81,14 @@ public sealed class DocumentOrderStrategy : IScrapingStrategy
         {
             var uri = new Uri(pageUrl);
             var escapedDomain = Regex.Escape(uri.Host);
+
+            // workspace-felb: keep a non-default port in the pattern so local
+            // sites on different ports never match each other's configs.
+            var portPattern = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
             var pathPattern = uri.AbsolutePath == "/" || string.IsNullOrEmpty(uri.AbsolutePath)
                 ? "/?"
                 : Regex.Escape(uri.AbsolutePath);
-            return $"^https?://(www\\.)?{escapedDomain}{pathPattern}";
+            return $"^https?://(www\\.)?{escapedDomain}{portPattern}{pathPattern}";
         }
         catch
         {
@@ -92,15 +96,5 @@ public sealed class DocumentOrderStrategy : IScrapingStrategy
         }
     }
 
-    private static string ExtractDomain(string pageUrl)
-    {
-        try
-        {
-            return new Uri(pageUrl).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    private static string ExtractDomain(string pageUrl) => HierarchyDomainKey.FromUrl(pageUrl);
 }

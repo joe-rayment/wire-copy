@@ -35,6 +35,9 @@ public class HierarchyConfigStoreTests : IDisposable
                 "test-hierarchy.example.com.json",
                 "test-hierarchy.other.com.json",
                 "test-hierarchy.corrupt.com.json",
+                "test-hierarchy.localhost.json",
+                "test-hierarchy.localhost_8001.json",
+                "test-hierarchy.localhost_8002.json",
             };
 
             foreach (var file in testFiles)
@@ -274,6 +277,42 @@ public class HierarchyConfigStoreTests : IDisposable
         var result = await _store.GetConfigAsync("not-a-valid-url");
 
         result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_LocalSitesOnDifferentPorts_DoNotCollide()
+    {
+        // workspace-felb: configs for local sites are keyed host:port so a
+        // config saved against one local server never applies to another.
+        var config = CreateTestConfig(
+            domain: "test-hierarchy.localhost:8001",
+            urlPattern: "^https?://(www\\.)?test-hierarchy\\.localhost:8001/?");
+        await _store.SaveConfigAsync(config);
+
+        var samePort = await _store.GetConfigAsync("http://test-hierarchy.localhost:8001/");
+        var otherPort = await _store.GetConfigAsync("http://test-hierarchy.localhost:8002/");
+
+        samePort.Should().NotBeNull();
+        samePort!.Domain.Should().Be("test-hierarchy.localhost:8001");
+        otherPort.Should().BeNull("a config saved for port 8001 must not leak to port 8002");
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_LegacyPortBlindConfig_NotReturnedForPortedUrl()
+    {
+        // workspace-felb: pre-fix configs were keyed on the bare host with a
+        // port-blind pattern. Ported URLs now key to host_port files, so the
+        // legacy port-blind config must no longer hijack them.
+        var legacy = CreateTestConfig(
+            domain: "test-hierarchy.localhost",
+            urlPattern: "^https?://(www\\.)?test-hierarchy\\.localhost/?");
+        await _store.SaveConfigAsync(legacy);
+
+        var ported = await _store.GetConfigAsync("http://test-hierarchy.localhost:8002/");
+        var defaultPort = await _store.GetConfigAsync("http://test-hierarchy.localhost/");
+
+        ported.Should().BeNull("ported URLs must not match the port-blind legacy config");
+        defaultPort.Should().NotBeNull("default-port URLs still find the bare-host config");
     }
 
     [Fact]

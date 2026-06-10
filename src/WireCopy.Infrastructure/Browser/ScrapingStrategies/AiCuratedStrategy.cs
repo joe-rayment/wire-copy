@@ -548,17 +548,7 @@ public sealed class AiCuratedStrategy : IScrapingStrategy
         return captured * 10 >= expectedStories.Count * 7; // >= 70%
     }
 
-    private static string ExtractDomain(string pageUrl)
-    {
-        try
-        {
-            return new Uri(pageUrl).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    private static string ExtractDomain(string pageUrl) => HierarchyDomainKey.FromUrl(pageUrl);
 
     /// <summary>
     /// workspace-99ve: normalises user guidance for both the analyzer call

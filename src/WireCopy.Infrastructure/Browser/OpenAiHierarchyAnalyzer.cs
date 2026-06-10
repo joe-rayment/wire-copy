@@ -248,7 +248,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
-        var domain = new Uri(pageUrl).Host.ToLowerInvariant();
+        var domain = HierarchyDomainKey.FromUrl(pageUrl);
         var systemPrompt = BuildHierarchySystemPrompt();
         var userPrompt = BuildHierarchyUserPrompt(links, pageUrl);
         if (!string.IsNullOrEmpty(promptSuffix))
@@ -961,12 +961,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             })
             .ToList();
 
-        var uri = new Uri(pageUrl);
-        var escapedDomain = Regex.Escape(uri.Host);
-        var pathPattern = uri.AbsolutePath == "/"
-            ? "/?"
-            : Regex.Escape(uri.AbsolutePath);
-        var urlPattern = $"^https?://(www\\.)?{escapedDomain}{pathPattern}";
+        var urlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(pageUrl);
 
         return new SiteHierarchyConfig
         {
@@ -1190,17 +1185,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         _ => SetupQuestionKind.PickMain,
     };
 
-    private static string SafeHost(string url)
-    {
-        try
-        {
-            return new Uri(url).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    private static string SafeHost(string url) => HierarchyDomainKey.FromUrl(url);
 #pragma warning restore SA1202
 
     /// <summary>

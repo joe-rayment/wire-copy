@@ -119,17 +119,7 @@ public sealed class RssFeedStrategy : IScrapingStrategy
         };
     }
 
-    private static string ExtractDomain(string pageUrl)
-    {
-        try
-        {
-            return new Uri(pageUrl).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    private static string ExtractDomain(string pageUrl) => HierarchyDomainKey.FromUrl(pageUrl);
 
     private async Task<string?> ResolveFeedUrlAsync(
         ScrapingStrategyContext context,

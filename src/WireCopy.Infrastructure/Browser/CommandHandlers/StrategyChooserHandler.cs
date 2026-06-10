@@ -1133,15 +1133,5 @@ internal static class StrategyChooserHandler
         }
     }
 
-    private static string ExtractDomain(string url)
-    {
-        try
-        {
-            return new Uri(url).Host.ToLowerInvariant();
-        }
-        catch
-        {
-            return "unknown";
-        }
-    }
+    private static string ExtractDomain(string url) => HierarchyDomainKey.FromUrl(url);
 }
