@@ -264,6 +264,56 @@ public class DockSpotlightIntegrationTests
 
     [SkippableFact]
     [Trait("Category", "Integration")]
+    public async Task Spotlight_ExpandsCollapsedReadMoreRegions_WithoutFollowingRealLinks()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlC = server.UrlFor("c");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        try
+        {
+            await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // Story 8 hides behind the "Read more" button: the proactive expand on
+        // follow-navigation (or the targeted rescue) must surface it.
+        spotlight.RequestSync(new SpotlightTarget(urlC, $"{urlC}c-story-8", "C-Story 8"));
+        var probe8 = await WaitForSpotlightAsync(lens!, "c-story-8");
+        _out.WriteLine($"c-story-8 probe: {probe8}");
+        probe8.OverlayPresent.Should().BeTrue("a collapsed 'read more' story must be auto-expanded and highlighted");
+        probe8.AnchorInViewport.Should().BeTrue();
+
+        // Story 13 hides behind a bare '+' toggle — only the targeted
+        // aria-controls rescue path can reveal it.
+        spotlight.RequestSync(new SpotlightTarget(urlC, $"{urlC}c-story-13", "C-Story 13"));
+        var probe13 = await WaitForSpotlightAsync(lens!, "c-story-13");
+        _out.WriteLine($"c-story-13 probe: {probe13}");
+        probe13.OverlayPresent.Should().BeTrue("the aria-controls rescue must reveal the second collapsed region");
+        probe13.AnchorInViewport.Should().BeTrue();
+
+        // The real 'Read more stories' LINK was never clicked: still on page C.
+        lens!.Url.Should().StartWith(urlC, "expansion must never follow a navigating link");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
     public async Task TunerScript_HighlightsBothDialects_AndClears()
     {
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
@@ -438,6 +488,48 @@ public class DockSpotlightIntegrationTests
             return sb.ToString();
         }
 
+        /// <summary>
+        /// workspace-2cz4 fixture: a mobile-style page that collapses stories.
+        /// Region one hides behind a "Read more" button (proactive ExpandAll
+        /// territory); region two behind a bare "+" toggle that only the
+        /// targeted aria-controls rescue can find. A REAL "Read more stories"
+        /// link to /c/all must never be followed by the expander.
+        /// </summary>
+        private static string BuildPageC()
+        {
+            var sb = new StringBuilder("<!DOCTYPE html><html><head><title>C</title></head><body>");
+            sb.Append("<h1>Page C</h1>");
+            for (var i = 1; i <= 5; i++)
+            {
+                sb.Append($"<div style=\"height:120px\"><a href=\"/c/c-story-{i}\">C-Story {i}</a></div>");
+            }
+
+            sb.Append("<div id=\"more-one\" hidden>");
+            for (var i = 6; i <= 10; i++)
+            {
+                sb.Append($"<div style=\"height:120px\"><a href=\"/c/c-story-{i}\">C-Story {i}</a></div>");
+            }
+
+            sb.Append("</div>");
+            sb.Append("<button aria-expanded=\"false\" aria-controls=\"more-one\" " +
+                "onclick=\"document.getElementById('more-one').hidden=false;this.setAttribute('aria-expanded','true')\">Read more</button>");
+
+            sb.Append("<div id=\"more-two\" hidden>");
+            for (var i = 11; i <= 15; i++)
+            {
+                sb.Append($"<div style=\"height:120px\"><a href=\"/c/c-story-{i}\">C-Story {i}</a></div>");
+            }
+
+            sb.Append("</div>");
+            sb.Append("<button aria-expanded=\"false\" aria-controls=\"more-two\" " +
+                "onclick=\"document.getElementById('more-two').hidden=false;this.setAttribute('aria-expanded','true')\">+</button>");
+
+            // A real link labelled like an expander: clicking it would navigate.
+            sb.Append("<div><a href=\"/c/all\">Read more stories</a></div>");
+            sb.Append("</body></html>");
+            return sb.ToString();
+        }
+
         private static string BuildPageB()
         {
             var sb = new StringBuilder("<!DOCTYPE html><html><head><title>B</title></head><body>");
@@ -466,7 +558,9 @@ public class DockSpotlightIntegrationTests
                 }
 
                 var path = ctx.Request.Url?.AbsolutePath ?? "/";
-                var html = path.StartsWith("/b", StringComparison.Ordinal) ? BuildPageB() : BuildPageA();
+                var html = path.StartsWith("/b", StringComparison.Ordinal) ? BuildPageB()
+                    : path.StartsWith("/c", StringComparison.Ordinal) ? BuildPageC()
+                    : BuildPageA();
                 var bytes = Encoding.UTF8.GetBytes(html);
                 try
                 {

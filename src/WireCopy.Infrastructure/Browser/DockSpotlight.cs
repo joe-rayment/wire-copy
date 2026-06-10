@@ -365,6 +365,22 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
                 }).ConfigureAwait(false);
                 _lastLensNav = target.PageUrl;
+
+                // workspace-2cz4: mobile-viewport sites tuck content behind
+                // "read more" — proactively expand on OUR navigations so listed
+                // stories have layout when the spotlight looks for them.
+                try
+                {
+                    var expanded = await page.EvaluateAsync<int>(ExpandScript.ExpandAll).ConfigureAwait(false);
+                    if (expanded > 0)
+                    {
+                        _logger.LogDebug("Dock spotlight: auto-expanded {Count} collapsed region(s) on {Url}", expanded, target.PageUrl);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Dock spotlight: auto-expand failed (advisory)");
+                }
             }
             else
             {
@@ -385,6 +401,23 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             var result = await page.EvaluateAsync<string>(
                 SpotlightScript.Sync,
                 new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
+
+            // workspace-2cz4: a present-but-hidden anchor usually means a
+            // collapsed "read more" region — expand the region the target lives
+            // in (never following a real link) and retry the spotlight once.
+            if (result != "ok")
+            {
+                var revealed = await page.EvaluateAsync<string>(
+                    ExpandScript.RevealTarget,
+                    new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
+                if (revealed == "expanded")
+                {
+                    _logger.LogDebug("Dock spotlight: expanded a collapsed region for {LinkUrl}, retrying", target.LinkUrl);
+                    result = await page.EvaluateAsync<string>(
+                        SpotlightScript.Sync,
+                        new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
+                }
+            }
 
             if (result == "ok")
             {
