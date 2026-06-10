@@ -71,11 +71,11 @@ public class ReaderLayoutInvariantTests
     }
 
     [Theory]
-    [InlineData(35, 30)]   // 35 - 3 - 2 = 30
-    [InlineData(24, 19)]
-    [InlineData(50, 45)]
-    [InlineData(80, 75)]
-    public void ComputeContentHeight_SubtractsHeaderAndStatusBar(int terminalHeight, int expectedContent)
+    [InlineData(35, 29)]   // 35 - 3 (header) - 1 (end-of-content rule) - 2 (status bar) = 29
+    [InlineData(24, 18)]
+    [InlineData(50, 44)]
+    [InlineData(80, 74)]
+    public void ComputeContentHeight_SubtractsHeaderRuleAndStatusBar(int terminalHeight, int expectedContent)
     {
         ReaderLayout.ComputeContentHeight(terminalHeight).Should().Be(expectedContent);
     }
@@ -96,7 +96,7 @@ public class ReaderLayoutInvariantTests
         // a content area to paint into.
         const int smallTerminal = 10;
         var content = ReaderLayout.ComputeContentHeight(smallTerminal);
-        (ReaderLayout.HeaderLines + content + ReaderLayout.StatusBarReservedLines)
+        (ReaderLayout.HeaderLines + content + ReaderLayout.EndOfContentRuleLines + ReaderLayout.StatusBarReservedLines)
             .Should().BeLessOrEqualTo(smallTerminal + ReaderLayout.MinimumContentHeight,
                 "the floor lets content overflow into status-bar space on tiny terminals; " +
                 "this is acceptable as the editor degrades gracefully");

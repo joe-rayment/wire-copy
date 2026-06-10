@@ -57,6 +57,16 @@ internal static class ReaderLayout
     public const int StatusBarReservedLines = 2;
 
     /// <summary>
+    /// Line emitted by <c>RenderHelpers.RenderEndOfContentRule</c> between the
+    /// article content and the status bar. Must be part of the row budget:
+    /// when a full-height article filled the entire content viewport, this
+    /// unbudgeted rule pushed the status bar down one row, clipping the status
+    /// CONTENT line below the terminal — mode badge, reader progress, and
+    /// transient status messages all vanished in reader view (workspace-w7oe).
+    /// </summary>
+    public const int EndOfContentRuleLines = 1;
+
+    /// <summary>
     /// Floor on the returned viewport so the renderer never gets a zero or
     /// negative content area on degenerately small terminals.
     /// </summary>
@@ -70,6 +80,8 @@ internal static class ReaderLayout
     /// </summary>
     public static int ComputeContentHeight(int terminalHeight)
     {
-        return System.Math.Max(MinimumContentHeight, terminalHeight - HeaderLines - StatusBarReservedLines);
+        return System.Math.Max(
+            MinimumContentHeight,
+            terminalHeight - HeaderLines - EndOfContentRuleLines - StatusBarReservedLines);
     }
 }
