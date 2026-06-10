@@ -43,9 +43,18 @@ internal sealed class PodcastJobLifecycleService : IHostedService
         _logger = logger;
     }
 
+    /// <summary>
+    /// The background sweep dispatched by <see cref="StartAsync"/>. Exposed so
+    /// tests can await completion deterministically; polling the table from a
+    /// second thread races the sweep on a shared in-memory SQLite connection,
+    /// which is not thread-safe (workspace-ml8j). Null until StartAsync runs.
+    /// Never faults — the wrapper swallows and logs all sweep exceptions.
+    /// </summary>
+    internal Task? SweepTask { get; private set; }
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _ = Task.Run(
+        SweepTask = Task.Run(
             async () =>
             {
                 try

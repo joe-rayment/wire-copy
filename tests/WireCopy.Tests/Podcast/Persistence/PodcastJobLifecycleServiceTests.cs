@@ -78,8 +78,8 @@ public class PodcastJobLifecycleServiceTests
 
         await sut.StartAsync(CancellationToken.None);
 
-        // Give the background task a moment to run; sweep is fired with Task.Run.
-        await WaitForSweepAsync(provider);
+        // The sweep is fired with Task.Run; await its handle directly.
+        await sut.SweepTask!;
 
         using var ctx = new AppDbContext(_options);
         (await ctx.PodcastJobs.CountAsync()).Should().Be(0);
@@ -98,7 +98,7 @@ public class PodcastJobLifecycleServiceTests
             NullLogger<PodcastJobLifecycleService>.Instance);
 
         await sut.StartAsync(CancellationToken.None);
-        await WaitForSweepAsync(provider);
+        await sut.SweepTask!;
 
         var reloaded = await LoadAsync(running.Id);
         reloaded.Should().NotBeNull();
@@ -120,7 +120,7 @@ public class PodcastJobLifecycleServiceTests
             NullLogger<PodcastJobLifecycleService>.Instance);
 
         await sut.StartAsync(CancellationToken.None);
-        await WaitForSweepAsync(provider);
+        await sut.SweepTask!;
 
         var reloaded = await LoadAsync(done.Id);
         reloaded!.Status.Should().Be(PodcastJobStatus.FullSuccess);
@@ -142,31 +142,10 @@ public class PodcastJobLifecycleServiceTests
             NullLogger<PodcastJobLifecycleService>.Instance);
 
         await sut.StartAsync(CancellationToken.None);
-        await WaitForSweepAsync(provider);
+        await sut.SweepTask!;
 
         (await LoadAsync(a.Id))!.Status.Should().Be(PodcastJobStatus.Interrupted);
         (await LoadAsync(b.Id))!.Status.Should().Be(PodcastJobStatus.Interrupted);
         (await LoadAsync(c.Id))!.Status.Should().Be(PodcastJobStatus.TotalFailure);
-    }
-
-    /// <summary>
-    /// The sweep is dispatched on Task.Run; poll the table until the active
-    /// set drains or a 5s budget elapses.
-    /// </summary>
-    private async Task WaitForSweepAsync(IServiceProvider provider)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (DateTime.UtcNow < deadline)
-        {
-            using var scope = provider.CreateScope();
-            var repo = scope.ServiceProvider.GetRequiredService<IPodcastJobRepository>();
-            var active = await repo.GetActiveJobsAsync();
-            if (active.Count == 0)
-            {
-                return;
-            }
-
-            await Task.Delay(25);
-        }
     }
 }
