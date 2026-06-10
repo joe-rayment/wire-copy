@@ -93,6 +93,7 @@ public class SetupWizardTests
             analyzer, input, Render, overlay, Links(), "https://x.com/", screenshot: null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null,
+            lens: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
@@ -125,7 +126,7 @@ public class SetupWizardTests
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, overlay, Links(), "https://x.com/", null, budget,
-            _ => Task.FromResult<string?>(string.Empty), pickLeadFromTree: null, CancellationToken.None);
+            _ => Task.FromResult<string?>(string.Empty), pickLeadFromTree: null, lens: null, CancellationToken.None);
 
         result.UseDocumentOrder.Should().BeTrue();
         result.Config.Should().BeNull();
@@ -145,7 +146,7 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, spent, _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, CancellationToken.None);
+            pickLeadFromTree: null, lens: null, CancellationToken.None);
 
         result.Cancelled.Should().BeTrue();
         await analyzer.DidNotReceive().ProposeSetupQuestionsAsync(
@@ -213,6 +214,7 @@ public class SetupWizardTests
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
+            lens: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
@@ -248,6 +250,7 @@ public class SetupWizardTests
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(header),
+            lens: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull("a rejected pick keeps the base config");
@@ -255,5 +258,147 @@ public class SetupWizardTests
         await analyzer.Received(1).InferPatternFromAnswersAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
             Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
+    }
+
+    // ---- workspace-wylw: live lens confirmation ----
+
+    [Fact]
+    public void CssForIdentifier_BuildsDescendantAndHrefSelectors()
+    {
+        SetupWizard.CssForIdentifier("section.lead", "/politics/")
+            .Should().Be("section.lead a[href], a[href*=\"/politics/\"]");
+        SetupWizard.CssForIdentifier("section.feed", string.Empty)
+            .Should().Be("section.feed a[href]");
+        SetupWizard.CssForIdentifier(string.Empty, "/a\"b/")
+            .Should().Be("a[href*=\"/a\\\"b/\"]", "quotes are escaped for the attribute selector");
+        SetupWizard.CssForIdentifier(string.Empty, string.Empty).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CssForSection_JoinsAllIdentifiers()
+    {
+        var section = new HierarchySection
+        {
+            Name = "Top",
+            SortOrder = 0,
+            ParentSelectors = new List<string> { "section.lead", ".hero" },
+            UrlPatterns = new List<string> { "/politics/" },
+        };
+
+        SetupWizard.CssForSection(section)
+            .Should().Be("section.lead a[href], .hero a[href], a[href*=\"/politics/\"]");
+    }
+
+    [Fact]
+    public void BuildConfirmSectionsCard_ShowsRealMatchCounts_AndCoverage()
+    {
+        var config = SomeConfig(); // one section matching "section.lead"
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://x.com/a", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 80, ParentSelector = "section.lead a" },
+            new() { Url = "https://x.com/b", DisplayText = "B", Type = LinkType.Content, ImportanceScore = 60, ParentSelector = "aside.promo a" },
+        };
+
+        var card = SetupWizard.BuildConfirmSectionsCard(config, links);
+
+        card.Options.Should().HaveCount(1);
+        card.Options[0].Label.Should().Contain("1 link(s)");
+        card.Options[0].HighlightSelector.Should().Be("section.lead a[href]");
+        card.Footnote.Should().Be("1 of 2 story links covered");
+    }
+
+    [Fact]
+    public void BuildConfirmSectionsCard_ZeroMatches_WarnsBeforeSaving()
+    {
+        var config = SomeConfig();
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://x.com/b", DisplayText = "B", Type = LinkType.Content, ImportanceScore = 60, ParentSelector = "aside.promo a" },
+        };
+
+        var card = SetupWizard.BuildConfirmSectionsCard(config, links);
+
+        card.Footnote.Should().StartWith("⚠");
+    }
+
+    [Fact]
+    public async Task AcceptAllPath_HighlightsFocusedOptionOnLens_AndConfirmCardSaves()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 1));
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(SomeConfig());
+
+        var input = Substitute.For<IInputHandler>();
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(new NavigationCommand { Type = CommandType.ActivateLink });
+
+        var highlighted = new List<string>();
+        var cleared = 0;
+        var lens = new SetupWizard.Lens(
+            (css, _) => { highlighted.Add(css); return Task.FromResult(3); },
+            _ => { cleared++; return Task.CompletedTask; });
+
+        var overlay = new SetupWizardOverlay.State();
+        var cards = new List<IReadOnlyList<string>>();
+        Task Render(CancellationToken _)
+        {
+            if (overlay.Card != null && overlay.Mode == SetupWizardOverlay.Mode.Card)
+            {
+                cards.Add(SetupWizardOverlay.DescribeCard(overlay.Card));
+            }
+
+            return Task.CompletedTask;
+        }
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, Render, overlay, Links(), "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
+            lens: lens,
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+
+        // Overview card focused the proposed top story → its links lit up.
+        highlighted.Should().Contain("section.lead a[href], a[href*=\"/politics/\"]");
+
+        // The confirm-sections card lit the saved section's links and was rendered
+        // with its real match count before Enter saved.
+        highlighted.Should().Contain("section.lead a[href]");
+        cards.SelectMany(c => c).Should().Contain(l => l.Contains("Top Story — 1 link(s)", StringComparison.Ordinal));
+        cleared.Should().BeGreaterThan(0, "highlights are cleared after the confirm step");
+    }
+
+    [Fact]
+    public async Task ConfirmCard_Esc_CancelsWithoutSaving()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(SomeConfig());
+
+        var input = Substitute.For<IInputHandler>();
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NavigationCommand { Type = CommandType.ActivateLink }, // overview: looks good
+                new NavigationCommand { Type = CommandType.GoBack });      // confirm card: Esc
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
+            lens: null,
+            CancellationToken.None);
+
+        result.Cancelled.Should().BeTrue("Esc on the confirm card must not save the config");
+        result.Config.Should().BeNull();
     }
 }

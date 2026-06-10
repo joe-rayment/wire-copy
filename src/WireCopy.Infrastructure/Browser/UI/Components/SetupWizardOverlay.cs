@@ -196,5 +196,12 @@ internal static class SetupWizardOverlay
 
         /// <summary>The durable identifier (selector / url-pattern) shown to the user.</summary>
         public string Identifier { get; init; } = string.Empty;
+
+        /// <summary>
+        /// workspace-wylw: CSS selector evaluated on the sidecar lens when this
+        /// option is focused, highlighting every link it matches. Empty clears
+        /// the highlight instead.
+        /// </summary>
+        public string HighlightSelector { get; init; } = string.Empty;
     }
 }

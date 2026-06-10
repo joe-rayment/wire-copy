@@ -559,19 +559,48 @@ public class PageLoadPipeline
         // Durable Sections route to the pattern path FIRST — a build-cache
         // rehydrate drops Kind/Strategy/AiResult, so keying on Sections.Count>0
         // is what keeps a configured site curated after a restart.
+        //
+        // workspace-wylw: the build-cache entry's config is a SNAPSHOT taken at
+        // extraction time. A config saved AFTER that (Ctrl+L wizard, chooser,
+        // reconfigure) lives only in the store, so a cache-hit revisit — same
+        // session or after a restart — silently rendered document order. The
+        // store is the durable source of truth; prefer it whenever it has a
+        // config for this URL and fall back to the snapshot otherwise.
+        var hierarchyConfig = cache.HierarchyConfig;
+        var configStore = GetHierarchyConfigStore();
+        if (configStore != null)
+        {
+            try
+            {
+                var stored = await configStore.GetConfigAsync(cache.FinalUrl).ConfigureAwait(false);
+                if (stored != null && !ReferenceEquals(stored, hierarchyConfig))
+                {
+                    _logger.LogDebug(
+                        "RebuildFromBuildCache: using stored hierarchy config for {Url} (cache snapshot {Snapshot})",
+                        cache.FinalUrl,
+                        hierarchyConfig == null ? "null" : "stale");
+                    hierarchyConfig = stored;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "RebuildFromBuildCache: config store lookup failed; using cache snapshot");
+            }
+        }
+
         NavigationTree tree;
-        var route = HierarchyRouteResolver.Decide(cache.HierarchyConfig);
+        var route = HierarchyRouteResolver.Decide(hierarchyConfig);
         if (route == HierarchyRoute.AiSnapshot)
         {
-            tree = await _treeBuilder.BuildFromAiResultAsync(cache.Links, cache.HierarchyConfig!.AiResult!).ConfigureAwait(false);
+            tree = await _treeBuilder.BuildFromAiResultAsync(cache.Links, hierarchyConfig!.AiResult!).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
-        else if (cache.HierarchyConfig != null)
+        else if (hierarchyConfig != null)
         {
             // PatternConfig (or an RSS/other config in cache): the generalizing
             // hierarchy builder. Build cache cannot replay an RSS fetch, so a
             // cached RSS config renders its grouped links here.
-            tree = await _treeBuilder.BuildTreeAsync(cache.Links, cache.HierarchyConfig).ConfigureAwait(false);
+            tree = await _treeBuilder.BuildTreeAsync(cache.Links, hierarchyConfig).ConfigureAwait(false);
             _navigationService.SetAiHierarchy(true);
         }
         else

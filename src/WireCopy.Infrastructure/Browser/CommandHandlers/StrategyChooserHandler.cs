@@ -477,6 +477,11 @@ internal static class StrategyChooserHandler
         ctx.SetOverlayPainter(opts =>
             UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
 
+        // workspace-wylw: focused wizard options highlight their matched links
+        // live on the sidecar lens (same surface as the article tuner).
+        var session = scope.ServiceProvider.GetService<IBrowserSession>();
+        var lens = BuildWizardLens(session, ctx.Logger);
+
         try
         {
             var budget = new ModelRoundTripBudget();
@@ -491,12 +496,70 @@ internal static class StrategyChooserHandler
                 budget,
                 c => PromptForGuidanceAsync(ctx, options, c),
                 c => PickLeadFromTreeAsync(ctx, page, options, c),
+                lens,
                 ct).ConfigureAwait(false);
         }
         finally
         {
             ClearOverlay(ctx);
+            if (lens != null)
+            {
+                await lens.ClearAsync(CancellationToken.None).ConfigureAwait(false);
+            }
         }
+    }
+
+    /// <summary>
+    /// workspace-wylw: lens hooks for the wizard — evaluates
+    /// <see cref="TunerScript"/> (dialect css, link-list sections) on the
+    /// dedicated lens tab. Every failure degrades to no-highlight; the wizard
+    /// cards still show identifiers and match counts as text.
+    /// </summary>
+    private static SetupWizard.Lens? BuildWizardLens(IBrowserSession? session, ILogger logger)
+    {
+        if (session == null)
+        {
+            return null;
+        }
+
+        return new SetupWizard.Lens(
+            HighlightCssAsync: async (css, _) =>
+            {
+                try
+                {
+                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    if (lensPage == null)
+                    {
+                        logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
+                        return -1;
+                    }
+
+                    var count = await lensPage.EvaluateAsync<int>(
+                        TunerScript.Highlight, new { selector = css, dialect = "css" }).ConfigureAwait(false);
+                    logger.LogInformation("Wizard lens: {Selector} highlighted {Count} match(es)", css, count);
+                    return count;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogInformation(ex, "Wizard lens: highlight failed for {Selector}", css);
+                    return -1;
+                }
+            },
+            ClearAsync: async _ =>
+            {
+                try
+                {
+                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    if (lensPage != null)
+                    {
+                        await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Cosmetic.
+                }
+            });
     }
 
     /// <summary>

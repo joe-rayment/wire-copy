@@ -2,6 +2,7 @@
 
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.UI.Components;
 
@@ -28,6 +29,8 @@ internal static class SetupWizard
     /// </summary>
     /// <param name="render">Repaints the page + overlay (the overlay painter reads <paramref name="overlay"/>).</param>
     /// <param name="freeTextPrompt">Prompts the optional final free-text card; returns null/empty to skip.</param>
+    /// <param name="lens">workspace-wylw: best-effort sidecar-lens preview hooks — the focused
+    /// option's matches highlight live on the page; null (tests / no sidecar) degrades to text-only.</param>
     public static async Task<Result> RunAsync(
         IHierarchyAnalyzer analyzer,
         IInputHandler input,
@@ -39,6 +42,7 @@ internal static class SetupWizard
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
+        Lens? lens,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
@@ -60,7 +64,7 @@ internal static class SetupWizard
         // ---- Overview card: confirm the proposed pattern (or bail to doc order,
         // or point at the main story yourself when a tree picker is wired) ----
         var overview = BuildOverviewCard(proposal, allowPick: pickLeadFromTree != null);
-        var ovChoice = await RunCardAsync(input, render, overlay, overview, ct).ConfigureAwait(false);
+        var ovChoice = await RunCardAsync(input, render, overlay, overview, lens, ct).ConfigureAwait(false);
         if (ovChoice < 0)
         {
             return new Result { Cancelled = true };
@@ -86,16 +90,20 @@ internal static class SetupWizard
         for (var qi = 0; qi < questions.Count; qi++)
         {
             var card = BuildQuestionCard(questions[qi], qi + 1, questions.Count);
-            var choice = await RunCardAsync(input, render, overlay, card, ct).ConfigureAwait(false);
+            var choice = await RunCardAsync(input, render, overlay, card, lens, ct).ConfigureAwait(false);
             if (choice < 0)
             {
                 return new Result { Cancelled = true };
             }
 
+            // workspace-wylw: echo the chosen option's durable identifier back to
+            // round 2, so the model grounds the answer in the selector the user
+            // confirmed rather than re-deriving it from the label alone.
+            var chosen = card.Options[Math.Clamp(choice, 0, card.Options.Count - 1)];
             answers.Add(new SetupAnswer
             {
                 QuestionId = questions[qi].Id,
-                Answer = card.Options[Math.Clamp(choice, 0, card.Options.Count - 1)].Label,
+                Answer = chosen.Identifier.Length > 0 ? $"{chosen.Label} ({chosen.Identifier})" : chosen.Label,
             });
         }
 
@@ -132,7 +140,92 @@ internal static class SetupWizard
             }
         }
 
+        // ---- workspace-wylw: live confirmation — every proposed section lights
+        // up its matched story links on the lens; Enter saves, Esc backs out. ----
+        if (config.Sections.Count > 0)
+        {
+            var confirm = BuildConfirmSectionsCard(config, links);
+            var saveChoice = await RunCardAsync(input, render, overlay, confirm, lens, ct).ConfigureAwait(false);
+            if (lens != null)
+            {
+                await lens.ClearAsync(ct).ConfigureAwait(false);
+            }
+
+            if (saveChoice < 0)
+            {
+                return new Result { Cancelled = true };
+            }
+        }
+
         return new Result { Config = config };
+    }
+
+    /// <summary>
+    /// workspace-wylw: the final confirmation card — one row per durable section
+    /// with its REAL match count against the current page's links (the same
+    /// <see cref="NavigationTreeBuilder.MatchesSection"/> semantics revisits use),
+    /// so a degenerate config is visible before it is saved. Focusing a row
+    /// highlights all of its matched links on the sidecar lens.
+    /// </summary>
+    internal static SetupWizardOverlay.WizardCard BuildConfirmSectionsCard(
+        SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+        var options = config.Sections.Select(section => new SetupWizardOverlay.CardOption
+        {
+            Label = $"{section.Name} — {contentLinks.Count(l => NavigationTreeBuilder.MatchesSection(l, section))} link(s)",
+            Identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns)),
+            HighlightSelector = CssForSection(section),
+        }).ToList();
+
+        var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+        var footnote = covered == 0 && contentLinks.Count > 0
+            ? "⚠ No links on this page match — Esc and try document order instead"
+            : $"{covered} of {contentLinks.Count} story links covered";
+
+        return new SetupWizardOverlay.WizardCard
+        {
+            Title = "Confirm your story list",
+            Prompt = "The live page highlights each section's stories — do they look right?",
+            Options = options,
+            Footnote = footnote,
+            Hint = "↑/↓ preview a section · Enter save · Esc cancel",
+        };
+    }
+
+    /// <summary>
+    /// workspace-wylw: CSS evaluated on the lens to show the links a durable
+    /// identifier pair matches — descendant links of the parent-selector fragment
+    /// plus href-substring matches for the URL pattern (approximating the
+    /// Contains semantics of <see cref="NavigationTreeBuilder.MatchesSection"/>).
+    /// </summary>
+    internal static string CssForIdentifier(string parentSelector, string urlPattern)
+    {
+        var parts = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(parentSelector))
+        {
+            parts.Add($"{parentSelector.Trim()} a[href]");
+        }
+
+        if (!string.IsNullOrWhiteSpace(urlPattern))
+        {
+            parts.Add($"a[href*=\"{EscapeAttrValue(urlPattern.Trim())}\"]");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>workspace-wylw: <see cref="CssForIdentifier"/> over a whole section's identifier lists.</summary>
+    internal static string CssForSection(HierarchySection section)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        var parts = section.ParentSelectors
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => $"{x.Trim()} a[href]")
+            .Concat(section.UrlPatterns
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => $"a[href*=\"{EscapeAttrValue(x.Trim())}\"]"));
+        return string.Join(", ", parts);
     }
 
     /// <summary>
@@ -206,16 +299,21 @@ internal static class SetupWizard
             screenshot, links, pageUrl, proposal, refined, ct).ConfigureAwait(false);
     }
 
+    private static string EscapeAttrValue(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
     private static async Task<int> RunCardAsync(
         IInputHandler input,
         Func<CancellationToken, Task> render,
         SetupWizardOverlay.State overlay,
         SetupWizardOverlay.WizardCard card,
+        Lens? lens,
         CancellationToken ct)
     {
         overlay.Mode = SetupWizardOverlay.Mode.Card;
         overlay.Card = card;
         await render(ct).ConfigureAwait(false);
+        await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
 
         var count = Math.Max(1, card.Options.Count);
         while (!ct.IsCancellationRequested)
@@ -226,10 +324,12 @@ internal static class SetupWizard
                 case CommandType.MoveDown or CommandType.ExpandNode:
                     card.Cursor = (card.Cursor + 1) % count;
                     await render(ct).ConfigureAwait(false);
+                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
                     break;
                 case CommandType.MoveUp or CommandType.CollapseNode:
                     card.Cursor = (card.Cursor - 1 + count) % count;
                     await render(ct).ConfigureAwait(false);
+                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
                     break;
                 case CommandType.ActivateLink:
                     return card.Cursor;
@@ -242,6 +342,42 @@ internal static class SetupWizard
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// workspace-wylw: highlights the focused option's matches on the sidecar
+    /// lens (clears when the option carries no selector). Advisory only — the
+    /// card still shows the durable identifier as text; lens failures never
+    /// interrupt the wizard.
+    /// </summary>
+    private static async Task PreviewFocusedOptionAsync(
+        Lens? lens, SetupWizardOverlay.WizardCard card, CancellationToken ct)
+    {
+        if (lens == null || card.Options.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var selector = card.Options[Math.Clamp(card.Cursor, 0, card.Options.Count - 1)].HighlightSelector;
+            if (string.IsNullOrEmpty(selector))
+            {
+                await lens.ClearAsync(ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await lens.HighlightCssAsync(selector, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Lens preview is cosmetic.
+        }
     }
 
     /// <summary>
@@ -287,6 +423,7 @@ internal static class SetupWizard
             {
                 Label = top != null ? $"Looks good — main story: \"{Truncate(top.Label, 36)}\"" : "Looks good — set it up",
                 Identifier = top != null ? FormatIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
+                HighlightSelector = top != null ? CssForIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
             },
             new() { Label = "Use plain document order instead" },
         };
@@ -318,6 +455,7 @@ internal static class SetupWizard
             {
                 Label = o.Label,
                 Identifier = FormatIdentifier(o.ParentSelector, o.UrlPattern),
+                HighlightSelector = CssForIdentifier(o.ParentSelector, o.UrlPattern),
             }).ToList();
             defaultCursor = Math.Max(0, options.FindIndex(o =>
                 string.Equals(o.Label, question.DefaultAnswer, StringComparison.OrdinalIgnoreCase)));
@@ -362,6 +500,16 @@ internal static class SetupWizard
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
+
+    /// <summary>
+    /// workspace-wylw: best-effort hooks into the sidecar lens tab.
+    /// <c>HighlightCssAsync</c> evaluates <see cref="TunerScript.Highlight"/>
+    /// (dialect css) and returns the match count (-1 for an invalid selector);
+    /// <c>ClearAsync</c> removes every highlight. Null where no lens exists.
+    /// </summary>
+    internal sealed record Lens(
+        Func<string, CancellationToken, Task<int>> HighlightCssAsync,
+        Func<CancellationToken, Task> ClearAsync);
 
     internal sealed record Result
     {

@@ -419,6 +419,7 @@ internal static class ScheduleCommandHandler
             new ModelRoundTripBudget(),
             c => PromptTextAsync(ctx, palette, "Your answer", null, c),
             pickLeadFromTree: null,
+            lens: null,
             ct).ConfigureAwait(false);
 
         if (result.Cancelled || result.Config is null)
