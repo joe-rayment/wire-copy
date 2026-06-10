@@ -57,41 +57,14 @@ public sealed class BookmarkReconciler : IBookmarkReconciler
             }
         }
 
-        // Step 2: load the (now-guaranteed-present) user config + the shipped
-        // defaults and merge any new shipped entries the user file is missing.
-        var userConfig = await _configStore.LoadUserConfigAsync(cancellationToken).ConfigureAwait(false)
+        // Step 2: load the (now-guaranteed-present) user config. Shipped
+        // defaults SEED a missing config (step 1) and are never merged into an
+        // existing one (workspace-kt19.3): the user's file is theirs — changing
+        // the shipped set (e.g. to the demo bookmarks) must not inject entries
+        // into configs that already exist.
+        var mergedConfig = await _configStore.LoadUserConfigAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"User config at '{_configStore.UserConfigPath}' could not be loaded after first-run setup.");
-
-        var shippedDefaults = await _configStore.LoadShippedDefaultsAsync(cancellationToken).ConfigureAwait(false);
-
-        var mergedEntries = userConfig.Bookmarks.ToList();
-        var userUrls = new HashSet<string>(
-            mergedEntries.Select(e => e.Url),
-            StringComparer.OrdinalIgnoreCase);
-        var missingDefaults = shippedDefaults.Bookmarks
-            .Where(def => !userUrls.Contains(def.Url))
-            .ToList();
-        foreach (var def in missingDefaults)
-        {
-            mergedEntries.Add(def);
-            userUrls.Add(def.Url);
-        }
-
-        var addedFromShipped = missingDefaults.Count;
-
-        var mergedConfig = userConfig with { Bookmarks = mergedEntries };
-
-        // Persist the merged config back to disk if we added anything OR if
-        // the file didn't exist (we already wrote it once above; that's fine).
-        if (addedFromShipped > 0)
-        {
-            _logger.LogInformation(
-                "Adding {Count} new shipped default(s) to user bookmarks config at {Path}.",
-                addedFromShipped,
-                _configStore.UserConfigPath);
-            await _configStore.SaveUserConfigAsync(mergedConfig, cancellationToken).ConfigureAwait(false);
-        }
 
         // Step 3: align the DB to mergedConfig.
         // - For each entry: ensure DB has a row with that URL (add if missing).

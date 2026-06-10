@@ -65,10 +65,11 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
     }
 
     [Fact]
-    public async Task Reconcile_NewDefaultInShippedFile_AddedToExistingDb()
+    public async Task Reconcile_NewDefaultInShippedFile_NeverInjectedIntoExistingConfig()
     {
-        // Simulate an "old user" whose config file pre-dates a default. Drop
-        // Wired from the user file but keep the others, then reconcile.
+        // workspace-kt19.3: shipped defaults only SEED a missing config. A user
+        // whose file lacks a shipped entry (trimmed it, or the shipped set
+        // changed — e.g. to the demo bookmarks) must NOT have it re-injected.
         var shipped = await _configStore.LoadShippedDefaultsAsync();
         var trimmed = new BookmarkConfigFile(
             shipped.Version,
@@ -86,9 +87,10 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         await _sut.ReconcileAsync();
 
         var dbBookmarks = await _repository.GetAllAsync();
-        dbBookmarks.Select(b => b.Url).Should().Contain("https://www.wired.com");
+        dbBookmarks.Select(b => b.Url).Should().NotContain("https://www.wired.com");
         var config = await _configStore.LoadUserConfigAsync();
-        config!.Bookmarks.Select(e => e.Url).Should().Contain("https://www.wired.com");
+        config!.Bookmarks.Select(e => e.Url).Should().NotContain("https://www.wired.com");
+        config.Bookmarks.Should().HaveCount(trimmed.Bookmarks.Count, "the user's file is untouched");
     }
 
     [Fact]
@@ -104,8 +106,9 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
 
         var dbBookmarks = await _repository.GetAllAsync();
         dbBookmarks.Select(b => b.Url).Should().Contain("https://my.site");
-        // Reconciler also applies missing shipped defaults additively.
-        dbBookmarks.Select(b => b.Url).Should().Contain("https://www.wired.com");
+        // workspace-kt19.3: shipped defaults are seed-only — an existing config
+        // never gains them.
+        dbBookmarks.Select(b => b.Url).Should().NotContain("https://www.wired.com");
     }
 
     [Fact]
@@ -156,8 +159,9 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         var config = await _configStore.LoadUserConfigAsync();
         config.Should().NotBeNull();
         config!.Bookmarks.Select(e => e.Url).Should().Contain(new[] { "https://a.example", "https://b.example" });
-        // Reconciler also adds shipped defaults additively to the now-extant config.
-        config.Bookmarks.Select(e => e.Url).Should().Contain("https://www.wired.com");
+        // workspace-kt19.3: the exported config is the user's data — shipped
+        // defaults are not mixed in.
+        config.Bookmarks.Select(e => e.Url).Should().NotContain("https://www.wired.com");
     }
 
     [Fact]
