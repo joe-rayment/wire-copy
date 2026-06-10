@@ -137,6 +137,53 @@ public class SharedContextPrefetchTests
         await session.CloseBackgroundPageAsync(bg);
     }
 
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task PrefetchBadge_AppliesAndClears()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var echo = new CookieEchoServer();
+        var config = Options.Create(new BrowserConfiguration { Visibility = BrowserVisibility.Visible, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        try
+        {
+            await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        var bg = await session.CreateBackgroundPageAsync();
+        bg.Should().NotBeNull();
+        await bg!.GotoAsync(echo.BaseUrl);
+
+        // workspace-1rfd: a glance at the prefetch tab explains itself.
+        (await bg.EvaluateAsync<string>(Infrastructure.Browser.Cache.PrefetchBadgeScript.Apply,
+            new { done = 3, total = 30 })).Should().Be("ok");
+        (await bg.TitleAsync()).Should().StartWith("⧖ caching 3/30 · WireCopy");
+        (await bg.EvaluateAsync<bool>(
+            "() => !!document.getElementById('__wirecopy-prefetch-badge')")).Should().BeTrue();
+
+        // Progress updates in place (idempotent re-apply).
+        (await bg.EvaluateAsync<string>(Infrastructure.Browser.Cache.PrefetchBadgeScript.Apply,
+            new { done = 4, total = 30 })).Should().Be("ok");
+        (await bg.TitleAsync()).Should().StartWith("⧖ caching 4/30 · WireCopy");
+
+        (await bg.EvaluateAsync<string>(Infrastructure.Browser.Cache.PrefetchBadgeScript.Clear))
+            .Should().Be("cleared");
+        (await bg.EvaluateAsync<bool>(
+            "() => !!document.getElementById('__wirecopy-prefetch-badge')")).Should().BeFalse();
+
+        await session.CloseBackgroundPageAsync(bg);
+    }
+
     private static async Task<int> WindowIdAsync(Microsoft.Playwright.IPage page)
     {
         var cdp = await page.Context.NewCDPSessionAsync(page);

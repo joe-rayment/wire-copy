@@ -406,6 +406,10 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
                     _eagerMode = false;
                 }
 
+                // workspace-1rfd: prefetch went idle — drop the in-page badge so the
+                // tab doesn't claim activity it no longer has.
+                await ClearPrefetchBadgeAsync().ConfigureAwait(false);
+
                 // Clear the "currently fetching" indicator when batch ends
                 _currentlyFetchingUrl = null;
                 Interlocked.Exchange(ref _currentlyFetchingStartedAtTicks, long.MinValue);
@@ -1165,6 +1169,37 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     /// True when a human used the shared browser within the configured input
     /// window (workspace-mya7). Conservative on errors: never blocks prefetch.
     /// </summary>
+    /// <summary>workspace-1rfd: (cached, total) snapshot for the prefetch-tab badge.</summary>
+    private (int Done, int Total) CachedProgressSnapshot()
+    {
+        List<string> eligible;
+        lock (_queueLock)
+        {
+            eligible = _allEligibleUrls;
+        }
+
+        var done = eligible.Count(url => _cache.Contains(url) || IsInArticleCache(url));
+        return (done, eligible.Count);
+    }
+
+    private async Task ClearPrefetchBadgeAsync()
+    {
+        var page = _backgroundPage;
+        if (page == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await page.EvaluateAsync<string>(PrefetchBadgeScript.Clear).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Prefetch badge clear failed (non-fatal)");
+        }
+    }
+
     private async Task<bool> IsBrowserUserActiveAsync()
     {
         if (_browserSession == null)

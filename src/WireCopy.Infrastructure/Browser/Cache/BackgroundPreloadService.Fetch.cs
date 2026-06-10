@@ -421,6 +421,20 @@ internal sealed partial class BackgroundPreloadService
                 _logger.LogDebug(ex, "Failed to minimize after preload navigation (non-fatal)");
             }
 
+            // workspace-1rfd: label the prefetch tab so a user who looks at the
+            // browser mid-cache understands what they're seeing.
+            try
+            {
+                var (done, total) = CachedProgressSnapshot();
+                await _backgroundPage.EvaluateAsync<string>(
+                    PrefetchBadgeScript.Apply,
+                    new { done, total }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Prefetch badge apply failed (non-fatal)");
+            }
+
             // Wait for JS content to render (article paragraphs or sufficient DOM size)
             try
             {

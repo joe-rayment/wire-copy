@@ -210,6 +210,17 @@ def main():
                 time.sleep(0.5)
             print("5 consecutive docked article opens: all loaded")
 
+            # --- 7c. workspace-8cf2/5452: interactive session is NEVER headless ---
+            log_path = "/workspace/logs/wirecopy-" + time.strftime("%Y%m%d") + ".log"
+            try:
+                log = open(log_path).read()
+                if "Browser mode: VISIBLE" not in log:
+                    failures.append("startup did not log 'Browser mode: VISIBLE'")
+                if "headless=True" in log or "(headless=true)" in log:
+                    failures.append("a headless context was created in an interactive session")
+            except OSError:
+                failures.append(f"could not read app log at {log_path}")
+
             # --- 8. '?' help popup renders (modal canary) ---
             t.send_keys("?")
             time.sleep(1.5)
