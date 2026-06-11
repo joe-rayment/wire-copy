@@ -617,6 +617,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("     - author/byline pages and tag/topic landing pages");
         sb.AppendLine("     - /video/ or podcast hub links, live-blog index shells");
         sb.AppendLine("     - social, share, login, and other navigation/utility links");
+        sb.AppendLine("     - sponsor posts / advertiser slots, and tertiary site chrome such as");
+        sb.AppendLine("       a parent-company link, 'about', leaderboards, or event calendars");
         sb.AppendLine("   A real homepage usually contains a NON-TRIVIAL share of such links —");
         sb.AppendLine("   expect to exclude several. Be aggressive: if it is not a specific");
         sb.AppendLine("   story, it goes in `excluded`. But do NOT invent exclusions for links");
@@ -643,21 +645,57 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine($"Page URL: {pageUrl}");
         sb.AppendLine();
         sb.AppendLine("Content links extracted from the page (numbered for reference;");
-        sb.AppendLine("URLs shown as path only):");
+        sb.AppendLine("same-site URLs shown as path only; off-site links keep their host —");
+        sb.AppendLine("on aggregator pages the host itself is signal):");
         sb.AppendLine();
         for (int i = 0; i < contentLinks.Count; i++)
         {
             var link = contentLinks[i];
             var sect = string.IsNullOrWhiteSpace(link.SectionTitle) ? "-" : link.SectionTitle;
             sb.AppendLine(
-                $"[{i}] score={link.ImportanceScore} sect=\"{sect}\" \"{link.DisplayText}\" -> {ToPathOnly(link.Url)}");
+                $"[{i}] score={link.ImportanceScore} sect=\"{sect}\" \"{link.DisplayText}\" -> {FormatLinkUrl(link)}");
             if (!string.IsNullOrEmpty(link.ParentSelector))
             {
                 sb.AppendLine($"    parent: {link.ParentSelector}");
             }
         }
 
+        if (IsAggregatorLinkSet(contentLinks))
+        {
+            sb.AppendLine();
+            sb.AppendLine("NOTE: most stories on this page link to OTHER sites — this is an");
+            sb.AppendLine("AGGREGATOR (like Techmeme or Hacker News). The external story links ARE");
+            sb.AppendLine("the content. Because story URLs span many domains, shared URL path");
+            sb.AppendLine("patterns will NOT generalize here — identify sections by parent CSS");
+            sb.AppendLine("selector instead, and leave url_pattern/url_patterns empty.");
+        }
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// workspace-6yb7.2: majority-external content links mark an aggregator page;
+    /// drives the aggregator note in the prompt (mirrors the LinkExtractor
+    /// promotion threshold without re-running it).
+    /// </summary>
+    internal static bool IsAggregatorLinkSet(List<LinkInfo> contentLinks) =>
+        contentLinks.Count >= 10 && contentLinks.Count(l => l.IsExternal) * 2 > contentLinks.Count;
+
+    /// <summary>
+    /// Same-site links render as path-only (saves tokens, surfaces path patterns);
+    /// off-site links keep their host — on an aggregator the host IS the story's
+    /// identity and a bare path like '/2024/06/post' would be meaningless.
+    /// </summary>
+    private static string FormatLinkUrl(LinkInfo link)
+    {
+        if (!link.IsExternal)
+        {
+            return ToPathOnly(link.Url);
+        }
+
+        return Uri.TryCreate(link.Url, UriKind.Absolute, out var uri)
+            ? uri.Host + uri.PathAndQuery
+            : link.Url;
     }
 
     /// <summary>
@@ -692,7 +730,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("   exists; else empty string. Always fill example_link_indices with the link");
         sb.AppendLine("   numbers the option refers to. These identifiers must generalize to a LATER");
         sb.AppendLine("   visit when the article URLs have changed — never identify a story by its");
-        sb.AppendLine("   exact URL.");
+        sb.AppendLine("   exact URL. On AGGREGATOR pages (stories link to many different hosts),");
+        sb.AppendLine("   url_pattern cannot generalize — leave it empty and identify sections by");
+        sb.AppendLine("   parent_selector alone. Aggregator clusters (a lead headline plus related");
+        sb.AppendLine("   coverage/discussion sublinks) map naturally to tiers: leads in a top tier,");
+        sb.AppendLine("   secondary coverage in a lower (or excluded) tier.");
         sb.AppendLine();
         sb.AppendLine($"2. questions: AT MOST {maxQuestions} short clarifying questions to confirm the");
         sb.AppendLine("   pattern. Ask ONLY where you are genuinely unsure. Each question MUST set");
@@ -720,8 +762,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("- start_collapsed: true for low-priority sections.");
         sb.AppendLine();
         sb.AppendLine("Also return exclude_selectors / exclude_url_patterns (durable identifiers for the");
-        sb.AppendLine("non-stories to hide) and exclude_indices (their link numbers). NEVER identify a");
-        sb.Append("link by its exact URL — only by selector or path pattern. Honour the user's answers.");
+        sb.AppendLine("non-stories to hide: utility links, sponsor slots, tertiary chrome like a");
+        sb.AppendLine("parent-company link) and exclude_indices (their link numbers). NEVER identify a");
+        sb.AppendLine("link by its exact URL — only by selector or path pattern. On AGGREGATOR pages");
+        sb.AppendLine("(stories span many hosts) url_patterns cannot generalize — use parent_selectors");
+        sb.Append("only. Honour the user's answers.");
         return sb.ToString();
     }
 

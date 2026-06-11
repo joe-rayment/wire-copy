@@ -383,6 +383,89 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public async Task AnalyzeCuratedAsync_AggregatorPage_KeepsHostsAndAddsAggregatorNote()
+    {
+        // workspace-6yb7.2: on an aggregator (majority of content links external)
+        // the prompt must keep each story's host (the host IS signal) and warn the
+        // model that URL patterns will not generalize.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        List<ChatMessage>? captured = null;
+        OpenAiHierarchyAnalyzer.ChatCompleter completer = (_, _, messages, _, _) =>
+        {
+            captured = messages.ToList();
+            return Task.FromResult("{\"excluded\":[],\"stories\":[0],\"sections\":[]}");
+        };
+
+        var analyzer = CreateAnalyzer(completer);
+        var links = Enumerable.Range(1, 12).Select(i => new LinkInfo
+        {
+            Url = $"https://publisher{i}.com/post/{i}",
+            DisplayText = $"Story {i}",
+            Type = LinkType.Content,
+            ImportanceScore = 70,
+            ParentSelector = "div.clus div.ourh",
+            IsExternal = true,
+        }).ToList();
+
+        await analyzer.AnalyzeCuratedAsync(screenshot: null, links, "https://aggregator.example/");
+
+        var userText = string.Join(
+            "\n",
+            captured!.SelectMany(m => m.Content)
+                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                .Select(p => p.Text));
+
+        userText.Should().Contain("publisher1.com/post/1",
+            "external story links keep their host in the prompt");
+        userText.Should().Contain("AGGREGATOR",
+            "the aggregator note steers the model away from URL patterns");
+        userText.Should().Contain("parent CSS");
+    }
+
+    [Fact]
+    public async Task AnalyzeCuratedAsync_ConventionalPage_NoAggregatorNote()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        List<ChatMessage>? captured = null;
+        OpenAiHierarchyAnalyzer.ChatCompleter completer = (_, _, messages, _, _) =>
+        {
+            captured = messages.ToList();
+            return Task.FromResult("{\"excluded\":[],\"stories\":[0,1],\"sections\":[]}");
+        };
+
+        var analyzer = CreateAnalyzer(completer);
+        await analyzer.AnalyzeCuratedAsync(screenshot: null, CreateSampleLinks(), "https://example.com/");
+
+        var userText = string.Join(
+            "\n",
+            captured!.SelectMany(m => m.Content)
+                .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                .Select(p => p.Text));
+
+        userText.Should().NotContain("AGGREGATOR");
+    }
+
+    [Theory]
+    [InlineData(12, 7, true)]   // majority external over threshold count
+    [InlineData(12, 6, false)]  // exactly half is not a majority
+    [InlineData(9, 9, false)]   // under minimum link count
+    public void IsAggregatorLinkSet_Thresholds(int total, int external, bool expected)
+    {
+        var links = Enumerable.Range(0, total).Select(i => new LinkInfo
+        {
+            Url = $"https://site{i}.com/x",
+            DisplayText = $"Link {i}",
+            Type = LinkType.Content,
+            ImportanceScore = 50,
+            IsExternal = i < external,
+        }).ToList();
+
+        OpenAiHierarchyAnalyzer.IsAggregatorLinkSet(links).Should().Be(expected);
+    }
+
+    [Fact]
     public async Task AnalyzeCuratedAsync_ReasoningEffortOverride_ReachesOptions()
     {
         _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
