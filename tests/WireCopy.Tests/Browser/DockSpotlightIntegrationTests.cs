@@ -371,6 +371,56 @@ public class DockSpotlightIntegrationTests
 
     [SkippableFact]
     [Trait("Category", "Integration")]
+    public async Task Spotlight_ClearDuringSettleWindow_IsNotOverriddenBySelfHeal()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlD = server.UrlFor("d");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        try
+        {
+            await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // workspace-s6bo: select a story that can't be highlighted yet (page D's
+        // expanders haven't hydrated), then CLEAR while the settle passes are
+        // still running. The self-heal re-enqueue must NOT resurrect the
+        // selection the user dropped — whichever side of the sync failure the
+        // clear lands on.
+        spotlight.RequestSync(new SpotlightTarget(urlD, $"{urlD}d-story-13-9", "D-Story 13-9"));
+        await Task.Delay(550);
+        spotlight.RequestClear();
+
+        // Poll through the whole settle window (last pass ~5.5s after nav):
+        // the overlay must never come back.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(6);
+        while (DateTime.UtcNow < deadline)
+        {
+            (await ProbeAsync(lens!, "d-story-13-9")).OverlayPresent.Should().BeFalse(
+                "a cleared selection must stay cleared — the settle pass must not re-light it");
+            await Task.Delay(250);
+        }
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
     public async Task TunerScript_HighlightsBothDialects_AndClears()
     {
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),

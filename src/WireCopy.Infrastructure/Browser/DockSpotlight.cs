@@ -198,6 +198,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         lock (_gate)
         {
+            // workspace-s6bo: invalidate the self-heal target at REQUEST time
+            // (before the early return — a failed sync leaves nothing lit but a
+            // target remembered) — a settle pass must never re-light a highlight
+            // the user just asked to drop.
+            _lastFailedTarget = null;
+
             // Nothing lit, nothing queued, nothing in flight — skip the wakeup.
             if (_applied == null && !_hasPending && !_busy)
             {
@@ -500,8 +506,11 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             {
                 // workspace-yx03: remember the miss so a settle pass that expands
                 // something can re-enqueue it — the highlight self-heals once the
-                // page finishes mounting its collapsed sections.
-                _lastFailedTarget = target.FollowPageOnly ? null : target;
+                // page finishes mounting its collapsed sections. workspace-s6bo:
+                // unless a clear arrived mid-sync — recording the miss would
+                // resurrect a selection the user just dropped.
+                var clearPending = _hasPending && _pendingIsClear;
+                _lastFailedTarget = target.FollowPageOnly || clearPending ? null : target;
             }
 
             HintOncePerPage(target.PageUrl, "Selected story isn't visible on the live page — highlight skipped");
@@ -564,15 +573,15 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
                 _logger.LogDebug("Dock spotlight: settle pass expanded {Count} region(s) on {Url}", acted, pageUrl);
 
-                SpotlightTarget? failed;
                 lock (_gate)
                 {
-                    failed = _lastFailedTarget;
-                }
-
-                if (failed is { } f && UrlsMatch(pageUrl, f.PageUrl))
-                {
-                    RequestSync(f);
+                    // workspace-s6bo: read-and-enqueue atomically (Monitor is
+                    // reentrant) so a RequestClear can't slip between the read
+                    // and the RequestSync and then be overwritten by it.
+                    if (_lastFailedTarget is { } f && UrlsMatch(pageUrl, f.PageUrl))
+                    {
+                        RequestSync(f);
+                    }
                 }
             }
         }
