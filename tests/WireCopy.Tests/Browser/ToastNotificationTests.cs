@@ -34,12 +34,6 @@ public class ToastNotificationTests
         toast.IsSticky.Should().BeFalse();
     }
 
-    [Fact]
-    public void HasBeenRendered_DefaultsFalse()
-    {
-        var toast = new ToastNotification { Type = ToastType.Info, Message = "test" };
-        toast.HasBeenRendered.Should().BeFalse();
-    }
 
     [Fact]
     public void Detail_IsOptional()
@@ -96,19 +90,43 @@ public class ToastNotificationTests
     }
 
     [Fact]
-    public void MarkToastRendered_NonSticky_ClearsAfterSecondCall()
+    public void MarkToastRendered_NonSticky_SurvivesRapidRerenders_UntilTtl()
     {
-        var sut = CreateNavigationService();
+        // workspace-wef6.6: dismissal is clock-based. The old render-count
+        // rule killed any toast on the 2nd render pass, so a quick re-render
+        // (progress tick, animation frame) ate it before a human could read it.
+        var (sut, clock) = CreateNavigationServiceWithClock();
 
-        // Show a non-sticky (Info) toast
         sut.ShowToast(ToastType.Info, "Cache warmed");
 
-        // First call: marks as rendered but keeps the toast
-        sut.MarkToastRendered();
-        sut.CurrentContext.ActiveToast.Should().NotBeNull();
-        sut.CurrentContext.ActiveToast!.HasBeenRendered.Should().BeTrue();
+        // Dozens of rapid render passes inside the TTL window keep the toast.
+        for (var i = 0; i < 40; i++)
+        {
+            sut.MarkToastRendered();
+            clock.Advance(TimeSpan.FromMilliseconds(50));
+            sut.CurrentContext.ActiveToast.Should().NotBeNull(
+                $"render pass #{i} at {(i + 1) * 50}ms is inside the 4s TTL");
+        }
 
-        // Second call: auto-dismisses because it was already rendered
+        // Past the TTL, the next render pass dismisses it.
+        clock.Advance(TimeSpan.FromSeconds(3));
+        sut.MarkToastRendered();
+        sut.CurrentContext.ActiveToast.Should().BeNull("the clock-based TTL elapsed");
+    }
+
+    [Fact]
+    public void MarkToastRendered_TtlStartsAtFirstRender_NotAtShow()
+    {
+        var (sut, clock) = CreateNavigationServiceWithClock();
+        sut.ShowToast(ToastType.Info, "Cache warmed");
+
+        // Time passes before anything renders — the clock hasn't started.
+        clock.Advance(TimeSpan.FromSeconds(10));
+        sut.MarkToastRendered();
+        sut.CurrentContext.ActiveToast.Should().NotBeNull(
+            "the TTL is measured from the first render, not from ShowToast");
+
+        clock.Advance(TimeSpan.FromSeconds(4.5));
         sut.MarkToastRendered();
         sut.CurrentContext.ActiveToast.Should().BeNull();
     }
@@ -186,12 +204,18 @@ public class ToastNotificationTests
         var toast = sut.CurrentContext.ActiveToast;
         toast.Should().NotBeNull();
         toast!.Detail.Should().BeNull();
-        toast.HasBeenRendered.Should().BeFalse();
     }
 
     private static NavigationService CreateNavigationService()
     {
         var logger = Substitute.For<ILogger<NavigationService>>();
         return new NavigationService(logger);
+    }
+
+    private static (NavigationService Service, FakeTimeProvider Clock) CreateNavigationServiceWithClock()
+    {
+        var clock = new FakeTimeProvider(new DateTime(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc));
+        var logger = Substitute.For<ILogger<NavigationService>>();
+        return (new NavigationService(logger, clock), clock);
     }
 }

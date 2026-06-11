@@ -30,10 +30,4 @@ public record ToastNotification
     /// Error and Celebration toasts are sticky by default.
     /// </summary>
     public bool IsSticky => Type is ToastType.Error or ToastType.Celebration;
-
-    /// <summary>
-    /// Whether this toast has been rendered at least once.
-    /// Used to implement auto-dismiss: non-sticky toasts are cleared after one render pass.
-    /// </summary>
-    public bool HasBeenRendered { get; init; }
 }

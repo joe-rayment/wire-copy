@@ -532,7 +532,9 @@ internal class StatusBarRenderer
             items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Prompt, $"cache {cacheUsagePercent:F0}%", priority: 8));
         }
 
-        if (context.IsSpeedReadActive)
+        // While the speed-read announcement itself is on screen, the ambient
+        // badge would duplicate it — it appears once the announcement fades.
+        if (context.IsSpeedReadActive && context.ActiveAnnouncement?.Glyph != "▶")
         {
             items.Add(new StatusItem
             {

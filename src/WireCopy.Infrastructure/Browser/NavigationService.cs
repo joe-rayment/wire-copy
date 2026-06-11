@@ -18,6 +18,14 @@ public class NavigationService : INavigationService
 {
     private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// workspace-wef6.6: non-sticky toasts live this long from their FIRST
+    /// render, measured by the clock — the old render-count dismissal
+    /// (cleared on the 2nd render pass) meant any quick re-render ate the
+    /// toast before a human could read it.
+    /// </summary>
+    private static readonly TimeSpan ToastDuration = TimeSpan.FromSeconds(4);
+
     private readonly ILogger<NavigationService> _logger;
     private readonly Stack<HistoryEntry> _backHistory = new();
     private readonly Stack<HistoryEntry> _forwardHistory = new();
@@ -40,6 +48,7 @@ public class NavigationService : INavigationService
     private bool _speedReadActive;
     private int _speedReadWpm = 750;
     private ToastNotification? _activeToast;
+    private DateTime? _toastShownAt;
 
     // Layout preview state
     private List<LayoutCandidate>? _previewLayouts;
@@ -364,6 +373,7 @@ public class NavigationService : INavigationService
             Message = message,
             Detail = detail,
         };
+        _toastShownAt = null; // The TTL clock starts at the first render.
     }
 
     /// <summary>
@@ -372,27 +382,33 @@ public class NavigationService : INavigationService
     public void ClearToast()
     {
         _activeToast = null;
+        _toastShownAt = null;
     }
 
     /// <summary>
-    /// Marks the active toast as rendered. Non-sticky toasts are cleared on the next call.
-    /// Call this after rendering the toast so auto-dismiss works on the next render pass.
+    /// Advances the toast lifecycle on each render pass. workspace-wef6.6:
+    /// dismissal is CLOCK-based — the first render starts the TTL and the
+    /// toast survives any number of re-renders until it elapses. Sticky
+    /// toasts (errors, celebrations) are exempt and dismiss via Esc.
     /// </summary>
     public void MarkToastRendered()
     {
-        if (_activeToast == null)
+        if (_activeToast == null || _activeToast.IsSticky)
         {
             return;
         }
 
-        if (_activeToast.HasBeenRendered && !_activeToast.IsSticky)
+        var now = _clock.GetUtcNow().UtcDateTime;
+        if (_toastShownAt == null)
         {
-            // Non-sticky toast was already shown once — auto-dismiss
-            _activeToast = null;
+            _toastShownAt = now;
+            return;
         }
-        else
+
+        if (now - _toastShownAt.Value > ToastDuration)
         {
-            _activeToast = _activeToast with { HasBeenRendered = true };
+            _activeToast = null;
+            _toastShownAt = null;
         }
     }
 
