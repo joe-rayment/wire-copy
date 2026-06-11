@@ -493,7 +493,7 @@ internal static class StrategyChooserHandler
                 screenshot,
                 budget,
                 c => PromptForGuidanceAsync(ctx, options, c),
-                c => PickLeadFromTreeAsync(ctx, page, options, c),
+                c => PickLeadFromTreeAsync(ctx, scope, page, options, c),
                 applyPreview,
                 lens,
                 ct).ConfigureAwait(false);
@@ -569,13 +569,16 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
-    /// workspace-5oe9.9: lets the user point at the main story in the previewed
-    /// link tree. j/k move the tree cursor; Enter sets the highlighted link as
-    /// the lead (rejecting synthetic section headers); Esc cancels the pick.
+    /// workspace-5oe9.9 / workspace-6yb7.5: lets the user point at the main
+    /// story EITHER by clicking it in the sidecar browser window (PickScript
+    /// arms a navigation-swallowing click trap on the lens; clicks are polled
+    /// on animation ticks) OR by walking the previewed tree with j/k + Enter
+    /// (always available — the only path when the dock is hidden). Esc cancels.
     /// Returns the chosen <see cref="LinkInfo"/> or null.
     /// </summary>
     private static async Task<LinkInfo?> PickLeadFromTreeAsync(
         CommandContext ctx,
+        IServiceScope scope,
         Domain.Entities.Browser.Page page,
         RenderOptions options,
         CancellationToken ct)
@@ -586,43 +589,147 @@ internal static class StrategyChooserHandler
             return null;
         }
 
+        var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
+        var session = scope.ServiceProvider.GetService<IBrowserSession>();
+        var lensPage = await ArmLensPickAsync(session, ctx.Logger).ConfigureAwait(false);
+
         // Visibly distinct footer so the pick mode is unmistakable.
         ClearOverlay(ctx);
-        ctx.NavigationService.SetStatusMessage("Pick the main story — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
+        var hint = lensPage != null
+            ? "Pick the main story — click it in the browser window, or j/k + Enter here · Esc cancel"
+            : "Pick the main story — j/k move · Enter set · Esc cancel";
+        ctx.NavigationService.SetStatusMessage(hint, TimeSpan.FromMinutes(2));
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-        while (!ct.IsCancellationRequested)
+        // Poll the lens for clicks between keystrokes via the animation-tick
+        // race; the prior animation state is restored on every exit path.
+        var animation = ctx.InputHandler.AnimationController;
+        var hadAnimation = animation.AnimationState.HasActiveAnimation;
+        var savedInterval = animation.AnimationIntervalMs;
+        if (lensPage != null && !hadAnimation)
         {
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-            switch (command.Type)
-            {
-                case CommandType.MoveDown or CommandType.ExpandNode:
-                    tree.SelectNext();
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    break;
-                case CommandType.MoveUp or CommandType.CollapseNode:
-                    tree.SelectPrevious();
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    break;
-                case CommandType.ActivateLink:
-                    var node = tree.GetSelectedNode();
-                    if (node == null || node.IsGroupHeader)
-                    {
-                        ctx.NavigationService.SetStatusMessage("Pick a story, not a section header — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
-                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                        break;
-                    }
-
-                    return node.Link;
-                case CommandType.GoBack or CommandType.Quit:
-                    return null;
-                case CommandType.TerminalResized:
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    break;
-            }
+            animation.AnimationIntervalMs = 200;
+            animation.StartAnimation();
         }
 
-        return null;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+                switch (command.Type)
+                {
+                    case CommandType.AnimationTick:
+                        var pick = await PollLensPickAsync(lensPage, ctx.Logger).ConfigureAwait(false);
+                        if (pick != null)
+                        {
+                            return pick.ToLinkInfo(links);
+                        }
+
+                        break;
+                    case CommandType.MoveDown or CommandType.ExpandNode:
+                        tree.SelectNext();
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.MoveUp or CommandType.CollapseNode:
+                        tree.SelectPrevious();
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.ActivateLink:
+                        var node = tree.GetSelectedNode();
+                        if (node == null || node.IsGroupHeader)
+                        {
+                            ctx.NavigationService.SetStatusMessage("Pick a story, not a section header — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
+                            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                            break;
+                        }
+
+                        return node.Link;
+                    case CommandType.GoBack or CommandType.Quit:
+                        return null;
+                    case CommandType.TerminalResized:
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                        break;
+                }
+            }
+
+            return null;
+        }
+        finally
+        {
+            if (lensPage != null && !hadAnimation)
+            {
+                animation.StopAnimation();
+                animation.AnimationIntervalMs = savedInterval;
+            }
+
+            await DisarmLensPickAsync(lensPage, ctx.Logger).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Arms <see cref="PickScript"/> on the lens tab; null when no sidecar /
+    /// lens page exists or the evaluation fails (keyboard pick still works).
+    /// </summary>
+    private static async Task<Microsoft.Playwright.IPage?> ArmLensPickAsync(IBrowserSession? session, ILogger logger)
+    {
+        if (session == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+            if (lensPage == null)
+            {
+                return null;
+            }
+
+            await lensPage.EvaluateAsync<string>(PickScript.Arm).ConfigureAwait(false);
+            return lensPage;
+        }
+        catch (Exception ex)
+        {
+            logger.LogInformation(ex, "Lens pick: arming failed; keyboard pick only");
+            return null;
+        }
+    }
+
+    private static async Task<LensPick?> PollLensPickAsync(Microsoft.Playwright.IPage? lensPage, ILogger logger)
+    {
+        if (lensPage == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = await lensPage.EvaluateAsync<string>(PickScript.Poll).ConfigureAwait(false);
+            return LensPick.Parse(json);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Lens pick: poll failed");
+            return null;
+        }
+    }
+
+    private static async Task DisarmLensPickAsync(Microsoft.Playwright.IPage? lensPage, ILogger logger)
+    {
+        if (lensPage == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await lensPage.EvaluateAsync<string>(PickScript.Disarm).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Lens pick: disarm failed (page may have navigated)");
+        }
     }
 
     /// <summary>
