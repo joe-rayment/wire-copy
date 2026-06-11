@@ -1035,4 +1035,106 @@ public class LinkExtractorTests
     }
 
     #endregion
+
+    #region Aggregator external-story classification (workspace-6yb7.1)
+
+    [Fact]
+    public async Task ExtractLinksAsync_AggregatorPage_ShouldPromoteExternalStoriesToContent()
+    {
+        // A Techmeme-shaped page: every story headline links to another host,
+        // wrapped in div-soup with no content-class signal. Short external links
+        // (publisher tags, parent-company chrome) must stay External.
+        var stories = string.Join("\n", Enumerable.Range(1, 12).Select(i =>
+            $@"<div class=""clus""><div class=""ourh""><a href=""https://publisher{i}.com/post/{i}"">Major Technology Company Announces Significant Product Update Number {i}</a></div>
+               <a href=""https://publisher{i}.com"">Publisher {i}</a></div>"));
+        var html = $@"<html><body>{stories}
+            <a href=""https://parentcompany.com"">About Us</a>
+            </body></html>";
+        var baseUrl = "https://aggregator.example";
+
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        var headlines = links.Where(l => l.DisplayText.StartsWith("Major Technology")).ToList();
+        headlines.Should().HaveCount(12);
+        headlines.Should().OnlyContain(l => l.Type == LinkType.Content && l.IsExternal,
+            "aggregator story headlines are the page's content even though they are off-domain");
+
+        var shortExternals = links.Where(l => l.DisplayText.StartsWith("Publisher") || l.DisplayText == "About Us").ToList();
+        shortExternals.Should().NotBeEmpty();
+        shortExternals.Should().OnlyContain(l => l.Type == LinkType.External,
+            "short off-domain links carry no story signal and stay External");
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_ConventionalSite_ShouldNotPromoteExternalLinks()
+    {
+        // A normal news homepage with mostly same-domain stories: the few
+        // long-text external links must NOT be promoted.
+        var stories = string.Join("\n", Enumerable.Range(1, 12).Select(i =>
+            $@"<a href=""https://example.com/2024/06/{i:00}/story-{i}"">Local Newsroom Publishes Investigative Report Number {i} on City Matters</a>"));
+        var html = $@"<html><body>{stories}
+            <a href=""https://othersite.com/partner-piece"">Our Partner Publication Covers an Interesting Story Elsewhere</a>
+            </body></html>";
+        var baseUrl = "https://example.com";
+
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        var external = links.Single(l => l.Url.Contains("othersite.com"));
+        external.Type.Should().Be(LinkType.External,
+            "a conventional page's stray external link is not content");
+        external.IsExternal.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_ExternalLinkInContentContainer_ShouldClassifyAsContent()
+    {
+        var html = @"<html><body>
+            <article>
+                <a href=""https://othersite.com/their-story"">An Off-Domain Story Placed Inside the Article Container by Editors</a>
+            </article>
+            </body></html>";
+        var baseUrl = "https://example.com";
+
+        var links = await _sut.ExtractLinksAsync(html, baseUrl);
+
+        links.Should().HaveCount(1);
+        links[0].Type.Should().Be(LinkType.Content,
+            "content-container signals beat the off-domain check");
+        links[0].IsExternal.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExtractLinksAsync_SameDomainLinks_ShouldNotBeFlaggedExternal()
+    {
+        var html = @"<html><body>
+            <a href=""https://example.com/2024/01/15/story"">A Perfectly Ordinary Same-Domain Story Headline for Testing</a>
+            </body></html>";
+
+        var links = await _sut.ExtractLinksAsync(html, "https://example.com");
+
+        links.Should().HaveCount(1);
+        links[0].IsExternal.Should().BeFalse();
+    }
+
+    [Fact]
+    public void PromoteAggregatorStories_BelowMinimumStoryCount_ShouldNotTrigger()
+    {
+        var links = Enumerable.Range(1, LinkExtractor.AggregatorMinStoryLinks - 1)
+            .Select(i => new LinkInfo
+            {
+                Url = $"https://other{i}.com/story",
+                DisplayText = $"A Long Enough Headline to Be Story Shaped Number {i}",
+                Type = LinkType.External,
+                ImportanceScore = 20,
+                IsExternal = true,
+            })
+            .ToList();
+
+        var result = LinkExtractor.PromoteAggregatorStories(links);
+
+        result.Should().OnlyContain(l => l.Type == LinkType.External,
+            "small pages never trigger aggregator detection");
+    }
+
+    #endregion
 }

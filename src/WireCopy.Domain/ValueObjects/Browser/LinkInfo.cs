@@ -66,6 +66,13 @@ public record LinkInfo
     public bool IsFromImageAlt { get; init; }
 
     /// <summary>
+    /// True when the link's host differs from the page it was extracted from.
+    /// Independent of <see cref="Type"/>: on aggregator sites (Techmeme, HN)
+    /// story links are external AND content at the same time.
+    /// </summary>
+    public bool IsExternal { get; init; }
+
+    /// <summary>
     /// Classifies whether this LinkInfo is a regular link or a header.
     /// </summary>
     public HeaderType HeaderType { get; init; }

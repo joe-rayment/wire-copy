@@ -81,6 +81,19 @@ public class LinkExtractor : ILinkExtractor
         "recommended", "related", "see also", "latest", "you might like"
     };
 
+    /// <summary>
+    /// Display-text length at or above which a link with no other signals is
+    /// treated as a probable headline (shared by <see cref="DetermineLinkType"/>
+    /// and the aggregator promotion pass).
+    /// </summary>
+    internal const int MinStoryTextLength = 25;
+
+    /// <summary>Minimum story-shaped links before aggregator detection can trigger.</summary>
+    internal const int AggregatorMinStoryLinks = 10;
+
+    /// <summary>Share of story-shaped links that must be off-domain to call the page an aggregator.</summary>
+    internal const double AggregatorExternalShare = 0.6;
+
     private readonly ILogger<LinkExtractor> _logger;
 
     public LinkExtractor(ILogger<LinkExtractor> logger)
@@ -203,8 +216,9 @@ public class LinkExtractor : ILinkExtractor
                         linkInfo = linkInfo with { Author = author, PublishedDate = pubDate };
                     }
 
-                    // Extract section title for content links only
-                    if (linkInfo.Type == LinkType.Content)
+                    // Extract section title for content links — and external links,
+                    // which the aggregator pass may promote to content later.
+                    if (linkInfo.Type == LinkType.Content || linkInfo.Type == LinkType.External)
                     {
                         var sectionTitle = ExtractSectionTitle(anchor);
                         if (sectionTitle != null)
@@ -254,7 +268,16 @@ public class LinkExtractor : ILinkExtractor
                 links.Count,
                 deduplicatedLinks.Count);
 
-            links = deduplicatedLinks;
+            var promoted = PromoteAggregatorStories(deduplicatedLinks);
+            var promotedCount = promoted.Count(l => l.Type == LinkType.Content && l.IsExternal);
+            if (promotedCount > 0 && !ReferenceEquals(promoted, deduplicatedLinks))
+            {
+                _logger.LogInformation(
+                    "Aggregator page detected: promoted {Count} external story links to content",
+                    promotedCount);
+            }
+
+            links = promoted;
         }
         catch (Exception ex)
         {
@@ -266,7 +289,8 @@ public class LinkExtractor : ILinkExtractor
 
     public LinkInfo ClassifyLink(string url, string displayText, string? parentSelector, string baseUrl)
     {
-        var linkType = DetermineLinkType(url, parentSelector, displayText, baseUrl);
+        var isExternal = IsExternalLink(url, baseUrl);
+        var linkType = DetermineLinkType(url, parentSelector, displayText, isExternal);
         var importance = CalculateImportance(linkType, displayText, parentSelector);
 
         return new LinkInfo
@@ -275,7 +299,8 @@ public class LinkExtractor : ILinkExtractor
             DisplayText = displayText.Trim(),
             Type = linkType,
             ImportanceScore = importance,
-            ParentSelector = parentSelector
+            ParentSelector = parentSelector,
+            IsExternal = isExternal
         };
     }
 
@@ -871,13 +896,13 @@ public class LinkExtractor : ILinkExtractor
         return null;
     }
 
-    private static LinkType DetermineLinkType(string url, string? parentSelector, string displayText, string baseUrl)
+    private static LinkType DetermineLinkType(string url, string? parentSelector, string displayText, bool isExternal)
     {
-        // Check if external link
-        if (IsExternalLink(url, baseUrl))
-        {
-            return LinkType.External;
-        }
+        // Content signals are evaluated BEFORE the domain check: on aggregator
+        // pages (Techmeme, HN, Drudge) every story links to another host, so an
+        // unconditional off-domain => External rule erases the entire page.
+        // A bare off-domain link with no content signal still falls through to
+        // External at the end.
 
         // Non-article URL patterns: newsletters, account pages, etc.
         // These are promotional/utility links regardless of their DOM container.
@@ -928,15 +953,56 @@ public class LinkExtractor : ILinkExtractor
             return LinkType.Content;
         }
 
+        // No container or URL signal: off-domain links are External here (the
+        // page-level aggregator pass may still promote story-shaped ones).
+        if (isExternal)
+        {
+            return LinkType.External;
+        }
+
         // Heuristic based on display text length
         // Very short text (< 25 chars) is more likely to be navigation (Home, About, Contact, etc.)
         // Text >= 25 chars with no other signals defaults to Content (probable headline)
-        if (displayText.Length < 25)
+        if (displayText.Length < MinStoryTextLength)
         {
             return LinkType.Navigation;
         }
 
         return LinkType.Content;
+    }
+
+    /// <summary>
+    /// Aggregator pass: when the clear majority of story-shaped links (headline-length
+    /// text) on a page point off-domain, the page is an aggregator and those links ARE
+    /// its content — promote them so the link tree, the AI analyzer, and the setup
+    /// wizard (which all consume LinkType.Content) see the stories. Short off-domain
+    /// links (publisher tags, discussion links, social chrome) stay External.
+    /// </summary>
+    internal static List<LinkInfo> PromoteAggregatorStories(List<LinkInfo> links)
+    {
+        var storyShaped = links
+            .Where(l => !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength)
+            .ToList();
+        if (storyShaped.Count < AggregatorMinStoryLinks)
+        {
+            return links;
+        }
+
+        var externalShare = (double)storyShaped.Count(l => l.IsExternal) / storyShaped.Count;
+        if (externalShare < AggregatorExternalShare)
+        {
+            return links;
+        }
+
+        return links
+            .Select(l => l.Type == LinkType.External && !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength
+                ? l with
+                {
+                    Type = LinkType.Content,
+                    ImportanceScore = CalculateImportance(LinkType.Content, l.DisplayText, l.ParentSelector),
+                }
+                : l)
+            .ToList();
     }
 
     private static int CalculateImportance(LinkType type, string displayText, string? parentSelector)
