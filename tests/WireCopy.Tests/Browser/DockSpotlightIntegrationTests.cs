@@ -314,6 +314,63 @@ public class DockSpotlightIntegrationTests
 
     [SkippableFact]
     [Trait("Category", "Integration")]
+    public async Task Spotlight_ExpandsHydratedRenderOnClickSections_AcrossManySections()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        using var server = new TinySiteServer();
+        var urlD = server.UrlFor("d");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        try
+        {
+            await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // workspace-yx03 regression (NYT Today's Paper): the target story is in
+        // the LAST of 13 sections (beyond the old 5-click cap), exists only
+        // after its "Show More in …" button is clicked (render-on-click), and
+        // the button's handler attaches ~400ms after load — the inline expand
+        // pass at DOMContentLoaded is a silent no-op. The settle passes plus
+        // failed-target re-enqueue must still land the highlight, with no
+        // further selection input.
+        spotlight.RequestSync(new SpotlightTarget(urlD, $"{urlD}d-story-13-9", "D-Story 13-9"));
+        var probe = await WaitForSpotlightAsync(lens!, "d-story-13-9");
+        _out.WriteLine($"d-story-13-9 probe: {probe}");
+        probe.OverlayPresent.Should().BeTrue("a render-on-click story behind a late-hydrating expander must be auto-expanded and highlighted");
+        probe.AnchorInViewport.Should().BeTrue();
+        probe.OverlayWrapsAnchor.Should().BeTrue();
+
+        // Every section expanded: all 13 Show More buttons consumed their click
+        // (each removes itself) — the old MAX_CLICKS=5 cap left 8 behind.
+        (await lens!.EvaluateAsync<int>("() => document.querySelectorAll('button.more-btn').length"))
+            .Should().Be(0, "the click cap must cover one expander per section on a 13-section front");
+
+        // Idempotence: with everything expanded, another pass performs no work
+        // (nothing re-collapses, the settle loop's stop condition is real).
+        (await lens.EvaluateAsync<int>(ExpandScript.ExpandAll)).Should().Be(0);
+
+        // The real 'Read more stories' LINK was never clicked: still on page D.
+        lens.Url.Should().StartWith(urlD, "expansion must never follow a navigating link");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
     public async Task TunerScript_HighlightsBothDialects_AndClears()
     {
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
@@ -530,6 +587,60 @@ public class DockSpotlightIntegrationTests
             return sb.ToString();
         }
 
+        /// <summary>
+        /// workspace-yx03 fixture: an NYT-Today's-Paper-shaped page that defeats
+        /// every assumption the original Page C let slide — 13 sections (more
+        /// than the old click cap), each with 3 visible stories and a
+        /// "Show More in …" button whose stories are NOT in the DOM until the
+        /// button is clicked (render-on-click), and handlers attached only
+        /// ~400ms after load (hydration window: an early synthetic click is a
+        /// silent no-op). A real "Read more stories" link must stay unclicked.
+        /// </summary>
+        private static string BuildPageD()
+        {
+            var sb = new StringBuilder("<!DOCTYPE html><html><head><title>D</title></head><body>");
+            sb.Append("<h1>Page D</h1>");
+            for (var s = 1; s <= 13; s++)
+            {
+                sb.Append($"<section><h2>Section {s}</h2><ol>");
+                for (var i = 1; i <= 3; i++)
+                {
+                    sb.Append($"<li style=\"height:120px\"><a href=\"/d/d-story-{s}-{i}\">D-Story {s}-{i}</a></li>");
+                }
+
+                sb.Append($"</ol><button type=\"button\" class=\"more-btn\" data-sec=\"{s}\">Show More in <!-- -->Section {s}</button></section>");
+            }
+
+            // A real link labelled like an expander: clicking it would navigate.
+            sb.Append("<div><a href=\"/d/all\">Read more stories</a></div>");
+
+            // "Hydration": handlers attach well after DOMContentLoaded. A click
+            // mounts the section's remaining stories and removes the button —
+            // exactly NYT's Show More behavior.
+            sb.Append("""
+                <script>
+                setTimeout(() => {
+                    for (const b of document.querySelectorAll('button.more-btn')) {
+                        b.addEventListener('click', () => {
+                            const s = b.dataset.sec;
+                            const ol = b.parentElement.querySelector('ol');
+                            for (let i = 4; i <= 9; i++) {
+                                const li = document.createElement('li');
+                                li.style.height = '120px';
+                                li.innerHTML = '<a href="/d/d-story-' + s + '-' + i + '">D-Story ' + s + '-' + i + '</a>';
+                                ol.appendChild(li);
+                            }
+                            b.remove();
+                        });
+                    }
+                    document.body.dataset.hydrated = '1';
+                }, 400);
+                </script>
+                """);
+            sb.Append("</body></html>");
+            return sb.ToString();
+        }
+
         private static string BuildPageB()
         {
             var sb = new StringBuilder("<!DOCTYPE html><html><head><title>B</title></head><body>");
@@ -560,6 +671,7 @@ public class DockSpotlightIntegrationTests
                 var path = ctx.Request.Url?.AbsolutePath ?? "/";
                 var html = path.StartsWith("/b", StringComparison.Ordinal) ? BuildPageB()
                     : path.StartsWith("/c", StringComparison.Ordinal) ? BuildPageC()
+                    : path.StartsWith("/d", StringComparison.Ordinal) ? BuildPageD()
                     : BuildPageA();
                 var bytes = Encoding.UTF8.GetBytes(html);
                 try

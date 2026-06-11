@@ -36,6 +36,16 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan FollowNavigationTimeout = TimeSpan.FromSeconds(15);
 
+    // workspace-yx03: settle schedule for re-running the expander after a
+    // follow-navigation — hydrated sites attach expander handlers well after
+    // DOMContentLoaded, so the inline pass can be a silent no-op. Inter-pass
+    // delays; the last pass lands ~5.5s after navigation.
+    private static readonly int[] ExpandSettleDelaysMs = { 700, 800, 1500, 2500 };
+
+    // workspace-yx03: beat between a rescue expansion and the sync retry so
+    // render-on-click content (NYT "Show More in <Section>") has mounted.
+    private static readonly TimeSpan ExpandMountDelay = TimeSpan.FromMilliseconds(350);
+
     private readonly IBrowserSession _session;
     private readonly ILogger<DockSpotlight> _logger;
     private readonly object _gate = new();
@@ -65,6 +75,19 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     // lens somewhere — never fight them; offer adoption instead.
     private string? _lastLensNav;
     private string? _divergedFromTarget;
+
+    // workspace-yx03: background settle passes for the current follow-navigation,
+    // cancelled and replaced by the next one.
+    private CancellationTokenSource? _expandSettleCts;
+
+    // workspace-yx03: the last target Sync gave up on (guarded by _gate — record
+    // struct writes aren't atomic). A settle pass that expands something re-enqueues
+    // it so the highlight self-heals without another keypress.
+    private SpotlightTarget? _lastFailedTarget;
+
+    // workspace-yx03: one rescue expansion per page URL (single slot, like
+    // _lastHintPageUrl); re-armed by the next follow-navigation's fresh DOM.
+    private string? _expandRescuePageUrl;
 
     private bool _disposed;
 
@@ -209,6 +232,13 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         catch (Exception)
         {
             // Pump is draining a sync against a possibly-dead page; don't block shutdown.
+        }
+
+        if (_expandSettleCts != null)
+        {
+            // Already cancelled via the linked _disposeCts — belt and braces.
+            await _expandSettleCts.CancelAsync().ConfigureAwait(false);
+            _expandSettleCts.Dispose();
         }
 
         _disposeCts.Dispose();
@@ -365,6 +395,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
                 }).ConfigureAwait(false);
                 _lastLensNav = target.PageUrl;
+                _expandRescuePageUrl = null; // fresh DOM — re-arm the once-per-page rescue
 
                 // workspace-2cz4: mobile-viewport sites tuck content behind
                 // "read more" — proactively expand on OUR navigations so listed
@@ -381,6 +412,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                 {
                     _logger.LogDebug(ex, "Dock spotlight: auto-expand failed (advisory)");
                 }
+
+                // workspace-yx03: hydrated sites attach the expanders' handlers
+                // AFTER DOMContentLoaded, so the pass above can be a no-op —
+                // keep re-running it in the background until a pass changes
+                // nothing.
+                StartExpandSettlePasses(page, target.PageUrl);
             }
             else
             {
@@ -417,15 +454,56 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                         SpotlightScript.Sync,
                         new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
                 }
+                else if (revealed == "not-found"
+                    && !string.Equals(_expandRescuePageUrl, target.PageUrl, StringComparison.Ordinal))
+                {
+                    // workspace-yx03: an anchor absent from the DOM is the
+                    // render-on-click signature (NYT "Show More in <Section>"
+                    // mounts the stories only when clicked) — the proactive pass
+                    // may have clicked before hydration. One more expander pass
+                    // per page, a beat for the content to mount, then retry.
+                    _expandRescuePageUrl = target.PageUrl;
+                    var acted = 0;
+                    try
+                    {
+                        acted = await page.EvaluateAsync<int>(ExpandScript.ExpandAll).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Dock spotlight: rescue expand failed (advisory)");
+                    }
+
+                    if (acted > 0)
+                    {
+                        _logger.LogDebug("Dock spotlight: rescue pass expanded {Count} region(s) for {LinkUrl}, retrying", acted, target.LinkUrl);
+                        await Task.Delay(ExpandMountDelay).ConfigureAwait(false);
+                        result = await page.EvaluateAsync<string>(
+                            SpotlightScript.Sync,
+                            new { url = target.LinkUrl, text = target.DisplayText }).ConfigureAwait(false);
+                    }
+                }
             }
 
             if (result == "ok")
             {
                 _applied = target;
+                lock (_gate)
+                {
+                    _lastFailedTarget = null;
+                }
+
                 return;
             }
 
             _applied = null;
+            lock (_gate)
+            {
+                // workspace-yx03: remember the miss so a settle pass that expands
+                // something can re-enqueue it — the highlight self-heals once the
+                // page finishes mounting its collapsed sections.
+                _lastFailedTarget = target.FollowPageOnly ? null : target;
+            }
+
             HintOncePerPage(target.PageUrl, "Selected story isn't visible on the live page — highlight skipped");
         }
         catch (OperationCanceledException)
@@ -443,6 +521,68 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             _logger.LogDebug(ex, "Dock spotlight: sync failed for {LinkUrl}", target.LinkUrl);
             _applied = null;
             HintOncePerPage(target.PageUrl, "Couldn't sync the live page to your selection");
+        }
+    }
+
+    // workspace-yx03: kicks off the post-navigation settle passes, replacing any
+    // loop still running for the previous navigation.
+    private void StartExpandSettlePasses(IPage page, string pageUrl)
+    {
+        _expandSettleCts?.Cancel();
+        _expandSettleCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_disposeCts.Token);
+        _expandSettleCts = cts;
+        _ = Task.Run(() => ExpandSettlePassesAsync(page, pageUrl, cts.Token), CancellationToken.None);
+    }
+
+    // workspace-yx03: re-runs the expander on a short settle schedule after a
+    // follow-navigation. Hydrated sites attach expander click handlers after
+    // DOMContentLoaded, so the inline pass can be a silent no-op; ExpandAll's
+    // eligibility checks make re-runs idempotent (a worked expander disappears,
+    // flips aria-expanded, or changes label). Stops as soon as a pass performs
+    // no work, and never touches a lens that has moved off the page (user
+    // navigation or a newer follow-nav). When a pass expands something and the
+    // last sync had failed, the target is re-enqueued so the highlight
+    // self-heals without another keypress.
+    private async Task ExpandSettlePassesAsync(IPage page, string pageUrl, CancellationToken ct)
+    {
+        try
+        {
+            foreach (var delayMs in ExpandSettleDelaysMs)
+            {
+                await Task.Delay(delayMs, ct).ConfigureAwait(false);
+                if (!UrlsMatch(page.Url, pageUrl))
+                {
+                    return;
+                }
+
+                var acted = await page.EvaluateAsync<int>(ExpandScript.ExpandAll).ConfigureAwait(false);
+                if (acted == 0)
+                {
+                    return;
+                }
+
+                _logger.LogDebug("Dock spotlight: settle pass expanded {Count} region(s) on {Url}", acted, pageUrl);
+
+                SpotlightTarget? failed;
+                lock (_gate)
+                {
+                    failed = _lastFailedTarget;
+                }
+
+                if (failed is { } f && UrlsMatch(pageUrl, f.PageUrl))
+                {
+                    RequestSync(f);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer navigation or shutdown.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Dock spotlight: expand settle pass failed (advisory)");
         }
     }
 
@@ -474,6 +614,10 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         finally
         {
             _applied = null;
+            lock (_gate)
+            {
+                _lastFailedTarget = null; // selection gone — nothing to self-heal
+            }
         }
     }
 

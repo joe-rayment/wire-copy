@@ -19,11 +19,23 @@ internal static class ExpandScript
     /// Proactive pass after a follow-navigation: opens every closed
     /// <c>&lt;details&gt;</c> and clicks visible, NON-NAVIGATING expanders whose
     /// accessible text reads like "read/show/load more". Returns the number of
-    /// expansions performed (capped).
+    /// expansions performed this pass (0 = nothing left to do, the caller's
+    /// settle loop can stop).
+    ///
+    /// <para>workspace-yx03: designed to be re-run — hydrated sites attach the
+    /// expanders' click handlers AFTER DOMContentLoaded, so an early pass can be
+    /// a silent no-op. Success is detected through observable state, not a
+    /// clicked-set: an expander that worked disappears, flips
+    /// <c>aria-expanded</c>, or changes its label, so it drops out of the next
+    /// pass's eligible set on its own. The per-pass cap fits one button per
+    /// section on section-heavy fronts (NYT Today's Paper has ~13); the
+    /// cumulative page cap bounds pathological toggles that expose no state.</para>
     /// </summary>
     public const string ExpandAll = """
         () => {
-            const MAX_CLICKS = 5;
+            const PASS_CLICKS = 25;
+            const PAGE_CLICKS = 60;
+            window.__wcExpandClicks ||= 0;
             let acted = 0;
 
             for (const d of document.querySelectorAll('details:not([open])')) {
@@ -45,11 +57,11 @@ internal static class ExpandScript
 
             let clicks = 0;
             for (const el of document.querySelectorAll('button, [role="button"], summary, a, [aria-expanded="false"]')) {
-                if (clicks >= MAX_CLICKS) break;
+                if (clicks >= PASS_CLICKS || window.__wcExpandClicks >= PAGE_CLICKS) break;
                 const r = el.getBoundingClientRect();
                 if (r.width <= 0 || r.height <= 0) continue;
                 if (!moreish(el) || navigates(el)) continue;
-                try { el.click(); clicks++; acted++; } catch {}
+                try { el.click(); clicks++; acted++; window.__wcExpandClicks++; } catch {}
             }
 
             return acted;
