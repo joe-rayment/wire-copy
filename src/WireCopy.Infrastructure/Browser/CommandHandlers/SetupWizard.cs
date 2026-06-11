@@ -9,26 +9,40 @@ using WireCopy.Infrastructure.Browser.UI.Components;
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
-/// workspace-5oe9.8 — the question-driven AI setup wizard (CENTERPIECE B, UI).
+/// workspace-6yb7.3 — the preview-first AI setup wizard.
 /// Calls <see cref="IHierarchyAnalyzer.ProposeSetupQuestionsAsync"/> (round 1),
-/// renders the proposed pattern + a BOUNDED set of confirm-the-pattern cards
-/// (each showing the DURABLE identifier that will be saved), collects the user's
-/// answers keyboard-only, then calls
-/// <see cref="IHierarchyAnalyzer.InferPatternFromAnswersAsync"/> (round 2) to
-/// produce the final durable config. The accept-all path is "Enter, Enter,
-/// Enter" and spends exactly two model round-trips.
+/// asks the model's clarifying questions (each option highlights its matches on
+/// the sidecar lens), calls
+/// <see cref="IHierarchyAnalyzer.InferPatternFromAnswersAsync"/> (round 2), and
+/// then shows the RESULT: the candidate config is applied to the real link tree
+/// behind a slim caption card, so what the user evaluates is the page they will
+/// actually get. Enter saves exactly what is previewed; Space opens the adjust
+/// loop (point at the lead / free-text guidance, each one budget-guarded
+/// re-inference); Esc discards — document order is the implicit unconfigured
+/// default and is never presented as a wizard option.
 /// </summary>
 internal static class SetupWizard
 {
-    /// <summary>Cap on structured question cards shown (a final optional free-text card may follow).</summary>
+    /// <summary>Cap on structured question cards shown.</summary>
     internal const int MaxStructuredQuestions = 3;
+
+    /// <summary>Outcome of one pass through the preview card.</summary>
+    private enum PreviewChoice
+    {
+        Save,
+        Adjust,
+        Cancel,
+    }
 
     /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
     /// so the flow is unit-testable with a mock analyzer + scripted input.
     /// </summary>
     /// <param name="render">Repaints the page + overlay (the overlay painter reads <paramref name="overlay"/>).</param>
-    /// <param name="freeTextPrompt">Prompts the optional final free-text card; returns null/empty to skip.</param>
+    /// <param name="freeTextPrompt">Prompts the adjust loop's free-text card; returns null/empty to skip.</param>
+    /// <param name="applyPreview">workspace-6yb7.3: builds the candidate config into the page's REAL
+    /// link tree so the preview card sits over the actual result. Null (tests) skips the live preview;
+    /// the caller is responsible for restoring the original tree when the wizard is cancelled.</param>
     /// <param name="lens">workspace-wylw: best-effort sidecar-lens preview hooks — the focused
     /// option's matches highlight live on the page; null (tests / no sidecar) degrades to text-only.</param>
     public static async Task<Result> RunAsync(
@@ -42,6 +56,7 @@ internal static class SetupWizard
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
+        Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
         CancellationToken ct)
     {
@@ -61,30 +76,7 @@ internal static class SetupWizard
             render,
             ct).ConfigureAwait(false);
 
-        // ---- Overview card: confirm the proposed pattern (or bail to doc order,
-        // or point at the main story yourself when a tree picker is wired) ----
-        var overview = BuildOverviewCard(proposal, allowPick: pickLeadFromTree != null);
-        var ovChoice = await RunCardAsync(input, render, overlay, overview, lens, ct).ConfigureAwait(false);
-        if (ovChoice < 0)
-        {
-            return new Result { Cancelled = true };
-        }
-
-        if (ovChoice == 1)
-        {
-            // "Use plain document order instead"
-            return new Result { UseDocumentOrder = true };
-        }
-
-        // workspace-5oe9.9: "Let me point at the main story" — the user highlights
-        // a real link in the previewed tree; we re-infer once with that override.
-        LinkInfo? pickedLead = null;
-        if (ovChoice == 2 && pickLeadFromTree != null)
-        {
-            pickedLead = await pickLeadFromTree(ct).ConfigureAwait(false);
-        }
-
-        // ---- Up to MaxStructuredQuestions confirm-the-pattern cards ----
+        // ---- Up to MaxStructuredQuestions clarifying-question cards ----
         var answers = new List<SetupAnswer>();
         var questions = proposal.Questions.Take(MaxStructuredQuestions).ToList();
         for (var qi = 0; qi < questions.Count; qi++)
@@ -107,13 +99,6 @@ internal static class SetupWizard
             });
         }
 
-        // ---- Optional free-text card ----
-        var freeText = await freeTextPrompt(ct).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(freeText))
-        {
-            answers.Add(new SetupAnswer { QuestionId = "freeform", Answer = freeText.Trim() });
-        }
-
         // ---- Round 2: infer the durable pattern from the answers ----
         if (!budget.TrySpend())
         {
@@ -127,47 +112,70 @@ internal static class SetupWizard
             render,
             ct).ConfigureAwait(false);
 
-        // workspace-5oe9.9: apply a point-at-a-link lead override with exactly
-        // one extra re-inference (budget-guarded). Header/synthetic picks are
-        // rejected by RefineWithPickedLeadAsync and leave the base config.
-        if (pickedLead != null)
+        // ---- Preview loop: show the RESULT, not a description of it ----
+        while (!ct.IsCancellationRequested)
         {
-            var refined = await RefineWithPickedLeadAsync(
-                analyzer, screenshot, links, pageUrl, proposal, answers, pickedLead, budget, ct).ConfigureAwait(false);
-            if (refined != null)
+            if (config.Sections.Count == 0)
             {
-                config = refined;
+                // Degenerate output — handled by the gate (workspace-6yb7.6).
+                return new Result { Config = config };
             }
-        }
 
-        // ---- workspace-wylw: live confirmation — every proposed section lights
-        // up its matched story links on the lens; Enter saves, Esc backs out. ----
-        if (config.Sections.Count > 0)
-        {
-            var confirm = BuildConfirmSectionsCard(config, links);
-            var saveChoice = await RunCardAsync(input, render, overlay, confirm, lens, ct).ConfigureAwait(false);
+            if (applyPreview != null)
+            {
+                await applyPreview(config, ct).ConfigureAwait(false);
+            }
+
+            var preview = BuildPreviewCard(config, links);
+            var choice = await RunPreviewCardAsync(input, render, overlay, preview, lens, ct).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.ClearAsync(ct).ConfigureAwait(false);
             }
 
-            if (saveChoice < 0)
+            switch (choice)
             {
-                return new Result { Cancelled = true };
+                case PreviewChoice.Save:
+                    return new Result { Config = config };
+                case PreviewChoice.Cancel:
+                    return new Result { Cancelled = true };
+                case PreviewChoice.Adjust:
+                    var adjusted = await RunAdjustAsync(
+                        analyzer,
+                        input,
+                        render,
+                        overlay,
+                        links,
+                        pageUrl,
+                        screenshot,
+                        proposal,
+                        answers,
+                        budget,
+                        freeTextPrompt,
+                        pickLeadFromTree,
+                        lens,
+                        ct).ConfigureAwait(false);
+                    if (adjusted != null)
+                    {
+                        config = adjusted;
+                    }
+
+                    continue;
             }
         }
 
-        return new Result { Config = config };
+        return new Result { Cancelled = true };
     }
 
     /// <summary>
-    /// workspace-wylw: the final confirmation card — one row per durable section
-    /// with its REAL match count against the current page's links (the same
+    /// The preview caption — one row per durable section with its REAL match
+    /// count against the current page's links (the same
     /// <see cref="NavigationTreeBuilder.MatchesSection"/> semantics revisits use),
     /// so a degenerate config is visible before it is saved. Focusing a row
-    /// highlights all of its matched links on the sidecar lens.
+    /// highlights all of its matched links on the sidecar lens; the page behind
+    /// the card already shows the candidate tree.
     /// </summary>
-    internal static SetupWizardOverlay.WizardCard BuildConfirmSectionsCard(
+    internal static SetupWizardOverlay.WizardCard BuildPreviewCard(
         SiteHierarchyConfig config, List<LinkInfo> links)
     {
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
@@ -180,16 +188,16 @@ internal static class SetupWizard
 
         var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
         var footnote = covered == 0 && contentLinks.Count > 0
-            ? "⚠ No links on this page match — Esc and try document order instead"
+            ? "⚠ No links on this page match this layout"
             : $"{covered} of {contentLinks.Count} story links covered";
 
         return new SetupWizardOverlay.WizardCard
         {
-            Title = "Confirm your story list",
-            Prompt = "The live page highlights each section's stories — do they look right?",
+            Title = "Your new layout",
+            Prompt = "The page now shows the layout that will be saved.",
             Options = options,
             Footnote = footnote,
-            Hint = "↑/↓ preview a section · Enter save · Esc cancel",
+            Hint = "↑/↓ preview a section · Enter save · Space adjust · Esc discard",
         };
     }
 
@@ -259,22 +267,11 @@ internal static class SetupWizard
     }
 
     /// <summary>
-    /// workspace-5oe9.9: re-infers the durable config with the user's
-    /// point-at-a-link lead override appended as an answer — the single permitted
-    /// extra round-trip (guarded by <paramref name="budget"/>). Returns null when
-    /// the pick is invalid (header / no identifier) or the budget is exhausted,
-    /// so the caller keeps the base config.
+    /// workspace-5oe9.9: turns a picked link into the lead-override answer fed
+    /// back to round 2. Returns null for header/synthetic picks or when no
+    /// durable identifier can be derived.
     /// </summary>
-    internal static async Task<SiteHierarchyConfig?> RefineWithPickedLeadAsync(
-        IHierarchyAnalyzer analyzer,
-        byte[]? screenshot,
-        List<LinkInfo> links,
-        string pageUrl,
-        SiteSetupProposal proposal,
-        IReadOnlyList<SetupAnswer> answers,
-        LinkInfo pickedLead,
-        ModelRoundTripBudget budget,
-        CancellationToken ct)
+    internal static SetupAnswer? LeadOverrideAnswer(LinkInfo pickedLead)
     {
         var section = SectionFromPickedLink(pickedLead, "Top Story");
         if (section == null)
@@ -282,21 +279,90 @@ internal static class SetupWizard
             return null;
         }
 
-        if (!budget.TrySpend())
-        {
-            return null;
-        }
-
         var identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns));
-        var refined = answers.Append(new SetupAnswer
+        return new SetupAnswer
         {
             QuestionId = "lead-override",
             Answer = $"The single main/lead story is the link matching {identifier} (\"{pickedLead.DisplayText}\"). " +
                      "Put it alone in the Top Story section.",
-        }).ToList();
+        };
+    }
 
-        return await analyzer.InferPatternFromAnswersAsync(
-            screenshot, links, pageUrl, proposal, refined, ct).ConfigureAwait(false);
+    /// <summary>
+    /// The adjust loop behind Space on the preview card: point at the main story
+    /// (when a tree/click picker is wired) or steer the model with free text.
+    /// Each adjustment is exactly one budget-guarded re-inference whose answer is
+    /// APPENDED to the running answer list, so adjustments accumulate. Returns
+    /// the re-inferred config, or null when the user backed out / the pick was
+    /// invalid / the budget is spent (the caller keeps the current config).
+    /// </summary>
+    private static async Task<SiteHierarchyConfig?> RunAdjustAsync(
+        IHierarchyAnalyzer analyzer,
+        IInputHandler input,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        List<LinkInfo> links,
+        string pageUrl,
+        byte[]? screenshot,
+        SiteSetupProposal proposal,
+        List<SetupAnswer> answers,
+        ModelRoundTripBudget budget,
+        Func<CancellationToken, Task<string?>> freeTextPrompt,
+        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
+        Lens? lens,
+        CancellationToken ct)
+    {
+        var allowPick = pickLeadFromTree != null;
+        var options = new List<SetupWizardOverlay.CardOption>();
+        if (allowPick)
+        {
+            options.Add(new SetupWizardOverlay.CardOption { Label = "Point at the main story" });
+        }
+
+        options.Add(new SetupWizardOverlay.CardOption { Label = "Tell the AI what to change…" });
+
+        var card = new SetupWizardOverlay.WizardCard
+        {
+            Title = "Adjust the layout",
+            Prompt = "What should change?",
+            Options = options,
+            Footnote = budget.Exhausted ? "AI budget for this setup is used up — Esc and save or discard" : string.Empty,
+            Hint = "↑/↓ choose · Enter select · Esc back to preview",
+        };
+
+        var choice = await RunCardAsync(input, render, overlay, card, lens, ct).ConfigureAwait(false);
+        if (choice < 0)
+        {
+            return null;
+        }
+
+        SetupAnswer? adjustment = null;
+        if (allowPick && choice == 0)
+        {
+            var picked = await pickLeadFromTree!(ct).ConfigureAwait(false);
+            adjustment = picked != null ? LeadOverrideAnswer(picked) : null;
+        }
+        else
+        {
+            var freeText = await freeTextPrompt(ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(freeText))
+            {
+                adjustment = new SetupAnswer { QuestionId = "adjustment", Answer = freeText.Trim() };
+            }
+        }
+
+        if (adjustment == null || !budget.TrySpend())
+        {
+            return null;
+        }
+
+        answers.Add(adjustment);
+        return await RunWithProgressAsync(
+            analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
+            "Rebuilding your layout",
+            overlay,
+            render,
+            ct).ConfigureAwait(false);
     }
 
     private static string EscapeAttrValue(string value) =>
@@ -342,6 +408,54 @@ internal static class SetupWizard
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// The preview card's input loop: ↑/↓ cycles section highlights on the lens,
+    /// Enter saves, Space opens the adjust loop, Esc discards.
+    /// </summary>
+    private static async Task<PreviewChoice> RunPreviewCardAsync(
+        IInputHandler input,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        SetupWizardOverlay.WizardCard card,
+        Lens? lens,
+        CancellationToken ct)
+    {
+        overlay.Mode = SetupWizardOverlay.Mode.Card;
+        overlay.Card = card;
+        await render(ct).ConfigureAwait(false);
+        await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
+
+        var count = Math.Max(1, card.Options.Count);
+        while (!ct.IsCancellationRequested)
+        {
+            var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
+            switch (command.Type)
+            {
+                case CommandType.MoveDown or CommandType.ExpandNode:
+                    card.Cursor = (card.Cursor + 1) % count;
+                    await render(ct).ConfigureAwait(false);
+                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.MoveUp or CommandType.CollapseNode:
+                    card.Cursor = (card.Cursor - 1 + count) % count;
+                    await render(ct).ConfigureAwait(false);
+                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
+                    break;
+                case CommandType.ActivateLink:
+                    return PreviewChoice.Save;
+                case CommandType.ToggleSelection:
+                    return PreviewChoice.Adjust;
+                case CommandType.GoBack or CommandType.Quit:
+                    return PreviewChoice.Cancel;
+                case CommandType.TerminalResized:
+                    await render(ct).ConfigureAwait(false);
+                    break;
+            }
+        }
+
+        return PreviewChoice.Cancel;
     }
 
     /// <summary>
@@ -409,41 +523,6 @@ internal static class SetupWizard
             ct).ConfigureAwait(false);
     }
 
-    private static SetupWizardOverlay.WizardCard BuildOverviewCard(SiteSetupProposal proposal, bool allowPick)
-    {
-        var top = proposal.ProposedPattern.TopStory;
-        var tierCount = proposal.ProposedPattern.Tiers.Count;
-        var excludeCount = proposal.ProposedPattern.Exclude.Count;
-
-        var footnote = $"{tierCount} story tier(s) · {excludeCount} group(s) to hide";
-
-        var options = new List<SetupWizardOverlay.CardOption>
-        {
-            new()
-            {
-                Label = top != null ? $"Looks good — main story: \"{Truncate(top.Label, 36)}\"" : "Looks good — set it up",
-                Identifier = top != null ? FormatIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
-                HighlightSelector = top != null ? CssForIdentifier(top.ParentSelector, top.UrlPattern) : string.Empty,
-            },
-            new() { Label = "Use plain document order instead" },
-        };
-
-        // Index 2 (only when a tree picker is wired): point at the main story.
-        if (allowPick)
-        {
-            options.Add(new SetupWizardOverlay.CardOption { Label = "Let me point at the main story" });
-        }
-
-        return new SetupWizardOverlay.WizardCard
-        {
-            Title = "Set up this site with AI",
-            Prompt = "Here's the layout I inferred — does it look right?",
-            Options = options,
-            Footnote = footnote,
-            Hint = "↑/↓ choose · Enter confirm · Esc cancel",
-        };
-    }
-
     private static SetupWizardOverlay.WizardCard BuildQuestionCard(SetupQuestion question, int number, int total)
     {
         List<SetupWizardOverlay.CardOption> options;
@@ -498,9 +577,6 @@ internal static class SetupWizard
         return string.Join(" · ", parts);
     }
 
-    private static string Truncate(string value, int max) =>
-        value.Length <= max ? value : value[..max] + "…";
-
     /// <summary>
     /// workspace-wylw: best-effort hooks into the sidecar lens tab.
     /// <c>HighlightCssAsync</c> evaluates <see cref="TunerScript.Highlight"/>
@@ -514,8 +590,6 @@ internal static class SetupWizard
     internal sealed record Result
     {
         public SiteHierarchyConfig? Config { get; init; }
-
-        public bool UseDocumentOrder { get; init; }
 
         public bool Cancelled { get; init; }
     }

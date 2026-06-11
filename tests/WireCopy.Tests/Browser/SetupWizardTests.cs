@@ -13,6 +13,12 @@ using Xunit;
 
 namespace WireCopy.Tests.Browser;
 
+/// <summary>
+/// workspace-6yb7.3 — preview-first wizard flow: round 1 propose, clarifying
+/// questions, round 2 infer, then a live preview the user saves (Enter),
+/// adjusts (Space), or discards (Esc). 'Looks good' / 'Use plain document
+/// order' no longer exist anywhere in the flow.
+/// </summary>
 [Trait("Category", "Unit")]
 public class SetupWizardTests
 {
@@ -58,6 +64,37 @@ public class SetupWizardTests
         new LinkInfo { Url = "https://x.com/a", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 80, ParentSelector = "section.lead a" },
     };
 
+    private static IHierarchyAnalyzer AnalyzerReturning(SiteSetupProposal proposal, SiteHierarchyConfig config)
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(proposal);
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(config);
+        return analyzer;
+    }
+
+    private static IInputHandler InputSequence(params CommandType[] commands)
+    {
+        var input = Substitute.For<IInputHandler>();
+        if (commands.Length == 1)
+        {
+            input.WaitForInputAsync(Arg.Any<CancellationToken>())
+                .Returns(new NavigationCommand { Type = commands[0] });
+        }
+        else
+        {
+            input.WaitForInputAsync(Arg.Any<CancellationToken>())
+                .Returns(
+                    new NavigationCommand { Type = commands[0] },
+                    commands.Skip(1).Select(c => new NavigationCommand { Type = c }).ToArray());
+        }
+
+        return input;
+    }
+
     [Fact]
     public async Task AcceptAllPath_ClampsQuestions_ExactlyTwoRoundTrips_ShowsIdentifier()
     {
@@ -71,9 +108,7 @@ public class SetupWizardTests
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
             .Returns(ci => { capturedAnswers = ci.Arg<IReadOnlyList<SetupAnswer>>(); return SomeConfig(); });
 
-        var input = Substitute.For<IInputHandler>();
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(new NavigationCommand { Type = CommandType.ActivateLink }); // Enter every card
+        var input = InputSequence(CommandType.ActivateLink); // Enter every card
 
         var overlay = new SetupWizardOverlay.State();
         var cards = new List<IReadOnlyList<string>>();
@@ -93,47 +128,91 @@ public class SetupWizardTests
             analyzer, input, Render, overlay, Links(), "https://x.com/", screenshot: null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null,
+            applyPreview: null,
             lens: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        result.UseDocumentOrder.Should().BeFalse();
         budget.Used.Should().Be(2, "accept-all spends exactly propose + infer");
         capturedAnswers!.Count.Should().BeLessThanOrEqualTo(SetupWizard.MaxStructuredQuestions,
             "structured questions are clamped to at most 3 (5 proposed)");
 
-        // Identifier transparency: at least one rendered card shows the durable
-        // selector that will be saved.
+        // Identifier transparency: the preview card shows the durable selector
+        // that will be saved.
         cards.SelectMany(c => c).Should().Contain(l => l.Contains("section.lead", StringComparison.Ordinal));
+
+        // The removed confirmation-theater options must not resurface.
+        cards.SelectMany(c => c).Should().NotContain(l => l.Contains("Looks good", StringComparison.OrdinalIgnoreCase));
+        cards.SelectMany(c => c).Should().NotContain(l => l.Contains("document order", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task DocumentOrderEscape_OnOverviewCard_SkipsInferenceRoundTrip()
+    public async Task ObviousPattern_ZeroQuestions_GoesStraightToPreview()
     {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 2));
-
-        var input = Substitute.For<IInputHandler>();
-        // On the overview card: Down to the "document order" option, then Enter.
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(
-                new NavigationCommand { Type = CommandType.MoveDown },
-                new NavigationCommand { Type = CommandType.ActivateLink });
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
+        var input = InputSequence(CommandType.ActivateLink); // Enter on the preview saves
 
         var overlay = new SetupWizardOverlay.State();
+        var titles = new List<string>();
+        Task Render(CancellationToken _)
+        {
+            if (overlay.Card != null && overlay.Mode == SetupWizardOverlay.Mode.Card)
+            {
+                titles.Add(overlay.Card.Title);
+            }
+
+            return Task.CompletedTask;
+        }
+
         var budget = new ModelRoundTripBudget();
-
         var result = await SetupWizard.RunAsync(
-            analyzer, input, _ => Task.CompletedTask, overlay, Links(), "https://x.com/", null, budget,
-            _ => Task.FromResult<string?>(string.Empty), pickLeadFromTree: null, lens: null, CancellationToken.None);
+            analyzer, input, Render, overlay, Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
 
-        result.UseDocumentOrder.Should().BeTrue();
+        result.Config.Should().NotBeNull();
+        budget.Used.Should().Be(2);
+        titles.Should().OnlyContain(t => t == "Your new layout",
+            "with no questions the ONLY interactive surface is the preview itself");
+    }
+
+    [Fact]
+    public async Task Preview_AppliesCandidateTreeBeforeAskingToSave()
+    {
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
+        var input = InputSequence(CommandType.ActivateLink);
+
+        var previewed = new List<SiteHierarchyConfig>();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
+            applyPreview: (config, _) => { previewed.Add(config); return Task.CompletedTask; },
+            lens: null,
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        previewed.Should().ContainSingle()
+            .Which.Should().BeSameAs(result.Config, "Enter saves exactly what was previewed");
+    }
+
+    [Fact]
+    public async Task Preview_Esc_CancelsWithoutSaving()
+    {
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
+        var input = InputSequence(CommandType.GoBack); // Esc on the preview
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Cancelled.Should().BeTrue("Esc on the preview must not save the config");
         result.Config.Should().BeNull();
-        budget.Used.Should().Be(1, "only the proposal call ran; inference was skipped");
-        await analyzer.DidNotReceive().InferPatternFromAnswersAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
+        budget.Used.Should().Be(2);
     }
 
     [Fact]
@@ -146,14 +225,14 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, spent, _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, lens: null, CancellationToken.None);
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
 
         result.Cancelled.Should().BeTrue();
         await analyzer.DidNotReceive().ProposeSetupQuestionsAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ---- workspace-5oe9.9: point-at-a-link pick mode ----
+    // ---- workspace-5oe9.9: point-at-a-link pick mode (now inside the adjust loop) ----
 
     [Fact]
     public void SectionFromPickedLink_ContentNode_YieldsSectionWithItsIdentifier()
@@ -181,23 +260,16 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public async Task PickLeadOverride_ContentNode_PerformsExactlyOneExtraRoundTrip()
+    public async Task Adjust_PickLead_PerformsExactlyOneExtraRoundTrip()
     {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 0));
-        analyzer.InferPatternFromAnswersAsync(
-                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(_ => SomeConfig());
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
 
-        var input = Substitute.For<IInputHandler>();
-        // Overview: Down ×2 to the "point at the main story" option (index 2), then Enter.
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(
-                new NavigationCommand { Type = CommandType.MoveDown },
-                new NavigationCommand { Type = CommandType.MoveDown },
-                new NavigationCommand { Type = CommandType.ActivateLink });
+        // Preview: Space (adjust) → adjust card Enter on "Point at the main
+        // story" → re-infer → preview again → Enter saves.
+        var input = InputSequence(
+            CommandType.ToggleSelection,
+            CommandType.ActivateLink,
+            CommandType.ActivateLink);
 
         var pickedLink = new LinkInfo
         {
@@ -214,33 +286,26 @@ public class SetupWizardTests
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
+            applyPreview: null,
             lens: null,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "propose + infer + one re-inference for the override");
+        budget.Used.Should().Be(3, "propose + infer + one re-inference for the pick");
         await analyzer.Received(2).InferPatternFromAnswersAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
             Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task PickLeadOverride_HeaderNode_DoesNotReInfer()
+    public async Task Adjust_HeaderPick_DoesNotReInfer_KeepsBaseConfig()
     {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 0));
-        analyzer.InferPatternFromAnswersAsync(
-                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(_ => SomeConfig());
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
 
-        var input = Substitute.For<IInputHandler>();
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(
-                new NavigationCommand { Type = CommandType.MoveDown },
-                new NavigationCommand { Type = CommandType.MoveDown },
-                new NavigationCommand { Type = CommandType.ActivateLink });
+        var input = InputSequence(
+            CommandType.ToggleSelection,
+            CommandType.ActivateLink,
+            CommandType.ActivateLink);
 
         var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
         var budget = new ModelRoundTripBudget();
@@ -250,6 +315,7 @@ public class SetupWizardTests
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(header),
+            applyPreview: null,
             lens: null,
             CancellationToken.None);
 
@@ -258,6 +324,68 @@ public class SetupWizardTests
         await analyzer.Received(1).InferPatternFromAnswersAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
             Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Adjust_FreeText_ReachesRoundTwo_AsAdjustmentAnswer()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+
+        var allAnswers = new List<IReadOnlyList<SetupAnswer>>();
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                allAnswers.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
+                return SomeConfig();
+            });
+
+        // Preview: Space → adjust card: no pick wired, so cursor 0 is the
+        // free-text option → Enter → free text → re-infer → preview → Enter.
+        var input = InputSequence(
+            CommandType.ToggleSelection,
+            CommandType.ActivateLink,
+            CommandType.ActivateLink);
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>("hide the opinion pieces"),
+            pickLeadFromTree: null,
+            applyPreview: null,
+            lens: null,
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        budget.Used.Should().Be(3, "the free-text adjustment costs exactly one re-inference");
+        allAnswers.Should().HaveCount(2);
+        allAnswers[1].Should().Contain(a => a.QuestionId == "adjustment" && a.Answer == "hide the opinion pieces");
+    }
+
+    [Fact]
+    public async Task Adjust_Esc_ReturnsToPreviewWithoutSpendingBudget()
+    {
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
+
+        // Preview: Space → adjust card: Esc → back on preview: Enter saves.
+        var input = InputSequence(
+            CommandType.ToggleSelection,
+            CommandType.GoBack,
+            CommandType.ActivateLink);
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        budget.Used.Should().Be(2, "backing out of the adjust card costs nothing");
     }
 
     // ---- workspace-wylw: live lens confirmation ----
@@ -290,7 +418,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void BuildConfirmSectionsCard_ShowsRealMatchCounts_AndCoverage()
+    public void BuildPreviewCard_ShowsRealMatchCounts_AndCoverage()
     {
         var config = SomeConfig(); // one section matching "section.lead"
         var links = new List<LinkInfo>
@@ -299,7 +427,7 @@ public class SetupWizardTests
             new() { Url = "https://x.com/b", DisplayText = "B", Type = LinkType.Content, ImportanceScore = 60, ParentSelector = "aside.promo a" },
         };
 
-        var card = SetupWizard.BuildConfirmSectionsCard(config, links);
+        var card = SetupWizard.BuildPreviewCard(config, links);
 
         card.Options.Should().HaveCount(1);
         card.Options[0].Label.Should().Contain("1 link(s)");
@@ -308,7 +436,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void BuildConfirmSectionsCard_ZeroMatches_WarnsBeforeSaving()
+    public void BuildPreviewCard_ZeroMatches_WarnsBeforeSaving()
     {
         var config = SomeConfig();
         var links = new List<LinkInfo>
@@ -316,25 +444,16 @@ public class SetupWizardTests
             new() { Url = "https://x.com/b", DisplayText = "B", Type = LinkType.Content, ImportanceScore = 60, ParentSelector = "aside.promo a" },
         };
 
-        var card = SetupWizard.BuildConfirmSectionsCard(config, links);
+        var card = SetupWizard.BuildPreviewCard(config, links);
 
         card.Footnote.Should().StartWith("⚠");
     }
 
     [Fact]
-    public async Task AcceptAllPath_HighlightsFocusedOptionOnLens_AndConfirmCardSaves()
+    public async Task QuestionAndPreviewCards_HighlightFocusedOptionOnLens()
     {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 1));
-        analyzer.InferPatternFromAnswersAsync(
-                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(SomeConfig());
-
-        var input = Substitute.For<IInputHandler>();
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(new NavigationCommand { Type = CommandType.ActivateLink });
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 1), SomeConfig());
+        var input = InputSequence(CommandType.ActivateLink);
 
         var highlighted = new List<string>();
         var cleared = 0;
@@ -358,47 +477,19 @@ public class SetupWizardTests
             analyzer, input, Render, overlay, Links(), "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null,
+            applyPreview: null,
             lens: lens,
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
 
-        // Overview card focused the proposed top story → its links lit up.
-        highlighted.Should().Contain("section.lead a[href], a[href*=\"/politics/\"]");
+        // The question card focused its first option → its links lit up.
+        highlighted.Should().Contain("section.feed a[href]");
 
-        // The confirm-sections card lit the saved section's links and was rendered
-        // with its real match count before Enter saved.
+        // The preview card lit the saved section's links and was rendered with
+        // its real match count before Enter saved.
         highlighted.Should().Contain("section.lead a[href]");
         cards.SelectMany(c => c).Should().Contain(l => l.Contains("Top Story — 1 link(s)", StringComparison.Ordinal));
-        cleared.Should().BeGreaterThan(0, "highlights are cleared after the confirm step");
-    }
-
-    [Fact]
-    public async Task ConfirmCard_Esc_CancelsWithoutSaving()
-    {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 0));
-        analyzer.InferPatternFromAnswersAsync(
-                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(SomeConfig());
-
-        var input = Substitute.For<IInputHandler>();
-        input.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(
-                new NavigationCommand { Type = CommandType.ActivateLink }, // overview: looks good
-                new NavigationCommand { Type = CommandType.GoBack });      // confirm card: Esc
-
-        var result = await SetupWizard.RunAsync(
-            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
-            Links(), "https://x.com/", null, new ModelRoundTripBudget(),
-            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null,
-            lens: null,
-            CancellationToken.None);
-
-        result.Cancelled.Should().BeTrue("Esc on the confirm card must not save the config");
-        result.Config.Should().BeNull();
+        cleared.Should().BeGreaterThan(0, "highlights are cleared after the preview step");
     }
 }

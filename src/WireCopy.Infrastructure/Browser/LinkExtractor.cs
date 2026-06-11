@@ -14,6 +14,19 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public class LinkExtractor : ILinkExtractor
 {
+    /// <summary>
+    /// Display-text length at or above which a link with no other signals is
+    /// treated as a probable headline (shared by <see cref="DetermineLinkType"/>
+    /// and the aggregator promotion pass).
+    /// </summary>
+    internal const int MinStoryTextLength = 25;
+
+    /// <summary>Minimum story-shaped links before aggregator detection can trigger.</summary>
+    internal const int AggregatorMinStoryLinks = 10;
+
+    /// <summary>Share of story-shaped links that must be off-domain to call the page an aggregator.</summary>
+    internal const double AggregatorExternalShare = 0.6;
+
     private static readonly HashSet<string> NavigationParentTags = new(StringComparer.OrdinalIgnoreCase)
     {
         "nav", "header", "aside"
@@ -80,19 +93,6 @@ public class LinkExtractor : ILinkExtractor
         "more", "also", "trending", "most read", "most popular",
         "recommended", "related", "see also", "latest", "you might like"
     };
-
-    /// <summary>
-    /// Display-text length at or above which a link with no other signals is
-    /// treated as a probable headline (shared by <see cref="DetermineLinkType"/>
-    /// and the aggregator promotion pass).
-    /// </summary>
-    internal const int MinStoryTextLength = 25;
-
-    /// <summary>Minimum story-shaped links before aggregator detection can trigger.</summary>
-    internal const int AggregatorMinStoryLinks = 10;
-
-    /// <summary>Share of story-shaped links that must be off-domain to call the page an aggregator.</summary>
-    internal const double AggregatorExternalShare = 0.6;
 
     private readonly ILogger<LinkExtractor> _logger;
 
@@ -486,6 +486,40 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Aggregator pass: when the clear majority of story-shaped links (headline-length
+    /// text) on a page point off-domain, the page is an aggregator and those links ARE
+    /// its content — promote them so the link tree, the AI analyzer, and the setup
+    /// wizard (which all consume LinkType.Content) see the stories. Short off-domain
+    /// links (publisher tags, discussion links, social chrome) stay External.
+    /// </summary>
+    internal static List<LinkInfo> PromoteAggregatorStories(List<LinkInfo> links)
+    {
+        var storyShaped = links
+            .Where(l => !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength)
+            .ToList();
+        if (storyShaped.Count < AggregatorMinStoryLinks)
+        {
+            return links;
+        }
+
+        var externalShare = (double)storyShaped.Count(l => l.IsExternal) / storyShaped.Count;
+        if (externalShare < AggregatorExternalShare)
+        {
+            return links;
+        }
+
+        return links
+            .Select(l => l.Type == LinkType.External && !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength
+                ? l with
+                {
+                    Type = LinkType.Content,
+                    ImportanceScore = CalculateImportance(LinkType.Content, l.DisplayText, l.ParentSelector),
+                }
+                : l)
+            .ToList();
     }
 
     /// <summary>
@@ -969,40 +1003,6 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return LinkType.Content;
-    }
-
-    /// <summary>
-    /// Aggregator pass: when the clear majority of story-shaped links (headline-length
-    /// text) on a page point off-domain, the page is an aggregator and those links ARE
-    /// its content — promote them so the link tree, the AI analyzer, and the setup
-    /// wizard (which all consume LinkType.Content) see the stories. Short off-domain
-    /// links (publisher tags, discussion links, social chrome) stay External.
-    /// </summary>
-    internal static List<LinkInfo> PromoteAggregatorStories(List<LinkInfo> links)
-    {
-        var storyShaped = links
-            .Where(l => !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength)
-            .ToList();
-        if (storyShaped.Count < AggregatorMinStoryLinks)
-        {
-            return links;
-        }
-
-        var externalShare = (double)storyShaped.Count(l => l.IsExternal) / storyShaped.Count;
-        if (externalShare < AggregatorExternalShare)
-        {
-            return links;
-        }
-
-        return links
-            .Select(l => l.Type == LinkType.External && !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength
-                ? l with
-                {
-                    Type = LinkType.Content,
-                    ImportanceScore = CalculateImportance(LinkType.Content, l.DisplayText, l.ParentSelector),
-                }
-                : l)
-            .ToList();
     }
 
     private static int CalculateImportance(LinkType type, string displayText, string? parentSelector)

@@ -127,11 +127,10 @@ internal static class StrategyChooserHandler
 
             var configToSave = selected.Config;
 
-            // workspace-5oe9.8: if the user selected the AI-Curated stub, run the
-            // question-driven setup wizard now (replaces the old one-shot guidance
-            // prompt). The wizard proposes a pattern, asks a bounded set of
-            // confirm-the-pattern questions (each showing the durable identifier),
-            // and infers the final durable config.
+            // workspace-6yb7.3: if the user selected the AI-Curated stub, run the
+            // preview-first setup wizard now. The wizard proposes a pattern, asks
+            // the model's clarifying questions, and previews the resulting tree on
+            // the real page before anything is saved.
             if (registry != null
                 && configToSave.Strategy == ScrapingStrategies.AiCuratedStrategy.StrategyId
                 && configToSave.AiResult == null)
@@ -150,23 +149,7 @@ internal static class StrategyChooserHandler
                     var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
                     var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
 
-                    if (wizardResult.UseDocumentOrder)
-                    {
-                        var docStrategy = registry.GetById(ScrapingStrategies.DocumentOrderStrategy.StrategyId);
-                        if (docStrategy != null)
-                        {
-                            var docContext = new ScrapingStrategyContext
-                            {
-                                PageUrl = page.Url,
-                                Html = page.RawHtml ?? string.Empty,
-                                Links = links,
-                            };
-                            var docResult = await docStrategy.BuildTreeAsync(docContext, ct).ConfigureAwait(false);
-                            configToSave = docResult.Config;
-                            page.SetLinkTree(docResult.Tree);
-                        }
-                    }
-                    else if (wizardResult.Config != null && treeBuilder != null)
+                    if (wizardResult.Config != null && treeBuilder != null)
                     {
                         configToSave = wizardResult.Config;
                         var tree = await treeBuilder.BuildTreeAsync(links, configToSave, ct).ConfigureAwait(false);
@@ -444,9 +427,10 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
-    /// workspace-5oe9.8: runs the question-driven AI setup wizard for the
-    /// current page, painting its card overlay. Returns the wizard's outcome
-    /// (durable config, document-order escape, or cancel).
+    /// workspace-6yb7.3: runs the preview-first AI setup wizard for the current
+    /// page, painting its card overlay. The wizard previews each candidate config
+    /// on the REAL link tree (via the applyPreview hook); when the user cancels,
+    /// the original tree is restored so an abandoned wizard leaves no trace.
     /// </summary>
     private static async Task<SetupWizard.Result> RunSetupWizardAsync(
         CommandContext ctx,
@@ -482,10 +466,24 @@ internal static class StrategyChooserHandler
         var session = scope.ServiceProvider.GetService<IBrowserSession>();
         var lens = BuildWizardLens(session, ctx.Logger);
 
+        // workspace-6yb7.3: the preview hook builds candidate configs into the
+        // page's real tree so the wizard's preview card sits over the actual
+        // result. The original tree is restored on cancel/failure below.
+        var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
+        var originalTree = page.LinkTree;
+        Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview = treeBuilder == null
+            ? null
+            : async (config, c) =>
+            {
+                var tree = await treeBuilder.BuildTreeAsync(links, config, c).ConfigureAwait(false);
+                page.SetLinkTree(tree);
+            };
+
+        var completed = false;
         try
         {
             var budget = new ModelRoundTripBudget();
-            return await SetupWizard.RunAsync(
+            var result = await SetupWizard.RunAsync(
                 analyzer,
                 ctx.InputHandler,
                 c => ctx.RenderCurrentPageAsync(options, c),
@@ -496,11 +494,19 @@ internal static class StrategyChooserHandler
                 budget,
                 c => PromptForGuidanceAsync(ctx, options, c),
                 c => PickLeadFromTreeAsync(ctx, page, options, c),
+                applyPreview,
                 lens,
                 ct).ConfigureAwait(false);
+            completed = !result.Cancelled;
+            return result;
         }
         finally
         {
+            if (!completed && originalTree != null)
+            {
+                page.SetLinkTree(originalTree);
+            }
+
             ClearOverlay(ctx);
             if (lens != null)
             {
@@ -769,12 +775,6 @@ internal static class StrategyChooserHandler
         {
             ctx.NavigationService.SetStatusMessage("Cancelled — site not configured");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        if (wizardResult.UseDocumentOrder)
-        {
-            await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
             return;
         }
 

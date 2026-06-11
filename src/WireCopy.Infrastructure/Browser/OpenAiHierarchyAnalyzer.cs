@@ -547,6 +547,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         return 400 + (Math.Max(1, maxQuestions) * perQuestion);
     }
 
+    /// <summary>
+    /// workspace-6yb7.2: majority-external content links mark an aggregator page;
+    /// drives the aggregator note in the prompt (mirrors the LinkExtractor
+    /// promotion threshold without re-running it).
+    /// </summary>
+    internal static bool IsAggregatorLinkSet(List<LinkInfo> contentLinks) =>
+        contentLinks.Count >= 10 && contentLinks.Count(l => l.IsExternal) * 2 > contentLinks.Count;
+
     private static string BuildHierarchySystemPrompt()
     {
         var sb = new StringBuilder();
@@ -672,14 +680,6 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         return sb.ToString();
     }
-
-    /// <summary>
-    /// workspace-6yb7.2: majority-external content links mark an aggregator page;
-    /// drives the aggregator note in the prompt (mirrors the LinkExtractor
-    /// promotion threshold without re-running it).
-    /// </summary>
-    internal static bool IsAggregatorLinkSet(List<LinkInfo> contentLinks) =>
-        contentLinks.Count >= 10 && contentLinks.Count(l => l.IsExternal) * 2 > contentLinks.Count;
 
     /// <summary>
     /// Same-site links render as path-only (saves tokens, surfaces path patterns);
