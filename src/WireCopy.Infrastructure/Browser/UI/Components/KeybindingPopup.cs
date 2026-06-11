@@ -115,13 +115,14 @@ internal static class KeybindingPopup
         var maxKeyWidth = 0;
         foreach (var (key, _) in bindings)
         {
-            if (key.Length > maxKeyWidth)
+            var keyWidth = RenderHelpers.GetDisplayWidth(key);
+            if (keyWidth > maxKeyWidth)
             {
-                maxKeyWidth = key.Length;
+                maxKeyWidth = keyWidth;
             }
         }
 
-        var innerWidth = Math.Clamp(maxKeyWidth + 25, 30, Math.Max(30, terminalWidth - 4));
+        var innerWidth = ComputeInnerWidth(bindings, title, maxKeyWidth, terminalWidth);
 
         // Clip bindings to fit terminal height
         var maxBindings = Math.Max(2, terminalHeight - 4); // 4 = borders + hint + status bar
@@ -145,9 +146,9 @@ internal static class KeybindingPopup
         // Top border with title
         // Content rows are: │ + space + innerWidth + space + │ = innerWidth + 4 visible chars
         // So top border must span innerWidth + 2 dashes between ┌ and ┐
-        var titlePadded = $" {title} ";
         var totalDashes = innerWidth + 2; // dashes between ┌ and ┐
-        var topBorderWidth = Math.Max(0, totalDashes - titlePadded.Length - 1);
+        var titlePadded = $" {RenderHelpers.TruncateText(title, Math.Max(1, totalDashes - 4))} ";
+        var topBorderWidth = Math.Max(0, totalDashes - RenderHelpers.GetDisplayWidth(titlePadded) - 1);
         var topLeft = new string('\u2500', 1);
         var topRight = new string('\u2500', topBorderWidth);
         var topLine = $"{borderColor}\u250c{topLeft}{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{topRight}\u2510{Reset}";
@@ -156,12 +157,10 @@ internal static class KeybindingPopup
         Console.Write(topLine);
 
         // Binding rows
-        for (var i = 0; i < bindings.Length; i++)
+        var rows = BuildRows(bindings, maxKeyWidth, innerWidth);
+        for (var i = 0; i < rows.Length; i++)
         {
-            var (key, desc) = bindings[i];
-            var keyPadded = key.PadRight(maxKeyWidth + 1);
-            var contentWidth = maxKeyWidth + 1 + desc.Length;
-            var rowPadding = Math.Max(0, innerWidth - contentWidth);
+            var (keyPadded, desc, rowPadding) = rows[i];
 
             var row = startRow + 1 + i;
             if (row >= terminalHeight - 1)
@@ -192,5 +191,49 @@ internal static class KeybindingPopup
         }
 
         return popupHeight + 1; // +1 for hint line
+    }
+
+    /// <summary>
+    /// Measures the inner content width needed so the longest row
+    /// (key column + gap + description) and the top-border title both fit.
+    /// Clamped to a 30-column floor and the terminal width minus margins;
+    /// when the terminal is narrower than the content, descriptions are
+    /// truncated at render time rather than overflowing the border.
+    /// </summary>
+    internal static int ComputeInnerWidth(
+        (string Key, string Description)[] bindings, string title, int maxKeyWidth, int terminalWidth)
+    {
+        var needed = 0;
+        foreach (var (_, desc) in bindings)
+        {
+            needed = Math.Max(needed, maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(desc));
+        }
+
+        // Top border is ┌─<title padded><dashes>┐ spanning innerWidth + 2 between
+        // the corners; keep at least one trailing dash after the title.
+        needed = Math.Max(needed, RenderHelpers.GetDisplayWidth($" {title} ") + 1);
+
+        return Math.Clamp(needed, 30, Math.Max(30, terminalWidth - 4));
+    }
+
+    /// <summary>
+    /// Builds the visible (ANSI-free) content of each binding row, padded to
+    /// exactly <paramref name="innerWidth"/> columns. Descriptions that don't
+    /// fit are ellipsis-truncated so no row can exceed the border width.
+    /// </summary>
+    internal static (string KeyPadded, string Description, int Padding)[] BuildRows(
+        (string Key, string Description)[] bindings, int maxKeyWidth, int innerWidth)
+    {
+        var rows = new (string, string, int)[bindings.Length];
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var (key, desc) = bindings[i];
+            var keyPadded = key + new string(' ', Math.Max(0, maxKeyWidth + 1 - RenderHelpers.GetDisplayWidth(key)));
+            var fitted = RenderHelpers.TruncateText(desc, Math.Max(0, innerWidth - maxKeyWidth - 1));
+            var contentWidth = maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(fitted);
+            rows[i] = (keyPadded, fitted, Math.Max(0, innerWidth - contentWidth));
+        }
+
+        return rows;
     }
 }
