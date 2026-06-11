@@ -5,6 +5,7 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.StatusLine;
 
 namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 
@@ -133,6 +134,48 @@ internal class StatusBarRenderer
 
         // Line 2: status bar content
         _helpers.WriteLine(line);
+    }
+
+    /// <summary>
+    /// workspace-wef6 B1: paints a fully composed <see cref="StatusLineModel"/>.
+    /// All width decisions were made by <see cref="StatusComposer"/> — this is
+    /// a pure theme-token painter keeping the 2-line layout (dimmed rule +
+    /// content line).
+    /// </summary>
+    public void RenderStatusLine(StatusLineModel model)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        _helpers.WriteLine(Components.Borders.DimmedRule(p, model.Width));
+        _helpers.WriteLine(FormatStatusLine(model, p));
+    }
+
+    /// <summary>
+    /// Renders the model into one ANSI line. Internal so tests can assert the
+    /// painted output without console capture.
+    /// </summary>
+    internal static string FormatStatusLine(StatusLineModel model, ThemePalette p)
+    {
+        var leftParts = model.Left
+            .Select(group => PaintSegments(group, p))
+            .Where(s => s.Length > 0)
+            .ToList();
+        if (model.Hints is { Length: > 0 })
+        {
+            leftParts.Add(PaintSegments(model.Hints, p));
+        }
+
+        var left = string.Join(" ", leftParts);
+
+        var separator = $" {p.SecondaryText.AnsiFg}·{Reset} ";
+        var right = string.Join(separator, model.Right.Select(group => PaintSegments(group, p)).Where(s => s.Length > 0));
+
+        var help = model.Help is { Length: > 0 } ? PaintSegments(model.Help, p) : string.Empty;
+        if (help.Length > 0 && right.Length > 0)
+        {
+            help = $" {help}";
+        }
+
+        return $"{left}{new string(' ', model.Padding)}{right}{help}";
     }
 
     internal static string GetModeLabel(ViewMode mode)
@@ -657,5 +700,25 @@ internal class StatusBarRenderer
         }
 
         return url.Length > 40 ? url[..40] : url;
+    }
+
+    private static string PaintSegments(StatusSegment[] segments, ThemePalette p)
+        => string.Concat(segments
+            .Where(s => s.Text.Length > 0)
+            .Select(s => $"{StyleFor(s.Style, p)}{s.Text}{Reset}"));
+
+    private static string StyleFor(StatusStyle style, ThemePalette p)
+    {
+        return style switch
+        {
+            StatusStyle.Primary => p.PrimaryText.AnsiFg,
+            StatusStyle.Secondary => p.SecondaryText.AnsiFg,
+            StatusStyle.Dim => p.GetDimFg().AnsiFg,
+            StatusStyle.Accent => p.GetAccentFg().AnsiFg,
+            StatusStyle.Warning => p.GetWarningFg().AnsiFg,
+            StatusStyle.Prompt => p.PromptFg.AnsiFg,
+            StatusStyle.Success => p.GetSuccessFg().AnsiFg,
+            _ => p.SecondaryText.AnsiFg,
+        };
     }
 }
