@@ -60,7 +60,9 @@ internal static class ArticleLayoutCommandHandler
             return;
         }
 
-        ctx.NavigationService.SetStatusMessage("Regenerating article layout…", TimeSpan.FromMinutes(2));
+        // workspace-wef6.5: the 30-60s AnalyzeAsync runs in the activity slot
+        // (animated spinner) instead of a long-TTL status message.
+        ctx.NavigationService.SetActivity("ai", "✨ regenerating article layout…", priority: 1);
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         ArticleSelectorConfig? candidate;
@@ -80,6 +82,10 @@ internal static class ArticleLayoutCommandHandler
             ctx.NavigationService.SetStatusMessage("Regenerate failed — see logs");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
+        }
+        finally
+        {
+            ctx.NavigationService.ClearActivity("ai");
         }
 
         if (candidate == null || candidate.PageTypes.Count == 0)

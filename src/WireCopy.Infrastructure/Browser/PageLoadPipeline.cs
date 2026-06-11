@@ -1272,6 +1272,9 @@ public class PageLoadPipeline
         ArticleSelectorConfig? candidate;
         try
         {
+            // workspace-wef6.5: surface the 30-60s analysis in the animated
+            // activity slot — it was previously invisible.
+            _navigationService.SetActivity("ai", "✨ analyzing layout…", priority: 1);
             candidate = await aiExtractor.AnalyzeAsync(url, html, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -1282,6 +1285,10 @@ public class PageLoadPipeline
         {
             _logger.LogWarning(ex, "AI article extractor failed for {Url}", url);
             return null;
+        }
+        finally
+        {
+            _navigationService.ClearActivity("ai");
         }
 
         if (candidate == null || candidate.PageTypes.Count == 0)

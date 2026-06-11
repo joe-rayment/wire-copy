@@ -337,36 +337,6 @@ internal class StatusBarRenderer
         }
     }
 
-    /// <summary>
-    /// workspace-vkhr Phase D: renders the headphones-glyph status-bar badge
-    /// surfaced while the podcast modal is detached but a background job is
-    /// still running. Returns an empty string when no job is active or no
-    /// manager is wired (e.g. test fixtures that construct the renderer
-    /// without DI). The percent is read from the manager's latest snapshot
-    /// via a volatile barrier so the render thread never blocks on the
-    /// generation thread. The bead allows omitting an ETA at the badge layer
-    /// since no aggregator is reachable from this layer — the modal owns it.
-    /// </summary>
-    internal static string FormatPodcastBadge(IPodcastBackgroundJobManager? manager, ThemePalette p)
-    {
-        ArgumentNullException.ThrowIfNull(p);
-
-        if (manager is null || !manager.HasActiveJob)
-        {
-            return string.Empty;
-        }
-
-        var snapshot = manager.LastSnapshot;
-        var percent = snapshot is null
-            ? 0
-            : Math.Clamp(snapshot.PercentComplete, 0, 100);
-
-        return $"{p.GetAccentFg().AnsiFg}\U0001F3A7{Reset} " +
-               $"{p.PrimaryText.AnsiFg}Generating {percent}%{Reset} " +
-               $"{p.SecondaryText.AnsiFg}·{Reset} " +
-               $"{p.GetAccentFg().AnsiFg}Shift+P{Reset}{p.GetDimFg().AnsiFg}:restore{Reset}";
-    }
-
     private static List<StatusItem> BuildLeftItems(
         NavigationContext context,
         ViewMode mode,
@@ -466,8 +436,9 @@ internal class StatusBarRenderer
             items.Add(transient);
         }
 
-        // ---- Activity channel: prefetch in flight ----
-        var activity = BuildCacheActivityItem(mode, cacheProgress);
+        // ---- Activity channel: ONE animated "is it working" slot ----
+        // Priority: foreground load > AI analysis > podcast > prefetch.
+        var activity = BuildActivityItem(context, mode, cacheProgress, podcastJobManager);
         if (activity != null)
         {
             items.Add(activity);
@@ -490,12 +461,6 @@ internal class StatusBarRenderer
                     new[] { new StatusSegment("\u21c9", StatusStyle.Accent) },
                 },
             });
-        }
-
-        var podcastItem = BuildPodcastItem(podcastJobManager);
-        if (podcastItem != null)
-        {
-            items.Add(podcastItem);
         }
 
         if (!string.IsNullOrEmpty(context.SearchQuery))
@@ -697,8 +662,7 @@ internal class StatusBarRenderer
             return null;
         }
 
-        var spinner = SpinnerFrames[_spinnerFrame % SpinnerFrames.Length];
-        _spinnerFrame++;
+        var spinner = NextSpinnerFrame();
         var (filled, empty) = Components.Indicators.EighthBlockBarParts(
             (double)progress.CachedCount / Math.Max(1, progress.TotalCacheableLinks), 6);
         var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
@@ -826,7 +790,49 @@ internal class StatusBarRenderer
         return null;
     }
 
-    private static StatusItem? BuildPodcastItem(IPodcastBackgroundJobManager? manager)
+    /// <summary>
+    /// workspace-wef6.5: the unified activity slot. Exactly one animated
+    /// indicator renders, chosen by priority: a registered activity (foreground
+    /// load 0, AI analysis 1), then a running podcast job, then prefetch
+    /// derived from CacheProgress. The Braille spinner frame advances on every
+    /// render so the slot visibly proves liveness.
+    /// </summary>
+    private static StatusItem? BuildActivityItem(
+        NavigationContext context,
+        ViewMode mode,
+        PreloadProgress? cacheProgress,
+        IPodcastBackgroundJobManager? podcastJobManager)
+    {
+        // Registered producers (load / AI) win over derived ones.
+        var registered = context.ActiveActivity;
+        var podcast = BuildPodcastActivityItem(podcastJobManager);
+        if (registered != null && (podcast == null || registered.Priority <= 2))
+        {
+            var spinner = NextSpinnerFrame();
+            var percentSuffix = registered.Percent is { } pct ? $" {pct}%" : string.Empty;
+            return new StatusItem
+            {
+                Channel = StatusChannel.Activity,
+                Variants = new[]
+                {
+                    new[]
+                    {
+                        new StatusSegment($"{spinner} ", StatusStyle.Warning),
+                        new StatusSegment($"{registered.Text}{percentSuffix}", StatusStyle.Secondary),
+                    },
+                    new[] { new StatusSegment(spinner.ToString(), StatusStyle.Warning) },
+                },
+            };
+        }
+
+        return podcast ?? BuildCacheActivityItem(mode, cacheProgress);
+    }
+
+    /// <summary>
+    /// Podcast generation as an activity-slot producer (replaces the bespoke
+    /// ambient 🎧 badge): spinner + percent + the restore key.
+    /// </summary>
+    private static StatusItem? BuildPodcastActivityItem(IPodcastBackgroundJobManager? manager)
     {
         if (manager is null || !manager.HasActiveJob)
         {
@@ -835,18 +841,19 @@ internal class StatusBarRenderer
 
         var snapshot = manager.LastSnapshot;
         var percent = snapshot is null ? 0 : Math.Clamp(snapshot.PercentComplete, 0, 100);
+        var spinner = NextSpinnerFrame();
 
         return new StatusItem
         {
-            Channel = StatusChannel.Ambient,
-            Priority = 1,
+            Channel = StatusChannel.Activity,
             Variants = new[]
             {
                 new[]
                 {
+                    new StatusSegment($"{spinner} ", StatusStyle.Warning),
                     new StatusSegment("\U0001F3A7 ", StatusStyle.Accent),
                     new StatusSegment($"Generating {percent}%", StatusStyle.Primary),
-                    new StatusSegment(" \u00b7 ", StatusStyle.Secondary),
+                    new StatusSegment(" · ", StatusStyle.Secondary),
                     new StatusSegment("Shift+P", StatusStyle.Accent),
                     new StatusSegment(":restore", StatusStyle.Dim),
                 },
@@ -857,6 +864,13 @@ internal class StatusBarRenderer
                 },
             },
         };
+    }
+
+    private static char NextSpinnerFrame()
+    {
+        var frame = SpinnerFrames[_spinnerFrame % SpinnerFrames.Length];
+        _spinnerFrame++;
+        return frame;
     }
 
     /// <summary>

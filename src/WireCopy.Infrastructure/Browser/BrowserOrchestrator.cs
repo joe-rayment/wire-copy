@@ -599,13 +599,16 @@ public partial class BrowserOrchestrator : IBrowserService
                     // Timer elapsed — update loading status or check preload progress
                     if (HasActiveBackgroundLoad() && _loadingStatus != null)
                     {
+                        // workspace-wef6.5: the load stage is the activity slot's
+                        // top-priority producer, not a transient message.
                         var stage = _loadingStatus.Stage ?? "Loading...";
                         var elapsed = _loadingStatus.ElapsedMs / 1000;
-                        _navigationService.SetStatusMessage($"{stage} ({elapsed}s)");
+                        _navigationService.SetActivity("load", $"{stage} ({elapsed}s)", priority: 0);
                         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
+                        _navigationService.ClearActivity("load");
                         await CheckAndRenderProgressAsync(cancellationToken).ConfigureAwait(false);
                     }
                 }

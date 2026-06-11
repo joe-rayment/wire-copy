@@ -96,6 +96,7 @@ public partial class BrowserOrchestrator
         }
 
         _backgroundLoadCts = null;
+        _navigationService.ClearActivity("load");
         _preloadService.Resume();
     }
 
@@ -205,6 +206,7 @@ public partial class BrowserOrchestrator
         }
         finally
         {
+            _navigationService.ClearActivity("load");
             _preloadService.Resume();
         }
     }

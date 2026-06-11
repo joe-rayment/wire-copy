@@ -85,6 +85,14 @@ public record NavigationContext
     public StatusAnnouncement? ActiveAnnouncement { get; init; }
 
     /// <summary>
+    /// The winning entry of the unified activity slot (workspace-wef6.5), or
+    /// null when no registered producer is running. Prefetch activity is
+    /// derived from CacheProgress instead and acts as the lowest-priority
+    /// fallback.
+    /// </summary>
+    public ActivityIndicator? ActiveActivity { get; init; }
+
+    /// <summary>
     /// Whether the current page was served from the cache.
     /// </summary>
     public bool IsFromCache { get; init; }

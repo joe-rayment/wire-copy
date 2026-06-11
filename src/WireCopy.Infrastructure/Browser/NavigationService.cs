@@ -27,6 +27,8 @@ public class NavigationService : INavigationService
     private int _scrollOffset;
     private string? _searchQuery;
     private int _searchMatchIndex;
+    private readonly Dictionary<string, ActivityIndicator> _activities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _activityLock = new();
     private StatusAnnouncement? _announcement;
     private DateTime? _announcementSetAt;
     private TimeSpan _announcementTtl = StatusMessageDuration;
@@ -80,6 +82,7 @@ public class NavigationService : INavigationService
         SearchMatchIndex = _searchMatchIndex,
         StatusMessage = GetActiveAnnouncement()?.Text,
         ActiveAnnouncement = GetActiveAnnouncement(),
+        ActiveActivity = GetTopActivity(),
         IsFromCache = _isFromCache,
         CachedAt = _cachedAt,
         IsAiHierarchy = _isAiHierarchy,
@@ -288,6 +291,39 @@ public class NavigationService : INavigationService
         };
         _announcementSetAt = _clock.GetUtcNow().UtcDateTime;
         _announcementTtl = ttl ?? StatusMessageDuration;
+    }
+
+    /// <summary>
+    /// workspace-wef6.5: registers (or updates) a producer in the unified
+    /// activity slot. The highest-priority live entry renders as the single
+    /// animated "is it working" indicator. Call <see cref="ClearActivity"/>
+    /// when the work finishes — activity is stateful, not TTL'd.
+    /// </summary>
+    /// <param name="source">Producer identity ("load", "ai", "podcast"); one live entry per source.</param>
+    /// <param name="text">Indicator copy.</param>
+    /// <param name="priority">Slot priority: load 0 &gt; AI 1 &gt; podcast 2 (prefetch is the derived 3).</param>
+    /// <param name="percent">Optional completion percent.</param>
+    public void SetActivity(string source, string text, int priority = 0, int? percent = null)
+    {
+        lock (_activityLock)
+        {
+            _activities[source] = new ActivityIndicator
+            {
+                Source = source,
+                Text = text,
+                Priority = priority,
+                Percent = percent,
+            };
+        }
+    }
+
+    /// <summary>Removes a producer's entry from the activity slot.</summary>
+    public void ClearActivity(string source)
+    {
+        lock (_activityLock)
+        {
+            _activities.Remove(source);
+        }
     }
 
     /// <summary>
@@ -761,6 +797,16 @@ public class NavigationService : INavigationService
         _previewLayouts = null;
         _previewIndex = 0;
         _originalTree = null;
+    }
+
+    private ActivityIndicator? GetTopActivity()
+    {
+        lock (_activityLock)
+        {
+            return _activities.Count == 0
+                ? null
+                : _activities.Values.OrderBy(a => a.Priority).ThenBy(a => a.Source, StringComparer.Ordinal).First();
+        }
     }
 
     private StatusAnnouncement? GetActiveAnnouncement()

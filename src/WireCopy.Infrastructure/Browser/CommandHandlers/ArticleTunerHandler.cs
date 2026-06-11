@@ -98,7 +98,9 @@ internal static class ArticleTunerHandler
         ArticleSelectors? aiSeed = null;
         if (aiExtractor is { IsConfigured: true })
         {
-            ctx.NavigationService.SetStatusMessage("Asking AI for layout candidates…", TimeSpan.FromMinutes(2));
+            // workspace-wef6.5: the long AnalyzeAsync runs in the animated
+            // activity slot instead of a 2-minute status message.
+            ctx.NavigationService.SetActivity("ai", "✨ asking AI for layout candidates…", priority: 1);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             try
             {
@@ -112,6 +114,10 @@ internal static class ArticleTunerHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "AI layout proposal failed; falling back to heuristics");
+            }
+            finally
+            {
+                ctx.NavigationService.ClearActivity("ai");
             }
         }
 
