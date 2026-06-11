@@ -67,10 +67,17 @@ public interface IPageRenderer
     void RenderHumanAction(HumanActionRequired action, string url);
 
     /// <summary>
-    /// Renders a message for interactive refresh mode (headed browser open for manual intervention).
+    /// Renders a message for interactive refresh mode (headed browser open for
+    /// manual intervention). workspace-lmwm: the copy is verdict-aware — when no
+    /// gate was detected the screen says the page loaded instead of falsely
+    /// claiming a captcha exists.
     /// </summary>
     /// <param name="url">URL being loaded interactively.</param>
-    void RenderInteractiveRefresh(string url);
+    /// <param name="requiredAction">
+    /// Typed detection verdict from the headed load / challenge poll, or null
+    /// when the page loaded cleanly with no human action detected.
+    /// </param>
+    void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction);
 
     /// <summary>
     /// Renders a message telling the user to complete login in the browser window.

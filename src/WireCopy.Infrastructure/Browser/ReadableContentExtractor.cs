@@ -28,6 +28,14 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// </summary>
     private const int PaywallMinContentLength = 500;
 
+    /// <summary>
+    /// Word count past which extracted content is treated as a full article even
+    /// when paywall gate markup is present in the DOM (workspace-lmwm). Dormant
+    /// gates on logged-in pages sit alongside complete article text; an active
+    /// gate truncates the preview well below this.
+    /// </summary>
+    private const int PaywallElementMinWordCount = 200;
+
     private static readonly HashSet<string> ArticleIndicators = new(StringComparer.OrdinalIgnoreCase)
     {
         "article", "post", "entry", "story", "news", "blog"
@@ -332,8 +340,10 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
     /// <summary>
     /// Detects whether a page is paywalled by checking for paywall indicator elements
     /// and text patterns. Paywall HTML elements (gate overlays, subscriber walls) are
-    /// a strong signal and always trigger detection. Text patterns (e.g., "subscribe to
-    /// continue") are a weaker signal and only trigger when content also looks truncated.
+    /// a strong signal, but only when the extracted content also looks truncated —
+    /// logged-in NYT pages keep dormant gateway/meter markup in the DOM while serving
+    /// the full article text (workspace-lmwm). Text patterns (e.g., "subscribe to
+    /// continue") are a weaker signal under the same truncation rule.
     /// </summary>
     internal static bool DetectPaywall(HtmlDocument doc, IReadOnlyList<string> paragraphs)
     {
@@ -341,12 +351,15 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         var hasPaywallElement = PaywallElementSelectors.Any(
             selector => doc.DocumentNode.SelectSingleNode(selector) != null);
 
-        // Paywall HTML elements are explicit gates injected by the site.
-        // NYT and others show preview content (5+ paragraphs) before the gate,
-        // so we trust these regardless of content length.
+        // Paywall HTML elements are explicit gates injected by the site, but a
+        // selector hit alone doesn't prove the gate is ACTIVE: subscribers get
+        // the full article with the gateway markup still present-but-dormant.
+        // When extraction produced substantial content, require a truncation
+        // signal before declaring a paywall (workspace-lmwm — kills the
+        // per-article "Paywall detected … Shift+I" nag for logged-in users).
         if (hasPaywallElement)
         {
-            return true;
+            return !HasSubstantialContent(paragraphs);
         }
 
         // Check for paywall text patterns in the full document text — weaker signal
@@ -375,6 +388,25 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         // Even with few paragraphs, if total content is substantial it's a real short article
         var totalContentLength = paragraphs.Sum(p => p.Length);
         return totalContentLength < PaywallMinContentLength;
+    }
+
+    /// <summary>
+    /// True when the extracted paragraphs amount to a full article rather than
+    /// a truncated paywall preview (workspace-lmwm): enough paragraphs AND
+    /// enough characters, or a word count past
+    /// <see cref="PaywallElementMinWordCount"/>. Truncated gate previews
+    /// (1–2 teaser paragraphs) fail every clause.
+    /// </summary>
+    internal static bool HasSubstantialContent(IReadOnlyList<string> paragraphs)
+    {
+        var totalContentLength = paragraphs.Sum(p => p.Length);
+        if (paragraphs.Count >= PaywallTruncationThreshold && totalContentLength >= PaywallMinContentLength)
+        {
+            return true;
+        }
+
+        var wordCount = paragraphs.Sum(p => p.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length);
+        return wordCount >= PaywallElementMinWordCount;
     }
 
     /// <summary>

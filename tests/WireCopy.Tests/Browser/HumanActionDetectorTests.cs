@@ -87,6 +87,81 @@ public class HumanActionDetectorTests
     }
 
     [Fact]
+    public void Detect_LargeArticleMentioningTwoFactor_ReturnsNull()
+    {
+        // workspace-lmwm: an NYT article ABOUT two-factor authentication tripped
+        // a TwoFactor verdict during browser preload because the prose keywords
+        // were matched against the whole body with no page-size gating. Article
+        // prose on a large page must not read as an interstitial.
+        var html = $"""
+            <html><body>
+            <article>
+            <h1>How Two-Factor Authentication Became Standard</h1>
+            <p>Security experts recommend two-factor authentication and using an
+            authenticator app instead of receiving a verification code by SMS.</p>
+            <p>{new string('x', 25_000)}</p>
+            </article>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://www.nytimes.com/2026/06/10/technology/anthropic-ai.html");
+
+        verdict.Should().BeNull(
+            "a >20KB article body containing 2FA prose is an article, not a gate");
+    }
+
+    [Fact]
+    public void Detect_SmallPageWithTwoFactorProse_StillReturnsTwoFactor()
+    {
+        const string html = """
+            <html><body>
+            <h1>Enter the 6-digit code from your authenticator app</h1>
+            <form><input name="code" /></form>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://accounts.example.com/2fa");
+
+        verdict.Should().NotBeNull("interstitial-sized pages keep the prose-keyword detection");
+        verdict!.Variant.Should().Be(HumanActionVariant.TwoFactor);
+    }
+
+    [Fact]
+    public void Detect_LargePageWithOtpAutocompleteMarkup_StillReturnsTwoFactor()
+    {
+        // Markup indicators are form attributes, not prose — they stay ungated.
+        var html = $"""
+            <html><body>
+            <form><input autocomplete="one-time-code" name="code" /></form>
+            <main>{new string('x', 25_000)}</main>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://accounts.example.com/challenge");
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.TwoFactor);
+    }
+
+    [Fact]
+    public void Detect_LargeArticleMentioningRegionBlockPhrase_ReturnsNull()
+    {
+        var html = $"""
+            <html><body>
+            <article>
+            <p>The streaming service told customers the show is geo-restricted and
+            not available in your region without a VPN.</p>
+            <p>{new string('x', 25_000)}</p>
+            </article>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://www.example.com/news/streaming");
+
+        verdict.Should().BeNull("geo-restriction prose in a large article is not a region block");
+    }
+
+    [Fact]
     public void Detect_RegionBlockHttp451_ReturnsRegionBlockVariant()
     {
         var verdict = HumanActionDetector.Detect(html: string.Empty, "https://example.com/page", statusCode: 451);

@@ -330,10 +330,11 @@ public class TerminalPageRenderer : IPageRenderer
     }
 #pragma warning restore SA1204
 
-    public void RenderInteractiveRefresh(string url)
+    public void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
+        var body = GetInteractiveRefreshBody(requiredAction);
 
         var lines = new List<CenteredBoxLine>
         {
@@ -342,7 +343,7 @@ public class TerminalPageRenderer : IPageRenderer
             CenteredBoxLine.Empty,
             new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
             CenteredBoxLine.Empty,
-            new($"{p.SecondaryText.AnsiFg}Complete any captcha or login in the browser.{Reset}", "Complete any captcha or login in the browser."),
+            new($"{p.SecondaryText.AnsiFg}{body}{Reset}", body),
             new(
                 $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.SecondaryText.AnsiFg}:accept{Reset}  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}",
                 "Enter:accept  Esc:cancel"),
@@ -351,6 +352,35 @@ public class TerminalPageRenderer : IPageRenderer
 
         RenderCenteredBox(lines, p.GetMutedFg());
     }
+
+    /// <summary>
+    /// Verdict-aware body copy for the interactive-refresh prompt
+    /// (workspace-lmwm). The old copy asserted "Complete any captcha or login"
+    /// unconditionally — even when the headed load succeeded with no gate
+    /// detected, which read as "the app thinks there's a captcha" on perfectly
+    /// healthy pages. Public so tests can pin the copy per variant.
+    /// </summary>
+#pragma warning disable SA1204 // Static members should appear before non-static members — kept adjacent to RenderInteractiveRefresh for readability.
+    public static string GetInteractiveRefreshBody(HumanActionRequired? requiredAction)
+    {
+        if (requiredAction == null)
+        {
+            return "Page loaded — accept it, or interact with the browser first.";
+        }
+
+        return requiredAction.Variant switch
+        {
+            Domain.Enums.Browser.HumanActionVariant.Captcha => "Solve the CAPTCHA in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.Login => "Log in in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.CookieConsent => "Accept the cookie banner in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.TwoFactor => "Complete two-factor verification in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.Paywall => "Log in past the paywall in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.RegionBlock => "This site blocks your region — a VPN may be required.",
+            Domain.Enums.Browser.HumanActionVariant.RedirectLoop => "Resolve the redirect loop in the browser window.",
+            _ => "Complete the required action in the browser window.",
+        };
+    }
+#pragma warning restore SA1204
 
     public void RenderManualLogin(string url, string domain)
     {

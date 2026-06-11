@@ -52,9 +52,10 @@ public class PaywallDetectionTests
     [Fact]
     public void DetectPaywall_ReturnsTrue_WhenPaywallElementsEvenWithEnoughParagraphs()
     {
-        // Arrange - paywall class present with 6 paragraphs of preview content.
-        // NYT and similar sites show preview content before the paywall gate,
-        // so paywall HTML elements are always trusted.
+        // Arrange - paywall class present with 6 SHORT paragraphs of preview
+        // content. NYT and similar sites show preview content before the gate;
+        // the element hit wins because the content is still clearly truncated
+        // (under both the char-length and word-count substantiality bars).
         var html = @"
             <html>
             <body>
@@ -387,6 +388,67 @@ public class PaywallDetectionTests
         var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
 
         result.Should().BeTrue("gateway element is a strong paywall indicator even with 5 preview paragraphs");
+    }
+
+    [Fact]
+    public void DetectPaywall_ReturnsFalse_LoggedInNytFullArticleWithDormantGateway()
+    {
+        // workspace-lmwm: logged-in NYT pages serve the FULL article text while
+        // keeping dormant gateway/meter markup in the DOM. A selector hit alone
+        // must not flag a paywall when extraction produced substantial content —
+        // this false positive nagged logged-in subscribers with
+        // "Paywall detected … Shift+I" on every article.
+        var paragraphHtml = string.Join("\n", Enumerable.Range(1, 48).Select(i =>
+            $"<p>Paragraph {i} of the full article text, served to an authenticated subscriber with plenty of words in it.</p>"));
+        var html = $@"
+            <html>
+            <body>
+                <article>
+                    {paragraphHtml}
+                </article>
+                <div class='gateway-content' id='gateway-content' style='display:none'>
+                    <h2>Subscribe to The Times</h2>
+                </div>
+            </body>
+            </html>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var paragraphs = Enumerable.Range(1, 48).Select(i =>
+            $"Paragraph {i} of the full article text, served to an authenticated subscriber with plenty of words in it.").ToList();
+
+        var result = ReadableContentExtractor.DetectPaywall(doc, paragraphs);
+
+        result.Should().BeFalse(
+            "48 substantial paragraphs prove the gate is dormant — the article is fully readable");
+    }
+
+    [Fact]
+    public void DetectPaywall_ReturnsTrue_TruncatedTwoParagraphGate()
+    {
+        // workspace-lmwm companion to the dormant-gateway test: a genuinely
+        // ACTIVE gate truncates the preview, so the element hit must still win.
+        var html = @"
+            <html>
+            <body>
+                <article>
+                    <p>Teaser paragraph one.</p>
+                    <p>Teaser paragraph two.</p>
+                </article>
+                <div class='gateway-content'>
+                    <h2>Subscribe to continue reading</h2>
+                </div>
+            </body>
+            </html>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var paragraphs = new List<string> { "Teaser paragraph one.", "Teaser paragraph two." };
+
+        ReadableContentExtractor.DetectPaywall(doc, paragraphs).Should().BeTrue(
+            "an element hit plus truncated content is a real active paywall");
     }
 
     [Fact]

@@ -125,6 +125,10 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     private int _generalBrowserPreloadCount;
     private volatile bool _hasPaywalledCookies;
 
+    // workspace-lmwm: one-shot guard for the session-start sync of headed
+    // browser profile cookies into the persisted store + HTTP jar.
+    private volatile bool _profileCookieSyncAttempted;
+
     public BackgroundPreloadService(
         IPageCache cache,
         IIdleDetector idleDetector,
@@ -880,7 +884,19 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         {
             var info = await _cookieManager.GetCookieInfoAsync().ConfigureAwait(false);
             var hadCookies = _hasPaywalledCookies;
-            _hasPaywalledCookies = info is { Exists: true, IsExpired: false };
+            var hasStoredCookies = info is { Exists: true, IsExpired: false };
+
+            // workspace-lmwm: before declaring "no auth cookies", consult the
+            // headed browser PROFILE — a logged-in user's cookies live there and
+            // previously only reached the persisted store / HTTP jar after a
+            // manual interactive refresh, so the status bar showed a false
+            // "🍪✗ Shift+I:login" badge to users who were already logged in.
+            if (!hasStoredCookies)
+            {
+                hasStoredCookies = await TryImportProfileCookiesAsync().ConfigureAwait(false);
+            }
+
+            _hasPaywalledCookies = hasStoredCookies;
 
             // When cookies become available, refresh the HttpClient's CookieContainer
             // and clear paywalled domains from _needsJsDomains so they can be re-queued
@@ -910,6 +926,72 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         {
             _logger.LogDebug(ex, "Failed to refresh paywalled cookie state; assuming none");
             _hasPaywalledCookies = false;
+        }
+    }
+
+    /// <summary>
+    /// One-shot sync of headed-browser-profile cookies into the persisted store
+    /// and HTTP jar (workspace-lmwm). Runs at most once per session, and only
+    /// once a browser context actually exists (lazy launch means it may not at
+    /// first call — later refreshes retry until one is up). Returns true when
+    /// the import produced valid auth cookies.
+    /// </summary>
+    private async Task<bool> TryImportProfileCookiesAsync()
+    {
+        if (_profileCookieSyncAttempted
+            || _cookieManager == null
+            || _browserSession is not { HasBrowserContext: true })
+        {
+            return false;
+        }
+
+        _profileCookieSyncAttempted = true;
+
+        try
+        {
+            var aggregated = new Dictionary<(string Name, string Domain, string Path), StoredCookie>();
+            foreach (var domain in _browserConfig.PaywalledDomains)
+            {
+                IReadOnlyList<StoredCookie> domainCookies;
+                try
+                {
+                    domainCookies = await _browserSession.GetCookiesForUrlAsync($"https://{domain}/").ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Profile cookie sync: failed to read cookies for {Domain}", domain);
+                    continue;
+                }
+
+                foreach (var c in domainCookies)
+                {
+                    aggregated[(c.Name, c.Domain, c.Path)] = c;
+                }
+            }
+
+            if (aggregated.Count == 0)
+            {
+                return false;
+            }
+
+            await _cookieManager.SaveCookiesAsync(aggregated.Values.ToList()).ConfigureAwait(false);
+            if (_httpCookieRefresher != null)
+            {
+                await _httpCookieRefresher.RefreshAsync().ConfigureAwait(false);
+            }
+
+            var info = await _cookieManager.GetCookieInfoAsync().ConfigureAwait(false);
+            var ok = info is { Exists: true, IsExpired: false };
+            _logger.LogInformation(
+                "Profile cookie sync: imported {Count} cookies from the headed browser profile (auth cookies valid: {Ok})",
+                aggregated.Count,
+                ok);
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Profile cookie sync failed (non-fatal)");
+            return false;
         }
     }
 

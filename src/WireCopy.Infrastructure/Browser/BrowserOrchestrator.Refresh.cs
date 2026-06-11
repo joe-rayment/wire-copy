@@ -173,8 +173,11 @@ public partial class BrowserOrchestrator
                 loadResult = challengeResult;
             }
 
-            // Show prompt and wait for user to accept or cancel
-            _renderer.RenderInteractiveRefresh(url);
+            // Show prompt and wait for user to accept or cancel. workspace-lmwm:
+            // pass the surviving detection verdict (null when the headed load
+            // succeeded with no gate, or after the poll auto-resolved one) so
+            // the screen never claims a captcha exists on a healthy page.
+            _renderer.RenderInteractiveRefresh(url, loadResult.RequiredAction);
 
             var input = await _inputHandler.WaitForInputAsync(cancellationToken).ConfigureAwait(false);
             if (input.Type == CommandType.GoBack)

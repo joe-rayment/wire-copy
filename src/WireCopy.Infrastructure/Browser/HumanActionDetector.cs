@@ -95,10 +95,19 @@ public static class HumanActionDetector
         "data-cookieconsent",
     };
 
-    private static readonly string[] TwoFactorIndicators =
+    // workspace-lmwm: split 2FA indicators by kind, mirroring the kq4b captcha
+    // split. Markup indicators are form attributes that only appear on real OTP
+    // forms; prose indicators ("two-factor", "verification code", …) appear in
+    // ordinary article text — an NYT article ABOUT two-factor auth tripped a
+    // TwoFactor verdict — so they only count on small (interstitial-sized) pages.
+    private static readonly string[] TwoFactorMarkupIndicators =
     {
         "autocomplete=\"one-time-code\"",
         "autocomplete='one-time-code'",
+    };
+
+    private static readonly string[] TwoFactorProseIndicators =
+    {
         "verification code",
         "6-digit code",
         "two-factor",
@@ -166,7 +175,13 @@ public static class HumanActionDetector
             return new HumanActionRequired(HumanActionVariant.RegionBlock, domain, "HTTP 451");
         }
 
-        if (ContainsAny(bodyLower, RegionBlockTextIndicators))
+        // workspace-lmwm: prose-prone keyword lists only count on pages small
+        // enough to be an interstitial — a large article body that merely
+        // MENTIONS "two-factor" or "not available in your region" is prose,
+        // not a gate (same page-size gating kq4b added for captcha scoring).
+        var isLargeBody = bodyLower.Length > RealPageThreshold;
+
+        if (!isLargeBody && ContainsAny(bodyLower, RegionBlockTextIndicators))
         {
             return new HumanActionRequired(HumanActionVariant.RegionBlock, domain);
         }
@@ -178,8 +193,10 @@ public static class HumanActionDetector
             return new HumanActionRequired(HumanActionVariant.Captcha, domain, "vendor markers detected");
         }
 
-        // 3. TwoFactor: explicit OTP autocomplete or verification-code copy.
-        if (ContainsAny(bodyLower, TwoFactorIndicators))
+        // 3. TwoFactor: explicit OTP form markup anywhere, or verification-code
+        //    prose on an interstitial-sized page (workspace-lmwm).
+        if (ContainsAny(bodyLower, TwoFactorMarkupIndicators)
+            || (!isLargeBody && ContainsAny(bodyLower, TwoFactorProseIndicators)))
         {
             return new HumanActionRequired(HumanActionVariant.TwoFactor, domain);
         }

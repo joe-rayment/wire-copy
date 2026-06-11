@@ -364,11 +364,13 @@ public class ContentQualityGateTests
     }
 
     [Fact]
-    public async Task ExtractAsync_PaywallElementWithFullContent_IsPaywalled()
+    public async Task ExtractAsync_PaywallElementWithFullContent_IsNotPaywalled()
     {
-        // Arrange - Page has a gateway paywall element with full preview content.
-        // Paywall HTML elements are strong indicators — sites like NYT show preview
-        // content before the gate, so we always trust these elements.
+        // Arrange - Page has a DORMANT gateway paywall element alongside full
+        // article content. workspace-lmwm inverted the old "always trust the
+        // element" rule: logged-in NYT pages keep gateway/meter markup in the
+        // DOM while serving the complete text, so a selector hit only counts
+        // when the extracted content also looks truncated.
         var logger = Substitute.For<ILogger<ReadableContentExtractor>>();
         var extractor = new ReadableContentExtractor(logger);
 
@@ -391,7 +393,8 @@ public class ContentQualityGateTests
 
         // Assert
         result.Should().NotBeNull();
-        result!.IsPaywalled.Should().BeTrue("gateway HTML element is a strong paywall indicator regardless of content amount");
+        result!.IsPaywalled.Should().BeFalse(
+            "four substantial paragraphs prove the gateway markup is dormant — flagging this nags logged-in subscribers");
     }
 
     [Fact]
