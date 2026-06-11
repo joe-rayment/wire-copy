@@ -34,6 +34,7 @@ internal static class KeybindingPopup
                 ("h / l", "collapse / expand group"),
                 ("v", "switch to reader view"),
                 ("r / t", "reader / tree view"),
+                ("Ctrl+L", "set up site layout (AI)"),
                 ("/", "search"),
                 ("n / N", "next / prev match"),
                 ("R", "refresh (bypass cache)"),

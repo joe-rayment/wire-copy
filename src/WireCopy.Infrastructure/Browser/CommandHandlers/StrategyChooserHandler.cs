@@ -198,9 +198,8 @@ internal static class StrategyChooserHandler
 
     /// <summary>
     /// workspace-5oe9.10: Shift+I while previewing the AI Curated row launches
-    /// the question-driven setup wizard (identical to pressing Enter on that
-    /// row). Replaces the old stub — the wizard shipped in workspace-5oe9.8.
-    /// No-op for non-AI rows.
+    /// the preview-first setup wizard (identical to pressing Enter on that
+    /// row). No-op for non-AI rows.
     /// </summary>
     public static async Task HandleGuidanceRequestAsync(
         CommandContext ctx,
@@ -215,13 +214,12 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
-    /// workspace-99ve: short text-field prompt for optional editorial
-    /// guidance to the AI Curated analyzer. Returns:
+    /// workspace-6yb7.7: free-text steering for the wizard's adjust / failure
+    /// loop ("Tell the AI what to change"). Returns:
     ///   <list type="bullet">
-    ///     <item>null — user pressed Esc, abort the apply.</item>
-    ///     <item>empty string — user accepted without typing, run with the
-    ///       default prompt.</item>
-    ///     <item>non-empty string — user-supplied guidance to pass through.</item>
+    ///     <item>null — user pressed Esc, back out without an adjustment.</item>
+    ///     <item>empty string — user pressed Enter without typing (no-op).</item>
+    ///     <item>non-empty string — the adjustment fed to re-inference.</item>
     ///   </list>
     /// </summary>
     private static async Task<string?> PromptForGuidanceAsync(
@@ -232,9 +230,9 @@ internal static class StrategyChooserHandler
         var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var field = new UI.Components.FormFieldConfig
         {
-            Label = "Anything you'd like to tell the AI? (optional)",
-            Subtitle = "e.g. 'exclude opinion pieces', 'put COVID first', 'group by section'",
-            Placeholder = "Press Enter to use the default curation prompt, Esc to cancel.",
+            Label = "Tell the AI what to change",
+            Subtitle = "e.g. 'exclude opinion pieces', 'the lead is the big photo story', 'group by section'",
+            Placeholder = "Type the change and press Enter · Esc to go back",
         };
 
         var fieldWidth = Math.Min(80, Math.Max(40, options.TerminalWidth - 6));
