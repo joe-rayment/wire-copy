@@ -324,10 +324,28 @@ internal sealed class PreloadDetailRenderer
         var truncatedUrl = RenderHelpers.TruncateUrl(entry.Url, Math.Max(10, maxUrlWidth));
         var leftPlain = $"  {glyph} {truncatedUrl}";
         var leftWidth = RenderHelpers.GetDisplayWidth(leftPlain);
-        var pad = Math.Max(1, innerWidth - leftWidth - elapsed.Length);
 
-        var styled = $"  {color}{glyph}{Reset} {palette.PrimaryText.AnsiFg}{truncatedUrl}{Reset}{new string(' ', pad)}{palette.GetDimFg().AnsiFg}{elapsed}{Reset}";
-        var plain = $"{leftPlain}{new string(' ', pad)}{elapsed}";
+        // workspace-v04i: surface the skip/failure reason ("paywall", "needs JS",
+        // "bot detection", …) dim after the URL so the user can tell WHY an entry
+        // was skipped without leaving the panel. Dropped when the row is too
+        // tight to show a meaningful fragment.
+        var reasonStyled = string.Empty;
+        var reasonPlain = string.Empty;
+        if (!string.IsNullOrWhiteSpace(entry.Reason))
+        {
+            var room = innerWidth - leftWidth - elapsed.Length - 1;
+            if (room >= 6)
+            {
+                var reasonText = RenderHelpers.TruncateText($" — {entry.Reason}", room);
+                reasonStyled = $"{palette.GetDimFg().AnsiFg}{reasonText}{Reset}";
+                reasonPlain = reasonText;
+            }
+        }
+
+        var pad = Math.Max(1, innerWidth - leftWidth - RenderHelpers.GetDisplayWidth(reasonPlain) - elapsed.Length);
+
+        var styled = $"  {color}{glyph}{Reset} {palette.PrimaryText.AnsiFg}{truncatedUrl}{Reset}{reasonStyled}{new string(' ', pad)}{palette.GetDimFg().AnsiFg}{elapsed}{Reset}";
+        var plain = $"{leftPlain}{reasonPlain}{new string(' ', pad)}{elapsed}";
         return new PanelLine(styled, plain);
     }
 

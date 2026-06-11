@@ -571,12 +571,7 @@ public partial class BrowserOrchestrator : IBrowserService
 
                     // Gate commands during background loading: only Quit, GoBack, and
                     // passive commands are allowed. All others are silently ignored.
-                    if (HasActiveBackgroundLoad() &&
-                        command.Type is not CommandType.Quit
-                            and not CommandType.GoBack
-                            and not CommandType.NoOp
-                            and not CommandType.TerminalResized
-                            and not CommandType.AnimationTick)
+                    if (HasActiveBackgroundLoad() && !IsCommandAllowedDuringBackgroundLoad(command.Type))
                     {
                         // Ignore the command — user will see the loading screen
                         continue;

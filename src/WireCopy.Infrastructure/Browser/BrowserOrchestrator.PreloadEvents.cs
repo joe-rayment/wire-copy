@@ -20,6 +20,26 @@ namespace WireCopy.Infrastructure.Browser;
 public partial class BrowserOrchestrator
 {
     /// <summary>
+    /// True when the preloader is doing (or has queued) work, i.e. the open
+    /// detail panel should keep refreshing on the main-loop tick even though
+    /// no ProgressChanged event has fired (workspace-v04i heartbeat).
+    /// </summary>
+    internal static bool ShouldHeartbeatRefresh(PreloadProgress progress)
+    {
+        return !string.IsNullOrEmpty(progress.CurrentlyFetchingUrl) || progress.UpcomingUrls.Count > 0;
+    }
+
+    /// <summary>
+    /// Decides whether a progress change warrants a re-render: always when the
+    /// prefetch detail panel is open (it overlays every view, workspace-v04i);
+    /// otherwise only in the views whose status bar shows preload progress.
+    /// </summary>
+    internal static bool ShouldRefreshForProgress(bool panelVisible, ViewMode viewMode)
+    {
+        return panelVisible || viewMode is ViewMode.Hierarchical or ViewMode.CollectionItems;
+    }
+
+    /// <summary>
     /// Handles an animation timer tick. Performs a lightweight render update
     /// for just the animated region (e.g., status bar) without processing
     /// the full command pipeline. This keeps animation overhead minimal.
@@ -108,7 +128,14 @@ public partial class BrowserOrchestrator
     /// </summary>
     private async Task CheckAndRenderProgressAsync(CancellationToken cancellationToken)
     {
-        if (!_progressDirty)
+        var panelVisible = _commandContext.IsPreloadDetailVisible;
+
+        // workspace-v04i heartbeat: while the detail panel is open and the
+        // preloader is busy, refresh even without a ProgressChanged event so
+        // ElapsedOnCurrent visibly ticks and the 8s/30s stall states can
+        // appear for a wedged fetch that emits no events. A fully idle
+        // preloader still skips the render so an open panel costs nothing.
+        if (!_progressDirty && (!panelVisible || !ShouldHeartbeatRefresh(_preloadService.GetProgress())))
         {
             return;
         }
@@ -122,9 +149,10 @@ public partial class BrowserOrchestrator
         _progressDirty = false;
         _lastProgressRender = now;
 
-        // Only refresh for views that display preload progress
+        // Refresh wherever the panel is open (it overlays any view); otherwise
+        // only for views that display preload progress in the status bar.
         var viewMode = _navigationService.CurrentContext.ViewMode;
-        if (viewMode != ViewMode.Hierarchical && viewMode != ViewMode.CollectionItems)
+        if (!ShouldRefreshForProgress(panelVisible, viewMode))
         {
             return;
         }

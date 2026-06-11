@@ -20,6 +20,23 @@ namespace WireCopy.Infrastructure.Browser;
 public partial class BrowserOrchestrator
 {
     /// <summary>
+    /// Commands the main loop still honours while a background page load is
+    /// painting the skeleton screen. workspace-v04i: TogglePreloadDetail is
+    /// allowed so the user can open the prefetch panel at exactly the moment
+    /// they're wondering whether the load has stalled — the overlay paints
+    /// over the skeleton via the normal render path.
+    /// </summary>
+    internal static bool IsCommandAllowedDuringBackgroundLoad(CommandType type)
+    {
+        return type is CommandType.Quit
+            or CommandType.GoBack
+            or CommandType.NoOp
+            or CommandType.TerminalResized
+            or CommandType.AnimationTick
+            or CommandType.TogglePreloadDetail;
+    }
+
+    /// <summary>
     /// Starts loading a page in the background. The main loop will pick up the result
     /// via _backgroundPageLoad in its WhenAny race.
     /// </summary>

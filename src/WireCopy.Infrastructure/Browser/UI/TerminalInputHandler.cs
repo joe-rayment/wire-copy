@@ -135,6 +135,7 @@ public class TerminalInputHandler : IInputHandler
  Cache
    Shift+R / F5    Refresh (bypass cache)
    Shift+I         Interactive refresh (headed browser for captcha/login)
+   \               Prefetch detail (what's cached / loading now)
 
  General
    Ctrl+p          Cycle theme
