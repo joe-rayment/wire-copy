@@ -736,14 +736,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("   coverage/discussion sublinks) map naturally to tiers: leads in a top tier,");
         sb.AppendLine("   secondary coverage in a lower (or excluded) tier.");
         sb.AppendLine();
-        sb.AppendLine($"2. questions: AT MOST {maxQuestions} short clarifying questions to confirm the");
-        sb.AppendLine("   pattern. Ask ONLY where you are genuinely unsure. Each question MUST set");
-        sb.AppendLine("   default_answer to your best guess so the user can just press Enter. Use kind:");
-        sb.AppendLine("   pick_main (which is the lead), confirm_exclude (hide these non-stories?),");
-        sb.AppendLine("   confirm_order (is this section order right?), group_by (group into sections?).");
-        sb.AppendLine("   Each option carries the same durable identifier fields as above.");
+        sb.AppendLine($"2. questions: AT MOST {maxQuestions} questions, and ONLY where you are genuinely");
+        sb.AppendLine("   torn between concrete alternatives. A question must DISCRIMINATE: each");
+        sb.AppendLine("   answer must produce a materially different layout (different lead, different");
+        sb.AppendLine("   grouping, something hidden or kept). The user answers by LOOKING at the");
+        sb.AppendLine("   page — every option is highlighted live — so options MUST carry durable");
+        sb.AppendLine("   identifiers (parent_selector and/or url_pattern) pointing at real elements");
+        sb.AppendLine("   (a hide-or-keep pair may reference the same element). Never ask 'does this");
+        sb.AppendLine("   look right?', never offer a lone yes/no, never ask anything whose answer");
+        sb.AppendLine("   would not change the sections you output. Set default_answer to your best");
+        sb.AppendLine("   guess. Use kind: pick_main (which of these is the lead), confirm_exclude");
+        sb.AppendLine("   (hide this group or keep it), confirm_order (which section comes first),");
+        sb.AppendLine("   group_by (group by these containers or those).");
         sb.AppendLine();
-        sb.Append("Prefer FEWER questions. If the pattern is obvious, return an empty questions array.");
+        sb.Append("If the pattern is obvious, return an EMPTY questions array — that is the best outcome.");
         return sb.ToString();
     }
 

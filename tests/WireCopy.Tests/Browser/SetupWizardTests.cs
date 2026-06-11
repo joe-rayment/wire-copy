@@ -33,6 +33,7 @@ public class SetupWizardTests
             Options = new List<SetupOption>
             {
                 new() { Label = "Opt", ParentSelector = "section.feed" },
+                new() { Label = "Alt", ParentSelector = "section.alt" },
             },
         }).ToList();
 
@@ -386,6 +387,146 @@ public class SetupWizardTests
 
         result.Config.Should().NotBeNull();
         budget.Used.Should().Be(2, "backing out of the adjust card costs nothing");
+    }
+
+    // ---- workspace-6yb7.4: directed-question filter ----
+
+    [Fact]
+    public void IsDiscriminating_RealAlternatives_Pass()
+    {
+        var question = new SetupQuestion
+        {
+            Id = "q",
+            Prompt = "Which of these is the story river?",
+            Kind = SetupQuestionKind.PickMain,
+            Options = new List<SetupOption>
+            {
+                new() { Label = "The clustered headlines", ParentSelector = "div.clus" },
+                new() { Label = "The sidebar list", ParentSelector = "div.sidebar" },
+            },
+        };
+
+        SetupWizard.IsDiscriminating(question).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDiscriminating_HideOrKeepSameElement_Passes()
+    {
+        // Both options legitimately reference the same element — the verdict
+        // differs, and the element is highlightable.
+        var question = new SetupQuestion
+        {
+            Id = "q",
+            Prompt = "Hide the sponsor posts?",
+            Kind = SetupQuestionKind.ConfirmExclude,
+            Options = new List<SetupOption>
+            {
+                new() { Label = "Hide them", ParentSelector = "div.sponsor" },
+                new() { Label = "Keep them", ParentSelector = "div.sponsor" },
+            },
+        };
+
+        SetupWizard.IsDiscriminating(question).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDiscriminating_NoOptions_Dropped()
+    {
+        // The old flow synthesized a yes/no card from DefaultAnswer for these —
+        // nothing to show on the page, nothing to decide.
+        var question = new SetupQuestion
+        {
+            Id = "q",
+            Prompt = "Does this look right?",
+            Kind = SetupQuestionKind.ConfirmOrder,
+            DefaultAnswer = "Yes",
+        };
+
+        SetupWizard.IsDiscriminating(question).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsDiscriminating_NoIdentifiers_Dropped()
+    {
+        var question = new SetupQuestion
+        {
+            Id = "q",
+            Prompt = "Is the order fine?",
+            Kind = SetupQuestionKind.ConfirmOrder,
+            Options = new List<SetupOption>
+            {
+                new() { Label = "Yes" },
+                new() { Label = "No" },
+            },
+        };
+
+        SetupWizard.IsDiscriminating(question).Should().BeFalse(
+            "a question whose options cannot be highlighted is not visually answerable");
+    }
+
+    [Fact]
+    public void IsDiscriminating_DuplicateLabels_Dropped()
+    {
+        var question = new SetupQuestion
+        {
+            Id = "q",
+            Prompt = "Pick one",
+            Kind = SetupQuestionKind.PickMain,
+            Options = new List<SetupOption>
+            {
+                new() { Label = "Same", ParentSelector = "div.a" },
+                new() { Label = "same", ParentSelector = "div.b" },
+            },
+        };
+
+        SetupWizard.IsDiscriminating(question).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_DropsNonDiscriminatingQuestions_KeepsRealOnes()
+    {
+        var proposal = ProposalWith(questionCount: 1); // one real question (distinct labels? "Opt" only 1 option!)
+        proposal.Questions.Clear();
+        proposal.Questions.Add(new SetupQuestion
+        {
+            Id = "junk",
+            Prompt = "Does this look right?",
+            Kind = SetupQuestionKind.ConfirmOrder,
+            DefaultAnswer = "Yes",
+        });
+        proposal.Questions.Add(new SetupQuestion
+        {
+            Id = "real",
+            Prompt = "Which is the lead?",
+            Kind = SetupQuestionKind.PickMain,
+            DefaultAnswer = "Hero",
+            Options = new List<SetupOption>
+            {
+                new() { Label = "Hero", ParentSelector = "section.hero" },
+                new() { Label = "First feed item", ParentSelector = "section.feed" },
+            },
+        });
+
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(proposal);
+        IReadOnlyList<SetupAnswer>? captured = null;
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => { captured = ci.Arg<IReadOnlyList<SetupAnswer>>().ToList(); return SomeConfig(); });
+
+        var input = InputSequence(CommandType.ActivateLink);
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        captured.Should().ContainSingle("only the discriminating question was asked")
+            .Which.QuestionId.Should().Be("real");
     }
 
     // ---- workspace-wylw: live lens confirmation ----

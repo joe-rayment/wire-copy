@@ -77,8 +77,15 @@ internal static class SetupWizard
             ct).ConfigureAwait(false);
 
         // ---- Up to MaxStructuredQuestions clarifying-question cards ----
+        // workspace-6yb7.4: only DISCRIMINATING questions survive — a question
+        // must offer concrete, visually inspectable alternatives whose answers
+        // change the layout. Confirmation theater is dropped client-side even
+        // when the model emits it.
         var answers = new List<SetupAnswer>();
-        var questions = proposal.Questions.Take(MaxStructuredQuestions).ToList();
+        var questions = proposal.Questions
+            .Where(IsDiscriminating)
+            .Take(MaxStructuredQuestions)
+            .ToList();
         for (var qi = 0; qi < questions.Count; qi++)
         {
             var card = BuildQuestionCard(questions[qi], qi + 1, questions.Count);
@@ -165,6 +172,37 @@ internal static class SetupWizard
         }
 
         return new Result { Cancelled = true };
+    }
+
+    /// <summary>
+    /// workspace-6yb7.4: a question earns a card only when it discriminates —
+    /// at least two distinctly labelled alternatives, at least one of them
+    /// carrying a durable identifier the lens can light up. Kills the
+    /// synthesized yes/no confirmation cards (no options = nothing to show on
+    /// the page, nothing to decide) and un-highlightable abstract questions.
+    /// Note a hide-or-keep question legitimately points BOTH options at the
+    /// same element — the verdict differs, so identifiers may repeat.
+    /// </summary>
+    internal static bool IsDiscriminating(SetupQuestion question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        if (question.Options.Count < 2)
+        {
+            return false;
+        }
+
+        var hasIdentifier = question.Options.Any(o =>
+            !string.IsNullOrWhiteSpace(o.ParentSelector) || !string.IsNullOrWhiteSpace(o.UrlPattern));
+        if (!hasIdentifier)
+        {
+            return false;
+        }
+
+        // Two options with the same label are one option.
+        return question.Options
+            .Select(o => o.Label.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count() > 1;
     }
 
     /// <summary>
@@ -525,31 +563,17 @@ internal static class SetupWizard
 
     private static SetupWizardOverlay.WizardCard BuildQuestionCard(SetupQuestion question, int number, int total)
     {
-        List<SetupWizardOverlay.CardOption> options;
-        int defaultCursor;
-
-        if (question.Options.Count > 0)
+        // workspace-6yb7.4: IsDiscriminating guarantees >= 2 concrete options, so
+        // there is no synthesized yes/no fallback — every row is a real
+        // alternative whose matches light up on the lens as it is focused.
+        var options = question.Options.Select(o => new SetupWizardOverlay.CardOption
         {
-            options = question.Options.Select(o => new SetupWizardOverlay.CardOption
-            {
-                Label = o.Label,
-                Identifier = FormatIdentifier(o.ParentSelector, o.UrlPattern),
-                HighlightSelector = CssForIdentifier(o.ParentSelector, o.UrlPattern),
-            }).ToList();
-            defaultCursor = Math.Max(0, options.FindIndex(o =>
-                string.Equals(o.Label, question.DefaultAnswer, StringComparison.OrdinalIgnoreCase)));
-        }
-        else
-        {
-            // No options → a yes/no confirmation seeded from the default answer.
-            var yes = string.IsNullOrWhiteSpace(question.DefaultAnswer) ? "Yes" : question.DefaultAnswer;
-            options = new List<SetupWizardOverlay.CardOption>
-            {
-                new() { Label = yes },
-                new() { Label = "No" },
-            };
-            defaultCursor = 0;
-        }
+            Label = o.Label,
+            Identifier = FormatIdentifier(o.ParentSelector, o.UrlPattern),
+            HighlightSelector = CssForIdentifier(o.ParentSelector, o.UrlPattern),
+        }).ToList();
+        var defaultCursor = Math.Max(0, options.FindIndex(o =>
+            string.Equals(o.Label, question.DefaultAnswer, StringComparison.OrdinalIgnoreCase)));
 
         return new SetupWizardOverlay.WizardCard
         {
@@ -557,7 +581,7 @@ internal static class SetupWizard
             Prompt = question.Prompt,
             Options = options,
             Cursor = defaultCursor,
-            Hint = "↑/↓ choose · Enter accept · Esc cancel",
+            Hint = "↑/↓ see each option on the page · Enter choose · Esc cancel",
         };
     }
 
