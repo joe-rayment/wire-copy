@@ -529,6 +529,159 @@ public class SetupWizardTests
             .Which.QuestionId.Should().Be("real");
     }
 
+    // ---- workspace-6yb7.6: degenerate gate ----
+
+    private static SiteHierarchyConfig MismatchedConfig() => new()
+    {
+        Domain = "x.com",
+        UrlPattern = "^x$",
+        Sections = new List<HierarchySection> { new() { Name = "Ghost", SortOrder = 0, ParentSelectors = new List<string> { "section.does-not-exist" } } },
+        CreatedAt = DateTime.UtcNow,
+        ModelVersion = "gpt-5-mini",
+        Kind = LayoutKind.AiCurated,
+        Version = 3,
+    };
+
+    [Fact]
+    public void IsDegenerate_Cases()
+    {
+        var links = Links(); // one content link under "section.lead a"
+
+        SetupWizard.IsDegenerate(MismatchedConfig(), links).Should().BeTrue("zero coverage");
+        SetupWizard.IsDegenerate(SomeConfig(), links).Should().BeFalse("full coverage");
+        SetupWizard.IsDegenerate(
+            SomeConfig() with { Sections = new List<HierarchySection>() }, links)
+            .Should().BeTrue("no sections at all");
+        SetupWizard.IsDegenerate(MismatchedConfig(), new List<LinkInfo>())
+            .Should().BeFalse("no story links to judge coverage against");
+
+        // Near-degenerate: 1 of 20 covered (5%) is below the 10% floor.
+        var manyLinks = Enumerable.Range(0, 20).Select(i => new LinkInfo
+        {
+            Url = $"https://x.com/{i}",
+            DisplayText = $"L{i}",
+            Type = LinkType.Content,
+            ImportanceScore = 60,
+            ParentSelector = i == 0 ? "section.lead a" : "div.elsewhere a",
+        }).ToList();
+        SetupWizard.IsDegenerate(SomeConfig(), manyLinks).Should().BeTrue("5% coverage is near-degenerate");
+    }
+
+    [Fact]
+    public async Task DegenerateConfig_GetsOneAutoRepair_ThenPreviews()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+
+        var inferCalls = 0;
+        var allAnswers = new List<IReadOnlyList<SetupAnswer>>();
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                allAnswers.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
+                return ++inferCalls == 1 ? MismatchedConfig() : SomeConfig();
+            });
+
+        var input = InputSequence(CommandType.ActivateLink); // Enter saves the (repaired) preview
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        result.Config!.Sections[0].Name.Should().Be("Top Story", "the repaired config is what previews and saves");
+        budget.Used.Should().Be(3, "propose + infer + exactly one automatic repair");
+        allAnswers[1].Should().Contain(a => a.QuestionId == "self-test-failure",
+            "the repair round-trip carries the structured mismatch feedback");
+    }
+
+    [Fact]
+    public async Task StillDegenerate_ShowsFailureCard_EscLeavesUnconfigured()
+    {
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), MismatchedConfig());
+
+        var overlay = new SetupWizardOverlay.State();
+        var titles = new List<string>();
+        Task Render(CancellationToken _)
+        {
+            if (overlay.Card != null && overlay.Mode == SetupWizardOverlay.Mode.Card)
+            {
+                titles.Add(overlay.Card.Title);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        var input = InputSequence(CommandType.GoBack); // Esc on the failure card
+
+        var previewApplied = 0;
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, Render, overlay, Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
+            applyPreview: (_, _) => { previewApplied++; return Task.CompletedTask; },
+            lens: null,
+            CancellationToken.None);
+
+        result.Cancelled.Should().BeTrue("a 0-coverage config must be unsaveable");
+        result.Config.Should().BeNull();
+        budget.Used.Should().Be(3, "propose + infer + the single repair attempt");
+        previewApplied.Should().Be(0, "a degenerate config never reaches the live preview");
+        titles.Should().Contain("No reliable pattern found");
+        titles.Should().NotContain("Your new layout");
+    }
+
+    [Fact]
+    public async Task FailureCard_PickStory_RecoversToPreviewAndSaves()
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ProposalWith(questionCount: 0));
+
+        var inferCalls = 0;
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ++inferCalls <= 2 ? MismatchedConfig() : SomeConfig());
+
+        // infer #1 degenerate → auto-repair infer #2 still degenerate → failure
+        // card: Enter on "Point at the main story" → pick → infer #3 good →
+        // preview → Enter saves.
+        var input = InputSequence(
+            CommandType.ActivateLink,
+            CommandType.ActivateLink);
+
+        var pickedLink = new LinkInfo
+        {
+            Url = "https://x.com/2026/06/11/lead",
+            DisplayText = "The lead",
+            Type = LinkType.Content,
+            ImportanceScore = 95,
+            ParentSelector = "main section.hero a",
+        };
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            Links(), "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
+            applyPreview: null,
+            lens: null,
+            CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        result.Config!.Sections[0].Name.Should().Be("Top Story");
+        budget.Used.Should().Be(4, "propose + infer + auto-repair + pick-driven re-inference");
+    }
+
     // ---- workspace-wylw: live lens confirmation ----
 
     [Fact]

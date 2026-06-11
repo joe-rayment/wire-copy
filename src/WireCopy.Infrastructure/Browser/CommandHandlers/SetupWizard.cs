@@ -26,6 +26,12 @@ internal static class SetupWizard
     /// <summary>Cap on structured question cards shown.</summary>
     internal const int MaxStructuredQuestions = 3;
 
+    /// <summary>
+    /// workspace-6yb7.6: minimum share of the page's story links a config must
+    /// cover to earn a preview. Below this the wizard repairs or fails honestly.
+    /// </summary>
+    internal const double MinCoverageFraction = 0.10;
+
     /// <summary>Outcome of one pass through the preview card.</summary>
     private enum PreviewChoice
     {
@@ -119,13 +125,53 @@ internal static class SetupWizard
             render,
             ct).ConfigureAwait(false);
 
+        // ---- workspace-6yb7.6: degenerate gate — self-test BEFORE showing
+        // anything. A config covering (almost) none of the live page's story
+        // links gets ONE automatic repair round-trip with the mismatch fed
+        // back as a structured answer; a config that is still degenerate goes
+        // to the honest failure card below, never to the preview.
+        if (IsDegenerate(config, links) && budget.TrySpend())
+        {
+            answers.Add(SelfTestFailureAnswer(config, links));
+            config = await RunWithProgressAsync(
+                analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
+                "Rechecking the page",
+                overlay,
+                render,
+                ct).ConfigureAwait(false);
+        }
+
         // ---- Preview loop: show the RESULT, not a description of it ----
         while (!ct.IsCancellationRequested)
         {
-            if (config.Sections.Count == 0)
+            if (IsDegenerate(config, links))
             {
-                // Degenerate output — handled by the gate (workspace-6yb7.6).
-                return new Result { Config = config };
+                // Honest failure: no fake-confident preview, no savable empty
+                // config. The user can point at a story (one more budget-guarded
+                // re-inference) or Esc to leave the page unconfigured.
+                var repaired = await RunAdjustAsync(
+                    analyzer,
+                    input,
+                    render,
+                    overlay,
+                    links,
+                    pageUrl,
+                    screenshot,
+                    proposal,
+                    answers,
+                    budget,
+                    freeTextPrompt,
+                    pickLeadFromTree,
+                    lens,
+                    ct,
+                    BuildFailureCardShape(config, links, budget)).ConfigureAwait(false);
+                if (repaired == null)
+                {
+                    return new Result { Cancelled = true };
+                }
+
+                config = repaired;
+                continue;
             }
 
             if (applyPreview != null)
@@ -206,6 +252,61 @@ internal static class SetupWizard
     }
 
     /// <summary>
+    /// Coverage self-test: (covered, total) story links under the SAME
+    /// <see cref="NavigationTreeBuilder.MatchesSection"/> semantics revisits use.
+    /// </summary>
+    internal static (int Covered, int Total) Coverage(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+        var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+        return (covered, contentLinks.Count);
+    }
+
+    /// <summary>
+    /// workspace-6yb7.6: a config is degenerate when it has no sections at all,
+    /// or its sections match (almost) none of the live page's story links —
+    /// the Techmeme failure mode where a confidently-presented layout was
+    /// empty in practice. Pages with no story links can't be coverage-judged;
+    /// only a sectionless config is degenerate there.
+    /// </summary>
+    internal static bool IsDegenerate(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (config.Sections.Count == 0)
+        {
+            return true;
+        }
+
+        var (covered, total) = Coverage(config, links);
+        if (total == 0)
+        {
+            return false;
+        }
+
+        return covered == 0 || (double)covered / total < MinCoverageFraction;
+    }
+
+    /// <summary>
+    /// workspace-6yb7.6: the structured answer fed back for the single automatic
+    /// repair round-trip — tells the model its identifiers missed the live DOM
+    /// and anchors the retry in the link list's actual parent fields.
+    /// </summary>
+    internal static SetupAnswer SelfTestFailureAnswer(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        var (covered, total) = Coverage(config, links);
+        return new SetupAnswer
+        {
+            QuestionId = "self-test-failure",
+            Answer = $"Self-test failed: your previous pattern matched only {covered} of {total} story links " +
+                     "on the live page — the selectors/url patterns did not match the page's actual DOM. " +
+                     "Re-derive every section identifier by copying parent-selector fragments EXACTLY from " +
+                     "the links' parent fields in the list above, and drop any url_pattern that does not " +
+                     "literally appear in those links' URLs.",
+        };
+    }
+
+    /// <summary>
     /// The preview caption — one row per durable section with its REAL match
     /// count against the current page's links (the same
     /// <see cref="NavigationTreeBuilder.MatchesSection"/> semantics revisits use),
@@ -224,7 +325,7 @@ internal static class SetupWizard
             HighlightSelector = CssForSection(section),
         }).ToList();
 
-        var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+        var (covered, _) = Coverage(config, links);
         var footnote = covered == 0 && contentLinks.Count > 0
             ? "⚠ No links on this page match this layout"
             : $"{covered} of {contentLinks.Count} story links covered";
@@ -327,6 +428,23 @@ internal static class SetupWizard
     }
 
     /// <summary>
+    /// workspace-6yb7.6: the honest failure card shown instead of a preview
+    /// when the config (still) matches ~none of the page's story links.
+    /// </summary>
+    internal static AdjustCardShape BuildFailureCardShape(
+        SiteHierarchyConfig config, List<LinkInfo> links, ModelRoundTripBudget budget)
+    {
+        var (covered, total) = Coverage(config, links);
+        return new AdjustCardShape(
+            Title: "No reliable pattern found",
+            Prompt: "I couldn't find a layout that matches this page's stories.",
+            Footnote: budget.Exhausted
+                ? $"Matches {covered} of {total} story links · AI budget used up — Esc to leave unconfigured"
+                : $"The proposed layout matches {covered} of {total} story links on this page",
+            Hint: "↑/↓ choose · Enter select · Esc leave unconfigured");
+    }
+
+    /// <summary>
     /// The adjust loop behind Space on the preview card: point at the main story
     /// (when a tree/click picker is wired) or steer the model with free text.
     /// Each adjustment is exactly one budget-guarded re-inference whose answer is
@@ -348,7 +466,8 @@ internal static class SetupWizard
         Func<CancellationToken, Task<string?>> freeTextPrompt,
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Lens? lens,
-        CancellationToken ct)
+        CancellationToken ct,
+        AdjustCardShape? shape = null)
     {
         var allowPick = pickLeadFromTree != null;
         var options = new List<SetupWizardOverlay.CardOption>();
@@ -359,13 +478,19 @@ internal static class SetupWizard
 
         options.Add(new SetupWizardOverlay.CardOption { Label = "Tell the AI what to change…" });
 
+        shape ??= new AdjustCardShape(
+            Title: "Adjust the layout",
+            Prompt: "What should change?",
+            Footnote: budget.Exhausted ? "AI budget for this setup is used up — Esc and save or discard" : string.Empty,
+            Hint: "↑/↓ choose · Enter select · Esc back to preview");
+
         var card = new SetupWizardOverlay.WizardCard
         {
-            Title = "Adjust the layout",
-            Prompt = "What should change?",
+            Title = shape.Title,
+            Prompt = shape.Prompt,
             Options = options,
-            Footnote = budget.Exhausted ? "AI budget for this setup is used up — Esc and save or discard" : string.Empty,
-            Hint = "↑/↓ choose · Enter select · Esc back to preview",
+            Footnote = shape.Footnote,
+            Hint = shape.Hint,
         };
 
         var choice = await RunCardAsync(input, render, overlay, card, lens, ct).ConfigureAwait(false);
@@ -600,6 +725,13 @@ internal static class SetupWizard
 
         return string.Join(" · ", parts);
     }
+
+    /// <summary>
+    /// The shape (title/prompt/footnote/hint) RunAdjustAsync dresses its card
+    /// in — the same loop serves both the preview's Space-adjust and the
+    /// degenerate gate's honest failure card (workspace-6yb7.6).
+    /// </summary>
+    internal sealed record AdjustCardShape(string Title, string Prompt, string Footnote, string Hint);
 
     /// <summary>
     /// workspace-wylw: best-effort hooks into the sidecar lens tab.
