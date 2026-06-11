@@ -1254,12 +1254,26 @@ public partial class BrowserOrchestrator : IBrowserService
                 _dockSpotlight.RequestClear();
             }
 
-            _navigationService.SetStatusMessage(state switch
+            switch (state)
             {
-                BrowserWindowState.Docked => DockedStatusMessage(),
-                BrowserWindowState.Minimized => "Immersive view · O: sidecar",
-                _ => "No live page to show beside the app yet — open an article first",
-            });
+                case BrowserWindowState.Docked:
+                    _navigationService.Announce(
+                        DockGlyph(),
+                        "Sidecar open",
+                        new[] { new StatusKeyHint("O", "immersive view") },
+                        shortText: DockGlyph());
+                    break;
+                case BrowserWindowState.Minimized:
+                    _navigationService.Announce(
+                        glyph: null,
+                        "Immersive view",
+                        new[] { new StatusKeyHint("O", "sidecar") });
+                    break;
+                default:
+                    _navigationService.SetStatusMessage(
+                        "No live page to show beside the app yet — open an article first");
+                    break;
+            }
         }
 
         // The render below runs the spotlight hook, so docking immediately
@@ -1291,12 +1305,12 @@ public partial class BrowserOrchestrator : IBrowserService
     /// Side-aware status line shown whenever the sidecar docks (toggle or auto-engage).
     /// workspace-8fkv: the dock side is configurable, so the copy must reflect it.
     /// </summary>
-    private string DockedStatusMessage()
+    private string DockGlyph()
     {
         // Kept short: when docked the status bar has only the uncovered columns.
         return _browserConfig.DockSide == WireCopy.Infrastructure.Configuration.DockSide.Left
-            ? "Sidecar open ⇇ · O: immersive view"
-            : "Sidecar open ⇉ · O: immersive view";
+            ? "⇇"
+            : "⇉";
     }
 
     /// <summary>
@@ -1325,7 +1339,11 @@ public partial class BrowserOrchestrator : IBrowserService
             if (!_sidecarHintShown)
             {
                 _sidecarHintShown = true;
-                _navigationService.SetStatusMessage(DockedStatusMessage());
+                _navigationService.Announce(
+                    DockGlyph(),
+                    "Sidecar open",
+                    new[] { new StatusKeyHint("O", "immersive view") },
+                    shortText: DockGlyph());
                 await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
             }
 
@@ -1359,7 +1377,11 @@ public partial class BrowserOrchestrator : IBrowserService
         {
             _sidecarSummonFailures = 0;
             _sidecarHintShown = true;
-            _navigationService.SetStatusMessage(DockedStatusMessage());
+            _navigationService.Announce(
+                DockGlyph(),
+                "Sidecar open",
+                new[] { new StatusKeyHint("O", "immersive view") },
+                shortText: DockGlyph());
         }
         else
         {
@@ -1396,6 +1418,20 @@ public partial class BrowserOrchestrator : IBrowserService
         {
             _navigationService.StartSpeedRead();
             startingSpeedRead = true;
+
+            // workspace-wef6.4: announce the new state WITH its controls, then
+            // collapse to the ambient ▶WPM badge once the announcement fades.
+            _navigationService.Announce(
+                "▶",
+                $"Speed reading {_navigationService.SpeedReadWpm} WPM",
+                new[]
+                {
+                    new StatusKeyHint("<", "slower"),
+                    new StatusKeyHint(">", "faster"),
+                    new StatusKeyHint("f", "stop"),
+                },
+                TimeSpan.FromSeconds(4),
+                $"▶{_navigationService.SpeedReadWpm}");
         }
         else
         {
@@ -1430,7 +1466,11 @@ public partial class BrowserOrchestrator : IBrowserService
     private async Task AdjustSpeedReadAsync(int delta, RenderOptions options, CancellationToken cancellationToken)
     {
         _navigationService.AdjustSpeedReadWpm(delta);
-        _navigationService.SetStatusMessage($"{_navigationService.SpeedReadWpm} WPM");
+        _navigationService.Announce(
+            "▶",
+            $"{_navigationService.SpeedReadWpm} WPM",
+            ttl: TimeSpan.FromSeconds(1.5),
+            shortText: $"▶{_navigationService.SpeedReadWpm}");
         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
     }
 

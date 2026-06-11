@@ -73,8 +73,16 @@ public record NavigationContext
 
     /// <summary>
     /// Transient status message displayed for one render cycle (e.g., theme name after cycling).
+    /// Back-compat plain-text view of <see cref="ActiveAnnouncement"/>.
     /// </summary>
     public string? StatusMessage { get; init; }
+
+    /// <summary>
+    /// The active transient announcement (workspace-wef6.4): state-change
+    /// feedback with key hints, rendered in the status line's Transient
+    /// channel until its TTL expires. Null when nothing is active.
+    /// </summary>
+    public StatusAnnouncement? ActiveAnnouncement { get; init; }
 
     /// <summary>
     /// Whether the current page was served from the cache.

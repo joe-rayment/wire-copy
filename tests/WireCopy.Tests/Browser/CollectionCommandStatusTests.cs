@@ -92,7 +92,7 @@ public class CollectionCommandStatusTests
     }
 
     [Fact]
-    public async Task HandleSaveToCollection_Success_FiresSuccessToast()
+    public async Task HandleSaveToCollection_Success_AnnouncesWithFollowUpKey()
     {
         SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
         _collectionService.SaveToReadingListAsync(
@@ -101,11 +101,16 @@ public class CollectionCommandStatusTests
 
         await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
 
-        _navService.CurrentContext.ActiveToast.Should().NotBeNull(
-            "successful save fires a toast for visual feedback");
-        _navService.CurrentContext.ActiveToast!.Type.Should().Be(ToastType.Success);
-        _navService.CurrentContext.ActiveToast!.Message.Should().Be("Saved to Reading List");
-        _navService.CurrentContext.ActiveToast!.Detail.Should().Be("My Article");
+        // workspace-wef6.4: successful saves route through the Transient
+        // channel ("✓ Saved: … — c:list"); toasts are reserved for
+        // modal-worthy results (errors with detail, layout saved).
+        _navService.CurrentContext.ActiveToast.Should().BeNull(
+            "success feedback is a transient announcement, not a toast");
+        var announcement = _navService.CurrentContext.ActiveAnnouncement;
+        announcement.Should().NotBeNull();
+        announcement!.Glyph.Should().Be("✓");
+        announcement.Text.Should().Be("Saved: My Article");
+        announcement.Keys.Should().ContainSingle(k => k.Key == "c" && k.Action == "list");
     }
 
     [Fact]
@@ -139,10 +144,11 @@ public class CollectionCommandStatusTests
     }
 
     [Fact]
-    public async Task HandleSaveToCollection_DisableAnimations_StillFiresToast()
+    public async Task HandleSaveToCollection_DisableAnimations_StillAnnounces()
     {
-        // Build a fresh context with DisableAnimations=true to verify the toast
-        // path is unaffected (it's not an animation) while the row flash is skipped.
+        // Build a fresh context with DisableAnimations=true to verify the
+        // feedback path is unaffected (it's not an animation) while the row
+        // flash is skipped.
         var disabledCtx = BuildContextWithAnimationsDisabled();
 
         SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article", disabledCtx.NavService);
@@ -152,9 +158,9 @@ public class CollectionCommandStatusTests
 
         await CollectionCommandHandler.HandleSaveToCollection(disabledCtx.Ctx, _options, CancellationToken.None);
 
-        disabledCtx.NavService.CurrentContext.ActiveToast.Should().NotBeNull(
-            "toast still fires even when animations are disabled");
-        disabledCtx.NavService.CurrentContext.ActiveToast!.Type.Should().Be(ToastType.Success);
+        disabledCtx.NavService.CurrentContext.ActiveAnnouncement.Should().NotBeNull(
+            "the save announcement still fires even when animations are disabled");
+        disabledCtx.NavService.CurrentContext.ActiveAnnouncement!.Text.Should().Be("Saved: My Article");
         disabledCtx.Ctx.DisableAnimations.Should().BeTrue();
     }
 
@@ -230,7 +236,7 @@ public class CollectionCommandStatusTests
 
         await CollectionCommandHandler.HandleSaveAllToReadingList(_ctx, _options, CancellationToken.None);
 
-        _lastStatusMessage.Should().Be("Saved 3 links to Reading List");
+        _lastStatusMessage.Should().Be("Saved (3)");
     }
 
     #endregion

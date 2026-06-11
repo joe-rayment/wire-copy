@@ -375,7 +375,7 @@ public class ViewCommandHandlerTests
 
         await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 70");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 70");
     }
 
     [Fact]
@@ -385,7 +385,7 @@ public class ViewCommandHandlerTests
 
         await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 50");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 50");
     }
 
     [Fact]
@@ -395,7 +395,7 @@ public class ViewCommandHandlerTests
 
         await ViewCommandHandler.HandleResetWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width: 60");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 60");
         _navigationService.CurrentContext.StatusMessage.Should().Contain("default");
     }
 

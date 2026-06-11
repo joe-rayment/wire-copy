@@ -27,9 +27,10 @@ public class NavigationService : INavigationService
     private int _scrollOffset;
     private string? _searchQuery;
     private int _searchMatchIndex;
-    private string? _statusMessage;
-    private DateTime? _statusMessageSetAt;
-    private TimeSpan _statusMessageDuration = StatusMessageDuration;
+    private StatusAnnouncement? _announcement;
+    private DateTime? _announcementSetAt;
+    private TimeSpan _announcementTtl = StatusMessageDuration;
+    private readonly TimeProvider _clock;
     private bool _isFromCache;
     private DateTime? _cachedAt;
     private bool _isAiHierarchy;
@@ -48,9 +49,10 @@ public class NavigationService : INavigationService
     private readonly CollectionNavigationState _collectionState;
     private readonly LauncherNavigationState _launcherState;
 
-    public NavigationService(ILogger<NavigationService> logger)
+    public NavigationService(ILogger<NavigationService> logger, TimeProvider? clock = null)
     {
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
         _collectionState = new CollectionNavigationState(logger);
         _launcherState = new LauncherNavigationState(logger);
     }
@@ -76,7 +78,8 @@ public class NavigationService : INavigationService
         LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
         SearchQuery = _searchQuery,
         SearchMatchIndex = _searchMatchIndex,
-        StatusMessage = GetActiveStatusMessage(),
+        StatusMessage = GetActiveAnnouncement()?.Text,
+        ActiveAnnouncement = GetActiveAnnouncement(),
         IsFromCache = _isFromCache,
         CachedAt = _cachedAt,
         IsAiHierarchy = _isAiHierarchy,
@@ -258,13 +261,43 @@ public class NavigationService : INavigationService
     }
 
     /// <summary>
+    /// workspace-wef6.4: announces a state change into the status line's
+    /// Transient channel — glyph + copy + the keys that control the new state
+    /// ("▶ Speed reading 350 WPM — &lt;:slower &gt;:faster f:stop"). The
+    /// announcement survives every re-render until its TTL elapses
+    /// (clock-based; the render-count toast bug class cannot recur here).
+    /// </summary>
+    /// <param name="glyph">Leading glyph from the app's glyph language (⏸ ▶ ✓ ⚡ ⇉), or null.</param>
+    /// <param name="text">The announcement copy.</param>
+    /// <param name="keys">Keys controlling the announced state, or null.</param>
+    /// <param name="ttl">Time to live; defaults to 3 seconds.</param>
+    /// <param name="shortText">Compact fallback for squeezed lines (e.g. "▶350").</param>
+    public void Announce(
+        string? glyph,
+        string text,
+        IReadOnlyList<StatusKeyHint>? keys = null,
+        TimeSpan? ttl = null,
+        string? shortText = null)
+    {
+        _announcement = new StatusAnnouncement
+        {
+            Glyph = glyph,
+            Text = text,
+            Keys = keys ?? Array.Empty<StatusKeyHint>(),
+            ShortText = shortText,
+        };
+        _announcementSetAt = _clock.GetUtcNow().UtcDateTime;
+        _announcementTtl = ttl ?? StatusMessageDuration;
+    }
+
+    /// <summary>
     /// Sets a status message that auto-expires after a few seconds.
+    /// workspace-wef6.4: shim over <see cref="Announce"/> — the ~200 existing
+    /// call sites keep working and route into the Transient channel.
     /// </summary>
     public void SetStatusMessage(string message)
     {
-        _statusMessage = message;
-        _statusMessageSetAt = DateTime.UtcNow;
-        _statusMessageDuration = StatusMessageDuration;
+        Announce(glyph: null, text: message);
     }
 
     /// <summary>
@@ -272,18 +305,16 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SetStatusMessage(string message, TimeSpan duration)
     {
-        _statusMessage = message;
-        _statusMessageSetAt = DateTime.UtcNow;
-        _statusMessageDuration = duration;
+        Announce(glyph: null, text: message, ttl: duration);
     }
 
     /// <summary>
-    /// Clears the status message immediately.
+    /// Clears the status message / announcement immediately.
     /// </summary>
     public void ClearStatusMessage()
     {
-        _statusMessage = null;
-        _statusMessageSetAt = null;
+        _announcement = null;
+        _announcementSetAt = null;
     }
 
     /// <summary>
@@ -732,21 +763,21 @@ public class NavigationService : INavigationService
         _originalTree = null;
     }
 
-    private string? GetActiveStatusMessage()
+    private StatusAnnouncement? GetActiveAnnouncement()
     {
-        if (_statusMessage == null || _statusMessageSetAt == null)
+        if (_announcement == null || _announcementSetAt == null)
         {
             return null;
         }
 
-        if (DateTime.UtcNow - _statusMessageSetAt.Value > _statusMessageDuration)
+        if (_clock.GetUtcNow().UtcDateTime - _announcementSetAt.Value > _announcementTtl)
         {
-            _statusMessage = null;
-            _statusMessageSetAt = null;
+            _announcement = null;
+            _announcementSetAt = null;
             return null;
         }
 
-        return _statusMessage;
+        return _announcement;
     }
 
     private record struct HistoryEntry(Page Page, ViewMode ViewMode);

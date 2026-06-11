@@ -460,9 +460,10 @@ internal class StatusBarRenderer
         // ---- Transient channel: the active status message / announcement ----
         // TTL expiry is owned by NavigationService (clock-based), so presence
         // here means "still active" \u2014 the composer guarantees it isn't dropped.
-        if (!string.IsNullOrEmpty(context.StatusMessage))
+        var transient = BuildTransientItem(context);
+        if (transient != null)
         {
-            items.Add(StatusItem.Text(StatusChannel.Transient, StatusStyle.Prompt, context.StatusMessage));
+            items.Add(transient);
         }
 
         // ---- Activity channel: prefetch in flight ----
@@ -581,6 +582,64 @@ internal class StatusBarRenderer
         }
 
         return items;
+    }
+
+    /// <summary>
+    /// workspace-wef6.4: the Transient item. A rich announcement renders
+    /// glyph + copy + key hints ("\u25b6 Speed reading 350 WPM \u2014 &lt;:slower
+    /// &gt;:faster f:stop"), degrading to glyph + copy, then to its compact
+    /// short form ("\u25b6350"). Plain status messages (the SetStatusMessage shim)
+    /// render as before.
+    /// </summary>
+    private static StatusItem? BuildTransientItem(NavigationContext context)
+    {
+        var announcement = context.ActiveAnnouncement;
+        if (announcement == null)
+        {
+            return string.IsNullOrEmpty(context.StatusMessage)
+                ? null
+                : StatusItem.Text(StatusChannel.Transient, StatusStyle.Prompt, context.StatusMessage);
+        }
+
+        var glyphPrefix = string.IsNullOrEmpty(announcement.Glyph) ? string.Empty : $"{announcement.Glyph} ";
+        var baseVariant = new List<StatusSegment>
+        {
+            new($"{glyphPrefix}{announcement.Text}", StatusStyle.Prompt),
+        };
+
+        var variants = new List<StatusSegment[]>();
+        if (announcement.Keys.Count > 0)
+        {
+            var withKeys = new List<StatusSegment>(baseVariant)
+            {
+                new(" \u2014 ", StatusStyle.Dim),
+            };
+            for (var i = 0; i < announcement.Keys.Count; i++)
+            {
+                if (i > 0)
+                {
+                    withKeys.Add(new StatusSegment(" ", StatusStyle.Dim));
+                }
+
+                withKeys.Add(new StatusSegment(announcement.Keys[i].Key, StatusStyle.Accent));
+                withKeys.Add(new StatusSegment($":{announcement.Keys[i].Action}", StatusStyle.Dim));
+            }
+
+            variants.Add(withKeys.ToArray());
+        }
+
+        variants.Add(baseVariant.ToArray());
+
+        if (!string.IsNullOrEmpty(announcement.ShortText))
+        {
+            variants.Add(new[] { new StatusSegment(announcement.ShortText, StatusStyle.Prompt) });
+        }
+
+        return new StatusItem
+        {
+            Channel = StatusChannel.Transient,
+            Variants = variants,
+        };
     }
 
     /// <summary>
@@ -811,7 +870,17 @@ internal class StatusBarRenderer
             return null;
         }
 
-        var tiers = GetHintTiers(mode, context, preloadDetailVisible);
+        // The trailing help slot always shows "?:help" — strip the ? entry
+        // from the tiers so the line never teaches the same key twice.
+        var tiers = GetHintTiers(mode, context, preloadDetailVisible)
+            .Select(tier => tier.Where(h => h.Key != "?").ToArray())
+            .Where(tier => tier.Length > 0)
+            .ToArray();
+        if (tiers.Length == 0)
+        {
+            return null;
+        }
+
         return new StatusItem
         {
             Channel = StatusChannel.Hint,

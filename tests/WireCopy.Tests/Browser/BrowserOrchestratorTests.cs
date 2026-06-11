@@ -679,7 +679,7 @@ public class BrowserOrchestratorNavigationTests
         await _sut.RunAsync("https://example.com");
 
         // Assert - DecreaseWidth directly adjusts width in reader mode
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width:");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width");
     }
 
     [Fact]

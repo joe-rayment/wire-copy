@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Browser.UI.Components;
@@ -47,10 +48,14 @@ internal static class CollectionCommandHandler
                     await service.SaveAllToReadingListAsync(links, ct).ConfigureAwait(false);
                     tree.ClearSelection();
                     ctx.Logger.LogInformation("Saved {Count} items to Reading List", links.Count);
-                    ctx.NavigationService.SetStatusMessage($"Saved {links.Count} items to Reading List");
-                    ctx.NavigationService.ShowToast(
-                        ToastType.Success,
-                        $"Saved {links.Count} to Reading List");
+
+                    // workspace-wef6.4: success feedback is a transient with its
+                    // follow-up key; toasts are reserved for modal-worthy results.
+                    ctx.NavigationService.Announce(
+                        "✓",
+                        $"Saved ({links.Count})",
+                        new[] { new StatusKeyHint("c", "list") },
+                        shortText: $"✓ {links.Count}");
                 }
                 catch (Exception ex)
                 {
@@ -82,11 +87,11 @@ internal static class CollectionCommandHandler
                         await service.SaveToReadingListAsync(
                             saveNode.Link.Url, saveNode.Link.DisplayText, ct).ConfigureAwait(false);
                         ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
-                        ctx.NavigationService.SetStatusMessage($"Saved: {saveNode.Link.DisplayText}");
-                        ctx.NavigationService.ShowToast(
-                            ToastType.Success,
-                            "Saved to Reading List",
-                            TruncateForToast(saveNode.Link.DisplayText));
+                        ctx.NavigationService.Announce(
+                            "✓",
+                            $"Saved: {saveNode.Link.DisplayText}",
+                            new[] { new StatusKeyHint("c", "list") },
+                            shortText: "✓ saved");
                     }
                     catch (Exception ex)
                     {
@@ -117,11 +122,11 @@ internal static class CollectionCommandHandler
                     var service = ctx.CreateCollectionService(scope);
                     await service.SaveToReadingListAsync(url, title, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved to Reading List from reader: {Title}", title);
-                    ctx.NavigationService.SetStatusMessage($"Saved: {title}");
-                    ctx.NavigationService.ShowToast(
-                        ToastType.Success,
-                        "Saved to Reading List",
-                        TruncateForToast(title));
+                    ctx.NavigationService.Announce(
+                        "✓",
+                        $"Saved: {title}",
+                        new[] { new StatusKeyHint("c", "list") },
+                        shortText: "✓ saved");
                 }
                 catch (Exception ex)
                 {
@@ -254,11 +259,11 @@ internal static class CollectionCommandHandler
                     var service = ctx.CreateCollectionService(scope);
                     await service.SaveAllToReadingListAsync(visibleNodes, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
-                    ctx.NavigationService.SetStatusMessage(
-                        $"Saved {visibleNodes.Count} links to Reading List");
-                    ctx.NavigationService.ShowToast(
-                        ToastType.Success,
-                        $"Saved {visibleNodes.Count} to Reading List");
+                    ctx.NavigationService.Announce(
+                        "✓",
+                        $"Saved ({visibleNodes.Count})",
+                        new[] { new StatusKeyHint("c", "list") },
+                        shortText: $"✓ {visibleNodes.Count}");
                 }
                 catch (Exception ex)
                 {
@@ -563,20 +568,6 @@ internal static class CollectionCommandHandler
 
         var current = ctx.NavigationService.CurrentPage?.LinkTree?.GetSelectedNode();
         return current != null && current.Id == savedNodeId.Value;
-    }
-
-    /// <summary>
-    /// Truncates a title to fit comfortably in a toast detail line.
-    /// </summary>
-    private static string TruncateForToast(string text)
-    {
-        const int maxLength = 48;
-        if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
-        {
-            return text;
-        }
-
-        return text.Substring(0, maxLength - 1) + "…";
     }
 
     private static int IndexOfItemById(IReadOnlyList<Domain.Entities.Collections.CollectionItem> items, Guid id)

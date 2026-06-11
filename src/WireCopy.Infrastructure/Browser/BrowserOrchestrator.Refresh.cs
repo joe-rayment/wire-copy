@@ -45,6 +45,10 @@ public partial class BrowserOrchestrator
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
 
+            // workspace-wef6.4: the loading screen covers the fetch itself,
+            // so announce the outcome once the fresh page paints.
+            _navigationService.Announce("✓", "Refreshed — cache bypassed", shortText: "✓ refreshed");
+
             await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)

@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -59,7 +60,15 @@ internal static class ViewCommandHandler
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current + WidthStep, MinContentWidth, MaxContentWidth);
-        ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
+        ctx.NavigationService.Announce(
+            glyph: null,
+            $"Width {ctx.ContentWidthOverride}",
+            new[]
+            {
+                new StatusKeyHint("[", "narrow"),
+                new StatusKeyHint("]", "widen"),
+                new StatusKeyHint("0", "reset"),
+            });
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
@@ -69,7 +78,15 @@ internal static class ViewCommandHandler
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
         ctx.ContentWidthOverride = Math.Clamp(current - WidthStep, MinContentWidth, MaxContentWidth);
-        ctx.NavigationService.SetStatusMessage($"Width: {ctx.ContentWidthOverride}");
+        ctx.NavigationService.Announce(
+            glyph: null,
+            $"Width {ctx.ContentWidthOverride}",
+            new[]
+            {
+                new StatusKeyHint("[", "narrow"),
+                new StatusKeyHint("]", "widen"),
+                new StatusKeyHint("0", "reset"),
+            });
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
@@ -78,7 +95,15 @@ internal static class ViewCommandHandler
     public static async Task HandleResetWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.ContentWidthOverride = null;
-        ctx.NavigationService.SetStatusMessage($"Width: {DefaultContentWidth} (default)");
+        ctx.NavigationService.Announce(
+            glyph: null,
+            $"Width {DefaultContentWidth} (default)",
+            new[]
+            {
+                new StatusKeyHint("[", "narrow"),
+                new StatusKeyHint("]", "widen"),
+                new StatusKeyHint("0", "reset"),
+            });
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
@@ -94,7 +119,10 @@ internal static class ViewCommandHandler
     public static async Task HandleCycleTheme(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.ThemeProvider.CycleTheme();
-        ctx.NavigationService.SetStatusMessage(ctx.ThemeProvider.CurrentTheme.ToString());
+        ctx.NavigationService.Announce(
+            glyph: null,
+            $"Theme: {ctx.ThemeProvider.CurrentTheme}",
+            new[] { new StatusKeyHint("Ctrl+p", "next") });
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
