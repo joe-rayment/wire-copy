@@ -20,6 +20,12 @@ namespace WireCopy.Infrastructure.Browser.UI;
 /// </summary>
 public class TerminalPageRenderer : IPageRenderer
 {
+    /// <summary>
+    /// workspace-u5vu: the pointer shown when Shift+I was likely a reach for
+    /// the layout setup wizard (which lives on Ctrl+L / preview-mode Shift+I).
+    /// </summary>
+    public const string LayoutSetupPointer = "Looking for layout setup? Esc, then Ctrl+l.";
+
     private const string Reset = "\x1b[0m";
     private const int MinBoxWidth = 30;
 
@@ -331,7 +337,7 @@ public class TerminalPageRenderer : IPageRenderer
     }
 #pragma warning restore SA1204
 
-    public void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction)
+    public void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction, bool layoutSetupHint = false)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
@@ -350,6 +356,13 @@ public class TerminalPageRenderer : IPageRenderer
                 "Enter:accept  Esc:cancel"),
             CenteredBoxLine.Empty,
         };
+
+        if (layoutSetupHint)
+        {
+            lines.Insert(
+                lines.Count - 1,
+                new CenteredBoxLine($"{p.GetDimFg().AnsiFg}{LayoutSetupPointer}{Reset}", LayoutSetupPointer));
+        }
 
         RenderCenteredBox(lines, p.GetMutedFg());
     }

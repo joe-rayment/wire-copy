@@ -181,7 +181,12 @@ public partial class BrowserOrchestrator
             // pass the surviving detection verdict (null when the headed load
             // succeeded with no gate, or after the poll auto-resolved one) so
             // the screen never claims a captcha exists on a healthy page.
-            _renderer.RenderInteractiveRefresh(url, loadResult.RequiredAction);
+            // workspace-u5vu: on a link-list page outside preview mode, Shift+I
+            // is often a reach for the layout wizard — point at Ctrl+L.
+            var layoutSetupHint = !_navigationService.IsInPreviewMode
+                && _navigationService.CurrentContext.ViewMode == ViewMode.Hierarchical
+                && _navigationService.CurrentPage?.Classification == PageClassification.LinkList;
+            _renderer.RenderInteractiveRefresh(url, loadResult.RequiredAction, layoutSetupHint);
 
             var input = await _inputHandler.WaitForInputAsync(cancellationToken).ConfigureAwait(false);
             if (input.Type == CommandType.GoBack)

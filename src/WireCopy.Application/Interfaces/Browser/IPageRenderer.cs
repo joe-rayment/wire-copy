@@ -77,7 +77,13 @@ public interface IPageRenderer
     /// Typed detection verdict from the headed load / challenge poll, or null
     /// when the page loaded cleanly with no human action detected.
     /// </param>
-    void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction);
+    /// <param name="layoutSetupHint">
+    /// workspace-u5vu: true when the user pressed Shift+I on a link-list page
+    /// outside preview mode — the context where they likely reached for the
+    /// layout setup wizard (preview-mode Shift+I) — so the prompt points them
+    /// at Ctrl+L.
+    /// </param>
+    void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction, bool layoutSetupHint = false);
 
     /// <summary>
     /// Renders a message telling the user to complete login in the browser window.

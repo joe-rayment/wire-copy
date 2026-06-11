@@ -55,4 +55,14 @@ public class InteractiveRefreshCopyTests
 
         body.Should().Contain("required action");
     }
+
+    [Fact]
+    public void LayoutSetupPointer_NamesCtrlL_AndFitsTheBox()
+    {
+        // workspace-u5vu: Shift+I on a link-list page outside preview mode is
+        // often a reach for the layout wizard — the prompt points at Ctrl+L.
+        TerminalPageRenderer.LayoutSetupPointer.Should().Contain("Ctrl+l");
+        TerminalPageRenderer.LayoutSetupPointer.Length.Should().BeLessThanOrEqualTo(54,
+            "the pointer must fit the centered box content width at 80 cols");
+    }
 }
