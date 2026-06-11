@@ -70,18 +70,6 @@ public partial class BrowserOrchestrator
     {
         _progressDirty = true;
 
-        // Skip animations if disabled or not in a view that shows cache progress
-        if (_browserConfig.DisableAnimations)
-        {
-            return;
-        }
-
-        var viewMode = _navigationService.CurrentContext.ViewMode;
-        if (viewMode != ViewMode.Hierarchical && viewMode != ViewMode.CollectionItems)
-        {
-            return;
-        }
-
         try
         {
             var progress = _preloadService.GetProgress();
@@ -91,6 +79,26 @@ public partial class BrowserOrchestrator
             _prevIsComplete = progress.IsComplete;
 
             if (progress.TotalCacheableLinks <= 0)
+            {
+                return;
+            }
+
+            // workspace-wef6.2: cache-warm completion announces once as a
+            // transient ("✓ all N cached") and then the bar stays silent —
+            // the old "✓ cached" badge sat in the chrome forever post-warm.
+            if (progress.IsComplete && !prevComplete && progress.CachedCount > 0)
+            {
+                _navigationService.SetStatusMessage($"✓ all {progress.CachedCount} cached");
+            }
+
+            // Skip animations if disabled or not in a view that shows cache progress
+            if (_browserConfig.DisableAnimations)
+            {
+                return;
+            }
+
+            var viewMode = _navigationService.CurrentContext.ViewMode;
+            if (viewMode != ViewMode.Hierarchical && viewMode != ViewMode.CollectionItems)
             {
                 return;
             }

@@ -75,6 +75,28 @@ internal static class Indicators
     }
 
     /// <summary>
+    /// Plain-text parts of the eighth-block bar (workspace-wef6): the filled
+    /// run (full blocks + partial block) and the empty track run. Lets the
+    /// status-line composer measure and style the bar as two segments instead
+    /// of one pre-colored ANSI string.
+    /// </summary>
+    internal static (string Filled, string Empty) EighthBlockBarParts(double fraction, int barLength)
+    {
+        fraction = Math.Clamp(fraction, 0.0, 1.0);
+        var totalEighths = fraction * barLength * 8;
+        var fullBlocks = (int)(totalEighths / 8);
+        var remainder = (int)(totalEighths % 8);
+
+        if (remainder > 0 && fullBlocks < barLength)
+        {
+            var filled = new string(EighthBlocks[0], fullBlocks) + EighthBlocks[8 - remainder];
+            return (filled, new string(EmptyTrack, Math.Max(0, barLength - fullBlocks - 1)));
+        }
+
+        return (new string(EighthBlocks[0], fullBlocks), new string(EmptyTrack, Math.Max(0, barLength - fullBlocks)));
+    }
+
+    /// <summary>
     /// Renders a smooth eighth-block progress bar for a given fraction and bar length.
     /// The empty portion renders as ▱ (U+25B1) characters in the empty color.
     /// </summary>

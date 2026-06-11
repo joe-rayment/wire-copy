@@ -124,7 +124,8 @@ public class StatusBarRendererReaderMessageTests
         output.Should().Contain("325 WPM",
             "a full-height article must leave room for the status content line — " +
             "the end-of-content rule is part of the reader row budget (workspace-w7oe)");
-        output.Should().Contain("Reader",
-            "the mode badge lives on the same status content line and vanishes with it");
+        output.Should().Contain(":help",
+            "the help affordance lives on the same status content line and vanishes with it " +
+            "(the ReaderView mode badge itself was dropped in workspace-wef6.2)");
     }
 }

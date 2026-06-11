@@ -39,4 +39,10 @@ internal enum StatusStyle
     Warning,
     Prompt,
     Success,
+
+    /// <summary>Muted track color (progress-bar empty portion).</summary>
+    Muted,
+
+    /// <summary>The status-bar mode badge token (StatusBarTextFg).</summary>
+    ModeBadge,
 }

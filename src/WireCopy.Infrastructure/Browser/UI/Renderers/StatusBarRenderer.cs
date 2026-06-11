@@ -17,9 +17,13 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 internal class StatusBarRenderer
 {
     private const string Reset = "\x1b[0m";
+
     private static readonly char[] SpinnerFrames = ['\u280B', '\u2819', '\u2839', '\u2838', '\u283C', '\u2834', '\u2826', '\u2827', '\u2807', '\u280F'];
+
     private static int _spinnerFrame;
+
     private readonly RenderHelpers _helpers;
+
     private readonly IThemeProvider _themeProvider;
 
     // workspace-vkhr Phase D: optional reference to the singleton background
@@ -58,82 +62,23 @@ internal class StatusBarRenderer
         HumanActionRequired? requiredAction = null,
         bool browserDocked = false)
     {
-        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        _ = readerContentWidth; // workspace-wef6.2: W badge dropped \u2014 width announces transiently on [/] instead.
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
-        var maxWidth = width - 1;
+        var model = ComposeStatusLine(
+            context,
+            mode,
+            width,
+            cacheProgress,
+            cacheUsagePercent,
+            readerTotalLines,
+            readerViewportHeight,
+            layoutVariantLabel,
+            missingCookieDomains,
+            requiredAction,
+            browserDocked,
+            _podcastJobManager);
 
-        // Build components
-        var back = context.CanGoBack ? $"{p.SecondaryText.AnsiFg}[\u2190]{Reset} " : string.Empty;
-        var backWidth = context.CanGoBack ? 5 : 0;
-
-        var modeBadge = FormatModeBadge(mode, p);
-        var modeBadgeWidth = GetShortModeLabel(mode).Length + 2; // +2 for space padding
-
-        var left = FormatLeftContent(context, mode, p, readerTotalLines, readerContentWidth, readerViewportHeight);
-        var leftWidth = RenderHelpers.GetDisplayWidth(left);
-
-        var right = FormatRightContent(context, mode, p, cacheProgress, cacheUsagePercent, layoutVariantLabel, missingCookieDomains, requiredAction, browserDocked, _podcastJobManager);
-        var rightWidth = RenderHelpers.GetDisplayWidth(right);
-
-        // Responsive help hint: show preview controls or standard help
-        string helpHint;
-        int helpWidth;
-        if (context.IsInPreviewMode)
-        {
-            helpHint = $" {p.GetAccentFg().AnsiFg}\u25c0/\u25b6{Reset}{p.GetDimFg().AnsiFg}:cycle{Reset} {p.GetAccentFg().AnsiFg}Enter{Reset}{p.GetDimFg().AnsiFg}:save{Reset} {p.GetAccentFg().AnsiFg}Esc{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}";
-            helpWidth = 30;
-        }
-        else if (width >= 60)
-        {
-            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}{p.GetDimFg().AnsiFg}:help{Reset}";
-            helpWidth = 7;
-        }
-        else
-        {
-            helpHint = $" {p.GetAccentFg().AnsiFg}?{Reset}";
-            helpWidth = 2;
-        }
-
-        // Layout: [back][mode] [left]    [right] [?:help]
-        var fixedWidth = backWidth + modeBadgeWidth + 1 + helpWidth; // +1 space after mode
-        var contentWidth = maxWidth - fixedWidth;
-
-        // At narrow widths (<60), drop right-side badges entirely
-        if (width < 60 && rightWidth > contentWidth - 5)
-        {
-            right = string.Empty;
-            rightWidth = 0;
-        }
-
-        // If right + left don't fit, truncate left first
-        if (leftWidth + rightWidth > contentWidth)
-        {
-            var maxLeft = contentWidth - rightWidth;
-            if (maxLeft > 3)
-            {
-                left = RenderHelpers.TruncateText(left, maxLeft);
-                leftWidth = maxLeft;
-            }
-            else
-            {
-                left = string.Empty;
-                leftWidth = 0;
-            }
-        }
-
-        var padding = Math.Max(1, contentWidth - leftWidth - rightWidth);
-        var line = $"{back}{modeBadge} {left}{new string(' ', padding)}{right}{helpHint}";
-
-        if (RenderHelpers.GetDisplayWidth(line) > maxWidth)
-        {
-            line = RenderHelpers.TruncateText(line, maxWidth);
-        }
-
-        // Line 1: full-width dimmed separator
-        _helpers.WriteLine(Components.Borders.DimmedRule(p, width));
-
-        // Line 2: status bar content
-        _helpers.WriteLine(line);
+        RenderStatusLine(model);
     }
 
     /// <summary>
@@ -147,6 +92,62 @@ internal class StatusBarRenderer
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         _helpers.WriteLine(Components.Borders.DimmedRule(p, model.Width));
         _helpers.WriteLine(FormatStatusLine(model, p));
+    }
+
+    /// <summary>
+    /// workspace-wef6.2: builds the channelized status items and composes them
+    /// for the given width. Static and pure (modulo the spinner frame counter)
+    /// so tests can assert the model without console capture.
+    /// </summary>
+    internal static StatusLineModel ComposeStatusLine(
+        NavigationContext context,
+        ViewMode mode,
+        int width,
+        PreloadProgress? cacheProgress = null,
+        double cacheUsagePercent = 0,
+        int readerTotalLines = 0,
+        int readerViewportHeight = 0,
+        string? layoutVariantLabel = null,
+        IReadOnlyList<string>? missingCookieDomains = null,
+        HumanActionRequired? requiredAction = null,
+        bool browserDocked = false,
+        IPodcastBackgroundJobManager? podcastJobManager = null,
+        TimeProvider? clock = null)
+    {
+        var left = BuildLeftItems(context, mode, readerTotalLines, readerViewportHeight);
+        var right = BuildRightItems(
+            context,
+            mode,
+            cacheProgress,
+            cacheUsagePercent,
+            layoutVariantLabel,
+            missingCookieDomains,
+            requiredAction,
+            browserDocked,
+            podcastJobManager);
+        var hints = BuildHintItem(context, mode);
+        var help = BuildHelpItem(context);
+
+        return new StatusComposer(clock).Compose(width, left, right, hints, help);
+    }
+
+    /// <summary>
+    /// "42% \u00b7 ~6 min left" \u2014 minutes from the page's word count and the active
+    /// reading speed (speed-read WPM when running, ~230 WPM prose pace
+    /// otherwise). Falls back to the bare percent when no word count exists.
+    /// </summary>
+    internal static string FormatReaderPosition(NavigationContext context, int progressPercent)
+    {
+        progressPercent = Math.Clamp(progressPercent, 0, 100);
+        var wordCount = context.CurrentPage?.ReadableContent?.WordCount ?? 0;
+        if (wordCount <= 0 || progressPercent >= 100)
+        {
+            return $"{progressPercent}%";
+        }
+
+        var wpm = context.IsSpeedReadActive ? Math.Max(100, context.SpeedReadWpm) : 230;
+        var minutesLeft = (int)Math.Ceiling(wordCount * ((100 - progressPercent) / 100.0) / wpm);
+        return $"{progressPercent}% \u00b7 ~{minutesLeft} min left";
     }
 
     /// <summary>
@@ -363,253 +364,367 @@ internal class StatusBarRenderer
                $"{p.GetAccentFg().AnsiFg}Shift+P{Reset}{p.GetDimFg().AnsiFg}:restore{Reset}";
     }
 
-    private static string FormatModeBadge(ViewMode mode, ThemePalette p)
-    {
-        var label = GetShortModeLabel(mode);
-        return $"{p.StatusBarTextFg.AnsiFg}{label}{Reset}";
-    }
-
-    private static string GetShortModeLabel(ViewMode mode)
-    {
-        return mode switch
-        {
-            ViewMode.Hierarchical => "LinkView",
-            ViewMode.Readable => "ReaderView",
-            ViewMode.CollectionList => "Collections",
-            ViewMode.CollectionItems => "ReadingList",
-            ViewMode.Launcher => throw new InvalidOperationException("StatusBar is not rendered for the launcher"),
-            _ => "Browser"
-        };
-    }
-
-    private static string FormatLeftContent(
+    private static List<StatusItem> BuildLeftItems(
         NavigationContext context,
         ViewMode mode,
-        ThemePalette p,
         int readerTotalLines,
-        int readerContentWidth,
         int readerViewportHeight)
     {
-        // Reader mode: show line position, width, and progress
-        if (mode == ViewMode.Readable && readerTotalLines > 0)
-        {
-            var progress = readerTotalLines > 0
-                ? (int)((float)Math.Min(context.ScrollOffset + readerViewportHeight, readerTotalLines) / readerTotalLines * 100)
-                : 100;
+        var items = new List<StatusItem>();
 
-            var lineInfo = $"L{context.ScrollOffset + 1}/{readerTotalLines}";
-            var widthInfo = $"W{readerContentWidth}";
-            return $"{p.SecondaryText.AnsiFg}{lineInfo} {widthInfo} {progress}%{Reset}";
+        if (context.CanGoBack)
+        {
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, "[\u2190]"));
         }
 
-        // Collection items: show collection name
+        // workspace-wef6.2: the mode badge only renders for the collection
+        // views, where the surface isn't visually self-evident. Link view and
+        // reader view are obvious at a glance \u2014 mode switches announce
+        // transiently instead of occupying permanent chrome.
+        if (mode is ViewMode.CollectionList or ViewMode.CollectionItems)
+        {
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.ModeBadge, GetModeLabel(mode)));
+        }
+
+        // Reader: "42% \u00b7 ~6 min left" replaces the L12/348 W60 42% trivia.
+        if (mode == ViewMode.Readable && readerTotalLines > 0)
+        {
+            var progress = (int)((float)Math.Min(context.ScrollOffset + readerViewportHeight, readerTotalLines) / readerTotalLines * 100);
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, FormatReaderPosition(context, progress)));
+        }
+
+        // Collection items: the active collection name.
         if (mode == ViewMode.CollectionItems)
         {
             var name = context.CurrentPage?.Metadata?.Title;
             if (!string.IsNullOrEmpty(name))
             {
-                return $"{p.SecondaryText.AnsiFg}{name}{Reset}";
+                items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, name));
             }
         }
 
-        // Show URL/domain for page views
-        var url = context.CurrentPage?.Url;
-        if (!string.IsNullOrEmpty(url))
-        {
-            var domain = GetDomain(url);
-            return $"{p.SecondaryText.AnsiFg}{domain}{Reset}";
-        }
-
-        return string.Empty;
+        // workspace-wef6.2: no domain on the left in Hierarchical \u2014 the header
+        // already shows it. The freed space goes to adaptive hints.
+        return items;
     }
 
-    private static string FormatRightContent(
+    private static List<StatusItem> BuildRightItems(
         NavigationContext context,
         ViewMode mode,
-        ThemePalette p,
         PreloadProgress? cacheProgress,
         double cacheUsagePercent,
-        string? layoutVariantLabel = null,
-        IReadOnlyList<string>? missingCookieDomains = null,
-        HumanActionRequired? requiredAction = null,
-        bool browserDocked = false,
-        IPodcastBackgroundJobManager? podcastJobManager = null)
+        string? layoutVariantLabel,
+        IReadOnlyList<string>? missingCookieDomains,
+        HumanActionRequired? requiredAction,
+        bool browserDocked,
+        IPodcastBackgroundJobManager? podcastJobManager)
     {
-        var parts = new List<string>();
+        var items = new List<StatusItem>();
 
-        // Persistent dock affordance (workspace-v7mb): while the headed browser is
-        // docked beside the terminal, always show "⇉ docked" so the side-by-side
-        // "concert" state stays visible after the transient status message fades.
-        if (browserDocked)
-        {
-            parts.Add($"{p.GetAccentFg().AnsiFg}⇉{Reset} {p.SecondaryText.AnsiFg}docked{Reset}");
-        }
-
-        // workspace-vkhr Phase D: when a podcast job is generating in the
-        // background (modal detached), surface a "🎧 Generating XX%" badge
-        // so the user remembers there's a run in flight. Rendered first so
-        // the user notices the indicator even on narrow terminals.
-        var podcastBadge = FormatPodcastBadge(podcastJobManager, p);
-        if (!string.IsNullOrEmpty(podcastBadge))
-        {
-            parts.Add(podcastBadge);
-        }
-
-        // Typed human-action badge takes precedence over the legacy cookie badge
-        // (workspace-0b9s). Format: "⏸ {verb} at {domain} · Shift+O:open" — replaces
-        // the confusing "🍪✗ nytimes.com Shift+I:login" copy that read as "something
-        // about cookies" when the actual block was a CAPTCHA / login wall / consent
-        // banner / etc.
+        // ---- Alert channel: HITL verdicts; never dropped at any width ----
         if (requiredAction != null)
         {
-            // workspace-kq4b: Generic verdicts no longer render the bare "action
-            // needed at {domain}" — that copy is ambiguous and was wrong on
-            // pages that loaded fine (Cloudflare bot-monitor false positives).
-            // Instead, lead with "uncertain interruption" + the Shift+R retry
-            // affordance so the user has a clear next step.
-            var domainText = string.IsNullOrWhiteSpace(requiredAction.Domain) ? "site" : requiredAction.Domain;
-            if (requiredAction.Variant == HumanActionVariant.Generic)
-            {
-                parts.Add(
-                    $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
-                    $"{p.SecondaryText.AnsiFg}uncertain interruption at {domainText}{Reset} " +
-                    $"{p.SecondaryText.AnsiFg}·{Reset} " +
-                    $"{p.GetAccentFg().AnsiFg}Shift+R{Reset}{p.GetDimFg().AnsiFg}:retry{Reset}");
-            }
-            else
-            {
-                var verb = GetActionVerb(requiredAction.Variant);
-                parts.Add(
-                    $"{p.GetWarningFg().AnsiFg}⏸{Reset} " +
-                    $"{p.SecondaryText.AnsiFg}{verb} at {domainText}{Reset} " +
-                    $"{p.SecondaryText.AnsiFg}·{Reset} " +
-                    $"{p.GetAccentFg().AnsiFg}Shift+O{Reset}{p.GetDimFg().AnsiFg}:open{Reset}");
-            }
+            items.Add(BuildAlertItem(requiredAction));
         }
         else if (missingCookieDomains is { Count: > 0 })
         {
-            // Legacy cookie badge — kept for backwards compat with consumers that haven't
-            // wired the typed RequiredAction signal yet.
+            // Legacy cookie badge \u2014 kept for consumers without the typed signal.
             var domainList = string.Join(",", missingCookieDomains);
-            parts.Add(
-                $"{p.PromptFg.AnsiFg}\U0001F36A✗{Reset} " +
-                $"{p.SecondaryText.AnsiFg}{domainList}{Reset} " +
-                $"{p.GetAccentFg().AnsiFg}Shift+I{Reset}{p.GetDimFg().AnsiFg}:login{Reset}");
+            items.Add(new StatusItem
+            {
+                Channel = StatusChannel.Alert,
+                Priority = 1,
+                Variants = new[]
+                {
+                    new[]
+                    {
+                        new StatusSegment("\U0001F36A\u2717 ", StatusStyle.Prompt),
+                        new StatusSegment(domainList, StatusStyle.Secondary),
+                        new StatusSegment(" ", StatusStyle.Secondary),
+                        new StatusSegment("Shift+I", StatusStyle.Accent),
+                        new StatusSegment(":login", StatusStyle.Dim),
+                    },
+                    new[]
+                    {
+                        new StatusSegment("\U0001F36A\u2717", StatusStyle.Prompt),
+                        new StatusSegment("\u00b7", StatusStyle.Secondary),
+                        new StatusSegment("Shift+I", StatusStyle.Accent),
+                    },
+                },
+            });
         }
 
-        // Search info
+        // ---- Transient channel: the active status message / announcement ----
+        // TTL expiry is owned by NavigationService (clock-based), so presence
+        // here means "still active" \u2014 the composer guarantees it isn't dropped.
+        if (!string.IsNullOrEmpty(context.StatusMessage))
+        {
+            items.Add(StatusItem.Text(StatusChannel.Transient, StatusStyle.Prompt, context.StatusMessage));
+        }
+
+        // ---- Activity channel: prefetch in flight ----
+        var activity = BuildCacheActivityItem(mode, cacheProgress);
+        if (activity != null)
+        {
+            items.Add(activity);
+        }
+
+        // ---- Ambient channel: non-default states, in stable priority order ----
+        if (browserDocked)
+        {
+            items.Add(new StatusItem
+            {
+                Channel = StatusChannel.Ambient,
+                Priority = 0,
+                Variants = new[]
+                {
+                    new[]
+                    {
+                        new StatusSegment("\u21c9", StatusStyle.Accent),
+                        new StatusSegment(" docked", StatusStyle.Secondary),
+                    },
+                    new[] { new StatusSegment("\u21c9", StatusStyle.Accent) },
+                },
+            });
+        }
+
+        var podcastItem = BuildPodcastItem(podcastJobManager);
+        if (podcastItem != null)
+        {
+            items.Add(podcastItem);
+        }
+
         if (!string.IsNullOrEmpty(context.SearchQuery))
         {
-            parts.Add($"{p.PromptFg.AnsiFg}/{context.SearchQuery}{Reset} {p.SecondaryText.AnsiFg}(n/N){Reset}");
+            items.Add(new StatusItem
+            {
+                Channel = StatusChannel.Ambient,
+                Priority = 2,
+                Variants = new[]
+                {
+                    new[]
+                    {
+                        new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt),
+                        new StatusSegment(" (n/N)", StatusStyle.Secondary),
+                    },
+                    new[] { new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt) },
+                },
+            });
         }
 
-        // Layout preview indicator (takes priority over other badges)
         if (context.IsInPreviewMode && context.PreviewLabel != null)
         {
-            parts.Add($"{p.PromptFg.AnsiFg}{context.PreviewLabel}{Reset}");
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Prompt, context.PreviewLabel, priority: 3));
         }
         else
         {
-            // Page classification badge
-            if (context.CurrentPage?.Classification == PageClassification.LinkList)
-            {
-                parts.Add($"{p.SecondaryText.AnsiFg}index{Reset}");
-            }
-
-            // AI hierarchy badge
-            if (context.IsAiHierarchy && (mode == ViewMode.Hierarchical || mode == ViewMode.Readable))
-            {
-                parts.Add($"{p.SecondaryText.AnsiFg}AI{Reset}");
-            }
-
-            // Layout chooser hint — always visible on link list pages in hierarchical view.
-            // workspace-5oe9.9: nudge "set up" until the site has an AI layout configured.
+            // workspace-wef6.2: the standalone "index" and "AI" badges fold
+            // into the Ctrl+l hint copy (:layout when an AI hierarchy exists,
+            // :set up when not) instead of separate trivia fragments.
             if (mode == ViewMode.Hierarchical &&
                 context.CurrentPage?.Classification == PageClassification.LinkList)
             {
                 var layoutHint = context.IsAiHierarchy ? ":layout" : ":set up";
-                parts.Add($"{p.GetAccentFg().AnsiFg}Ctrl+l{Reset}{p.GetDimFg().AnsiFg}{layoutHint}{Reset}");
+                items.Add(new StatusItem
+                {
+                    Channel = StatusChannel.Ambient,
+                    Priority = 4,
+                    Variants = new[]
+                    {
+                        new[]
+                        {
+                            new StatusSegment("Ctrl+l", StatusStyle.Accent),
+                            new StatusSegment(layoutHint, StatusStyle.Dim),
+                        },
+                    },
+                });
             }
 
-            // Layout variant indicator (e.g., "Grid 1/3")
             if (!string.IsNullOrEmpty(layoutVariantLabel))
             {
-                parts.Add($"{p.SecondaryText.AnsiFg}{layoutVariantLabel}{Reset}");
+                items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, layoutVariantLabel, priority: 5));
             }
         }
 
-        // Cache progress or badge
-        var cachePart = FormatCacheIndicator(context, mode, p, cacheProgress);
-        if (!string.IsNullOrEmpty(cachePart))
+        var cacheState = BuildCacheStateItem(context, mode, cacheProgress);
+        if (cacheState != null)
         {
-            parts.Add(cachePart);
+            items.Add(cacheState);
         }
 
-        // Selection count badge (persistent, replaces transient status message)
         var selCount = context.CurrentPage?.LinkTree?.SelectionCount ?? 0;
         if (selCount > 0 && mode == ViewMode.Hierarchical)
         {
-            parts.Add($"{p.PromptFg.AnsiFg}{selCount} sel{Reset}");
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Prompt, $"{selCount} sel", priority: 7));
         }
 
-        // Cache usage warning
         if (cacheUsagePercent >= 90)
         {
-            parts.Add($"{p.PromptFg.AnsiFg}cache {cacheUsagePercent:F0}%{Reset}");
+            items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Prompt, $"cache {cacheUsagePercent:F0}%", priority: 8));
         }
 
-        // Speed reading WPM indicator
         if (context.IsSpeedReadActive)
         {
-            parts.Add($"{p.PromptFg.AnsiFg}\u25b6 {context.SpeedReadWpm} WPM{Reset}");
+            items.Add(new StatusItem
+            {
+                Channel = StatusChannel.Ambient,
+                Priority = 9,
+                Variants = new[]
+                {
+                    new[] { new StatusSegment($"\u25b6 {context.SpeedReadWpm} WPM", StatusStyle.Prompt) },
+                    new[] { new StatusSegment($"\u25b6{context.SpeedReadWpm}", StatusStyle.Prompt) },
+                },
+            });
         }
 
-        // Status message
-        if (!string.IsNullOrEmpty(context.StatusMessage))
-        {
-            parts.Add($"{p.PromptFg.AnsiFg}{context.StatusMessage}{Reset}");
-        }
-
-        return parts.Count > 0 ? string.Join($" {p.SecondaryText.AnsiFg}\u00b7{Reset} ", parts) : string.Empty;
+        return items;
     }
 
-    private static string FormatCacheIndicator(NavigationContext context, ViewMode mode, ThemePalette p, PreloadProgress? progress)
+    /// <summary>
+    /// HITL alert item: long copy names the verb + domain + recovery key;
+    /// short copy keeps the glyph, verb, and key ("\u23f8 login\u00b7Shift+O").
+    /// </summary>
+    private static StatusItem BuildAlertItem(HumanActionRequired requiredAction)
     {
-        if ((mode == ViewMode.Hierarchical || mode == ViewMode.CollectionItems) && progress != null)
+        var domainText = string.IsNullOrWhiteSpace(requiredAction.Domain) ? "site" : requiredAction.Domain;
+
+        // workspace-kq4b: Generic verdicts lead with "uncertain interruption" +
+        // Shift+R retry rather than a confidently wrong claim.
+        var isGeneric = requiredAction.Variant == HumanActionVariant.Generic;
+        var verb = isGeneric ? "uncertain interruption" : GetActionVerb(requiredAction.Variant);
+        var key = isGeneric ? "Shift+R" : "Shift+O";
+        var action = isGeneric ? "retry" : "open";
+
+        return new StatusItem
+        {
+            Channel = StatusChannel.Alert,
+            Variants = new[]
+            {
+                new[]
+                {
+                    new StatusSegment("\u23f8 ", StatusStyle.Warning),
+                    new StatusSegment($"{verb} at {domainText}", StatusStyle.Secondary),
+                    new StatusSegment(" \u00b7 ", StatusStyle.Secondary),
+                    new StatusSegment(key, StatusStyle.Accent),
+                    new StatusSegment($":{action}", StatusStyle.Dim),
+                },
+                new[]
+                {
+                    new StatusSegment("\u23f8 ", StatusStyle.Warning),
+                    new StatusSegment(verb, StatusStyle.Secondary),
+                    new StatusSegment("\u00b7", StatusStyle.Secondary),
+                    new StatusSegment(key, StatusStyle.Accent),
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Activity item for an actively fetching preloader: count + eighth-block
+    /// bar + Braille spinner frame. Null when prefetch isn't running.
+    /// </summary>
+    private static StatusItem? BuildCacheActivityItem(ViewMode mode, PreloadProgress? progress)
+    {
+        if (mode is not (ViewMode.Hierarchical or ViewMode.CollectionItems)
+            || progress == null
+            || progress.TotalCacheableLinks <= 0
+            || progress.IsComplete
+            || progress.PausedByUser
+            || !progress.IsActivelyFetching)
+        {
+            return null;
+        }
+
+        var spinner = SpinnerFrames[_spinnerFrame % SpinnerFrames.Length];
+        _spinnerFrame++;
+        var (filled, empty) = Components.Indicators.EighthBlockBarParts(
+            (double)progress.CachedCount / Math.Max(1, progress.TotalCacheableLinks), 6);
+        var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
+
+        return new StatusItem
+        {
+            Channel = StatusChannel.Activity,
+            Variants = new[]
+            {
+                new[]
+                {
+                    new StatusSegment($"{count} ", StatusStyle.Secondary),
+                    new StatusSegment(filled, StatusStyle.Warning),
+                    new StatusSegment(empty, StatusStyle.Muted),
+                    new StatusSegment($" {spinner}", StatusStyle.Warning),
+                },
+                new[]
+                {
+                    new StatusSegment($"{count} ", StatusStyle.Secondary),
+                    new StatusSegment(spinner.ToString(), StatusStyle.Warning),
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Quiet ambient cache states: paused, stalled, needs-login, paywall, and
+    /// the cache-age badge. The "\u2713 cached" completion state renders nothing \u2014
+    /// completion announces itself transiently and then stays silent
+    /// (workspace-wef6.2).
+    /// </summary>
+    private static StatusItem? BuildCacheStateItem(NavigationContext context, ViewMode mode, PreloadProgress? progress)
+    {
+        if (mode is (ViewMode.Hierarchical or ViewMode.CollectionItems) && progress != null)
         {
             if (progress.TotalCacheableLinks > 0)
             {
+                var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
+
                 if (progress.IsComplete && progress.CachedCount > 0)
                 {
-                    if (progress.NeedsBrowserCount > 0)
-                    {
-                        return $"{p.SecondaryText.AnsiFg}{progress.CachedCount}/{progress.TotalCacheableLinks} \u2713{Reset}";
-                    }
-
-                    return $"{p.SecondaryText.AnsiFg}\u2713 cached{Reset}";
+                    // Partial completion (some links need a browser login) keeps
+                    // a compact badge; full completion is silent.
+                    return progress.NeedsBrowserCount > 0
+                        ? StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, $"{count} \u2713", priority: 6)
+                        : null;
                 }
 
-                // workspace-mya7: the user grabbed the shared browser — prefetch is
-                // waiting for it to go quiet, then resumes from its checkpoint.
                 if (progress.PausedByUser)
                 {
-                    return $"{p.SecondaryText.AnsiFg}⏸ {progress.CachedCount}/{progress.TotalCacheableLinks} · paused — you're using the browser{Reset}";
+                    return new StatusItem
+                    {
+                        Channel = StatusChannel.Ambient,
+                        Priority = 6,
+                        Variants = new[]
+                        {
+                            new[] { new StatusSegment($"\u23f8 {count} \u00b7 paused \u2014 you're using the browser", StatusStyle.Secondary) },
+                            new[] { new StatusSegment($"\u23f8 {count} paused", StatusStyle.Secondary) },
+                            new[] { new StatusSegment($"\u23f8 {count}", StatusStyle.Secondary) },
+                        },
+                    };
                 }
 
                 if (progress.IsActivelyFetching)
                 {
-                    return FormatProgressBar(progress.CachedCount, progress.TotalCacheableLinks, p, true, progress.CurrentlyFetchingUrl);
+                    return null; // The Activity channel owns the in-flight presentation.
                 }
 
-                // Stalled: not actively fetching but not complete either
-                // (or "complete" with nothing cached — all needsJs)
-                var count = $"{progress.CachedCount}/{progress.TotalCacheableLinks}";
+                // Stalled: not actively fetching but not complete either.
                 if (progress.NeedsBrowserCount > 0)
                 {
-                    return $"{p.SecondaryText.AnsiFg}{count} \u00b7 {Reset}{p.GetAccentFg().AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                    return new StatusItem
+                    {
+                        Channel = StatusChannel.Ambient,
+                        Priority = 6,
+                        Variants = new[]
+                        {
+                            new[]
+                            {
+                                new StatusSegment($"{count} \u00b7 ", StatusStyle.Secondary),
+                                new StatusSegment("I", StatusStyle.Accent),
+                                new StatusSegment(":login", StatusStyle.Secondary),
+                            },
+                        },
+                    };
                 }
 
-                return $"{p.SecondaryText.AnsiFg}{count} \u00b7 paused{Reset}";
+                return StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, $"{count} \u00b7 paused", priority: 6);
             }
 
             if (progress.PaywalledLinkCount > 0)
@@ -617,19 +732,150 @@ internal class StatusBarRenderer
                 if (context.CurrentPage?.HasReadableContent() == true ||
                     context.CurrentPage?.LinkTree?.TotalLinks > 0)
                 {
-                    return $"{p.SecondaryText.AnsiFg}paywall{Reset}";
+                    return StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, "paywall", priority: 6);
                 }
 
-                return $"{p.SecondaryText.AnsiFg}paywall \u00b7 {Reset}{p.GetAccentFg().AnsiFg}I{Reset}{p.SecondaryText.AnsiFg}:login{Reset}";
+                return new StatusItem
+                {
+                    Channel = StatusChannel.Ambient,
+                    Priority = 6,
+                    Variants = new[]
+                    {
+                        new[]
+                        {
+                            new StatusSegment("paywall \u00b7 ", StatusStyle.Secondary),
+                            new StatusSegment("I", StatusStyle.Accent),
+                            new StatusSegment(":login", StatusStyle.Secondary),
+                        },
+                    },
+                };
             }
         }
 
         if (context.IsFromCache)
         {
-            return $"{p.SecondaryText.AnsiFg}{RenderHelpers.FormatCacheAge(context.CachedAt)}{Reset}";
+            return StatusItem.Text(
+                StatusChannel.Ambient,
+                StatusStyle.Secondary,
+                RenderHelpers.FormatCacheAge(context.CachedAt),
+                priority: 6);
         }
 
-        return string.Empty;
+        return null;
+    }
+
+    private static StatusItem? BuildPodcastItem(IPodcastBackgroundJobManager? manager)
+    {
+        if (manager is null || !manager.HasActiveJob)
+        {
+            return null;
+        }
+
+        var snapshot = manager.LastSnapshot;
+        var percent = snapshot is null ? 0 : Math.Clamp(snapshot.PercentComplete, 0, 100);
+
+        return new StatusItem
+        {
+            Channel = StatusChannel.Ambient,
+            Priority = 1,
+            Variants = new[]
+            {
+                new[]
+                {
+                    new StatusSegment("\U0001F3A7 ", StatusStyle.Accent),
+                    new StatusSegment($"Generating {percent}%", StatusStyle.Primary),
+                    new StatusSegment(" \u00b7 ", StatusStyle.Secondary),
+                    new StatusSegment("Shift+P", StatusStyle.Accent),
+                    new StatusSegment(":restore", StatusStyle.Dim),
+                },
+                new[]
+                {
+                    new StatusSegment("\U0001F3A7 ", StatusStyle.Accent),
+                    new StatusSegment($"{percent}%", StatusStyle.Primary),
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// workspace-wef6.3: the adaptive hint tiers as a Hint-channel item \u2014 the
+    /// composer fills leftover space with the largest tier that fits.
+    /// </summary>
+    private static StatusItem? BuildHintItem(NavigationContext context, ViewMode mode)
+    {
+        if (context.IsInPreviewMode || mode == ViewMode.Launcher)
+        {
+            return null;
+        }
+
+        var tiers = GetHintTiers(mode);
+        return new StatusItem
+        {
+            Channel = StatusChannel.Hint,
+            Variants = tiers.Select(FormatHintSegments).ToArray(),
+        };
+    }
+
+    private static StatusSegment[] FormatHintSegments((string Key, string Action)[] hints)
+    {
+        var segments = new List<StatusSegment>();
+        for (var i = 0; i < hints.Length; i++)
+        {
+            if (i > 0)
+            {
+                segments.Add(new StatusSegment(" ", StatusStyle.Dim));
+            }
+
+            segments.Add(new StatusSegment(hints[i].Key, StatusStyle.Accent));
+            segments.Add(new StatusSegment($":{hints[i].Action}", StatusStyle.Dim));
+        }
+
+        return segments.ToArray();
+    }
+
+    private static StatusItem BuildHelpItem(NavigationContext context)
+    {
+        if (context.IsInPreviewMode)
+        {
+            return new StatusItem
+            {
+                Channel = StatusChannel.Hint,
+                Variants = new[]
+                {
+                    new[]
+                    {
+                        new StatusSegment("\u25c0/\u25b6", StatusStyle.Accent),
+                        new StatusSegment(":cycle ", StatusStyle.Dim),
+                        new StatusSegment("Enter", StatusStyle.Accent),
+                        new StatusSegment(":save ", StatusStyle.Dim),
+                        new StatusSegment("Esc", StatusStyle.Accent),
+                        new StatusSegment(":cancel", StatusStyle.Dim),
+                    },
+                    new[]
+                    {
+                        new StatusSegment("\u25c0/\u25b6", StatusStyle.Accent),
+                        new StatusSegment(" ", StatusStyle.Dim),
+                        new StatusSegment("Enter", StatusStyle.Accent),
+                        new StatusSegment(" ", StatusStyle.Dim),
+                        new StatusSegment("Esc", StatusStyle.Accent),
+                    },
+                },
+            };
+        }
+
+        return new StatusItem
+        {
+            Channel = StatusChannel.Hint,
+            Variants = new[]
+            {
+                new[]
+                {
+                    new StatusSegment("?", StatusStyle.Accent),
+                    new StatusSegment(":help", StatusStyle.Dim),
+                },
+                new[] { new StatusSegment("?", StatusStyle.Accent) },
+            },
+        };
     }
 
     private static (string Key, string Action)[][] GetHintTiers(ViewMode mode)
@@ -692,16 +938,6 @@ internal class StatusBarRenderer
         };
     }
 
-    private static string GetDomain(string url)
-    {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            return uri.Host;
-        }
-
-        return url.Length > 40 ? url[..40] : url;
-    }
-
     private static string PaintSegments(StatusSegment[] segments, ThemePalette p)
         => string.Concat(segments
             .Where(s => s.Text.Length > 0)
@@ -718,6 +954,8 @@ internal class StatusBarRenderer
             StatusStyle.Warning => p.GetWarningFg().AnsiFg,
             StatusStyle.Prompt => p.PromptFg.AnsiFg,
             StatusStyle.Success => p.GetSuccessFg().AnsiFg,
+            StatusStyle.Muted => p.GetMutedFg().AnsiFg,
+            StatusStyle.ModeBadge => p.StatusBarTextFg.AnsiFg,
             _ => p.SecondaryText.AnsiFg,
         };
     }

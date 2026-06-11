@@ -97,10 +97,19 @@ public class ScreenRenderingSnapshotTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, mode, 120));
 
-        // The status bar should contain the theme's StatusBarTextFg ANSI code
-        // (used in the mode badge)
-        output.Should().Contain(p.StatusBarTextFg.AnsiFg,
-            $"StatusBar for {theme}/{mode} should use StatusBarTextFg");
+        // workspace-wef6.2: the mode badge (the StatusBarTextFg consumer) only
+        // renders for the collection views — link/reader views are visually
+        // self-evident and freed that chrome for adaptive hints.
+        if (mode is ViewMode.CollectionList or ViewMode.CollectionItems)
+        {
+            output.Should().Contain(p.StatusBarTextFg.AnsiFg,
+                $"StatusBar for {theme}/{mode} should use StatusBarTextFg in the mode badge");
+        }
+        else
+        {
+            output.Should().NotBeNullOrWhiteSpace(
+                $"StatusBar for {theme}/{mode} should still render without the mode badge");
+        }
     }
 
     [Theory]
@@ -131,18 +140,30 @@ public class ScreenRenderingSnapshotTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, mode, 120));
 
-        var expectedLabel = mode switch
+        // workspace-wef6.2: only the collection views keep a mode badge —
+        // LinkView/ReaderView labels were boilerplate occupying prime space.
+        switch (mode)
         {
-            ViewMode.Hierarchical => "LinkView",
-            ViewMode.Readable => "ReaderView",
-            ViewMode.CollectionList => "Collections",
-            ViewMode.CollectionItems => "ReadingList",
-            ViewMode.Launcher => "Launcher",
-            _ => "Browser"
-        };
-
-        output.Should().Contain(expectedLabel,
-            $"StatusBar for {theme}/{mode} should contain PascalCase mode label '{expectedLabel}'");
+            case ViewMode.CollectionList:
+                output.Should().Contain("Collections",
+                    $"StatusBar for {theme}/{mode} should contain its mode label");
+                break;
+            case ViewMode.CollectionItems:
+                output.Should().Contain("ReadingList",
+                    $"StatusBar for {theme}/{mode} should contain its mode label");
+                break;
+            case ViewMode.Hierarchical:
+                output.Should().NotContain("LinkView",
+                    $"StatusBar for {theme}/{mode} must not waste chrome on the obvious mode badge (workspace-wef6.2)");
+                break;
+            case ViewMode.Readable:
+                output.Should().NotContain("ReaderView",
+                    $"StatusBar for {theme}/{mode} must not waste chrome on the obvious mode badge (workspace-wef6.2)");
+                break;
+            default:
+                output.Should().NotBeNullOrWhiteSpace();
+                break;
+        }
     }
 
     [Theory]
@@ -278,8 +299,8 @@ public class ScreenRenderingSnapshotTests
 
         output.Should().NotBeNullOrWhiteSpace(
             $"StatusBar at {width} cols for {theme} should produce non-empty output");
-        output.Should().Contain("LinkView",
-            $"StatusBar at {width} cols for {theme} should contain mode label");
+        output.Should().Contain(":help",
+            $"StatusBar at {width} cols for {theme} should keep the help affordance (mode badge dropped, workspace-wef6.2)");
     }
 
     [Theory]
@@ -318,7 +339,7 @@ public class ScreenRenderingSnapshotTests
 
     [Theory]
     [MemberData(nameof(AllThemes))]
-    public void StatusBar_WithPage_ShowsDomain(ThemeName theme)
+    public void StatusBar_WithPage_DoesNotDuplicateDomain(ThemeName theme)
     {
         var statusBar = CreateStatusBarRenderer(theme);
         var page = Page.Create(
@@ -334,8 +355,8 @@ public class ScreenRenderingSnapshotTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120));
 
-        output.Should().Contain("example.com",
-            $"StatusBar for {theme} should display domain when page is set");
+        output.Should().NotContain("example.com",
+            $"StatusBar for {theme} must not duplicate the domain the header already shows (workspace-wef6.2)");
     }
 
     #endregion
@@ -384,7 +405,7 @@ public class ScreenRenderingSnapshotTests
 
     [Theory]
     [MemberData(nameof(AllThemes))]
-    public void StatusBar_ReaderView_ShowsLineAndWidthInfo(ThemeName theme)
+    public void StatusBar_ReaderView_ShowsProgressNotLineTrivia(ThemeName theme)
     {
         var statusBar = CreateStatusBarRenderer(theme);
         var context = new NavigationContext
@@ -397,10 +418,14 @@ public class ScreenRenderingSnapshotTests
             statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("L10/100",
-            $"ReaderView StatusBar for {theme} should show line position");
-        output.Should().Contain("W80",
-            $"ReaderView StatusBar for {theme} should show content width");
+        // workspace-wef6.2: reader shows reading progress ("29%", plus
+        // "~N min left" when a word count exists) instead of L/W trivia.
+        output.Should().Contain("29%",
+            $"ReaderView StatusBar for {theme} should show reading progress");
+        output.Should().NotContain("L10/100",
+            $"ReaderView StatusBar for {theme} must not show line-number trivia (workspace-wef6.2)");
+        output.Should().NotContain("W80",
+            $"ReaderView StatusBar for {theme} must not show the width badge — width announces transiently on [/]");
     }
 
     #endregion

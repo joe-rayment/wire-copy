@@ -70,8 +70,11 @@ public class CacheRenderingTests
     }
 
     [Fact]
-    public void StatusBar_Hierarchical_ShowsAllCached_WhenComplete()
+    public void StatusBar_Hierarchical_SilentWhenFullyCached()
     {
+        // workspace-wef6.2: full completion renders NO persistent badge — the
+        // orchestrator announces "✓ all N cached" transiently instead, so the
+        // chrome doesn't carry "✓ cached" forever post-warm.
         var context = new NavigationContext { ViewMode = ViewMode.Hierarchical };
         var progress = new PreloadProgress
         {
@@ -83,7 +86,8 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120, progress));
 
-        output.Should().Contain("cached");
+        output.Should().NotContain("cached");
+        output.Should().NotContain("5/5");
     }
 
     [Fact]
@@ -155,8 +159,10 @@ public class CacheRenderingTests
     }
 
     [Fact]
-    public void StatusBar_CollectionItems_ShowsAllCached_WhenComplete()
+    public void StatusBar_CollectionItems_SilentWhenFullyCached()
     {
+        // workspace-wef6.2: see the Hierarchical twin — completion is a
+        // transient announcement, not permanent chrome.
         var context = new NavigationContext { ViewMode = ViewMode.CollectionItems };
         var progress = new PreloadProgress
         {
@@ -168,7 +174,7 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.CollectionItems, 120, progress));
 
-        output.Should().Contain("cached");
+        output.Should().NotContain("4/4");
     }
 
     [Fact]
@@ -247,20 +253,23 @@ public class CacheRenderingTests
     }
 
     [Fact]
-    public void UnifiedStatusBar_ReaderView_ShowsReaderLabel()
+    public void UnifiedStatusBar_ReaderView_HasNoModeBadge()
     {
+        // workspace-wef6.2: reader view is visually obvious; the badge is gone.
         var context = new NavigationContext { ViewMode = ViewMode.Readable };
 
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("ReaderView");
+        output.Should().NotContain("ReaderView");
     }
 
     [Fact]
-    public void UnifiedStatusBar_ReaderView_ShowsLineAndWidthInfo()
+    public void UnifiedStatusBar_ReaderView_ShowsProgressPercent()
     {
+        // workspace-wef6.2: "29%" (plus "~N min left" with a word count)
+        // replaces the L/W trivia.
         var context = new NavigationContext
         {
             ViewMode = ViewMode.Readable,
@@ -271,8 +280,9 @@ public class CacheRenderingTests
             _statusBar.RenderStatusBar(context, ViewMode.Readable, 120,
                 readerTotalLines: 100, readerContentWidth: 80, readerViewportHeight: 20));
 
-        output.Should().Contain("L10/100");
-        output.Should().Contain("W80");
+        output.Should().Contain("29%");
+        output.Should().NotContain("L10/100");
+        output.Should().NotContain("W80");
     }
 
     #endregion
@@ -350,24 +360,28 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        // Single line with mode badge and domain
-        output.Should().Contain("LinkView");
-        output.Should().Contain("example.com");
+        // workspace-wef6.2: no mode badge / duplicate domain — the line carries
+        // the help affordance and adaptive hints instead.
+        output.Should().Contain(":help");
+        output.Should().NotContain("LinkView");
+        output.Should().NotContain("example.com");
     }
 
     [Fact]
-    public void StatusBar_Line1_ContainsModeLabel()
+    public void StatusBar_LinkView_HasNoModeLabel()
     {
+        // workspace-wef6.2: the LinkView badge was boilerplate; only the
+        // collection views keep a mode badge.
         var context = new NavigationContext { ViewMode = ViewMode.Hierarchical };
 
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 80));
 
-        output.Should().Contain("LinkView");
+        output.Should().NotContain("LinkView");
     }
 
     [Fact]
-    public void StatusBar_Line2_ShowsDomain_WhenPageHasUrl()
+    public void StatusBar_DoesNotDuplicateDomain_WhenPageHasUrl()
     {
         var context = new NavigationContext
         {
@@ -381,7 +395,8 @@ public class CacheRenderingTests
         var output = CaptureConsoleOutput(() =>
             _statusBar.RenderStatusBar(context, ViewMode.Hierarchical, 120));
 
-        output.Should().Contain("example.com");
+        output.Should().NotContain("example.com",
+            "the header already shows the domain — the bar must not duplicate it (workspace-wef6.2)");
     }
 
     #endregion
