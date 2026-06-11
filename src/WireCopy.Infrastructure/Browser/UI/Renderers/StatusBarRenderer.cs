@@ -60,9 +60,10 @@ internal class StatusBarRenderer
         string? layoutVariantLabel = null,
         IReadOnlyList<string>? missingCookieDomains = null,
         HumanActionRequired? requiredAction = null,
-        bool browserDocked = false)
+        bool browserDocked = false,
+        bool preloadDetailVisible = false)
     {
-        _ = readerContentWidth; // workspace-wef6.2: W badge dropped \u2014 width announces transiently on [/] instead.
+        _ = readerContentWidth; // workspace-wef6.2: W badge dropped - width announces transiently on [/] instead.
         var width = terminalWidth > 0 ? terminalWidth : Console.WindowWidth;
         var model = ComposeStatusLine(
             context,
@@ -76,7 +77,8 @@ internal class StatusBarRenderer
             missingCookieDomains,
             requiredAction,
             browserDocked,
-            _podcastJobManager);
+            _podcastJobManager,
+            preloadDetailVisible: preloadDetailVisible);
 
         RenderStatusLine(model);
     }
@@ -112,7 +114,8 @@ internal class StatusBarRenderer
         HumanActionRequired? requiredAction = null,
         bool browserDocked = false,
         IPodcastBackgroundJobManager? podcastJobManager = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        bool preloadDetailVisible = false)
     {
         var left = BuildLeftItems(context, mode, readerTotalLines, readerViewportHeight);
         var right = BuildRightItems(
@@ -125,7 +128,7 @@ internal class StatusBarRenderer
             requiredAction,
             browserDocked,
             podcastJobManager);
-        var hints = BuildHintItem(context, mode);
+        var hints = BuildHintItem(context, mode, preloadDetailVisible);
         var help = BuildHelpItem(context);
 
         return new StatusComposer(clock).Compose(width, left, right, hints, help);
@@ -801,14 +804,14 @@ internal class StatusBarRenderer
     /// workspace-wef6.3: the adaptive hint tiers as a Hint-channel item \u2014 the
     /// composer fills leftover space with the largest tier that fits.
     /// </summary>
-    private static StatusItem? BuildHintItem(NavigationContext context, ViewMode mode)
+    private static StatusItem? BuildHintItem(NavigationContext context, ViewMode mode, bool preloadDetailVisible = false)
     {
         if (context.IsInPreviewMode || mode == ViewMode.Launcher)
         {
             return null;
         }
 
-        var tiers = GetHintTiers(mode);
+        var tiers = GetHintTiers(mode, context, preloadDetailVisible);
         return new StatusItem
         {
             Channel = StatusChannel.Hint,
@@ -878,8 +881,44 @@ internal class StatusBarRenderer
         };
     }
 
-    private static (string Key, string Action)[][] GetHintTiers(ViewMode mode)
+    /// <summary>
+    /// workspace-wef6.3: state-sensitive hint tiers. When a modal-ish state is
+    /// active, the hint slot teaches THAT state's keys instead of the generic
+    /// per-view tier — the Claude Code pattern of contextual teaching.
+    /// </summary>
+    private static (string Key, string Action)[][] GetHintTiers(
+        ViewMode mode,
+        NavigationContext? context = null,
+        bool preloadDetailVisible = false)
     {
+        if (preloadDetailVisible)
+        {
+            return
+            [
+                [("\\", "close"), ("Esc", "close")],
+                [("\\", "close")],
+            ];
+        }
+
+        if (context?.IsSpeedReadActive == true && mode == ViewMode.Readable)
+        {
+            return
+            [
+                [("</>", "speed"), ("f", "stop")],
+                [("f", "stop")],
+            ];
+        }
+
+        if (mode == ViewMode.Hierarchical && (context?.CurrentPage?.LinkTree?.SelectionCount ?? 0) > 0)
+        {
+            return
+            [
+                [("s", "save-sel"), ("Space", "select"), ("Esc", "clear")],
+                [("s", "save-sel"), ("Esc", "clear")],
+                [("s", "save-sel")],
+            ];
+        }
+
         return mode switch
         {
             ViewMode.Hierarchical =>

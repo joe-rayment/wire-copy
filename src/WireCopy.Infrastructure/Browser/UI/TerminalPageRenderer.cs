@@ -97,7 +97,7 @@ public class TerminalPageRenderer : IPageRenderer
         }
 
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
+        _statusBarRenderer.RenderStatusBar(context, ViewMode.Hierarchical, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked, preloadDetailVisible: options.ShowPreloadDetail);
         RenderPreloadDetailOverlay(options);
         RenderToastOverlay(context, options.TerminalWidth);
     }
@@ -130,7 +130,7 @@ public class TerminalPageRenderer : IPageRenderer
             }
 
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked, preloadDetailVisible: options.ShowPreloadDetail);
             RenderPreloadDetailOverlay(options);
             RenderToastOverlay(context, options.TerminalWidth);
             return;
@@ -164,7 +164,8 @@ public class TerminalPageRenderer : IPageRenderer
                 layoutVariantLabel: options.LayoutVariantLabel,
                 missingCookieDomains: options.MissingCookieDomains,
                 requiredAction: options.RequiredAction,
-                browserDocked: options.BrowserDocked);
+                browserDocked: options.BrowserDocked,
+                preloadDetailVisible: options.ShowPreloadDetail);
         }
         else
         {
@@ -172,7 +173,7 @@ public class TerminalPageRenderer : IPageRenderer
             _helpers.LeftMargin = 0;
             _helpers.RenderEndOfContentRule(palette, options.TerminalWidth);
             _helpers.PositionAtBottom();
-            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked);
+            _statusBarRenderer.RenderStatusBar(context, ViewMode.Readable, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel, missingCookieDomains: options.MissingCookieDomains, requiredAction: options.RequiredAction, browserDocked: options.BrowserDocked, preloadDetailVisible: options.ShowPreloadDetail);
         }
 
         RenderPreloadDetailOverlay(options);
@@ -419,7 +420,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, preloadDetailVisible: options.ShowPreloadDetail);
         RenderPreloadDetailOverlay(options);
     }
 
