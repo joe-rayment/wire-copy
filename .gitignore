@@ -160,8 +160,9 @@ drops/
 AGENTS.md
 CLAUDE.md
 
-# Local issue tracker (untracked; local copy persists across pulls)
-.beads/
+# Local issue tracker (db/backups untracked; issues.jsonl passive export is tracked)
+.beads/*
+!.beads/issues.jsonl
 
 # Internal QA / verification artifacts (untracked; local copies persist across pulls)
 docs/qa/
