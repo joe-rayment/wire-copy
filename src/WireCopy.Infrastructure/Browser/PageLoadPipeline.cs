@@ -182,6 +182,21 @@ public class PageLoadPipeline
                 _pageCache.Remove(url);
             }
 
+            // workspace-romy.9: reject caches built by older extraction logic.
+            // Cached links carry frozen Type values, and a cache hit skips
+            // extraction entirely — so without this gate an extraction change
+            // (e.g. aggregator story promotion) never reaches revisits. This
+            // is how techmeme kept showing zero articles.
+            else if (buildCache.ExtractionVersion != LinkExtractor.ExtractionVersion)
+            {
+                _logger.LogInformation(
+                    "LoadAsync: rejecting stale build cache (extraction v{Old} != v{New}): {Url}",
+                    buildCache.ExtractionVersion,
+                    LinkExtractor.ExtractionVersion,
+                    url);
+                _pageCache.Remove(url);
+            }
+
             // Quality gate: reject build caches that misclassified article URLs as LinkList.
             // HTTP-fetched JS shells often have nav links but no article content, producing
             // a bad LinkList classification that persists in cache.
@@ -539,6 +554,7 @@ public class PageLoadPipeline
             FinalUrl = finalUrl,
             Classification = classification,
             ClassificationVersion = PageClassifier.ClassificationVersion,
+            ExtractionVersion = LinkExtractor.ExtractionVersion,
             ClassificationScore = classificationScore,
             DetectedFeeds = detectedFeeds,
         };

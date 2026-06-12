@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Browser.Cache;
 using WireCopy.Infrastructure.Configuration;
 using Xunit;
@@ -238,6 +239,49 @@ public class DiskCacheStoreTests : IDisposable
         loaded[key].HierarchyConfig.Should().NotBeNull();
         loaded[key].HierarchyConfig!.ExcludeSelectors.Should().BeEquivalentTo(new[] { ".promo", "aside.ad" });
         loaded[key].HierarchyConfig!.ExcludeUrlPatterns.Should().BeEquivalentTo(new[] { "/sponsored/" });
+    }
+
+    [Fact]
+    public void WriteBuildCache_RoundTripsExtractionVersionAndLinkSignals()
+    {
+        // workspace-romy.9: ExtractionVersion gates stale caches, and the
+        // IsExternal/IsSponsored/Geometry signals must survive a rehydrate —
+        // losing IsExternal silently broke aggregator detection on revisits.
+        var url = "https://agg.example.com/";
+        var buildCache = new PageBuildCache
+        {
+            Links = new List<LinkInfo>
+            {
+                new()
+                {
+                    Url = "https://elsewhere.example.org/story",
+                    DisplayText = "An external aggregator story headline",
+                    Type = LinkType.Content,
+                    ImportanceScore = 85,
+                    IsExternal = true,
+                    IsSponsored = true,
+                    Geometry = new LinkGeometry(40, 120, 620, 44, 21, 700, AboveFold: true),
+                },
+            },
+            Metadata = new PageMetadata { Title = "Agg" },
+            FinalUrl = url,
+            Classification = PageClassification.LinkList,
+            ClassificationVersion = 1,
+            ExtractionVersion = LinkExtractor.ExtractionVersion,
+            CachedAt = DateTime.UtcNow,
+        };
+
+        _store.WriteBuildCache(url, buildCache);
+
+        var loaded = _store.LoadAllBuildCaches();
+        var restored = loaded[UrlNormalizer.Normalize(url)];
+        restored.ExtractionVersion.Should().Be(LinkExtractor.ExtractionVersion);
+        var link = restored.Links.Single();
+        link.IsExternal.Should().BeTrue();
+        link.IsSponsored.Should().BeTrue();
+        link.Geometry.Should().NotBeNull();
+        link.Geometry!.FontSize.Should().Be(21);
+        link.Geometry.AboveFold.Should().BeTrue();
     }
 
     [Fact]

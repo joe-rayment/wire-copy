@@ -676,6 +676,7 @@ internal sealed partial class BackgroundPreloadService
                 FinalUrl = result.Url ?? url,
                 Classification = classification,
                 ClassificationVersion = PageClassifier.ClassificationVersion,
+                ExtractionVersion = LinkExtractor.ExtractionVersion,
                 ClassificationScore = classificationScore,
             };
 

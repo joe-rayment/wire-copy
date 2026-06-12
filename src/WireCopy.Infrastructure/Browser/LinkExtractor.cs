@@ -15,6 +15,18 @@ namespace WireCopy.Infrastructure.Browser;
 public class LinkExtractor : ILinkExtractor
 {
     /// <summary>
+    /// workspace-romy.9 — version of the link extraction logic, persisted into
+    /// build caches and checked on cache restore. Bump whenever extraction
+    /// output changes shape or classification semantics, otherwise revisits
+    /// keep serving stale links and skip the new logic entirely. That is
+    /// exactly how techmeme showed "no articles": caches written before the
+    /// aggregator-promotion pass froze every story as External, and the cache
+    /// hit path never re-extracts. v2 = aggregator promotion + geometry +
+    /// sponsor flags (2026-06).
+    /// </summary>
+    public const int ExtractionVersion = 2;
+
+    /// <summary>
     /// Display-text length at or above which a link with no other signals is
     /// treated as a probable headline (shared by <see cref="DetermineLinkType"/>
     /// and the aggregator promotion pass).

@@ -750,6 +750,17 @@ public partial class BrowserOrchestrator : IBrowserService
                         url);
                     _pageCache.Remove(url);
                 }
+
+                // workspace-romy.9: stale extraction logic — see PageLoadPipeline.
+                else if (buildCache.ExtractionVersion != LinkExtractor.ExtractionVersion)
+                {
+                    _logger.LogInformation(
+                        "NavigateToAsync: rejecting stale build cache (extraction v{Old} != v{New}): {Url}",
+                        buildCache.ExtractionVersion,
+                        LinkExtractor.ExtractionVersion,
+                        url);
+                    _pageCache.Remove(url);
+                }
                 else if (buildCache.Classification == PageClassification.LinkList
                     && !PageClassifier.IsSectionUrlPattern(url))
                 {

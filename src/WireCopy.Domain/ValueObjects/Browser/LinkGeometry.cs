@@ -30,6 +30,13 @@ public sealed record LinkGeometry(
     public bool IsBold => FontWeight >= 600;
 
     /// <summary>
+    /// Inverse of <see cref="Parse"/> — the compact "x,y,w,h,fs,fw,fold" form,
+    /// used to persist geometry in disk build caches (workspace-romy.9).
+    /// </summary>
+    public string ToAttributeString() =>
+        $"{X},{Y},{Width},{Height},{FontSize},{FontWeight},{(AboveFold ? 1 : 0)}";
+
+    /// <summary>
     /// Parses the <c>data-wc-geom</c> attribute stamped by the page loader:
     /// "x,y,w,h,fontSize,fontWeight,aboveFold(0|1)". Returns null on any
     /// malformed input — geometry is always optional.

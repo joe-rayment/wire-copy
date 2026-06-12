@@ -306,6 +306,7 @@ internal sealed class DiskCacheStore
                 FinalUrl = buildCache.FinalUrl,
                 Classification = (int)buildCache.Classification,
                 ClassificationVersion = buildCache.ClassificationVersion,
+                ExtractionVersion = buildCache.ExtractionVersion,
                 CachedAt = buildCache.CachedAt,
                 Title = buildCache.Metadata.Title,
                 MetaDescription = buildCache.Metadata.Description,
@@ -326,6 +327,9 @@ internal sealed class DiskCacheStore
                     SectionTitle = l.SectionTitle,
                     IsFromImageAlt = l.IsFromImageAlt,
                     HeaderType = (int)l.HeaderType,
+                    IsExternal = l.IsExternal,
+                    IsSponsored = l.IsSponsored,
+                    Geometry = l.Geometry?.ToAttributeString(),
                 }).ToList(),
             };
 
@@ -422,6 +426,9 @@ internal sealed class DiskCacheStore
                     SectionTitle = l.SectionTitle is null ? null : TextNormalizer.NormalizeDisplayText(l.SectionTitle),
                     IsFromImageAlt = l.IsFromImageAlt,
                     HeaderType = (HeaderType)l.HeaderType,
+                    IsExternal = l.IsExternal,
+                    IsSponsored = l.IsSponsored,
+                    Geometry = LinkGeometry.Parse(l.Geometry),
                 }).ToList();
 
                 var metadata = new PageMetadata
@@ -488,6 +495,7 @@ internal sealed class DiskCacheStore
                     FinalUrl = persisted.FinalUrl ?? string.Empty,
                     Classification = (PageClassification)persisted.Classification,
                     ClassificationVersion = persisted.ClassificationVersion,
+                    ExtractionVersion = persisted.ExtractionVersion,
                     CachedAt = persisted.CachedAt,
                 };
 
@@ -637,6 +645,9 @@ internal sealed class DiskCacheStore
 
         public int ClassificationVersion { get; set; }
 
+        // workspace-romy.9: 0 for legacy files -> rejected by the extraction gate.
+        public int ExtractionVersion { get; set; }
+
         public DateTime CachedAt { get; set; }
 
         public string? Title { get; set; }
@@ -711,6 +722,15 @@ internal sealed class DiskCacheStore
         public bool IsFromImageAlt { get; set; }
 
         public int HeaderType { get; set; }
+
+        // workspace-romy.9: these signals were silently dropped on restore —
+        // losing IsExternal broke aggregator detection on every cache hit.
+        public bool IsExternal { get; set; }
+
+        public bool IsSponsored { get; set; }
+
+        // Compact LinkGeometry attribute form ("x,y,w,h,fs,fw,fold") or null.
+        public string? Geometry { get; set; }
     }
 
     internal sealed class PersistedHierarchySection
