@@ -20,6 +20,7 @@ Usage: python3 scripts/test_wylw_wizard_live.py
 Needs: tmux, Xvfb, ImageMagick, a Release build, an OpenAI key in app settings.
 """
 
+import glob
 import http.server
 import os
 import re
@@ -112,7 +113,6 @@ def orange_pixels(png):
 
 
 def wizard_lens_log_lines():
-    import glob
     logs = sorted(glob.glob("/workspace/logs/wirecopy-*.log"))
     if not logs:
         return []

@@ -216,9 +216,12 @@ public class LinkExtractor : ILinkExtractor
                         linkInfo = linkInfo with { Author = author, PublishedDate = pubDate };
                     }
 
-                    // Extract section title for content links — and external links,
-                    // which the aggregator pass may promote to content later.
-                    if (linkInfo.Type == LinkType.Content || linkInfo.Type == LinkType.External)
+                    // Extract section title for content links — and the external
+                    // links the aggregator pass could promote (story-shaped text).
+                    // Short externals (publisher tags, social chrome) skip the
+                    // ancestor walk since their SectionTitle is never consumed.
+                    if (linkInfo.Type == LinkType.Content ||
+                        (linkInfo.Type == LinkType.External && linkInfo.DisplayText.Length >= MinStoryTextLength))
                     {
                         var sectionTitle = ExtractSectionTitle(anchor);
                         if (sectionTitle != null)
@@ -269,9 +272,12 @@ public class LinkExtractor : ILinkExtractor
                 deduplicatedLinks.Count);
 
             var promoted = PromoteAggregatorStories(deduplicatedLinks);
-            var promotedCount = promoted.Count(l => l.Type == LinkType.Content && l.IsExternal);
-            if (promotedCount > 0 && !ReferenceEquals(promoted, deduplicatedLinks))
+            if (!ReferenceEquals(promoted, deduplicatedLinks))
             {
+                // The pass returns a new list only when it triggered; count the
+                // links whose Type actually changed (same order in both lists).
+                var promotedCount = deduplicatedLinks.Zip(promoted)
+                    .Count(pair => pair.First.Type != pair.Second.Type);
                 _logger.LogInformation(
                     "Aggregator page detected: promoted {Count} external story links to content",
                     promotedCount);
@@ -497,9 +503,10 @@ public class LinkExtractor : ILinkExtractor
     /// </summary>
     internal static List<LinkInfo> PromoteAggregatorStories(List<LinkInfo> links)
     {
-        var storyShaped = links
-            .Where(l => !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength)
-            .ToList();
+        static bool IsStoryShaped(LinkInfo l) =>
+            !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength;
+
+        var storyShaped = links.Where(IsStoryShaped).ToList();
         if (storyShaped.Count < AggregatorMinStoryLinks)
         {
             return links;
@@ -512,7 +519,7 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return links
-            .Select(l => l.Type == LinkType.External && !l.IsGroupHeader && l.DisplayText.Length >= MinStoryTextLength
+            .Select(l => l.Type == LinkType.External && IsStoryShaped(l)
                 ? l with
                 {
                     Type = LinkType.Content,

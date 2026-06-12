@@ -448,9 +448,9 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Theory]
-    [InlineData(12, 7, true)]   // majority external over threshold count
-    [InlineData(12, 6, false)]  // exactly half is not a majority
-    [InlineData(9, 9, false)]   // under minimum link count
+    [InlineData(12, 8, true)]   // 2/3 external, over the shared 0.6 share bar
+    [InlineData(12, 7, false)]  // 58% external is below LinkExtractor.AggregatorExternalShare
+    [InlineData(9, 9, false)]   // under LinkExtractor.AggregatorMinStoryLinks
     public void IsAggregatorLinkSet_Thresholds(int total, int external, bool expected)
     {
         var links = Enumerable.Range(0, total).Select(i => new LinkInfo

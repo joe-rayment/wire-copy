@@ -29,22 +29,6 @@ public class CollectionStatusToastTests
         return new TerminalPageRenderer(themeProvider, Substitute.For<ILogger<TerminalPageRenderer>>());
     }
 
-    private static string Capture(Action action)
-    {
-        var originalOut = Console.Out;
-        try
-        {
-            using var sw = new StringWriter();
-            Console.SetOut(sw);
-            action();
-            return sw.ToString();
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-    }
-
     private static RenderOptions Options(string? statusMessage) => new()
     {
         TerminalWidth = 120,
@@ -59,7 +43,7 @@ public class CollectionStatusToastTests
         var collection = Collection.Create("Reading List");
         collection.AddItem("https://example.com/a", "A Story");
 
-        var output = Capture(() => CreateRenderer().RenderCollectionItems(
+        var output = ConsoleCapture.Render(() => CreateRenderer().RenderCollectionItems(
             collection, selectedIndex: 0, scrollOffset: 0,
             Options("Cancelled — 2 articles completed")));
 
@@ -72,7 +56,7 @@ public class CollectionStatusToastTests
     {
         var collections = new List<Collection> { Collection.Create("Reading List") };
 
-        var output = Capture(() => CreateRenderer().RenderCollectionList(
+        var output = ConsoleCapture.Render(() => CreateRenderer().RenderCollectionList(
             collections, selectedIndex: 0, defaultCollectionId: null, scrollOffset: 0,
             Options("✔ Saved")));
 
@@ -84,7 +68,7 @@ public class CollectionStatusToastTests
     {
         var collection = Collection.Create("Reading List");
 
-        var output = Capture(() => CreateRenderer().RenderCollectionItems(
+        var output = ConsoleCapture.Render(() => CreateRenderer().RenderCollectionItems(
             collection, selectedIndex: 0, scrollOffset: 0, Options(null)));
 
         output.Should().Contain("Reading List");

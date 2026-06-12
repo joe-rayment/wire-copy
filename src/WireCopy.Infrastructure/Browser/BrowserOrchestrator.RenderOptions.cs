@@ -46,7 +46,11 @@ public partial class BrowserOrchestrator
         // GetMergedCachedUrls + GetMissingPaywalledCookieDomains are
         // genuinely expensive (set unions, async-cached lookups). Short-circuit
         // when on the launcher so those fields stay null/empty/zero.
-        var isLauncher = _navigationService.CurrentContext.ViewMode == ViewMode.Launcher;
+        // CurrentContext is a COMPUTED snapshot (announcement TTL check +
+        // activity lock + sort) — materialize it once per options build
+        // instead of once per consumed field.
+        var navContext = _navigationService.CurrentContext;
+        var isLauncher = navContext.ViewMode == ViewMode.Launcher;
 
         // Surface the typed human-action signal raised by the preload service so
         // status-bar / reader-view consumers can render variant-aware copy
@@ -67,18 +71,18 @@ public partial class BrowserOrchestrator
             Use256Colors = use256,
             CachedUrls = isLauncher ? null : GetMergedCachedUrls(),
             CacheProgress = preloadProgress,
-            StatusMessage = _navigationService.CurrentContext.StatusMessage,
+            StatusMessage = navContext.StatusMessage,
             PodcastButtonState = isLauncher ? 0 : GetPodcastButtonState(),
             PodcastProgressFraction = isLauncher ? 0 : _commandContext.PodcastGenerationProgress,
             PodcastArticleCount = isLauncher ? 0 : GetPodcastArticleCount(),
             PodcastFeedUrl = isLauncher ? null : _commandContext.PodcastFeedUrl,
             CacheUsagePercent = isLauncher ? 0 : GetCacheUsagePercent(),
             LayoutVariantLabel = isLauncher ? null : GetLayoutVariantLabel(),
-            LayoutVariant = _layoutVariantProvider.GetCurrentVariant(_navigationService.CurrentContext.ViewMode),
+            LayoutVariant = _layoutVariantProvider.GetCurrentVariant(navContext.ViewMode),
             MissingCookieDomains = isLauncher
                 ? null
                 : _preloadService.GetMissingPaywalledCookieDomains(
-                    _navigationService.CurrentContext.CurrentPage?.Url),
+                    navContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
             ScheduledRunBadge = isLauncher ? GetScheduledRunBadge() : null,
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,

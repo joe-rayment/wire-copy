@@ -549,11 +549,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
     /// <summary>
     /// workspace-6yb7.2: majority-external content links mark an aggregator page;
-    /// drives the aggregator note in the prompt (mirrors the LinkExtractor
-    /// promotion threshold without re-running it).
+    /// drives the aggregator note in the prompt. Shares the LinkExtractor
+    /// promotion thresholds so the two verdicts cannot drift (the population
+    /// differs — content links here vs story-shaped links there — but the
+    /// count floor and external-share bar are one definition).
     /// </summary>
     internal static bool IsAggregatorLinkSet(List<LinkInfo> contentLinks) =>
-        contentLinks.Count >= 10 && contentLinks.Count(l => l.IsExternal) * 2 > contentLinks.Count;
+        contentLinks.Count >= LinkExtractor.AggregatorMinStoryLinks &&
+        (double)contentLinks.Count(l => l.IsExternal) / contentLinks.Count >= LinkExtractor.AggregatorExternalShare;
 
     private static string BuildHierarchySystemPrompt()
     {

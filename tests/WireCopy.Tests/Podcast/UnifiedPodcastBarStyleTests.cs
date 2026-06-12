@@ -45,7 +45,7 @@ public class UnifiedPodcastBarStyleTests
     [Fact]
     public void GeneratingModal_GlobalBar_UsesTheUnifiedStyle()
     {
-        var output = CaptureRender(helpers =>
+        var output = WireCopy.Tests.ConsoleCapture.Render(helpers =>
             PodcastProgressScreens.RenderProgressContent(
                 helpers,
                 Palette,
@@ -75,29 +75,11 @@ public class UnifiedPodcastBarStyleTests
             CurrentArticle = 3, // 2 done of 4 → TTS sub-bar half full
         });
 
-        var output = CaptureRender(helpers =>
+        var output = WireCopy.Tests.ConsoleCapture.Render(helpers =>
             PodcastProgressScreens.RenderPhaseSubBars(helpers, Palette, aggregator, width: 100));
 
         var celebrationBar = Palette.GetCelebrationFg().AnsiFg + "█";
         output.Should().Contain(celebrationBar, "an in-flight phase fills with the celebration color");
     }
 
-    private static string CaptureRender(Action<RenderHelpers> action, int terminalHeight = 30)
-    {
-        var originalOut = Console.Out;
-        using var sw = new StringWriter();
-        Console.SetOut(sw);
-        try
-        {
-            var helpers = new RenderHelpers { TerminalHeight = terminalHeight };
-            helpers.Clear();
-            action(helpers);
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-
-        return sw.ToString();
-    }
 }

@@ -62,11 +62,15 @@ public class PickScriptIntegrationTests : IAsyncLifetime
         var page = _page!;
         await page.SetContentAsync(TestHtml);
 
-        // Simulate the session's takeover init script.
+        // Simulate the session's takeover init script (BrowserSession.cs) —
+        // including the pick-aware skip the marker now owns.
         await page.EvaluateAsync(
             """
             () => {
-                const mark = () => { window.__wcLastUserInput = Date.now(); };
+                const mark = () => {
+                    if (window.__wcPick && window.__wcPick.active) return;
+                    window.__wcLastUserInput = Date.now();
+                };
                 ['pointerdown', 'keydown', 'wheel', 'touchstart', 'pointermove']
                     .forEach((e) => window.addEventListener(e, mark, { capture: true, passive: true }));
                 window.__wcLastUserInput = 12345;

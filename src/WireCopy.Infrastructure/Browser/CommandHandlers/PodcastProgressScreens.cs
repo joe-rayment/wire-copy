@@ -318,17 +318,21 @@ internal static class PodcastProgressScreens
                         continue;
                     }
 
+                    // Once generation has finished, any exit key just collects
+                    // the result.
+                    if (command.Type is CommandType.GoBack or CommandType.CancelRun &&
+                        generationTask.IsCompleted)
+                    {
+                        break;
+                    }
+
                     // workspace-m8es.2: backing out (Esc / b / Backspace — all
                     // CommandType.GoBack) DETACHES: the generation task keeps
                     // running, the CTS + task hand over to the singleton
                     // manager so the status-bar badge, the CTA progress, and
                     // the Shift+P restore path can all find it. Going back
-                    // must never threaten the run. If generation is already
-                    // complete this falls through to the normal collect-result
-                    // exit — no useful detach to perform.
-                    if (command.Type == CommandType.GoBack &&
-                        jobManager is not null &&
-                        !generationTask.IsCompleted)
+                    // must never threaten the run.
+                    if (command.Type == CommandType.GoBack && jobManager is not null)
                     {
                         try
                         {
@@ -349,26 +353,13 @@ internal static class PodcastProgressScreens
                         }
                     }
 
-                    if (command.Type == CommandType.GoBack && generationTask.IsCompleted)
-                    {
-                        // Fall through to collect the finished result.
-                        break;
-                    }
-
                     // workspace-m8es.2: cancelling the run is a DELIBERATE act
                     // — its own keystroke ('x') plus a confirmation, never the
                     // default exit. With no job manager wired (degraded/test
                     // paths) GoBack also lands here so the modal stays
                     // escapable.
-                    if (command.Type == CommandType.CancelRun ||
-                        (command.Type == CommandType.GoBack && jobManager is null))
+                    if (command.Type == CommandType.CancelRun || command.Type == CommandType.GoBack)
                     {
-                        // If generation already completed, fall through to collect result
-                        if (generationTask.IsCompleted)
-                        {
-                            break;
-                        }
-
                         var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
                         if (shouldCancel)
                         {
@@ -683,11 +674,19 @@ internal static class PodcastProgressScreens
                         continue;
                     }
 
+                    // Once generation has finished, any exit key just collects
+                    // the result.
+                    if (command.Type is CommandType.GoBack or CommandType.CancelRun &&
+                        generationTask.IsCompleted)
+                    {
+                        break;
+                    }
+
                     // workspace-m8es.2: backing out (Esc / b / Backspace)
                     // re-detaches. Idempotent — the job is already registered
                     // on the manager, so we just exit the attached loop
                     // without touching the manager state.
-                    if (command.Type == CommandType.GoBack && !generationTask.IsCompleted)
+                    if (command.Type == CommandType.GoBack)
                     {
                         detachedAgain = true;
                         ctx.NavigationService.SetStatusMessage(
@@ -695,19 +694,9 @@ internal static class PodcastProgressScreens
                         return null;
                     }
 
-                    if (command.Type == CommandType.GoBack && generationTask.IsCompleted)
-                    {
-                        break;
-                    }
-
                     // workspace-m8es.2: 'x' + confirm is the only cancel path.
                     if (command.Type == CommandType.CancelRun)
                     {
-                        if (generationTask.IsCompleted)
-                        {
-                            break;
-                        }
-
                         var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
                         if (shouldCancel)
                         {

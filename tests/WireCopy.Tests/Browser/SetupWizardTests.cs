@@ -80,19 +80,10 @@ public class SetupWizardTests
     private static IInputHandler InputSequence(params CommandType[] commands)
     {
         var input = Substitute.For<IInputHandler>();
-        if (commands.Length == 1)
-        {
-            input.WaitForInputAsync(Arg.Any<CancellationToken>())
-                .Returns(new NavigationCommand { Type = commands[0] });
-        }
-        else
-        {
-            input.WaitForInputAsync(Arg.Any<CancellationToken>())
-                .Returns(
-                    new NavigationCommand { Type = commands[0] },
-                    commands.Skip(1).Select(c => new NavigationCommand { Type = c }).ToArray());
-        }
-
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NavigationCommand { Type = commands[0] },
+                commands.Skip(1).Select(c => new NavigationCommand { Type = c }).ToArray());
         return input;
     }
 

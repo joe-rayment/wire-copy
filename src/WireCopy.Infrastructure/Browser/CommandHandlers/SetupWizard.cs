@@ -32,13 +32,11 @@ internal static class SetupWizard
     /// </summary>
     internal const double MinCoverageFraction = 0.10;
 
-    /// <summary>Outcome of one pass through the preview card.</summary>
-    private enum PreviewChoice
-    {
-        Save,
-        Adjust,
-        Cancel,
-    }
+    /// <summary>Card-loop sentinel: Esc/quit (a chosen option is &gt;= 0).</summary>
+    private const int CancelChoice = -1;
+
+    /// <summary>Card-loop sentinel: Space on an adjustable card (the preview).</summary>
+    private const int AdjustChoice = -2;
 
     /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
@@ -180,7 +178,7 @@ internal static class SetupWizard
             }
 
             var preview = BuildPreviewCard(config, links);
-            var choice = await RunPreviewCardAsync(input, render, overlay, preview, lens, ct).ConfigureAwait(false);
+            var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.ClearAsync(ct).ConfigureAwait(false);
@@ -188,11 +186,11 @@ internal static class SetupWizard
 
             switch (choice)
             {
-                case PreviewChoice.Save:
+                case >= 0: // Enter — save exactly what is previewed
                     return new Result { Config = config };
-                case PreviewChoice.Cancel:
+                case CancelChoice:
                     return new Result { Cancelled = true };
-                case PreviewChoice.Adjust:
+                case AdjustChoice:
                     var adjusted = await RunAdjustAsync(
                         analyzer,
                         input,
@@ -284,7 +282,7 @@ internal static class SetupWizard
             return false;
         }
 
-        return covered == 0 || (double)covered / total < MinCoverageFraction;
+        return (double)covered / total < MinCoverageFraction;
     }
 
     /// <summary>
@@ -325,7 +323,7 @@ internal static class SetupWizard
             HighlightSelector = CssForSection(section),
         }).ToList();
 
-        var (covered, _) = Coverage(config, links);
+        var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
         var footnote = covered == 0 && contentLinks.Count > 0
             ? "⚠ No links on this page match this layout"
             : $"{covered} of {contentLinks.Count} story links covered";
@@ -531,13 +529,20 @@ internal static class SetupWizard
     private static string EscapeAttrValue(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The one card input loop: ↑/↓ cycles options (highlighting each on the
+    /// lens), Enter returns the cursor, Esc returns <see cref="CancelChoice"/>.
+    /// When <paramref name="adjustable"/> (the preview card), Space returns
+    /// <see cref="AdjustChoice"/>.
+    /// </summary>
     private static async Task<int> RunCardAsync(
         IInputHandler input,
         Func<CancellationToken, Task> render,
         SetupWizardOverlay.State overlay,
         SetupWizardOverlay.WizardCard card,
         Lens? lens,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool adjustable = false)
     {
         overlay.Mode = SetupWizardOverlay.Mode.Card;
         overlay.Card = card;
@@ -562,63 +567,17 @@ internal static class SetupWizard
                     break;
                 case CommandType.ActivateLink:
                     return card.Cursor;
+                case CommandType.ToggleSelection when adjustable:
+                    return AdjustChoice;
                 case CommandType.GoBack or CommandType.Quit:
-                    return -1;
+                    return CancelChoice;
                 case CommandType.TerminalResized:
                     await render(ct).ConfigureAwait(false);
                     break;
             }
         }
 
-        return -1;
-    }
-
-    /// <summary>
-    /// The preview card's input loop: ↑/↓ cycles section highlights on the lens,
-    /// Enter saves, Space opens the adjust loop, Esc discards.
-    /// </summary>
-    private static async Task<PreviewChoice> RunPreviewCardAsync(
-        IInputHandler input,
-        Func<CancellationToken, Task> render,
-        SetupWizardOverlay.State overlay,
-        SetupWizardOverlay.WizardCard card,
-        Lens? lens,
-        CancellationToken ct)
-    {
-        overlay.Mode = SetupWizardOverlay.Mode.Card;
-        overlay.Card = card;
-        await render(ct).ConfigureAwait(false);
-        await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
-
-        var count = Math.Max(1, card.Options.Count);
-        while (!ct.IsCancellationRequested)
-        {
-            var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
-            switch (command.Type)
-            {
-                case CommandType.MoveDown or CommandType.ExpandNode:
-                    card.Cursor = (card.Cursor + 1) % count;
-                    await render(ct).ConfigureAwait(false);
-                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
-                    break;
-                case CommandType.MoveUp or CommandType.CollapseNode:
-                    card.Cursor = (card.Cursor - 1 + count) % count;
-                    await render(ct).ConfigureAwait(false);
-                    await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
-                    break;
-                case CommandType.ActivateLink:
-                    return PreviewChoice.Save;
-                case CommandType.ToggleSelection:
-                    return PreviewChoice.Adjust;
-                case CommandType.GoBack or CommandType.Quit:
-                    return PreviewChoice.Cancel;
-                case CommandType.TerminalResized:
-                    await render(ct).ConfigureAwait(false);
-                    break;
-            }
-        }
-
-        return PreviewChoice.Cancel;
+        return CancelChoice;
     }
 
     /// <summary>

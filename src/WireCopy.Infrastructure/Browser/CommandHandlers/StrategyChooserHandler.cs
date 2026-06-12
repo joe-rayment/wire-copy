@@ -146,14 +146,12 @@ internal static class StrategyChooserHandler
                         return;
                     }
 
-                    var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
-                    var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
-
-                    if (wizardResult.Config != null && treeBuilder != null)
+                    // The wizard's preview hook already applied the saved
+                    // config to the page's real tree (Enter saves exactly what
+                    // is previewed) — no rebuild needed here.
+                    if (wizardResult.Config != null)
                     {
                         configToSave = wizardResult.Config;
-                        var tree = await treeBuilder.BuildTreeAsync(links, configToSave, ct).ConfigureAwait(false);
-                        page.SetLinkTree(tree);
                     }
                 }
             }
@@ -889,15 +887,10 @@ internal static class StrategyChooserHandler
             return;
         }
 
-        var treeBuilder = scope.ServiceProvider.GetService<INavigationTreeBuilder>();
+        // The wizard's preview hook already applied the saved config to the
+        // page's real tree (Enter saves exactly what is previewed) — only the
+        // persistence step remains.
         var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-        var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
-        if (treeBuilder != null)
-        {
-            var tree = await treeBuilder.BuildTreeAsync(links, wizardResult.Config, ct).ConfigureAwait(false);
-            page.SetLinkTree(tree);
-        }
-
         if (configStore != null)
         {
             await configStore.SaveConfigAsync(wizardResult.Config).ConfigureAwait(false);

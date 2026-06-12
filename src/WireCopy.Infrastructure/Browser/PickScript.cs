@@ -8,9 +8,9 @@ namespace WireCopy.Infrastructure.Browser;
 /// <see cref="Arm"/> installs a capture-phase click trap (links never
 /// navigate while armed) plus a hover outline; the C# side polls
 /// <see cref="Poll"/> on animation ticks and <see cref="Disarm"/> always
-/// removes every listener and overlay. While armed, takeover marking
-/// (<c>__wcLastUserInput</c>) is suppressed via a property interceptor so a
-/// pick click is wizard input, not a human takeover that pauses prefetch.
+/// removes every listener and overlay. While armed, the BrowserSession init
+/// script's takeover marker skips events (it checks <c>__wcPick.active</c>),
+/// so a pick click is wizard input, not a human takeover that pauses prefetch.
 /// </summary>
 internal static class PickScript
 {
@@ -26,19 +26,10 @@ internal static class PickScript
             const KEY = '__wcPick';
             if (window[KEY] && window[KEY].active) return 'already-armed';
 
+            // The session's takeover marker checks state.active and skips
+            // marking while armed — pick interaction is wizard input.
             const state = { active: true, result: null };
             window[KEY] = state;
-
-            // Suppress takeover marking while armed: pick interaction is wizard
-            // input, not a human takeover. Restored verbatim on disarm.
-            state.savedInput = window.__wcLastUserInput || 0;
-            try {
-                Object.defineProperty(window, '__wcLastUserInput', {
-                    get: () => state.savedInput,
-                    set: () => {},
-                    configurable: true,
-                });
-            } catch { /* non-configurable: takeover pause is merely cosmetic */ }
 
             const findAnchor = (el) => {
                 while (el && el.nodeType === 1) {
@@ -113,7 +104,7 @@ internal static class PickScript
         }
         """;
 
-    /// <summary>Removes listeners, outline, and the takeover-suppression patch (idempotent).</summary>
+    /// <summary>Removes listeners and the outline; takeover marking resumes (idempotent).</summary>
     public const string Disarm = """
         () => {
             const state = window['__wcPick'];
@@ -124,12 +115,6 @@ internal static class PickScript
                     window.removeEventListener('click', state.handlers.click, { capture: true });
                 }
                 if (state.outline) state.outline.remove();
-                const saved = state.savedInput || 0;
-                try {
-                    Object.defineProperty(window, '__wcLastUserInput', {
-                        value: saved, writable: true, configurable: true,
-                    });
-                } catch { }
             } finally {
                 delete window['__wcPick'];
             }

@@ -854,8 +854,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             await _context.AddInitScriptAsync(@"
                 // workspace-mya7: takeover detection — note when a HUMAN uses any
                 // page of the shared browser so prefetch can yield instantly.
+                // workspace-6yb7.5: input during an armed PickScript session is
+                // wizard input, not a takeover — the marker (which owns this
+                // signal) skips it rather than PickScript patching the global.
                 (() => {
-                    const mark = () => { window.__wcLastUserInput = Date.now(); };
+                    const mark = () => {
+                        if (window.__wcPick && window.__wcPick.active) return;
+                        window.__wcLastUserInput = Date.now();
+                    };
                     ['pointerdown', 'keydown', 'wheel', 'touchstart', 'pointermove']
                         .forEach((e) => window.addEventListener(e, mark, { capture: true, passive: true }));
                 })();

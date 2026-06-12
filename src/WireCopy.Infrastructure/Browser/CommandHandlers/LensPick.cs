@@ -69,10 +69,15 @@ internal sealed record LensPick(string Href, string Text, string Parent)
         };
     }
 
-    /// <summary>Case- and trailing-slash-insensitive URL equality.</summary>
-    internal static bool UrlsEqual(string a, string b)
-    {
-        static string Norm(string u) => u.TrimEnd('/');
-        return string.Equals(Norm(a), Norm(b), StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>
+    /// URL equality via the canonical <see cref="Cache.UrlNormalizer"/> (the
+    /// same comparison DockSpotlight uses) — handles host casing, trailing
+    /// slashes, fragments, and tracking params, so a clicked
+    /// <c>…?utm_source=…#frag</c> still matches its extracted link.
+    /// </summary>
+    internal static bool UrlsEqual(string a, string b) =>
+        string.Equals(
+            Cache.UrlNormalizer.Normalize(a),
+            Cache.UrlNormalizer.Normalize(b),
+            StringComparison.OrdinalIgnoreCase);
 }
