@@ -57,6 +57,14 @@ public record RenderOptions
     public PreloadProgress? CacheProgress { get; init; }
 
     /// <summary>
+    /// workspace-zzjy: the live transient status message (TTL-aware, from
+    /// NavigationService). Collection views render their status bar from a
+    /// synthesized NavigationContext, which previously dropped every toast —
+    /// e.g. "Cancelled — N articles completed" after an x-cancel.
+    /// </summary>
+    public string? StatusMessage { get; init; }
+
+    /// <summary>
     /// Visual state of the podcast CTA button (0=Idle, 1=Pressed, 2=Disabled, 3=Unconfigured, 5=Generating).
     /// Mapped to PodcastCtaState enum in the rendering layer.
     /// </summary>

@@ -423,7 +423,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _collectionRenderer.RenderCollectionList(collections, selectedIndex, defaultCollectionId, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList }, ViewMode.CollectionList, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionList, StatusMessage = options.StatusMessage }, ViewMode.CollectionList, options.TerminalWidth, layoutVariantLabel: options.LayoutVariantLabel);
     }
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
@@ -433,7 +433,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _collectionRenderer.RenderCollectionItems(collection, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, preloadDetailVisible: options.ShowPreloadDetail);
+        _statusBarRenderer.RenderStatusBar(new NavigationContext { ViewMode = ViewMode.CollectionItems, StatusMessage = options.StatusMessage }, ViewMode.CollectionItems, options.TerminalWidth, options.CacheProgress, options.CacheUsagePercent, layoutVariantLabel: options.LayoutVariantLabel, preloadDetailVisible: options.ShowPreloadDetail);
         RenderPreloadDetailOverlay(options);
     }
 

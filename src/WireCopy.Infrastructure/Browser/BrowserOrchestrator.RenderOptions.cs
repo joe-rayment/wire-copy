@@ -67,6 +67,7 @@ public partial class BrowserOrchestrator
             Use256Colors = use256,
             CachedUrls = isLauncher ? null : GetMergedCachedUrls(),
             CacheProgress = preloadProgress,
+            StatusMessage = _navigationService.CurrentContext.StatusMessage,
             PodcastButtonState = isLauncher ? 0 : GetPodcastButtonState(),
             PodcastProgressFraction = isLauncher ? 0 : _commandContext.PodcastGenerationProgress,
             PodcastArticleCount = isLauncher ? 0 : GetPodcastArticleCount(),
