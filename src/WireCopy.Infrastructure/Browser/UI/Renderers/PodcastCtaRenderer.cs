@@ -280,8 +280,7 @@ internal class PodcastCtaRenderer
 
         // Progress bar width: inner width minus indent, pctText, and small padding
         var barWidth = Math.Max(4, innerWidth - contentIndent - pctText.Length - 1);
-        var filledColor = percent >= 100 ? p.GetSuccessFg().AnsiFg : p.GetCelebrationFg().AnsiFg;
-        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, progressFraction, barWidth);
+        var bar = Indicators.PodcastBar(p, progressFraction, barWidth);
 
         // Line 1: top border
         _helpers.WriteLine($"{padStr}{borderFg}\u256d{new string('\u2500', innerWidth)}\u256e{Reset}");
@@ -466,8 +465,7 @@ internal class PodcastCtaRenderer
 
         // Progress bar fills remaining space between label and percentage
         var barWidth = Math.Max(4, buttonWidth - iconLabel.Length - pctText.Length - 1);
-        var filledColor = percent >= 100 ? p.GetSuccessFg().AnsiFg : p.GetCelebrationFg().AnsiFg;
-        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+        var bar = Indicators.PodcastBar(p, fraction, barWidth);
 
         var sb = new StringBuilder();
         sb.Append(padStr);

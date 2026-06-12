@@ -75,6 +75,19 @@ internal static class Indicators
     }
 
     /// <summary>
+    /// workspace-m8es.1: THE podcast progress-bar style — celebration fill
+    /// while running, success fill at completion, muted empty track. Extracted
+    /// from the reading-list CTA (the treatment the user preferred) so the
+    /// generating modal's global bar, its phase sub-bars, the analyzing
+    /// indicator, and the CTA all read as one visual language.
+    /// </summary>
+    internal static string PodcastBar(ThemePalette p, double fraction, int barLength)
+    {
+        var filledColor = fraction >= 0.999 ? p.GetSuccessFg().AnsiFg : p.GetCelebrationFg().AnsiFg;
+        return RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barLength);
+    }
+
+    /// <summary>
     /// Plain-text parts of the eighth-block bar (workspace-wef6): the filled
     /// run (full blocks + partial block) and the empty track run. Lets the
     /// status-line composer measure and style the bar as two segments instead

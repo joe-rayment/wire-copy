@@ -45,16 +45,22 @@ internal static class PodcastAnalyzingIndicator
         var hint = $"{palette.SecondaryText.AnsiFg}please wait{Reset}";
         var hintPlain = "please wait";
 
+        // workspace-m8es.1: the unified podcast bar (CTA style) so the
+        // analyzing box already speaks the generating flow's visual language.
+        const int barLength = 14;
+        var fraction = total > 0 ? (double)completed / total : 0;
+        var bar = UI.Components.Indicators.PodcastBar(palette, fraction, barLength);
+
         var contentWidth = boxWidth - 4;
         var summaryWidth = RenderHelpers.GetDisplayWidth(summary);
         var hintWidth = RenderHelpers.GetDisplayWidth(hintPlain);
-        var gapWidth = Math.Max(2, contentWidth - summaryWidth - hintWidth);
+        var gapWidth = Math.Max(2, contentWidth - summaryWidth - barLength - 1 - hintWidth);
 
         var styledSummary = $"{Bold}{palette.PrimaryText.AnsiFg}{summary}{Reset}";
 
         var topRow = Math.Max(0, options.TerminalHeight - 5);
         helpers.WriteAt(0, topRow, $"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
-        helpers.WriteAt(0, topRow + 1, $"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{hint} {borderFg}│{Reset}");
+        helpers.WriteAt(0, topRow + 1, $"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{bar} {hint} {borderFg}│{Reset}");
         helpers.WriteAt(0, topRow + 2, $"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
     }
 

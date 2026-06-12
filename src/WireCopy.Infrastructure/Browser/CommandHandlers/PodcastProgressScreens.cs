@@ -1413,8 +1413,10 @@ internal static class PodcastProgressScreens
         var percent = (int)Math.Round(fraction * 100);
         var barWidth = Math.Max(10, width - 22);
         var isComplete = percent >= 100;
-        var filledColor = isComplete ? p.GetSuccessFg().AnsiFg : p.GetWarningFg().AnsiFg;
-        var bar = Indicators.RenderEighthBlockBar(filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+
+        // workspace-m8es.1: one bar style across all podcast surfaces (the
+        // reading-list CTA's celebration/success treatment).
+        var bar = Indicators.PodcastBar(p, fraction, barWidth);
         var etaLabel = FormatEta(aggregator?.Eta, isComplete);
         helpers.WriteLine($"  {bar} {percent,3}%   {p.SecondaryText.AnsiFg}{etaLabel}{Reset}");
         helpers.WriteLine();
@@ -1725,9 +1727,9 @@ internal static class PodcastProgressScreens
         //   · pending (fraction == 0, not yet started)
         var (glyph, glyphColor) = ClassifyPhaseState(fraction, p);
 
-        var filledColor = fraction >= 0.999 ? p.GetSuccessFg().AnsiFg : p.GetMutedFg().AnsiFg;
-        var bar = Indicators.RenderEighthBlockBar(
-            filledColor, p.GetMutedFg().AnsiFg, fraction, barWidth);
+        // workspace-m8es.1: sub-bars share the unified podcast bar style; the
+        // ✓/⟳/· state glyphs stay as the at-a-glance stage indicator.
+        var bar = Indicators.PodcastBar(p, fraction, barWidth);
 
         // Leave room for the glyph + space at the front of the label column so
         // the bars stay column-aligned.
