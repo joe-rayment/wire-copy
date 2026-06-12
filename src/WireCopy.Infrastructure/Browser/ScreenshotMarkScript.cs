@@ -17,16 +17,21 @@ internal static class ScreenshotMarkScript
         (marks) => {
             const prev = document.getElementById('__wc_som');
             if (prev) prev.remove();
+            const norm = (u) => {
+                u = String(u).replace(/#.*$/, '');
+                return u.endsWith('/') ? u.slice(0, -1) : u;
+            };
             const byHref = new Map();
             for (const a of document.querySelectorAll('a[href]')) {
-                if (!byHref.has(a.href)) byHref.set(a.href, a);
+                const key = norm(a.href);
+                if (!byHref.has(key)) byHref.set(key, a);
             }
             const root = document.createElement('div');
             root.id = '__wc_som';
             root.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;pointer-events:none;';
             let n = 0;
             for (const m of marks) {
-                const a = byHref.get(m.url);
+                const a = byHref.get(norm(m.url));
                 if (!a) continue;
                 const r = a.getBoundingClientRect();
                 if (r.width < 1 || r.height < 1) continue;

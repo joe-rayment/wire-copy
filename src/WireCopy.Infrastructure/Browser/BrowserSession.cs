@@ -451,11 +451,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                         ScreenshotMarkScript.Apply,
                         marks.Select(m => new { i = m.Index, url = m.Url }).ToArray()).ConfigureAwait(false);
                     marked = true;
-                    _logger.LogDebug("Set-of-Marks: drew {Drawn} of {Requested} badges", drawn, marks.Count);
+
+                    // Information level on purpose: badge alignment is the
+                    // grounding contract — live gates assert on this line.
+                    _logger.LogInformation("Set-of-Marks: drew {Drawn} of {Requested} badges", drawn, marks.Count);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Set-of-Marks apply failed, capturing unmarked (non-fatal)");
+                    _logger.LogInformation(ex, "Set-of-Marks apply failed, capturing unmarked (non-fatal)");
                 }
             }
 
@@ -464,28 +467,48 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // workspace-romy.1: capture past the fold — a viewport-only shot
                 // of a news homepage shows the masthead and little else, so the
                 // AI layout analyzer could never see the river it was ranking.
-                // Clip to the page's real width and up to three viewport heights
-                // (clip coordinates may exceed the viewport in Playwright).
+                // Playwright's ScreenshotAsync cannot clip beyond the viewport,
+                // so go through CDP Page.captureScreenshot with
+                // captureBeyondViewport: up to three viewport heights tall.
+                // Quirks-mode pages report the real height on body.scrollHeight
+                // while documentElement.scrollHeight is just the viewport —
+                // take the max of both.
                 var dims = await _page.EvaluateAsync<int[]>(
                     @"() => {
                         const de = document.documentElement;
                         const vw = window.innerWidth || de.clientWidth || 1280;
                         const vh = window.innerHeight || de.clientHeight || 800;
-                        return [vw, Math.min(de.scrollHeight || vh, vh * 3)];
+                        const sh = Math.max(de.scrollHeight || 0, document.body ? document.body.scrollHeight : 0, vh);
+                        return [vw, Math.min(sh, vh * 3)];
                     }").ConfigureAwait(false);
                 if (dims is { Length: 2 } && dims[0] > 0 && dims[1] > 0)
                 {
-                    return await _page.ScreenshotAsync(new PageScreenshotOptions
+                    var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+                    var shot = await cdp.SendAsync("Page.captureScreenshot", new Dictionary<string, object>
                     {
-                        Clip = new() { X = 0, Y = 0, Width = dims[0], Height = dims[1] },
+                        ["format"] = "png",
+                        ["captureBeyondViewport"] = true,
+                        ["clip"] = new Dictionary<string, object>
+                        {
+                            ["x"] = 0,
+                            ["y"] = 0,
+                            ["width"] = dims[0],
+                            ["height"] = dims[1],
+                            ["scale"] = 1,
+                        },
                     }).ConfigureAwait(false);
+                    var data = shot?.GetProperty("data").GetString();
+                    if (!string.IsNullOrEmpty(data))
+                    {
+                        return Convert.FromBase64String(data);
+                    }
                 }
 
                 return await _page.ScreenshotAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Clipped screenshot failed, retrying viewport-only (non-fatal)");
+                _logger.LogInformation(ex, "Beyond-viewport screenshot failed, retrying viewport-only (non-fatal)");
                 try
                 {
                     return await _page.ScreenshotAsync().ConfigureAwait(false);

@@ -2,6 +2,7 @@
 
 using FluentAssertions;
 using NSubstitute;
+using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
@@ -463,5 +464,100 @@ public class WizardV3Tests
 
         card.Prompt.Should().NotContain("AI is unsure");
         card.Options.Should().HaveCount(1);
+    }
+
+    // ---- workspace-romy.8: wizard flow with a confirm question ----
+
+    private static SetupQuestion ConfirmQuestion() => new()
+    {
+        Id = "confirm",
+        Prompt = "Which is the main story?",
+        Kind = SetupQuestionKind.PickMain,
+        Options = new List<SetupOption>
+        {
+            new() { Label = "The lead box", ParentSelector = "section.lead" },
+            new() { Label = "The feed top", ParentSelector = "section.feed" },
+        },
+    };
+
+    private static IInputHandler InputSequence(params CommandType[] commands)
+    {
+        var input = Substitute.For<IInputHandler>();
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new WireCopy.Application.DTOs.Browser.NavigationCommand { Type = commands[0] },
+                commands.Skip(1).Select(c => new WireCopy.Application.DTOs.Browser.NavigationCommand { Type = c }).ToArray());
+        return input;
+    }
+
+    private static IHierarchyAnalyzer AnalyzerWithQuestionThenClean(
+        SiteHierarchyConfig config, List<IReadOnlyList<SetupAnswer>> answersLog)
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SiteSetupProposal { ProposedPattern = new ProposedPattern() });
+        var inferCalls = 0;
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                answersLog.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
+                inferCalls++;
+                return new InferredPattern
+                {
+                    Config = config,
+                    Confidence = inferCalls == 1 ? 0.5 : 1.0,
+                    ConfirmQuestion = inferCalls == 1 ? ConfirmQuestion() : null,
+                };
+            });
+        return analyzer;
+    }
+
+    [Fact]
+    public async Task ConfirmQuestion_PlainEnter_QuickAcceptsWithoutAnswering()
+    {
+        var links = ParseLinks();
+        var config = ConfigWithSections(Section("Top", "section.lead"), Section("Feed", "section.feed"));
+        var answersLog = new List<IReadOnlyList<SetupAnswer>>();
+        var analyzer = AnalyzerWithQuestionThenClean(config, answersLog);
+        var input = InputSequence(CommandType.ActivateLink); // Enter on cursor 0 = section row
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new Infrastructure.Browser.UI.Components.SetupWizardOverlay.State(),
+            links, "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull("Enter on a section row saves immediately, question ignored");
+        budget.Used.Should().Be(2, "ignoring the question must not spend extra model calls");
+    }
+
+    [Fact]
+    public async Task ConfirmQuestion_AnswerRow_TriggersOneMoreInference_ThenSaves()
+    {
+        var links = ParseLinks();
+        var config = ConfigWithSections(Section("Top", "section.lead"), Section("Feed", "section.feed"));
+        var answersLog = new List<IReadOnlyList<SetupAnswer>>();
+        var analyzer = AnalyzerWithQuestionThenClean(config, answersLog);
+
+        // Preview rows: [0]=Top, [1]=Feed, [2]=answer 1, [3]=answer 2.
+        // Down Down Enter lands on the first answer row; then Enter saves the
+        // re-previewed config.
+        var input = InputSequence(
+            CommandType.MoveDown, CommandType.MoveDown, CommandType.ActivateLink,
+            CommandType.ActivateLink);
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new Infrastructure.Browser.UI.Components.SetupWizardOverlay.State(),
+            links, "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        budget.Used.Should().Be(3, "propose + infer + the answered confirm question");
+        answersLog.Last().Should().Contain(a => a.QuestionId == "confirm" && a.Answer.Contains("The lead box"));
     }
 }
