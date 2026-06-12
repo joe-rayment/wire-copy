@@ -586,6 +586,7 @@ public class TerminalInputHandler : IInputHandler
             'y' => new NavigationCommand { Type = CommandType.AdoptLensPage },
             'L' => new NavigationCommand { Type = CommandType.TuneArticleLayout },
             'z' => new NavigationCommand { Type = CommandType.Undo },
+            'x' => new NavigationCommand { Type = CommandType.CancelRun },
             'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
             '<' => new NavigationCommand { Type = CommandType.SpeedReadSlower },
             '>' => new NavigationCommand { Type = CommandType.SpeedReadFaster },

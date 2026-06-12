@@ -155,6 +155,97 @@ public class PodcastProgressScreenAttachedTests
         manager.HasActiveJob.Should().BeFalse();
     }
 
+    // ---- workspace-m8es.2: GoBack detaches; cancel is the explicit 'x' ----
+
+    [Fact]
+    public async Task Attached_GoBack_WhileRunning_RedetachesWithoutCancelling()
+    {
+        var manager = new PodcastBackgroundJobManager();
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/a", "A");
+        var tcs = new TaskCompletionSource<PodcastResult>();
+        using var cts = new CancellationTokenSource();
+        manager.StartJob(collection, targets: null, tcs.Task, cts);
+
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(new NavigationCommand { Type = CommandType.GoBack });
+
+        var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
+            _ctx, _options, manager, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Should().BeNull("backing out detaches instead of collecting a result");
+        cts.IsCancellationRequested.Should().BeFalse(
+            "Esc/b must NEVER cancel the run — that is the whole point of workspace-m8es.2");
+        manager.HasActiveJob.Should().BeTrue("the job stays registered for the next Shift+P");
+        await _inputHandler.DidNotReceive().PromptForInputAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Attached_CancelRun_WithConfirm_CancelsTheRun()
+    {
+        var manager = new PodcastBackgroundJobManager();
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/a", "A");
+        var tcs = new TaskCompletionSource<PodcastResult>();
+        using var cts = new CancellationTokenSource();
+        cts.Token.Register(() => tcs.TrySetCanceled(cts.Token));
+        manager.StartJob(collection, targets: null, tcs.Task, cts);
+
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(new NavigationCommand { Type = CommandType.CancelRun });
+        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("y");
+
+        var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
+            _ctx, _options, manager, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Should().BeNull();
+        cts.IsCancellationRequested.Should().BeTrue(
+            "'x' + confirm is the deliberate cancel path");
+    }
+
+    [Fact]
+    public async Task Attached_CancelRun_Declined_KeepsRunning()
+    {
+        var manager = new PodcastBackgroundJobManager();
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/a", "A");
+        var tcs = new TaskCompletionSource<PodcastResult>();
+        using var cts = new CancellationTokenSource();
+        manager.StartJob(collection, targets: null, tcs.Task, cts);
+
+        var prompted = new TaskCompletionSource();
+        var inputCalls = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ++inputCalls == 1
+                ? Task.FromResult(new NavigationCommand { Type = CommandType.CancelRun })
+                : new TaskCompletionSource<NavigationCommand>().Task);
+        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { prompted.TrySetResult(); return "n"; });
+
+        var modalTask = PodcastProgressScreens.ShowProgressScreenAttachedAsync(
+            _ctx, _options, manager, CancellationToken.None);
+
+        await prompted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cts.IsCancellationRequested.Should().BeFalse("a declined confirm changes nothing");
+
+        // Finish the run normally — the modal must still collect the result.
+        tcs.SetResult(PodcastResult.Successful(
+            feedUrl: null,
+            localFilePath: "/tmp/t.m4a",
+            totalDuration: TimeSpan.FromSeconds(30),
+            articlesProcessed: 1,
+            articlesFailed: 0,
+            fileSizeBytes: 1024,
+            articlesCached: 0,
+            totalCost: 0m));
+
+        var result = await modalTask.WaitAsync(TimeSpan.FromSeconds(5));
+        result.Should().NotBeNull();
+        result!.Success.Should().BeTrue();
+    }
+
     [Fact]
     public async Task Attached_LivesProgressEvent_UpdatesContextProgressFlag()
     {

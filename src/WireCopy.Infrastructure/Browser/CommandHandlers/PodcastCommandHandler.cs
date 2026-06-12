@@ -43,8 +43,9 @@ internal static class PodcastCommandHandler
 
     /// <summary>
     /// workspace-vkhr Phase D: restores the in-progress podcast modal when a
-    /// background job is running and the user has detached it via 'D' (or
-    /// ":podcast" while a run is in flight). Subscribes to the live progress
+    /// background job is running and the user has detached it by backing out
+    /// (Esc/b — workspace-m8es.2) or via ":podcast" while a run is in flight.
+    /// Subscribes to the live progress
     /// stream from the manager, awaits the same generation task, and runs
     /// the same result/error/cancel completion flow as
     /// <see cref="HandleGeneratePodcast"/>. When no active job exists, the

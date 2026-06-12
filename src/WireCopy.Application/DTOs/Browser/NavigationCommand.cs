@@ -140,6 +140,14 @@ public enum CommandType
     // Debug/Utility
     DumpHtml,
 
+    /// <summary>
+    /// workspace-m8es.2: 'x' — explicitly cancel a long-running job (podcast
+    /// generation). Deliberately NOT on the GoBack path: backing out of a
+    /// progress screen detaches and keeps the job alive; cancelling spend
+    /// requires this dedicated keystroke plus a confirmation.
+    /// </summary>
+    CancelRun,
+
     // Terminal
     TerminalResized,
 
@@ -167,7 +175,7 @@ public enum CommandType
     TogglePreloadDetail,
 
     // Podcast: restore the in-progress podcast modal when a background job
-    // is running and the user has detached it via 'D'. Bound to Shift+P
+    // is running and the user has detached it by backing out (Esc/b). Bound to Shift+P
     // (workspace-vkhr) and also via the ":podcast" command-line accelerator.
     // No-op when no active job exists.
     RestorePodcastModal,

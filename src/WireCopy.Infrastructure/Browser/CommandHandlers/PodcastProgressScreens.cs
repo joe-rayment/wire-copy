@@ -245,7 +245,7 @@ internal static class PodcastProgressScreens
         }
 
         // workspace-vkhr Phase D: do NOT wrap genCts in a `using` here — when
-        // the user presses 'D' to detach, ownership of the CTS transfers to
+        // the user backs out (Esc/b) to detach, ownership of the CTS transfers to
         // the background job manager, and disposing it would cancel the run.
         // The detach path leaks the CTS to the manager; the non-detach path
         // disposes it in the finally block below.
@@ -318,14 +318,15 @@ internal static class PodcastProgressScreens
                         continue;
                     }
 
-                    // workspace-vkhr Phase D: 'D' (CommandType.DumpHtml carries
-                    // Shift+D in the existing keymap) detaches the modal. The
-                    // generation task keeps running; we hand the CTS + task to
-                    // the singleton manager so the status-bar badge and the
-                    // restore path can both find it. If generation is already
+                    // workspace-m8es.2: backing out (Esc / b / Backspace — all
+                    // CommandType.GoBack) DETACHES: the generation task keeps
+                    // running, the CTS + task hand over to the singleton
+                    // manager so the status-bar badge, the CTA progress, and
+                    // the Shift+P restore path can all find it. Going back
+                    // must never threaten the run. If generation is already
                     // complete this falls through to the normal collect-result
                     // exit — no useful detach to perform.
-                    if (command.Type == CommandType.DumpHtml &&
+                    if (command.Type == CommandType.GoBack &&
                         jobManager is not null &&
                         !generationTask.IsCompleted)
                     {
@@ -348,7 +349,19 @@ internal static class PodcastProgressScreens
                         }
                     }
 
-                    if (command.Type == CommandType.GoBack)
+                    if (command.Type == CommandType.GoBack && generationTask.IsCompleted)
+                    {
+                        // Fall through to collect the finished result.
+                        break;
+                    }
+
+                    // workspace-m8es.2: cancelling the run is a DELIBERATE act
+                    // — its own keystroke ('x') plus a confirmation, never the
+                    // default exit. With no job manager wired (degraded/test
+                    // paths) GoBack also lands here so the modal stays
+                    // escapable.
+                    if (command.Type == CommandType.CancelRun ||
+                        (command.Type == CommandType.GoBack && jobManager is null))
                     {
                         // If generation already completed, fall through to collect result
                         if (generationTask.IsCompleted)
@@ -670,18 +683,25 @@ internal static class PodcastProgressScreens
                         continue;
                     }
 
-                    if (command.Type == CommandType.DumpHtml && !generationTask.IsCompleted)
+                    // workspace-m8es.2: backing out (Esc / b / Backspace)
+                    // re-detaches. Idempotent — the job is already registered
+                    // on the manager, so we just exit the attached loop
+                    // without touching the manager state.
+                    if (command.Type == CommandType.GoBack && !generationTask.IsCompleted)
                     {
-                        // Re-detach is idempotent — the job is already
-                        // registered on the manager, so we just exit the
-                        // attached loop without touching the manager state.
                         detachedAgain = true;
                         ctx.NavigationService.SetStatusMessage(
                             "Generating in background. Press Shift+P to restore.");
                         return null;
                     }
 
-                    if (command.Type == CommandType.GoBack)
+                    if (command.Type == CommandType.GoBack && generationTask.IsCompleted)
+                    {
+                        break;
+                    }
+
+                    // workspace-m8es.2: 'x' + confirm is the only cancel path.
+                    if (command.Type == CommandType.CancelRun)
                     {
                         if (generationTask.IsCompleted)
                         {
@@ -1500,11 +1520,11 @@ internal static class PodcastProgressScreens
             RenderDestinationFooter(helpers, p, targets, width);
         }
 
-        // workspace-vkhr Phase D: surface the detach affordance alongside the
-        // cancel keystroke so the user knows D is bound during a live run.
+        // workspace-m8es.2: backing out is the safe, primary exit (the run
+        // keeps going); cancelling spend is the deliberate, secondary one.
         helpers.WriteLine(
-            $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:cancel{Reset}   " +
-            $"{p.GetAccentFg().AnsiFg}D{Reset}{p.SecondaryText.AnsiFg}:detach{Reset}");
+            $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:back (keeps generating){Reset}   " +
+            $"{p.GetAccentFg().AnsiFg}x{Reset}{p.SecondaryText.AnsiFg}:cancel run{Reset}");
     }
 
     /// <summary>
@@ -1598,11 +1618,10 @@ internal static class PodcastProgressScreens
 
         helpers.WriteLine();
 
-        // workspace-vkhr Phase D: the detach affordance stays — the user CAN
-        // free the screen and the job keeps running. Closing the terminal
-        // still cancels (that's Phase F).
+        // workspace-m8es.2: backing out frees the screen and the job keeps
+        // running. Closing the terminal still cancels (that's Phase F).
         helpers.WriteLine(
-            $"  {p.SecondaryText.AnsiFg}Running. Press D to free the screen — generation continues. " +
+            $"  {p.SecondaryText.AnsiFg}Running. Press Esc to free the screen — generation continues. " +
             $"Closing this terminal still cancels.{Reset}");
         helpers.WriteLine();
     }

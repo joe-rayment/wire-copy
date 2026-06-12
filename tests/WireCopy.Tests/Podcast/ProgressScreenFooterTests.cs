@@ -69,10 +69,10 @@ public class ProgressScreenFooterTests
         output.Should().Contain("Will save to",
             because: "the local-file destination stays in the footer as a secondary line");
         output.Should().Contain("reading-list.m4b");
-        // workspace-vkhr Phase D: footer still advertises the detach
-        // affordance and warns that the terminal owns the lifecycle.
-        output.Should().Contain("Press D to free the screen",
-            because: "the footer must advertise the detach keystroke");
+        // workspace-m8es.2: the footer advertises that BACKING OUT keeps the
+        // run alive, and warns that the terminal owns the lifecycle.
+        output.Should().Contain("Press Esc to free the screen",
+            because: "backing out is the safe exit and must be advertised");
         output.Should().Contain("Closing this terminal still cancels",
             because: "the user must still be warned that the process owns the run");
     }
