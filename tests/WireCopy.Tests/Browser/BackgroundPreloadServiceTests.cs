@@ -460,13 +460,8 @@ public class BackgroundPreloadServiceTests : IDisposable
         _service.NotifySelectionChanged(0, nodes1, "https://example.com");
         _service.NotifySelectionChanged(0, nodes2, "https://example.com");
 
-        // Wait for debounce timer to fire (200ms + margin)
-        await Task.Delay(350);
-
-        // Read internal _queue via reflection to verify actual debounce behavior
-        var queueField = typeof(BackgroundPreloadService)
-            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+        // Wait for the debounce timer to fire and the rebuilt queue to land.
+        var internalQueue = await WaitForQueueAsync(_service, q => q.Count == 2);
 
         // Should reflect the second (latest) call — 2 items from nodes2
         internalQueue.Should().HaveCount(2);
@@ -871,13 +866,8 @@ public class BackgroundPreloadServiceTests : IDisposable
         _service.NotifyCollectionChanged(0, urls1);
         _service.NotifyCollectionChanged(0, urls2);
 
-        // Wait for debounce (200ms + margin)
-        await Task.Delay(350);
-
-        // Should reflect the latest call
-        var queueField = typeof(BackgroundPreloadService)
-            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+        // Should reflect the latest call once the debounce timer fires.
+        var internalQueue = await WaitForQueueAsync(_service, q => q.Count == 3);
 
         internalQueue.Should().HaveCount(3);
     }
@@ -893,11 +883,7 @@ public class BackgroundPreloadServiceTests : IDisposable
         var urls = new List<string> { "https://col.com/1", "https://col.com/2" };
         _service.NotifyCollectionChanged(0, urls);
 
-        await Task.Delay(350);
-
-        var queueField = typeof(BackgroundPreloadService)
-            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+        var internalQueue = await WaitForQueueAsync(_service, q => q.Count == 2);
 
         // Should contain collection URLs, not link-tree
         internalQueue.Should().HaveCount(2);
@@ -915,11 +901,7 @@ public class BackgroundPreloadServiceTests : IDisposable
         var nodes = CreateContentNodes("https://example.com/a1");
         _service.NotifySelectionChanged(0, nodes, "https://example.com");
 
-        await Task.Delay(350);
-
-        var queueField = typeof(BackgroundPreloadService)
-            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var internalQueue = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(_service)!;
+        var internalQueue = await WaitForQueueAsync(_service, q => q.Count == 1);
 
         // Should contain link-tree URL, not collection
         internalQueue.Should().ContainSingle();
@@ -1173,6 +1155,34 @@ public class BackgroundPreloadServiceTests : IDisposable
     #endregion
 
     #region Helpers
+
+    /// <summary>
+    /// workspace-7itt: the debounce timer is a REAL 200ms timer; a fixed
+    /// Task.Delay margin is load-sensitive (one full-suite flake observed).
+    /// Poll the internal queue until the expected post-debounce state lands,
+    /// up to a generous ceiling — deterministic under load, fast when idle.
+    /// </summary>
+    private static async Task<List<BackgroundPreloadService.PreloadItem>> WaitForQueueAsync(
+        BackgroundPreloadService service,
+        Func<List<BackgroundPreloadService.PreloadItem>, bool> settled)
+    {
+        var queueField = typeof(BackgroundPreloadService)
+            .GetField("_queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        List<BackgroundPreloadService.PreloadItem> snapshot = new();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            snapshot = (List<BackgroundPreloadService.PreloadItem>)queueField!.GetValue(service)!;
+            if (settled(snapshot))
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return snapshot;
+    }
 
     private static void SetInternalQueue(BackgroundPreloadService service, List<BackgroundPreloadService.PreloadItem> queue)
     {
