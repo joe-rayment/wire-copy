@@ -38,11 +38,13 @@ public interface IHierarchyAnalyzer
 
     /// <summary>
     /// workspace-5oe9.7 — round 2 of the AI setup contract. Given the proposal
-    /// and the user's answers, returns a durable <see cref="SiteHierarchyConfig"/>
-    /// whose sections carry CSS/URL-pattern identifiers (never per-URL snapshot
-    /// keys) so the layout generalizes across visits.
+    /// and the user's answers, returns a durable config whose sections carry
+    /// CSS/URL-pattern identifiers (never per-URL snapshot keys) so the layout
+    /// generalizes across visits. workspace-romy.8: wrapped in
+    /// <see cref="InferredPattern"/> carrying the model's confidence and at
+    /// most one ignorable targeted confirm question for the preview card.
     /// </summary>
-    Task<SiteHierarchyConfig> InferPatternFromAnswersAsync(
+    Task<InferredPattern> InferPatternFromAnswersAsync(
         byte[]? screenshot,
         List<LinkInfo> links,
         string pageUrl,

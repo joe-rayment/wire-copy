@@ -577,7 +577,7 @@ public class OpenAiHierarchyAnalyzerTests
         };
         var answers = new List<SetupAnswer> { new() { QuestionId = "q0", Answer = "the budget vote story" } };
 
-        var config = await analyzer.InferPatternFromAnswersAsync(null, SetupLinks(), "https://x.com/", proposal, answers);
+        var config = (await analyzer.InferPatternFromAnswersAsync(null, SetupLinks(), "https://x.com/", proposal, answers)).Config;
 
         config.Version.Should().Be(3);
         config.Sections.Should().HaveCount(2);
@@ -643,7 +643,7 @@ public class OpenAiHierarchyAnalyzerTests
             "{\"sections\":[{\"name\":\"Lead\",\"parent_selectors\":[],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}]," +
             "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[3]}";
 
-        var config = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, SetupLinks(), "https://x.com/", "gpt-5-mini");
+        var config = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, SetupLinks(), "https://x.com/", "gpt-5-mini").Config;
 
         config.Sections.Should().ContainSingle();
         config.Sections[0].ParentSelectors.Should().Contain("section.lead", "derived as a B3 fallback from story_indices");

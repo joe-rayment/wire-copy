@@ -351,7 +351,7 @@ internal static class StrategyChooserHandler
             overlay.Footnote = "Preparing — capturing screenshot and loading saved config…";
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            var screenshotTask = CaptureScreenshotSafelyAsync(scope, ctx.Logger);
+            var screenshotTask = CaptureScreenshotSafelyAsync(scope, BuildSetupMarks(links), ctx.Logger);
             var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
             var savedConfigTask = configStore != null
                 ? configStore.GetConfigAsync(page.Url)
@@ -445,12 +445,32 @@ internal static class StrategyChooserHandler
         var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
         var links = buildCache?.Links ?? new List<LinkInfo>();
 
-        // workspace-5oe9.11: the wizard's single screenshot, bounded so a slow
-        // Playwright capture never stalls the AI path — go text-only past the cap.
+        // workspace-romy.1: kick the capture off FIRST so it runs while the
+        // overlay/lens wiring happens below. The old flow awaited a 750ms cap
+        // against a 0.5-3s capture, so the wizard almost always ran text-only —
+        // the model never saw the page. workspace-romy.3: badge the page with
+        // Set-of-Marks numbers (the analyzer's link indices) before the shot.
+        var captureTask = CaptureScreenshotSafelyAsync(scope, BuildSetupMarks(links), ctx.Logger);
+
         var screenshot = await ScreenshotCapture.WithCapAsync(
-            () => CaptureScreenshotSafelyAsync(scope, ctx.Logger),
-            ScreenshotCapture.DefaultCap,
+            () => captureTask,
+            ScreenshotCapture.WizardCap,
             ct).ConfigureAwait(false);
+        if (screenshot != null)
+        {
+            var size = ScreenshotCapture.TryReadPngSize(screenshot);
+            ctx.Logger.LogInformation(
+                "Wizard screenshot attached: {Width}x{Height}, {Kb} KB",
+                size?.Width ?? 0,
+                size?.Height ?? 0,
+                screenshot.Length / 1024);
+        }
+        else
+        {
+            ctx.Logger.LogInformation(
+                "Wizard proceeding text-only: screenshot not ready within {CapSeconds}s",
+                ScreenshotCapture.WizardCap.TotalSeconds);
+        }
 
         var overlay = new UI.Components.SetupWizardOverlay.State();
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -1213,6 +1233,7 @@ internal static class StrategyChooserHandler
     /// </summary>
     private static async Task<byte[]?> CaptureScreenshotSafelyAsync(
         IServiceScope scope,
+        IReadOnlyList<ScreenshotMark>? marks,
         ILogger logger)
     {
         if (scope.ServiceProvider.GetService<IBrowserSessionControl>() is not IBrowserSession session)
@@ -1222,7 +1243,25 @@ internal static class StrategyChooserHandler
 
         try
         {
-            return await session.CaptureScreenshotAsync().ConfigureAwait(false);
+            var screenshot = await session.CaptureScreenshotAsync(marks).ConfigureAwait(false);
+
+            // workspace-romy.3: debug hook — dump the (marked) wizard shot so a
+            // human or live gate can verify badge/link alignment.
+            var debugPath = Environment.GetEnvironmentVariable("WIRECOPY_SOM_DEBUG");
+            if (screenshot != null && !string.IsNullOrEmpty(debugPath))
+            {
+                try
+                {
+                    await File.WriteAllBytesAsync(debugPath, screenshot).ConfigureAwait(false);
+                    logger.LogInformation("Wizard screenshot dumped to {Path}", debugPath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Failed to dump wizard screenshot");
+                }
+            }
+
+            return screenshot;
         }
         catch (Exception ex)
         {
@@ -1230,6 +1269,28 @@ internal static class StrategyChooserHandler
             return null;
         }
     }
+
+    /// <summary>
+    /// workspace-romy.3: marks for the wizard screenshot — one badge per
+    /// analyzer link index. The index space MUST mirror the analyzer's filter
+    /// (links with <see cref="LinkType.Content"/>, in order); badges are capped
+    /// to the highest-importance 80 so a 1000-link page stays legible.
+    /// </summary>
+#pragma warning disable SA1202 // kept adjacent to CaptureScreenshotSafelyAsync, its only production caller
+    internal static List<ScreenshotMark> BuildSetupMarks(IReadOnlyList<LinkInfo> links)
+    {
+        const int maxMarks = 80;
+        return links
+            .Where(l => l.Type == LinkType.Content)
+            .Select((l, i) => (Link: l, Index: i))
+            .Where(x => !string.IsNullOrEmpty(x.Link.Url))
+            .OrderByDescending(x => x.Link.ImportanceScore)
+            .Take(maxMarks)
+            .OrderBy(x => x.Index)
+            .Select(x => new ScreenshotMark(x.Index, x.Link.Url))
+            .ToList();
+    }
+#pragma warning restore SA1202
 
     private static string ExtractDomain(string url) => HierarchyDomainKey.FromUrl(url);
 }

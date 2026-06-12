@@ -14,6 +14,38 @@ internal static class ScreenshotCapture
     /// <summary>Default cap before the AI path gives up waiting and goes text-only.</summary>
     public static readonly TimeSpan DefaultCap = TimeSpan.FromMilliseconds(750);
 
+    /// <summary>
+    /// workspace-romy.1: cap for the setup wizard. The old 750ms default raced a
+    /// capture this file documents as taking 0.5-3s, so the wizard almost always
+    /// proceeded text-only — the model never saw the page it was asked to lay
+    /// out. The wizard's first model round-trip takes far longer than 4s, and
+    /// the capture is started while the entry card renders, so waiting here
+    /// costs the user nothing.
+    /// </summary>
+    public static readonly TimeSpan WizardCap = TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// Reads the pixel dimensions from a PNG's IHDR chunk (bytes 16-23) for
+    /// attach telemetry. Returns null when the buffer is not a parseable PNG.
+    /// </summary>
+    public static (int Width, int Height)? TryReadPngSize(byte[]? png)
+    {
+        if (png == null || png.Length < 24)
+        {
+            return null;
+        }
+
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A, then IHDR length+type.
+        if (png[0] != 0x89 || png[1] != 0x50 || png[2] != 0x4E || png[3] != 0x47)
+        {
+            return null;
+        }
+
+        var width = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
+        var height = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
+        return width > 0 && height > 0 ? (width, height) : null;
+    }
+
     public static async Task<byte[]?> WithCapAsync(
         Func<Task<byte[]?>> capture,
         TimeSpan cap,

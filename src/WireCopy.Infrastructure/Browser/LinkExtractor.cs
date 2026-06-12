@@ -174,8 +174,13 @@ public class LinkExtractor : ILinkExtractor
 
                     var parentSelector = GetParentSelector(anchor);
 
-                    // Filter out ads and sponsored content
-                    if (IsAdOrSponsoredLink(displayText, parentSelector))
+                    // workspace-romy.4: chrome-shaped ad/sponsor links (CTAs,
+                    // newsletter plugs) are still dropped, but STORY-SHAPED ones
+                    // are kept and flagged — dropping them hid promo slots from
+                    // the AI analyzer entirely, so it could neither demote nor
+                    // exclude them by pattern.
+                    var isSponsored = IsAdOrSponsoredLink(displayText, parentSelector);
+                    if (isSponsored && displayText.Length < MinStoryTextLength)
                     {
                         _logger.LogDebug("Filtered ad/sponsor link: {Text}", displayText);
                         skippedAd++;
@@ -183,6 +188,29 @@ public class LinkExtractor : ILinkExtractor
                     }
 
                     var linkInfo = ClassifyLink(absoluteUrl, displayText, parentSelector, baseUrl);
+                    if (isSponsored)
+                    {
+                        // Flagged promo slots never outrank stories: keep them,
+                        // but cap the score so they start collapsed/below.
+                        linkInfo = linkInfo with
+                        {
+                            IsSponsored = true,
+                            ImportanceScore = Math.Min(linkInfo.ImportanceScore, 35),
+                        };
+                    }
+
+                    // workspace-romy.2: visual geometry stamped on the live DOM
+                    // by PageLoader.StampLinkGeometryAsync (absent for HTTP
+                    // fetches and pre-geometry cached HTML).
+                    var geometry = LinkGeometry.Parse(anchor.GetAttributeValue("data-wc-geom", string.Empty));
+                    if (geometry != null)
+                    {
+                        linkInfo = linkInfo with
+                        {
+                            Geometry = geometry,
+                            ImportanceScore = ApplyGeometryBoost(linkInfo.ImportanceScore, geometry),
+                        };
+                    }
 
                     // Refine Content classification: distinguish headline links from inline references
                     if (linkInfo.Type == LinkType.Content)
@@ -470,7 +498,8 @@ public class LinkExtractor : ILinkExtractor
                     {
                         Author = link.Author ?? existing.Author,
                         PublishedDate = link.PublishedDate ?? existing.PublishedDate,
-                        SectionTitle = link.SectionTitle ?? existing.SectionTitle
+                        SectionTitle = link.SectionTitle ?? existing.SectionTitle,
+                        Geometry = link.Geometry ?? existing.Geometry
                     };
                 }
                 else
@@ -523,10 +552,47 @@ public class LinkExtractor : ILinkExtractor
                 ? l with
                 {
                     Type = LinkType.Content,
-                    ImportanceScore = CalculateImportance(LinkType.Content, l.DisplayText, l.ParentSelector),
+                    ImportanceScore = ApplyGeometryBoost(
+                        CalculateImportance(LinkType.Content, l.DisplayText, l.ParentSelector),
+                        l.Geometry),
                 }
                 : l)
             .ToList();
+    }
+
+    /// <summary>
+    /// workspace-romy.2: folds measured visual prominence into the heuristic
+    /// importance score. Above-the-fold placement and headline-sized/bold type
+    /// push a link up; clearly utility-sized type (&lt;= 11px) pushes it down.
+    /// No geometry (null) leaves the score untouched.
+    /// </summary>
+    internal static int ApplyGeometryBoost(int importance, LinkGeometry? geometry)
+    {
+        if (geometry == null)
+        {
+            return importance;
+        }
+
+        if (geometry.AboveFold)
+        {
+            importance += 8;
+        }
+
+        if (geometry.FontSize >= 17)
+        {
+            importance += 8;
+        }
+        else if (geometry.FontSize > 0 && geometry.FontSize <= 11)
+        {
+            importance -= 8;
+        }
+
+        if (geometry.IsBold)
+        {
+            importance += 4;
+        }
+
+        return Math.Clamp(importance, 0, 100);
     }
 
     /// <summary>

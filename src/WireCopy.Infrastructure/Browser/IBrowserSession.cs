@@ -154,6 +154,15 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<byte[]?> CaptureScreenshotAsync();
 
     /// <summary>
+    /// workspace-romy.3: captures a screenshot with Set-of-Marks badges —
+    /// numbered overlays drawn at each mark's anchor (matched by resolved
+    /// href) before the shot and removed after, so the AI analyzer can map
+    /// screenshot pixels to link-list indices. Null/empty marks behave like
+    /// <see cref="CaptureScreenshotAsync()"/>.
+    /// </summary>
+    Task<byte[]?> CaptureScreenshotAsync(IReadOnlyList<ScreenshotMark>? marks);
+
+    /// <summary>
     /// Creates a new background page (tab) in the dedicated headless preload
     /// context — a SECOND, completely isolated Playwright persistent context
     /// that lives alongside the foreground browser. The preload context is

@@ -288,12 +288,15 @@ public class TerminalInputHandler : IInputHandler
                     continue;
                 }
 
+                // workspace-romy.6: cursor movement redraws via RedrawInput —
+                // the visible window may need to slide, and a bare
+                // SetCursorPosition could land past the box edge on long input.
                 if (keyInfo.Key == ConsoleKey.LeftArrow)
                 {
                     if (cursorPos > 0)
                     {
                         cursorPos--;
-                        Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     }
 
                     continue;
@@ -304,7 +307,7 @@ public class TerminalInputHandler : IInputHandler
                     if (cursorPos < input.Length)
                     {
                         cursorPos++;
-                        Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                        RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     }
 
                     continue;
@@ -313,14 +316,14 @@ public class TerminalInputHandler : IInputHandler
                 if (keyInfo.Key == ConsoleKey.Home)
                 {
                     cursorPos = 0;
-                    Console.SetCursorPosition(promptStart, targetRow);
+                    RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     continue;
                 }
 
                 if (keyInfo.Key == ConsoleKey.End)
                 {
                     cursorPos = input.Length;
-                    Console.SetCursorPosition(promptStart + cursorPos, targetRow);
+                    RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
                     continue;
                 }
 
@@ -399,6 +402,12 @@ public class TerminalInputHandler : IInputHandler
     /// optional <paramref name="maxInputCells"/> cap is honoured so FormField
     /// callers (with a narrow box) don't paint over the right-hand border —
     /// see workspace-cgnt.
+    /// workspace-romy.6: input longer than the visible box scrolls horizontally
+    /// instead of freezing — the old code truncated the DISPLAY at the box
+    /// width and pinned the cursor there, so typing past ~60 cells in a docked
+    /// terminal looked dead even though the buffer kept growing. The visible
+    /// window slides to keep the cursor in view, with '…' markers at a
+    /// scrolled-off edge.
     /// </summary>
     private static void RedrawInput(System.Text.StringBuilder input, int promptStart, int targetRow, int cursorPos, bool isSecret, int? maxInputCells = null)
     {
@@ -407,14 +416,46 @@ public class TerminalInputHandler : IInputHandler
         var maxWidth = maxInputCells.HasValue
             ? Math.Max(1, maxInputCells.Value)
             : Math.Max(1, Console.WindowWidth - 1 - promptStart);
-        if (display.Length > maxWidth)
+
+        var (window, windowStart) = ScrollWindow(display, cursorPos, maxWidth);
+        Console.Write(window.PadRight(maxWidth)); // full-width pad clears stale cells as the window slides
+        Console.SetCursorPosition(promptStart + Math.Min(cursorPos - windowStart, maxWidth - 1), targetRow);
+    }
+
+    /// <summary>
+    /// workspace-romy.6: computes the visible slice of <paramref name="display"/>
+    /// for a box of <paramref name="maxWidth"/> cells so the cursor is always
+    /// inside the window. Stateless: the window start derives from the cursor
+    /// alone (cursor pinned to the right edge once it passes the width).
+    /// Scrolled-off edges are marked with '…'. Returns the slice and its start
+    /// index in the full string.
+    /// </summary>
+#pragma warning disable SA1202 // kept adjacent to RedrawInput, its only production caller
+    internal static (string Window, int Start) ScrollWindow(string display, int cursorPos, int maxWidth)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        maxWidth = Math.Max(1, maxWidth);
+        cursorPos = Math.Clamp(cursorPos, 0, display.Length);
+
+        // Reserve one cell at the right edge for the cursor to sit in when at
+        // end-of-input, so it never overwrites the box border.
+        var start = Math.Max(0, cursorPos - maxWidth + 1);
+        var visible = Math.Min(maxWidth, display.Length - start);
+        var window = display.Substring(start, visible);
+
+        if (start > 0 && window.Length > 0)
         {
-            display = display[..maxWidth];
+            window = '…' + window[1..];
         }
 
-        Console.Write(display + " "); // trailing space clears deleted char
-        Console.SetCursorPosition(promptStart + Math.Min(cursorPos, maxWidth), targetRow);
+        if (start + visible < display.Length && window.Length > 1)
+        {
+            window = window[..^1] + '…';
+        }
+
+        return (window, start);
     }
+#pragma warning restore SA1202
 
     private async Task<NavigationCommand> WaitForInputCoreAsync(CancellationToken cancellationToken)
     {

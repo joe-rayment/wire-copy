@@ -182,9 +182,36 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             },
             "exclude_selectors": { "type": "array", "items": { "type": "string" } },
             "exclude_url_patterns": { "type": "array", "items": { "type": "string" } },
-            "exclude_indices": { "type": "array", "items": { "type": "integer" } }
+            "exclude_indices": { "type": "array", "items": { "type": "integer" } },
+            "confidence": { "type": "number" },
+            "confirm_question": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "prompt": { "type": "string" },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "label": { "type": "string" },
+                          "parent_selector": { "type": "string" },
+                          "url_pattern": { "type": "string" }
+                        },
+                        "required": ["label", "parent_selector", "url_pattern"]
+                      }
+                    }
+                  },
+                  "required": ["prompt", "options"]
+                }
+              ]
+            }
           },
-          "required": ["sections", "exclude_selectors", "exclude_url_patterns", "exclude_indices"]
+          "required": ["sections", "exclude_selectors", "exclude_url_patterns", "exclude_indices", "confidence", "confirm_question"]
         }
         """);
 
@@ -319,7 +346,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             .Where(l => l.Type == LinkType.Content)
             .ToList();
 
-        var systemPrompt = BuildCuratedSystemPrompt();
+        var systemPrompt = BuildCuratedSystemPrompt(screenshot is { Length: > 0 });
         var userPrompt = BuildCuratedUserPrompt(contentLinks, pageUrl);
 
         // workspace-99ve: append user-supplied editorial guidance to the
@@ -383,7 +410,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
         var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
-        var systemPrompt = BuildSetupQuestionsSystemPrompt(_config.MaxSetupQuestions);
+        var systemPrompt = BuildSetupQuestionsSystemPrompt(_config.MaxSetupQuestions, screenshot is { Length: > 0 });
         var userPrompt = BuildCuratedUserPrompt(contentLinks, pageUrl);
 
         for (int attempt = 0; attempt < 2; attempt++)
@@ -416,7 +443,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     }
 
     /// <inheritdoc />
-    public async Task<SiteHierarchyConfig> InferPatternFromAnswersAsync(
+    public async Task<InferredPattern> InferPatternFromAnswersAsync(
         byte[]? screenshot,
         List<LinkInfo> links,
         string pageUrl,
@@ -432,7 +459,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
         var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
-        var systemPrompt = BuildInferPatternSystemPrompt();
+        var systemPrompt = BuildInferPatternSystemPrompt(screenshot is { Length: > 0 });
         var userPrompt = BuildInferPatternUserPrompt(contentLinks, pageUrl, proposal, answers);
 
         for (int attempt = 0; attempt < 2; attempt++)
@@ -558,6 +585,36 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         contentLinks.Count >= LinkExtractor.AggregatorMinStoryLinks &&
         (double)contentLinks.Count(l => l.IsExternal) / contentLinks.Count >= LinkExtractor.AggregatorExternalShare;
 
+    /// <summary>
+    /// workspace-romy.4: the shared visual-hierarchy instruction block. The
+    /// prompts previously never mentioned the attached image, so even when a
+    /// screenshot made it into the message the model had no reason to ground
+    /// its ranking in what the page LOOKS like — the techmeme failure mode
+    /// (promo rail above the river) in one sentence.
+    /// </summary>
+    internal static string VisionGuidance(bool hasScreenshot)
+    {
+        var sb = new StringBuilder();
+        if (hasScreenshot)
+        {
+            sb.AppendLine("A SCREENSHOT of the page is attached — treat it as ground truth for");
+            sb.AppendLine("visual hierarchy. The lead story is the large-type item in the main");
+            sb.AppendLine("column near the top. Sponsor posts, event calendars, job boards, and");
+            sb.AppendLine("other promo slots sit in narrow side rails or visually separate boxes");
+            sb.AppendLine("even when their markup mimics stories — they must NEVER lead the");
+            sb.AppendLine("layout or sit above real stories. If the screenshot carries small");
+            sb.AppendLine("numbered badges, each badge is the index of that link in the list.");
+        }
+
+        sb.AppendLine("Links may carry a `vis:` line — measured page geometry (x/y document");
+        sb.AppendLine("position, width x height, font size with 'b' for bold, above-fold).");
+        sb.AppendLine("Use it to separate the main column (wide, large type, small x) from");
+        sb.AppendLine("rails (narrow, small type, large x) and to find the lead. Links with");
+        sb.AppendLine("`flag=sponsor` matched ad/sponsor heuristics: exclude them or rank them");
+        sb.Append("last, and prefer excluding their whole container by parent selector.");
+        return sb.ToString();
+    }
+
     private static string BuildHierarchySystemPrompt()
     {
         var sb = new StringBuilder();
@@ -607,10 +664,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         return sb.ToString();
     }
 
-    private static string BuildCuratedSystemPrompt()
+    private static string BuildCuratedSystemPrompt(bool hasScreenshot)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are curating a news homepage's links for a terminal-based reader.");
+        sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
         sb.AppendLine("Each link is given with a `score` (0-100) — an upstream estimate of");
         sb.AppendLine("visual/editorial prominence (higher = larger/more featured on the page)");
@@ -664,10 +722,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             var link = contentLinks[i];
             var sect = string.IsNullOrWhiteSpace(link.SectionTitle) ? "-" : link.SectionTitle;
             sb.AppendLine(
-                $"[{i}] score={link.ImportanceScore} sect=\"{sect}\" \"{link.DisplayText}\" -> {FormatLinkUrl(link)}");
+                $"[{i}] score={link.ImportanceScore}{FormatLinkFlags(link)} sect=\"{sect}\" \"{link.DisplayText}\" -> {FormatLinkUrl(link)}");
             if (!string.IsNullOrEmpty(link.ParentSelector))
             {
                 sb.AppendLine($"    parent: {link.ParentSelector}");
+            }
+
+            // workspace-romy.2: measured geometry — the durable prominence
+            // signal (a wide 18px main-column headline vs a narrow 12px rail
+            // item). Omitted when the page was fetched without a browser.
+            if (link.Geometry is { } g)
+            {
+                var bold = g.IsBold ? "b" : string.Empty;
+                var fold = g.AboveFold ? " above-fold" : string.Empty;
+                sb.AppendLine($"    vis: x={g.X} y={g.Y} {g.Width}x{g.Height} font={g.FontSize}{bold}{fold}");
             }
         }
 
@@ -683,6 +751,15 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// workspace-romy.4: inline flags after the score. flag=sponsor marks links
+    /// whose text/container matched the ad/sponsor heuristics — kept in the
+    /// list (instead of silently dropped) precisely so the model can demote or
+    /// exclude the whole slot by its durable selector.
+    /// </summary>
+    private static string FormatLinkFlags(LinkInfo link) =>
+        link.IsSponsored ? " flag=sponsor" : string.Empty;
 
     /// <summary>
     /// Same-site links render as path-only (saves tokens, surfaces path patterns);
@@ -714,11 +791,12 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             : url;
     }
 
-    private static string BuildSetupQuestionsSystemPrompt(int maxQuestions)
+    private static string BuildSetupQuestionsSystemPrompt(int maxQuestions, bool hasScreenshot)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are setting up a news homepage for a terminal reader by inferring a REUSABLE pattern.");
         sb.AppendLine("Each link has a score (0-100 prominence), a sect (nearest heading or '-'), text, and a path-only URL.");
+        sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
         sb.AppendLine("Return TWO things:");
         sb.AppendLine();
@@ -756,10 +834,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         return sb.ToString();
     }
 
-    private static string BuildInferPatternSystemPrompt()
+    private static string BuildInferPatternSystemPrompt(bool hasScreenshot)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are finalizing a REUSABLE homepage layout pattern from the user's answers.");
+        sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
         sb.AppendLine("Return durable sections (most prominent first):");
         sb.AppendLine("- name: short label (the first/lead section should be the single top story);");
@@ -775,7 +854,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("parent-company link) and exclude_indices (their link numbers). NEVER identify a");
         sb.AppendLine("link by its exact URL — only by selector or path pattern. On AGGREGATOR pages");
         sb.AppendLine("(stories span many hosts) url_patterns cannot generalize — use parent_selectors");
-        sb.Append("only. Honour the user's answers.");
+        sb.AppendLine("only. Honour the user's answers.");
+        sb.AppendLine();
+        sb.AppendLine("Also return `confidence` (0..1, how sure you are this layout matches the");
+        sb.AppendLine("page's editorial hierarchy) and `confirm_question`: null when confident,");
+        sb.AppendLine("or ONE targeted question (e.g. 'Which of these is the main story?') with");
+        sb.AppendLine("2-4 options when genuinely torn. Each option needs a label plus a durable");
+        sb.AppendLine("parent_selector and/or url_pattern pointing at real elements. The user can");
+        sb.Append("ignore the question and save as-is, so never gate the layout on it.");
         return sb.ToString();
     }
 
@@ -1133,9 +1219,10 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     /// workspace-5oe9.7: parses the round-2 response into a durable
     /// <see cref="SiteHierarchyConfig"/>. Prefers model-returned selectors;
     /// falls back to <see cref="SelectorDerivation"/> over a section's
-    /// story_indices when the model omitted them.
+    /// story_indices when the model omitted them. workspace-romy.8: wrapped in
+    /// <see cref="InferredPattern"/> with confidence + optional confirm question.
     /// </summary>
-    internal static SiteHierarchyConfig ParsePatternFromAnswers(
+    internal static InferredPattern ParsePatternFromAnswers(
         string responseText, List<LinkInfo> contentLinks, string pageUrl, string modelVersion)
     {
         var jsonText = StripOptionalFences(responseText);
@@ -1207,7 +1294,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         var domain = SafeHost(pageUrl);
-        return new SiteHierarchyConfig
+        var config = new SiteHierarchyConfig
         {
             Domain = domain,
             UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(pageUrl),
@@ -1219,6 +1306,30 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             Kind = LayoutKind.AiCurated,
             Version = 3,
             Strategy = ScrapingStrategies.AiCuratedStrategy.StrategyId,
+        };
+
+        // workspace-romy.8: an optional targeted confirm question, shown as
+        // ignorable rows on the preview card. Clamped like round-1 questions.
+        SetupQuestion? confirmQuestion = null;
+        if (parsed.ConfirmQuestion is { } cq && !string.IsNullOrWhiteSpace(cq.Prompt))
+        {
+            confirmQuestion = new SetupQuestion
+            {
+                Id = "confirm",
+                Prompt = cq.Prompt!,
+                Kind = SetupQuestionKind.PickMain,
+                Options = (cq.Options ?? new())
+                    .Take(MaxOptionsPerQuestion)
+                    .Select(MapOption)
+                    .ToList(),
+            };
+        }
+
+        return new InferredPattern
+        {
+            Config = config,
+            Confidence = Math.Clamp(parsed.Confidence ?? 1.0, 0.0, 1.0),
+            ConfirmQuestion = confirmQuestion,
         };
     }
 
@@ -1454,5 +1565,26 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         [JsonPropertyName("exclude_indices")]
         public List<int>? ExcludeIndices { get; set; }
+
+        // workspace-romy.8: self-assessed confidence + at most one targeted
+        // confirm question (both optional for older fixtures/responses).
+        [JsonPropertyName("confidence")]
+        public double? Confidence { get; set; }
+
+        [JsonPropertyName("confirm_question")]
+        public ConfirmQuestionResponse? ConfirmQuestion { get; set; }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "SonarAnalyzer.CSharp",
+        "S3459:Unassigned members should be removed",
+        Justification = "Properties are assigned by JSON deserialization")]
+    private sealed class ConfirmQuestionResponse
+    {
+        [JsonPropertyName("prompt")]
+        public string? Prompt { get; set; }
+
+        [JsonPropertyName("options")]
+        public List<OptionResponse>? Options { get; set; }
     }
 }

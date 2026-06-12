@@ -426,7 +426,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
-    public async Task<byte[]?> CaptureScreenshotAsync()
+    public Task<byte[]?> CaptureScreenshotAsync() => CaptureScreenshotAsync(marks: null);
+
+    /// <inheritdoc />
+    public async Task<byte[]?> CaptureScreenshotAsync(IReadOnlyList<ScreenshotMark>? marks)
     {
         await _lock.WaitAsync().ConfigureAwait(false);
         try
@@ -436,14 +439,76 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 return null;
             }
 
+            // workspace-romy.3: draw Set-of-Marks badges before the shot so the
+            // AI analyzer can map pixels to link indices. Best-effort — a failed
+            // apply degrades to an unmarked screenshot.
+            var marked = false;
+            if (marks is { Count: > 0 })
+            {
+                try
+                {
+                    var drawn = await _page.EvaluateAsync<int>(
+                        ScreenshotMarkScript.Apply,
+                        marks.Select(m => new { i = m.Index, url = m.Url }).ToArray()).ConfigureAwait(false);
+                    marked = true;
+                    _logger.LogDebug("Set-of-Marks: drew {Drawn} of {Requested} badges", drawn, marks.Count);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Set-of-Marks apply failed, capturing unmarked (non-fatal)");
+                }
+            }
+
             try
             {
+                // workspace-romy.1: capture past the fold — a viewport-only shot
+                // of a news homepage shows the masthead and little else, so the
+                // AI layout analyzer could never see the river it was ranking.
+                // Clip to the page's real width and up to three viewport heights
+                // (clip coordinates may exceed the viewport in Playwright).
+                var dims = await _page.EvaluateAsync<int[]>(
+                    @"() => {
+                        const de = document.documentElement;
+                        const vw = window.innerWidth || de.clientWidth || 1280;
+                        const vh = window.innerHeight || de.clientHeight || 800;
+                        return [vw, Math.min(de.scrollHeight || vh, vh * 3)];
+                    }").ConfigureAwait(false);
+                if (dims is { Length: 2 } && dims[0] > 0 && dims[1] > 0)
+                {
+                    return await _page.ScreenshotAsync(new PageScreenshotOptions
+                    {
+                        Clip = new() { X = 0, Y = 0, Width = dims[0], Height = dims[1] },
+                    }).ConfigureAwait(false);
+                }
+
                 return await _page.ScreenshotAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to capture screenshot (non-fatal)");
-                return null;
+                _logger.LogDebug(ex, "Clipped screenshot failed, retrying viewport-only (non-fatal)");
+                try
+                {
+                    return await _page.ScreenshotAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex2)
+                {
+                    _logger.LogDebug(ex2, "Failed to capture screenshot (non-fatal)");
+                    return null;
+                }
+            }
+            finally
+            {
+                if (marked)
+                {
+                    try
+                    {
+                        await _page.EvaluateAsync<bool>(ScreenshotMarkScript.Remove).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Set-of-Marks removal failed (non-fatal)");
+                    }
+                }
             }
         }
         finally

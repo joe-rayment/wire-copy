@@ -213,6 +213,48 @@ public class PageLoader : IPageLoader
         }
     }
 
+    /// <summary>
+    /// workspace-romy.2: annotates every visible anchor with a
+    /// <c>data-wc-geom</c> attribute ("x,y,w,h,fontSize,fontWeight,aboveFold")
+    /// in document coordinates, so <see cref="LinkExtractor"/> — which parses
+    /// the static HTML snapshot and can never measure layout itself — can
+    /// recover visual prominence. Best-effort: any failure leaves the page
+    /// unannotated and extraction proceeds without geometry.
+    /// </summary>
+    internal static async Task StampLinkGeometryAsync(IPage page, ILogger logger)
+    {
+        try
+        {
+            var stamped = await page.EvaluateAsync<int?>(@"() => {
+                const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+                let n = 0;
+                for (const a of document.querySelectorAll('a[href]')) {
+                    const r = a.getBoundingClientRect();
+                    if (r.width < 1 || r.height < 1) continue;
+                    const s = window.getComputedStyle(a);
+                    if (s.visibility === 'hidden' || s.display === 'none') continue;
+                    const x = Math.round(r.left + window.scrollX);
+                    const y = Math.round(r.top + window.scrollY);
+                    const fs = Math.round(parseFloat(s.fontSize) || 0);
+                    let fw = parseInt(s.fontWeight, 10);
+                    if (!Number.isFinite(fw)) fw = s.fontWeight === 'bold' ? 700 : 400;
+                    const fold = (r.top + window.scrollY) < vh ? 1 : 0;
+                    a.setAttribute('data-wc-geom',
+                        x + ',' + y + ',' + Math.round(r.width) + ',' + Math.round(r.height) +
+                        ',' + fs + ',' + fw + ',' + fold);
+                    n++;
+                }
+                return n;
+            }").ConfigureAwait(false);
+
+            logger.LogDebug("Stamped geometry on {Count} anchors", stamped ?? 0);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to stamp link geometry (non-fatal)");
+        }
+    }
+
     private static bool IsJavaScriptRequired(string html)
     {
         // Cloudflare / DataDome / general bot-challenge pages — these need a browser to solve.
@@ -695,6 +737,11 @@ public class PageLoader : IPageLoader
 
             // Dismiss login/subscription overlays that may cover content
             await DismissOverlaysAsync(page, _logger).ConfigureAwait(false);
+
+            // workspace-romy.2: stamp per-link geometry onto the DOM so the
+            // static-HTML extraction pass downstream can see visual prominence.
+            await StampLinkGeometryAsync(page, _logger).ConfigureAwait(false);
+
             var finalUrl = page.Url;
             var html = await page.ContentAsync().ConfigureAwait(false);
 

@@ -73,7 +73,7 @@ public class SetupWizardTests
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(config);
+            .Returns(new InferredPattern { Config = config });
         return analyzer;
     }
 
@@ -98,7 +98,7 @@ public class SetupWizardTests
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(ci => { capturedAnswers = ci.Arg<IReadOnlyList<SetupAnswer>>(); return SomeConfig(); });
+            .Returns(ci => { capturedAnswers = ci.Arg<IReadOnlyList<SetupAnswer>>(); return new InferredPattern { Config = SomeConfig() }; });
 
         var input = InputSequence(CommandType.ActivateLink); // Enter every card
 
@@ -332,7 +332,7 @@ public class SetupWizardTests
             .Returns(ci =>
             {
                 allAnswers.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
-                return SomeConfig();
+                return new InferredPattern { Config = SomeConfig() };
             });
 
         // Preview: Space → adjust card: no pick wired, so cursor 0 is the
@@ -505,7 +505,7 @@ public class SetupWizardTests
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(ci => { captured = ci.Arg<IReadOnlyList<SetupAnswer>>().ToList(); return SomeConfig(); });
+            .Returns(ci => { captured = ci.Arg<IReadOnlyList<SetupAnswer>>().ToList(); return new InferredPattern { Config = SomeConfig() }; });
 
         var input = InputSequence(CommandType.ActivateLink);
 
@@ -573,7 +573,7 @@ public class SetupWizardTests
             .Returns(ci =>
             {
                 allAnswers.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
-                return ++inferCalls == 1 ? MismatchedConfig() : SomeConfig();
+                return new InferredPattern { Config = ++inferCalls == 1 ? MismatchedConfig() : SomeConfig() };
             });
 
         var input = InputSequence(CommandType.ActivateLink); // Enter saves the (repaired) preview
@@ -640,7 +640,7 @@ public class SetupWizardTests
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(_ => ++inferCalls <= 2 ? MismatchedConfig() : SomeConfig());
+            .Returns(_ => new InferredPattern { Config = ++inferCalls <= 2 ? MismatchedConfig() : SomeConfig() });
 
         // infer #1 degenerate → auto-repair infer #2 still degenerate → failure
         // card: Enter on "Point at the main story" → pick → infer #3 good →

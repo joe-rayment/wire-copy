@@ -10,10 +10,15 @@ namespace WireCopy.Infrastructure.Browser;
 /// allows at most one override re-inference and one degenerate retry on top.
 /// Enforced in code (not just documented) so no path can spin the model
 /// unbounded.
+/// workspace-romy.7: default raised 4 -> 8. The old ceiling left exactly ONE
+/// adjustment after propose + infer + auto-repair, so the wizard's
+/// adjust-and-re-preview loop dead-ended after a single round. 8 funds the
+/// base contract plus several genuine refinement rounds while still bounding
+/// cost; the adjust card surfaces the remaining calls when they run low.
 /// </summary>
 internal sealed class ModelRoundTripBudget
 {
-    public ModelRoundTripBudget(int max = 4)
+    public ModelRoundTripBudget(int max = 8)
     {
         Max = max;
     }
@@ -23,6 +28,9 @@ internal sealed class ModelRoundTripBudget
     public int Used { get; private set; }
 
     public bool Exhausted => Used >= Max;
+
+    /// <summary>Round-trips still available (never negative).</summary>
+    public int Remaining => Math.Max(0, Max - Used);
 
     /// <summary>
     /// Reserves one round-trip if budget remains. Returns false when the ceiling

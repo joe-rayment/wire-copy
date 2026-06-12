@@ -73,6 +73,20 @@ public record LinkInfo
     public bool IsExternal { get; init; }
 
     /// <summary>
+    /// workspace-romy.2: visual geometry measured on the live page before the
+    /// HTML snapshot (null for HTTP-fetched or cached pre-geometry HTML).
+    /// </summary>
+    public LinkGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// workspace-romy.4: true when the link's text or container matched the
+    /// ad/sponsor heuristics but the link was story-shaped enough to keep —
+    /// surfaced to the AI analyzer (flag=sponsor) and to the wizard's
+    /// ordering self-test so promo slots never outrank real stories.
+    /// </summary>
+    public bool IsSponsored { get; init; }
+
+    /// <summary>
     /// Classifies whether this LinkInfo is a regular link or a header.
     /// </summary>
     public HeaderType HeaderType { get; init; }

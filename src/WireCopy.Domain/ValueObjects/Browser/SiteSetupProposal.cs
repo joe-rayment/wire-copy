@@ -83,3 +83,24 @@ public record SetupAnswer
 
     public required string Answer { get; init; }
 }
+
+/// <summary>
+/// workspace-romy.8 — round-2 output of the AI setup contract: the durable
+/// config plus the model's self-assessed confidence and AT MOST one targeted
+/// confirm question ("is X the lead?"). The wizard renders the question as
+/// ignorable rows on the preview card — Enter on a section row still saves
+/// immediately, so a confident first proposal stays one keystroke.
+/// </summary>
+public record InferredPattern
+{
+    public required SiteHierarchyConfig Config { get; init; }
+
+    /// <summary>Model's 0..1 confidence in the pattern (1.0 when not reported).</summary>
+    public double Confidence { get; init; } = 1.0;
+
+    /// <summary>
+    /// One targeted confirm question, or null when the model is confident.
+    /// Only shown when discriminating (see the wizard's IsDiscriminating).
+    /// </summary>
+    public SetupQuestion? ConfirmQuestion { get; init; }
+}
