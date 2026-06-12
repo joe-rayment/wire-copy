@@ -160,7 +160,7 @@ public class DockSpotlightTests
         await using var spotlight = CreateSpotlight(session);
 
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/1", "one"));
-        await firstAcquireEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await firstAcquireEntered.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
         // Burst arrives while sync #1 is stuck in GetLensPageAsync.
         spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/2", "two"));
@@ -170,7 +170,15 @@ public class DockSpotlightTests
 
         // Drain: the burst must collapse into exactly ONE follow-up sync.
         await WaitForAsync(() => Volatile.Read(ref acquisitions) >= 2);
-        await Task.Delay(200);
+
+        // Quiescence barrier for the negative assertion: the pump's drain loop
+        // doesn't observe cancellation, so DisposeAsync only returns once every
+        // taken-or-pending request has been processed and the pump task has
+        // exited. After it returns the count is final — a leaked third sync
+        // would already have been counted. (No wall-clock settle: under full-
+        // suite load a fixed delay can both miss a late extra sync and isn't
+        // long enough to prove there wasn't one.)
+        await spotlight.DisposeAsync();
         Volatile.Read(ref acquisitions).Should().Be(2, "three queued requests must coalesce into one");
     }
 
@@ -191,7 +199,10 @@ public class DockSpotlightTests
 
     private static async Task WaitForAsync(Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        // Generous deadline: under full-suite parallel load the pump's Task.Run
+        // and mock continuations can be starved for seconds. The wait exits as
+        // soon as the condition holds, so passing runs never pay this.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
         while (!condition() && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10);
