@@ -1403,7 +1403,13 @@ public class LinkExtractor : ILinkExtractor
             depth++;
         }
 
-        return string.Join(" > ", parts);
+        // workspace-romy.10: drop volatile (digit-stamped) id fragments so the
+        // stored parent is durable. Keeping them poisoned everything
+        // downstream: the AI was told to copy parent fragments exactly (so it
+        // copied date-stamped ids that match nothing tomorrow), and durable
+        // section selectors could not substring-match a parent chain with a
+        // volatile id in the middle.
+        return SelectorDerivation.StripVolatileIds(string.Join(" > ", parts));
     }
 
     private string? ResolveUrl(string href, Uri baseUri)

@@ -362,8 +362,9 @@ internal static class SetupWizard
     ///     prominent link — top-quartile importance, or above-fold with
     ///     headline-sized type;
     /// (2) no sponsor-majority section may rank above a real story section;
-    /// (3) at least 70% of high-importance links (score 70+) must be covered
-    ///     when the page has enough of them to judge.
+    /// (3) at least 70% of high-importance links (score 80+ — the base Content
+    ///     score is 70, so 70 would sweep in every short publisher-tag link)
+    ///     must be covered when the page has enough of them to judge.
     /// </summary>
     internal static SetupAnswer? OrderingSanityFailure(SiteHierarchyConfig config, List<LinkInfo> links)
     {
@@ -429,8 +430,9 @@ internal static class SetupWizard
             }
         }
 
-        // Rule 3: high-importance coverage.
-        var highScore = contentLinks.Where(l => l.ImportanceScore >= 70).ToList();
+        // Rule 3: high-importance coverage. 80+ because 70 is the BASE score
+        // for every Content link — real stories earn boosts past it.
+        var highScore = contentLinks.Where(l => l.ImportanceScore >= 80).ToList();
         if (highScore.Count >= 3)
         {
             var covered = highScore.Count(l => config.Sections.Any(s => NavigationTreeBuilder.MatchesSection(l, s)));
@@ -441,7 +443,7 @@ internal static class SetupWizard
                 {
                     QuestionId = "ordering-sanity-failure",
                     Answer = $"Sanity check failed: your sections cover only {covered} of the page's {highScore.Count} " +
-                             $"high-importance links (score 70+), e.g. \"{Truncate(missed.DisplayText, 60)}\" " +
+                             $"high-importance links (score 80+), e.g. \"{Truncate(missed.DisplayText, 60)}\" " +
                              $"(parent: {missed.ParentSelector ?? "-"}) is not matched by any section. These are the " +
                              "page's main stories — broaden the section identifiers so the main story list is covered.",
                 };

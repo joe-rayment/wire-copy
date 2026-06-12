@@ -29,6 +29,39 @@ internal static class SelectorDerivation
     // Combinators / whitespace that separate CSS compound selectors.
     private static readonly Regex SelectorSplit = new(@"[\s>+~]+", RegexOptions.Compiled);
 
+    // workspace-romy.10: id fragments containing 2+ digits are volatile
+    // per-item / per-day stamps (techmeme '#0i1', memeorandum '#260611p108'),
+    // never durable structure ('#hiring', '#topcol2' survive).
+    private static readonly Regex VolatileIdFragment = new(
+        @"#(?=[A-Za-z0-9_-]*\d[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// workspace-romy.10: strips volatile (digit-bearing) id fragments from a
+    /// selector so model-returned identifiers stay durable across visits. On
+    /// memeorandum the analyzer kept returning 'div.item#260611p108'-style
+    /// selectors — valid today, matching ONE item even today, nothing
+    /// tomorrow — which collapsed coverage below the degenerate gate.
+    /// Removing the id only ever broadens a selector, so the sanitized
+    /// fragment matches at least everything the original did.
+    /// </summary>
+    public static string StripVolatileIds(string selector)
+    {
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            return selector;
+        }
+
+        var stripped = VolatileIdFragment.Replace(selector, string.Empty);
+
+        // Drop compounds left empty (a bare '#260611p44' between combinators)
+        // so we don't emit 'div.clus >  > div.ii'.
+        var parts = stripped
+            .Split(['>', '+', '~'], StringSplitOptions.TrimEntries)
+            .Where(p => p.Length > 0);
+        return string.Join(" > ", parts);
+    }
+
     /// <summary>
     /// Derives the shared, discriminating parent-selector fragment(s) common to
     /// every link's <see cref="LinkInfo.ParentSelector"/>. A fragment is

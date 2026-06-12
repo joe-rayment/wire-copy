@@ -29,6 +29,26 @@ public class TechmemeExtractionTests
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "techmeme-2026-06-12.html");
 
     [Fact]
+    public async Task RealMemeorandumMarkup_ContentLinksCarryDerivableParents()
+    {
+        var html = await File.ReadAllTextAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "memeorandum-2026-06-12.html"));
+        var extractor = new LinkExtractor(Substitute.For<Microsoft.Extensions.Logging.ILogger<LinkExtractor>>());
+
+        var links = await extractor.ExtractLinksAsync(html, "https://www.memeorandum.com/");
+
+        var content = links.Where(l => l.Type == LinkType.Content).ToList();
+        var storyShaped = content.Where(l => l.DisplayText.Length >= LinkExtractor.MinStoryTextLength).ToList();
+        _output.WriteLine($"total={links.Count} content={content.Count} storyShaped={storyShaped.Count}");
+        foreach (var group in content.GroupBy(l => l.ParentSelector ?? "-").OrderByDescending(g => g.Count()).Take(12))
+        {
+            _output.WriteLine($"  {group.Count(),4} x parent: {group.Key}");
+        }
+
+        storyShaped.Count.Should().BeGreaterThanOrEqualTo(20);
+    }
+
+    [Fact]
     public async Task RealTechmemeMarkup_PromotesRiverStoriesToContent()
     {
         var html = await File.ReadAllTextAsync(FixturePath);

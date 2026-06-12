@@ -1239,7 +1239,16 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         foreach (var s in parsed.Sections ?? new())
         {
             var members = LinksAt(s.StoryIndices);
-            var selectors = (s.ParentSelectors ?? new()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+
+            // workspace-romy.10: sanitize model selectors — date/item-stamped
+            // id fragments (div.item#260611p108) match one link today and
+            // nothing tomorrow; stripping them only broadens the match.
+            var selectors = (s.ParentSelectors ?? new())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(SelectorDerivation.StripVolatileIds)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
             var urlPatterns = (s.UrlPatterns ?? new()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
 
             // B3 fallback only when the model omitted durable identifiers.
@@ -1269,6 +1278,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         var excludeSelectors = (parsed.ExcludeSelectors ?? new())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(SelectorDerivation.StripVolatileIds)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -1336,7 +1347,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     private static SetupOption MapOption(OptionResponse o) => new()
     {
         Label = o.Label ?? string.Empty,
-        ParentSelector = o.ParentSelector ?? string.Empty,
+        ParentSelector = SelectorDerivation.StripVolatileIds(o.ParentSelector ?? string.Empty),
         UrlPattern = o.UrlPattern ?? string.Empty,
         ExampleLinkIndices = (o.ExampleLinkIndices ?? new()).Take(MaxExampleIndicesPerOption).ToList(),
     };

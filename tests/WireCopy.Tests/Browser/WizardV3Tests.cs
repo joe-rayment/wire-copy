@@ -466,6 +466,38 @@ public class WizardV3Tests
         card.Options.Should().HaveCount(1);
     }
 
+    // ---- workspace-romy.10: volatile-id selector sanitization ----
+
+    [Theory]
+    [InlineData("div.item#260611p108", "div.item")]
+    [InlineData("div.clus > div.item#260611p93 > div.mlk", "div.clus > div.item > div.mlk")]
+    [InlineData("div.itc2#260611p44 > div.item#0i1 > strong.L5", "div.itc2 > div.item > strong.L5")]
+    [InlineData("div#hiring > div.rnbody", "div#hiring > div.rnbody")] // structural id kept
+    [InlineData("div#topcol2", "div#topcol2")] // single digit = structural
+    [InlineData("#260611p44 > div.ii", "div.ii")] // bare volatile compound dropped
+    [InlineData("section.lead", "section.lead")]
+    public void StripVolatileIds_RemovesDateStampedIds_KeepsStructure(string input, string expected)
+    {
+        SelectorDerivation.StripVolatileIds(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_SanitizesVolatileIdSelectors()
+    {
+        // The memeorandum failure mode: model returns per-item date-stamped
+        // ids that match one link today and nothing on a revisit.
+        var json =
+            "{\"sections\":[{\"name\":\"Lead\",\"parent_selectors\":[\"div.clus > div.item#260611p108\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[\"div.jsrn#260611ad1\"],\"exclude_url_patterns\":[],\"exclude_indices\":[]}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, ParseLinks(), "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections[0].ParentSelectors.Should().ContainSingle()
+            .Which.Should().Be("div.clus > div.item");
+        result.Config.ExcludeSelectors.Should().ContainSingle()
+            .Which.Should().Be("div.jsrn");
+    }
+
     // ---- workspace-romy.8: wizard flow with a confirm question ----
 
     private static SetupQuestion ConfirmQuestion() => new()

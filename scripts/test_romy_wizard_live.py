@@ -87,7 +87,9 @@ class Gate:
 def drive_to_preview(t, gate):
     """Ctrl+L → AI → answer question cards → return the preview screen (or None)."""
     t.send_keys("C-l")
-    t.wait_for("How should WireCopy read this site?", timeout=20)
+    # Slow, link-heavy pages (memeorandum: 600+ links) take longer to open the
+    # chooser; the pre-flight phase also captures a screenshot first.
+    t.wait_for("How should WireCopy read this site?", timeout=60)
     gate.shot(t, "entry card")
     t.send_keys("Enter")  # ✨ Let AI find the stories
 
@@ -167,10 +169,17 @@ def run_site(site_key, som_dir):
 
     with TermTest(url=url, width=TERM_W, height=45) as t:
         t.wait_for(marker, timeout=120)
-        time.sleep(8)
+
+        # Poll until the tree settles instead of a fixed sleep — heavy pages
+        # (memeorandum) can still be extracting 8s after the title shows.
+        rows, deadline = [], time.time() + 60
+        while time.time() < deadline:
+            rows = headline_rows(t.capture())
+            if len(rows) >= 5:
+                break
+            time.sleep(3)
         screen = gate.shot(t, "1. default tree (fresh cache)")
 
-        rows = headline_rows(screen)
         if len(rows) < 5:
             gate.fail(f"default tree shows only {len(rows)} headline rows (romy.9)")
 
@@ -238,9 +247,14 @@ def run_site(site_key, som_dir):
     # romy.9 warm path: fresh process, same URL, cache intact.
     with TermTest(url=url, width=TERM_W, height=45) as t2:
         t2.wait_for(marker, timeout=120)
-        time.sleep(8)
-        screen = gate.shot(t2, "6. warm-cache revisit (fresh process)")
-        if len(headline_rows(screen)) < 5:
+        rows, deadline = [], time.time() + 60
+        while time.time() < deadline:
+            rows = headline_rows(t2.capture())
+            if len(rows) >= 5:
+                break
+            time.sleep(3)
+        gate.shot(t2, "6. warm-cache revisit (fresh process)")
+        if len(rows) < 5:
             gate.fail("warm-cache revisit lost the headlines (romy.9 warm path)")
 
     return gate
@@ -275,7 +289,13 @@ def main():
     all_failures, full_log = [], []
     try:
         for key in keys:
-            gate = run_site(key, OUT_DIR)
+            try:
+                gate = run_site(key, OUT_DIR)
+            except Exception as ex:  # noqa: BLE001 — one site crashing must not kill the rest
+                gate = Gate(key)
+                first_line = str(ex).splitlines()[0] if str(ex) else type(ex).__name__
+                gate.fail(f"crashed: {first_line}")
+                gate.log.append(f"\n===== [{key}] CRASH =====\n{ex}")
             all_failures.extend(gate.failures)
             full_log.extend(gate.log)
             subprocess.run(["tmux", "kill-server"], capture_output=True)
