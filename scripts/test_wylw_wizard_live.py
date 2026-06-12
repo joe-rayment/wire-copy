@@ -5,21 +5,24 @@ LIVE lens confirmation. Runs the REAL app (real OpenAI round trips) in tmux
 under Xvfb against a local sectioned link-list site, then:
 
   1. Opens the page, waits for the sidecar lens to dock.
-  2. Ctrl+L -> "Let AI find the stories" -> walks every wizard card with Enter,
-     capturing the terminal transcript at each step.
-  3. On the "Confirm your story list" card, captures an X screenshot and
+  2. Ctrl+L -> "Let AI find the stories" -> answers any clarifying-question
+     cards with Enter, capturing the terminal transcript at each step
+     (workspace-6yb7: no overview card, no always-on free-text card).
+  3. On the "Your new layout" PREVIEW (the candidate tree is applied to the
+     real page behind a coverage caption), captures an X screenshot and
      verifies ORANGE TunerScript multi-highlight pixels in the lens window
-     strip (the proposed section's matched links, lit on the live page).
+     strip (the focused section's matched links, lit on the live page).
   4. Enter saves; verifies the "Site set up · AI Curated" toast/status.
   5. RELAUNCHES the app on the same URL and verifies the saved durable config
      routes the revisit (section headers render with no AI round trip).
 
 Usage: python3 scripts/test_wylw_wizard_live.py
-Needs: tmux, Xvfb, ffmpeg, a Release build, an OpenAI key in app settings.
+Needs: tmux, Xvfb, ImageMagick, a Release build, an OpenAI key in app settings.
 """
 
 import http.server
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -85,11 +88,10 @@ class Site(http.server.BaseHTTPRequestHandler):
 
 
 def x_screenshot(name):
+    # ImageMagick `import` (ffmpeg with x11grab is not always present).
     path = os.path.join(OUT_DIR, name)
     subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab",
-         "-video_size", f"{SCREEN_W}x{SCREEN_H}", "-i", DISPLAY,
-         "-frames:v", "1", path],
+        ["import", "-display", DISPLAY, "-window", "root", path],
         check=True, env={**os.environ, "DISPLAY": DISPLAY})
     return path
 
@@ -99,8 +101,7 @@ def orange_pixels(png):
     screenshot — the docked browser window can be wider than DOCK_W (Chromium
     minimum window width), so scan the full frame."""
     raw = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-i", png,
-         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        ["convert", png, "-depth", "8", "rgb:-"],
         check=True, capture_output=True).stdout
     count = 0
     for i in range(0, len(raw) - 2, 3):
@@ -111,8 +112,12 @@ def orange_pixels(png):
 
 
 def wizard_lens_log_lines():
+    import glob
+    logs = sorted(glob.glob("/workspace/logs/wirecopy-*.log"))
+    if not logs:
+        return []
     out = subprocess.run(
-        ["grep", "-h", "Wizard lens:", "/workspace/logs/wirecopy-20260610.log"],
+        ["grep", "-h", "Wizard lens:", logs[-1]],
         capture_output=True, text=True).stdout
     return [l for l in out.splitlines() if l]
 
@@ -167,60 +172,57 @@ def main():
             transcript(t, log, "2. Ctrl+L entry card (AI-first)")
             t.send_keys("Enter")  # ✨ Let AI find the stories
 
-            # --- Round 1 (real model), then the overview card ---
-            t.wait_for("does it look right?", timeout=180)
-            transcript(t, log, "3. overview card — proposed pattern + durable identifier")
-            shot = x_screenshot("01-overview-highlight.png")
-            n = orange_pixels(shot)
-            print(f"lens highlight pixels on overview card: {n}")
-            if n < 100:
-                failures.append(f"overview card: expected orange highlight on lens, found {n} px")
-            t.send_keys("Enter")  # looks good
-
-            # --- Walk question cards / free-text until the confirm card ---
+            # --- Round 1 (real model) → clarifying questions (if any) →
+            # round 2 → the live PREVIEW. workspace-6yb7: there is no overview
+            # card and no always-on free-text card; "Looks good" and "Use plain
+            # document order" must never appear.
             deadline = time.time() + 300
             seen_q = 0
             while time.time() < deadline:
                 screen = t.capture()
-                if "Confirm your story list" in screen:
+                if "Looks good" in screen or "plain document order" in screen:
+                    failures.append("a removed confirmation-theater option resurfaced")
                     break
-                if "Anything you'd like to tell the AI?" in screen:
-                    transcript(t, log, "5. optional free-text card (skipped)")
-                    t.send_keys("Enter")
-                    time.sleep(1)
-                elif "of " in screen and "Set up this site with AI ·" in screen:
+                if "Your new layout" in screen:
+                    break
+                if "Set up this site with AI ·" in screen:
                     seen_q += 1
-                    transcript(t, log, f"4.{seen_q} question card (Enter accepts default)")
+                    transcript(t, log, f"3.{seen_q} question card (Enter accepts the focused option)")
                     t.send_keys("Enter")
                     time.sleep(1)
                 else:
                     time.sleep(2)  # analyzing spinner
             else:
-                failures.append("never reached the confirm-sections card")
+                failures.append("never reached the preview card")
 
-            if "Confirm your story list" in t.capture():
-                transcript(t, log, "6. CONFIRM CARD — sections with real match counts")
+            if "Your new layout" in t.capture():
+                screen = transcript(t, log, "4. PREVIEW — real tree behind a coverage caption")
+                cov = re.search(r"(\d+) of (\d+) story links covered", screen)
+                if not cov:
+                    failures.append("preview caption shows no coverage line")
+                elif int(cov.group(1)) == 0:
+                    failures.append("preview presented a 0-coverage layout (gate must catch this)")
                 time.sleep(1.5)  # let the lens highlight + scroll settle
-                shot = x_screenshot("02-confirm-section-highlight.png")
+                shot = x_screenshot("02-preview-section-highlight.png")
                 n = orange_pixels(shot)
-                print(f"lens highlight pixels on confirm card: {n}")
+                print(f"lens highlight pixels on preview card: {n}")
                 if n < 100:
-                    failures.append(f"confirm card: expected highlight on lens, found {n} px")
+                    failures.append(f"preview card: expected highlight on lens, found {n} px")
 
                 # j/k grammar: preview the next section live, then back.
                 t.send_keys("j")
                 time.sleep(1.5)
-                x_screenshot("03-confirm-next-section.png")
-                transcript(t, log, "7. j cycles — next section previewed on the lens")
+                x_screenshot("03-preview-next-section.png")
+                transcript(t, log, "5. j cycles — next section previewed on the lens")
                 t.send_keys("k")
                 time.sleep(1)
 
-                t.send_keys("Enter")  # save
+                t.send_keys("Enter")  # save exactly what is previewed
                 t.wait_for("Site set up", timeout=30)
-                transcript(t, log, "8. saved — AI Curated with durable sections")
+                transcript(t, log, "6. saved — AI Curated with durable sections")
 
             time.sleep(2)
-            screen = transcript(t, log, "9. link tree rebuilt from the saved config")
+            screen = transcript(t, log, "7. link tree rebuilt from the saved config")
             if "sections" not in screen:
                 failures.append("post-save header does not show the section count")
 
@@ -241,7 +243,7 @@ def main():
             # section structure itself, not a (possibly hidden) headline.
             t2.wait_for("sections", timeout=90)
             time.sleep(3)
-            screen = transcript(t2, log, "10. REVISIT — fresh process, same URL")
+            screen = transcript(t2, log, "8. REVISIT — fresh process, same URL")
             if "sections" not in screen and "▼" not in screen:
                 failures.append("revisit did not route through the saved durable config "
                                 "(no section headers / section count in the header)")
@@ -249,7 +251,7 @@ def main():
             # the wizard's section names appear as group headers.
             t2.send_keys("C-l")
             t2.wait_for("Layout", timeout=20)
-            screen = transcript(t2, log, "11. Ctrl+L on revisit — configured summary (not setup)")
+            screen = transcript(t2, log, "9. Ctrl+L on revisit — configured summary (not setup)")
             if "Reconfigure with AI" not in screen:
                 failures.append("revisit Ctrl+L did not open the configured summary")
             t2.send_keys("Escape")
