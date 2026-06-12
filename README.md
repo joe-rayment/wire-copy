@@ -19,6 +19,10 @@ A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers,
 - **Schedule recurring episodes** — recipes pull named sections from your sites on a schedule (headless), assemble an episode, and publish it, with a quality floor so you never get a near-empty one.
 - *(advanced)* **Anti-detection browsing** via patched Playwright for sites that block bots, and **paste-once login cookies** (encrypted at rest) for paywalled sources you already pay for.
 
+<p align="center">
+  <img src="docs/assets/wire-copy-june11.gif" alt="WireCopy in action — browsing a site's link tree and reading in the terminal." width="640" />
+</p>
+
 For the technically curious: a .NET 10 terminal browser with Helix-style keybindings (`j`/`k`/`h`/`l`/`gg`/`G`), a distraction-free reader view, and a pipeline that turns saved articles into M4B audiobooks with chapter markers and an optional GCS-hosted RSS feed.
 
 > **Note:** When browsing websites with this tool, respect each site's robots.txt and Terms of Service. WireCopy is for educational and personal use.
