@@ -305,6 +305,14 @@ def main():
         subprocess.run(["tmux", "kill-server"], capture_output=True)
         xvfb.terminate()
 
+    # Persist the verdict alongside the transcript so audits don't depend on
+    # captured stdout.
+    with open(os.path.join(OUT_DIR, "verdict.txt"), "w") as fh:
+        fh.write(f"sites: {', '.join(keys)}\n")
+        fh.write("PASSED\n" if not all_failures else "FAILED\n")
+        for f in all_failures:
+            fh.write(f"  ✗ {f}\n")
+
     print(f"\ntranscript in {OUT_DIR}/transcript.txt")
     if all_failures:
         print("\nFAILURES:")
