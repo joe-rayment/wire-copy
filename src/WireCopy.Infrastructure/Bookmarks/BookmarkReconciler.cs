@@ -73,11 +73,31 @@ public sealed class BookmarkReconciler : IBookmarkReconciler
         // - Bookmarks present in DB but not in mergedConfig are LEFT ALONE
         //   (these are user customizations added via the app; they live below
         //   the configured ones in sort order).
-        var dbByUrl = (await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false))
-            .ToDictionary(b => b.Url, b => b, StringComparer.OrdinalIgnoreCase);
-
         var configUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var dirty = false;
+
+        // Build the URL→bookmark map DEFENSIVELY (workspace-znoe). A corrupt DB can hold two rows
+        // with the same URL (case-insensitive); the previous ToDictionary(b => b.Url) threw "An item
+        // with the same key has already been added", the whole reconcile failed, and the launcher fell
+        // back to the EMPTY state ("Your bookmarks await") despite the DB holding bookmarks — silent
+        // loss. GetAllAsync is ordered by SortOrder then Name, so the first occurrence per URL is the
+        // canonical (lowest-sorted) row; keep it and DELETE the redundant duplicates so the corruption
+        // self-heals and the grid stops rendering duplicate tiles.
+        var dbByUrl = new Dictionary<string, Bookmark>(StringComparer.OrdinalIgnoreCase);
+        foreach (var bookmark in await _repository.GetAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (dbByUrl.TryAdd(bookmark.Url, bookmark))
+            {
+                continue;
+            }
+
+            _logger.LogWarning(
+                "Duplicate bookmark URL '{Url}' in DB (id {Id}); deleting the redundant row.",
+                bookmark.Url,
+                bookmark.Id);
+            await _repository.DeleteAsync(bookmark, cancellationToken).ConfigureAwait(false);
+            dirty = true;
+        }
 
         for (var i = 0; i < mergedConfig.Bookmarks.Count; i++)
         {

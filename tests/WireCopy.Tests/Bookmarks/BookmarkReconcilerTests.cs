@@ -190,6 +190,31 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         ours[2].Url.Should().Be("https://b.example");
     }
 
+    [Fact]
+    public async Task Reconcile_DuplicateUrlsInDb_DoesNotThrow_AndDedupsToOneRow()
+    {
+        // workspace-znoe: a corrupt DB with two rows sharing a URL (case-insensitively) previously
+        // crashed ToDictionary(b => b.Url) — the reconcile failed and the launcher rendered the EMPTY
+        // state despite the DB holding bookmarks (silent loss). Reconcile must now survive it, keep one
+        // row per URL, and delete the redundant duplicate so the corruption self-heals.
+        await _configStore.SaveUserConfigAsync(new List<Bookmark>());
+        await _repository.AddAsync(Bookmark.Create("First", "https://dup.example/", 0));
+        await _repository.AddAsync(Bookmark.Create("Second copy", "HTTPS://DUP.EXAMPLE/", 1));
+        await _repository.AddAsync(Bookmark.Create("Unique", "https://unique.example/", 2));
+        await _unitOfWork.SaveChangesAsync();
+
+        var act = async () => await _sut.ReconcileAsync();
+        await act.Should().NotThrowAsync();
+
+        var dbBookmarks = await _repository.GetAllAsync();
+        dbBookmarks.Should().NotBeEmpty("the launcher must not fall back to the empty state");
+        dbBookmarks
+            .Count(b => string.Equals(b.Url, "https://dup.example/", StringComparison.OrdinalIgnoreCase))
+            .Should().Be(1, "the duplicate row should be removed, keeping the first (lowest-sorted)");
+        dbBookmarks.Should().ContainSingle(b => b.Name == "First");
+        dbBookmarks.Select(b => b.Url).Should().Contain("https://unique.example/");
+    }
+
     public new void Dispose()
     {
         Dispose(true);
