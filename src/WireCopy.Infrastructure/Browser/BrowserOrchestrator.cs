@@ -1338,6 +1338,14 @@ public partial class BrowserOrchestrator : IBrowserService
     /// </summary>
     private async Task EnsureSidecarEngagedAsync(CancellationToken cancellationToken)
     {
+        // Browser-hosted web pane: the streamed pane IS the live view, so never summon a separate OS
+        // dock window. The spotlight drives the streamed display page directly (DockSpotlight web mode).
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET")))
+        {
+            _sidecarUnavailable = true;
+            return;
+        }
+
         if (_sidecarUnavailable
             || !_inputHandler.IsInteractive
             || _browserSession is not IBrowserSession session

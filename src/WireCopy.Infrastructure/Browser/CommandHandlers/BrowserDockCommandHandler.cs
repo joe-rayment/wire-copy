@@ -34,6 +34,13 @@ internal static class BrowserDockCommandHandler
             return null;
         }
 
+        // Browser-hosted web pane: there is no OS dock window to toggle — the page is streamed into
+        // the user's tab (hidden/revealed there with F9). Never summon a headed window in this mode.
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET")))
+        {
+            return null;
+        }
+
         // First, try to toggle an already-open headed window (the post-captcha/login case).
         var state = await session.ToggleWindowDockAsync().ConfigureAwait(false);
         if (state is not null)
