@@ -190,12 +190,12 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             var type = buf[0];
             if (type == TypeInput)
             {
-                await HandleInputAsync(page, Encoding.UTF8.GetString(buf, 1, len - 1), ct).ConfigureAwait(false);
+                await HandleInputAsync(page, Encoding.UTF8.GetString(buf, 1, len - 1)).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task HandleInputAsync(IPage page, string json, CancellationToken ct)
+    private async Task HandleInputAsync(IPage page, string json)
     {
         if (_cdp is null)
         {
@@ -209,12 +209,12 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             switch (root.GetProperty("type").GetString())
             {
                 case "click":
-                    await DispatchMouseAsync("mousePressed", root, ct).ConfigureAwait(false);
-                    await DispatchMouseAsync("mouseReleased", root, ct).ConfigureAwait(false);
+                    await DispatchMouseAsync("mousePressed", root).ConfigureAwait(false);
+                    await DispatchMouseAsync("mouseReleased", root).ConfigureAwait(false);
                     break;
 
                 case "move":
-                    await DispatchMouseAsync("mouseMoved", root, ct).ConfigureAwait(false);
+                    await DispatchMouseAsync("mouseMoved", root).ConfigureAwait(false);
                     break;
 
                 case "wheel":
@@ -258,7 +258,7 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
         }
     }
 
-    private Task DispatchMouseAsync(string type, JsonElement root, CancellationToken ct)
+    private Task DispatchMouseAsync(string type, JsonElement root)
         => _cdp!.SendAsync("Input.dispatchMouseEvent", new Dictionary<string, object>
         {
             ["type"] = type,
@@ -306,6 +306,7 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
         }
     }
 
+#pragma warning disable SA1204 // static read helper kept at the end with the other I/O helpers
     private static async Task<bool> ReadExactAsync(Socket socket, byte[] buffer, CancellationToken ct)
     {
         var read = 0;
