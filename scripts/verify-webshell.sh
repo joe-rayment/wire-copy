@@ -41,11 +41,20 @@ echo "== build =="
 ./dotnet build src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" -v quiet || exit 1
 
 echo "== launch web host =="
+# workspace-8ne3: the API's content browser now runs HEADFUL and never falls back to headless. It
+# therefore needs an X server. When none is attached (CI / containers) provide a virtual display via
+# xvfb-run, mirroring the Dockerfile entrypoint, so the headful Chromium can start. On a host that
+# already has a display (DISPLAY set) — or macOS, where headful needs no X server — launch directly.
+XVFB=()
+if [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
+  XVFB=(xvfb-run -a --server-args="-screen 0 1280x2400x24")
+  echo "   (no DISPLAY; running the web host under xvfb-run for the headful content browser)"
+fi
 WIRECOPY_WEB_URL="$URL" \
 WIRECOPY_TERMINAL_APP="$API_EXE" \
 WIRECOPY_TERMINAL_CWD="$ROOT" \
 WIRECOPY_CHROMIUM_EXECUTABLE="$CHROMIUM" \
-  ./dotnet run --project src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" --no-build > /tmp/verify-webshell.log 2>&1 &
+  "${XVFB[@]}" ./dotnet run --project src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" --no-build > /tmp/verify-webshell.log 2>&1 &
 disown
 
 for i in $(seq 1 20); do

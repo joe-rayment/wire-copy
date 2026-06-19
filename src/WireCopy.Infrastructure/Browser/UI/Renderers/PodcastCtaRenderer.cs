@@ -29,6 +29,14 @@ internal class PodcastCtaRenderer
     private const int MaxButtonWidth = 72;
     private const double MinutesPerArticle = 3.5;
 
+    // workspace-q2xh: the CTA is left-anchored to the SAME content column as the collection
+    // header and items (CollectionRenderer.cs:138/151 — a single leading space, box capped at 78),
+    // instead of being centered across the full terminal width. On wide terminals the old centering
+    // floated the CTA out to the center-right while the header/items hugged the left, leaving the
+    // reading-list screen visually unbalanced.
+    private const int MaxContentWidth = 78;
+    private const string ContentLeftPad = " ";
+
     /// <summary>
     /// Minimum terminal height to render the hero box CTA (reserves 7 lines for the
     /// CTA and still leaves room for the box header, status bar, and a couple items).
@@ -107,7 +115,7 @@ internal class PodcastCtaRenderer
         }
         else
         {
-            RenderInline(width, p, state);
+            RenderInline(p, state);
         }
     }
 
@@ -179,10 +187,11 @@ internal class PodcastCtaRenderer
     /// </summary>
     private static (int InnerWidth, string PadStr) ComputeHeroBox(int terminalWidth)
     {
-        var boxWidth = Math.Clamp(terminalWidth - 8, MinButtonWidth, MaxButtonWidth);
-        var pad = Math.Max(0, (terminalWidth - boxWidth) / 2);
+        // Left-anchor (one leading space) and cap at the header's 78-col content width so the hero
+        // box's left and right edges coincide with the collection header box (workspace-q2xh).
+        var boxWidth = Math.Clamp(Math.Min(terminalWidth - 2, MaxContentWidth), MinButtonWidth, MaxContentWidth);
         var innerWidth = Math.Max(1, boxWidth - 2);
-        return (innerWidth, new string(' ', pad));
+        return (innerWidth, ContentLeftPad);
     }
 
     /// <summary>
@@ -364,8 +373,7 @@ internal class PodcastCtaRenderer
     private void RenderCompactSlab(int width, ThemePalette p, PodcastCtaState state)
     {
         var buttonWidth = ComputeButtonWidth(width);
-        var pad = Math.Max(0, (width - buttonWidth) / 2);
-        var padStr = new string(' ', pad);
+        var padStr = ContentLeftPad;
 
         var (bgAnsi, fgAnsi, hintAnsi, dimmed) = GetStateColors(p, state);
 
@@ -385,8 +393,7 @@ internal class PodcastCtaRenderer
     private void RenderGeneratingCompactSlab(int width, ThemePalette p, double fraction)
     {
         var buttonWidth = ComputeButtonWidth(width);
-        var pad = Math.Max(0, (width - buttonWidth) / 2);
-        var padStr = new string(' ', pad);
+        var padStr = ContentLeftPad;
 
         var bgAnsi = p.SelectedItemBg.AnsiBg;
         var titleColor = p.GetCelebrationFg().AnsiFg;
@@ -404,17 +411,15 @@ internal class PodcastCtaRenderer
     /// <summary>
     /// Inline: 1 line -- centered content only.
     /// </summary>
-    private void RenderInline(int width, ThemePalette p, PodcastCtaState state)
+    private void RenderInline(ThemePalette p, PodcastCtaState state)
     {
         var (_, fgAnsi, hintAnsi, dimmed) = GetStateColors(p, state);
 
         var content = $" {PlayIcon}  {Label} ";
         var hint = state == PodcastCtaState.Selected ? SelectedKeyHint : KeyHint;
-        var totalLen = content.Length + hint.Length;
-        var pad = Math.Max(0, (width - totalLen) / 2);
 
         var sb = new StringBuilder();
-        sb.Append(new string(' ', pad));
+        sb.Append(ContentLeftPad);
 
         if (dimmed)
         {

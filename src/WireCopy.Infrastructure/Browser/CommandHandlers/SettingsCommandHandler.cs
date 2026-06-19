@@ -271,6 +271,13 @@ internal static class SettingsCommandHandler
             var instructionsValue = string.IsNullOrWhiteSpace(instructions)
                 ? "(none)"
                 : TruncateMiddle(instructions, Math.Max(20, width - 40));
+
+            // workspace-dq78: TTS instructions are only honoured by gpt-4o-mini-tts. If a non-empty
+            // instruction is configured while a different model (e.g. tts-1) is selected, the hint is
+            // silently dropped at synthesis time — warn so the user isn't misled into thinking their
+            // voice direction applies.
+            var instructionsInert = !string.IsNullOrWhiteSpace(instructions)
+                && !model.StartsWith("gpt-4o-mini-tts", StringComparison.OrdinalIgnoreCase);
             RenderRow(
                 helpers,
                 palette,
@@ -284,7 +291,11 @@ internal static class SettingsCommandHandler
                 instructionsValue,
                 palette.PromptFg.AnsiFg,
                 "Change",
-                helperText: "Style hint sent with each request (gpt-4o-mini-tts only)");
+                helperText: "Style hint sent with each request (gpt-4o-mini-tts only)",
+                warningText: instructionsInert
+                    ? $"Ignored by {model} — only gpt-4o-mini-tts uses instructions. Change TTS model to apply."
+                    : null,
+                isWarning: instructionsInert);
 
             RenderRow(
                 helpers,
@@ -327,6 +338,19 @@ internal static class SettingsCommandHandler
                 $"{palette.GetAccentFg().AnsiFg}Enter{Reset}{palette.GetDimFg().AnsiFg}:edit   " +
                 $"{palette.GetAccentFg().AnsiFg}Esc{Reset}{palette.GetDimFg().AnsiFg}:back   " +
                 $"{palette.GetAccentFg().AnsiFg}:{Reset}{palette.GetDimFg().AnsiFg}:run command{Reset}");
+
+            // workspace-fvgw: surface the transient status message on the Settings screen itself.
+            // The config screen draws its own footer instead of the standard status bar, so verify
+            // results set via SetStatusMessage (e.g. "Invalid API key" / "API key saved" after an
+            // OpenAI key entry) were invisible here — an invalid key looked like a silent no-op.
+            var statusMessage = ctx.NavigationService.CurrentContext.StatusMessage;
+            if (!string.IsNullOrWhiteSpace(statusMessage))
+            {
+                helpers.WriteLine();
+                helpers.WriteLine(
+                    $"  {palette.GetAccentFg().AnsiFg}{RenderHelpers.TruncateText(statusMessage, Math.Max(10, width - 4))}{Reset}");
+            }
+
             helpers.ClearRemainingLines();
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);

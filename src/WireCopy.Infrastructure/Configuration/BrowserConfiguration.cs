@@ -71,6 +71,23 @@ public class BrowserConfiguration
     public int LensViewportWidth { get; init; } = 414;
 
     /// <summary>
+    /// Viewport size (CSS px) of the Chromium context the API renders and mirrors to the
+    /// Shell's web pane (workspace-51ok / workspace-bd7i). A phone-shaped portrait viewport
+    /// (~414 wide) makes pages collapse to their mobile/single-column layout — they look
+    /// phone-shaped in the pane (matching the retired LensViewportWidth=414 dock) and the
+    /// simpler mobile DOM is friendlier to link extraction. Set at context-LAUNCH time
+    /// (reliable) rather than via SetViewportSizeAsync on a persistent-context page (a no-op
+    /// — the cause of the earlier landscape regression). Applied to the web-pane mirror
+    /// context whether it runs headful under a virtual display (workspace-8ne3) or, as a
+    /// degraded fallback, headless; a non-mirror headed/debug launch keeps the real window size.
+    /// </summary>
+    public int MirrorViewportWidth { get; init; } = 414;
+
+    /// <summary>Viewport height (CSS px) of the mirrored web-pane context (workspace-51ok). See
+    /// <see cref="MirrorViewportWidth"/>. ~896 gives an iPhone-XR-shaped portrait frame.</summary>
+    public int MirrorViewportHeight { get; init; } = 896;
+
+    /// <summary>
     /// Whether the sidecar — the docked live browser window beside the terminal —
     /// engages automatically when a page opens (workspace-exbz). When true, completing
     /// a navigation (live OR cache-served) summons the headed window to the configured

@@ -83,12 +83,13 @@ public partial class BrowserOrchestrator
     /// <summary>
     /// Starts the background watcher when the HITL exception's variant is
     /// one a user can plausibly clear in their headed browser
-    /// (CAPTCHA / Login / CookieConsent / TwoFactor). No-op for variants
-    /// that don't resolve via headed interaction (Paywall, RegionBlock,
-    /// RedirectLoop, Generic) and for headless runs where there is no visible
-    /// window. (A RedirectLoop throws before any pollable page exists and a
-    /// Cloudflare bounce won't settle on its own — the user must open it in
-    /// their real browser and press R.)
+    /// (CAPTCHA / Login / CookieConsent / TwoFactor — the SOLVABLE variants).
+    /// No-op for UNSOLVABLE variants that don't resolve via headed interaction
+    /// (Paywall, RegionBlock, BotBlock, RedirectLoop, Generic) and for headless
+    /// runs where there is no visible window. (A RedirectLoop throws before any
+    /// pollable page exists; a BotBlock/Cloudflare hard block won't settle on its
+    /// own — there is no challenge to clear, so the user must open it in their
+    /// real browser.)
     /// </summary>
     private void StartHumanActionWatcher(
         string url,

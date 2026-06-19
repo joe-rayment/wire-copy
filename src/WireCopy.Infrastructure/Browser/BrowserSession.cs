@@ -265,13 +265,20 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        // Browser-hosted web pane: force headless regardless of caller/config. EffectiveHeadless is
-        // Auto, which resolves to HEADED on a desktop host — that would pop a stray OS window the user
-        // never asked for, defeating the single-tab guarantee. Forcing headless here also makes the
-        // OS-dock methods dormant (they all guard on _pageIsHeadless).
+        // Browser-hosted web pane: force HEADFUL regardless of caller/config (workspace-8ne3).
+        // A REAL headful Chromium under the server-side virtual display (Xvfb, DISPLAY=:99 in the
+        // container) defeats the bot-detection (navigator.webdriver, render/GPU fingerprints) that
+        // gets headless Chromium blocked by Cloudflare/WAFs on most real sites. The single-window
+        // guarantee is preserved: the browser renders to the virtual framebuffer — no OS window on
+        // the user's machine — and the pane shows its CDP screencast. NEVER headless here (standing
+        // non-negotiable user requirement); if no X server is available the launch fails loudly
+        // rather than silently degrading to headless (the missing-display fallback in this method
+        // excludes _webPaneMode). Launch-time OS-dock/minimize is skipped for the web pane in
+        // LaunchBrowserAsync, and dock summon is already disabled upstream (EnsureSidecarEngagedAsync
+        // / BrowserDockCommandHandler), so there is no stray window to manage.
         if (_webPaneMode)
         {
-            headless = true;
+            headless = false;
         }
 
         await _lock.WaitAsync().ConfigureAwait(false);
@@ -312,7 +319,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             {
                 await LaunchBrowserAsync(headless).ConfigureAwait(false);
             }
-            catch (PlaywrightException ex) when (!headless && LooksLikeMissingDisplay(ex.Message))
+            catch (PlaywrightException ex) when (!headless && !_webPaneMode && LooksLikeMissingDisplay(ex.Message))
             {
                 // workspace-j0b8: headed Chromium can't initialize when there's no X server
                 // (CI / headless containers / SSH sessions without forwarding). Chromium exits
@@ -322,9 +329,25 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // a clear warning; this turns "Page navigated mid-load" (which is what the
                 // user saw on macleans.ca in workspace-hrrf) into a successful page load on
                 // any host that simply doesn't have a display attached.
+                //
+                // EXCLUDED for the web pane (workspace-8ne3): a real headful browser is a
+                // non-negotiable requirement there, so we must NOT silently degrade to headless.
+                // The container always provides Xvfb (DISPLAY=:99); if a display is genuinely
+                // missing we let the exception propagate so the failure is visible and fixable
+                // (run via `docker compose up wirecopy-web`) instead of quietly serving a
+                // bot-blocked headless page.
                 _logger.LogWarning(
                     "Headed browser launch failed — no X server / DISPLAY available. Falling back to headless mode for this session.");
                 await LaunchBrowserAsync(headless: true).ConfigureAwait(false);
+            }
+            catch (PlaywrightException ex) when (_webPaneMode && LooksLikeMissingDisplay(ex.Message))
+            {
+                // workspace-8ne3: web pane requires a real headful browser and must never go
+                // headless. No virtual display is available — surface a clear, actionable error.
+                _logger.LogError(
+                    ex,
+                    "Web-pane browser launch failed — no X server / DISPLAY available, and the web pane must run a real headful browser (never headless). Run the web shell under a virtual display, e.g. `docker compose up wirecopy-web` (Xvfb + DISPLAY=:99).");
+                throw;
             }
 
             return _page!;
@@ -1001,42 +1024,63 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         if (!_browsersInstalled && string.IsNullOrEmpty(chromeExecutable))
         {
             _browsersInstalled = true;
-            try
-            {
-                _logger.LogInformation("Ensuring Playwright browsers are installed...");
-                var installTask = Task.Run(() =>
-                {
-                    var origOut = Console.Out;
-                    var origErr = Console.Error;
-                    Console.SetOut(TextWriter.Null);
-                    Console.SetError(TextWriter.Null);
-                    try
-                    {
-                        return Microsoft.Playwright.Program.Main(["install", "chromium"]);
-                    }
-                    finally
-                    {
-                        Console.SetOut(origOut);
-                        Console.SetError(origErr);
-                    }
-                });
 
-                if (await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(60))).ConfigureAwait(false) == installTask)
+            // The startup launcher (./run) sets WIRECOPY_BOOTSTRAP_DONE=1 only after it has verified
+            // Chromium is already present, so skip the redundant in-app install and don't race the
+            // launcher. Otherwise this stays the lazy safety net for a direct `dotnet run` / container
+            // start. A genuine cold download is ~270 MB, so the old 60s cap was far too short:
+            // default to 300s, overridable via WIRECOPY_CHROMIUM_INSTALL_TIMEOUT_SECONDS.
+            if (Environment.GetEnvironmentVariable("WIRECOPY_BOOTSTRAP_DONE") == "1")
+            {
+                _logger.LogInformation("Skipping in-app Chromium install (startup already verified it present).");
+            }
+            else
+            {
+                var timeoutSeconds = 300;
+                if (int.TryParse(
+                        Environment.GetEnvironmentVariable("WIRECOPY_CHROMIUM_INSTALL_TIMEOUT_SECONDS"),
+                        out var configured) && configured > 0)
                 {
-                    var exitCode = await installTask.ConfigureAwait(false);
-                    if (exitCode != 0)
+                    timeoutSeconds = configured;
+                }
+
+                try
+                {
+                    _logger.LogInformation("Ensuring Playwright browsers are installed...");
+                    var installTask = Task.Run(() =>
                     {
-                        _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
+                        var origOut = Console.Out;
+                        var origErr = Console.Error;
+                        Console.SetOut(TextWriter.Null);
+                        Console.SetError(TextWriter.Null);
+                        try
+                        {
+                            return Microsoft.Playwright.Program.Main(["install", "chromium"]);
+                        }
+                        finally
+                        {
+                            Console.SetOut(origOut);
+                            Console.SetError(origErr);
+                        }
+                    });
+
+                    if (await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(timeoutSeconds))).ConfigureAwait(false) == installTask)
+                    {
+                        var exitCode = await installTask.ConfigureAwait(false);
+                        if (exitCode != 0)
+                        {
+                            _logger.LogWarning("Playwright browser install returned exit code {ExitCode}", exitCode);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Playwright browser install timed out after {Timeout}s (will attempt launch anyway)", timeoutSeconds);
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _logger.LogWarning("Playwright browser install timed out after 60s (will attempt launch anyway)");
+                    _logger.LogWarning(ex, "Playwright browser install failed (will attempt launch anyway)");
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Playwright browser install failed (will attempt launch anyway)");
             }
         }
 
@@ -1062,12 +1106,37 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             if (!headless)
             {
-                args.Add("--window-size=800,600");
+                // The web-pane mirror runs headful under a virtual display (workspace-8ne3); size the
+                // window to the phone-shaped mirror viewport (workspace-bd7i) so the framebuffer it
+                // renders to — and therefore the CDP screencast shown in the pane — is portrait
+                // phone-shaped, matching the viewport set below. A normal headed/debug launch keeps
+                // the small default window.
+                args.Add(_webPaneMode
+                    ? $"--window-size={_browserConfig.MirrorViewportWidth},{_browserConfig.MirrorViewportHeight}"
+                    : "--window-size=800,600");
             }
 
             if (!string.IsNullOrEmpty(chromeExecutable))
             {
                 _logger.LogInformation("Using pinned Chromium executable: {Path}", chromeExecutable);
+            }
+
+            // Phone-shaped portrait viewport for the web-pane MIRROR context (workspace-bd7i /
+            // workspace-51ok): pages collapse to their mobile/single-column layout so the pane looks
+            // phone-shaped (like the retired 414px lens dock) and the simpler DOM aids link extraction —
+            // fixing the NYT "nav links surfaced as stories" regression. Applied at launch
+            // (SetViewportSizeAsync on a persistent context is a no-op — the earlier landscape
+            // regression). Gated on _webPaneMode, NOT headless, so it still applies now that the mirror
+            // runs HEADFUL (workspace-8ne3) under the virtual display. A non-mirror headless launch
+            // keeps the 1400x900 desktop frame; a non-mirror headed launch keeps the real window size.
+            ViewportSize? viewportSize;
+            if (_webPaneMode)
+            {
+                viewportSize = new ViewportSize { Width = _browserConfig.MirrorViewportWidth, Height = _browserConfig.MirrorViewportHeight };
+            }
+            else
+            {
+                viewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null;
             }
 
             var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
@@ -1081,7 +1150,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // In headed mode, let Chromium use its real UA to avoid version mismatch
                 // detection (e.g., claiming Chrome/131 but actually running Chromium/145).
                 UserAgent = headless ? _browserConfig.UserAgent : null,
-                ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
+                ViewportSize = viewportSize,
                 IgnoreHTTPSErrors = true,
             });
 
@@ -1159,16 +1228,24 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // the persistent "docked" affordance can't lie (workspace-v7mb).
                 _page!.Close += OnHeadedPageClosed;
 
-                // Re-dock automatically when the headed browser reappears if the user was
-                // in docked mode; otherwise minimize it into the background.
-                // RestoreWindowAsync (BringToFront) is called when interaction is needed.
-                if (_userWantsDock)
+                // workspace-8ne3: the web-pane mirror is headful too, but it renders to the
+                // server-side virtual display and IS the streamed pane — there is no OS window to
+                // dock or minimize, and OS-dock summon is disabled upstream (EnsureSidecarEngagedAsync
+                // / BrowserDockCommandHandler). Skip all window positioning so we never drive a window
+                // manager that isn't there; only a genuine desktop headed launch docks/minimizes.
+                if (!_webPaneMode)
                 {
-                    await DockWindowAsync().ConfigureAwait(false);
-                }
-                else
-                {
-                    await MinimizeWindowAsync().ConfigureAwait(false);
+                    // Re-dock automatically when the headed browser reappears if the user was
+                    // in docked mode; otherwise minimize it into the background.
+                    // RestoreWindowAsync (BringToFront) is called when interaction is needed.
+                    if (_userWantsDock)
+                    {
+                        await DockWindowAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await MinimizeWindowAsync().ConfigureAwait(false);
+                    }
                 }
             }
         }

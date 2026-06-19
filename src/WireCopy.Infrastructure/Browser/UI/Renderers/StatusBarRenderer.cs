@@ -1057,6 +1057,7 @@ internal class StatusBarRenderer
             HumanActionVariant.TwoFactor => "2FA",
             HumanActionVariant.Paywall => "paywall",
             HumanActionVariant.RegionBlock => "region-block",
+            HumanActionVariant.BotBlock => "blocked",
             HumanActionVariant.RedirectLoop => "redirect loop",
             _ => "action needed",
         };

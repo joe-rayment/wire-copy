@@ -33,9 +33,10 @@ public class InteractiveRefreshCopyTests
     [InlineData(HumanActionVariant.Captcha, "CAPTCHA")]
     [InlineData(HumanActionVariant.Login, "Log in")]
     [InlineData(HumanActionVariant.CookieConsent, "cookie")]
-    [InlineData(HumanActionVariant.TwoFactor, "two-factor")]
+    [InlineData(HumanActionVariant.TwoFactor, "verification")]
     [InlineData(HumanActionVariant.Paywall, "paywall")]
     [InlineData(HumanActionVariant.RegionBlock, "region")]
+    [InlineData(HumanActionVariant.BotBlock, "bots")]
     [InlineData(HumanActionVariant.RedirectLoop, "redirect")]
     public void Verdict_NamesTheVariant(HumanActionVariant variant, string expectedFragment)
     {
@@ -44,6 +45,30 @@ public class InteractiveRefreshCopyTests
         var body = TerminalPageRenderer.GetInteractiveRefreshBody(action);
 
         body.ToLowerInvariant().Should().Contain(expectedFragment.ToLowerInvariant());
+    }
+
+    [Theory]
+    [InlineData(HumanActionVariant.Captcha)]
+    [InlineData(HumanActionVariant.Login)]
+    [InlineData(HumanActionVariant.CookieConsent)]
+    [InlineData(HumanActionVariant.TwoFactor)]
+    [InlineData(HumanActionVariant.Paywall)]
+    [InlineData(HumanActionVariant.RegionBlock)]
+    [InlineData(HumanActionVariant.BotBlock)]
+    [InlineData(HumanActionVariant.RedirectLoop)]
+    [InlineData(HumanActionVariant.Generic)]
+    public void RefreshBody_FitsWithinBoxWidth(HumanActionVariant variant)
+    {
+        // The interactive-refresh body is rendered un-truncated inside the centered box (≤54 usable
+        // chars at 80 cols). A too-long BotBlock body overflowed the box (workspace-3rtr review), so
+        // pin every variant's body to the same width budget GetHumanActionCopy is checked against.
+        const int maxContentChars = 54; // MaxBoxContentWidth (56) - 2 padding spaces
+
+        var body = TerminalPageRenderer.GetInteractiveRefreshBody(new HumanActionRequired(variant, "subdomain.nytimes.com"));
+
+        body.Length.Should().BeLessThanOrEqualTo(
+            maxContentChars,
+            $"interactive-refresh body for {variant} '{body}' must fit in {maxContentChars} chars at 80 cols");
     }
 
     [Fact]

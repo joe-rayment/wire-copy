@@ -15,44 +15,24 @@ public class WebPaneControlMessageTests
     [Fact]
     public void Live_BuildsModeLiveMessage()
     {
-        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Live, null));
+        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Live));
         var root = doc.RootElement;
 
         root.GetProperty("kind").GetString().Should().Be("mode");
         root.GetProperty("mode").GetString().Should().Be("live");
+        // workspace-8a5y: Snapshot mode is retired — no control message ever carries reader HTML.
         root.TryGetProperty("html", out _).Should().BeFalse();
     }
 
     [Fact]
     public void Hidden_BuildsModeHiddenMessage()
     {
-        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Hidden, "ignored"));
+        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Hidden));
         var root = doc.RootElement;
 
         root.GetProperty("kind").GetString().Should().Be("mode");
         root.GetProperty("mode").GetString().Should().Be("hidden");
         root.TryGetProperty("html", out _).Should().BeFalse();
-    }
-
-    [Fact]
-    public void Snapshot_CarriesTheHtmlPayload()
-    {
-        var html = "<h1>Title</h1><p>Body</p>";
-
-        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Snapshot, html));
-        var root = doc.RootElement;
-
-        root.GetProperty("kind").GetString().Should().Be("mode");
-        root.GetProperty("mode").GetString().Should().Be("snapshot");
-        root.GetProperty("html").GetString().Should().Be(html);
-    }
-
-    [Fact]
-    public void Snapshot_NullHtml_BecomesEmptyString()
-    {
-        using var doc = JsonDocument.Parse(WebPaneHostBridge.BuildModeMessage(WebPaneMode.Snapshot, null));
-
-        doc.RootElement.GetProperty("html").GetString().Should().BeEmpty();
     }
 
     [Fact]

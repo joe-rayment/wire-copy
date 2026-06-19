@@ -48,6 +48,17 @@ public enum HumanActionVariant
     RegionBlock,
 
     /// <summary>
+    /// Hard bot / WAF block — the site has DENIED automated access outright (Cloudflare
+    /// "Sorry, you have been blocked" / error code 1020/1015/1010, Akamai/other WAF access-denied
+    /// pages, HTTP 403 with a security-service banner). Distinct from <see cref="Captcha"/>: there is
+    /// no puzzle to solve, so this is UNSOLVABLE in-session — the app must not spin waiting for the
+    /// user to "clear" a challenge that doesn't exist. Remediation is to open the page in a real
+    /// browser (workspace-3rtr). A real headful browser (workspace-8ne3) removes most of these at the
+    /// source; what remains is surfaced honestly instead of being mislabeled "captcha".
+    /// </summary>
+    BotBlock,
+
+    /// <summary>
     /// Site is stuck in a redirect loop — the browser hit
     /// <c>net::ERR_TOO_MANY_REDIRECTS</c> or the HTTP client exhausted its
     /// automatic-redirect budget and returned a final 3xx. Almost always a

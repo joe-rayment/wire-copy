@@ -691,7 +691,11 @@ public class TerminalInputHandler : IInputHandler
             ConsoleKey.Q => new NavigationCommand { Type = CommandType.Quit },
             ConsoleKey.Escape => new NavigationCommand { Type = CommandType.GoBack },
             ConsoleKey.F5 => new NavigationCommand { Type = CommandType.Refresh },
-            ConsoleKey.Oem2 => new NavigationCommand { Type = CommandType.ShowHelp },
+
+            // NOTE: '/' help is intentionally NOT mapped here. The '/' key always arrives with
+            // KeyChar=='/', which MapKeyInfoToCommand resolves to Search before this ConsoleKey
+            // switch is reached, so an Oem2 => ShowHelp entry would be dead code that advertised a
+            // non-existent binding. Help is '?' (see MapKeyInfoToCommand and the status-bar hints).
             _ => new NavigationCommand { Type = CommandType.NoOp }
         };
     }

@@ -92,15 +92,17 @@ public class LauncherBoxedGridTests
     }
 
     [Fact]
-    public void Grid_LayoutCellHeight_IsFourLineCardStride()
+    public void Grid_LayoutCellHeight_MatchesLinkListCardStride()
     {
-        // workspace-bs93: card cell stride is 4 lines — blank pad + title +
-        // subtitle + separator rule. Adjacent cards stack directly; the
-        // separator provides the visual break, matching link-list cards.
-        // Scroll math relies on this stride to keep selected cells fully in
-        // the viewport.
+        // workspace-stby / dlkb.1: card cell stride is 5 lines — blank pad + title +
+        // subtitle + interior pad + separator rule — matching the link-list
+        // card height (LinkTreeRenderer standardCellHeight = 5) so the two
+        // views align row-for-row. (Was 4 under workspace-bs93, which read as
+        // crowded next to the taller link-list cards.) Adjacent cards stack
+        // directly; the separator provides the visual break. Scroll math
+        // relies on this stride to keep selected cells fully in the viewport.
         var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, TerminalHeight, "Grid");
-        layout.CellHeight.Should().Be(4);
+        layout.CellHeight.Should().Be(5);
     }
 
     [Fact]

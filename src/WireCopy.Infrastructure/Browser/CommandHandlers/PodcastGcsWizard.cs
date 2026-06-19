@@ -634,8 +634,14 @@ internal static class PodcastGcsWizard
         ArgumentNullException.ThrowIfNull(bucketName);
 
         var xml = BuildSelfTestFeedXml(bucketName, DateTime.UtcNow);
+
+        // workspace-g4sj: upload to the EXPLICIT verified bucket. The ad-hoc verify GcsStorageClient's
+        // _config.BucketName is the DI-bound value (often unset on this path), not the settings-store
+        // bucket being verified; the plain UploadStringAsync used that and threw
+        // "Object must have a name and bucket (Parameter 'destination')", so the self-test was always
+        // skipped. The four-step probe just confirmed read/write to bucketName, so it exists.
         await gcsClient
-            .UploadStringAsync(xml, "feed.xml", "application/rss+xml", "no-cache, max-age=0", ct)
+            .UploadStringToBucketAsync(bucketName, xml, "feed.xml", "application/rss+xml", "no-cache, max-age=0", ct)
             .ConfigureAwait(false);
         return $"https://storage.googleapis.com/{bucketName}/feed.xml";
     }

@@ -12,12 +12,11 @@ namespace WireCopy.Infrastructure.Browser;
 public interface IWebPaneSink
 {
     /// <summary>
-    /// Sets the pane's desired mode. Cheap and idempotent — safe to call on every render. The
-    /// <paramref name="snapshotKey"/> (typically the page URL) dedupes snapshots so identical reader
-    /// views are not rebuilt or resent; <paramref name="snapshotHtmlFactory"/> is invoked only when a
-    /// new snapshot actually needs to be sent.
+    /// Sets the pane's desired mode (<see cref="WebPaneMode.Live"/> = stream the real page,
+    /// <see cref="WebPaneMode.Hidden"/> = collapse). Cheap and idempotent — safe to call on every
+    /// render; the implementation dedupes and only acts on a real change.
     /// </summary>
-    void Update(WebPaneMode mode, string? snapshotKey, Func<string>? snapshotHtmlFactory);
+    void Update(WebPaneMode mode);
 
     /// <summary>
     /// Toggles the pane's visibility in the user's tab (the 'O' keystroke in web mode). A subsequent

@@ -49,6 +49,97 @@ public class HumanActionDetectorTests
     }
 
     [Fact]
+    public void Detect_CloudflareHardBlock_ReturnsBotBlockNotCaptcha()
+    {
+        // workspace-3rtr: the macleans.ca screenshot — a Cloudflare WAF hard block ("Sorry, you have
+        // been blocked" + Ray ID) was mislabeled "captcha". It is unsolvable; classify it BotBlock.
+        const string html = """
+            <html><head><title>Attention Required! | Cloudflare</title></head>
+            <body><h1>Sorry, you have been blocked</h1>
+            <p>You are unable to access macleans.ca</p>
+            <p>Ray ID: 8f1c2d3e4a5b6c7d</p>
+            <p>This website is using a security service to protect itself from online attacks.</p>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://www.macleans.ca/", statusCode: 403);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.BotBlock);
+        verdict.Variant.Should().NotBe(HumanActionVariant.Captcha);
+    }
+
+    [Fact]
+    public void Detect_CloudflareErrorCode1020Status_ReturnsBotBlock()
+    {
+        const string html = "<html><body><h1>Error 1020</h1><p>Access denied</p></body></html>";
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/", statusCode: 1020);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.BotBlock);
+        verdict.Detail.Should().Contain("1020");
+    }
+
+    [Fact]
+    public void Detect_BlockTextWithSolvableChallenge_StaysCaptcha()
+    {
+        // A "checking your browser" interstitial that also says access-denied-ish words is still a
+        // SOLVABLE challenge, not a hard block — the solvable-challenge marker must win.
+        const string html = """
+            <html><head><title>Just a moment...</title></head>
+            <body class="cf-challenge"><p>Checking your browser...</p>
+            <p>access denied until verification completes</p></body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/article", statusCode: 403);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.Captcha);
+    }
+
+    [Fact]
+    public void Detect_LoginWith403AndForm_StillReturnsLoginNotBotBlock()
+    {
+        // A real login form on a 403 must stay Login — the BotBlock 403 path only fires on
+        // access-denied phrasing, which a login page does not carry.
+        const string html = """
+            <html><body>
+            <form action="/auth/login" method="post">
+            <input type="password" name="password" />
+            </form></body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/api", statusCode: 403);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.Login);
+    }
+
+    [Fact]
+    public void Detect_Login403WithAccessDeniedTextAndForm_ReturnsLoginNotBotBlock()
+    {
+        // A real auth wall can return 403 with access-denied phrasing AND a login form. The login form
+        // must win over the weak BotBlock heuristic (workspace-3rtr review). Body padded past the 5KB
+        // "tiny page" threshold so the pre-existing captcha-on-tiny-page heuristic doesn't intercept —
+        // isolating the BotBlock-vs-Login precedence this fix is about.
+        var filler = new string('x', 8000);
+        var html = $"""
+            <html><body>
+            <h1>Access denied</h1><p>You don't have permission to access this page. Log in below:</p>
+            <form action="/login" method="post"><input type="password" name="password" /></form>
+            <div>{filler}</div>
+            </body></html>
+            """;
+
+        var verdict = HumanActionDetector.Detect(html, "https://example.com/admin", statusCode: 403);
+
+        verdict.Should().NotBeNull();
+        verdict!.Variant.Should().Be(HumanActionVariant.Login);
+        verdict.Variant.Should().NotBe(HumanActionVariant.BotBlock);
+    }
+
+    [Fact]
     public void Detect_OneTrustCookieBanner_ReturnsCookieConsentVariant()
     {
         // Mid-size page (>5KB so it can't be classified as a small captcha shell)
@@ -439,6 +530,7 @@ public class HumanActionDetectorTests
     [InlineData(HumanActionVariant.TwoFactor, "Two-factor code required at nytimes.com")]
     [InlineData(HumanActionVariant.Paywall, "Article is paywalled at nytimes.com")]
     [InlineData(HumanActionVariant.RegionBlock, "Site blocks this region (HTTP 451)")]
+    [InlineData(HumanActionVariant.BotBlock, "Site blocked automated access")]
     [InlineData(HumanActionVariant.RedirectLoop, "Site is stuck in a redirect loop")]
     [InlineData(HumanActionVariant.Generic, "Action needed at nytimes.com")]
     public void GetHumanActionCopy_RendersVariantSpecificHeadline(HumanActionVariant variant, string expectedHeadline)
@@ -495,6 +587,7 @@ public class HumanActionDetectorTests
     [InlineData(HumanActionVariant.TwoFactor)]
     [InlineData(HumanActionVariant.Paywall)]
     [InlineData(HumanActionVariant.RegionBlock)]
+    [InlineData(HumanActionVariant.BotBlock)]
     [InlineData(HumanActionVariant.RedirectLoop)]
     [InlineData(HumanActionVariant.Generic)]
     public void GetHumanActionCopy_AllVariantsFitWithinBoxWidth(HumanActionVariant variant)

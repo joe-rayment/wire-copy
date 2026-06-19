@@ -7,7 +7,7 @@ namespace WireCopy.Infrastructure.Browser;
 
 /// <summary>
 /// Pure mapping from the current TUI view state to what the web pane should show. Kept separate from
-/// the orchestrator so the "never-empty / reveal-on-content / snapshot-vs-live" policy is unit-testable
+/// the orchestrator so the "never-empty / reveal-on-content / live-only" policy is unit-testable
 /// without a browser. Reuses <see cref="DockSpotlight.ResolveTarget"/> as the single source of truth
 /// for "is there anything worth showing" (it already returns null for launcher/collections/group
 /// headers and non-summonable URLs).
@@ -15,11 +15,11 @@ namespace WireCopy.Infrastructure.Browser;
 public static class WebPaneDecision
 {
     /// <summary>
-    /// Decides the pane mode for a view:
+    /// Decides the pane mode for a view (workspace-8a5y — the web pane is ALWAYS the LIVE real site, or
+    /// hidden; it never renders a reader-fied snapshot):
     /// <list type="bullet">
-    /// <item>no displayable target (launcher, collections, data: pages) → <see cref="WebPaneMode.Hidden"/>;</item>
-    /// <item>reader view with extracted article content → <see cref="WebPaneMode.Snapshot"/>;</item>
-    /// <item>everything else worth showing (link lists, live pages) → <see cref="WebPaneMode.Live"/>.</item>
+    /// <item>no displayable target (launcher, collections, data: pages, cache-only reads) → <see cref="WebPaneMode.Hidden"/>;</item>
+    /// <item>anything worth showing (link lists, live articles, reader views with a live page) → <see cref="WebPaneMode.Live"/>.</item>
     /// </list>
     /// </summary>
     public static WebPaneMode Decide(ViewMode viewMode, Page? page)
@@ -34,11 +34,9 @@ public static class WebPaneDecision
             return WebPaneMode.Hidden;
         }
 
-        if (viewMode == ViewMode.Readable && page.HasReadableContent())
-        {
-            return WebPaneMode.Snapshot;
-        }
-
+        // Reader view streams the LIVE site too — the spotlight drives the display page to follow the
+        // article being read, so the pane is the real page, complementing (not duplicating) the TUI
+        // reader. The retired Snapshot branch rendered a sanitized fake site here (workspace-8a5y).
         return WebPaneMode.Live;
     }
 }

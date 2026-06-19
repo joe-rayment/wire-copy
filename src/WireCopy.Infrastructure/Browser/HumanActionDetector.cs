@@ -76,6 +76,52 @@ public static class HumanActionDetector
     private static readonly string[] CaptchaIndicators =
         StrongCaptchaIndicators.Concat(WeakCaptchaIndicators).ToArray();
 
+    // workspace-3rtr: HARD bot / WAF blocks — access denied outright, NOT a solvable challenge.
+    // Strong markers are unambiguous access-denied text that won't appear in a real article at any
+    // size (Cloudflare's "Sorry, you have been blocked" headline, the numeric CF error codes, the
+    // WAF "security service to protect itself" banner). These get a confident BotBlock verdict so the
+    // user sees the real reason (and the "open in a real browser" remedy) instead of a wrong "captcha"
+    // badge, and so the human-action watcher does not spin waiting on a challenge that doesn't exist.
+    private static readonly string[] StrongBotBlockIndicators =
+    {
+        "sorry, you have been blocked",
+        "this website is using a security service to protect itself",
+        "error code: 1020",
+        "error code: 1015",
+        "error code: 1010",
+        "error code: 1009",
+        "error 1020",
+        "error 1015",
+    };
+
+    // Weaker access-denied phrases — real enough on a SMALL 403 page, but too generic to fire on a
+    // large body that merely uses the words. Only counted alongside an HTTP 403 on a non-large page.
+    private static readonly string[] WeakBotBlockIndicators =
+    {
+        "you have been blocked",
+        "access denied",
+        "you don't have permission to access",
+        "you are unable to access",
+    };
+
+    // Markers of a SOLVABLE challenge (interactive CAPTCHA / "checking your browser" interstitial).
+    // When present, the page is a challenge the user can pass — defer to the captcha path rather than
+    // calling it a hard BotBlock, even if access-denied-ish words also appear.
+    private static readonly string[] SolvableChallengeIndicators =
+    {
+        "cf-challenge",
+        "cf-browser-verification",
+        "checking your browser",
+        "just a moment...",
+        "challenge-platform",
+        "g-recaptcha",
+        "h-captcha",
+        "hcaptcha.com",
+        "captcha-delivery.com",
+        "datadome",
+        "turnstile",
+    };
+
     private static readonly string[] CookieConsentIndicators =
     {
         // OneTrust
@@ -186,6 +232,41 @@ public static class HumanActionDetector
             return new HumanActionRequired(HumanActionVariant.RegionBlock, domain);
         }
 
+        // A login form takes priority over the weaker BotBlock heuristics below: a real auth wall that
+        // returns 403 with access-denied phrasing ("Access denied. Log in below:") is a Login, not a
+        // hard bot block. Computed here (used again by the Login step) so the BotBlock weak-403 path can
+        // exclude it.
+        var hasLoginForm = ContainsAny(bodyLower, LoginFormIndicators);
+
+        // 1c. BotBlock (workspace-3rtr): a Cloudflare/WAF HARD block — access denied outright, NOT a
+        //     solvable challenge. The old code mislabeled these as "captcha" (a tiny "Sorry, you have
+        //     been blocked" page scored High via the weak-indicator path) and then spun the
+        //     human-action watcher waiting for the user to clear a challenge that doesn't exist. Fire
+        //     ONLY when no solvable-challenge widget is present (else it's a real challenge → captcha
+        //     path), on: an unambiguous access-denied marker at any size, a Cloudflare numeric error
+        //     code carried as the status, or a 403 + a weaker access-denied phrase on a non-large page
+        //     WITHOUT a login form (a login wall wins — see hasLoginForm above).
+        if (!ContainsAny(bodyLower, SolvableChallengeIndicators))
+        {
+            var isCloudflareErrorStatus = statusCode is 1020 or 1015 or 1010 or 1009;
+            if (ContainsAny(bodyLower, StrongBotBlockIndicators)
+                || isCloudflareErrorStatus
+                || (statusCode == 403 && !isLargeBody && !hasLoginForm && ContainsAny(bodyLower, WeakBotBlockIndicators)))
+            {
+                string detail;
+                if (isCloudflareErrorStatus)
+                {
+                    detail = $"Cloudflare error {statusCode}";
+                }
+                else
+                {
+                    detail = statusCode == 403 ? "HTTP 403 (WAF)" : "access denied";
+                }
+
+                return new HumanActionRequired(HumanActionVariant.BotBlock, domain, detail);
+            }
+        }
+
         // 2. Captcha: small page + vendor-specific markers, OR vendor markers anywhere.
         var captchaConfidence = ScoreCaptcha(bodyLower);
         if (captchaConfidence == CaptchaConfidence.High)
@@ -207,8 +288,7 @@ public static class HumanActionDetector
             return new HumanActionRequired(HumanActionVariant.CookieConsent, domain);
         }
 
-        // 5. Login: HTTP 401 or 403 + login form markers.
-        var hasLoginForm = ContainsAny(bodyLower, LoginFormIndicators);
+        // 5. Login: HTTP 401 or 403 + login form markers (hasLoginForm computed above).
         if ((statusCode == 401 || statusCode == 403) && hasLoginForm)
         {
             return new HumanActionRequired(HumanActionVariant.Login, domain, statusCode == 401 ? "HTTP 401" : "HTTP 403");

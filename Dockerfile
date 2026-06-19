@@ -84,7 +84,9 @@ ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24", "dotnet", 
 #   docker build --target final-web -t wirecopy-web .
 # then browse to http://localhost:5099. The web host spawns the unmodified
 # WireCopy.API under a PTY (terminal → xterm.js) and streams its browser into
-# the web pane. Chromium still runs headless under Xvfb in the container.
+# the web pane. Chromium runs HEADFUL under Xvfb (DISPLAY=:99) in the container
+# (workspace-8ne3) — a real browser defeats the bot detection that blocks headless,
+# and the virtual framebuffer keeps it a single window streamed to the pane.
 # ---------------------------------------------------------------------------
 FROM build AS publish-web
 WORKDIR "/src/src/WireCopy.Web"

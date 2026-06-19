@@ -16,14 +16,11 @@ public enum WebPaneMode
     Hidden,
 
     /// <summary>
-    /// A live, interactive page (link list, login, captcha, paywall) — stream it via the CDP
-    /// screencast so the user can see and drive it.
+    /// A live, interactive page (link list, reader-view article, login, captcha, paywall) — stream the
+    /// REAL site via the CDP screencast so the user sees and can drive it. The web pane is ALWAYS the
+    /// live site when a page is loaded (workspace-8a5y); it never renders a reader-fied snapshot of our
+    /// own — a fake website in the pane is useless. Cache-only reads (no live page to stream) collapse
+    /// to <see cref="Hidden"/>; the cached content shows in the TUI reader only.
     /// </summary>
     Live,
-
-    /// <summary>
-    /// A reader-view article — render our own sanitized HTML snapshot in the pane's iframe for crisp,
-    /// selectable text instead of streaming pixels.
-    /// </summary>
-    Snapshot,
 }

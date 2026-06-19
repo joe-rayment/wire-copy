@@ -26,19 +26,26 @@ internal class LauncherRenderer
 
     private const int WordmarkWidth = 87;
 
-    // Grid card cell layout (workspace-bs93) — mirrors LinkTreeRenderer's
-    // BuildSelectedCardLine vocabulary so launcher and link-list tiles read
-    // as one product:
+    // Grid card cell layout (workspace-bs93, height aligned in workspace-stby / dlkb.1) —
+    // mirrors LinkTreeRenderer's 5-line BuildSelectedCardLine vocabulary
+    // (standardCellHeight = 5, LinkTreeRenderer.cs) so launcher and link-list
+    // tiles read as one product. The launcher card was 4 rows, one shorter than
+    // a link-list card, which made the tiles look crowded and pushed the
+    // separator closer to the text even though the glyphs were identical:
     //   line 0: blank padding    (breathing room above the title)
     //   line 1: title row        " NAME                [N]"  ← ▌ replaces the leading
     //                                                          space when selected or
     //                                                          on the Reading List slot
     //   line 2: subtitle row     " domain.example"           ← same ▌ rule
-    //   line 3: separator rule   "────────────────"          ← dim secondary, always
+    //   line 3: interior padding (breathing room below the subtitle — the
+    //                             launcher has no title2/author rows to fill it,
+    //                             so it pads while keeping the selBg + ▌ bar)
+    //   line 4: separator rule   "────────────────"          ← dim secondary, always
     //                                                          rendered (matches link-list)
     // No box-drawing characters around the card; the separator rule provides
-    // the visual cap. cellHeight stays 4 so adjacent cards stack directly.
-    private const int GridCardHeight = 4;
+    // the visual cap. cellHeight = 5 so adjacent cards stack directly and align
+    // row-for-row with the link-list view.
+    private const int GridCardHeight = 5;
 
     // URL bar block height (workspace-0rde): blank + top border + content
     // + bottom border = 4 lines. The trailing blank that previously padded
@@ -194,12 +201,13 @@ internal class LauncherRenderer
                 const int columnThreshold = 40;
                 columns = width >= columnThreshold ? 2 : 1;
 
-                // Card cell (workspace-bs93): blank pad + title + subtitle +
-                // separator rule = 4 lines. Adjacent cards stack directly —
-                // the separator rule provides the visual break, matching the
-                // link-list card vocabulary so the two views feel like the
-                // same product. Scroll math treats the 4-line block as the
-                // logical row height so a row never partially scrolls in.
+                // Card cell (workspace-bs93/stby): blank pad + title + subtitle +
+                // interior pad + separator rule = 5 lines, matching the link-list
+                // card height (LinkTreeRenderer standardCellHeight). Adjacent cards
+                // stack directly — the separator rule provides the visual break, so
+                // the two views feel like the same product. Scroll math treats the
+                // 5-line block as the logical row height so a row never partially
+                // scrolls in.
                 cellHeight = GridCardHeight;
                 break;
             }
@@ -393,21 +401,19 @@ internal class LauncherRenderer
         var accentBarColor = isReadingList ? accentFg : borderFg;
         var contentWidth = Math.Max(1, cellWidth - 1);
 
+        // The separator rule is always the cell's LAST line (workspace-stby moved
+        // it off a hardcoded `case 3` so it tracks GridCardHeight). It's rendered
+        // the same way for selected and unselected cells — it's the visual border
+        // between cell rows and must not be eaten by the selection box. The
+        // previous mj9x behaviour (selBg fill on this row) looked like a 1-row-too-tall
+        // highlight that punched through the divider that connects to the `┼` cross.
+        if (lineIdx == GridCardHeight - 1)
+        {
+            return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";
+        }
+
         switch (lineIdx)
         {
-            case 0:
-                if (isSelected)
-                {
-                    // workspace-zlv0 (refines mj9x + 63jj): top padding fills
-                    // with selBg so the green box reaches the cell's top edge.
-                    // The cell's BOTTOM edge is the separator row (line 3)
-                    // which stays as the dim ─ rule — that's the real divider
-                    // between cell rows and must survive.
-                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
-                }
-
-                return new string(' ', cellWidth);
-
             case 1:
             {
                 // Title row: optional accent bar + leading space + glyph (RL only)
@@ -479,16 +485,19 @@ internal class LauncherRenderer
                 return $"{prefix} {domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
             }
 
-            case 3:
-                // workspace-63jj: separator rule is rendered the same way for
-                // selected and unselected cells — it's the visual border
-                // between cell rows and must not be eaten by the selection
-                // box. The previous mj9x behaviour (selBg fill on this row)
-                // looked like a 1-row-too-tall highlight that punched through
-                // the divider that connects to the `┼` cross.
-                return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";
-
             default:
+                // Padding rows: line 0 (above the title) and the interior line
+                // below the subtitle (workspace-stby). When selected they fill
+                // with selBg plus the accent bar, exactly like the title and
+                // subtitle rows, so the selection rectangle stays a continuous
+                // block with no gap; blank otherwise. (workspace-zlv0/mj9x/63jj:
+                // selBg must reach the cell top edge but must NOT bleed onto the
+                // separator row, which is handled above as the last line.)
+                if (isSelected)
+                {
+                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
+                }
+
                 return new string(' ', cellWidth);
         }
     }
@@ -980,10 +989,10 @@ internal class LauncherRenderer
         ThemePalette p,
         int? readingListCount = null)
     {
-        // 4-line card stride (workspace-bs93): blank pad + title + subtitle
-        // + separator. Mirrors LinkTreeRenderer's row layout — including the
-        // `│` divider between columns, with `┼` on the separator row so the
-        // intersection reads as continuous.
+        // 5-line card stride (workspace-bs93/stby): blank pad + title + subtitle
+        // + interior pad + separator. Mirrors LinkTreeRenderer's row layout —
+        // including the `│` divider between columns, with `┼` on the separator
+        // row so the intersection reads as continuous.
         if (line >= GridCardHeight)
         {
             return new string(' ', layout.Width);

@@ -164,10 +164,15 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_QuestionMark_ReturnsShowHelp()
+    public void MapKeyToCommand_BareOem2_ReturnsNoOp()
     {
+        // workspace-1d24: the dead ConsoleKey.Oem2 => ShowHelp entry was removed. A bare Oem2 with no
+        // KeyChar is ambiguous between '/' and '?'. In the real input path help arrives as '?'
+        // (KeyChar) and search as '/' (KeyChar); both are resolved by MapKeyInfoToCommand before this
+        // ConsoleKey-level map is ever reached, so the Oem2 entry only ever advertised a non-existent
+        // binding. Help remains reachable via '?'.
         var result = _sut.MapKeyToCommand(ConsoleKey.Oem2, 0);
-        result.Type.Should().Be(CommandType.ShowHelp);
+        result.Type.Should().Be(CommandType.NoOp);
     }
 
     [Fact]

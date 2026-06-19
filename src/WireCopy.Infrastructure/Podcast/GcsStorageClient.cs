@@ -330,6 +330,52 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         return GetPublicUrl(objectName);
     }
 
+    /// <summary>
+    /// Uploads string content to an EXPLICIT bucket, bypassing <see cref="_config"/>.BucketName and
+    /// the ensure-bucket step. Used by the ad-hoc GCS verify self-test (workspace-g4sj): on that path
+    /// the DI-bound config bucket is not the settings-store bucket being verified, so the plain
+    /// <see cref="UploadStringAsync"/> built a destination object with no bucket and threw
+    /// "Object must have a name and bucket (Parameter 'destination')". The four-step read/write probe
+    /// already targets — and just confirmed — this explicit bucket, so it is known to exist.
+    /// </summary>
+    public async Task<string> UploadStringToBucketAsync(
+        string bucket,
+        string content,
+        string objectName,
+        string contentType,
+        string? cacheControl = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bucket);
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(objectName);
+
+        var client = await GetClientWithDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+
+        _logger.LogDebug(
+            "Uploading string content to gs://{Bucket}/{Object} (explicit bucket, cacheControl={CacheControl})",
+            bucket,
+            objectName,
+            cacheControl ?? "(default)");
+
+        var obj = new Google.Apis.Storage.v1.Data.Object
+        {
+            Bucket = bucket,
+            Name = objectName,
+            ContentType = contentType,
+            CacheControl = cacheControl,
+        };
+
+        await client.UploadObjectAsync(
+            obj,
+            stream,
+            new UploadObjectOptions(),
+            cancellationToken).ConfigureAwait(false);
+
+        return $"https://storage.googleapis.com/{bucket}/{objectName}";
+    }
+
     public async Task<string?> DownloadStringAsync(
         string objectName,
         CancellationToken cancellationToken = default)

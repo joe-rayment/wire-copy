@@ -2,6 +2,71 @@
 # Wrapper script to run WireCopy with clean console output by default
 # Use --verbose flag to see all browser console output
 
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Use the repo-local .NET 10 SDK wrapper (./dotnet) so we don't pick up a
+# system 'dotnet' that's too old to target net10.0 (NETSDK1045). Fall back to a
+# 'dotnet' on PATH only if the wrapper isn't present/executable.
+if [ -x "$ROOT/dotnet" ]; then
+    DOTNET="$ROOT/dotnet"
+else
+    DOTNET="dotnet"
+fi
+
+CFG="${WIRECOPY_BUILD_CONFIG:-Release}"
+
+# ensure_deps: handle the app's runtime dependencies at startup so the user never has to install
+# them by hand and never hits a mid-session stall. Safe by design — it only ever downloads the
+# Playwright Chromium build (into the per-user cache) and never runs sudo/apt on its own.
+#   - Chromium: the web pane streams the API child's own Patchright Chromium. Detect it first
+#     (an explicit WIRECOPY_CHROMIUM_EXECUTABLE pin, or the Playwright browsers cache); if missing,
+#     install it up front via the built Playwright driver so the ~270MB download happens here at
+#     startup instead of lazily on first navigation. On success we export WIRECOPY_BOOTSTRAP_DONE=1
+#     so the in-app installer skips the redundant pass. If the driver isn't built yet we leave the
+#     flag unset and the in-app safety net (300s timeout) handles it.
+#   - ffmpeg/ffprobe: required only for podcast generation. Detect and point the user at the right
+#     install command — we never install it for them (no silent sudo).
+ensure_deps() {
+    if [ -n "${WIRECOPY_CHROMIUM_EXECUTABLE:-}" ] && [ -x "${WIRECOPY_CHROMIUM_EXECUTABLE}" ]; then
+        export WIRECOPY_BOOTSTRAP_DONE=1
+    else
+        local cache="${PLAYWRIGHT_BROWSERS_PATH:-}"
+        if [ -z "$cache" ]; then
+            case "$(uname -s)" in
+                Darwin) cache="$HOME/Library/Caches/ms-playwright" ;;
+                *)      cache="$HOME/.cache/ms-playwright" ;;
+            esac
+        fi
+        if [ -n "$(find "$cache" -path '*chromium-*' -type f \( -name chrome -o -name Chromium \) 2>/dev/null | head -1)" ]; then
+            export WIRECOPY_BOOTSTRAP_DONE=1
+        else
+            local pwdir="" rcfg=""
+            for d in "$ROOT/src/WireCopy.API/bin/$CFG/net10.0" "$ROOT/src/WireCopy.Web/bin/$CFG/net10.0"; do
+                if [ -f "$d/Microsoft.Playwright.dll" ]; then pwdir="$d"; break; fi
+            done
+            if [ -n "$pwdir" ]; then
+                rcfg="$(ls "$pwdir"/WireCopy.*.runtimeconfig.json 2>/dev/null | head -1)"
+            fi
+            if [ -n "$rcfg" ]; then
+                echo "Installing Chromium for the web pane (one-time, ~270 MB)…" >&2
+                if "$DOTNET" exec --runtimeconfig "$rcfg" "$pwdir/Microsoft.Playwright.dll" install chromium >&2; then
+                    export WIRECOPY_BOOTSTRAP_DONE=1
+                else
+                    echo "Chromium install did not finish; the app will retry on first navigation." >&2
+                fi
+            fi
+        fi
+    fi
+
+    if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+        echo "Note: ffmpeg/ffprobe not on PATH — podcast generation is unavailable until installed." >&2
+        case "$(uname -s)" in
+            Darwin) echo "      brew install ffmpeg" >&2 ;;
+            *)      echo "      sudo apt-get install ffmpeg   # or your distro's package manager" >&2 ;;
+        esac
+    fi
+}
+
 # Check for --web (browser-hosted shell) and --verbose flags
 verbose=false
 web=false
@@ -18,23 +83,24 @@ done
 # the unmodified WireCopy.API under a PTY and serves the terminal + web pane in your browser at
 # http://127.0.0.1:5099 (override with WIRECOPY_WEB_URL). Set WIRECOPY_NO_OPEN=1 to skip auto-opening.
 if [ "$web" = true ]; then
-    ROOT="$(cd "$(dirname "$0")" && pwd)"
-    CFG="${WIRECOPY_BUILD_CONFIG:-Release}"
     API_EXE="$ROOT/src/WireCopy.API/bin/$CFG/net10.0/WireCopy.API"
-    dotnet build "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c "$CFG" -v quiet || exit 1
-    dotnet build "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" -v quiet || exit 1
+    "$DOTNET" build "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c "$CFG" -v quiet || exit 1
+    "$DOTNET" build "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" -v quiet || exit 1
+    ensure_deps
     export WIRECOPY_TERMINAL_APP="$API_EXE"
     export WIRECOPY_TERMINAL_CWD="$ROOT"
-    exec dotnet run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
+    exec "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
 fi
+
+ensure_deps
 
 # Run with or without filtering
 if [ "$verbose" = true ]; then
     # Verbose mode: show everything
-    dotnet run --project src/WireCopy.API --configuration Release -- "$@"
+    "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@"
 else
     # Default mode: filter browser noise
-    dotnet run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
+    "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
       grep -v "console.error:" | \
       grep -v "NS_ERROR_CONTENT_BLOCKED" | \
       grep -v "geckodriver" | \

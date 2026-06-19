@@ -836,7 +836,12 @@ internal class LinkTreeRenderer
             {
                 var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
                 var divider = isSeparatorLine ? "\u253c" : "\u2502";
-                sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
+
+                // Dim to match the horizontal card rules (BuildCardLine separators at
+                // lines ~429/565). Without {Dim} the vertical divider renders at full
+                // brightness while the rules are dimmed, so the border colour appeared to
+                // change row-to-row underneath the stories (workspace-mijd / dlkb.3).
+                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{divider}{Reset}");
                 if (row.Right != null)
                 {
                     var rightToggled = selectedIds != null && selectedIds.Contains(row.Right.Id);

@@ -120,18 +120,24 @@ await page.WaitForTimeoutAsync(500);
 var shownAfterF9 = !await PaneHiddenAsync(page);
 Check(hiddenAfterF9 && shownAfterF9, "F9 hides and re-reveals the web pane");
 
-// 6) Reader view → SNAPSHOT mode: navigating to an article auto-enters reader view (the TUI does this
-// for Article-classified pages), so the pane should swap the screencast for our clean HTML in the
-// iframe, carrying the article text.
+// 6) Reader view streams the LIVE site (workspace-8a5y): navigating to an article auto-enters reader
+// view (the TUI does this for Article-classified pages). The pane must show the LIVE page via the
+// screencast — NOT a reader-fied HTML snapshot. The Snapshot/iframe mode is retired: a fake website
+// rendered in the pane is useless, so reader view shows the real page and the TUI reader is the
+// complementary view.
 await NavigateTuiAsync(page, $"{baseUrl}/article.html");
-await page.WaitForTimeoutAsync(6000); // classification + reader extraction + snapshot push
-var iframeVisible = await page.EvaluateAsync<bool>(
-    "() => { const f=document.querySelector('#web-iframe'); return !!f && getComputedStyle(f).display !== 'none'; }");
-var snapshotText = await page.EvaluateAsync<string>(
-    "() => { const f=document.querySelector('#web-iframe'); try { return (f && f.contentDocument && f.contentDocument.body) ? f.contentDocument.body.innerText : ''; } catch { return ''; } }");
-await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-3-snapshot.png") });
-Check(iframeVisible && snapshotText.Contains("WIRECOPY_SNAPSHOT_MARKER"),
-    "reader view renders a crisp HTML snapshot in the iframe");
+await page.WaitForTimeoutAsync(6000); // classification + reader extraction + live follow
+// DOM-state probes only (page globals aren't visible from this evaluate context — see line 53).
+// Reader view must show the LIVE screencast, NOT a snapshot iframe: the pane is visible, the
+// screencast <img> is the visible surface, the streamed frame is non-blank, and the old snapshot
+// iframe element no longer exists at all (workspace-8a5y retired it).
+var readerPaneVisible = !await PaneHiddenAsync(page);
+var readerScreencastVisible = await ScreencastVisibleAsync(page);
+var iframeGone = await page.EvaluateAsync<bool>("() => !document.querySelector('#web-iframe')");
+var readerPane = await img.ScreenshotAsync();
+await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-3-reader-live.png") });
+Check(readerPaneVisible && readerScreencastVisible && iframeGone && readerPane.Length > 2000,
+    "reader view streams the LIVE site (snapshot mode retired)");
 
 // 7) A second concurrent tab gets its own API child + Chromium profile and streams independently.
 var page2 = await OpenTabAsync();

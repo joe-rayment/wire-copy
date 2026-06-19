@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>WireCopy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0b0e'/%3E%3Ctext x='8' y='13' font-size='13' font-family='monospace' fill='%23ff5fa2' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/vendor/xterm.css" />
   <style>
     :root { color-scheme: dark; }
@@ -19,7 +20,6 @@
     #web-url { flex: 1; background: #0b0b0e; color: #ddd; border: 1px solid #333; padding: 4px 6px; border-radius: 4px; }
     #web-surface { flex: 1; position: relative; overflow: hidden; display: flex; align-items: flex-start; justify-content: center; }
     #screencast { max-width: 100%; display: block; }
-    #web-iframe { width: 100%; height: 100%; border: 0; background: #fff; display: none; }
     .hidden { display: none !important; }
     button { background: #2a2a33; color: #ddd; border: 1px solid #3a3a44; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
   </style>
@@ -37,7 +37,6 @@
       </div>
       <div id="web-surface">
         <img id="screencast" alt="web pane" />
-        <iframe id="web-iframe" sandbox="allow-same-origin"></iframe>
       </div>
     </div>
   </div>
@@ -53,8 +52,15 @@
     // ---- Terminal ----
     const term = new Terminal({
       fontFamily: 'ui-monospace, "DejaVu Sans Mono", monospace',
-      fontSize: 14,
+      // workspace-dlkb.1: 14 read too small in the browser-hosted shell vs the old TUI; 16 restores
+      // comfortable reading (the xterm-native equivalent of the old "larger font" Avalonia fix).
+      fontSize: 16,
       cursorBlink: true,
+      // workspace-dlkb.3: draw box-drawing / block glyphs pinned to the cell grid instead of trusting
+      // the web font's metrics (the xterm-native equivalent of the old "pin glyphs to the cell grid"
+      // fix). Active when a canvas/webgl renderer is used; harmless with the DOM renderer. The wordmark
+      // and link-list borders also rely on a font with correct box-drawing metrics (DejaVu Sans Mono).
+      customGlyphs: true,
       theme: { background: '#000000' },
     });
     const fit = new FitAddon.FitAddon();
@@ -69,7 +75,13 @@
     termSocket.onopen = () => sendResize();
     termSocket.onmessage = (ev) => {
       if (typeof ev.data === 'string') term.write(ev.data);
-      else term.write(dec.decode(new Uint8Array(ev.data)));
+      // workspace-dlkb.2: decode with { stream: true } on the ONE persistent decoder. The PTY chunks
+      // at arbitrary byte boundaries, so a multibyte UTF-8 glyph (3-byte box-drawing, 2-byte
+      // punctuation) can split across two websocket frames. Without streaming, each decode() flushes
+      // and turns the trailing partial bytes into a replacement char — the "stray characters" bug.
+      // Streaming buffers the incomplete tail and completes it on the next frame (the xterm-native
+      // equivalent of the old stateful-UTF-8 PTY decoder fix).
+      else term.write(dec.decode(new Uint8Array(ev.data), { stream: true }));
     };
     term.onData((data) => {
       if (termSocket.readyState === WebSocket.OPEN) termSocket.send(enc.encode(data));
@@ -79,15 +91,19 @@
       termSocket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
 
-    // ---- Web pane (screencast + snapshot) ----
+    // ---- Web pane (live screencast of the REAL site) ----
     const img = document.getElementById('screencast');
-    const iframe = document.getElementById('web-iframe');
     const pane = document.getElementById('web-pane');
     const status = document.getElementById('web-status');
     const surface = document.getElementById('web-surface');
     let lastUrl = null;
-    // The pane is "never empty": the child tells us hidden/live/snapshot based on what the TUI shows.
+    // The pane is "never empty": the child tells us hidden/live based on what the TUI shows. There is
+    // no snapshot mode — the pane is ALWAYS the live real site, or hidden (workspace-8a5y).
     let currentMode = 'live';
+    // workspace-jria: the user explicitly hid the pane (Hide button / F9). While set, server-driven
+    // mode updates must NOT auto-reveal the pane — only an explicit un-hide, or the content going away
+    // (mode:hidden) and a fresh navigation, brings it back.
+    let userHidden = false;
     const paneSocket = new WebSocket(`${wsBase}/ws/webpane?session=${sessionId}`);
     paneSocket.binaryType = 'arraybuffer';
     paneSocket.onopen = () => { status.textContent = 'live'; };
@@ -103,23 +119,25 @@
     function handleControl(text) {
       let msg; try { msg = JSON.parse(text); } catch { return; }
       if (msg.kind === 'toggle') { togglePane(); return; }
-      if (msg.kind === 'mode') applyMode(msg.mode, msg.html);
+      // workspace-jria: while the user has hidden the pane, ignore server "reveal" (live) updates so
+      // streaming can't pop the panel back open; still honor "hidden" (it clears the user-hidden state
+      // so the next real navigation can reveal again).
+      if (msg.kind === 'mode') {
+        if (!userHidden || msg.mode === 'hidden') applyMode(msg.mode);
+      }
     }
 
-    function applyMode(mode, html) {
+    function applyMode(mode) {
       currentMode = mode;
-      if (mode === 'hidden') { setPaneVisible(false); return; }
-      setPaneVisible(true);
-      if (mode === 'snapshot') {
-        iframe.srcdoc = html || '';
-        iframe.style.display = 'block';
-        img.style.display = 'none';
-        status.textContent = 'reader';
-      } else { // live
-        iframe.style.display = 'none';
-        img.style.display = 'block';
-        status.textContent = 'live';
+      if (mode === 'hidden') {
+        userHidden = false; // content went away — a fresh navigation may reveal the pane again.
+        setPaneVisible(false);
+        return;
       }
+      // live — the real site stream.
+      setPaneVisible(true);
+      img.style.display = 'block';
+      status.textContent = 'live';
     }
 
     function setPaneVisible(visible) {
@@ -143,7 +161,6 @@
     window.__wcPaneReady = () => paneSocket.readyState === WebSocket.OPEN && !!img.src;
     window.__wcPaneMode = () => currentMode;
     window.__wcPaneVisible = () => !pane.classList.contains('hidden');
-    window.__wcSnapshotText = () => { try { return iframe.contentDocument?.body?.innerText || ''; } catch { return ''; } };
 
     document.getElementById('web-go').addEventListener('click', () => {
       let url = document.getElementById('web-url').value.trim();
@@ -152,7 +169,23 @@
       paneSocket.send(JSON.stringify({ type: 'navigate', url }));
     });
     document.getElementById('web-hide').addEventListener('click', togglePane);
-    function togglePane() { document.getElementById('web-pane').classList.toggle('hidden'); fit.fit(); sendResize(); }
+    // workspace-jria: Hide collapses the WHOLE panel and stays collapsed during live streaming.
+    // togglePane records the user's intent (userHidden) so server mode:live updates can't re-reveal it,
+    // reflows the terminal to full width (and hides the splitter), and tells the child to pause the
+    // screencast while hidden so it costs nothing.
+    function togglePane() {
+      const willHide = !pane.classList.contains('hidden');
+      userHidden = willHide;
+      pane.classList.toggle('hidden', willHide);
+      const termPane = document.getElementById('term-pane');
+      termPane.style.flex = willHide ? '1 1 100%' : '1 1 55%';
+      splitter.style.display = willHide ? 'none' : '';
+      fit.fit();
+      sendResize();
+      if (paneSocket.readyState === WebSocket.OPEN) {
+        paneSocket.send(JSON.stringify({ type: 'paneVisible', visible: !willHide }));
+      }
+    }
     window.addEventListener('keydown', (e) => { if (e.key === 'F9') { e.preventDefault(); togglePane(); } });
 
     // ---- Splitter + resize ----

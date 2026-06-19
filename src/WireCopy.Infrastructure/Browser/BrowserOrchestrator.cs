@@ -1522,26 +1522,48 @@ public partial class BrowserOrchestrator : IBrowserService
             options = GetCurrentRenderOptions();
             var viewMode = _navigationService.CurrentContext.ViewMode;
 
-            // Launcher view doesn't require a page - render directly
+            // Launcher view doesn't require a page - render directly.
+            // workspace-peq2: compose the frame into one buffered write (BeginFrame/EndFrame),
+            // mirroring RenderAsync. Without it each fragment is a separate Console.Write; over the
+            // PTY->xterm.js stream a per-line erase or cursor move can be split under rapid keystrokes,
+            // leaving a previously-selected card's accent bar as a ghost on a right-column card.
             if (viewMode == ViewMode.Launcher)
             {
-                _renderer.RenderLauncher(
-                    _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
-                    _navigationService.LauncherSelectedIndex,
-                    _navigationService.LauncherScrollOffset,
-                    options);
+                _renderer.BeginFrame();
+                try
+                {
+                    _renderer.RenderLauncher(
+                        _commandContext.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(),
+                        _navigationService.LauncherSelectedIndex,
+                        _navigationService.LauncherScrollOffset,
+                        options);
+                }
+                finally
+                {
+                    _renderer.EndFrame();
+                }
+
                 return;
             }
 
-            // Collection views don't require a page - render directly
+            // Collection views don't require a page - render directly (atomic frame, see peq2 above).
             if (viewMode == ViewMode.CollectionList)
             {
-                _renderer.RenderCollectionList(
-                    _commandContext.Collections?.ToList() ?? new List<Collection>(),
-                    _navigationService.CollectionSelectedIndex,
-                    _commandContext.DefaultCollectionId,
-                    _navigationService.CollectionListScrollOffset,
-                    options);
+                _renderer.BeginFrame();
+                try
+                {
+                    _renderer.RenderCollectionList(
+                        _commandContext.Collections?.ToList() ?? new List<Collection>(),
+                        _navigationService.CollectionSelectedIndex,
+                        _commandContext.DefaultCollectionId,
+                        _navigationService.CollectionListScrollOffset,
+                        options);
+                }
+                finally
+                {
+                    _renderer.EndFrame();
+                }
+
                 return;
             }
 
@@ -1550,11 +1572,19 @@ public partial class BrowserOrchestrator : IBrowserService
                 var activeCollection = _navigationService.ActiveCollection;
                 if (activeCollection != null)
                 {
-                    _renderer.RenderCollectionItems(
-                        activeCollection,
-                        _navigationService.CollectionItemSelectedIndex,
-                        _navigationService.CollectionItemScrollOffset,
-                        options);
+                    _renderer.BeginFrame();
+                    try
+                    {
+                        _renderer.RenderCollectionItems(
+                            activeCollection,
+                            _navigationService.CollectionItemSelectedIndex,
+                            _navigationService.CollectionItemScrollOffset,
+                            options);
+                    }
+                    finally
+                    {
+                        _renderer.EndFrame();
+                    }
                 }
 
                 return;
@@ -1644,17 +1674,14 @@ public partial class BrowserOrchestrator : IBrowserService
 
     /// <summary>
     /// Mirrors the same content signal onto the browser-hosted web pane: collapse it when there is
-    /// nothing to show (never-empty law), render a clean HTML snapshot for reader view, and stream the
-    /// live page for link lists / interactive pages. Inert (the sink no-ops) for plain terminal runs.
+    /// nothing live to show (never-empty law) and stream the REAL page otherwise — link lists,
+    /// interactive pages, and reader-view articles all show the live site, never a reader-fied snapshot
+    /// (workspace-8a5y). Inert (the sink no-ops) for plain terminal runs.
     /// </summary>
     private void SyncWebPane(ViewMode viewMode, Page? page)
     {
         var mode = WebPaneDecision.Decide(viewMode, page);
-        var key = mode == WebPaneMode.Snapshot ? page?.Url : null;
-        Func<string>? htmlFactory = mode == WebPaneMode.Snapshot && page is not null
-            ? () => ReaderSnapshotHtml.Build(page)
-            : null;
-        _webPaneSink.Update(mode, key, htmlFactory);
+        _webPaneSink.Update(mode);
     }
 
     /// <summary>

@@ -325,6 +325,10 @@ public class TerminalPageRenderer : IPageRenderer
                 "Site blocks this region (HTTP 451)",
                 "Try a different network or VPN",
                 "b:back"),
+            Domain.Enums.Browser.HumanActionVariant.BotBlock => (
+                "Site blocked automated access",
+                "It blocks bots — open it in your own browser",
+                $"{d} — Shift+O:open  b:back"),
             Domain.Enums.Browser.HumanActionVariant.RedirectLoop => (
                 "Site is stuck in a redirect loop",
                 "Open it in your browser, then press R",
@@ -387,9 +391,10 @@ public class TerminalPageRenderer : IPageRenderer
             Domain.Enums.Browser.HumanActionVariant.Captcha => "Solve the CAPTCHA in the browser window.",
             Domain.Enums.Browser.HumanActionVariant.Login => "Log in in the browser window.",
             Domain.Enums.Browser.HumanActionVariant.CookieConsent => "Accept the cookie banner in the browser window.",
-            Domain.Enums.Browser.HumanActionVariant.TwoFactor => "Complete two-factor verification in the browser window.",
+            Domain.Enums.Browser.HumanActionVariant.TwoFactor => "Complete 2FA verification in the browser window.",
             Domain.Enums.Browser.HumanActionVariant.Paywall => "Log in past the paywall in the browser window.",
             Domain.Enums.Browser.HumanActionVariant.RegionBlock => "This site blocks your region — a VPN may be required.",
+            Domain.Enums.Browser.HumanActionVariant.BotBlock => "This site blocks bots — open it in your browser.",
             Domain.Enums.Browser.HumanActionVariant.RedirectLoop => "Resolve the redirect loop in the browser window.",
             _ => "Complete the required action in the browser window.",
         };

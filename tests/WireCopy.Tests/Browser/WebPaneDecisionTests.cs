@@ -41,11 +41,13 @@ public class WebPaneDecisionTests
         => WebPaneDecision.Decide(ViewMode.Hierarchical, WebPage()).Should().Be(WebPaneMode.Live);
 
     [Fact]
-    public void ReaderWithArticle_IsSnapshot()
-        => WebPaneDecision.Decide(ViewMode.Readable, ArticlePage()).Should().Be(WebPaneMode.Snapshot);
+    public void ReaderWithArticle_IsLive()
+        // workspace-8a5y: reader view streams the LIVE site (the spotlight drives the display page to
+        // follow the article), never a reader-fied snapshot. The TUI reader is the complementary view.
+        => WebPaneDecision.Decide(ViewMode.Readable, ArticlePage()).Should().Be(WebPaneMode.Live);
 
     [Fact]
-    public void ReaderWithoutExtractedContent_FallsBackToLive()
+    public void ReaderWithoutExtractedContent_IsLive()
         => WebPaneDecision.Decide(ViewMode.Readable, WebPage()).Should().Be(WebPaneMode.Live);
 
     [Fact]

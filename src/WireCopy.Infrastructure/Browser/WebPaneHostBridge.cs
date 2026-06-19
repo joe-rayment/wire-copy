@@ -13,10 +13,10 @@ namespace WireCopy.Infrastructure.Browser;
 /// Child-side half of the browser-hosted web pane and the <see cref="IWebPaneSink"/> the orchestrator
 /// drives. When launched under the web host (the <c>WIRECOPY_WEBPANE_SOCKET</c> env var points at a
 /// Unix-domain socket) this connects to the host, ensures a dedicated display page exists, and — per
-/// the mode the render path requests — either streams the page via CDP <c>Page.startScreencast</c>
-/// (live/interactive pages), pushes a sanitized HTML snapshot (reader view), or collapses the pane
-/// (nothing to show). It also applies pointer/keyboard/navigation input the host forwards back. When
-/// the env var is absent (a plain terminal run) the connection never opens and the sink is inert.
+/// the mode the render path requests — either streams the REAL page via CDP <c>Page.startScreencast</c>
+/// (live/interactive pages and reader-view articles alike, workspace-8a5y) or collapses the pane
+/// (nothing live to show). It also applies pointer/keyboard/navigation input the host forwards back.
+/// When the env var is absent (a plain terminal run) the connection never opens and the sink is inert.
 ///
 /// Wire framing (see <see cref="PaneFraming"/>): <c>[len][type][payload]</c>.
 ///   type 1 (FRAME, child→host): JPEG bytes.
@@ -39,12 +39,9 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
 
     // Desired pane state, set by the orchestrator via Update(); applied to the host whenever connected.
     private WebPaneMode _desiredMode = WebPaneMode.Hidden;
-    private string? _desiredKey;
-    private Func<string>? _desiredHtmlFactory;
 
     // Last state actually sent to the host. Null forces a (re)apply on connect.
     private WebPaneMode? _sentMode;
-    private string? _sentKey;
     private bool _disposed;
 
     public WebPaneHostBridge(IBrowserSession session, ILogger<WebPaneHostBridge> logger)
@@ -92,7 +89,7 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
     }
 
     /// <inheritdoc />
-    public void Update(WebPaneMode mode, string? snapshotKey, Func<string>? snapshotHtmlFactory)
+    public void Update(WebPaneMode mode)
     {
         if (!_enabled)
         {
@@ -101,14 +98,12 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
 
         lock (_stateLock)
         {
-            if (mode == _desiredMode && string.Equals(snapshotKey, _desiredKey, StringComparison.Ordinal))
+            if (mode == _desiredMode)
             {
-                return; // unchanged — don't rebuild HTML or resend.
+                return; // unchanged — nothing to resend.
             }
 
             _desiredMode = mode;
-            _desiredKey = snapshotKey;
-            _desiredHtmlFactory = snapshotHtmlFactory;
         }
 
         _ = Task.Run(() => ApplyDesiredAsync(_cts.Token));
@@ -156,14 +151,13 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
     internal static string BuildToggleMessage() => JsonSerializer.Serialize(new { kind = "toggle" });
 
     /// <summary>
-    /// Builds the control message the client applies for a pane mode: live (show the screencast),
-    /// snapshot (render <paramref name="html"/> in the iframe), or hidden (collapse the pane).
-    /// Extracted so the SPA-facing contract is unit-testable without a socket or browser.
+    /// Builds the control message the client applies for a pane mode: live (show the screencast of the
+    /// real page) or hidden (collapse the pane). Extracted so the SPA-facing contract is unit-testable
+    /// without a socket or browser.
     /// </summary>
-    internal static string BuildModeMessage(WebPaneMode mode, string? html) => mode switch
+    internal static string BuildModeMessage(WebPaneMode mode) => mode switch
     {
         WebPaneMode.Live => JsonSerializer.Serialize(new { kind = "mode", mode = "live" }),
-        WebPaneMode.Snapshot => JsonSerializer.Serialize(new { kind = "mode", mode = "snapshot", html = html ?? string.Empty }),
         _ => JsonSerializer.Serialize(new { kind = "mode", mode = "hidden" }),
     };
 
@@ -285,16 +279,12 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
         try
         {
             WebPaneMode mode;
-            string? key;
-            Func<string>? factory;
             lock (_stateLock)
             {
                 mode = _desiredMode;
-                key = _desiredKey;
-                factory = _desiredHtmlFactory;
             }
 
-            if (_sentMode == mode && string.Equals(_sentKey, key, StringComparison.Ordinal))
+            if (_sentMode == mode)
             {
                 return;
             }
@@ -303,23 +293,16 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
             {
                 case WebPaneMode.Live:
                     await StartScreencastAsync().ConfigureAwait(false);
-                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Live, null), ct).ConfigureAwait(false);
+                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Live), ct).ConfigureAwait(false);
                     break;
 
-                case WebPaneMode.Snapshot:
-                    // The iframe shows our HTML; stop the screencast so it costs nothing.
+                default: // Hidden — nothing live to show; collapse the pane and stop streaming.
                     await StopScreencastAsync().ConfigureAwait(false);
-                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Snapshot, factory?.Invoke()), ct).ConfigureAwait(false);
-                    break;
-
-                default: // Hidden
-                    await StopScreencastAsync().ConfigureAwait(false);
-                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Hidden, null), ct).ConfigureAwait(false);
+                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Hidden), ct).ConfigureAwait(false);
                     break;
             }
 
             _sentMode = mode;
-            _sentKey = key;
         }
         catch (OperationCanceledException)
         {
@@ -387,6 +370,25 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
                     if (!string.IsNullOrWhiteSpace(url))
                     {
                         await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded }).ConfigureAwait(false);
+                    }
+
+                    break;
+
+                case "paneVisible":
+                    // workspace-jria: the user hid/showed the pane in their tab. Pause the CDP
+                    // screencast while hidden so a collapsed pane costs nothing; resume it on un-hide
+                    // if the current desired mode still wants the live stream.
+                    var visible = root.TryGetProperty("visible", out var vis) && vis.GetBoolean();
+                    if (visible)
+                    {
+                        if (_desiredMode == WebPaneMode.Live)
+                        {
+                            await StartScreencastAsync().ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        await StopScreencastAsync().ConfigureAwait(false);
                     }
 
                     break;
