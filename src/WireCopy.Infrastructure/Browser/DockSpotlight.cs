@@ -48,6 +48,13 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
     private readonly IBrowserSession _session;
     private readonly ILogger<DockSpotlight> _logger;
+
+    // Browser-hosted web pane mode: when launched under the web host the page is streamed into the
+    // tab (no OS dock window), so the spotlight drives the headless display page whenever a browser
+    // exists rather than gating on the OS-window dock state.
+    private readonly bool _webPaneMode =
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET"));
+
     private readonly object _gate = new();
     private readonly SemaphoreSlim _signal = new(0, 1);
     private readonly CancellationTokenSource _disposeCts = new();
@@ -163,7 +170,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     /// </summary>
     public void RequestSync(SpotlightTarget target)
     {
-        if (_disposed || !_session.IsDocked || !_session.HasActiveBrowser)
+        if (_disposed || !IsSpotlightActive || !_session.HasActiveBrowser)
         {
             return;
         }
@@ -344,7 +351,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
     private async Task SyncAsync(SpotlightTarget target)
     {
-        if (!_session.IsDocked || !_session.HasActiveBrowser)
+        if (!IsSpotlightActive || !_session.HasActiveBrowser)
         {
             _applied = null;
             return;
@@ -352,7 +359,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         try
         {
-            var page = await _session.GetLensPageAsync().ConfigureAwait(false);
+            var page = await GetSpotlightPageAsync().ConfigureAwait(false);
             if (page == null)
             {
                 _applied = null;
@@ -605,7 +612,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
         try
         {
-            var page = await _session.GetLensPageAsync().ConfigureAwait(false);
+            var page = await GetSpotlightPageAsync().ConfigureAwait(false);
             if (page != null)
             {
                 await page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
@@ -637,6 +644,15 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             return _hasPending;
         }
     }
+
+    // In web-pane mode the spotlight follows whenever a browser exists (the page is streamed into the
+    // tab); otherwise it follows only while the OS dock window is up.
+#pragma warning disable SA1201 // helpers grouped with HasNewerPending, their related gate logic
+    private bool IsSpotlightActive => _webPaneMode ? _session.HasActiveBrowser : _session.IsDocked;
+
+    private Task<IPage?> GetSpotlightPageAsync()
+        => _webPaneMode ? _session.GetDisplayPageAsync() : _session.GetLensPageAsync();
+#pragma warning restore SA1201
 
     private void HintOncePerPage(string pageUrl, string message)
     {
