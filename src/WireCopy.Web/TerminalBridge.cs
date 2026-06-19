@@ -16,7 +16,7 @@ namespace WireCopy.Web;
 /// </summary>
 internal static class TerminalBridge
 {
-    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct)
+    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct, string? paneSocketPath = null)
     {
         // The command to host. Defaults to bash for the isolated spike; the real host
         // sets this to the WireCopy.API browse process.
@@ -32,13 +32,20 @@ internal static class TerminalBridge
             ["COLORTERM"] = "truecolor",
             ["LANG"] = Environment.GetEnvironmentVariable("LANG") ?? "C.UTF-8",
         };
-        foreach (var key in new[] { "PATH", "HOME", "USER", "PLAYWRIGHT_BROWSERS_PATH", "DOTNET_ROOT" })
+        foreach (var key in new[] { "PATH", "HOME", "USER", "PLAYWRIGHT_BROWSERS_PATH", "DOTNET_ROOT", "WIRECOPY_CHROMIUM_EXECUTABLE" })
         {
             var v = Environment.GetEnvironmentVariable(key);
             if (v is not null)
             {
                 env[key] = v;
             }
+        }
+
+        // Hand the child the per-tab web-pane socket so its WebPaneHostBridge streams the display
+        // page back to this tab (the browser-hosted web pane).
+        if (!string.IsNullOrEmpty(paneSocketPath))
+        {
+            env["WIRECOPY_WEBPANE_SOCKET"] = paneSocketPath;
         }
 
         var options = new PtyOptions

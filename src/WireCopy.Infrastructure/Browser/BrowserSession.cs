@@ -183,6 +183,60 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Returns the dedicated display page streamed into the browser-hosted web pane, creating it
+    /// (and launching the browser headless if needed) on demand. Unlike <see cref="GetLensPageAsync"/>
+    /// this works in headless mode, because in the browser-hosted shell the engine is always headless
+    /// and the user sees it via the CDP screencast rather than an OS window. Reuses the lens tab so the
+    /// existing selection-follow/spotlight machinery (which targets the lens) drives the pane.
+    /// </summary>
+    public async Task<IPage?> GetDisplayPageAsync()
+    {
+        if (_disposed)
+        {
+            return null;
+        }
+
+        // Ensure the browser/context exists (headless per config). Released before we take the lock.
+        await GetOrCreatePageAsync(_browserConfig.EffectiveHeadless).ConfigureAwait(false);
+
+        await _lock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed || _context == null)
+            {
+                return null;
+            }
+
+            if (_lensPage != null)
+            {
+                try
+                {
+                    _ = _lensPage.Url;
+                    return _lensPage;
+                }
+                catch (PlaywrightException)
+                {
+                    _lensPage = null;
+                }
+            }
+
+            _lensPage = await _context.NewPageAsync().ConfigureAwait(false);
+            _lensPage.Close += OnLensPageClosed;
+            _logger.LogDebug("Display (lens) tab created for web pane");
+            return _lensPage;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to create display page (non-fatal)");
+            return null;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     /// <inheritdoc />
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
     {

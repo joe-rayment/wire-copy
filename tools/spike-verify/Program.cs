@@ -1,9 +1,11 @@
-// G0 spike verifier: drives the WireCopy.Web tab with a real headless Chromium and
-// screenshots it, proving terminal round-trip + interactive web-pane screencast in one tab.
+// G2 verifier: drives the WireCopy.Web tab with a real headless Chromium and screenshots it,
+// proving the web pane streams the WireCopy.API child's OWN browser (navigated via the URL bar,
+// interactive) alongside the real TUI — all in one tab.
 using Microsoft.Playwright;
 
 var baseUrl = Environment.GetEnvironmentVariable("WIRECOPY_WEB_URL") ?? "http://127.0.0.1:5099";
 var outDir = Environment.GetEnvironmentVariable("SPIKE_OUT") ?? "/tmp";
+var navUrl = Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_NAV") ?? $"{baseUrl}/testpage.html";
 var exe = Environment.GetEnvironmentVariable("WIRECOPY_CHROMIUM")
     ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
@@ -22,41 +24,40 @@ var page = await browser.NewPageAsync(new BrowserNewPageOptions
 Console.WriteLine($"navigating to {baseUrl}");
 await page.GotoAsync(baseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
 
-var noType = Environment.GetEnvironmentVariable("SPIKE_NO_TYPE") == "1";
-if (!noType)
-{
-    // 1) Terminal round-trip: focus the terminal and type a command the PTY/bash will echo.
-    await page.ClickAsync("#term");
-    await page.WaitForTimeoutAsync(500);
-    await page.Keyboard.TypeAsync("echo WIRECOPY_TERMINAL_OK_42\n");
-    await page.WaitForTimeoutAsync(800);
-}
-else
-{
-    // Real-TUI capture: allow warmup (headless chromium launch) + first render.
-    await page.WaitForTimeoutAsync(13000);
-}
+// The TUI child must warm up (host build + headless chromium launch) before its web-pane bridge
+// connects and the display page is created.
+Console.WriteLine("waiting for TUI warmup + pane bridge…");
+await page.WaitForTimeoutAsync(15000);
 
-// 2) Web pane: wait for the screencast to produce a frame.
+// Confirm the real TUI rendered in xterm.js.
+var termText = await page.EvaluateAsync<string>(
+    "() => document.querySelector('.xterm-rows') ? document.querySelector('.xterm-rows').innerText : ''");
+var terminalOk = termText.Contains("Wire Copy") || termText.Contains("READING LIST") || termText.Contains("Go to URL");
+Console.WriteLine($"terminal TUI visible: {terminalOk}");
+
+// Drive the pane through the URL bar -> routes to the child's display page over IPC.
+Console.WriteLine($"navigating web pane to {navUrl}");
+await page.FillAsync("#web-url", navUrl);
+await page.ClickAsync("#web-go");
+
+// Wait for a screencast frame of the navigated page.
 try
 {
-    await page.WaitForFunctionAsync("() => window.__wcPaneReady && window.__wcPaneReady()",
+    await page.WaitForFunctionAsync(
+        "() => { const i=document.querySelector('#screencast'); return i && i.complete && i.naturalWidth > 0; }",
         new PageWaitForFunctionOptions { Timeout = 20000 });
-    Console.WriteLine("screencast ready");
+    Console.WriteLine("screencast frame received");
 }
 catch (TimeoutException)
 {
-    Console.WriteLine("WARN: screencast not ready within timeout");
+    Console.WriteLine("WARN: no screencast frame within timeout");
 }
 
-await page.WaitForTimeoutAsync(800);
-await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "spike-initial.png"), FullPage = false });
-Console.WriteLine("captured spike-initial.png");
+await page.WaitForTimeoutAsync(1500);
+await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "g2-initial.png") });
+Console.WriteLine("captured g2-initial.png");
 
-// 3) Forward a click onto the streamed page's toggle button (pinned at page coords 50,300 / 220x60).
-//    Use a real trusted mouse click on the <img> so the page's own click handler maps it to page
-//    space and forwards it over the web-pane websocket (Patchright isolates evaluate() from page
-//    globals, so we cannot call window.__wcPaneClick directly).
+// Forward a click onto the streamed page's toggle button (pinned at page coords 50,300 / 220x60).
 var geomJson = await page.EvaluateAsync<string>(
     "() => { const i=document.querySelector('#screencast'); const r=i.getBoundingClientRect();" +
     " return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height,nw:i.naturalWidth,nh:i.naturalHeight}); }");
@@ -66,17 +67,12 @@ double gx = g.GetProperty("x").GetDouble(), gy = g.GetProperty("y").GetDouble();
 double gw = g.GetProperty("w").GetDouble(), gh = g.GetProperty("h").GetDouble();
 double nw = g.GetProperty("nw").GetDouble(), nh = g.GetProperty("nh").GetDouble();
 Console.WriteLine($"img rect=({gx},{gy}) {gw}x{gh} natural={nw}x{nh}");
-var clientX = gx + (160.0 * (gw / nw));
-var clientY = gy + (330.0 * (gh / nh));
-await page.Mouse.ClickAsync((float)clientX, (float)clientY);
-await page.WaitForTimeoutAsync(1200);
-await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "spike-final.png"), FullPage = false });
-Console.WriteLine("captured spike-final.png");
+if (nw > 0 && nh > 0)
+{
+    await page.Mouse.ClickAsync((float)(gx + (160.0 * (gw / nw))), (float)(gy + (330.0 * (gh / nh))));
+    await page.WaitForTimeoutAsync(1500);
+}
 
-// 4) Report whether the terminal text rendered (read xterm buffer text from the DOM).
-var termText = await page.EvaluateAsync<string>(
-    "() => document.querySelector('.xterm-rows') ? document.querySelector('.xterm-rows').innerText : ''");
-var terminalOk = termText.Contains("WIRECOPY_TERMINAL_OK_42");
-Console.WriteLine($"terminal echo visible: {terminalOk}");
-
-Console.WriteLine(terminalOk ? "SPIKE-RESULT: terminal OK" : "SPIKE-RESULT: terminal MISSING");
+await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "g2-final.png") });
+Console.WriteLine("captured g2-final.png");
+Console.WriteLine(terminalOk ? "G2-RESULT: terminal OK" : "G2-RESULT: terminal MISSING");

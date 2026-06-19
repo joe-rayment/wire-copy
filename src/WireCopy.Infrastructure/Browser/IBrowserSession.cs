@@ -87,6 +87,14 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<IPage?> GetLensPageAsync();
 
     /// <summary>
+    /// Returns the dedicated display page streamed into the browser-hosted web pane, creating it
+    /// (and launching the browser headless if needed) on demand. Works in headless mode — the user
+    /// sees the engine via the CDP screencast, not an OS window. Null if the session is disposed or
+    /// the page cannot be created.
+    /// </summary>
+    Task<IPage?> GetDisplayPageAsync();
+
+    /// <summary>
     /// Reads the most recent HUMAN input timestamp observed anywhere in the shared
     /// browser (workspace-mya7) — pointer/key/wheel/touch listeners injected at
     /// context launch, plus the e2e test seam. Null when no input has been seen

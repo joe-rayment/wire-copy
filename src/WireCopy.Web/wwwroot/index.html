@@ -47,6 +47,8 @@
   <script>
     const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsBase = `${wsProto}://${location.host}`;
+    // One session id per tab correlates the terminal child with its web pane.
+    const sessionId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g, '');
 
     // ---- Terminal ----
     const term = new Terminal({
@@ -60,7 +62,7 @@
     term.open(document.getElementById('term'));
     fit.fit();
 
-    const termSocket = new WebSocket(`${wsBase}/ws/terminal`);
+    const termSocket = new WebSocket(`${wsBase}/ws/terminal?session=${sessionId}`);
     termSocket.binaryType = 'arraybuffer';
     const enc = new TextEncoder();
     const dec = new TextDecoder();
@@ -82,7 +84,7 @@
     const status = document.getElementById('web-status');
     const surface = document.getElementById('web-surface');
     let lastUrl = null;
-    const paneSocket = new WebSocket(`${wsBase}/ws/webpane`);
+    const paneSocket = new WebSocket(`${wsBase}/ws/webpane?session=${sessionId}`);
     paneSocket.binaryType = 'arraybuffer';
     paneSocket.onopen = () => { status.textContent = 'live'; };
     paneSocket.onclose = () => { status.textContent = 'closed'; };

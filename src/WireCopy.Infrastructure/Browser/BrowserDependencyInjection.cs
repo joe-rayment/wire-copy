@@ -103,6 +103,10 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
         services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
 
+        // Browser-hosted web pane bridge: streams the display page to the web host when launched
+        // under it (WIRECOPY_WEBPANE_SOCKET set); inert for plain terminal runs.
+        services.AddHostedService<WebPaneHostBridge>();
+
         // Register page access priority queue (serializes foreground/background access)
         services.AddSingleton<IPageAccessQueue, PageAccessQueue>();
 

@@ -21,7 +21,8 @@ app.UseWebSockets();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Terminal stream: PTY child <-> websocket <-> xterm.js.
+// Terminal stream: PTY child <-> websocket <-> xterm.js. Each tab carries a session id so its
+// web pane can be correlated to the same spawned WireCopy.API child.
 app.Map("/ws/terminal", async context =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
@@ -30,11 +31,25 @@ app.Map("/ws/terminal", async context =>
         return;
     }
 
+    var sessionId = context.Request.Query["session"].ToString();
+    if (string.IsNullOrEmpty(sessionId))
+    {
+        sessionId = Guid.NewGuid().ToString("n");
+    }
+
+    var pane = PaneRegistry.Create(sessionId, log);
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    await TerminalBridge.RunAsync(socket, log, context.RequestAborted);
+    try
+    {
+        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath);
+    }
+    finally
+    {
+        await PaneRegistry.Remove(sessionId);
+    }
 });
 
-// Web pane: CDP screencast of a live page <-> websocket; input forwarded back.
+// Web pane: relays the matching child's CDP screencast frames to the tab and forwards input back.
 app.Map("/ws/webpane", async context =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
@@ -43,8 +58,9 @@ app.Map("/ws/webpane", async context =>
         return;
     }
 
+    var sessionId = context.Request.Query["session"].ToString();
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    await WebPaneBridge.RunAsync(socket, log, context.RequestAborted);
+    await WebPaneRelay.RunAsync(sessionId, socket, log, context.RequestAborted);
 });
 
 var url = Environment.GetEnvironmentVariable("WIRECOPY_WEB_URL") ?? "http://127.0.0.1:5099";
