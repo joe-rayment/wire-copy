@@ -4,9 +4,15 @@
 // user sees in the one tab.
 //
 //   1. the real TUI renders in xterm.js;
-//   2. driving the TUI (o = go to url) makes the web pane follow-navigate to that page (the API's
-//      own browser, streamed in) — non-blank pixels;
-//   3. a click forwarded into the pane visibly changes the live page (the pane region differs).
+//   2. the web pane is COLLAPSED at the launcher (never-empty law — nothing to show yet);
+//   3. driving the TUI (o = go to url) REVEALS the pane in live mode and follow-navigates the API's
+//      own browser, streamed in (non-blank pixels);
+//   4. a click forwarded into the pane visibly changes the live page (the pane region differs);
+//   5. F9 hides and re-reveals the pane;
+//   6. a second tab streams its own page concurrently (per-tab Chromium profile — no SingletonLock).
+//
+// NOTE: page.Evaluate runs in an ISOLATED world (the stealth engine), which shares the DOM but NOT the
+// page's JS globals — so all assertions read DOM state (classes / computed style), never window.__wc*.
 using Microsoft.Playwright;
 
 var baseUrl = Environment.GetEnvironmentVariable("WIRECOPY_WEB_URL") ?? "http://127.0.0.1:5099";
@@ -32,14 +38,38 @@ await using var browser = await pw.Chromium.LaunchAsync(new BrowserTypeLaunchOpt
     ExecutablePath = File.Exists(exe) ? exe : null,
     Args = new[] { "--no-sandbox", "--disable-gpu" },
 });
-var page = await browser.NewPageAsync(new BrowserNewPageOptions
+
+async Task<IPage> OpenTabAsync()
 {
-    ViewportSize = new ViewportSize { Width = 1400, Height = 900 },
-});
+    var p = await browser.NewPageAsync(new BrowserNewPageOptions
+    {
+        ViewportSize = new ViewportSize { Width = 1400, Height = 900 },
+    });
+    await p.GotoAsync(baseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
+    await p.WaitForTimeoutAsync(15000); // TUI warmup + pane bridge connect
+    return p;
+}
+
+// DOM-state probes (isolated world → read the shared DOM, not page globals).
+Task<bool> PaneHiddenAsync(IPage p) => p.EvaluateAsync<bool>(
+    "() => { const e=document.querySelector('#web-pane'); return !e || e.classList.contains('hidden'); }");
+Task<bool> ScreencastVisibleAsync(IPage p) => p.EvaluateAsync<bool>(
+    "() => { const i=document.querySelector('#screencast'); return !!i && getComputedStyle(i).display !== 'none' && i.offsetParent !== null; }");
+
+// Drives the TUI's "go to URL" (o) command to navigate the streamed pane.
+async Task NavigateTuiAsync(IPage p, string url)
+{
+    await p.ClickAsync("#term");
+    await p.WaitForTimeoutAsync(400);
+    await p.Keyboard.PressAsync("o");
+    await p.WaitForTimeoutAsync(700);
+    await p.Keyboard.TypeAsync(url, new KeyboardTypeOptions { Delay = 15 });
+    await p.Keyboard.PressAsync("Enter");
+    await p.WaitForTimeoutAsync(9000);
+}
 
 Console.WriteLine($"Gate: {baseUrl}");
-await page.GotoAsync(baseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
-await page.WaitForTimeoutAsync(15000); // TUI warmup + pane bridge connect
+var page = await OpenTabAsync();
 
 // 1) TUI renders.
 var termText = await page.EvaluateAsync<string>(
@@ -47,21 +77,20 @@ var termText = await page.EvaluateAsync<string>(
 Check(termText.Contains("Wire Copy") || termText.Contains("Go to URL") || termText.Contains("READING LIST"),
     "real TUI renders in xterm.js");
 
-// 2) Drive the TUI to navigate; the pane should follow.
-await page.ClickAsync("#term");
-await page.WaitForTimeoutAsync(400);
-await page.Keyboard.PressAsync("o");
-await page.WaitForTimeoutAsync(700);
-await page.Keyboard.TypeAsync(navUrl, new KeyboardTypeOptions { Delay = 15 });
-await page.Keyboard.PressAsync("Enter");
-await page.WaitForTimeoutAsync(9000);
+// 2) Never-empty law: at the launcher the pane is collapsed (no content to show).
+Check(await PaneHiddenAsync(page), "web pane is collapsed at the launcher (never-empty)");
+
+// 3) Drive the TUI to navigate; the pane should reveal in live mode and follow.
+await NavigateTuiAsync(page, navUrl);
+Check(!await PaneHiddenAsync(page) && await ScreencastVisibleAsync(page),
+    "web pane reveals in live mode after navigation");
 
 var img = page.Locator("#screencast");
 var paneBefore = await img.ScreenshotAsync();
 await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-1-followed.png") });
 Check(paneBefore.Length > 2000, "web pane shows a streamed page (non-blank)");
 
-// 3) Forward a click onto the toggle button (page coords 50,300 / 220x60) and assert the pane changes.
+// 4) Forward a click into the pane and assert the live page changes.
 var geomJson = await page.EvaluateAsync<string>(
     "() => { const i=document.querySelector('#screencast'); const r=i.getBoundingClientRect();" +
     " return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height,nw:i.naturalWidth,nh:i.naturalHeight}); }");
@@ -79,6 +108,25 @@ if (nw > 0 && nh > 0)
 var paneAfter = await img.ScreenshotAsync();
 await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-2-clicked.png") });
 Check(!paneBefore.AsSpan().SequenceEqual(paneAfter), "forwarded click visibly changes the live page");
+
+// 5) F9 hides and re-reveals the pane (real key press → the SPA's window keydown handler). Move focus
+// off the terminal first (xterm swallows keys); the status span is inert.
+await page.ClickAsync("#web-status");
+await page.Keyboard.PressAsync("F9");
+await page.WaitForTimeoutAsync(500);
+var hiddenAfterF9 = await PaneHiddenAsync(page);
+await page.Keyboard.PressAsync("F9");
+await page.WaitForTimeoutAsync(500);
+var shownAfterF9 = !await PaneHiddenAsync(page);
+Check(hiddenAfterF9 && shownAfterF9, "F9 hides and re-reveals the web pane");
+
+// 6) A second concurrent tab gets its own API child + Chromium profile and streams independently.
+var page2 = await OpenTabAsync();
+await NavigateTuiAsync(page2, navUrl);
+var pane2 = await page2.Locator("#screencast").ScreenshotAsync();
+await page2.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-3-second-tab.png") });
+Check(pane2.Length > 2000 && !await PaneHiddenAsync(page2),
+    "second concurrent tab streams its own page (per-tab profile)");
 
 Console.WriteLine();
 if (failures.Count == 0)

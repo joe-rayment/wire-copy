@@ -66,6 +66,7 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly ILayoutVariantProvider _layoutVariantProvider;
     private readonly IThemeProvider _themeProvider;
     private readonly DockSpotlight _dockSpotlight;
+    private readonly IWebPaneSink _webPaneSink;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
@@ -144,7 +145,8 @@ public partial class BrowserOrchestrator : IBrowserService
         ILogger<BrowserOrchestrator> logger,
         PageLoadPipeline pipeline,
         ILayoutVariantProvider layoutVariantProvider,
-        DockSpotlight dockSpotlight)
+        DockSpotlight dockSpotlight,
+        IWebPaneSink webPaneSink)
     {
         _pageLoader = pageLoader;
         _treeBuilder = treeBuilder;
@@ -166,6 +168,7 @@ public partial class BrowserOrchestrator : IBrowserService
         _layoutVariantProvider = layoutVariantProvider;
         _themeProvider = themeProvider;
         _dockSpotlight = dockSpotlight;
+        _webPaneSink = webPaneSink;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
         // workspace-mctt: the user navigated the lens themselves — offer to read it
@@ -1247,6 +1250,16 @@ public partial class BrowserOrchestrator : IBrowserService
     /// </summary>
     private async Task HandleToggleBrowserDockAsync(RenderOptions options, CancellationToken cancellationToken)
     {
+        // Browser-hosted web pane: there is no OS dock window — 'O' toggles the streamed pane's
+        // visibility in the user's tab (same as F9 in the SPA). Content changes re-assert visibility.
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET")))
+        {
+            _webPaneSink.Toggle();
+            _navigationService.SetStatusMessage("Web pane toggled");
+            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (_browserSession is IBrowserSession session)
         {
             // Lens-on-demand (workspace-ziky): toggle an existing headed window, or summon
@@ -1614,10 +1627,8 @@ public partial class BrowserOrchestrator : IBrowserService
     private void SyncDockSpotlight()
     {
         var page = _navigationService.CurrentPage;
-        var target = DockSpotlight.ResolveTarget(
-            _navigationService.CurrentContext.ViewMode,
-            page,
-            page?.LinkTree);
+        var viewMode = _navigationService.CurrentContext.ViewMode;
+        var target = DockSpotlight.ResolveTarget(viewMode, page, page?.LinkTree);
 
         if (target is { } t)
         {
@@ -1627,6 +1638,23 @@ public partial class BrowserOrchestrator : IBrowserService
         {
             _dockSpotlight.RequestClear();
         }
+
+        SyncWebPane(viewMode, page);
+    }
+
+    /// <summary>
+    /// Mirrors the same content signal onto the browser-hosted web pane: collapse it when there is
+    /// nothing to show (never-empty law), render a clean HTML snapshot for reader view, and stream the
+    /// live page for link lists / interactive pages. Inert (the sink no-ops) for plain terminal runs.
+    /// </summary>
+    private void SyncWebPane(ViewMode viewMode, Page? page)
+    {
+        var mode = WebPaneDecision.Decide(viewMode, page);
+        var key = mode == WebPaneMode.Snapshot ? page?.Url : null;
+        Func<string>? htmlFactory = mode == WebPaneMode.Snapshot && page is not null
+            ? () => ReaderSnapshotHtml.Build(page)
+            : null;
+        _webPaneSink.Update(mode, key, htmlFactory);
     }
 
     /// <summary>

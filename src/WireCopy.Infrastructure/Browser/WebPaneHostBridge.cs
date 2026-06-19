@@ -10,39 +10,54 @@ using Microsoft.Playwright;
 namespace WireCopy.Infrastructure.Browser;
 
 /// <summary>
-/// Child-side half of the browser-hosted web pane. When launched under the web host
-/// (the <c>WIRECOPY_WEBPANE_SOCKET</c> env var points at a Unix-domain socket), this connects to
-/// the host, ensures a dedicated display page exists, streams it via CDP <c>Page.startScreencast</c>
-/// (JPEG frames pushed to the host as binary), and applies pointer/keyboard/navigation input the
-/// host forwards back. When the env var is absent (a plain terminal run) the service is inert.
+/// Child-side half of the browser-hosted web pane and the <see cref="IWebPaneSink"/> the orchestrator
+/// drives. When launched under the web host (the <c>WIRECOPY_WEBPANE_SOCKET</c> env var points at a
+/// Unix-domain socket) this connects to the host, ensures a dedicated display page exists, and — per
+/// the mode the render path requests — either streams the page via CDP <c>Page.startScreencast</c>
+/// (live/interactive pages), pushes a sanitized HTML snapshot (reader view), or collapses the pane
+/// (nothing to show). It also applies pointer/keyboard/navigation input the host forwards back. When
+/// the env var is absent (a plain terminal run) the connection never opens and the sink is inert.
 ///
-/// Wire framing (both directions): [4-byte big-endian payload length][1 type byte][payload].
+/// Wire framing (see <see cref="PaneFraming"/>): <c>[len][type][payload]</c>.
 ///   type 1 (FRAME, child→host): JPEG bytes.
-///   type 2 (INPUT, host→child): UTF-8 JSON control/input message.
+///   type 2 (INPUT, host→child): UTF-8 JSON input message.
+///   type 3 (CONTROL, child→host): UTF-8 JSON pane control (mode / toggle).
 /// </summary>
-public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
+public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposable, IAsyncDisposable
 {
-    private const byte TypeFrame = 1;
-    private const byte TypeInput = 2;
-
     private readonly IBrowserSession _session;
     private readonly ILogger<WebPaneHostBridge> _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly SemaphoreSlim _applyLock = new(1, 1);
+    private readonly object _stateLock = new();
+    private readonly bool _enabled;
     private Task? _runLoop;
     private Socket? _socket;
     private ICDPSession? _cdp;
+    private bool _screencastOn;
+
+    // Desired pane state, set by the orchestrator via Update(); applied to the host whenever connected.
+    private WebPaneMode _desiredMode = WebPaneMode.Hidden;
+    private string? _desiredKey;
+    private Func<string>? _desiredHtmlFactory;
+
+    // Last state actually sent to the host. Null forces a (re)apply on connect.
+    private WebPaneMode? _sentMode;
+    private string? _sentKey;
+    private bool _disposed;
 
     public WebPaneHostBridge(IBrowserSession session, ILogger<WebPaneHostBridge> logger)
     {
         _session = session;
         _logger = logger;
+        _enabled = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET"));
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var socketPath = Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET");
-        if (string.IsNullOrWhiteSpace(socketPath))
+        if (!_enabled || string.IsNullOrWhiteSpace(socketPath))
         {
             return Task.CompletedTask; // plain terminal run — nothing to stream.
         }
@@ -76,11 +91,66 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <inheritdoc />
+    public void Update(WebPaneMode mode, string? snapshotKey, Func<string>? snapshotHtmlFactory)
+    {
+        if (!_enabled)
+        {
+            return;
+        }
+
+        lock (_stateLock)
+        {
+            if (mode == _desiredMode && string.Equals(snapshotKey, _desiredKey, StringComparison.Ordinal))
+            {
+                return; // unchanged — don't rebuild HTML or resend.
+            }
+
+            _desiredMode = mode;
+            _desiredKey = snapshotKey;
+            _desiredHtmlFactory = snapshotHtmlFactory;
+        }
+
+        _ = Task.Run(() => ApplyDesiredAsync(_cts.Token));
+    }
+
+    /// <inheritdoc />
+    public void Toggle()
+    {
+        if (!_enabled || _socket is not { } socket)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(new { kind = "toggle" });
+        _ = SendControlAsync(socket, json, _cts.Token);
+    }
+
+    // Sync disposal kept for the DI container, which disposes singletons synchronously (mirrors
+    // DockSpotlight); the container rejects services that implement only IAsyncDisposable.
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
     public async ValueTask DisposeAsync()
     {
-        await _cts.CancelAsync().ConfigureAwait(false);
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        try
+        {
+            await _cts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // already torn down
+        }
+
         _cts.Dispose();
         _socket?.Dispose();
+        _writeLock.Dispose();
+        _applyLock.Dispose();
     }
 
     private async Task RunAsync(string socketPath, CancellationToken ct)
@@ -105,7 +175,10 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
                 _logger.LogDebug(ex, "Web pane bridge connection ended; retrying");
             }
 
+            _socket = null;
+            _sentMode = null; // force a fresh apply on reconnect
             await StopScreencastAsync().ConfigureAwait(false);
+            _cdp = null;
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
@@ -141,7 +214,7 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
                 var sessionId = frame.GetProperty("sessionId").GetInt32();
                 if (!string.IsNullOrEmpty(data))
                 {
-                    await SendAsync(socket, TypeFrame, Convert.FromBase64String(data), ct).ConfigureAwait(false);
+                    await SendAsync(socket, PaneFraming.TypeFrame, Convert.FromBase64String(data), ct).ConfigureAwait(false);
                 }
 
                 await _cdp.SendAsync("Page.screencastFrameAck", new Dictionary<string, object>
@@ -155,18 +228,11 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             }
         };
 
-        await _cdp.SendAsync("Page.startScreencast", new Dictionary<string, object>
-        {
-            ["format"] = "jpeg",
-            ["quality"] = 70,
-            ["maxWidth"] = 1280,
-            ["maxHeight"] = 2400,
-            ["everyNthFrame"] = 1,
-        }).ConfigureAwait(false);
+        // Apply whatever the render path most recently requested (defaults to Live until the first
+        // Update arrives, so a tab opened mid-session still shows something immediately).
+        await ApplyDesiredAsync(ct).ConfigureAwait(false);
 
-        _logger.LogInformation("Web pane screencast started");
-
-        // Read input/control frames from the host until the connection drops.
+        // Read input frames from the host until the connection drops.
         var header = new byte[4];
         while (!ct.IsCancellationRequested)
         {
@@ -176,7 +242,7 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             }
 
             var len = BinaryPrimitives.ReadInt32BigEndian(header);
-            if (len <= 0 || len > 8 * 1024 * 1024)
+            if (len <= 0 || len > PaneFraming.MaxPayload)
             {
                 break;
             }
@@ -187,11 +253,72 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
                 break;
             }
 
-            var type = buf[0];
-            if (type == TypeInput)
+            if (buf[0] == PaneFraming.TypeInput)
             {
                 await HandleInputAsync(page, Encoding.UTF8.GetString(buf, 1, len - 1)).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task ApplyDesiredAsync(CancellationToken ct)
+    {
+        if (_socket is not { } socket || _cdp is null)
+        {
+            return; // not connected yet; ServeAsync will apply on connect.
+        }
+
+        await _applyLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            WebPaneMode mode;
+            string? key;
+            Func<string>? factory;
+            lock (_stateLock)
+            {
+                mode = _desiredMode;
+                key = _desiredKey;
+                factory = _desiredHtmlFactory;
+            }
+
+            if (_sentMode == mode && string.Equals(_sentKey, key, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            switch (mode)
+            {
+                case WebPaneMode.Live:
+                    await StartScreencastAsync().ConfigureAwait(false);
+                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "live" }), ct).ConfigureAwait(false);
+                    break;
+
+                case WebPaneMode.Snapshot:
+                    // The iframe shows our HTML; stop the screencast so it costs nothing.
+                    await StopScreencastAsync().ConfigureAwait(false);
+                    var html = factory?.Invoke() ?? string.Empty;
+                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "snapshot", html }), ct).ConfigureAwait(false);
+                    break;
+
+                default: // Hidden
+                    await StopScreencastAsync().ConfigureAwait(false);
+                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "hidden" }), ct).ConfigureAwait(false);
+                    break;
+            }
+
+            _sentMode = mode;
+            _sentKey = key;
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown or disconnect mid-apply; the next connect/Update re-applies.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Web pane apply failed for mode {Mode}", _desiredMode);
+        }
+        finally
+        {
+            _applyLock.Release();
         }
     }
 
@@ -269,9 +396,28 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             ["clickCount"] = 1,
         });
 
+    private async Task StartScreencastAsync()
+    {
+        if (_cdp is null || _screencastOn)
+        {
+            return;
+        }
+
+        await _cdp.SendAsync("Page.startScreencast", new Dictionary<string, object>
+        {
+            ["format"] = "jpeg",
+            ["quality"] = 70,
+            ["maxWidth"] = 1280,
+            ["maxHeight"] = 2400,
+            ["everyNthFrame"] = 1,
+        }).ConfigureAwait(false);
+        _screencastOn = true;
+        _logger.LogInformation("Web pane screencast started");
+    }
+
     private async Task StopScreencastAsync()
     {
-        if (_cdp is null)
+        if (_cdp is null || !_screencastOn)
         {
             return;
         }
@@ -285,15 +431,15 @@ public sealed class WebPaneHostBridge : IHostedService, IAsyncDisposable
             // best effort — the page/session may already be gone.
         }
 
-        _cdp = null;
+        _screencastOn = false;
     }
+
+    private Task SendControlAsync(Socket socket, string json, CancellationToken ct)
+        => SendAsync(socket, PaneFraming.TypeControl, Encoding.UTF8.GetBytes(json), ct);
 
     private async Task SendAsync(Socket socket, byte type, byte[] payload, CancellationToken ct)
     {
-        var frame = new byte[4 + 1 + payload.Length];
-        BinaryPrimitives.WriteInt32BigEndian(frame, payload.Length + 1);
-        frame[4] = type;
-        payload.CopyTo(frame, 5);
+        var frame = PaneFraming.Encode(type, payload);
 
         await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try

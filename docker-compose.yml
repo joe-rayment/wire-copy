@@ -13,3 +13,20 @@ services:
     # Increase shared memory size to prevent Chrome crashes
     shm_size: '2gb'
     restart: "no"
+
+  # Browser-hosted shell: the terminal + web pane served in your browser ("Cloud Shell" model).
+  # Start with `docker compose up wirecopy-web`, then browse to http://localhost:5099.
+  wirecopy-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final-web
+    ports:
+      - "5099:5099"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - ./output:/app/output
+      - ./logs:/app/logs
+    shm_size: '2gb'
+    restart: "no"

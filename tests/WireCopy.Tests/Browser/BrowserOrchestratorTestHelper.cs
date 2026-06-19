@@ -76,7 +76,8 @@ internal static class BrowserOrchestratorTestHelper
             logger,
             pipeline,
             Substitute.For<ILayoutVariantProvider>(),
-            CreateDockSpotlight());
+            CreateDockSpotlight(),
+            Substitute.For<IWebPaneSink>());
     }
 
     /// <summary>

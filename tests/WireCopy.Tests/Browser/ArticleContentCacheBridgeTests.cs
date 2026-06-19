@@ -118,7 +118,8 @@ public class ArticleContentCacheBridgeTests
             logger,
             pipeline,
             Substitute.For<ILayoutVariantProvider>(),
-            BrowserOrchestratorTestHelper.CreateDockSpotlight());
+            BrowserOrchestratorTestHelper.CreateDockSpotlight(),
+            Substitute.For<IWebPaneSink>());
     }
 
     /// <summary>

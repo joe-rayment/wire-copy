@@ -21,6 +21,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
     private readonly string _userDataDir;
+
+    // Browser-hosted web pane mode: launched under the web host (WIRECOPY_WEBPANE_SOCKET set). The
+    // engine is always headless here — the user sees it via the CDP screencast, not an OS window — so
+    // every launch is forced headless (which also keeps the OS-dock methods dormant via their
+    // _pageIsHeadless guards), and each tab gets its own Chromium profile to avoid SingletonLock
+    // contention between concurrently-open tabs.
+    private readonly bool _webPaneMode;
+    private readonly bool _ephemeralProfile;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
@@ -56,10 +64,25 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // first headed launch docks beside the terminal instead of minimizing into the
         // void; the dock toggle drops to the immersive view by clearing this intent.
         _userWantsDock = _browserConfig.Sidecar;
-        _userDataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "WireCopy",
-            "browser-profile");
+
+        _webPaneMode = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET"));
+        var sessionId = Environment.GetEnvironmentVariable("WIRECOPY_SESSION_ID");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        if (_webPaneMode && !string.IsNullOrWhiteSpace(sessionId))
+        {
+            // Per-tab profile: two tabs open at once must not fight over one Chromium SingletonLock.
+            // Login is still shared because cookies are injected centrally from the CookieManager store
+            // (InjectStoredCookiesAsync), independent of the profile directory. The ephemeral profile is
+            // deleted on dispose to avoid disk bloat.
+            var safe = string.Concat(sessionId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_'));
+            _userDataDir = Path.Combine(localAppData, "WireCopy", "web-profiles", safe);
+            _ephemeralProfile = true;
+        }
+        else
+        {
+            _userDataDir = Path.Combine(localAppData, "WireCopy", "browser-profile");
+        }
     }
 
     /// <inheritdoc />
@@ -241,6 +264,16 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public async Task<IPage> GetOrCreatePageAsync(bool headless)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Browser-hosted web pane: force headless regardless of caller/config. EffectiveHeadless is
+        // Auto, which resolves to HEADED on a desktop host — that would pop a stray OS window the user
+        // never asked for, defeating the single-tab guarantee. Forcing headless here also makes the
+        // OS-dock methods dormant (they all guard on _pageIsHeadless).
+        if (_webPaneMode)
+        {
+            headless = true;
+        }
+
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -781,6 +814,22 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _lock.Dispose();
+        }
+
+        // Per-tab web-pane profiles are throwaway — reclaim the disk after the context is gone.
+        if (_ephemeralProfile)
+        {
+            try
+            {
+                if (Directory.Exists(_userDataDir))
+                {
+                    Directory.Delete(_userDataDir, recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to delete ephemeral web-pane profile {Dir}", _userDataDir);
+            }
         }
     }
 

@@ -16,7 +16,7 @@ namespace WireCopy.Web;
 /// </summary>
 internal static class TerminalBridge
 {
-    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct, string? paneSocketPath = null)
+    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct, string? paneSocketPath = null, string? sessionId = null)
     {
         // The command to host. Defaults to bash for the isolated spike; the real host
         // sets this to the WireCopy.API browse process.
@@ -46,6 +46,13 @@ internal static class TerminalBridge
         if (!string.IsNullOrEmpty(paneSocketPath))
         {
             env["WIRECOPY_WEBPANE_SOCKET"] = paneSocketPath;
+        }
+
+        // Per-tab id so the child gives this tab its own Chromium profile (no SingletonLock contention
+        // when multiple tabs are open at once).
+        if (!string.IsNullOrEmpty(sessionId))
+        {
+            env["WIRECOPY_SESSION_ID"] = sessionId;
         }
 
         var options = new PtyOptions

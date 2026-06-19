@@ -2,14 +2,31 @@
 # Wrapper script to run WireCopy with clean console output by default
 # Use --verbose flag to see all browser console output
 
-# Check if --verbose is in the arguments
+# Check for --web (browser-hosted shell) and --verbose flags
 verbose=false
+web=false
 for arg in "$@"; do
     if [ "$arg" = "--verbose" ]; then
         verbose=true
-        break
+    fi
+    if [ "$arg" = "--web" ]; then
+        web=true
     fi
 done
+
+# --web: launch the browser-hosted shell (WireCopy.Web) instead of the direct terminal app. It spawns
+# the unmodified WireCopy.API under a PTY and serves the terminal + web pane in your browser at
+# http://127.0.0.1:5099 (override with WIRECOPY_WEB_URL). Set WIRECOPY_NO_OPEN=1 to skip auto-opening.
+if [ "$web" = true ]; then
+    ROOT="$(cd "$(dirname "$0")" && pwd)"
+    CFG="${WIRECOPY_BUILD_CONFIG:-Release}"
+    API_EXE="$ROOT/src/WireCopy.API/bin/$CFG/net10.0/WireCopy.API"
+    dotnet build "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c "$CFG" -v quiet || exit 1
+    dotnet build "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" -v quiet || exit 1
+    export WIRECOPY_TERMINAL_APP="$API_EXE"
+    export WIRECOPY_TERMINAL_CWD="$ROOT"
+    exec dotnet run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
+fi
 
 # Run with or without filtering
 if [ "$verbose" = true ]; then

@@ -8,7 +8,9 @@ namespace WireCopy.Web;
 /// <summary>
 /// Bridges a tab's web-pane websocket to its <see cref="PaneSession"/>: screencast frames from the
 /// WireCopy.API child are pushed to the tab as binary messages (latest-wins, so a slow tab never
-/// stalls the stream), and text input/control messages from the tab are forwarded down to the child.
+/// stalls the stream), control messages (pane mode / toggle) are pushed as text messages (never
+/// dropped — a missed mode change would leave the pane wrong), and text input/control messages from
+/// the tab are forwarded down to the child. A single send lock serializes all writes to the websocket.
 /// </summary>
 internal static class WebPaneRelay
 {
@@ -35,21 +37,24 @@ internal static class WebPaneRelay
             SingleReader = true,
         });
 
-        void OnFrame(byte[] data) => frames.Writer.TryWrite(data);
-        pane.FrameReceived += OnFrame;
+        // Control messages must NOT be dropped — an unbounded queue keeps every mode change.
+        var controls = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
 
-        var sender = Task.Run(async () =>
+        // WebSocket sends cannot overlap; both sender tasks acquire this before writing.
+        var sendLock = new SemaphoreSlim(1, 1);
+
+        void OnFrame(byte[] data) => frames.Writer.TryWrite(data);
+        void OnControl(string json) => controls.Writer.TryWrite(json);
+        pane.FrameReceived += OnFrame;
+        pane.ControlReceived += OnControl;
+
+        var frameSender = Task.Run(async () =>
         {
             try
             {
                 await foreach (var frame in frames.Reader.ReadAllAsync(ct))
                 {
-                    if (socket.State != WebSocketState.Open)
-                    {
-                        break;
-                    }
-
-                    await socket.SendAsync(frame, WebSocketMessageType.Binary, true, ct);
+                    await SendAsync(socket, sendLock, frame, WebSocketMessageType.Binary, ct);
                 }
             }
             catch (OperationCanceledException)
@@ -58,6 +63,24 @@ internal static class WebPaneRelay
             catch (Exception ex)
             {
                 log.LogDebug(ex, "web pane frame sender ended");
+            }
+        });
+
+        var controlSender = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var json in controls.Reader.ReadAllAsync(ct))
+                {
+                    await SendAsync(socket, sendLock, Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                log.LogDebug(ex, "web pane control sender ended");
             }
         });
 
@@ -87,9 +110,29 @@ internal static class WebPaneRelay
         finally
         {
             pane.FrameReceived -= OnFrame;
+            pane.ControlReceived -= OnControl;
             frames.Writer.TryComplete();
-            await sender;
+            controls.Writer.TryComplete();
+            await Task.WhenAll(frameSender, controlSender);
             await CloseAsync(socket, "bye");
+        }
+    }
+
+    private static async Task SendAsync(WebSocket socket, SemaphoreSlim sendLock, byte[] data, WebSocketMessageType type, CancellationToken ct)
+    {
+        if (socket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        await sendLock.WaitAsync(ct);
+        try
+        {
+            await socket.SendAsync(data, type, true, ct);
+        }
+        finally
+        {
+            sendLock.Release();
         }
     }
 

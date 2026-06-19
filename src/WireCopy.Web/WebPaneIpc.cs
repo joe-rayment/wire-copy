@@ -18,6 +18,7 @@ internal sealed class PaneSession : IAsyncDisposable
 {
     private const byte TypeFrame = 1;
     private const byte TypeInput = 2;
+    private const byte TypeControl = 3;
 
     private readonly Socket _listener;
     private readonly CancellationTokenSource _cts = new();
@@ -34,6 +35,9 @@ internal sealed class PaneSession : IAsyncDisposable
 
     /// <summary>Raised (off the accept loop) for each JPEG screencast frame from the child.</summary>
     public event Action<byte[]>? FrameReceived;
+
+    /// <summary>Raised (off the accept loop) for each control message (pane mode / toggle) from the child.</summary>
+    public event Action<string>? ControlReceived;
 
     public string SocketPath { get; }
 
@@ -197,6 +201,10 @@ internal sealed class PaneSession : IAsyncDisposable
                 var payload = new byte[len - 1];
                 Array.Copy(buf, 1, payload, 0, len - 1);
                 FrameReceived?.Invoke(payload);
+            }
+            else if (buf[0] == TypeControl)
+            {
+                ControlReceived?.Invoke(Encoding.UTF8.GetString(buf, 1, len - 1));
             }
         }
     }

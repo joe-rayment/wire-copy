@@ -79,22 +79,54 @@
       termSocket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
 
-    // ---- Web pane (screencast) ----
+    // ---- Web pane (screencast + snapshot) ----
     const img = document.getElementById('screencast');
+    const iframe = document.getElementById('web-iframe');
+    const pane = document.getElementById('web-pane');
     const status = document.getElementById('web-status');
     const surface = document.getElementById('web-surface');
     let lastUrl = null;
+    // The pane is "never empty": the child tells us hidden/live/snapshot based on what the TUI shows.
+    let currentMode = 'live';
     const paneSocket = new WebSocket(`${wsBase}/ws/webpane?session=${sessionId}`);
     paneSocket.binaryType = 'arraybuffer';
     paneSocket.onopen = () => { status.textContent = 'live'; };
     paneSocket.onclose = () => { status.textContent = 'closed'; };
     paneSocket.onmessage = (ev) => {
-      if (typeof ev.data === 'string') return;
+      if (typeof ev.data === 'string') { handleControl(ev.data); return; }
       const blob = new Blob([ev.data], { type: 'image/jpeg' });
       const next = URL.createObjectURL(blob);
       img.onload = () => { if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = next; };
       img.src = next;
     };
+
+    function handleControl(text) {
+      let msg; try { msg = JSON.parse(text); } catch { return; }
+      if (msg.kind === 'toggle') { togglePane(); return; }
+      if (msg.kind === 'mode') applyMode(msg.mode, msg.html);
+    }
+
+    function applyMode(mode, html) {
+      currentMode = mode;
+      if (mode === 'hidden') { setPaneVisible(false); return; }
+      setPaneVisible(true);
+      if (mode === 'snapshot') {
+        iframe.srcdoc = html || '';
+        iframe.style.display = 'block';
+        img.style.display = 'none';
+        status.textContent = 'reader';
+      } else { // live
+        iframe.style.display = 'none';
+        img.style.display = 'block';
+        status.textContent = 'live';
+      }
+    }
+
+    function setPaneVisible(visible) {
+      const wasHidden = pane.classList.contains('hidden');
+      pane.classList.toggle('hidden', !visible);
+      if (wasHidden === visible) { fit.fit(); sendResize(); }
+    }
     // Forward clicks: translate the click position on the <img> to page CSS pixels.
     img.addEventListener('click', (e) => {
       if (paneSocket.readyState !== WebSocket.OPEN) return;
@@ -109,6 +141,9 @@
     window.__wcPaneClick = (x, y) => paneSocket.send(JSON.stringify({ type: 'click', x, y }));
     window.__wcNavigate = (url) => paneSocket.send(JSON.stringify({ type: 'navigate', url }));
     window.__wcPaneReady = () => paneSocket.readyState === WebSocket.OPEN && !!img.src;
+    window.__wcPaneMode = () => currentMode;
+    window.__wcPaneVisible = () => !pane.classList.contains('hidden');
+    window.__wcSnapshotText = () => { try { return iframe.contentDocument?.body?.innerText || ''; } catch { return ''; } };
 
     document.getElementById('web-go').addEventListener('click', () => {
       let url = document.getElementById('web-url').value.trim();

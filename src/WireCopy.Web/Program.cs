@@ -41,7 +41,7 @@ app.Map("/ws/terminal", async context =>
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     try
     {
-        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath);
+        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath, sessionId);
     }
     finally
     {
@@ -64,4 +64,31 @@ app.Map("/ws/webpane", async context =>
 });
 
 var url = Environment.GetEnvironmentVariable("WIRECOPY_WEB_URL") ?? "http://127.0.0.1:5099";
+
+// Auto-open the tab once the host is up — unless suppressed (WIRECOPY_NO_OPEN) or there is no GUI
+// (a Linux host with no DISPLAY, e.g. CI / a container), where launching a browser would just error.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_NO_OPEN")))
+    {
+        return;
+    }
+
+    if (OperatingSystem.IsLinux() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
+    {
+        log.LogInformation("WireCopy web host listening on {Url} (no DISPLAY — open it manually)", url);
+        return;
+    }
+
+    try
+    {
+        var openUrl = url.Replace("0.0.0.0", "127.0.0.1", StringComparison.Ordinal);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(openUrl) { UseShellExecute = true });
+    }
+    catch (Exception ex)
+    {
+        log.LogDebug(ex, "Could not auto-open the browser; open {Url} manually", url);
+    }
+});
+
 app.Run(url);
