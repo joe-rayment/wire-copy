@@ -549,7 +549,7 @@ internal static class StrategyChooserHandler
             {
                 try
                 {
-                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    var lensPage = await BrowserDockCommandHandler.GetLensOrDisplayPageAsync(session).ConfigureAwait(false);
                     if (lensPage == null)
                     {
                         logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
@@ -571,7 +571,7 @@ internal static class StrategyChooserHandler
             {
                 try
                 {
-                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    var lensPage = await BrowserDockCommandHandler.GetLensOrDisplayPageAsync(session).ConfigureAwait(false);
                     if (lensPage != null)
                     {
                         await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
@@ -696,7 +696,7 @@ internal static class StrategyChooserHandler
 
         try
         {
-            var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+            var lensPage = await BrowserDockCommandHandler.GetLensOrDisplayPageAsync(session).ConfigureAwait(false);
             if (lensPage == null)
             {
                 return null;

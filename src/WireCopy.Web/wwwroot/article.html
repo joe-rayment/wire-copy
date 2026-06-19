@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="author" content="Ada Lovelace" />
+  <title>The Quiet Engine: How a Terminal Learned to Show Its Work</title>
+  <style>
+    body { font-family: Georgia, serif; margin: 0 auto; max-width: 40rem; padding: 40px; color: #111; }
+    h1 { font-size: 2rem; line-height: 1.2; }
+    .byline { color: #555; font-style: italic; }
+    p { font-size: 1.05rem; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1>The Quiet Engine: How a Terminal Learned to Show Its Work</h1>
+    <p class="byline">By Ada Lovelace</p>
+    <p>WIRECOPY_SNAPSHOT_MARKER For most of computing history the terminal and the browser lived in
+      separate worlds, and a reader who wanted both was forced to juggle two windows, two input models,
+      and two competing claims on their attention. The quiet engine described here dissolves that
+      separation by streaming a real rendered page beside the text the reader is already following.</p>
+    <p>The central idea is unglamorous but durable: keep the engine that already works, and change only
+      where its output is shown. A headless browser renders the page exactly as a person would see it,
+      and those pixels travel over a thin channel into a panel that sits next to the article. Nothing
+      about the page is faked, simplified, or reconstructed; it is the page, merely relocated.</p>
+    <p>Reader view is the exception that proves the rule. When the underlying document is plainly an
+      article, the system stops streaming pixels and instead composes clean, selectable prose from the
+      text it has already extracted. The result is crisp on every display, costs almost nothing to send,
+      and lets the reader highlight a sentence the way they always have.</p>
+    <p>What makes the arrangement feel coherent is restraint. The panel is never allowed to sit empty:
+      when there is nothing worth showing it simply collapses, and when a fresh list of stories appears
+      it returns. The reader is never asked to manage a window that has wandered off to show them
+      nothing, which is the small indignity that older designs quietly imposed.</p>
+    <p>None of this required a grand rewrite. The hardest problems were the ordinary ones — making sure
+      the right page is shown at the right moment, that two open tabs do not trip over each other, and
+      that the whole apparatus stays invisible until it is genuinely useful. The quiet engine earns its
+      name precisely because, when it is working, you do not notice it at all.</p>
+  </article>
+</body>
+</html>

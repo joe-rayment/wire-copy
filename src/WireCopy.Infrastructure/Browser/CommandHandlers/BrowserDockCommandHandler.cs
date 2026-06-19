@@ -73,4 +73,16 @@ internal static class BrowserDockCommandHandler
             && Uri.TryCreate(url, UriKind.Absolute, out var uri)
             && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
+
+    /// <summary>
+    /// Returns the page the lens/tuner/pick scripts should inject into: the streamed display page in
+    /// the browser-hosted web pane (where there is no headed OS lens window, so
+    /// <see cref="IBrowserSession.GetLensPageAsync"/> returns null), or the headed lens tab in a
+    /// direct-terminal run. Both resolve to the same selection-follow page the user is looking at, so
+    /// the 'L' tuner and the layout strategy chooser work in either mode.
+    /// </summary>
+    internal static Task<Microsoft.Playwright.IPage?> GetLensOrDisplayPageAsync(IBrowserSession session)
+        => string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIRECOPY_WEBPANE_SOCKET"))
+            ? session.GetLensPageAsync()
+            : session.GetDisplayPageAsync();
 }

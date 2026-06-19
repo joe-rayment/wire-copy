@@ -512,7 +512,7 @@ internal static class ArticleTunerHandler
 
         try
         {
-            var lens = await session.GetLensPageAsync().ConfigureAwait(false);
+            var lens = await BrowserDockCommandHandler.GetLensOrDisplayPageAsync(session).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.EvaluateAsync<int>(TunerScript.Highlight, new { selector = xpath, dialect = "xpath" })
@@ -534,7 +534,7 @@ internal static class ArticleTunerHandler
 
         try
         {
-            var lens = await session.GetLensPageAsync().ConfigureAwait(false);
+            var lens = await BrowserDockCommandHandler.GetLensOrDisplayPageAsync(session).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);

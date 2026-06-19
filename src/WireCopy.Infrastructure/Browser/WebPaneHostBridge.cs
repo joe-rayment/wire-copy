@@ -122,8 +122,7 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
             return;
         }
 
-        var json = JsonSerializer.Serialize(new { kind = "toggle" });
-        _ = SendControlAsync(socket, json, _cts.Token);
+        _ = SendControlAsync(socket, BuildToggleMessage(), _cts.Token);
     }
 
     // Sync disposal kept for the DI container, which disposes singletons synchronously (mirrors
@@ -152,6 +151,21 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
         _writeLock.Dispose();
         _applyLock.Dispose();
     }
+
+    /// <summary>The control message the client interprets as "flip pane visibility" (the 'O' key).</summary>
+    internal static string BuildToggleMessage() => JsonSerializer.Serialize(new { kind = "toggle" });
+
+    /// <summary>
+    /// Builds the control message the client applies for a pane mode: live (show the screencast),
+    /// snapshot (render <paramref name="html"/> in the iframe), or hidden (collapse the pane).
+    /// Extracted so the SPA-facing contract is unit-testable without a socket or browser.
+    /// </summary>
+    internal static string BuildModeMessage(WebPaneMode mode, string? html) => mode switch
+    {
+        WebPaneMode.Live => JsonSerializer.Serialize(new { kind = "mode", mode = "live" }),
+        WebPaneMode.Snapshot => JsonSerializer.Serialize(new { kind = "mode", mode = "snapshot", html = html ?? string.Empty }),
+        _ => JsonSerializer.Serialize(new { kind = "mode", mode = "hidden" }),
+    };
 
     private async Task RunAsync(string socketPath, CancellationToken ct)
     {
@@ -289,19 +303,18 @@ public sealed class WebPaneHostBridge : IHostedService, IWebPaneSink, IDisposabl
             {
                 case WebPaneMode.Live:
                     await StartScreencastAsync().ConfigureAwait(false);
-                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "live" }), ct).ConfigureAwait(false);
+                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Live, null), ct).ConfigureAwait(false);
                     break;
 
                 case WebPaneMode.Snapshot:
                     // The iframe shows our HTML; stop the screencast so it costs nothing.
                     await StopScreencastAsync().ConfigureAwait(false);
-                    var html = factory?.Invoke() ?? string.Empty;
-                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "snapshot", html }), ct).ConfigureAwait(false);
+                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Snapshot, factory?.Invoke()), ct).ConfigureAwait(false);
                     break;
 
                 default: // Hidden
                     await StopScreencastAsync().ConfigureAwait(false);
-                    await SendControlAsync(socket, JsonSerializer.Serialize(new { kind = "mode", mode = "hidden" }), ct).ConfigureAwait(false);
+                    await SendControlAsync(socket, BuildModeMessage(WebPaneMode.Hidden, null), ct).ConfigureAwait(false);
                     break;
             }
 

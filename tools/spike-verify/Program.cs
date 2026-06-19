@@ -120,7 +120,20 @@ await page.WaitForTimeoutAsync(500);
 var shownAfterF9 = !await PaneHiddenAsync(page);
 Check(hiddenAfterF9 && shownAfterF9, "F9 hides and re-reveals the web pane");
 
-// 6) A second concurrent tab gets its own API child + Chromium profile and streams independently.
+// 6) Reader view → SNAPSHOT mode: navigating to an article auto-enters reader view (the TUI does this
+// for Article-classified pages), so the pane should swap the screencast for our clean HTML in the
+// iframe, carrying the article text.
+await NavigateTuiAsync(page, $"{baseUrl}/article.html");
+await page.WaitForTimeoutAsync(6000); // classification + reader extraction + snapshot push
+var iframeVisible = await page.EvaluateAsync<bool>(
+    "() => { const f=document.querySelector('#web-iframe'); return !!f && getComputedStyle(f).display !== 'none'; }");
+var snapshotText = await page.EvaluateAsync<string>(
+    "() => { const f=document.querySelector('#web-iframe'); try { return (f && f.contentDocument && f.contentDocument.body) ? f.contentDocument.body.innerText : ''; } catch { return ''; } }");
+await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "gate-3-snapshot.png") });
+Check(iframeVisible && snapshotText.Contains("WIRECOPY_SNAPSHOT_MARKER"),
+    "reader view renders a crisp HTML snapshot in the iframe");
+
+// 7) A second concurrent tab gets its own API child + Chromium profile and streams independently.
 var page2 = await OpenTabAsync();
 await NavigateTuiAsync(page2, navUrl);
 var pane2 = await page2.Locator("#screencast").ScreenshotAsync();
