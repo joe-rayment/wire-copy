@@ -826,6 +826,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// (<c>PLAYWRIGHT_BROWSERS_PATH</c>) when present. Returns null to use Playwright's own
     /// managed download (the default).
     /// </summary>
+#pragma warning disable SA1204 // kept adjacent to LaunchBrowserAsync, its only caller
     private static string? ResolveChromeExecutable()
     {
         var explicitPath = Environment.GetEnvironmentVariable("WIRECOPY_CHROMIUM_EXECUTABLE");
@@ -856,6 +857,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         return null;
     }
+#pragma warning restore SA1204
 
     private async Task LaunchBrowserAsync(bool headless)
     {

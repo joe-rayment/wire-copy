@@ -8,6 +8,13 @@
 
     <!-- Surface analyzer warnings during build -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Audit only our DIRECT package references. The SQLite native bundle
+         (SQLitePCLRaw.lib.e_sqlite3) is pulled transitively by EF Core's Sqlite
+         provider; its advisory (NU1903) is fixed only in a major 3.x line we cannot
+         force under EF Core without ABI risk. Auditing direct deps keeps our own
+         surface honest while not failing Release on a transitive package we don't pin. -->
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
   <!-- Warnings are visible in Debug, fatal in Release. Keeps dev iteration fast
