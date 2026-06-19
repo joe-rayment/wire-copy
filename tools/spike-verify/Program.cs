@@ -22,11 +22,20 @@ var page = await browser.NewPageAsync(new BrowserNewPageOptions
 Console.WriteLine($"navigating to {baseUrl}");
 await page.GotoAsync(baseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
 
-// 1) Terminal round-trip: focus the terminal and type a command the PTY/bash will echo.
-await page.ClickAsync("#term");
-await page.WaitForTimeoutAsync(500);
-await page.Keyboard.TypeAsync("echo WIRECOPY_TERMINAL_OK_42\n");
-await page.WaitForTimeoutAsync(800);
+var noType = Environment.GetEnvironmentVariable("SPIKE_NO_TYPE") == "1";
+if (!noType)
+{
+    // 1) Terminal round-trip: focus the terminal and type a command the PTY/bash will echo.
+    await page.ClickAsync("#term");
+    await page.WaitForTimeoutAsync(500);
+    await page.Keyboard.TypeAsync("echo WIRECOPY_TERMINAL_OK_42\n");
+    await page.WaitForTimeoutAsync(800);
+}
+else
+{
+    // Real-TUI capture: allow warmup (headless chromium launch) + first render.
+    await page.WaitForTimeoutAsync(13000);
+}
 
 // 2) Web pane: wait for the screencast to produce a frame.
 try

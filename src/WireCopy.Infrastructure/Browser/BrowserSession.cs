@@ -819,6 +819,44 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Resolves a pinned Chromium executable to launch directly (skipping the bundled
+    /// Playwright browser install). Honours the explicit <c>WIRECOPY_CHROMIUM_EXECUTABLE</c>
+    /// override first, then falls back to a chromium in the Playwright browsers cache
+    /// (<c>PLAYWRIGHT_BROWSERS_PATH</c>) when present. Returns null to use Playwright's own
+    /// managed download (the default).
+    /// </summary>
+    private static string? ResolveChromeExecutable()
+    {
+        var explicitPath = Environment.GetEnvironmentVariable("WIRECOPY_CHROMIUM_EXECUTABLE");
+        if (!string.IsNullOrWhiteSpace(explicitPath) && File.Exists(explicitPath))
+        {
+            return explicitPath;
+        }
+
+        var browsersPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH");
+        if (!string.IsNullOrWhiteSpace(browsersPath) && Directory.Exists(browsersPath))
+        {
+            // The cache symlinks/dirs are named chromium-<rev>; pick a usable chrome binary.
+            var link = Path.Combine(browsersPath, "chromium");
+            if (File.Exists(link))
+            {
+                return link;
+            }
+
+            foreach (var dir in Directory.EnumerateDirectories(browsersPath, "chromium-*"))
+            {
+                var candidate = Path.Combine(dir, "chrome-linux", "chrome");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private async Task LaunchBrowserAsync(bool headless)
     {
         // Clean up any leftover state from a previous failed launch
@@ -846,10 +884,16 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             _logger.LogDebug(ex, "Could not remove the retired preload-profile directory (non-fatal)");
         }
 
+        // An operator can pin an existing Chromium build via WIRECOPY_CHROMIUM_EXECUTABLE
+        // (e.g. a system package, or the host's pre-provisioned Playwright cache). When set we
+        // launch that binary directly and SKIP the bundled-browser install — essential in locked-down
+        // environments where the Playwright CDN is unreachable, and the path the web host uses.
+        var chromeExecutable = ResolveChromeExecutable();
+
         // Ensure Playwright browsers are installed (idempotent — skips if already present).
         // Redirect stdout/stderr so install progress doesn't corrupt the TUI alternate screen.
         // Run with a timeout to prevent indefinite hangs on network issues.
-        if (!_browsersInstalled)
+        if (!_browsersInstalled && string.IsNullOrEmpty(chromeExecutable))
         {
             _browsersInstalled = true;
             try
@@ -916,10 +960,16 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 args.Add("--window-size=800,600");
             }
 
+            if (!string.IsNullOrEmpty(chromeExecutable))
+            {
+                _logger.LogInformation("Using pinned Chromium executable: {Path}", chromeExecutable);
+            }
+
             var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
             {
                 Headless = headless,
                 Args = args.ToArray(),
+                ExecutablePath = string.IsNullOrEmpty(chromeExecutable) ? null : chromeExecutable,
                 Timeout = 30000, // 30s timeout prevents indefinite hang if browser can't start
 
                 // Only override UserAgent for headless mode (HTTP fallback matching).
