@@ -67,9 +67,10 @@ ensure_deps() {
     fi
 }
 
-# Check for --web (browser-hosted shell) and --verbose flags
+# Check for --web (browser-hosted shell), --extension (host-browser-as-renderer) and --verbose flags
 verbose=false
 web=false
+extension=false
 for arg in "$@"; do
     if [ "$arg" = "--verbose" ]; then
         verbose=true
@@ -77,18 +78,71 @@ for arg in "$@"; do
     if [ "$arg" = "--web" ]; then
         web=true
     fi
+    if [ "$arg" = "--extension" ] || [ "$arg" = "--ext" ]; then
+        extension=true
+        web=true   # --extension implies the web host
+    fi
 done
 
-# --web: launch the browser-hosted shell (WireCopy.Web) instead of the direct terminal app. It spawns
-# the unmodified WireCopy.API under a PTY and serves the terminal + web pane in your browser at
-# http://127.0.0.1:5099 (override with WIRECOPY_WEB_URL). Set WIRECOPY_NO_OPEN=1 to skip auto-opening.
+# --web --extension: the host-browser-as-renderer model (workspace-blg5). The Wire Copy overlay docks
+# in the user's OWN browser via the Wire Copy Chrome extension; the real site is the tab's own page
+# (their profile/cookies, no bot blocks). No server-side content browser, no Xvfb, no Docker — and so
+# nothing can pop a stray window. We start WireCopy.Web with WIRECOPY_BROWSER=extension and the user
+# loads the extension (chrome://extensions -> Load unpacked -> ./extension), then just browses.
+if [ "$web" = true ] && [ "$extension" = true ]; then
+    API_EXE="$ROOT/src/WireCopy.API/bin/$CFG/net10.0/WireCopy.API"
+    "$DOTNET" build "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c "$CFG" -v quiet || exit 1
+    "$DOTNET" build "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" -v quiet || exit 1
+    export WIRECOPY_TERMINAL_APP="$API_EXE"
+    export WIRECOPY_TERMINAL_CWD="$ROOT"
+    export WIRECOPY_BROWSER=extension
+    export WIRECOPY_NO_OPEN=1   # the UI is the extension overlay in your existing browser, not a localhost tab
+    echo "Wire Copy (extension mode) — backend on ${WIRECOPY_WEB_URL:-http://127.0.0.1:5099}" >&2
+    echo "Load the extension once: chrome://extensions -> Developer mode -> Load unpacked -> $ROOT/extension" >&2
+    echo "Then browse normally; toggle the overlay with the toolbar button or Alt+Shift+W." >&2
+    exec "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
+fi
+
+# --web (legacy screencast shell): spawns the unmodified WireCopy.API under a PTY and serves the
+# terminal + a CDP-screencast web pane at http://127.0.0.1:5099 (override with WIRECOPY_WEB_URL). The
+# API's content browser runs HEADFUL (workspace-8ne3) and is single-window ONLY when it renders to an
+# INVISIBLE virtual display (Xvfb) and is streamed into the tab. On a host with a REAL display it would
+# pop a separate visible "Chrome for Testing" window — the cardinal single-window violation.
+# workspace-3sq1 stopgap: refuse that path and point at the extension (single window by construction)
+# or the container, instead of silently popping a stray window. Override: WIRECOPY_FORCE_WEB_LEGACY=1.
 if [ "$web" = true ]; then
+    real_display=false
+    case "$(uname -s)" in
+        Darwin) real_display=true ;;                           # macOS always has a visible display, no Xvfb
+        Linux)  [ -n "${DISPLAY:-}" ] && real_display=true ;;  # a set DISPLAY means a real X server here
+    esac
+
+    if [ "$real_display" = true ] && [ -z "${WIRECOPY_FORCE_WEB_LEGACY:-}" ]; then
+        echo "Refusing to launch the legacy --web shell on a real display: its headful content" >&2
+        echo "browser would pop a separate window (breaks the single-window rule)." >&2
+        echo >&2
+        echo "Use the extension instead (single window, your real browser as the renderer):" >&2
+        echo "    ./run --web --extension" >&2
+        echo "Or run the compliant container (Xvfb virtual display):" >&2
+        echo "    docker compose up wirecopy-web   # then open http://127.0.0.1:5099" >&2
+        echo >&2
+        echo "To force the legacy path anyway (will show a stray window): WIRECOPY_FORCE_WEB_LEGACY=1 ./run --web" >&2
+        exit 1
+    fi
+
     API_EXE="$ROOT/src/WireCopy.API/bin/$CFG/net10.0/WireCopy.API"
     "$DOTNET" build "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c "$CFG" -v quiet || exit 1
     "$DOTNET" build "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" -v quiet || exit 1
     ensure_deps
     export WIRECOPY_TERMINAL_APP="$API_EXE"
     export WIRECOPY_TERMINAL_CWD="$ROOT"
+
+    # Linux with no real display: provide a virtual one so the headful content browser stays invisible
+    # (single-window via the screencast) instead of failing to launch.
+    if [ "$(uname -s)" = Linux ] && [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
+        exec xvfb-run -a --server-args="-screen 0 1280x2400x24" \
+            "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
+    fi
     exec "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
 fi
 
