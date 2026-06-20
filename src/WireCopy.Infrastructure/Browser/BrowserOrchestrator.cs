@@ -66,6 +66,8 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly ILayoutVariantProvider _layoutVariantProvider;
     private readonly IThemeProvider _themeProvider;
     private readonly DockSpotlight _dockSpotlight;
+    private readonly IExtensionBridge? _extensionBridge;
+    private SpotlightTarget? _lastExtensionSpotlight;
     private readonly IWebPaneSink _webPaneSink;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
@@ -146,7 +148,8 @@ public partial class BrowserOrchestrator : IBrowserService
         PageLoadPipeline pipeline,
         ILayoutVariantProvider layoutVariantProvider,
         DockSpotlight dockSpotlight,
-        IWebPaneSink webPaneSink)
+        IWebPaneSink webPaneSink,
+        IExtensionBridge? extensionBridge = null)
     {
         _pageLoader = pageLoader;
         _treeBuilder = treeBuilder;
@@ -169,6 +172,7 @@ public partial class BrowserOrchestrator : IBrowserService
         _themeProvider = themeProvider;
         _dockSpotlight = dockSpotlight;
         _webPaneSink = webPaneSink;
+        _extensionBridge = extensionBridge;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
         // workspace-mctt: the user navigated the lens themselves — offer to read it
@@ -1669,7 +1673,51 @@ public partial class BrowserOrchestrator : IBrowserService
             _dockSpotlight.RequestClear();
         }
 
+        // Extension mode (workspace-pfea): the server-side DockSpotlight is inert (no docked server
+        // page), so mirror the TUI link-tree selection onto the user's REAL page by driving the
+        // extension's highlight/scroll over /ws/ext. Latest-wins (skip redundant re-highlights) and
+        // fire-and-forget so the render loop never blocks on the round-trip.
+        SyncExtensionSpotlight(target);
+
         SyncWebPane(viewMode, page);
+    }
+
+    private void SyncExtensionSpotlight(SpotlightTarget? target)
+    {
+        if (_extensionBridge is null)
+        {
+            return;
+        }
+
+        if (target is { } t && !t.FollowPageOnly && !string.IsNullOrEmpty(t.LinkUrl))
+        {
+            if (_lastExtensionSpotlight is { } prev && prev.LinkUrl == t.LinkUrl && prev.PageUrl == t.PageUrl)
+            {
+                return; // already highlighted this selection
+            }
+
+            _lastExtensionSpotlight = t;
+            FireAndForget(_extensionBridge.HighlightAsync(selector: null, url: t.LinkUrl, text: t.DisplayText));
+        }
+        else
+        {
+            if (_lastExtensionSpotlight is null)
+            {
+                return;
+            }
+
+            _lastExtensionSpotlight = null;
+            FireAndForget(_extensionBridge.ClearHighlightAsync());
+        }
+    }
+
+    private void FireAndForget(Task task)
+    {
+        _ = task.ContinueWith(
+            t => _logger.LogDebug(t.Exception, "Extension spotlight command failed (non-fatal)"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default);
     }
 
     /// <summary>

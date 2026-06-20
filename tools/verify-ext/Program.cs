@@ -111,6 +111,22 @@ var extracted = FindExtractionInLogs(logGlobDir, out var linkLine, out var viaEx
 Check(extracted && viaExtension,
     $"backend extracted links from extension DOM — viaExtension={viaExtension}, {linkLine ?? "no nav-tree line found"}");
 
+// 6. SPOTLIGHT — selecting a story in the TUI drives the extension to highlight it on the REAL page.
+//    On initial render the orchestrator auto-selects the first story, so the spotlight box
+//    (#__wire-copy-spotlight, drawn by content.js on the backend's highlight command over /ws/ext)
+//    should be present on the live page. This proves the full drive path is WIRED, not just defined.
+var spotlight = false;
+for (var i = 0; i < 8 && !spotlight; i++)
+{
+    spotlight = await page.EvaluateAsync<bool>("() => !!document.getElementById('__wire-copy-spotlight')");
+    if (!spotlight)
+    {
+        await page.WaitForTimeoutAsync(1500);
+    }
+}
+
+Check(spotlight, "story-select highlights the live page via the extension (#__wire-copy-spotlight present)");
+
 await context.CloseAsync();
 
 Console.WriteLine();
