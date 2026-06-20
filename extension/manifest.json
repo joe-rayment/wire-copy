@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Wire Copy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Wire Copy as a Chrome overlay: a docked terminal TUI on top, the real website underneath as the tab's own page. Your browser is the renderer — your sessions, no bot blocks, one window.",
   "permissions": ["scripting", "tabs", "activeTab", "storage"],
   "optional_permissions": ["debugger"],
