@@ -116,8 +116,24 @@ public static class BrowserDependencyInjection
 
         // Register browser session (shared Playwright lifecycle)
         services.AddSingleton<BrowserSession>();
-        services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
-        services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
+        if (extensionMode)
+        {
+            // workspace-blg5.2: in extension mode the server-side browser is RETIRED — the user's own
+            // browser is the renderer. Bind the session interfaces to a no-op session that reports the
+            // browser UNAVAILABLE, so none of the fallback paths (content-quality retry in
+            // PageLoadPipeline, bot-challenge/login polls, refresh, human-action watcher — all gated on
+            // IsBrowserAvailable) and no UI dock/summon command can launch a stray server-side Chromium
+            // window. That stray window is the cardinal single-window violation the extension epic exists
+            // to eliminate. The concrete BrowserSession above stays registered but is never resolved.
+            services.AddSingleton<Extension.ExtensionBrowserSession>();
+            services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<Extension.ExtensionBrowserSession>());
+            services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<Extension.ExtensionBrowserSession>());
+        }
+        else
+        {
+            services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
+            services.AddSingleton<IBrowserSessionControl>(sp => sp.GetRequiredService<BrowserSession>());
+        }
 
         // Browser-hosted web pane bridge: streams the display page to the web host when launched
         // under it (WIRECOPY_WEBPANE_SOCKET set); inert for plain terminal runs. One shared singleton

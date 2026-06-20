@@ -355,7 +355,14 @@ public class Program
                     var ready = await extBridge.WaitForReadyAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
                     if (ready
                         && Uri.TryCreate(extBridge.CurrentUrl, UriKind.Absolute, out var cur)
-                        && (cur.Scheme == Uri.UriSchemeHttp || cur.Scheme == Uri.UriSchemeHttps))
+                        && (cur.Scheme == Uri.UriSchemeHttp || cur.Scheme == Uri.UriSchemeHttps)
+                        // workspace-blg5.4: never adopt the backend's OWN "extension mode" placeholder —
+                        // served at the loopback ROOT (e.g. http://127.0.0.1:5099/). Adopting it extracted
+                        // the blank placeholder (empty TUI) and, on a content-less page, tripped the
+                        // browser-retry fallback. Fall through to the launcher instead. Loopback SUBPATHS
+                        // (e.g. a local article fixture or a localhost app the user wants to read) are
+                        // still adoptable — only the bare placeholder root is excluded.
+                        && !(cur.IsLoopback && cur.AbsolutePath == "/"))
                     {
                         url = extBridge.CurrentUrl;
                     }

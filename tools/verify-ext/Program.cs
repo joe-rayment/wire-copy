@@ -99,6 +99,21 @@ catch { /* screenshot best-effort */ }
 // SINGLE WINDOW — no second tab/window opened (holds in every mode).
 Check(context.Pages.Count == 1, $"single window (no 2nd tab) — pages={context.Pages.Count}");
 
+// CARDINAL (workspace-blg5.3): "single window" also requires that the BACKEND launched no server-side
+// browser. context.Pages above sees only the DRIVER's context; a browser the WireCopy backend launches
+// is a SEPARATE process the driver is blind to — and that blindness is exactly how the stray-window
+// regression (workspace-blg5.2) shipped GREEN. The backend logs "Creating new Playwright browser session"
+// the instant it launches, so scan the child log for it. Extension modes only — the legacy webshell
+// launches a server-side browser BY DESIGN, so this invariant does not apply there.
+if (!webshellMode)
+{
+    var backendLaunchedBrowser =
+        LogContains(logGlobDir, "Creating new Playwright browser session")
+        || LogContains(logGlobDir, "Ensuring Playwright browsers are installed");
+    Check(!backendLaunchedBrowser,
+        "backend launched NO server-side browser (extension mode is single-window by construction) — see workspace-blg5.2");
+}
+
 if (webshellMode)
 {
     // LEGACY WEB SHELL launcher (workspace-yqt5.2 / yqt5.3 / opb2): the SPA loaded at the backend URL
