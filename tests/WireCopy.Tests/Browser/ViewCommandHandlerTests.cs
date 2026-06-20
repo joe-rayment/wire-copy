@@ -17,6 +17,11 @@ namespace WireCopy.Tests.Browser;
 /// Tests for ViewCommandHandler covering view switching and width adjustment.
 /// </summary>
 [Trait("Category", "Unit")]
+// workspace-i8r7: HandleDumpHtml tests below mutate the process-global current directory
+// (Directory.SetCurrentDirectory) and delete the temp dir afterwards. Serialize against the rest of the
+// suite so that window never overlaps a concurrent test that resolves paths from the current directory
+// (e.g. SchedulerShutdownContractTests building a host whose content root is the current directory).
+[Collection(ProcessGlobalStateCollection.Name)]
 public class ViewCommandHandlerTests
 {
     private readonly NavigationService _navigationService;
