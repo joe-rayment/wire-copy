@@ -142,6 +142,18 @@ if (navigateMode)
     try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-launcher.png") }); }
     catch { /* best effort */ }
 
+    // workspace-blg5.7/.9: capture the launcher's xterm column count (full-width) so we can later assert
+    // the TUI actually REFLOWED (cols shrank) when the overlay docks to the split — not just that the
+    // iframe got narrower while the terminal kept its wide column count (the clipped-TUI bug).
+    var launcherCols = 0;
+    if (overlayFrame != null)
+    {
+        try { launcherCols = await overlayFrame.EvaluateAsync<int>("() => parseInt(document.documentElement.getAttribute('data-wc-cols') || '0', 10)"); }
+        catch { /* frame not ready */ }
+    }
+
+    Console.WriteLine($"   [cols] launcher xterm cols={launcherCols}");
+
     if (overlayFrame != null)
     {
         // Focus the xterm; the launcher routes the first printable char into the go-to-url field, Enter
@@ -239,6 +251,24 @@ if (navigateMode)
     var nonBlankRows = renderedRows.Split('\n').Count(r => r.Trim().Length > 0);
     Check(nonBlankRows >= 8,
         $"overlay renders content after navigation (NOT empty) — {nonBlankRows} non-blank rows");
+
+    // workspace-blg5.7/.9: assert the TUI actually REFLOWED to the panel — the re-injected overlay's
+    // xterm must have fewer columns at the split than the full-width launcher. Catches the clipped-TUI
+    // bug (iframe shrank but the terminal kept its wide column count and overran the panel).
+    var splitCols = 0;
+    var colsFrame = page.Frames.FirstOrDefault(f => f.Url.Contains("overlay.html", StringComparison.Ordinal));
+    if (colsFrame != null)
+    {
+        try { splitCols = await colsFrame.EvaluateAsync<int>("() => parseInt(document.documentElement.getAttribute('data-wc-cols') || '0', 10)"); }
+        catch { /* frame mid-navigation */ }
+    }
+
+    Check(splitCols > 0 && launcherCols > 0 && splitCols < launcherCols,
+        $"TUI reflowed to the panel — xterm cols shrank {launcherCols} -> {splitCols} (full-width -> split)");
+
+    // Settle for the backend's resize-driven re-render (TerminalResizeDetector polls at 100ms) before
+    // the final screenshot, so we capture the reflowed layout, not the pre-re-render frame.
+    await page.WaitForTimeoutAsync(7000);
 
     try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-navigate-final.png") }); }
     catch { /* best effort */ }

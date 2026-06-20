@@ -69,7 +69,11 @@ async function ensureExtSocket(tabId, sessionId, firstReady) {
 function closeSocket(tabId) {
   const state = sessions.get(tabId);
   if (state && state.ws) {
-    try { state.ws.onclose = null; state.ws.close(); } catch { /* ignore */ }
+    // Null ALL handlers before close (workspace-blg5.6): on a top-level navigation the new content
+    // script reinit closes+reopens this socket; a message still queued on the OLD socket must not
+    // dispatch into the (now stale) handler for this tab.
+    try { state.ws.onclose = null; state.ws.onmessage = null; state.ws.onerror = null; state.ws.close(); }
+    catch { /* ignore */ }
   }
 }
 
@@ -163,7 +167,13 @@ function navigateAndCapture(tabId, url) {
 function sendToContent(tabId, message) {
   return new Promise((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, (response) => {
-      if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+      if (chrome.runtime.lastError) {
+        // Log (workspace-blg5.6): a silent reject here (content script not injected / page mid-load /
+        // script crashed) otherwise leaves the backend with an opaque failure and no diagnostics.
+        console.warn("Wire Copy: sendMessage to tab", tabId, message && message.type, "failed -", chrome.runtime.lastError.message);
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
       resolve(response || {});
     });
   });

@@ -21,6 +21,7 @@ term.loadAddon(fit);
 term.open(document.getElementById("term"));
 fit.fit();
 term.focus();
+try { document.documentElement.setAttribute("data-wc-cols", String(term.cols)); } catch { /* not ready */ }
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -59,7 +60,13 @@ term.onData((data) => {
 // xterm buffer is correct but on-screen pixels can be stale (partial repaint); debounce rapid resizes
 // and force a full re-render of every row from the buffer once the resize settles.
 let resizeTimer = null;
-function refit() { fit.fit(); sendResize(); }
+// Mirror the current column count onto a shared DOM attribute (workspace-blg5.9): the headful gate's
+// frame.evaluate runs in an ISOLATED world that can't read overlay.js window globals, but the DOM is
+// shared — so the gate can assert the TUI actually reflowed (cols shrank) when the overlay docks.
+function markCols() {
+  try { document.documentElement.setAttribute("data-wc-cols", String(term.cols)); } catch { /* not ready */ }
+}
+function refit() { fit.fit(); sendResize(); markCols(); }
 function scheduleRepaint() {
   refit();
   clearTimeout(resizeTimer);
@@ -69,6 +76,13 @@ function scheduleRepaint() {
   }, 100);
 }
 window.addEventListener("resize", scheduleRepaint);
+// workspace-blg5.7: the parent content script changes THIS iframe's CSS width when the overlay docks
+// (full <-> split). An iframe CSS-width change does NOT reliably fire a `resize` in here, so the content
+// script posts a refit message — re-fit the xterm + push the new cols/rows to the PTY so the launcher /
+// link list / reader actually reflow to the panel width instead of being clipped.
+window.addEventListener("message", (ev) => {
+  if (ev && ev.data && ev.data.type === "wirecopy-refit") scheduleRepaint();
+});
 window.addEventListener("focus", () => term.focus());
 
 connect();

@@ -65,7 +65,9 @@
     if (!overlay) return;
     const vw = window.innerWidth || document.documentElement.clientWidth || 0;
     if (layoutMode === "split" && vw > 0) {
-      const w = Math.max(MIN_PANEL_PX, Math.min(Math.round(vw * splitFrac), vw - 80));
+      // workspace-blg5.7: enforce (vw - 80) as a HARD ceiling even when MIN_PANEL_PX is larger (narrow
+      // viewports) — order min(ceiling, max(floor, target)) so the live page always keeps >= 80px.
+      const w = Math.min(vw - 80, Math.max(MIN_PANEL_PX, Math.round(vw * splitFrac)));
       overlay.style.width = w + "px";
       ensureSplitter();
       splitter.style.left = w + "px";
@@ -74,6 +76,13 @@
       overlay.style.width = "100vw";
       if (splitter) splitter.style.display = "none";
     }
+    // The xterm inside the iframe MUST re-fit when the iframe width changes — otherwise the launcher/link
+    // list/reader keep rendering at the old (wide) column count and get clipped by the narrower panel.
+    // Changing an iframe's CSS width does NOT reliably fire a `resize` in the iframe's own window, so
+    // notify overlay.js explicitly (workspace-blg5.7). overlay.js debounces + double-fits, so a stale
+    // first read self-corrects on the settle pass.
+    try { if (overlay.contentWindow) overlay.contentWindow.postMessage({ type: "wirecopy-refit" }, "*"); }
+    catch { /* contentWindow not ready yet */ }
   }
 
   // Draggable divider (workspace-blg5.7). Only present in split mode. While dragging we disable the
