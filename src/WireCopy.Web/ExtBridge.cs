@@ -48,6 +48,7 @@ internal sealed class ExtSession : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ILogger _logger;
+    private readonly ConcurrentQueue<string> _pendingToChild = new();
     private Socket? _child;
 
     private ExtSession(string socketPath, Socket listener, ILogger logger)
@@ -102,9 +103,18 @@ internal sealed class ExtSession : IAsyncDisposable
         var child = _child;
         if (child is null)
         {
+            // The extension can connect (and announce `ready`) before the WireCopy.API child has
+            // attached to the control socket. Buffer so that one-shot startup messages are not lost;
+            // the accept loop flushes the queue the moment the child connects.
+            _pendingToChild.Enqueue(json);
             return;
         }
 
+        await SendFramedAsync(child, json, ct).ConfigureAwait(false);
+    }
+
+    private async Task SendFramedAsync(Socket child, string json, CancellationToken ct)
+    {
         var payload = Encoding.UTF8.GetBytes(json);
         var frame = new byte[4 + 1 + payload.Length];
         BinaryPrimitives.WriteInt32BigEndian(frame, payload.Length + 1);
@@ -176,6 +186,20 @@ internal sealed class ExtSession : IAsyncDisposable
 
             _child = child;
             _logger.LogInformation("Extension control child connected on {Path}", SocketPath);
+
+            // Flush anything the extension sent before the child attached (e.g. the initial `ready`).
+            while (_pendingToChild.TryDequeue(out var buffered))
+            {
+                try
+                {
+                    await SendFramedAsync(child, buffered, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "ext bridge flush-to-child failed");
+                }
+            }
+
             try
             {
                 await ReadLoopAsync(child, ct).ConfigureAwait(false);

@@ -1,0 +1,193 @@
+// workspace-a2ml — End-to-end real-experience gate for the Wire Copy extension (host-browser-as-
+// renderer). Launches a HEADFUL Chromium (under Xvfb in CI) with the unpacked extension loaded, opens
+// a REAL bot-heavy site as the tab's own top-level page, and asserts what the user actually gets:
+//
+//   1. SINGLE WINDOW: the extension never opens a second tab/window (page count stays 1).
+//   2. NO BOT BLOCK: the real site renders (no Cloudflare "Just a moment" / "Attention Required"),
+//      because the user's own browser is the renderer.
+//   3. OVERLAY DOCKS: the Wire Copy TUI overlay (an extension-owned iframe, not a site frame) injects.
+//   4. DOM CAPTURE: the rendered DOM is large and real (the content script's source material).
+//   5. BACKEND EXTRACTION: the WireCopy.API child, fed the extension's DOM over /ws/ext, extracts a
+//      non-trivial link list (asserted from the child's log — "Page loaded: ... N links").
+//
+// Exits non-zero on any failure. Screenshots land in $VERIFY_OUT (default /tmp/verify-ext).
+using Microsoft.Playwright;
+
+var baseUrl = Environment.GetEnvironmentVariable("WIRECOPY_WEB_URL") ?? "http://127.0.0.1:5099";
+var site = Environment.GetEnvironmentVariable("VERIFY_SITE") ?? "https://www.macleans.ca/";
+var extDir = Environment.GetEnvironmentVariable("VERIFY_EXT_DIR") ?? Path.GetFullPath("extension");
+var outDir = Environment.GetEnvironmentVariable("VERIFY_OUT") ?? "/tmp/verify-ext";
+var logGlobDir = Environment.GetEnvironmentVariable("VERIFY_LOG_DIR") ?? "logs";
+var exe = Environment.GetEnvironmentVariable("WIRECOPY_CHROMIUM")
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".cache/ms-playwright/chromium-1223/chrome-linux/chrome");
+var profileDir = Environment.GetEnvironmentVariable("VERIFY_PROFILE") ?? "/tmp/verify-ext-profile";
+
+Directory.CreateDirectory(outDir);
+if (Directory.Exists(profileDir))
+{
+    try { Directory.Delete(profileDir, true); } catch { /* best effort */ }
+}
+
+var failures = new List<string>();
+void Check(bool ok, string label)
+{
+    Console.WriteLine($"  [{(ok ? "PASS" : "FAIL")}] {label}");
+    if (!ok)
+    {
+        failures.Add(label);
+    }
+}
+
+Console.WriteLine($"== verify-ext: backend={baseUrl} site={site} ext={extDir} ==");
+Console.WriteLine($"   chromium={exe} (exists={File.Exists(exe)})");
+
+using var pw = await Playwright.CreateAsync();
+await using var context = await pw.Chromium.LaunchPersistentContextAsync(profileDir, new BrowserTypeLaunchPersistentContextOptions
+{
+    Headless = false, // extensions require a headful context; runs under Xvfb in CI
+    ExecutablePath = File.Exists(exe) ? exe : null,
+    ViewportSize = ViewportSize.NoViewport,
+    Args = new[]
+    {
+        "--no-sandbox",
+        "--disable-gpu",
+        $"--disable-extensions-except={extDir}",
+        $"--load-extension={extDir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+    },
+});
+
+// Point the extension at our backend before any page script reads it.
+try
+{
+    await context.AddInitScriptAsync(
+        $"try{{chrome.storage&&chrome.storage.local&&chrome.storage.local.set({{backend:'{baseUrl}'}});}}catch(e){{}}");
+}
+catch { /* init script is best-effort; default ws://127.0.0.1:5099 matches the gate anyway */ }
+
+var page = context.Pages.Count > 0 ? context.Pages[0] : await context.NewPageAsync();
+
+Console.WriteLine($"== navigate to {site} ==");
+try
+{
+    await page.GotoAsync(site, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 45000 });
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"   goto warning: {ex.Message}");
+}
+
+// Let the page render, the content script inject the overlay, and the backend child capture + extract.
+await page.WaitForTimeoutAsync(18000);
+
+try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-site.png") }); }
+catch { /* screenshot best-effort */ }
+
+// 1. SINGLE WINDOW — no second tab/window opened by the extension.
+Check(context.Pages.Count == 1, $"single window (no 2nd tab) — pages={context.Pages.Count}");
+
+// 2. NO BOT BLOCK — the real site rendered (not a Cloudflare interstitial).
+var bodyText = await page.EvaluateAsync<string>("() => (document.body && document.body.innerText) || ''");
+var blocked = bodyText.Contains("Just a moment", StringComparison.OrdinalIgnoreCase)
+    || bodyText.Contains("Attention Required", StringComparison.OrdinalIgnoreCase)
+    || bodyText.Contains("Checking your browser", StringComparison.OrdinalIgnoreCase)
+    || bodyText.Contains("Enable JavaScript and cookies to continue", StringComparison.OrdinalIgnoreCase);
+Check(!blocked && bodyText.Length > 800, $"no bot block — body {bodyText.Length} chars, blocked={blocked}");
+
+// 3. OVERLAY DOCKS — the extension-owned TUI iframe injected.
+var overlay = await page.QuerySelectorAsync("#wire-copy-overlay");
+Check(overlay != null, "Wire Copy overlay iframe injected");
+
+// 4. DOM CAPTURE — the rendered DOM the content script ships is large and real.
+var htmlLen = await page.EvaluateAsync<int>("() => document.documentElement.outerHTML.length");
+var anchorCount = await page.EvaluateAsync<int>("() => document.querySelectorAll('a[href]').length");
+Check(htmlLen > 20000 && anchorCount > 20, $"rendered DOM real — {htmlLen} bytes, {anchorCount} anchors");
+
+// 5. BACKEND EXTRACTION — the API child, fed the extension DOM over /ws/ext, extracted links.
+//    Require BOTH proof the EXTENSION supplied the DOM ("via extension") AND a non-trivial link tree.
+var extracted = FindExtractionInLogs(logGlobDir, out var linkLine, out var viaExtension);
+Check(extracted && viaExtension,
+    $"backend extracted links from extension DOM — viaExtension={viaExtension}, {linkLine ?? "no nav-tree line found"}");
+
+await context.CloseAsync();
+
+Console.WriteLine();
+if (failures.Count == 0)
+{
+    Console.WriteLine($"GATE PASSED ({site}) — screenshots in {outDir}");
+    return 0;
+}
+
+Console.WriteLine($"GATE FAILED: {failures.Count} check(s) — {string.Join("; ", failures)}");
+return 1;
+
+// Scans the WireCopy.API child log for proof the extension supplied the DOM ("via extension") and a
+// non-trivial link tree ("Built navigation tree with N links" or "Page loaded: ... N links", N>0).
+static bool FindExtractionInLogs(string dir, out string? line, out bool viaExtension)
+{
+    line = null;
+    viaExtension = false;
+    try
+    {
+        if (!Directory.Exists(dir))
+        {
+            return false;
+        }
+
+        var logs = Directory.GetFiles(dir, "wirecopy-*.log")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .ToList();
+        var found = false;
+        foreach (var log in logs)
+        {
+            string text;
+            using (var fs = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs))
+            {
+                text = sr.ReadToEnd();
+            }
+
+            if (text.Contains("via extension", StringComparison.OrdinalIgnoreCase))
+            {
+                viaExtension = true;
+            }
+
+            foreach (var l in text.Split('\n').Reverse())
+            {
+                var marker = l.Contains("Built navigation tree with ", StringComparison.Ordinal)
+                    ? "Built navigation tree with "
+                    : (l.Contains("Page loaded:", StringComparison.Ordinal) && l.Contains("links", StringComparison.Ordinal)
+                        ? " - "
+                        : null);
+                if (marker == null)
+                {
+                    continue;
+                }
+
+                var idx = l.IndexOf(marker, StringComparison.Ordinal);
+                var rest = l[(idx + marker.Length)..];
+                var num = new string(rest.TakeWhile(char.IsDigit).ToArray());
+                if (int.TryParse(num, out var n) && n > 0)
+                {
+                    line = l.Trim();
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found)
+            {
+                break;
+            }
+        }
+
+        return found;
+    }
+    catch
+    {
+        // best effort
+        return false;
+    }
+}

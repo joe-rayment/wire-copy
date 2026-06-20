@@ -37,21 +37,28 @@ app.Map("/ws/terminal", async context =>
         sessionId = Guid.NewGuid().ToString("n");
     }
 
-    var pane = PaneRegistry.Create(sessionId, log);
+    // Extension mode (workspace-blg5/P2.3): the user's own browser is the renderer, driven over the
+    // /ws/ext control channel — there is NO server-side screencast. Skip provisioning the screencast
+    // pane socket entirely so the child never spins up the WebPaneHostBridge (which would launch a
+    // server-side Chromium). Legacy mode keeps the pane socket for the screencast.
+    var extensionMode = string.Equals(
+        Environment.GetEnvironmentVariable("WIRECOPY_BROWSER"), "extension", StringComparison.OrdinalIgnoreCase);
 
-    // Extension mode (workspace-blg5): the child may instead drive the user's own browser via the
-    // /ws/ext control channel. Always provision the per-tab control socket; it sits idle in the
-    // legacy screencast path and is connected to only when the child runs WIRECOPY_BROWSER=extension.
+    var pane = extensionMode ? null : PaneRegistry.Create(sessionId, log);
     var ext = ExtRegistry.Create(sessionId, log);
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     try
     {
-        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath, sessionId, ext.SocketPath);
+        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane?.SocketPath, sessionId, ext.SocketPath);
     }
     finally
     {
-        await PaneRegistry.Remove(sessionId);
+        if (pane is not null)
+        {
+            await PaneRegistry.Remove(sessionId);
+        }
+
         await ExtRegistry.Remove(sessionId);
     }
 });

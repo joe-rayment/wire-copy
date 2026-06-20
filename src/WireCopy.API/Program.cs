@@ -316,7 +316,13 @@ public class Program
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
-            if (browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
+            // Extension mode (workspace-blg5/P2.3): the user's own browser is the renderer — never warm
+            // up (or launch) a server-side Playwright browser, which would fail on a no-display host and
+            // stall startup before the extension page-load path runs.
+            var extensionMode = string.Equals(
+                Environment.GetEnvironmentVariable("WIRECOPY_BROWSER"), "extension", StringComparison.OrdinalIgnoreCase);
+
+            if (!extensionMode && browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
             {
                 var session = host.Services.GetRequiredService<IBrowserSessionControl>();
                 Console.WriteLine("Preparing browser…");

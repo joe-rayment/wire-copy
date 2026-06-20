@@ -341,6 +341,17 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        // Extension mode (workspace-blg5 / P2.2): the no-second-tab rule forbids background-tab
+        // prefetch, and there is no server-side browser to prefetch with. Decision: drop background
+        // prefetch entirely in extension mode (on-demand load only — the user's real browser already
+        // makes navigation fast). Stay idle so nothing ever launches a server-side Chromium.
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("WIRECOPY_BROWSER"), "extension", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Background pre-load disabled in extension mode (on-demand load only)");
+            return;
+        }
+
         _logger.LogInformation("Background pre-load service started");
 
         // workspace-mya7: an interrupted-work checkpoint BINDS TO ITS PAGE — it is
