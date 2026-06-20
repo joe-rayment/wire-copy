@@ -209,6 +209,40 @@ if (navigateMode)
 
     Check(splitOk, $"content loaded: overlay docked to a split (w={splitW}, vw={vwSplit}; expect ~60%)");
 
+    // workspace-blg5.6: the navigate must actually RENDER content in the overlay — the user's complaint
+    // was an EMPTY overlay. The overlay iframe was re-injected by the post-navigation reload, so re-find
+    // it and poll the xterm rows for a non-trivial link list (not just a blank/skeleton terminal).
+    var renderedRows = string.Empty;
+    for (var i = 0; i < 15; i++)
+    {
+        var ovFrame = page.Frames.FirstOrDefault(f => f.Url.Contains("overlay.html", StringComparison.Ordinal));
+        if (ovFrame != null)
+        {
+            try
+            {
+                renderedRows = await ovFrame.EvaluateAsync<string>(
+                    "() => { const e = document.querySelector('.xterm-rows'); return e ? e.innerText : ''; }");
+            }
+            catch { /* frame mid-navigation */ }
+        }
+
+        // "links" / "sections" appear in the link-view header; a healthy render also has many rows.
+        if (renderedRows.Contains("link", StringComparison.OrdinalIgnoreCase)
+            || renderedRows.Split('\n').Count(r => r.Trim().Length > 0) >= 8)
+        {
+            break;
+        }
+
+        await page.WaitForTimeoutAsync(1500);
+    }
+
+    var nonBlankRows = renderedRows.Split('\n').Count(r => r.Trim().Length > 0);
+    Check(nonBlankRows >= 8,
+        $"overlay renders content after navigation (NOT empty) — {nonBlankRows} non-blank rows");
+
+    try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-navigate-final.png") }); }
+    catch { /* best effort */ }
+
     // Triage from the child log regardless of pass/fail (tells us WHERE the chain broke).
     var sentNavigate = LogContains(logGlobDir, "Loading page via extension (host-browser renderer)");
     var loadFailed = LogContains(logGlobDir, "Extension page load failed");
