@@ -330,6 +330,19 @@ public class PageLoadPipeline
             page.LinkTree?.TotalLinks ?? 0,
             page.HasReadableContent() ? "has" : "no");
 
+        // workspace-7q37: a heavy-JS site (e.g. macleans.ca) could render fully in the legacy pane yet
+        // yield ZERO links and no readable article — the user saw the live page but the TUI sat empty.
+        // Log it explicitly so the empty-extraction case is diagnosable. The verifiable fix is the
+        // extension path (the real desktop DOM carries the anchors; there is no "Loading via browser"
+        // server-render step to stall on). The established empty-page contract is preserved here to
+        // avoid regressing the native terminal app.
+        if ((page.LinkTree?.TotalLinks ?? 0) == 0 && !page.HasReadableContent() && loadResult.FetchMethod == FetchMethod.Browser)
+        {
+            _logger.LogWarning(
+                "Browser-rendered page yielded no links and no readable content (workspace-7q37): {Url}",
+                url);
+        }
+
         // Determine if quality improvement retries are needed.
         // If so, return the current page immediately and schedule retries in the background.
         // The user can interact with the (possibly truncated) content while retries run.

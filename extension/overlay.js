@@ -55,9 +55,20 @@ term.onData((data) => {
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(enc.encode(data));
 });
 
-// Keep the PTY's view of the grid in step with the overlay size.
+// Keep the PTY's view of the grid in step with the overlay size. workspace-opb2: after a resize the
+// xterm buffer is correct but on-screen pixels can be stale (partial repaint); debounce rapid resizes
+// and force a full re-render of every row from the buffer once the resize settles.
+let resizeTimer = null;
 function refit() { fit.fit(); sendResize(); }
-window.addEventListener("resize", refit);
+function scheduleRepaint() {
+  refit();
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    refit();
+    try { term.refresh(0, term.rows - 1); } catch { /* renderer not ready */ }
+  }, 100);
+}
+window.addEventListener("resize", scheduleRepaint);
 window.addEventListener("focus", () => term.focus());
 
 connect();

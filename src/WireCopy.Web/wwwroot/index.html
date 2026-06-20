@@ -143,7 +143,9 @@
     function setPaneVisible(visible) {
       const wasHidden = pane.classList.contains('hidden');
       pane.classList.toggle('hidden', !visible);
-      if (wasHidden === visible) { fit.fit(); sendResize(); }
+      // workspace-opb2: the launcher show->hide on initial connect changes the PTY width; force a full
+      // repaint after it settles so the bottom launcher rows don't keep stale (pre-resize) cells.
+      if (wasHidden === visible) { fit.fit(); sendResize(); scheduleRepaint(); }
     }
     // Forward clicks: translate the click position on the <img> to page CSS pixels.
     img.addEventListener('click', (e) => {
@@ -182,6 +184,7 @@
       splitter.style.display = willHide ? 'none' : '';
       fit.fit();
       sendResize();
+      scheduleRepaint(); // workspace-opb2: full repaint after the width change so no stale cells survive
       if (paneSocket.readyState === WebSocket.OPEN) {
         paneSocket.send(JSON.stringify({ type: 'paneVisible', visible: !willHide }));
       }
@@ -189,10 +192,25 @@
     window.addEventListener('keydown', (e) => { if (e.key === 'F9') { e.preventDefault(); togglePane(); } });
 
     // ---- Splitter + resize ----
+    // workspace-opb2: after a PTY resize the xterm BUFFER is correct on every row but the on-screen
+    // pixels can be stale (a partial repaint left old cells — broken launcher separators, a duplicated
+    // reader title, a garbled status bar). force a full re-render of every row from the (correct)
+    // buffer once the resize settles, and debounce rapid resizes (splitter drag, the show->hide that
+    // fires during the initial pane-bridge connect) so they coalesce into one clean repaint.
+    let resizeTimer = null;
+    function repaintTerminal() { try { term.refresh(0, term.rows - 1); } catch (e) { /* renderer not ready */ } }
+    function scheduleRepaint() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { fit.fit(); sendResize(); repaintTerminal(); }, 100);
+    }
     let dragging = false;
     const splitter = document.getElementById('splitter');
     splitter.addEventListener('mousedown', () => { dragging = true; document.body.style.userSelect = 'none'; });
-    window.addEventListener('mouseup', () => { dragging = false; document.body.style.userSelect = ''; });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false; document.body.style.userSelect = '';
+      scheduleRepaint(); // final clean repaint after the drag ends
+    });
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
       const total = document.getElementById('app').clientWidth;
@@ -200,7 +218,7 @@
       document.getElementById('term-pane').style.flex = `0 0 ${left}px`;
       fit.fit(); sendResize();
     });
-    window.addEventListener('resize', () => { fit.fit(); sendResize(); });
+    window.addEventListener('resize', scheduleRepaint);
   </script>
 </body>
 </html>
