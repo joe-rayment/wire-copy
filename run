@@ -67,6 +67,64 @@ ensure_deps() {
     fi
 }
 
+# find_chrome: locate a headful Chrome/Chromium to host the extension. WIRECOPY_CHROME pin wins; then
+# the OS default Chrome/Chromium; then the Playwright "Chrome for Testing" already in the cache. Empty
+# output (and exit 1) when none is found, so the caller can fall back to manual load-unpacked.
+find_chrome() {
+    if [ -n "${WIRECOPY_CHROME:-}" ] && [ -x "${WIRECOPY_CHROME:-}" ]; then echo "$WIRECOPY_CHROME"; return 0; fi
+    local c
+    case "$(uname -s)" in
+        Darwin)
+            for c in \
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+                "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+                "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"; do
+                [ -x "$c" ] && { echo "$c"; return 0; }
+            done
+            ;;
+        *)
+            for c in google-chrome google-chrome-stable chromium chromium-browser; do
+                c="$(command -v "$c" 2>/dev/null)" && [ -n "$c" ] && { echo "$c"; return 0; }
+            done
+            ;;
+    esac
+    local cache
+    case "$(uname -s)" in
+        Darwin) cache="$HOME/Library/Caches/ms-playwright" ;;
+        *)      cache="$HOME/.cache/ms-playwright" ;;
+    esac
+    c="$(find "$cache" -type f \( -name 'Google Chrome for Testing' -o -path '*chrome-linux/chrome' -o -path '*chrome-mac*/Chromium' \) 2>/dev/null | sort | tail -1)"
+    [ -n "$c" ] && { echo "$c"; return 0; }
+    return 1
+}
+
+# launch_extension_browser URL: open a headful Chrome with the CURRENT ./extension loaded, in a
+# dedicated persistent profile (so it never clobbers your main Chrome and logins persist across runs).
+# Because the extension is loaded fresh at every launch, you never have to reload it by hand — quit this
+# window and re-run ./run to pick up extension edits. Best-effort: prints manual steps if no Chrome found.
+launch_extension_browser() {
+    local url="$1" chrome profile
+    if ! chrome="$(find_chrome)"; then
+        echo "No Chrome/Chromium found to auto-launch. Load the extension manually:" >&2
+        echo "  chrome://extensions -> Developer mode -> Load unpacked -> $ROOT/extension  (then open $url)" >&2
+        echo "  (or set WIRECOPY_CHROME=/path/to/chrome and re-run)" >&2
+        return 0
+    fi
+    profile="${WIRECOPY_CHROME_PROFILE:-$HOME/.wirecopy/chrome-profile}"
+    mkdir -p "$profile"
+    echo "Opening $url in $(basename "$chrome") with the Wire Copy extension (profile: $profile)…" >&2
+    echo "  (extension reloads on each ./run — quit this Chrome window and re-run to pick up edits)" >&2
+    # WIRECOPY_CHROME_ARGS: extra flags for headless/container/CI hosts (e.g. "--no-sandbox --disable-gpu").
+    # Left empty for normal desktop Chrome, which neither needs nor wants them.
+    # shellcheck disable=SC2086
+    "$chrome" \
+        --user-data-dir="$profile" \
+        --no-first-run --no-default-browser-check \
+        --load-extension="$ROOT/extension" \
+        ${WIRECOPY_CHROME_ARGS:-} \
+        --new-window "$url" >/dev/null 2>&1 &
+}
+
 # Check for --web (browser-hosted shell), --extension (host-browser-as-renderer) and --verbose flags
 verbose=false
 web=false
@@ -97,10 +155,31 @@ if [ "$web" = true ] && [ "$extension" = true ]; then
     export WIRECOPY_TERMINAL_CWD="$ROOT"
     export WIRECOPY_BROWSER=extension
     export WIRECOPY_NO_OPEN=1   # the UI is the extension overlay in your existing browser, not a localhost tab
-    echo "Wire Copy (extension mode) — backend on ${WIRECOPY_WEB_URL:-http://127.0.0.1:5099}" >&2
-    echo "Load the extension once: chrome://extensions -> Developer mode -> Load unpacked -> $ROOT/extension" >&2
-    echo "Then browse normally; toggle the overlay with the toolbar button or Alt+Shift+W." >&2
-    exec "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build
+    WEB_URL="${WIRECOPY_WEB_URL:-http://127.0.0.1:5099}"
+    echo "Wire Copy (extension mode) — backend on $WEB_URL" >&2
+
+    # Start the backend, then auto-launch a headful Chrome with the CURRENT ./extension loaded — so every
+    # run loads the latest extension files (no manual load-unpacked, no reload, no stale-code guessing).
+    # WIRECOPY_NO_CHROME=1 skips the auto-launch (use your own Chrome via load-unpacked).
+    "$DOTNET" run --project "$ROOT/src/WireCopy.Web/WireCopy.Web.csproj" -c "$CFG" --no-build &
+    WEB_PID=$!
+    trap 'kill "$WEB_PID" 2>/dev/null' INT TERM EXIT
+
+    if [ -z "${WIRECOPY_NO_CHROME:-}" ]; then
+        printf 'Waiting for the backend' >&2
+        for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null "$WEB_URL/" 2>/dev/null && break
+            kill -0 "$WEB_PID" 2>/dev/null || { echo " — backend exited early." >&2; exit 1; }
+            printf '.' >&2; sleep 1
+        done
+        echo >&2
+        launch_extension_browser "$WEB_URL/"
+    else
+        echo "Load the extension manually: chrome://extensions -> Developer mode -> Load unpacked -> $ROOT/extension" >&2
+    fi
+    echo "Toggle the overlay with the toolbar button or Alt+Shift+W. Ctrl+C here stops the backend." >&2
+    wait "$WEB_PID"
+    exit $?
 fi
 
 # --web (legacy screencast shell): spawns the unmodified WireCopy.API under a PTY and serves the
