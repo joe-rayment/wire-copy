@@ -11,7 +11,9 @@
     html, body { margin: 0; height: 100%; background: #0b0b0e; color: #ddd;
       font-family: ui-monospace, "DejaVu Sans Mono", monospace; }
     #app { display: flex; height: 100vh; width: 100vw; }
-    #term-pane { flex: 1 1 55%; min-width: 240px; height: 100%; background: #000; padding: 4px; box-sizing: border-box; }
+    /* workspace-yqt5.2: the pane starts collapsed (never-empty law), so the terminal starts full-width.
+       setPaneVisible() flips this to 55% when real content arrives. */
+    #term-pane { flex: 1 1 100%; min-width: 240px; height: 100%; background: #000; padding: 4px; box-sizing: border-box; }
     #term { height: 100%; width: 100%; }
     #splitter { width: 5px; cursor: col-resize; background: #222; }
     #web-pane { flex: 1 1 45%; min-width: 0; height: 100%; position: relative; background: #15151a;
@@ -27,8 +29,10 @@
 <body>
   <div id="app">
     <div id="term-pane"><div id="term"></div></div>
-    <div id="splitter"></div>
-    <div id="web-pane">
+    <div id="splitter" class="hidden"></div>
+    <!-- workspace-yqt5.2: start collapsed. The pane is revealed only when the child reports real content
+         (mode:live) — never at the launcher, where there is nothing to show (never-empty law). -->
+    <div id="web-pane" class="hidden">
       <div id="web-toolbar">
         <input id="web-url" placeholder="https://…" value="" />
         <button id="web-go">Go</button>
@@ -99,7 +103,9 @@
     let lastUrl = null;
     // The pane is "never empty": the child tells us hidden/live based on what the TUI shows. There is
     // no snapshot mode — the pane is ALWAYS the live real site, or hidden (workspace-8a5y).
-    let currentMode = 'live';
+    // workspace-yqt5.2: default HIDDEN. The launcher (the first screen) has no content, so the pane must
+    // not show until the child reports mode:live; starting 'live' flashed a blank pane at the launcher.
+    let currentMode = 'hidden';
     // workspace-jria: the user explicitly hid the pane (Hide button / F9). While set, server-driven
     // mode updates must NOT auto-reveal the pane — only an explicit un-hide, or the content going away
     // (mode:hidden) and a fresh navigation, brings it back.
@@ -107,7 +113,9 @@
     const paneSocket = new WebSocket(`${wsBase}/ws/webpane?session=${sessionId}`);
     paneSocket.binaryType = 'arraybuffer';
     paneSocket.onopen = () => { status.textContent = 'live'; };
-    paneSocket.onclose = () => { status.textContent = 'closed'; };
+    // workspace-yqt5.2: if the pane channel closes (e.g. no server-side browser in extension mode, or the
+    // child went away), there is nothing to stream — collapse rather than sit blank-and-open.
+    paneSocket.onclose = () => { status.textContent = 'closed'; applyMode('hidden'); };
     paneSocket.onmessage = (ev) => {
       if (typeof ev.data === 'string') { handleControl(ev.data); return; }
       const blob = new Blob([ev.data], { type: 'image/jpeg' });
@@ -140,11 +148,16 @@
       status.textContent = 'live';
     }
 
+    // Single source of truth for the split layout: when the pane is visible the terminal gets 55% and
+    // the splitter shows; when hidden the terminal goes full-width and the splitter is removed. Called
+    // both by server mode updates (applyMode) and the user Hide toggle (togglePane).
     function setPaneVisible(visible) {
       const wasHidden = pane.classList.contains('hidden');
       pane.classList.toggle('hidden', !visible);
-      // workspace-opb2: the launcher show->hide on initial connect changes the PTY width; force a full
-      // repaint after it settles so the bottom launcher rows don't keep stale (pre-resize) cells.
+      splitter.classList.toggle('hidden', !visible);
+      document.getElementById('term-pane').style.flex = visible ? '1 1 55%' : '1 1 100%';
+      // workspace-opb2: a visibility change resizes the PTY; force a full repaint after it settles so the
+      // bottom launcher rows don't keep stale (pre-resize) cells.
       if (wasHidden === visible) { fit.fit(); sendResize(); scheduleRepaint(); }
     }
     // Forward clicks: translate the click position on the <img> to page CSS pixels.
@@ -178,13 +191,7 @@
     function togglePane() {
       const willHide = !pane.classList.contains('hidden');
       userHidden = willHide;
-      pane.classList.toggle('hidden', willHide);
-      const termPane = document.getElementById('term-pane');
-      termPane.style.flex = willHide ? '1 1 100%' : '1 1 55%';
-      splitter.style.display = willHide ? 'none' : '';
-      fit.fit();
-      sendResize();
-      scheduleRepaint(); // workspace-opb2: full repaint after the width change so no stale cells survive
+      setPaneVisible(!willHide); // layout + opb2 repaint handled centrally
       if (paneSocket.readyState === WebSocket.OPEN) {
         paneSocket.send(JSON.stringify({ type: 'paneVisible', visible: !willHide }));
       }

@@ -48,43 +48,78 @@ echo "== build =="
 ./dotnet build src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" -v quiet || exit 1
 ./dotnet build tools/verify-ext/verify-ext.csproj -c "$CFG" -v quiet || exit 1
 
-# Isolate this run's evidence: the WireCopy.API child appends to logs/wirecopy-<date>.log (shared
-# across same-day runs), and a disk page-cache HIT would short-circuit the extension load path with a
-# stale entry. Clear both so the gate proves a FRESH load THROUGH the extension.
-rm -f "$ROOT"/logs/wirecopy-*.log 2>/dev/null
-if [ "${VERIFY_KEEP_CACHE:-0}" != "1" ]; then
-  rm -rf "$HOME/.local/share/WireCopy/page-cache" 2>/dev/null
-fi
-
-echo "== launch backend (extension mode, no server browser) =="
-# Extension mode: WireCopy.Web spawns the WireCopy.API child under a PTY; the child uses the extension
-# as its renderer (WIRECOPY_BROWSER=extension) instead of launching Playwright. No DISPLAY needed here.
-WIRECOPY_BROWSER=extension \
-WIRECOPY_NO_OPEN=1 \
-WIRECOPY_TERMINAL_APP="$API_EXE" \
-WIRECOPY_TERMINAL_CWD="$ROOT" \
-  ./dotnet run --project src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" --no-build >/tmp/verify-ext-web.log 2>&1 &
-WEB_PID=$!
-
-echo "   waiting for backend on $WIRECOPY_WEB_URL ..."
-for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null "$WIRECOPY_WEB_URL/" 2>/dev/null; then break; fi
-  if ! kill -0 "$WEB_PID" 2>/dev/null; then echo "backend exited early:"; tail -20 /tmp/verify-ext-web.log; exit 1; fi
+# One gate phase: a fresh backend session + a headful Chromium driving one site in one mode. The reader
+# phase needs its OWN session because the backend enters reader view by ADOPTING the tab's initial URL
+# at startup (it does not yet follow later user-driven tab navigations).
+run_phase() {
+  local mode="$1" site="$2"
+  echo
+  echo "######## PHASE: mode=$mode site=$site ########"
+  cleanup
   sleep 1
-done
 
-echo "== drive headful Chromium with the extension loaded =="
-# The driver launches a HEADFUL Chromium (extensions need it); provide a virtual display when none.
-DRIVER=( ./dotnet run --project tools/verify-ext/verify-ext.csproj -c "$CFG" --no-build )
-if [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
-  xvfb-run -a --server-args="-screen 0 1600x1200x24" "${DRIVER[@]}"
-  rc=$?
-else
-  "${DRIVER[@]}"
-  rc=$?
+  # Isolate this phase's evidence: the WireCopy.API child appends to logs/wirecopy-<date>.log (shared
+  # across same-day runs), and a disk page-cache HIT would short-circuit the extension load path with a
+  # stale entry. Clear both so the gate proves a FRESH load THROUGH the extension.
+  rm -f "$ROOT"/logs/wirecopy-*.log 2>/dev/null
+  if [ "${VERIFY_KEEP_CACHE:-0}" != "1" ]; then
+    rm -rf "$HOME/.local/share/WireCopy/page-cache" 2>/dev/null
+  fi
+
+  echo "== launch backend (extension mode, no server browser) =="
+  # Extension mode: WireCopy.Web spawns the WireCopy.API child under a PTY; the child uses the extension
+  # as its renderer (WIRECOPY_BROWSER=extension) instead of launching Playwright. No DISPLAY needed here.
+  WIRECOPY_BROWSER=extension \
+  WIRECOPY_NO_OPEN=1 \
+  WIRECOPY_TERMINAL_APP="$API_EXE" \
+  WIRECOPY_TERMINAL_CWD="$ROOT" \
+    ./dotnet run --project src/WireCopy.Web/WireCopy.Web.csproj -c "$CFG" --no-build >/tmp/verify-ext-web.log 2>&1 &
+  local web_pid=$!
+
+  echo "   waiting for backend on $WIRECOPY_WEB_URL ..."
+  for i in $(seq 1 30); do
+    if curl -fsS -o /dev/null "$WIRECOPY_WEB_URL/" 2>/dev/null; then break; fi
+    if ! kill -0 "$web_pid" 2>/dev/null; then echo "backend exited early:"; tail -20 /tmp/verify-ext-web.log; return 1; fi
+    sleep 1
+  done
+
+  echo "== drive headful Chromium with the extension loaded =="
+  # The driver launches a HEADFUL Chromium (extensions need it); provide a virtual display when none.
+  local rc
+  DRIVER=( ./dotnet run --project tools/verify-ext/verify-ext.csproj -c "$CFG" --no-build )
+  if [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
+    VERIFY_MODE="$mode" VERIFY_SITE="$site" xvfb-run -a --server-args="-screen 0 1600x1200x24" "${DRIVER[@]}"
+    rc=$?
+  else
+    VERIFY_MODE="$mode" VERIFY_SITE="$site" "${DRIVER[@]}"
+    rc=$?
+  fi
+
+  echo "== backend log tail =="
+  tail -25 /tmp/verify-ext-web.log 2>/dev/null
+
+  kill "$web_pid" 2>/dev/null
+  wait "$web_pid" 2>/dev/null
+  return $rc
+}
+
+# Phase 1: a real bot-heavy SECTION page (single window, no bot block, extraction, spotlight verb).
+run_phase section "${VERIFY_SITE:-https://www.macleans.ca/}"
+section_rc=$?
+
+# Phase 2 (workspace-blg5.1): a plain ARTICLE — reader-view auto-switch + the scrollTo "follow" verb.
+# Uses the backend's own local article fixture (deterministic, no external dependency or bot block).
+# Skippable with VERIFY_SKIP_READER=1.
+reader_rc=0
+if [ "${VERIFY_SKIP_READER:-0}" != "1" ]; then
+  run_phase reader "${VERIFY_READER_SITE:-$WIRECOPY_WEB_URL/article.html}"
+  reader_rc=$?
 fi
 
-echo "== backend log tail =="
-tail -25 /tmp/verify-ext-web.log 2>/dev/null
-
-exit $rc
+echo
+if [ "$section_rc" -eq 0 ] && [ "$reader_rc" -eq 0 ]; then
+  echo "ALL PHASES PASSED (section + reader)"
+  exit 0
+fi
+echo "GATE FAILED — section_rc=$section_rc reader_rc=$reader_rc"
+exit 1

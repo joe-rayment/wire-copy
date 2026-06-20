@@ -35,8 +35,10 @@ public sealed class ExtensionPageLoader : IPageLoader
         if (!_bridge.IsConnected)
         {
             // The extension hasn't attached yet (user hasn't loaded it, or the SW is reconnecting).
-            // Give it a brief grace window before surfacing an actionable failure.
-            var ready = await _bridge.WaitForReadyAsync(TimeSpan.FromSeconds(20), cancellationToken).ConfigureAwait(false);
+            // Give it a brief grace window before surfacing an actionable failure. workspace-yqt5.1:
+            // 20s here meant a missing/loading extension hung the first load for 20s; a few seconds is
+            // enough for a connected-but-reconnecting SW, and returns the actionable message promptly.
+            var ready = await _bridge.WaitForReadyAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
             if (!ready)
             {
                 return PageLoadResult.Failure(

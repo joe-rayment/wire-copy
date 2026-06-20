@@ -72,8 +72,15 @@ public interface IExtensionBridge
     /// <summary>Clears any active spotlight overlay on the underlying page.</summary>
     Task<bool> ClearHighlightAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Clicks an element on the underlying page, by selector or by viewport coordinates.</summary>
-    Task<bool> ClickAsync(string? selector, double? x, double? y, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Clicks an element on the underlying page. The target is resolved by the content script in this
+    /// priority: viewport coordinates (<paramref name="x"/>/<paramref name="y"/>), then CSS
+    /// <paramref name="selector"/>, then the anchor <paramref name="url"/> or visible
+    /// <paramref name="text"/> the TUI link tree carries — so the orchestrator can drive a link the
+    /// real browser follows natively (its session, JS handlers, in-page fragment jumps) without
+    /// reconstructing a selector.
+    /// </summary>
+    Task<bool> ClickAsync(string? selector, string? url, string? text, double? x, double? y, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Toggles mobile-layout emulation on the underlying tab via CDP device-metrics override

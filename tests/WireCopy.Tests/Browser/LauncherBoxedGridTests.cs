@@ -130,6 +130,39 @@ public class LauncherBoxedGridTests
             "each card must end with a thin separator rule matching the link-list card");
     }
 
+    [Fact]
+    public void Grid_UnbadgedCards_DoNotOverflowLayoutWidth()
+    {
+        // workspace-opb2: cards at virtual index >= 9 carry no [N] badge. A surplus trailing space made
+        // their title row ONE column wider than the cell budget, so the composed two-column row exceeded
+        // the layout width — which shoved the column divider right (a bright "│" before the right title)
+        // and, on the terminal, auto-wrapped the over-long line so it ate the card's "─" separator row.
+        // Render >=10 bookmarks at a tall height (un-badged rows actually rendered, not below the fold)
+        // and assert NO launcher line exceeds layout.Width. Box-drawing/accent glyphs are one cell wide,
+        // so char count == display width. Before the fix the un-badged rows measured layout.Width + 1/+2.
+        var raw = RenderLauncherCapture(CreateBookmarks(14), selectedIndex: -1, terminalHeight: 80);
+        var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, 80, "Grid");
+
+        var lineWidths = SplitPositionedLines(raw).Select(s => s.Length).ToList();
+
+        lineWidths.Max().Should().BeLessOrEqualTo(layout.Width,
+            $"no launcher line may exceed the layout width ({layout.Width}); un-badged cards overflowed by the opb2 off-by-one. Distinct widths: [{string.Join(", ", lineWidths.Distinct().OrderBy(x => x))}]");
+    }
+
+    // Splits the renderer output into per-line content. WriteLineCore starts every line with a clear
+    // (`\x1b[K`); cursor positioning is a Console.SetCursorPosition no-op under a redirected Console, so
+    // the clear is the only per-line delimiter in the captured string. Strips colour SGR off each line.
+    private static IEnumerable<string> SplitPositionedLines(string raw)
+    {
+        return raw.Split("\x1b[K").Select(StripAllAnsi).Where(s => s.Length > 0);
+    }
+
+    // Strips ALL CSI escapes (color AND cursor positioning) leaving only the visible cell content.
+    private static string StripAllAnsi(string text)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(text, @"\x1b\[[0-9;]*[A-Za-z]", string.Empty);
+    }
+
     private static int CountOccurrences(string text, string needle)
     {
         if (string.IsNullOrEmpty(needle))
@@ -163,18 +196,19 @@ public class LauncherBoxedGridTests
         List<Bookmark> bookmarks,
         int selectedIndex,
         int scrollOffset = 0,
-        string variant = "Grid")
+        string variant = "Grid",
+        int terminalHeight = TerminalHeight)
     {
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
 
-        var helpers = new RenderHelpers { TerminalHeight = TerminalHeight };
+        var helpers = new RenderHelpers { TerminalHeight = terminalHeight };
         var renderer = new LauncherRenderer(helpers, themeProvider);
 
         var options = new RenderOptions
         {
             TerminalWidth = LargeTerminalWidth,
-            TerminalHeight = TerminalHeight,
+            TerminalHeight = terminalHeight,
             LayoutVariant = variant,
         };
 

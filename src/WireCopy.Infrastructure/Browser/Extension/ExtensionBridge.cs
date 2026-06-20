@@ -152,13 +152,23 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
         return await SendActionAsync(id, json, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<bool> ClickAsync(string? selector, double? x, double? y, CancellationToken cancellationToken = default)
+    public async Task<bool> ClickAsync(string? selector, string? url, string? text, double? x, double? y, CancellationToken cancellationToken = default)
     {
         var (id, json) = BuildCommand("click", w =>
         {
             if (selector != null)
             {
                 w.WriteString("selector", selector);
+            }
+
+            if (url != null)
+            {
+                w.WriteString("url", url);
+            }
+
+            if (text != null)
+            {
+                w.WriteString("text", text);
             }
 
             if (x.HasValue)

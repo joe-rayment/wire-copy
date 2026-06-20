@@ -89,6 +89,67 @@ public sealed class ExtensionBridgeTests : IDisposable
     }
 
     [Fact]
+    public async Task ScrollTo_RoundTripsActionResult()
+    {
+        using var listener = Listen(_socketPath);
+        await using var bridge = new ExtensionBridge(NullLogger<ExtensionBridge>.Instance);
+        bridge.ConnectForTest(_socketPath);
+
+        using var host = await listener.AcceptAsync();
+        await SendFrameAsync(host, """{"type":"ready"}""");
+        (await bridge.WaitForReadyAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+
+        // Reader-view follow drives the real page to the top (workspace-blg5.1).
+        var scrollTask = bridge.ScrollToAsync(selector: null, y: 0);
+
+        var command = await ReadFrameAsync(host);
+        using (var doc = JsonDocument.Parse(command))
+        {
+            doc.RootElement.GetProperty("type").GetString().Should().Be("scrollTo");
+            doc.RootElement.GetProperty("y").GetDouble().Should().Be(0);
+            var id = doc.RootElement.GetProperty("id").GetInt32();
+            await SendFrameAsync(host, JsonSerializer.Serialize(new { type = "actionResult", id, ok = true }));
+        }
+
+        (await scrollTask.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Click_CarriesSelectorUrlAndText()
+    {
+        using var listener = Listen(_socketPath);
+        await using var bridge = new ExtensionBridge(NullLogger<ExtensionBridge>.Instance);
+        bridge.ConnectForTest(_socketPath);
+
+        using var host = await listener.AcceptAsync();
+        await SendFrameAsync(host, """{"type":"ready"}""");
+        (await bridge.WaitForReadyAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+
+        // A same-document fragment activation clicks the real anchor by selector+url (workspace-blg5.1):
+        // the content script resolves it without the orchestrator reconstructing a coordinate.
+        var clickTask = bridge.ClickAsync(
+            selector: "[id=\"History\"], [name=\"History\"]",
+            url: "https://example.com/wiki/X#History",
+            text: "History",
+            x: null,
+            y: null);
+
+        var command = await ReadFrameAsync(host);
+        using (var doc = JsonDocument.Parse(command))
+        {
+            doc.RootElement.GetProperty("type").GetString().Should().Be("click");
+            doc.RootElement.GetProperty("selector").GetString().Should().Contain("History");
+            doc.RootElement.GetProperty("url").GetString().Should().Be("https://example.com/wiki/X#History");
+            doc.RootElement.GetProperty("text").GetString().Should().Be("History");
+            doc.RootElement.TryGetProperty("x", out _).Should().BeFalse("null coordinates are omitted");
+            var id = doc.RootElement.GetProperty("id").GetInt32();
+            await SendFrameAsync(host, JsonSerializer.Serialize(new { type = "actionResult", id, ok = true }));
+        }
+
+        (await clickTask.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task NavigatedEvent_IsRaised()
     {
         using var listener = Listen(_socketPath);

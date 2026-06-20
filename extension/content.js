@@ -132,14 +132,27 @@
   }
 
   // ---- command handling (from the background service worker) ----------------------------------
+  // driveLog records every page-drive command the backend issued (scrollTo / highlight / click), so the
+  // headful verification gate can assert the full drive path is WIRED end-to-end (workspace-blg5.1),
+  // not just that the verbs are defined. Capped so it can't grow unbounded on a long session.
+  const driveLog = [];
+  function note(kind) {
+    driveLog.push(kind);
+    if (driveLog.length > 50) driveLog.shift();
+    // Mirror onto the shared DOM (documentElement attribute) — the content script's window globals live
+    // in an ISOLATED world the verification gate's page.evaluate can't read, but the DOM is shared.
+    try { document.documentElement.setAttribute("data-wirecopy-drives", driveLog.join(",")); }
+    catch { /* document not ready */ }
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
       case "toggleOverlay": toggleOverlay(); sendResponse({ ok: true }); return true;
       case "requestDom": sendResponse(captureDom()); return true;
-      case "scrollTo": sendResponse(scrollTo(msg)); return true;
-      case "highlight": sendResponse(spotlight(msg)); return true;
-      case "clearHighlight": clearSpotlight(); sendResponse({ ok: true }); return true;
-      case "click": sendResponse(clickTarget(msg)); return true;
+      case "scrollTo": note("scrollTo"); sendResponse(scrollTo(msg)); return true;
+      case "highlight": note("highlight"); sendResponse(spotlight(msg)); return true;
+      case "clearHighlight": note("clearHighlight"); clearSpotlight(); sendResponse({ ok: true }); return true;
+      case "click": note("click"); sendResponse(clickTarget(msg)); return true;
       default: return false;
     }
   });
@@ -193,6 +206,8 @@
     spotlight,
     overlayVisible: () => visible,
     toggleOverlay,
+    driveLog: () => driveLog.slice(),
+    lastDrive: () => (driveLog.length ? driveLog[driveLog.length - 1] : null),
   };
   init();
 })();

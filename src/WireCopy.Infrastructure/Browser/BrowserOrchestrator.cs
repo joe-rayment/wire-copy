@@ -68,6 +68,7 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly DockSpotlight _dockSpotlight;
     private readonly IExtensionBridge? _extensionBridge;
     private SpotlightTarget? _lastExtensionSpotlight;
+    private string? _lastExtensionReaderScrollUrl;
     private readonly IWebPaneSink _webPaneSink;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
@@ -742,6 +743,26 @@ public partial class BrowserOrchestrator : IBrowserService
 
         try
         {
+            // Extension mode (workspace-blg5.1): a same-document fragment link (#section of the page
+            // already loaded in the user's own tab) is an in-page jump. CLICK the anchor so the real
+            // browser scrolls to it natively — driving "the browser underneath" — instead of reloading
+            // the whole tab (which restarts the overlay) just to move the scroll position. Cross-document
+            // links fall through to the normal load path below.
+            if (_extensionBridge is { IsConnected: true }
+                && Extension.ExtensionNavigation.IsSameDocumentFragment(_extensionBridge.CurrentUrl, url))
+            {
+                _logger.LogInformation("NavigateToAsync: extension same-document fragment — clicking in place (no reload): {Url}", url);
+
+                // Click the real <a href="...#frag"> anchor BY URL (selector left null): the content
+                // script resolves it to the page's own link and the browser performs the native in-page
+                // jump. Matching by a fragment-id selector instead would hit the target heading, whose
+                // .click() does nothing.
+                FireAndForget(_extensionBridge.ClickAsync(selector: null, url: url, text: null, x: null, y: null));
+                _preloadService.Resume();
+                await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             // Fast path: build cache hit (Phase 1) or page cache hit — load synchronously
             _logger.LogInformation("NavigateToAsync: checking build cache for {Url}", url);
             var buildCache = _pageCache.TryGetBuildCache(url);
@@ -1673,22 +1694,24 @@ public partial class BrowserOrchestrator : IBrowserService
             _dockSpotlight.RequestClear();
         }
 
-        // Extension mode (workspace-pfea): the server-side DockSpotlight is inert (no docked server
-        // page), so mirror the TUI link-tree selection onto the user's REAL page by driving the
-        // extension's highlight/scroll over /ws/ext. Latest-wins (skip redundant re-highlights) and
-        // fire-and-forget so the render loop never blocks on the round-trip.
-        SyncExtensionSpotlight(target);
+        // Extension mode (workspace-pfea / workspace-blg5.1): the server-side DockSpotlight is inert (no
+        // docked server page), so mirror the TUI link-tree selection onto the user's REAL page by driving
+        // the extension's highlight (link tree) or scroll (reader follow) over /ws/ext. Latest-wins (skip
+        // redundant drives) and fire-and-forget so the render loop never blocks on the round-trip.
+        SyncExtensionSpotlight(viewMode, target);
 
         SyncWebPane(viewMode, page);
     }
 
-    private void SyncExtensionSpotlight(SpotlightTarget? target)
+    private void SyncExtensionSpotlight(ViewMode viewMode, SpotlightTarget? target)
     {
         if (_extensionBridge is null)
         {
             return;
         }
 
+        // A concrete link is selected → highlight it on the real page (and re-arm reader follow so the
+        // next reader entry scrolls again).
         if (target is { } t && !t.FollowPageOnly && !string.IsNullOrEmpty(t.LinkUrl))
         {
             if (_lastExtensionSpotlight is { } prev && prev.LinkUrl == t.LinkUrl && prev.PageUrl == t.PageUrl)
@@ -1697,17 +1720,32 @@ public partial class BrowserOrchestrator : IBrowserService
             }
 
             _lastExtensionSpotlight = t;
+            _lastExtensionReaderScrollUrl = null;
             FireAndForget(_extensionBridge.HighlightAsync(selector: null, url: t.LinkUrl, text: t.DisplayText));
+            return;
+        }
+
+        // No concrete link → drop any highlight box (once).
+        if (_lastExtensionSpotlight is not null)
+        {
+            _lastExtensionSpotlight = null;
+            FireAndForget(_extensionBridge.ClearHighlightAsync());
+        }
+
+        // Reader view (workspace-blg5.1): keep the real page following the article the TUI is reading.
+        // The tab is already on this URL (the loader navigated it), so "follow" means align the live
+        // scroll position to the top of the article — driven once per article via the scrollTo verb.
+        if (viewMode == ViewMode.Readable && target is { } ft && !string.IsNullOrEmpty(ft.PageUrl))
+        {
+            if (!string.Equals(_lastExtensionReaderScrollUrl, ft.PageUrl, StringComparison.Ordinal))
+            {
+                _lastExtensionReaderScrollUrl = ft.PageUrl;
+                FireAndForget(_extensionBridge.ScrollToAsync(selector: null, y: 0));
+            }
         }
         else
         {
-            if (_lastExtensionSpotlight is null)
-            {
-                return;
-            }
-
-            _lastExtensionSpotlight = null;
-            FireAndForget(_extensionBridge.ClearHighlightAsync());
+            _lastExtensionReaderScrollUrl = null;
         }
     }
 

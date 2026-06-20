@@ -340,12 +340,19 @@ public class Program
             // adopt the tab's CURRENT url (reported by the extension over /ws/ext) as the landing page
             // so the TUI shows the page you're already on — instead of the launcher — and the
             // page-loader captures it in place rather than re-navigating (which would reload the tab).
+            //
+            // workspace-yqt5.1: this wait is on the startup critical path BEFORE the first frame paints,
+            // so a long timeout reads as "the app loads very slowly". When the extension is already
+            // attached (the common case — the user is browsing with it loaded) WaitForReadyAsync returns
+            // immediately, so a short cap keeps adoption while bounding the cold-start delay. If the
+            // extension isn't ready within the cap we simply land on the launcher (the user can navigate)
+            // rather than freezing for 10s.
             if (url is null)
             {
                 var extBridge = host.Services.GetService<WireCopy.Application.Interfaces.Browser.IExtensionBridge>();
                 if (extBridge is not null)
                 {
-                    var ready = await extBridge.WaitForReadyAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                    var ready = await extBridge.WaitForReadyAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
                     if (ready
                         && Uri.TryCreate(extBridge.CurrentUrl, UriKind.Absolute, out var cur)
                         && (cur.Scheme == Uri.UriSchemeHttp || cur.Scheme == Uri.UriSchemeHttps))

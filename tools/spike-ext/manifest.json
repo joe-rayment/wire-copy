@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "WireCopy Spike",
+  "version": "0.1",
+  "description": "Spike: overlay TUI that uses the host browser as the renderer and reuses the WireCopy backend extractor.",
+  "permissions": ["scripting", "tabs", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

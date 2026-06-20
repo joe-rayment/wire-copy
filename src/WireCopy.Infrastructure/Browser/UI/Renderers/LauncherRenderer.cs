@@ -464,7 +464,13 @@ internal class LauncherRenderer
                     return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)}{badgeFg}{badge}{Reset} ";
                 }
 
-                return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)} ";
+                // workspace-opb2: the badge path debits a trailing "{badge} " (badgeZone) from gap, so its
+                // visible width is contentWidth+1. The no-badge path (cards 09+, which carry no [N]) must
+                // emit the SAME width — gap already absorbs the dropped badge, so do NOT add a trailing
+                // space here. The old trailing space made un-badged title rows one column too wide, which
+                // shoved the column divider right (a bright "│" before the right title) and pushed the
+                // row past the terminal edge so it auto-wrapped and ate the card's "─" separator row.
+                return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)}";
             }
 
             case 2:
