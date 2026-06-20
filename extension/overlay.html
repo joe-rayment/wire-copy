@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!-- Wire Copy overlay surface (workspace-iohy): an extension-owned page that hosts the REAL Wire Copy
+     xterm.js TUI, connected to the backend terminal stream. Loaded as a docked top-layer iframe by the
+     content script — it is NOT a frame of the target site and NOT a second tab. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wire Copy</title>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    #term { position: absolute; inset: 0; padding: 4px; box-sizing: border-box; }
+    #wc-status {
+      position: absolute; bottom: 0; left: 0; right: 0; font: 11px ui-monospace, monospace;
+      color: #4aa874; background: #06080a; padding: 2px 6px; border-top: 1px solid #122; z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <div id="wc-status">connecting…</div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>

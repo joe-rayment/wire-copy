@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Wire Copy",
+  "version": "0.2.0",
+  "description": "Wire Copy as a Chrome overlay: a docked terminal TUI on top, the real website underneath as the tab's own page. Your browser is the renderer — your sessions, no bot blocks, one window.",
+  "permissions": ["scripting", "tabs", "activeTab", "storage"],
+  "optional_permissions": ["debugger"],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "ws://localhost/*",
+    "ws://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Toggle the Wire Copy overlay"
+  },
+  "commands": {
+    "toggle-overlay": {
+      "suggested_key": { "default": "Alt+Shift+W" },
+      "description": "Toggle the Wire Copy overlay"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["overlay.html", "overlay.js", "vendor/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
