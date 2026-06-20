@@ -64,6 +64,39 @@ public sealed class ExtensionBridgeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadinessGate_ReArmsOnDisconnect()
+    {
+        // workspace-blg5.6: after the extension disconnects, the readiness gate must RE-ARM — a later
+        // WaitForReadyAsync must not return the stale (already-completed) 'ready'. This is what lets a
+        // command issued during a transient reconnect wait for the next 'ready' instead of failing.
+        using var listener = Listen(_socketPath);
+        await using var bridge = new ExtensionBridge(NullLogger<ExtensionBridge>.Instance);
+        bridge.ConnectForTest(_socketPath);
+
+        var host = await listener.AcceptAsync();
+        await SendFrameAsync(host, """{"type":"ready"}""");
+        (await bridge.WaitForReadyAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        bridge.IsConnected.Should().BeTrue();
+
+        // Drop the connection — the read loop ends, _connected flips false and the gate re-arms.
+        host.Shutdown(SocketShutdown.Both);
+        host.Dispose();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (bridge.IsConnected && sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(50);
+        }
+
+        bridge.IsConnected.Should().BeFalse("the host closed the socket");
+        await Task.Delay(100); // let the re-arm settle past the disconnect handler
+
+        // Re-armed: a short wait must BLOCK then time out (false), not return the stale completed ready.
+        (await bridge.WaitForReadyAsync(TimeSpan.FromMilliseconds(400))).Should().BeFalse(
+            "the readiness gate must re-arm on disconnect, not surface the stale 'ready'");
+    }
+
+    [Fact]
     public async Task DriveCommand_RoundTripsActionResult()
     {
         using var listener = Listen(_socketPath);

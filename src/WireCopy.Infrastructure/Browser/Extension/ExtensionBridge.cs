@@ -33,7 +33,10 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
-    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // Swapped for a fresh gate on disconnect (workspace-blg5.6) so a command issued during a transient
+    // reconnect waits for the NEXT 'ready' rather than seeing the stale (already-completed) one.
+    private volatile TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private Socket? _socket;
     private Task? _readLoop;
@@ -87,10 +90,11 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
             return true;
         }
 
+        var readyTask = _ready.Task; // volatile snapshot — _ready is swapped on disconnect
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token);
         var timeoutTask = Task.Delay(timeout, linked.Token);
-        var completed = await Task.WhenAny(_ready.Task, timeoutTask).ConfigureAwait(false);
-        return completed == _ready.Task;
+        var completed = await Task.WhenAny(readyTask, timeoutTask).ConfigureAwait(false);
+        return completed == readyTask;
     }
 
     public async Task<ExtensionDomSnapshot> NavigateAndCaptureAsync(string url, CancellationToken cancellationToken = default)
@@ -308,7 +312,13 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
     {
         if (!_connected)
         {
-            throw new InvalidOperationException("Extension is not connected.");
+            // Transient reconnect grace (workspace-blg5.6): wait briefly for the extension to (re)connect
+            // and report 'ready' instead of failing the command outright during a reconnect window.
+            var ready = await WaitForReadyAsync(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+            if (!ready)
+            {
+                throw new InvalidOperationException("Extension is not connected.");
+            }
         }
 
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -368,6 +378,14 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "ExtensionBridge connection ended; retrying");
+            }
+
+            // Re-arm the readiness gate BEFORE flipping _connected (workspace-blg5.6) so WaitForReadyAsync
+            // never observes _connected=false alongside a stale, already-completed 'ready'. A command
+            // issued during the reconnect window then waits for the next 'ready' instead of failing.
+            if (!ct.IsCancellationRequested && _ready.Task.IsCompleted)
+            {
+                _ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
             _connected = false;
