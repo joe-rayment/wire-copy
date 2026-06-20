@@ -23,6 +23,14 @@ public interface IExtensionBridge
     /// <summary>True once the Chrome extension has connected and reported <c>ready</c>.</summary>
     bool IsConnected { get; }
 
+    /// <summary>
+    /// The underlying tab's current top-level URL, as last reported by the extension
+    /// (<c>ready</c> / <c>navigated</c> / <c>domSnapshot</c>). Empty until the first report. Lets the
+    /// page-loader capture the already-loaded page instead of re-navigating to it (which would reload
+    /// the tab and restart the overlay).
+    /// </summary>
+    string CurrentUrl { get; }
+
     /// <summary>Raised when the underlying tab navigates (top-level or SPA route change).</summary>
     event Action<string>? Navigated;
 

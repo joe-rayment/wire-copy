@@ -39,6 +39,7 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
     private Task? _readLoop;
     private int _nextId;
     private volatile bool _connected;
+    private volatile string _currentUrl = string.Empty;
 
     public ExtensionBridge(ILogger<ExtensionBridge> logger)
     {
@@ -50,6 +51,8 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
     public event Action<string>? UserInteraction;
 
     public bool IsConnected => _connected;
+
+    public string CurrentUrl => _currentUrl;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -400,6 +403,15 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+
+            if (root.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String)
+            {
+                var u = urlEl.GetString();
+                if (!string.IsNullOrEmpty(u))
+                {
+                    _currentUrl = u;
+                }
+            }
 
             switch (type)
             {

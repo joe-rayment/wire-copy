@@ -56,6 +56,41 @@ public sealed class ExtensionPageLoaderTests
     }
 
     [Fact]
+    public async Task LoadAsync_WhenTabAlreadyOnUrl_CapturesInPlace_DoesNotRenavigate()
+    {
+        var bridge = Substitute.For<IExtensionBridge>();
+        bridge.IsConnected.Returns(true);
+        bridge.CurrentUrl.Returns("https://example.com/world/");
+        bridge.CaptureDomAsync(Arg.Any<CancellationToken>())
+            .Returns(new ExtensionDomSnapshot(
+                "https://example.com/world",
+                "<html><head><title>World</title></head><body><a href=\"/a\">A long story headline here</a></body></html>",
+                1280, 800));
+
+        var loader = new ExtensionPageLoader(bridge, NullLogger<ExtensionPageLoader>.Instance);
+
+        // Same path, only trailing slash / scheme-case differs — must capture, not navigate.
+        var result = await loader.LoadAsync(new PageLoadRequest { Url = "https://example.com/world" });
+
+        result.Success.Should().BeTrue();
+        await bridge.Received(1).CaptureDomAsync(Arg.Any<CancellationToken>());
+        await bridge.DidNotReceive().NavigateAndCaptureAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void UrlsEquivalent_IgnoresTrailingSlashAndFragment_ButNotPath()
+    {
+        WireCopy.Infrastructure.Browser.Extension.ExtensionPageLoader
+            .UrlsEquivalent("https://x.com/a", "https://x.com/a/").Should().BeTrue();
+        WireCopy.Infrastructure.Browser.Extension.ExtensionPageLoader
+            .UrlsEquivalent("https://x.com/a#frag", "https://x.com/a").Should().BeTrue();
+        WireCopy.Infrastructure.Browser.Extension.ExtensionPageLoader
+            .UrlsEquivalent("https://x.com/a", "https://x.com/b").Should().BeFalse();
+        WireCopy.Infrastructure.Browser.Extension.ExtensionPageLoader
+            .UrlsEquivalent("https://x.com/a", "").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LoadAsync_WhenDomEmpty_Fails()
     {
         var bridge = Substitute.For<IExtensionBridge>();

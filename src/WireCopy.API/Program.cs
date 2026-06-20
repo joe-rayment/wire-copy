@@ -330,6 +330,25 @@ public class Program
                 }
             }
 
+            // Extension mode (workspace-blg5): the user's own browser is the renderer. On startup,
+            // adopt the tab's CURRENT url (reported by the extension over /ws/ext) as the landing page
+            // so the TUI shows the page you're already on — instead of the launcher — and the
+            // page-loader captures it in place rather than re-navigating (which would reload the tab).
+            if (url is null)
+            {
+                var extBridge = host.Services.GetService<WireCopy.Application.Interfaces.Browser.IExtensionBridge>();
+                if (extBridge is not null)
+                {
+                    var ready = await extBridge.WaitForReadyAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                    if (ready
+                        && Uri.TryCreate(extBridge.CurrentUrl, UriKind.Absolute, out var cur)
+                        && (cur.Scheme == Uri.UriSchemeHttp || cur.Scheme == Uri.UriSchemeHttps))
+                    {
+                        url = extBridge.CurrentUrl;
+                    }
+                }
+            }
+
             var browser = host.Services.GetRequiredService<IBrowserService>();
             await browser.RunAsync(url);
             return 0;

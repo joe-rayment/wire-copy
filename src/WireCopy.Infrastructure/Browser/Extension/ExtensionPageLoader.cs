@@ -46,8 +46,22 @@ public sealed class ExtensionPageLoader : IPageLoader
 
         try
         {
-            _logger.LogInformation("Loading page via extension (host-browser renderer): {Url}", request.Url);
-            var snapshot = await _bridge.NavigateAndCaptureAsync(request.Url, cancellationToken).ConfigureAwait(false);
+            // If the tab is ALREADY on this URL (the common case right after a navigation completes,
+            // and on extension-mode startup), capture the rendered DOM in place rather than navigating
+            // again — re-navigating would reload the tab and restart the overlay (workspace-pfea).
+            var sameAsCurrent = !request.ForceRefresh && UrlsEquivalent(request.Url, _bridge.CurrentUrl);
+
+            ExtensionDomSnapshot snapshot;
+            if (sameAsCurrent)
+            {
+                _logger.LogInformation("Capturing current page via extension (already loaded): {Url}", request.Url);
+                snapshot = await _bridge.CaptureDomAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                _logger.LogInformation("Loading page via extension (host-browser renderer): {Url}", request.Url);
+                snapshot = await _bridge.NavigateAndCaptureAsync(request.Url, cancellationToken).ConfigureAwait(false);
+            }
 
             var finalUrl = string.IsNullOrEmpty(snapshot.Url) ? request.Url : snapshot.Url;
             var html = snapshot.Html ?? string.Empty;
@@ -92,5 +106,28 @@ public sealed class ExtensionPageLoader : IPageLoader
         }
 
         return result.Html;
+    }
+
+    /// <summary>
+    /// Loose URL equivalence for "is the tab already here?" — ignores trailing slashes, fragments and
+    /// case in the scheme/host. Deliberately conservative: when in doubt it returns false and the
+    /// loader navigates (correct, just a redundant reload).
+    /// </summary>
+    internal static bool UrlsEquivalent(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(a, UriKind.Absolute, out var ua) || !Uri.TryCreate(b, UriKind.Absolute, out var ub))
+        {
+            return string.Equals(a.TrimEnd('/'), b.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+        }
+
+        var pathA = ua.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        var pathB = ub.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        return string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(ua.Query, ub.Query, StringComparison.Ordinal);
     }
 }
