@@ -764,6 +764,24 @@ public partial class BrowserOrchestrator : IBrowserService
                 return;
             }
 
+            // Extension mode (workspace-blg5.6): the user's live tab IS the content. A cross-document
+            // navigation must DRIVE the tab to the real URL — even when the TUI content is cached.
+            // Otherwise the in-session cache fast-paths below (and the pipeline's own cache check) render
+            // cached links while the tab stays on the previous page, so the live page no longer matches
+            // what you're reading — the "TUI shows content but the tab never moved" failure. Driving the
+            // tab reloads it, so a FRESH overlay session adopts {url} and renders it (cache-accelerated,
+            // since the build/HTML cache is still warm for the fresh session's extraction). When the tab
+            // is ALREADY on this URL (post-navigation adopt / same-page revisit / reader-follow) there is
+            // nothing to drive — fall through to the normal capture/cache path below.
+            if (_extensionBridge is { IsConnected: true }
+                && !Extension.ExtensionPageLoader.UrlsEquivalent(url, _extensionBridge.CurrentUrl))
+            {
+                _logger.LogInformation("NavigateToAsync: extension cross-document navigation — driving the tab to {Url}", url);
+                FireAndForget(_extensionBridge.NavigateAndCaptureAsync(url));
+                _preloadService.Resume();
+                return;
+            }
+
             // Fast path: build cache hit (Phase 1) or page cache hit — load synchronously
             _logger.LogInformation("NavigateToAsync: checking build cache for {Url}", url);
             var buildCache = _pageCache.TryGetBuildCache(url);
