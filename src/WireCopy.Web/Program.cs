@@ -38,15 +38,37 @@ app.Map("/ws/terminal", async context =>
     }
 
     var pane = PaneRegistry.Create(sessionId, log);
+
+    // Extension mode (workspace-blg5): the child may instead drive the user's own browser via the
+    // /ws/ext control channel. Always provision the per-tab control socket; it sits idle in the
+    // legacy screencast path and is connected to only when the child runs WIRECOPY_BROWSER=extension.
+    var ext = ExtRegistry.Create(sessionId, log);
+
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     try
     {
-        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath, sessionId);
+        await TerminalBridge.RunAsync(socket, log, context.RequestAborted, pane.SocketPath, sessionId, ext.SocketPath);
     }
     finally
     {
         await PaneRegistry.Remove(sessionId);
+        await ExtRegistry.Remove(sessionId);
     }
+});
+
+// Extension control channel: relays JSON commands/events between the WireCopy.API child (extension
+// mode) and the Chrome extension's background service worker. See ExtSession for the protocol.
+app.Map("/ws/ext", async context =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+
+    var sessionId = context.Request.Query["session"].ToString();
+    using var socket = await context.WebSockets.AcceptWebSocketAsync();
+    await ExtBridgeRelay.RunAsync(sessionId, socket, log, context.RequestAborted);
 });
 
 // Web pane: relays the matching child's CDP screencast frames to the tab and forwards input back.

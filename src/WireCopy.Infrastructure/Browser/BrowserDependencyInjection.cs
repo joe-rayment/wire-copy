@@ -33,6 +33,22 @@ public static class BrowserDependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddTerminalBrowser(this IServiceCollection services)
     {
+        // Extension mode (workspace-blg5): the user's own browser is the renderer, driven via the
+        // WireCopy Chrome extension over the /ws/ext control channel, instead of a server-side
+        // Playwright browser. Gated on WIRECOPY_BROWSER=extension so the native terminal app and the
+        // legacy screencast web mode are completely unaffected.
+        var extensionMode = string.Equals(
+            Environment.GetEnvironmentVariable("WIRECOPY_BROWSER"),
+            "extension",
+            StringComparison.OrdinalIgnoreCase);
+
+        if (extensionMode)
+        {
+            services.AddSingleton<Extension.ExtensionBridge>();
+            services.AddSingleton<IExtensionBridge>(sp => sp.GetRequiredService<Extension.ExtensionBridge>());
+            services.AddHostedService(sp => sp.GetRequiredService<Extension.ExtensionBridge>());
+        }
+
         // Register configuration
         services.AddOptions<BrowserConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
@@ -154,7 +170,14 @@ public static class BrowserDependencyInjection
             var pageLoaderLogger = sp.GetRequiredService<ILogger<PageLoader>>();
             var browserSession = sp.GetRequiredService<IBrowserSession>();
             var pageAccessQueue = sp.GetRequiredService<IPageAccessQueue>();
-            var innerLoader = new PageLoader(browserConfig, pageLoaderLogger, browserSession, httpClient, pageAccessQueue);
+
+            // In extension mode the rendered DOM comes from the user's own browser (workspace-wrs5),
+            // and every step downstream of the loader stays exactly the same.
+            IPageLoader innerLoader = extensionMode
+                ? new Extension.ExtensionPageLoader(
+                    sp.GetRequiredService<IExtensionBridge>(),
+                    sp.GetRequiredService<ILogger<Extension.ExtensionPageLoader>>())
+                : new PageLoader(browserConfig, pageLoaderLogger, browserSession, httpClient, pageAccessQueue);
 
             var cache = sp.GetRequiredService<IPageCache>();
             var cachingLogger = sp.GetRequiredService<ILogger<CachingPageLoader>>();

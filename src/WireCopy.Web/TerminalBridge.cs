@@ -16,7 +16,7 @@ namespace WireCopy.Web;
 /// </summary>
 internal static class TerminalBridge
 {
-    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct, string? paneSocketPath = null, string? sessionId = null)
+    public static async Task RunAsync(WebSocket socket, ILogger log, CancellationToken ct, string? paneSocketPath = null, string? sessionId = null, string? extSocketPath = null)
     {
         // The command to host. Defaults to bash for the isolated spike; the real host
         // sets this to the WireCopy.API browse process.
@@ -53,6 +53,14 @@ internal static class TerminalBridge
         if (!string.IsNullOrEmpty(sessionId))
         {
             env["WIRECOPY_SESSION_ID"] = sessionId;
+        }
+
+        // Extension mode (workspace-blg5): hand the child the per-tab control socket so it drives the
+        // user's own browser (via the extension) instead of launching a server-side Playwright browser.
+        // The child only connects when WIRECOPY_BROWSER=extension; otherwise this is inert.
+        if (!string.IsNullOrEmpty(extSocketPath))
+        {
+            env["WIRECOPY_EXT_SOCKET"] = extSocketPath;
         }
 
         var options = new PtyOptions

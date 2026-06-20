@@ -292,7 +292,13 @@ public class PageLoader : IPageLoader
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
     }
 
-    private static PageMetadata ExtractMetadata(string html, string url)
+#pragma warning disable SA1202 // exposed internally for the extension page-loader; kept beside the private metadata helpers it delegates to (workspace-wrs5).
+    /// <summary>
+    /// Extracts page metadata (title, description, canonical, author, date, favicon) from rendered
+    /// HTML. Exposed internally so the extension page-loader (workspace-wrs5) reuses the exact same
+    /// metadata logic on extension-supplied DOM as the Playwright path.
+    /// </summary>
+    internal static PageMetadata ExtractMetadata(string html, string url)
     {
         var doc = new HtmlDocument();
         doc.LoadHtml(html);
@@ -314,6 +320,7 @@ public class PageLoader : IPageLoader
             FaviconUrl = favicon
         };
     }
+#pragma warning restore SA1202
 
     private static string? ExtractTitle(HtmlDocument doc)
     {
