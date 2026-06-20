@@ -116,10 +116,21 @@ if [ "${VERIFY_SKIP_READER:-0}" != "1" ]; then
   reader_rc=$?
 fi
 
+# Phase 3 (workspace-blg5.6/.7): the REAL user flow the other phases bypass — start on the placeholder,
+# drive the OVERLAY's go-to-url to navigate, and assert the tab's TOP-LEVEL url actually changes AND the
+# overlay goes full-width on the launcher then docks to a TUI-majority split when the live page loads.
+# Needs external connectivity to VERIFY_NAV_TARGET (default macleans.ca, same as the section phase).
+# Skippable with VERIFY_SKIP_NAVIGATE=1.
+navigate_rc=0
+if [ "${VERIFY_SKIP_NAVIGATE:-0}" != "1" ]; then
+  run_phase navigate "$WIRECOPY_WEB_URL/"
+  navigate_rc=$?
+fi
+
 echo
-if [ "$section_rc" -eq 0 ] && [ "$reader_rc" -eq 0 ]; then
-  echo "ALL PHASES PASSED (section + reader)"
+if [ "$section_rc" -eq 0 ] && [ "$reader_rc" -eq 0 ] && [ "$navigate_rc" -eq 0 ]; then
+  echo "ALL PHASES PASSED (section + reader + navigate)"
   exit 0
 fi
-echo "GATE FAILED — section_rc=$section_rc reader_rc=$reader_rc"
+echo "GATE FAILED — section_rc=$section_rc reader_rc=$reader_rc navigate_rc=$navigate_rc"
 exit 1

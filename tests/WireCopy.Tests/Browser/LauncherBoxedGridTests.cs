@@ -149,6 +149,23 @@ public class LauncherBoxedGridTests
             $"no launcher line may exceed the layout width ({layout.Width}); un-badged cards overflowed by the opb2 off-by-one. Distinct widths: [{string.Join(", ", lineWidths.Distinct().OrderBy(x => x))}]");
     }
 
+    [Fact]
+    public void Grid_SelectedUnbadgedCard_DoesNotOverflowLayoutWidth()
+    {
+        // workspace-blg5.8: the opb2 fix removed the surplus trailing space only from the UNSELECTED
+        // un-badged path. The SELECTED un-badged path still appended one, so highlighting a card at
+        // virtual index >= 9 (no [N] badge) made its title row one column too wide — the misaligned
+        // highlight / shoved divider the user saw. Render a tall grid with an un-badged card SELECTED and
+        // assert NO line exceeds the layout width.
+        var raw = RenderLauncherCapture(CreateBookmarks(14), selectedIndex: 10, terminalHeight: 80);
+        var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, 80, "Grid");
+
+        var lineWidths = SplitPositionedLines(raw).Select(s => s.Length).ToList();
+
+        lineWidths.Max().Should().BeLessOrEqualTo(layout.Width,
+            $"no launcher line may exceed the layout width ({layout.Width}) when an un-badged card is selected. Distinct widths: [{string.Join(", ", lineWidths.Distinct().OrderBy(x => x))}]");
+    }
+
     // Splits the renderer output into per-line content. WriteLineCore starts every line with a clear
     // (`\x1b[K`); cursor positioning is a Console.SetCursorPosition no-op under a redirected Console, so
     // the clear is the only per-line delimiter in the captured string. Strips colour SGR off each line.

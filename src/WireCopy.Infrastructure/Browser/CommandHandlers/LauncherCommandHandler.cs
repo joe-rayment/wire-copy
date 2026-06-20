@@ -173,7 +173,11 @@ internal static class LauncherCommandHandler
                     if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
                     {
                         var bookmark = ctx.Bookmarks[bookmarkIdx];
-                        await ctx.NavigateToAsync(bookmark.Url, options, ct).ConfigureAwait(false);
+
+                        // workspace-blg5.6: normalize the scheme like the typed go-to-url path does
+                        // (HandleGoToUrl) — a scheme-less bookmark URL would otherwise be rejected by the
+                        // extension's chrome.tabs.update and fail to navigate the tab.
+                        await ctx.NavigateToAsync(NormalizeUrl(bookmark.Url), options, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -382,6 +386,24 @@ internal static class LauncherCommandHandler
     }
 
     /// <summary>
+    /// Prepends <c>https://</c> when the URL has no scheme, so the extension's chrome.tabs.update (and
+    /// the Playwright path) get a valid absolute URL. Shared by the typed go-to-url and bookmark-open
+    /// paths (workspace-blg5.6).
+    /// </summary>
+    internal static string NormalizeUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        return url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? url
+            : "https://" + url;
+    }
+
+    /// <summary>
     /// Translates a virtual launcher index into a bookmark-list index. With
     /// the Reading List slot at virtual index 1, the mapping is:
     ///   virtual 0 → bookmark 0
@@ -435,14 +457,7 @@ internal static class LauncherCommandHandler
             return;
         }
 
-        var url = input.Trim();
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            url = "https://" + url;
-        }
-
-        await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+        await ctx.NavigateToAsync(NormalizeUrl(input.Trim()), options, ct).ConfigureAwait(false);
     }
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)

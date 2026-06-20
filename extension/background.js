@@ -122,6 +122,10 @@ async function handleBackendCommand(tabId, raw) {
 // navigations keep the content script alive; cross-document navigations reload it, so we wait for the
 // tab to reach "complete" and re-request the DOM from the (possibly fresh) content script.
 function navigateAndCapture(tabId, url) {
+  // Defensive (workspace-blg5.6): chrome.tabs.update REJECTS a scheme-less URL (e.g. "www.x.com") with
+  // an "Invalid url" lastError and silently leaves the tab put. Normalize here so a bookmark or caller
+  // that didn't prepend a scheme still navigates, instead of failing invisibly.
+  if (url && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = "https://" + url;
   return new Promise((resolve, reject) => {
     let settled = false;
     const done = (fn, arg) => { if (!settled) { settled = true; cleanup(); fn(arg); } };
@@ -146,7 +150,12 @@ function navigateAndCapture(tabId, url) {
 
     chrome.tabs.onUpdated.addListener(onUpdated);
     chrome.tabs.update(tabId, { url }, () => {
-      if (chrome.runtime.lastError) done(reject, new Error(chrome.runtime.lastError.message));
+      if (chrome.runtime.lastError) {
+        // Don't swallow it (workspace-blg5.6): log AND surface so the backend shows a real error in the
+        // TUI instead of hanging for the 30s timeout.
+        console.warn("Wire Copy: chrome.tabs.update failed for", url, "-", chrome.runtime.lastError.message);
+        done(reject, new Error(chrome.runtime.lastError.message));
+      }
     });
   });
 }

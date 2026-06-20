@@ -152,6 +152,16 @@ public sealed class ExtensionBridge : IExtensionBridge, IHostedService, IAsyncDi
         return await SendActionAsync(id, json, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> SetLayoutAsync(string mode, double ratio, CancellationToken cancellationToken = default)
+    {
+        var (id, json) = BuildCommand("layout", w =>
+        {
+            w.WriteString("mode", mode);
+            w.WriteNumber("ratio", ratio);
+        });
+        return await SendActionAsync(id, json, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<bool> ClickAsync(string? selector, string? url, string? text, double? x, double? y, CancellationToken cancellationToken = default)
     {
         var (id, json) = BuildCommand("click", w =>

@@ -9,14 +9,24 @@
   if (window.__wireCopyContentLoaded) return;
   window.__wireCopyContentLoaded = true;
 
-  const PANEL_W = 480;
   const OVERLAY_ID = "wire-copy-overlay";
+  const SPLITTER_ID = "wire-copy-splitter";
   const SPOT_ID = "__wire-copy-spotlight";
   const AUTO_SHOW = true; // dock on load; toggle with the toolbar button / Alt+Shift+W.
+  const MIN_PANEL_PX = 320; // never collapse the TUI below a usable width
+  const DEFAULT_SPLIT = 0.6; // TUI-majority split when a live page is shown (workspace-blg5.7)
 
   let sessionId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g, "");
   let overlay = null;
+  let splitter = null;
   let visible = false;
+  // Layout state (workspace-blg5.7 — the never-empty law for the extension overlay):
+  //   "full"  = the overlay covers the whole tab (launcher / no live page underneath worth showing);
+  //   "split" = the overlay docks to `splitFrac` of the width, the live site shows on the right.
+  // The backend drives this over /ws/ext ({type:"layout"}) from the same content signal the legacy web
+  // pane uses (WebPaneDecision). We start FULL so the launcher (the first screen) is never a thin strip.
+  let layoutMode = "full";
+  let splitFrac = DEFAULT_SPLIT;
 
   // ---- backend address (shared with the overlay terminal) -------------------------------------
   function getBackend() {
@@ -40,23 +50,83 @@
       `?session=${encodeURIComponent(sessionId)}&backend=${encodeURIComponent(backend)}`;
     overlay.src = src;
     Object.assign(overlay.style, {
-      position: "fixed", top: "0", left: "0", width: PANEL_W + "px", height: "100vh",
+      position: "fixed", top: "0", left: "0", height: "100vh",
       border: "0", borderRight: "2px solid #1f6f2a", zIndex: "2147483647",
       boxShadow: "0 0 24px #000", background: "#000", colorScheme: "dark",
     });
     (document.documentElement || document.body).appendChild(overlay);
+    applyLayout(); // start full-width; the backend narrows to a split once a live page is shown
     setVisible(true);
+  }
+
+  // Width policy. Resizing the iframe fires a `resize` inside overlay.js, which re-fits the xterm and
+  // resizes the PTY — so the launcher renders full-width and link/reader views re-flow to the panel.
+  function applyLayout() {
+    if (!overlay) return;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (layoutMode === "split" && vw > 0) {
+      const w = Math.max(MIN_PANEL_PX, Math.min(Math.round(vw * splitFrac), vw - 80));
+      overlay.style.width = w + "px";
+      ensureSplitter();
+      splitter.style.left = w + "px";
+      splitter.style.display = visible ? "block" : "none";
+    } else {
+      overlay.style.width = "100vw";
+      if (splitter) splitter.style.display = "none";
+    }
+  }
+
+  // Draggable divider (workspace-blg5.7). Only present in split mode. While dragging we disable the
+  // iframe's pointer events so mousemove reaches THIS document (the cross-origin extension iframe would
+  // otherwise swallow them) — same trick the legacy web shell's #splitter uses.
+  function ensureSplitter() {
+    if (splitter) return;
+    splitter = document.createElement("div");
+    splitter.id = SPLITTER_ID;
+    Object.assign(splitter.style, {
+      position: "fixed", top: "0", width: "6px", height: "100vh",
+      cursor: "col-resize", zIndex: "2147483647", background: "#1f6f2a",
+    });
+    splitter.addEventListener("mousedown", startSplitDrag);
+    (document.documentElement || document.body).appendChild(splitter);
+  }
+
+  function startSplitDrag(e) {
+    e.preventDefault();
+    if (overlay) overlay.style.pointerEvents = "none";
+    const onMove = (ev) => {
+      const vw = window.innerWidth || 0;
+      if (vw > 0) { splitFrac = Math.min(0.9, Math.max(0.25, ev.clientX / vw)); applyLayout(); }
+    };
+    const onUp = () => {
+      if (overlay) overlay.style.pointerEvents = "";
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("mouseup", onUp, true);
+    };
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("mouseup", onUp, true);
+  }
+
+  function setLayout(msg) {
+    layoutMode = msg && msg.mode === "split" ? "split" : "full";
+    if (msg && typeof msg.ratio === "number" && msg.ratio > 0 && msg.ratio < 1) splitFrac = msg.ratio;
+    applyLayout();
+    return { ok: true };
   }
 
   function setVisible(v) {
     visible = v;
     if (overlay) overlay.style.display = v ? "block" : "none";
+    if (splitter) splitter.style.display = v && layoutMode === "split" ? "block" : "none";
   }
 
   function toggleOverlay() {
     if (!overlay) { mountOverlay(); return; }
     setVisible(!visible);
   }
+
+  // Keep the split width tracking the viewport as the window resizes.
+  window.addEventListener("resize", () => { if (layoutMode === "split") applyLayout(); });
 
   // ---- DOM capture ----------------------------------------------------------------------------
   function captureDom() {
@@ -153,6 +223,7 @@
       case "highlight": note("highlight"); sendResponse(spotlight(msg)); return true;
       case "clearHighlight": note("clearHighlight"); clearSpotlight(); sendResponse({ ok: true }); return true;
       case "click": note("click"); sendResponse(clickTarget(msg)); return true;
+      case "layout": sendResponse(setLayout(msg)); return true;
       default: return false;
     }
   });

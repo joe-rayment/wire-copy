@@ -69,6 +69,7 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly IExtensionBridge? _extensionBridge;
     private SpotlightTarget? _lastExtensionSpotlight;
     private string? _lastExtensionReaderScrollUrl;
+    private string? _lastExtensionLayout;
     private readonly IWebPaneSink _webPaneSink;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
@@ -1700,7 +1701,31 @@ public partial class BrowserOrchestrator : IBrowserService
         // redundant drives) and fire-and-forget so the render loop never blocks on the round-trip.
         SyncExtensionSpotlight(viewMode, target);
 
+        SyncExtensionLayout(viewMode, page);
+
         SyncWebPane(viewMode, page);
+    }
+
+    private void SyncExtensionLayout(ViewMode viewMode, Page? page)
+    {
+        if (_extensionBridge is null)
+        {
+            return;
+        }
+
+        // The never-empty law for the extension overlay (workspace-blg5.7): mirror the SAME content
+        // signal the legacy web pane uses (WebPaneDecision). When there is a live page worth showing
+        // (link list / reader with a real page) dock the overlay as a TUI-majority split so the live
+        // site shows alongside on the right; otherwise (launcher, collections, no live page) the overlay
+        // takes the FULL width — no placeholder/page bleed-through, launcher renders full-width.
+        var mode = WebPaneDecision.Decide(viewMode, page) == WebPaneMode.Live ? "split" : "full";
+        if (string.Equals(_lastExtensionLayout, mode, StringComparison.Ordinal))
+        {
+            return; // latest-wins — skip redundant layout drives so the render loop never re-fits needlessly
+        }
+
+        _lastExtensionLayout = mode;
+        FireAndForget(_extensionBridge.SetLayoutAsync(mode, ratio: 0.6));
     }
 
     private void SyncExtensionSpotlight(ViewMode viewMode, SpotlightTarget? target)

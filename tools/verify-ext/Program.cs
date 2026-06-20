@@ -49,6 +49,10 @@ Console.WriteLine($"   chromium={exe} (exists={File.Exists(exe)})");
 // "webshell" mode verifies the LEGACY browser-hosted split-pane shell (index.html) directly — no
 // extension is loaded; we just drive the served SPA at the backend URL and assert the launcher.
 var webshellMode = mode == "webshell";
+// "navigate" (workspace-blg5.6): reproduce the REAL user flow the other modes never exercise — the tab
+// starts on the backend placeholder and we drive the OVERLAY's go-to-url to navigate, asserting the
+// tab's TOP-LEVEL url actually changes (i.e. chrome.tabs.update fired) and content renders.
+var navigateMode = mode == "navigate";
 var baseArgs = new List<string> { "--no-sandbox", "--disable-gpu", "--no-first-run", "--no-default-browser-check" };
 if (!webshellMode)
 {
@@ -114,7 +118,104 @@ if (!webshellMode)
         "backend launched NO server-side browser (extension mode is single-window by construction) — see workspace-blg5.2");
 }
 
-if (webshellMode)
+if (navigateMode)
+{
+    // workspace-blg5.6: drive the docked TUI to navigate, the way the user does — type a URL into the
+    // overlay's go-to-url and press Enter — then assert the tab's TOP-LEVEL url actually changed off the
+    // placeholder. The prior gate used page.GotoAsync(site), bypassing exactly this overlay->/ws/ext->
+    // chrome.tabs.update path, which is why the "can't load webpages" bug shipped green.
+    var navTarget = Environment.GetEnvironmentVariable("VERIFY_NAV_TARGET") ?? "macleans.ca";
+    var startUrl = page.Url;
+    Console.WriteLine($"== drive overlay go-to-url: type '{navTarget}' + Enter (start={startUrl}) ==");
+
+    var overlayFrame = page.Frames.FirstOrDefault(f => f.Url.Contains("overlay.html", StringComparison.Ordinal));
+    Check(overlayFrame != null, $"overlay TUI frame present (frames={page.Frames.Count})");
+
+    // workspace-blg5.7: on the launcher (no live page) the overlay must be FULL-WIDTH — no placeholder
+    // bleed-through, launcher not cramped into a thin strip.
+    var vwLauncher = await page.EvaluateAsync<int>("() => window.innerWidth");
+    var ovLauncher = await page.QuerySelectorAsync("#wire-copy-overlay");
+    var boxLauncher = ovLauncher != null ? await ovLauncher.BoundingBoxAsync() : null;
+    Check(boxLauncher != null && boxLauncher.Width >= vwLauncher * 0.9,
+        $"launcher: overlay is full-width (w={boxLauncher?.Width}, vw={vwLauncher})");
+
+    try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-launcher.png") }); }
+    catch { /* best effort */ }
+
+    if (overlayFrame != null)
+    {
+        // Focus the xterm; the launcher routes the first printable char into the go-to-url field, Enter
+        // submits (HandleGoToUrl prepends https://). Click the terminal, then type into the focused frame.
+        try { await overlayFrame.ClickAsync(".xterm", new FrameClickOptions { Timeout = 5000 }); }
+        catch { try { await overlayFrame.ClickAsync("body", new FrameClickOptions { Timeout = 5000 }); } catch { /* best effort */ } }
+        await page.WaitForTimeoutAsync(500);
+        var via = (Environment.GetEnvironmentVariable("VERIFY_NAV_VIA") ?? "gotourl").Trim().ToLowerInvariant();
+        if (via == "bookmark")
+        {
+            // Open the selected launcher bookmark (Enter). This exercises LauncherCommandHandler:176
+            // which passes the RAW bookmark.Url — the candidate bug for "can't load webpages".
+            Console.WriteLine("   [drive] opening selected bookmark via Enter");
+            await page.Keyboard.PressAsync("Enter");
+        }
+        else
+        {
+            // Launcher footer: "[o] go to url" — press 'o' to open the URL bar, THEN type. (Plain
+            // printable chars don't open go-to-url; 'a' would open Add Bookmark, etc.)
+            await page.Keyboard.PressAsync("o");
+            await page.WaitForTimeoutAsync(500);
+            await page.Keyboard.TypeAsync(navTarget, new KeyboardTypeOptions { Delay = 40 });
+            await page.WaitForTimeoutAsync(400);
+            await page.Keyboard.PressAsync("Enter");
+        }
+
+        // navigate command -> chrome.tabs.update -> top-level load -> overlay re-inject -> capture.
+        for (var i = 0; i < 20; i++)
+        {
+            await page.WaitForTimeoutAsync(1500);
+            if (!page.Url.Contains("127.0.0.1", StringComparison.Ordinal) &&
+                !page.Url.StartsWith("about:", StringComparison.Ordinal))
+            {
+                break;
+            }
+        }
+    }
+
+    try { await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(outDir, "ext-navigate.png") }); }
+    catch { /* best effort */ }
+
+    var endUrl = page.Url;
+    var navigated = !endUrl.Contains("127.0.0.1", StringComparison.Ordinal)
+        && !endUrl.StartsWith("about:", StringComparison.Ordinal);
+    Check(navigated, $"overlay-driven navigation changed the tab top-level URL: {startUrl} -> {endUrl}");
+
+    // workspace-blg5.7: once a live page is loaded the overlay docks to a TUI-majority split so the real
+    // site shows on the right. Poll — the fresh overlay re-injects full-width, then the backend narrows it.
+    var splitOk = false;
+    double? splitW = null;
+    var vwSplit = await page.EvaluateAsync<int>("() => window.innerWidth");
+    for (var i = 0; i < 12; i++)
+    {
+        var ov = await page.QuerySelectorAsync("#wire-copy-overlay");
+        var box = ov != null ? await ov.BoundingBoxAsync() : null;
+        splitW = box?.Width;
+        if (box != null && box.Width <= vwSplit * 0.8 && box.Width >= vwSplit * 0.4)
+        {
+            splitOk = true;
+            break;
+        }
+
+        await page.WaitForTimeoutAsync(1000);
+    }
+
+    Check(splitOk, $"content loaded: overlay docked to a split (w={splitW}, vw={vwSplit}; expect ~60%)");
+
+    // Triage from the child log regardless of pass/fail (tells us WHERE the chain broke).
+    var sentNavigate = LogContains(logGlobDir, "Loading page via extension (host-browser renderer)");
+    var loadFailed = LogContains(logGlobDir, "Extension page load failed");
+    var loadedOk = LogContains(logGlobDir, "Loaded page via extension");
+    Console.WriteLine($"   [triage] backend-sent-navigate={sentNavigate} loadFailed={loadFailed} loadedOk={loadedOk}");
+}
+else if (webshellMode)
 {
     // LEGACY WEB SHELL launcher (workspace-yqt5.2 / yqt5.3 / opb2): the SPA loaded at the backend URL
     // shows the launcher. Assert the never-empty law and the ASCII-art wordmark.

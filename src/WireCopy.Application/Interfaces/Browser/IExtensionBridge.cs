@@ -87,4 +87,13 @@ public interface IExtensionBridge
     /// (workspace-8d8a). No-op fallback when the extension declines (e.g. debugger banner refused).
     /// </summary>
     Task<bool> EmulateAsync(bool mobile, int? width, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the docked overlay's width policy (workspace-blg5.7 — the never-empty law for the
+    /// extension overlay). <paramref name="mode"/> is <c>"full"</c> (the overlay takes the whole tab —
+    /// launcher / no live page) or <c>"split"</c> (the overlay docks to <paramref name="ratio"/> of the
+    /// width so the live site shows alongside on the right). The TUI re-fits its columns to the new
+    /// width. Fire-and-forget; the content script applies it in the page context.
+    /// </summary>
+    Task<bool> SetLayoutAsync(string mode, double ratio, CancellationToken cancellationToken = default);
 }

@@ -448,7 +448,11 @@ internal class LauncherRenderer
                     }
                     else
                     {
-                        sb.Append($"{selBg} {Reset}");
+                        // workspace-blg5.8: mirror the opb2 fix for the SELECTED path — the gap already
+                        // absorbs the (absent) badge zone, so just close the highlight background; do NOT
+                        // append a trailing space, which made the selected un-badged row one column too
+                        // wide (misaligned highlight / shoved divider).
+                        sb.Append(Reset);
                     }
 
                     return sb.ToString();
