@@ -55,7 +55,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // re-activate THAT exact app — terminal-agnostic, fixing Ghostty. Null until captured
     // or if capture failed; the refocus then falls back to the TERM_PROGRAM name map.
     private string? _terminalBundleId;
-    private bool _terminalBundleIdCaptureAttempted;
 
     // workspace-75ng.4: the terminal window's pre-dock bounds, captured when the sidecar
     // tiles the screen so dismiss can RESTORE the terminal to full size. Null when not tiled.
@@ -771,12 +770,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // idempotent: on failure the bundle id stays null and refocus falls back to the name map.
     private async Task CaptureTerminalBundleIdAsync()
     {
-        if (!OperatingSystem.IsMacOS() || _terminalBundleIdCaptureAttempted)
+        // Retry on every launch until we actually capture an id (workspace-75ng): if Automation
+        // permission was not granted at first launch, a later launch — once the user grants it —
+        // still captures. A successful capture short-circuits all later attempts.
+        if (!OperatingSystem.IsMacOS() || _terminalBundleId is not null)
         {
             return;
         }
-
-        _terminalBundleIdCaptureAttempted = true;
 
         var result = await RunOsascriptAsync(TerminalRefocus.CaptureFrontmostBundleIdScript).ConfigureAwait(false);
         if (result is null)
@@ -809,17 +809,19 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    private async Task RefocusTerminalAsync()
+    private async Task RefocusTerminalAsync(bool force = false)
     {
         if (!OperatingSystem.IsMacOS())
         {
             return;
         }
 
-        // Debounce: skip if another refocus happened within the last 500ms
+        // Debounce: skip if another refocus happened within the last 500ms — UNLESS forced.
+        // The dock path forces a final refocus AFTER bringing the browser to front, so it must
+        // win even if a park/dock refocus fired moments earlier (workspace-75ng focus-steal).
         var now = DateTime.UtcNow.Ticks;
         var previous = Interlocked.Exchange(ref _lastRefocusTicks, now);
-        if (TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
+        if (!force && TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
         {
             return;
         }
@@ -1401,20 +1403,17 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 },
             }).ConfigureAwait(false);
 
-            // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
-            // browser does not occupy (terminal left, browser right). Only on the dock
-            // transition, never per spotlight update (avoids the flicker the old version had).
-            await TileTerminalAsync(availLeft, availTop, screenWidth, screenHeight, bounds.Width).ConfigureAwait(false);
-
             // Activate the LENS tab in the docked window when it exists — the sidecar
             // shows the lens, never the fetch tab (workspace-qigc). Fall back to the
-            // fetch page so the pre-lens dock paths keep working.
+            // fetch page so the pre-lens dock paths keep working. NOTE: this OS-activates
+            // the browser window (steals focus); the forced refocus at the end takes it back.
             var front = _lensPage ?? _page;
             await front.BringToFrontAsync().ConfigureAwait(false);
 
             // Phone-shaped lens (workspace-o5yf): pin the lens viewport to a mobile CSS
             // width so responsive sites collapse to one column and the spotlight's
-            // targets are always on-screen. Height tracks the window minus chrome.
+            // targets are always on-screen. Height tracks the window minus chrome. This can
+            // resize the headed window, so it runs BEFORE the work-area snap below.
             if (_lensPage != null && _browserConfig.LensViewportWidth > 0)
             {
                 try
@@ -1429,18 +1428,86 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 }
             }
 
+            // workspace-75ng: SNAP the window flush inside the work area (Rectangle-style).
+            // Chromium clamps the requested phone width to a platform minimum, so positioning
+            // the left at availWidth-requestedWidth pushed the right edge PAST the Dock. Read
+            // the ACTUAL size back and pin it inside [availLeft, availLeft+availWidth] so it
+            // never spills over the Dock/menu bar — and use that real width for tiling.
+            var finalWidth = await SnapWindowToWorkAreaAsync(
+                cdp, windowId, availLeft, availTop, screenWidth, screenHeight).ConfigureAwait(false);
+
+            // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
+            // browser does not occupy (terminal left, browser right), using the browser's REAL
+            // width. Only on the dock transition, never per spotlight update (avoids flicker).
+            await TileTerminalAsync(availLeft, availTop, screenWidth, screenHeight, finalWidth).ConfigureAwait(false);
+
             _isDocked = true;
             _userWantsDock = true;
 
-            // The sidecar is a companion view, not a focus target — hand keyboard
-            // focus straight back to the terminal (macOS-only; no-op elsewhere).
-            await RefocusTerminalAsync().ConfigureAwait(false);
+            // The sidecar is a companion view, not a focus target — hand keyboard focus back to
+            // the terminal. Delay + FORCE so it wins the race against the BringToFront above
+            // (which activated the browser window) — the workspace-75ng focus-steal fix.
+            await Task.Delay(180).ConfigureAwait(false);
+            await RefocusTerminalAsync(force: true).ConfigureAwait(false);
             return BrowserWindowState.Docked;
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to dock browser window (non-fatal)");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Pins the docked window flush inside the work area (workspace-75ng), Rectangle-style:
+    /// reads the window's ACTUAL size (Chromium clamps the requested phone width to a platform
+    /// minimum, so trusting the requested width overshot the Dock), clamps width/height to the
+    /// work area, and re-pins the left so the window sits flush against the docked edge without
+    /// spilling over the Dock or menu bar. Returns the final window width (for terminal tiling).
+    /// </summary>
+    private async Task<int> SnapWindowToWorkAreaAsync(
+        Microsoft.Playwright.ICDPSession cdp, int windowId, int availLeft, int availTop, int availWidth, int availHeight)
+    {
+        try
+        {
+            var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var b = info.GetProperty("bounds");
+            var actualWidth = b.GetProperty("width").GetInt32();
+            var actualHeight = b.GetProperty("height").GetInt32();
+
+            var finalWidth = Math.Clamp(actualWidth, 1, Math.Max(1, availWidth));
+            var finalHeight = Math.Clamp(actualHeight, 1, Math.Max(1, availHeight));
+
+            // Right dock → pin the right edge to the work-area right edge (the Dock's edge when
+            // the Dock is on the right); left dock → pin to the left work-area edge.
+            var left = _browserConfig.DockSide == DockSide.Left
+                ? availLeft
+                : availLeft + availWidth - finalWidth;
+
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object>
+                {
+                    ["left"] = left,
+                    ["top"] = availTop,
+                    ["width"] = finalWidth,
+                    ["height"] = finalHeight,
+                },
+            }).ConfigureAwait(false);
+
+            var snapInfo =
+                $"left={left} top={availTop} {finalWidth}x{finalHeight} (actual width {actualWidth}; "
+                + $"work area {availLeft},{availTop} {availWidth}x{availHeight}, dock side {_browserConfig.DockSide})";
+            _logger.LogInformation("Sidecar snapped to work area: {Snap}", snapInfo);
+
+            return finalWidth;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to snap docked window to work area (non-fatal)");
+            return availWidth; // fall back so tiling still computes a complement
         }
     }
 
