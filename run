@@ -2,6 +2,13 @@
 # Wrapper script to run WireCopy with clean console output by default
 # Use --verbose flag to see all browser console output
 
+# Resolve the repo root and use the vendored .NET SDK wrapper (./dotnet), which bootstraps the pinned
+# .NET 10 SDK on first use. This avoids "NETSDK1045: does not support targeting .NET 10.0" when the
+# system 'dotnet' is an older SDK (e.g. 9.x). Run from anywhere.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+DOTNET="$ROOT/dotnet"
+
 # Check if --verbose is in the arguments
 verbose=false
 for arg in "$@"; do
@@ -31,10 +38,10 @@ fi
 # Run with or without filtering
 if [ "$verbose" = true ]; then
     # Verbose mode: show everything
-    "${launch[@]}" dotnet run --project src/WireCopy.API --configuration Release -- "$@"
+    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@"
 else
     # Default mode: filter browser noise
-    "${launch[@]}" dotnet run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
+    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
       grep -v "console.error:" | \
       grep -v "NS_ERROR_CONTENT_BLOCKED" | \
       grep -v "geckodriver" | \
