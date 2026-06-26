@@ -35,24 +35,31 @@ if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; t
     fi
 fi
 
-# Run with or without filtering
+# Run with or without filtering.
+#
+# The TUI renders ANSI frames to STDOUT (TerminalPageRenderer → Console.Out) and reads keys from STDIN, so
+# stdout/stdin MUST stay attached to the real terminal — piping stdout through grep mangles the frames and
+# the TUI never takes over the screen. The app's own logs go to logs/ (file-only in browse mode), so the
+# only console noise is the browser subprocess on STDERR. Default mode therefore filters ONLY stderr,
+# leaving stdout on the TTY for the TUI; --verbose shows everything unfiltered.
 if [ "$verbose" = true ]; then
     # Verbose mode: show everything
     "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@"
 else
-    # Default mode: filter browser noise
-    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
-      grep -v "console.error:" | \
-      grep -v "NS_ERROR_CONTENT_BLOCKED" | \
-      grep -v "geckodriver" | \
-      grep -v "Read port:" | \
-      grep -v "RenderCompositorSWGL" | \
-      grep -v "AVCaptureDeviceTypeExternal" | \
-      grep -v "FaviconLoader.sys.mjs" | \
-      grep -v "getpocket.com" | \
-      grep -v "OHTTP was configured" | \
-      grep -v "ContextId.sys.mjs" | \
-      grep -v "^\[GFX" | \
-      grep -v "^[0-9]*[[:space:]]*firefox\[" | \
-      grep -v "TypeError.*NetworkError.*Failed to fetch"
+    # Default mode: TUI on the real terminal (stdout), filter browser noise on stderr only.
+    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" \
+      2> >(grep --line-buffered -v \
+        -e "console.error:" \
+        -e "NS_ERROR_CONTENT_BLOCKED" \
+        -e "geckodriver" \
+        -e "Read port:" \
+        -e "RenderCompositorSWGL" \
+        -e "AVCaptureDeviceTypeExternal" \
+        -e "FaviconLoader.sys.mjs" \
+        -e "getpocket.com" \
+        -e "OHTTP was configured" \
+        -e "ContextId.sys.mjs" \
+        -e "^\[GFX" \
+        -e "^[0-9]*[[:space:]]*firefox\[" \
+        -e "TypeError.*NetworkError.*Failed to fetch" >&2)
 fi
