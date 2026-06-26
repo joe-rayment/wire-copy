@@ -67,14 +67,17 @@ public class BrowserWindowDockIntegrationTests
         var afterDock = await ReadBoundsAsync(page);
         _out.WriteLine($"after dock : {afterDock}");
 
-        // workspace-o5yf: the sidecar is phone-shaped now (DockWidthPx default 430).
-        var expectedWidth = 430;
-        var expectedLeft = screenW - expectedWidth;
+        // workspace-75ng: assert the window docks to the RIGHT HALF (left edge past the
+        // midpoint). Exact window WIDTH is NOT asserted under Xvfb — Chromium clamps the
+        // headed window to a ~500px minimum there regardless of the requested phone width,
+        // so the meaningful "mobile width" is the lens VIEWPORT (asserted in the summon test
+        // via CDP, not the OS-clamped window). The right-half check is what proves the
+        // far-left dock bug is fixed.
         afterDock.State.Should().Be("normal");
-        afterDock.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the window should be pinned to the right edge");
-        afterDock.Width.Should().BeCloseTo(expectedWidth, 80,
-            "the window should be phone-shaped (DockWidthPx default)");
+        afterDock.Left.Should().BeGreaterThan(screenW / 2,
+            "a right-side dock must place the window's left edge in the right half, never far-left");
+        (afterDock.Left + afterDock.Width).Should().BeGreaterThan(screenW - 200,
+            "the docked window reaches the right edge of the screen");
 
         // --- Toggle back: minimize ---
         var minimized = await session.ToggleWindowDockAsync();
@@ -127,26 +130,25 @@ public class BrowserWindowDockIntegrationTests
         var lens = await session.GetLensPageAsync();
         lens.Should().NotBeNull("the summon must create the lens tab");
 
-        // workspace-o5yf: the lens renders phone-shaped so responsive sites collapse
-        // to a single column and spotlight targets are always on-screen.
+        // workspace-75ng: the lens renders at iPhone-SE width (375 CSS px) so responsive
+        // sites collapse to a single column and spotlight targets are always on-screen. This
+        // is the authoritative "mobile width" assertion — it's the CDP viewport, independent
+        // of the OS-clamped window width.
         lens!.ViewportSize.Should().NotBeNull();
-        lens.ViewportSize!.Width.Should().Be(414, "the lens viewport is pinned to mobile width");
+        lens.ViewportSize!.Width.Should().Be(375, "the lens viewport is pinned to iPhone-SE width");
 
         var page = await session.GetOrCreatePageAsync(headless: false);
         var screen = await page.EvaluateAsync<int[]>(
             "() => [window.screen.availWidth, window.screen.availHeight]");
         var screenW = screen[0];
-        // workspace-o5yf: the sidecar is phone-shaped now (DockWidthPx default 430).
-        var expectedWidth = 430;
-        var expectedLeft = screenW - expectedWidth;
 
         var bounds = await ReadBoundsAsync(page);
         _out.WriteLine($"after summon+dock : {bounds}");
         bounds.State.Should().Be("normal");
-        bounds.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the summoned window should be pinned to the right edge");
-        bounds.Width.Should().BeCloseTo(expectedWidth, 80,
-            "the summoned window should be phone-shaped (DockWidthPx default)");
+        bounds.Left.Should().BeGreaterThan(screenW / 2,
+            "the summoned window must dock in the right half, never far-left");
+        (bounds.Left + bounds.Width).Should().BeGreaterThan(screenW - 200,
+            "the summoned window reaches the right edge of the screen");
     }
 
     [SkippableFact]
@@ -234,8 +236,9 @@ public class BrowserWindowDockIntegrationTests
         afterDock.State.Should().Be("normal");
         afterDock.Left.Should().BeCloseTo(availLeft, 60,
             "left-dock pins the window to the display's left work-area edge");
-        afterDock.Width.Should().BeCloseTo(430, 80,
-            "the window should be phone-shaped (DockWidthPx default)");
+        // Window width is OS-clamped under Xvfb (~500px min) regardless of the requested
+        // phone width, so we assert the left EDGE only — the meaningful mobile width is the
+        // lens viewport (covered by the summon test).
     }
 
     [SkippableFact]
@@ -271,13 +274,14 @@ public class BrowserWindowDockIntegrationTests
         var screen = await page.EvaluateAsync<int[]>(
             "() => [window.screen.availWidth, window.screen.availHeight]");
         var screenW = screen[0];
-        var expectedLeft = screenW - 430;
 
         var bounds = await ReadBoundsAsync(page);
         _out.WriteLine($"after sidecar launch : {bounds}");
         bounds.State.Should().Be("normal", "the window must NOT launch minimized in sidecar mode");
-        bounds.Left.Should().BeCloseTo(expectedLeft, 60,
-            "the auto-docked window should be pinned phone-width to the right edge");
+        bounds.Left.Should().BeGreaterThan(screenW / 2,
+            "the auto-docked window should be pinned to the right half, never far-left");
+        (bounds.Left + bounds.Width).Should().BeGreaterThan(screenW - 200,
+            "the auto-docked window reaches the right edge of the screen");
 
         // Background quieting (the preload service re-minimizes around every prefetch)
         // must NOT strip a dock the user wants — workspace-exbz regression: the dock
@@ -383,15 +387,15 @@ public class BrowserWindowDockIntegrationTests
         (parkedStart.Left + parkedStart.Width).Should().BeLessThanOrEqualTo(0,
             "the default launch parks the window off-screen");
 
-        // --- 'O' : reveal on-screen, docked ---
+        // --- 'O' : reveal on-screen, docked to the RIGHT half (not far-left) ---
         (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
         var afterDock = await ReadBoundsAsync(page);
         _out.WriteLine($"after dock (O) : {afterDock}");
         afterDock.State.Should().Be("normal");
-        (afterDock.Left + afterDock.Width).Should().BeGreaterThan(0,
-            "docking brings the window into the visible region");
-        afterDock.Left.Should().BeLessThan(screenW,
-            "the docked window's left edge is on-screen, not parked off the right either");
+        afterDock.Left.Should().BeGreaterThan(screenW / 2,
+            "docking brings the window on-screen in the RIGHT half — never far-left (workspace-75ng)");
+        (afterDock.Left + afterDock.Width).Should().BeGreaterThan(screenW - 200,
+            "the docked window reaches the right edge of the screen");
 
         // --- 'O' again : re-park off-screen (NOT minimized) ---
         (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Minimized);

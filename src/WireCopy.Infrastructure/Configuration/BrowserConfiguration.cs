@@ -59,15 +59,18 @@ public class BrowserConfiguration
     /// Preferred docked window width in physical pixels (workspace-o5yf). A phone-
     /// shaped sidecar: responsive sites collapse to a single column, the followed
     /// article is always on-screen, and most of the screen stays with the terminal.
-    /// 0 disables and falls back to <see cref="DockFraction"/>.
+    /// 0 disables and falls back to <see cref="DockFraction"/>. Default 390 — an
+    /// iPhone-SE-width window (workspace-75ng): the 375 px <see cref="LensViewportWidth"/>
+    /// content plus the window frame/scrollbar.
     /// </summary>
-    public int DockWidthPx { get; init; } = 430;
+    public int DockWidthPx { get; init; } = 390;
 
     /// <summary>
     /// CSS viewport width applied to the LENS tab (workspace-o5yf) so pages render
     /// mobile-width regardless of exact window chrome. 0 leaves the viewport fluid.
+    /// Default 375 — the iPhone SE / iPhone 8 logical width (workspace-75ng).
     /// </summary>
-    public int LensViewportWidth { get; init; } = 414;
+    public int LensViewportWidth { get; init; } = 375;
 
     /// <summary>
     /// Whether the sidecar — the docked live browser window beside the terminal —

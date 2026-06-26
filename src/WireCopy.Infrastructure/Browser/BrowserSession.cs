@@ -1267,6 +1267,22 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
             }).ConfigureAwait(false);
 
+            // workspace-75ng: ANCHOR the window back on-screen before measuring. The window
+            // is parked far off-screen (-32000) by default now, and window.screen.avail*
+            // read from an off-screen window reports geometry for a phantom / leftmost
+            // display — which docked the window on the FAR LEFT (and on multi-monitor Macs,
+            // off the visible area entirely). Moving it to the global origin (0,0 = the
+            // primary display's top-left) makes the screen read resolve to a real display.
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["left"] = 0, ["top"] = 0 },
+            }).ConfigureAwait(false);
+
+            // Give the renderer a beat to re-associate window.screen with the on-screen
+            // display before we read its work area (the move above is asynchronous to JS).
+            await Task.Delay(60).ConfigureAwait(false);
+
             // Position on the configured side/fraction of the available screen area
             // (as the page sees it). Defaults to the right half (workspace-v7mb).
             // Read the work-area ORIGIN too (availLeft/availTop) so the dock lands on the
