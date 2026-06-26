@@ -91,6 +91,18 @@ public class BrowserConfiguration
     public bool Sidecar { get; init; }
 
     /// <summary>
+    /// Side-by-side tiling (workspace-75ng.4, macOS only). When true, docking the sidecar via
+    /// 'O' also RESIZES the terminal window to the slice not taken by the browser (terminal
+    /// left, iPhone-SE browser right, heights matched), and dismissing restores the terminal
+    /// to its pre-dock bounds. Requires ACCESSIBILITY permission for the terminal app (System
+    /// Settings → Privacy &amp; Security → Accessibility) — separate from the Automation grant
+    /// used for focus return. Degrades gracefully to the plain right-edge dock if the terminal
+    /// bundle id was not captured or the resize is not permitted. Default OFF: it pokes a
+    /// third-party window and the reflow is verifiable only on a real Mac.
+    /// </summary>
+    public bool TileTerminalWithSidecar { get; init; }
+
+    /// <summary>
     /// Browser-side input within this window means the user is ACTIVELY using the
     /// shared browser — prefetch pauses immediately (workspace-mya7).
     /// </summary>

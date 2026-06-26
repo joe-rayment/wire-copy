@@ -193,6 +193,7 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `Browser:Visibility` | `Auto` (headed when a display + sidecar make sense, else headless), `Visible`, or `Headless` | `Auto` |
 | `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; `O` docks on demand) | `false` |
 | `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide (iPhone-SE width) | `Right` / `390` |
+| `Browser:TileTerminalWithSidecar` | macOS side-by-side: docking also resizes the terminal to the other half; dismiss restores it. Needs Accessibility permission | `false` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
 | `Gcs:BucketName` | GCS bucket for podcast feed publishing | (unset → local-only mode) |
 | `Gcs:ServiceAccountKeyPath` | Path to GCS service-account JSON key | (unset → default credentials) |

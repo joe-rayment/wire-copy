@@ -302,6 +302,52 @@ public class BrowserWindowDockIntegrationTests
 
     [SkippableFact]
     [Trait("Category", "Integration")]
+    public async Task TilingEnabled_OnNonMac_DocksBrowserNormally_NoCrash()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // workspace-75ng.4: enabling side-by-side tiling must DEGRADE GRACEFULLY where it
+        // cannot run (non-macOS here, or no Accessibility permission on a Mac): the browser
+        // still docks to the right, the terminal is simply not touched, and nothing throws.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, TileTerminalWithSidecar = true });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync("data:text/html,<title>tile</title><body>tile test</body>");
+
+        var screen = await page.EvaluateAsync<int[]>(
+            "() => [window.screen.availWidth, window.screen.availHeight]");
+        var screenW = screen[0];
+
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var afterDock = await ReadBoundsAsync(page);
+        _out.WriteLine($"tiling-enabled dock (non-mac) : {afterDock}");
+        afterDock.State.Should().Be("normal");
+        afterDock.Left.Should().BeGreaterThan(screenW / 2,
+            "with tiling enabled but unsupported, the browser still docks to the right (terminal untouched)");
+
+        // And dismiss still re-parks cleanly.
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Minimized);
+        (await ReadBoundsAsync(page)).Left.Should().BeLessThanOrEqualTo(0 - 100,
+            "dismiss re-parks the browser off-screen even with tiling enabled");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
     public async Task HeadedLaunch_Default_ParksWindowOffScreen_RendersButNotVisible()
     {
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),

@@ -57,6 +57,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private string? _terminalBundleId;
     private bool _terminalBundleIdCaptureAttempted;
 
+    // workspace-75ng.4: the terminal window's pre-dock bounds, captured when the sidecar
+    // tiles the screen so dismiss can RESTORE the terminal to full size. Null when not tiled.
+    private TerminalTiling.WindowRect? _terminalTileBounds;
+
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
@@ -1235,8 +1239,87 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             _logger.LogDebug(ex, "Failed to park browser window off-screen (non-fatal)");
         }
 
+        // workspace-75ng.4: if the sidecar had tiled the screen, give the terminal its full
+        // window back so dismissing returns to the terminal-only view.
+        await RestoreTerminalTileAsync().ConfigureAwait(false);
+
         // Refocus the terminal app so keyboard input works immediately
         await RefocusTerminalAsync().ConfigureAwait(false);
+    }
+
+    // workspace-75ng.4: resize the terminal window to the slice the docked browser does not
+    // occupy (macOS only; no-op without tiling enabled, a captured terminal bundle id, or
+    // Accessibility permission — it degrades to the plain edge dock). Captures the terminal's
+    // pre-dock bounds ONCE so RestoreTerminalTileAsync can put it back on dismiss.
+    private async Task TileTerminalAsync(int availLeft, int availTop, int availWidth, int availHeight, int browserWidth)
+    {
+        if (!_browserConfig.TileTerminalWithSidecar
+            || !OperatingSystem.IsMacOS()
+            || _terminalBundleId is null)
+        {
+            return;
+        }
+
+        var terminalRect = TerminalTiling.ComputeTerminalRect(
+            availLeft, availTop, availWidth, availHeight, browserWidth, _browserConfig.DockSide);
+        if (terminalRect is null)
+        {
+            return;
+        }
+
+        // Capture the terminal's current bounds once (before the first resize of this dock
+        // session) so dismiss restores exactly what the user had.
+        if (_terminalTileBounds is null)
+        {
+            var getResult = await RunOsascriptAsync(
+                TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
+            if (getResult is { ExitCode: 0 })
+            {
+                _terminalTileBounds = TerminalTiling.TryParseBounds(getResult.Value.StdOut);
+            }
+
+            if (_terminalTileBounds is null)
+            {
+                _logger.LogWarning(
+                    "Could not read the terminal window bounds for side-by-side tiling — skipping the resize. "
+                    + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.");
+                return;
+            }
+        }
+
+        var setResult = await RunOsascriptAsync(
+            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, terminalRect.Value)).ConfigureAwait(false);
+        if (setResult is { ExitCode: not 0 })
+        {
+            _logger.LogWarning(
+                "Failed to tile the terminal window (osascript exit {ExitCode}): {Error}. "
+                + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.",
+                setResult.Value.ExitCode,
+                setResult.Value.StdErr.Trim());
+        }
+    }
+
+    // workspace-75ng.4: restore the terminal to its pre-dock bounds captured by
+    // TileTerminalAsync, then forget them. No-op when tiling never ran.
+    private async Task RestoreTerminalTileAsync()
+    {
+        if (_terminalTileBounds is null || _terminalBundleId is null || !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var rect = _terminalTileBounds.Value;
+        _terminalTileBounds = null;
+
+        var result = await RunOsascriptAsync(
+            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, rect)).ConfigureAwait(false);
+        if (result is { ExitCode: not 0 })
+        {
+            _logger.LogWarning(
+                "Failed to restore the terminal window after un-tiling (osascript exit {ExitCode}): {Error}",
+                result.Value.ExitCode,
+                result.Value.StdErr.Trim());
+        }
     }
 
     /// <summary>
@@ -1317,6 +1400,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     ["height"] = bounds.Height,
                 },
             }).ConfigureAwait(false);
+
+            // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
+            // browser does not occupy (terminal left, browser right). Only on the dock
+            // transition, never per spotlight update (avoids the flicker the old version had).
+            await TileTerminalAsync(availLeft, availTop, screenWidth, screenHeight, bounds.Width).ConfigureAwait(false);
 
             // Activate the LENS tab in the docked window when it exists — the sidecar
             // shows the lens, never the fetch tab (workspace-qigc). Fall back to the
