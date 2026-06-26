@@ -220,24 +220,27 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 }
             }
 
-            _logger.LogInformation("Creating new Playwright browser session (headless={Headless})", headless);
+            // NEVER-HEADLESS POLICY: the browser is always launched headful regardless of the requested
+            // `headless` flag (LaunchBrowserAsync forces it). Headless is bot-detected/blocked on this app's
+            // target sites, so it is disabled unconditionally.
+            _logger.LogInformation("Creating new Playwright browser session (headful — never headless)");
             try
             {
-                await LaunchBrowserAsync(headless).ConfigureAwait(false);
+                await LaunchBrowserAsync().ConfigureAwait(false);
             }
-            catch (PlaywrightException ex) when (!headless && LooksLikeMissingDisplay(ex.Message))
+            catch (PlaywrightException ex) when (LooksLikeMissingDisplay(ex.Message))
             {
-                // workspace-j0b8: headed Chromium can't initialize when there's no X server
-                // (CI / headless containers / SSH sessions without forwarding). Chromium exits
-                // with "Missing X server or $DISPLAY" surfacing as a TargetClosedException —
-                // the failure shape is indistinguishable from a real "target closed" so the
-                // PageLoader retry path can't help. Auto-fall-back to headless once and log
-                // a clear warning; this turns "Page navigated mid-load" (which is what the
-                // user saw on macleans.ca in workspace-hrrf) into a successful page load on
-                // any host that simply doesn't have a display attached.
-                _logger.LogWarning(
-                    "Headed browser launch failed — no X server / DISPLAY available. Falling back to headless mode for this session.");
-                await LaunchBrowserAsync(headless: true).ConfigureAwait(false);
+                // No X server / DISPLAY. We do NOT fall back to headless (workspace-8ne3 / never-headless
+                // policy — headless gets bot-blocked, which is the whole reason it's banned). Fail loudly with
+                // an actionable message: run under a virtual display. The `run` script auto-provides one
+                // (xvfb-run) on Linux; a bare/cron invocation must wrap itself: `xvfb-run -a <cmd>`.
+                _logger.LogError(ex,
+                    "Headed browser launch failed — no display (DISPLAY/WAYLAND_DISPLAY unset). WireCopy never "
+                    + "runs headless. Start it under a virtual display, e.g. `xvfb-run -a ./run`, or attach a real display.");
+                throw new InvalidOperationException(
+                    "Headed browser launch failed: no display available, and headless is disabled by policy. "
+                    + "Run under a virtual display (e.g. `xvfb-run -a ./run`) or attach a real display.",
+                    ex);
             }
 
             return _page!;
@@ -819,7 +822,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    private async Task LaunchBrowserAsync(bool headless)
+    // NEVER-HEADLESS POLICY (workspace-8ne3): no `headless` parameter — Chromium is ALWAYS launched headful.
+    // Headless is bot-detected/blocked on this app's target sites (Cloudflare, NYT, macleans.ca), so it is
+    // disabled unconditionally. On a display-less host the headful browser runs under a virtual display (the
+    // `run` script provides Xvfb); it never silently degrades to headless.
+    private async Task LaunchBrowserAsync()
     {
         // Clean up any leftover state from a previous failed launch
         await DisposeContextUnsafeAsync().ConfigureAwait(false);
@@ -911,22 +918,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 args.AddRange(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]);
             }
 
-            if (!headless)
-            {
-                args.Add("--window-size=800,600");
-            }
+            args.Add("--window-size=800,600");
 
             var launchTask = _playwright.Chromium.LaunchPersistentContextAsync(_userDataDir, new BrowserTypeLaunchPersistentContextOptions
             {
-                Headless = headless,
+                Headless = false, // never-headless policy — always headful
                 Args = args.ToArray(),
                 Timeout = 30000, // 30s timeout prevents indefinite hang if browser can't start
 
-                // Only override UserAgent for headless mode (HTTP fallback matching).
-                // In headed mode, let Chromium use its real UA to avoid version mismatch
-                // detection (e.g., claiming Chrome/131 but actually running Chromium/145).
-                UserAgent = headless ? _browserConfig.UserAgent : null,
-                ViewportSize = headless ? new ViewportSize { Width = 1400, Height = 900 } : null,
+                // Headed mode: let Chromium use its real UA to avoid version-mismatch detection (e.g. claiming
+                // Chrome/131 but actually running Chromium/145), and its real window size for the viewport.
+                UserAgent = null,
+                ViewportSize = null,
                 IgnoreHTTPSErrors = true,
             });
 
@@ -996,25 +999,22 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // page creation, cookie injection) has already succeeded by this point. If
             // that earlier work throws, the flag stays stale so the next call retries the
             // mode switch; the positioning calls below swallow their own exceptions.
-            _pageIsHeadless = headless;
+            _pageIsHeadless = false; // never-headless policy — the launched browser is always headful
 
-            if (!headless)
+            // The browser is always headful (never-headless policy), so the headed-window wiring always runs.
+            // Reset the docked flag if THIS headed window is later closed/crashes so the persistent "docked"
+            // affordance can't lie (workspace-v7mb).
+            _page!.Close += OnHeadedPageClosed;
+
+            // When the headed browser reappears, re-dock it if the user was in docked mode, otherwise keep it
+            // minimized in the background. It is brought to the front later, only when interaction is needed.
+            if (_userWantsDock)
             {
-                // Reset the docked flag if THIS headed window is later closed/crashes so
-                // the persistent "docked" affordance can't lie (workspace-v7mb).
-                _page!.Close += OnHeadedPageClosed;
-
-                // Re-dock automatically when the headed browser reappears if the user was
-                // in docked mode; otherwise minimize it into the background.
-                // RestoreWindowAsync (BringToFront) is called when interaction is needed.
-                if (_userWantsDock)
-                {
-                    await DockWindowAsync().ConfigureAwait(false);
-                }
-                else
-                {
-                    await MinimizeWindowAsync().ConfigureAwait(false);
-                }
+                await DockWindowAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await MinimizeWindowAsync().ConfigureAwait(false);
             }
         }
         catch

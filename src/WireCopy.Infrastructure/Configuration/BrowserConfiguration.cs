@@ -6,8 +6,6 @@ public class BrowserConfiguration
 {
     public const string SectionName = "Browser";
 
-    private bool? _effectiveHeadless;
-
     public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
 
     public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
@@ -26,15 +24,16 @@ public class BrowserConfiguration
     public BrowserVisibility Visibility { get; init; } = BrowserVisibility.Auto;
 
     /// <summary>
-    /// The RESOLVED headless decision for this process — the only thing fetch/warmup
-    /// code should read. Cached on first evaluation.
+    /// The RESOLVED headless decision for this process — the only thing fetch/warmup code should read.
+    /// HARD PROJECT POLICY: the browser is NEVER headless. Headless is bot-detected and blocked on the
+    /// sites this app targets (Cloudflare, NYT, macleans.ca), so it is disabled unconditionally — the app
+    /// runs a REAL headful browser, under a virtual display (Xvfb) on a display-less host (the `run`
+    /// script provides one). Visibility / interactive / display no longer gate this; an explicit
+    /// Visibility=Headless is IGNORED (surfaced in <see cref="DescribeVisibilityResolution"/>).
     /// </summary>
-    public bool EffectiveHeadless => _effectiveHeadless ??= Visibility switch
-    {
-        BrowserVisibility.Visible => false,
-        BrowserVisibility.Headless => true,
-        _ => !(IsInteractiveSession() && HasDisplay()),
-    };
+#pragma warning disable S2325 // instance config API by design (read as config.EffectiveHeadless); the constant value IS the never-headless policy
+    public bool EffectiveHeadless => false;
+#pragma warning restore S2325
 
     /// <summary>
     /// When true, disables all UI animations. The timer-tick mechanism in the input handler
@@ -174,14 +173,14 @@ public class BrowserConfiguration
     /// <summary>One-line explanation of the resolution, logged at startup (workspace-8cf2).</summary>
     public string DescribeVisibilityResolution()
     {
-        var mode = EffectiveHeadless ? "HEADLESS" : "VISIBLE";
-        var why = Visibility switch
-        {
-            BrowserVisibility.Visible => "Visibility=Visible",
-            BrowserVisibility.Headless => "Visibility=Headless",
-            _ => $"Visibility=Auto (interactive={IsInteractiveSession()}, display={HasDisplay()})",
-        };
-        return $"Browser mode: {mode} — {why}";
+        // Headless is disabled by hard project policy — the browser is ALWAYS headful. We still log the
+        // interactive/display context (useful when a headed launch fails for lack of a display) and flag a
+        // requested-but-ignored Visibility=Headless.
+        var ignored = Visibility == BrowserVisibility.Headless
+            ? " — Visibility=Headless was REQUESTED but is IGNORED (never-headless policy)"
+            : string.Empty;
+        return $"Browser mode: VISIBLE (headful only — never headless; interactive={IsInteractiveSession()}, "
+            + $"display={HasDisplay()}){ignored}";
     }
 
     private static bool IsInteractiveSession()

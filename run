@@ -11,17 +11,33 @@ for arg in "$@"; do
     fi
 done
 
+# NEVER-HEADLESS POLICY (workspace-8ne3): WireCopy runs a REAL HEADFUL browser — never headless (headless is
+# bot-detected/blocked on the sites it targets). On Linux without a display, provide a VIRTUAL display (Xvfb)
+# so the browser is still headful; the app must NEVER silently degrade to headless. macOS/Windows and Linux
+# with a real DISPLAY run directly.
+launch=()
+if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    if command -v xvfb-run >/dev/null 2>&1; then
+        echo "wirecopy: no display detected — starting a virtual display (Xvfb) so the browser stays headful (never headless)." >&2
+        launch=(xvfb-run -a --server-args="-screen 0 1600x1200x24")
+    else
+        echo "wirecopy: ERROR — no display and 'xvfb-run' is not installed. WireCopy never runs headless." >&2
+        echo "  Install Xvfb (Debian/Ubuntu: sudo apt-get install xvfb; Fedora: sudo dnf install xorg-x11-server-Xvfb)," >&2
+        echo "  or attach a real display, then re-run ./run." >&2
+        exit 1
+    fi
+fi
+
 # Run with or without filtering
 if [ "$verbose" = true ]; then
     # Verbose mode: show everything
-    dotnet run --project src/WireCopy.API --configuration Release -- "$@"
+    "${launch[@]}" dotnet run --project src/WireCopy.API --configuration Release -- "$@"
 else
     # Default mode: filter browser noise
-    dotnet run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
+    "${launch[@]}" dotnet run --project src/WireCopy.API --configuration Release -- "$@" 2>&1 | \
       grep -v "console.error:" | \
       grep -v "NS_ERROR_CONTENT_BLOCKED" | \
       grep -v "geckodriver" | \
-      grep -v "You are running in headless mode" | \
       grep -v "Read port:" | \
       grep -v "RenderCompositorSWGL" | \
       grep -v "AVCaptureDeviceTypeExternal" | \

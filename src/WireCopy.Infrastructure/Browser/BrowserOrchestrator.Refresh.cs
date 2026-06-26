@@ -28,7 +28,7 @@ public partial class BrowserOrchestrator
             _renderer.RenderLoading(url);
 
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.Headless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
                 cancellationToken).ConfigureAwait(false);
 
             if (!loadResult.Success)
