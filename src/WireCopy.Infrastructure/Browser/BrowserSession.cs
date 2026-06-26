@@ -17,6 +17,13 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 {
+    // workspace-75ng: far off-screen X/Y the headed window is PARKED at when hidden. Far
+    // enough negative to clear any real multi-display arrangement, so the window is never in
+    // the visible region yet stays at windowState=normal — Chromium keeps painting it (no
+    // minimize/occlusion throttle, helped by --disable-backgrounding-occluded-windows), so
+    // the live page is current the instant it re-docks.
+    private const int OffScreenCoordinate = -32000;
+
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
@@ -35,13 +42,20 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private bool _isDocked;
 
     // Sticky user intent (workspace-v7mb): distinct from _isDocked (the window's current
-    // visible state). Set when the user docks, cleared when they explicitly minimize via
-    // the toggle. Survives the auto-minimize at launch so a headed window that reappears
-    // (e.g. after a headless→headed switch or a crash recovery) re-docks itself.
+    // visible state). Set when the user docks, cleared when they explicitly un-dock via the
+    // toggle. Survives the auto-park-off-screen at launch (workspace-75ng) so a headed window
+    // that reappears (e.g. after a crash recovery) re-docks itself when the user wanted a dock.
     private bool _userWantsDock;
     private bool _disposed;
     private bool _browsersInstalled;
     private long _lastRefocusTicks;
+
+    // workspace-75ng: the terminal's frontmost-app bundle id, captured ONCE at the first
+    // browser launch (while the terminal still owns focus) so RefocusTerminalAsync can
+    // re-activate THAT exact app — terminal-agnostic, fixing Ghostty. Null until captured
+    // or if capture failed; the refocus then falls back to the TERM_PROGRAM name map.
+    private string? _terminalBundleId;
+    private bool _terminalBundleIdCaptureAttempted;
 
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
@@ -53,8 +67,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         _cookieManager = cookieManager;
 
         // Sidecar mode starts in the configured state (workspace-exbz): when on, the
-        // first headed launch docks beside the terminal instead of minimizing into the
-        // void; the dock toggle drops to the immersive view by clearing this intent.
+        // first headed launch docks beside the terminal; the dock toggle drops to the
+        // immersive view by clearing this intent. Default OFF (workspace-75ng): the headed
+        // window launches PARKED off-screen (never pops up / steals focus at startup) and
+        // 'O' brings it on-screen to dock.
         _userWantsDock = _browserConfig.Sidecar;
         _userDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -330,6 +346,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    // workspace-75ng: "get out of the way" now PARKS the window off-screen rather than
+    // OS-minimizing it. A minimized window is occlusion-throttled by Chromium — its live
+    // page stops painting, so the spotlight/screenshots go stale. Parking keeps it at
+    // windowState=normal off-screen: invisible and focus-neutral, but still rendering.
     public async Task MinimizeWindowAsync()
     {
         if (_disposed || _page == null || _pageIsHeadless)
@@ -352,27 +372,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        _isDocked = false;
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "minimized" },
-            }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to minimize browser window (non-fatal)");
-        }
-
-        // Refocus the terminal app so keyboard input works immediately
-        await RefocusTerminalAsync().ConfigureAwait(false);
+        await ParkWindowOffScreenAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -386,9 +386,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         if (_isDocked)
         {
             // The user explicitly un-docked: drop the sticky intent so a future headed
-            // relaunch does NOT auto-re-dock against their wishes.
+            // relaunch does NOT auto-re-dock against their wishes. With the intent cleared,
+            // MinimizeWindowAsync re-PARKS the window off-screen (workspace-75ng) — not
+            // OS-minimized — so it keeps rendering and re-docks instantly with current
+            // content. Still reported as Minimized (hidden from view).
             _userWantsDock = false;
-            await MinimizeWindowAsync().ConfigureAwait(false); // also clears _isDocked
+            await MinimizeWindowAsync().ConfigureAwait(false); // parks off-screen; clears _isDocked
             return BrowserWindowState.Minimized;
         }
 
@@ -758,6 +761,50 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
+    // workspace-75ng: capture the frontmost GUI app's bundle id ONCE — at the first browser
+    // launch, before the headed window can take focus — so refocus targets the real terminal
+    // (Ghostty, Warp, anything) by id rather than guessing from TERM_PROGRAM. Best-effort and
+    // idempotent: on failure the bundle id stays null and refocus falls back to the name map.
+    private async Task CaptureTerminalBundleIdAsync()
+    {
+        if (!OperatingSystem.IsMacOS() || _terminalBundleIdCaptureAttempted)
+        {
+            return;
+        }
+
+        _terminalBundleIdCaptureAttempted = true;
+
+        var result = await RunOsascriptAsync(TerminalRefocus.CaptureFrontmostBundleIdScript).ConfigureAwait(false);
+        if (result is null)
+        {
+            return;
+        }
+
+        if (result.Value.ExitCode != 0)
+        {
+            _logger.LogWarning(
+                "Could not capture the terminal app for focus return (osascript exit {ExitCode}): {Error}. "
+                + "Grant Automation permission: System Settings → Privacy & Security → Automation. "
+                + "Falling back to the TERM_PROGRAM name map.",
+                result.Value.ExitCode,
+                result.Value.StdErr.Trim());
+            return;
+        }
+
+        var bundleId = result.Value.StdOut.Trim();
+        if (TerminalRefocus.IsUsableBundleId(bundleId))
+        {
+            _terminalBundleId = bundleId;
+            _logger.LogInformation("Captured terminal app for focus return: {BundleId}", bundleId);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Frontmost-app capture returned an unusable value ('{Value}') — falling back to TERM_PROGRAM",
+                bundleId);
+        }
+    }
+
     private async Task RefocusTerminalAsync()
     {
         if (!OperatingSystem.IsMacOS())
@@ -773,52 +820,78 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        // Re-activate the EXACT terminal captured at startup (by bundle id), falling back to
+        // the TERM_PROGRAM name map. Null when neither is known — we deliberately do NOT guess
+        // Apple Terminal, which is what returned focus to the wrong app under Ghostty.
+        var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
+        var script = TerminalRefocus.ResolveActivateScript(_terminalBundleId, termProgram);
+        if (script is null)
+        {
+            _logger.LogDebug(
+                "No terminal target to refocus (no captured bundle id; TERM_PROGRAM='{TermProgram}' unrecognised)",
+                termProgram);
+            return;
+        }
+
+        var result = await RunOsascriptAsync(script).ConfigureAwait(false);
+        if (result is null)
+        {
+            return;
+        }
+
+        if (result.Value.ExitCode != 0)
+        {
+            _logger.LogWarning(
+                "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy & Security → Automation permissions.",
+                result.Value.ExitCode,
+                result.Value.StdErr.Trim());
+            return;
+        }
+
+        _logger.LogDebug(
+            "Refocused terminal via {Target}",
+            _terminalBundleId is not null ? $"bundle id {_terminalBundleId}" : $"TERM_PROGRAM={termProgram}");
+    }
+
+    /// <summary>
+    /// Runs an osascript expression and returns its exit code / stdout / stderr, or null if
+    /// the process could not start or timed out. Args are passed via <see cref="System.Diagnostics.ProcessStartInfo.ArgumentList"/>
+    /// (no shell), so the AppleScript needs no shell-quoting. macOS-only callers; non-fatal.
+    /// </summary>
+    private async Task<(int ExitCode, string StdOut, string StdErr)?> RunOsascriptAsync(string script)
+    {
         try
         {
-            // Detect terminal app from environment and re-activate it
-            var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
-            var appName = termProgram switch
-            {
-                "iTerm.app" => "iTerm2",
-                "Apple_Terminal" => "Terminal",
-                "WezTerm" => "WezTerm",
-                "Alacritty" => "Alacritty",
-                "kitty" => "kitty",
-                _ => "Terminal", // fallback
-            };
-
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/usr/bin/osascript",
-                Arguments = $"-e 'tell application \"{appName}\" to activate'",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add(script);
 
             using var process = System.Diagnostics.Process.Start(psi);
-            if (process != null)
+            if (process is null)
             {
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-                if (process.HasExited && process.ExitCode != 0)
-                {
-                    var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
-                    _logger.LogWarning(
-                        "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy → Automation permissions.",
-                        process.ExitCode,
-                        stderr.Trim());
-                    return;
-                }
+                return null;
             }
 
-            _logger.LogDebug("Refocused terminal app: {AppName}", appName);
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            var stdout = await stdoutTask.ConfigureAwait(false);
+            var stderr = await stderrTask.ConfigureAwait(false);
+            return (process.ExitCode, stdout, stderr);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Failed to refocus terminal — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
+                "osascript invocation failed — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
+            return null;
         }
     }
 
@@ -828,6 +901,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // `run` script provides Xvfb); it never silently degrades to headless.
     private async Task LaunchBrowserAsync()
     {
+        // workspace-75ng: capture the terminal's bundle id NOW — before Playwright spawns the
+        // headed browser — while the terminal is still the frontmost app, so the later
+        // RefocusTerminalAsync re-activates the right app (fixes Ghostty). Runs once ever.
+        await CaptureTerminalBundleIdAsync().ConfigureAwait(false);
+
         // Clean up any leftover state from a previous failed launch
         await DisposeContextUnsafeAsync().ConfigureAwait(false);
 
@@ -912,6 +990,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             {
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
+
+                // workspace-75ng: spawn the headed window OFF-SCREEN so it never flashes at
+                // Chromium's default on-screen position and never steals keyboard focus at
+                // startup. It stays headful and renders fully (CDP extraction is window-
+                // visibility-independent); 'O' brings it on-screen to dock.
+                $"--window-position={OffScreenCoordinate},{OffScreenCoordinate}",
+
+                // workspace-75ng: keep the off-screen/occluded window PAINTING so the live
+                // page is current the instant the user docks it — otherwise Chromium throttles
+                // hidden windows and the spotlight/screenshots go stale.
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
             };
             if (OperatingSystem.IsLinux())
             {
@@ -1006,15 +1096,17 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // affordance can't lie (workspace-v7mb).
             _page!.Close += OnHeadedPageClosed;
 
-            // When the headed browser reappears, re-dock it if the user was in docked mode, otherwise keep it
-            // minimized in the background. It is brought to the front later, only when interaction is needed.
+            // When the headed browser launches/reappears, re-dock it if the user was in docked
+            // mode, otherwise PARK it off-screen (workspace-75ng) — the default. Parking (not
+            // minimizing) keeps it rendering for an instant re-dock and never pops up or steals
+            // focus. It is brought on-screen later only when the user presses 'O'.
             if (_userWantsDock)
             {
                 await DockWindowAsync().ConfigureAwait(false);
             }
             else
             {
-                await MinimizeWindowAsync().ConfigureAwait(false);
+                await ParkWindowOffScreenAsync().ConfigureAwait(false);
             }
         }
         catch
@@ -1094,6 +1186,57 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 "Failed to inject stored cookies into Playwright {Label} context (non-fatal)",
                 label);
         }
+    }
+
+    /// <summary>
+    /// Parks the headed window OFF-SCREEN (workspace-75ng): windowState=normal at a far
+    /// off-screen position. Unlike OS-minimize, the window keeps painting (no occlusion
+    /// throttle) so a later dock is instant with current content, and it never grabs
+    /// keyboard focus. Clears the docked flag and refocuses the terminal afterwards.
+    /// Assumes a live headed <see cref="_page"/>; swallows CDP failures (non-fatal).
+    /// </summary>
+    private async Task ParkWindowOffScreenAsync()
+    {
+        if (_disposed || _page == null || _pageIsHeadless)
+        {
+            return;
+        }
+
+        _isDocked = false;
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
+
+            // CDP forbids combining windowState with explicit bounds, so normalize the
+            // window first (it may arrive minimized from an earlier state) in one call,
+            // then move it off-screen in the next.
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
+            }).ConfigureAwait(false);
+
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = new Dictionary<string, object>
+                {
+                    ["left"] = OffScreenCoordinate,
+                    ["top"] = OffScreenCoordinate,
+                },
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to park browser window off-screen (non-fatal)");
+        }
+
+        // Refocus the terminal app so keyboard input works immediately
+        await RefocusTerminalAsync().ConfigureAwait(false);
     }
 
     /// <summary>

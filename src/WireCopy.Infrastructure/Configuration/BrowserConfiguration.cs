@@ -76,8 +76,16 @@ public class BrowserConfiguration
     /// <see cref="DockSide"/>/<see cref="DockFraction"/> and the dock spotlight keeps
     /// it following the selection; the dock key switches to the immersive (full-width)
     /// view and back. When false, the sidecar only appears on an explicit dock keystroke.
+    ///
+    /// <para>
+    /// Defaults to FALSE (workspace-75ng): the headed browser launches PARKED off-screen
+    /// (immersive) so it renders fully for extraction but never pops up or steals keyboard
+    /// focus at startup — the macOS focus-steal the user hit on Ghostty. 'O' brings it
+    /// on-screen to dock; dismissing re-parks it off-screen. Set true to opt back into
+    /// auto-docking the live window beside the terminal on every navigation.
+    /// </para>
     /// </summary>
-    public bool Sidecar { get; init; } = true;
+    public bool Sidecar { get; init; }
 
     /// <summary>
     /// Browser-side input within this window means the user is ACTIVELY using the

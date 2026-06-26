@@ -245,14 +245,14 @@ public class BrowserWindowDockIntegrationTests
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
             "Headed browser requires an X display — run under xvfb-run.");
 
-        // workspace-exbz: with sidecar mode on (the default), a headed launch must dock
-        // beside the terminal instead of minimizing into the void with a blank page.
-        var config = Options.Create(new BrowserConfiguration { Headless = false });
+        // workspace-exbz: with sidecar mode ON (opt-in since workspace-75ng), a headed launch
+        // must dock beside the terminal instead of minimizing into the void with a blank page.
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = true });
         var cookieManager = Substitute.For<ICookieManager>();
         cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
 
         using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
-        session.WantsSidecar.Should().BeTrue("sidecar mode defaults on");
+        session.WantsSidecar.Should().BeTrue("Sidecar=true was requested");
 
         IPage page;
         try
@@ -295,6 +295,136 @@ public class BrowserWindowDockIntegrationTests
         await session.MinimizeWindowAsync();
         session.IsWindowDocked.Should().BeFalse();
     }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task HeadedLaunch_Default_ParksWindowOffScreen_RendersButNotVisible()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // workspace-75ng.1: the DEFAULT launch (Sidecar off) PARKS the headed window
+        // off-screen — it never pops up on-screen or steals focus — yet keeps rendering so
+        // CDP/DOM extraction still works. Proven by the window's real bounds + a live DOM
+        // read, not logs.
+        var config = Options.Create(new BrowserConfiguration { Headless = false }); // Sidecar defaults OFF (parked)
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+        session.WantsSidecar.Should().BeFalse("the default is parked/immersive, not auto-dock");
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        session.IsWindowDocked.Should().BeFalse("the default launch parks off-screen, it does not dock");
+
+        var bounds = await ReadBoundsAsync(page);
+        _out.WriteLine($"after default (parked) launch : {bounds}");
+
+        // OUTCOME: the window sits entirely OFF the visible region (right edge left of x=0),
+        // so a screenshot of the screen shows no browser — and it is NOT minimized.
+        bounds.State.Should().Be("normal",
+            "a parked window stays normal so it keeps rendering — minimizing would occlusion-throttle it");
+        (bounds.Left + bounds.Width).Should().BeLessThanOrEqualTo(0,
+            "the parked window must sit entirely off the left of the visible region");
+
+        // OUTCOME: the off-screen page still renders and is fully extractable.
+        await page.GotoAsync("data:text/html,<title>parked</title><body><h1 id='h'>parked and rendering</h1></body>");
+        var heading = await page.EvaluateAsync<string>("() => document.getElementById('h')?.textContent ?? ''");
+        heading.Should().Be("parked and rendering",
+            "the parked window keeps rendering off-screen — extraction is visibility-independent");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task ToggleWindowDock_FromParked_DocksOnScreen_ThenReParksOffScreen()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // workspace-75ng.2: 'O' brings the parked window ON-SCREEN docked; pressing 'O' again
+        // RE-PARKS it off-screen (not minimized) so it keeps rendering for an instant re-dock.
+        var config = Options.Create(new BrowserConfiguration { Headless = false }); // parked default
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync(headless: false);
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync(
+            "data:text/html,<title>park</title>"
+            + "<body style='background:%23202060'><h1 id='h' style='color:white'>live page</h1></body>");
+
+        var screen = await page.EvaluateAsync<int[]>(
+            "() => [window.screen.availWidth, window.screen.availHeight]");
+        var screenW = screen[0];
+
+        var parkedStart = await ReadBoundsAsync(page);
+        _out.WriteLine($"parked at launch : {parkedStart}");
+        (parkedStart.Left + parkedStart.Width).Should().BeLessThanOrEqualTo(0,
+            "the default launch parks the window off-screen");
+
+        // --- 'O' : reveal on-screen, docked ---
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Docked);
+        var afterDock = await ReadBoundsAsync(page);
+        _out.WriteLine($"after dock (O) : {afterDock}");
+        afterDock.State.Should().Be("normal");
+        (afterDock.Left + afterDock.Width).Should().BeGreaterThan(0,
+            "docking brings the window into the visible region");
+        afterDock.Left.Should().BeLessThan(screenW,
+            "the docked window's left edge is on-screen, not parked off the right either");
+
+        // --- 'O' again : re-park off-screen (NOT minimized) ---
+        (await session.ToggleWindowDockAsync()).Should().Be(BrowserWindowState.Minimized);
+        var afterPark = await ReadBoundsAsync(page);
+        _out.WriteLine($"after re-park (O) : {afterPark}");
+        afterPark.State.Should().Be("normal",
+            "re-park keeps windowState=normal (NOT minimized) so the live page keeps painting");
+        (afterPark.Left + afterPark.Width).Should().BeLessThanOrEqualTo(0,
+            "re-park moves the window entirely off the visible region");
+        session.IsWindowDocked.Should().BeFalse("re-park clears the docked state");
+
+        // OUTCOME: the re-parked page still RENDERS. The dock spotlight drives the live page
+        // via CDP screenshots, which are window-visibility-independent — they force a frame
+        // even off-screen, so the re-dock shows current content instantly. (A minimized window
+        // can stall this; an off-screen normal window does not.) This is the real "keeps
+        // rendering" guarantee that matters here. NOTE: requestAnimationFrame is paused by
+        // Chromium for any non-visible surface (off-screen included), so wall-clock animation
+        // does not advance while parked — only the on-demand CDP render path does, which is
+        // exactly what the spotlight uses.
+        var parkedShot = await page.ScreenshotAsync(new PageScreenshotOptions { Type = ScreenshotType.Png });
+        _out.WriteLine($"parked CDP screenshot bytes: {parkedShot.Length}");
+        parkedShot.Should().NotBeNull();
+        parkedShot.Length.Should().BeGreaterThan(1000,
+            "the parked off-screen page must still render a real frame via CDP (the spotlight's mechanism)");
+        IsPng(parkedShot).Should().BeTrue("the parked window produced a valid rendered PNG frame");
+
+        // And the page stays fully reachable/evaluable while parked.
+        (await page.EvaluateAsync<string>("() => document.getElementById('h')?.textContent ?? ''"))
+            .Should().Be("live page", "the parked page's DOM is intact and extractable");
+    }
+
+    private static bool IsPng(byte[] bytes) =>
+        bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
 
     private static async Task<WindowBounds> ReadBoundsAsync(IPage page)
     {

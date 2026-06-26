@@ -191,7 +191,7 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiHierarchy:ReasoningEffort` | Reasoning tier (`minimal` / `low` / `medium`) | `minimal` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Visibility` | `Auto` (headed when a display + sidecar make sense, else headless), `Visible`, or `Headless` | `Auto` |
-| `Browser:Sidecar` | Dock the live browser beside the terminal | `true` |
+| `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; `O` docks on demand) | `false` |
 | `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide | `Right` / `430` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
 | `Gcs:BucketName` | GCS bucket for podcast feed publishing | (unset → local-only mode) |

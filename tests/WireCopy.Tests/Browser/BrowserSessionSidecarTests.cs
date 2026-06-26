@@ -35,9 +35,12 @@ public class BrowserSessionSidecarTests
     }
 
     [Fact]
-    public void Sidecar_DefaultsOn()
+    public void Sidecar_DefaultsOff_ParkedImmersive()
     {
-        new BrowserConfiguration().Sidecar.Should().BeTrue(
-            "the sidecar is the product's default reading mode; O switches to immersive");
+        // workspace-75ng: the headed browser launches PARKED off-screen by default so it never
+        // pops up or steals keyboard focus at startup (the macOS/Ghostty focus-steal). 'O'
+        // brings it on-screen to dock; opting into Sidecar=true restores auto-docking.
+        new BrowserConfiguration().Sidecar.Should().BeFalse(
+            "the default reading mode is immersive/parked; O brings the sidecar on-screen");
     }
 }
