@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Threading;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -450,39 +451,66 @@ public class InMemoryPageCacheTests : IDisposable
         _cache.GetStats().EntryCount.Should().BeLessOrEqualTo(_config.MaxEntries);
     }
 
+    // workspace-hv8n: the former ApplyLinkListTtl_RefreshesTtlFromNow_NotFromCachedAt test asserted the SLIDING
+    // behaviour that was the bug (expiry rebased to UtcNow on every revisit, so hot pages never expired). It is
+    // replaced by ApplyLinkListTtl_IsAbsoluteCap_DoesNotSlideForwardOnRevisit + UpdateTtl_OnlyShrinks_* below.
+
+    #endregion
+
     [Fact]
-    public void ApplyLinkListTtl_RefreshesTtlFromNow_NotFromCachedAt()
+    public void ApplyLinkListTtl_IsAbsoluteCap_DoesNotSlideForwardOnRevisit()
     {
-        // Use a short default TTL so we can verify the refresh extends it
+        // workspace-hv8n — the link-list TTL must be an ABSOLUTE cap anchored to the original cache time, NOT a
+        // sliding window that re-bases off "now" on every revisit. The old behaviour recomputed expiry from
+        // UtcNow each ApplyLinkListTtl call, so a frequently-reopened section page never expired. A short
+        // link-list TTL over a long default proves the cap: repeated revisits within and past the window must
+        // not push the expiry forward — once CachedAtUtc + LinkListTtl elapses the entry is gone.
         var config = new CacheConfiguration
         {
-            DefaultTtlSeconds = 2,
+            DefaultTtlSeconds = 3600,   // long default so the only cap in play is the link-list TTL
+            LinkListTtlSeconds = 2,     // short absolute cap
+            EvictionSweepIntervalSeconds = 3600,
+        };
+        using var cache = new InMemoryPageCache(
+            Options.Create(config),
+            NullLogger<InMemoryPageCache>.Instance);
+        var url = "https://example.com/section";
+        cache.Put(url, CreateResult(url, "<html>links</html>"));
+
+        // A revisit ~1s in must re-anchor to CachedAtUtc (cap stays at +2s), NOT slide to now+2s.
+        cache.ApplyLinkListTtl(url);
+        Thread.Sleep(1000);
+        cache.ApplyLinkListTtl(url);
+        cache.Contains(url).Should().BeTrue("still inside the 2s absolute cap");
+
+        // Cross the absolute cap. A revisit here must NOT resurrect or extend the entry.
+        Thread.Sleep(1500); // ~2.5s total > 2s cap
+        cache.Contains(url).Should().BeFalse(
+            "the link-list TTL is an absolute cap anchored to CachedAtUtc — repeated revisits must not slide it forward (workspace-hv8n)");
+    }
+
+    [Fact]
+    public void UpdateTtl_OnlyShrinks_NeverExtendsBeyondCachedAtCap()
+    {
+        // workspace-hv8n — applying a link-list TTL longer than what is already set must NOT extend the entry's
+        // lifetime; an apply can only shrink (clamp). Here a 1s default cap with a 3600s link-list TTL applied
+        // on top must still expire at the original ~1s cap, not be lengthened to an hour.
+        var config = new CacheConfiguration
+        {
+            DefaultTtlSeconds = 1,
             LinkListTtlSeconds = 3600,
             EvictionSweepIntervalSeconds = 3600,
         };
         using var cache = new InMemoryPageCache(
             Options.Create(config),
             NullLogger<InMemoryPageCache>.Instance);
-
         var url = "https://example.com/section";
         cache.Put(url, CreateResult(url, "<html>links</html>"));
-
-        // Entry should exist
-        cache.Contains(url).Should().BeTrue();
-
-        // Refresh TTL — should extend to 1 hour from NOW
-        var before = DateTime.UtcNow;
-        cache.ApplyLinkListTtl(url);
-
-        // Wait past the original 2-second TTL
-        Thread.Sleep(2500);
-
-        // Entry should STILL be valid because TTL was refreshed from UtcNow
-        cache.Contains(url).Should().BeTrue(
-            "ApplyLinkListTtl should refresh expiry from UtcNow, not from original CachedAtUtc");
+        cache.ApplyLinkListTtl(url); // 3600s apply must clamp to the original ~1s cap, not extend it
+        Thread.Sleep(1300);
+        cache.Contains(url).Should().BeFalse(
+            "a longer TTL apply must clamp (shrink-only), never extend an entry past its original cap (workspace-hv8n)");
     }
-
-    #endregion
 
     private static PageLoadResult CreateResult(string url, string html)
     {

@@ -914,7 +914,9 @@ public partial class BrowserOrchestrator : IBrowserService
             return;
         }
 
-        var title = page.ReadableContent?.Title ?? page.Metadata?.Title;
+        // workspace-a4wh — mirror RenderHeader's title source/precedence (LinkTreeRenderer: metadata.Title first)
+        // so the animated title is byte-identical in length to the header's, making the in-place overdraw exact.
+        var title = page.Metadata?.Title ?? page.ReadableContent?.Title;
         if (string.IsNullOrEmpty(title))
         {
             return;
@@ -928,8 +930,13 @@ public partial class BrowserOrchestrator : IBrowserService
 
             var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-            // Title is rendered at row 0, column 1 (after leading space in RenderHeader)
-            DecryptRevealAnimation.Play(displayTitle, row: 0, col: 1, palette);
+            // workspace-a4wh — RenderHeader (LinkTreeRenderer) draws the title at COLUMN 4, after the box prefix
+            // " ╭─ " (col0=space, col1=╭, col2=─, col3=space, col4=title). Drawing the animation at col:1 was a
+            // 3-column left shift that (a) overwrote the box's ╭─ left border for the 400ms animation and (b) left
+            // the header's last 3 chars as a duplicated tail (e.g. "Cloudflare - Wikipedia" → "…Wikipediadia").
+            // RenderHeader already cleared the line to EOL just before this, so an exact-length col:4 overdraw
+            // needs no extra clear and never touches the right border.
+            DecryptRevealAnimation.Play(displayTitle, row: 0, col: 4, palette);
         }
         catch (Exception ex)
         {

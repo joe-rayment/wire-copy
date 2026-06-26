@@ -22,10 +22,13 @@ public class CacheConfiguration
     public int DefaultTtlSeconds { get; init; } = 57600;
 
     /// <summary>
-    /// Time-to-live for link-list/section page cache entries in seconds. Default: 1 hour.
-    /// Shorter than article TTL because section pages change frequently (new headlines).
+    /// Time-to-live for link-list/section page cache entries in seconds. Default: 16 hours.
+    /// workspace-hv8n: the user expects cached items (including sections) to expire on a ~16h absolute clock,
+    /// so this matches <see cref="DefaultTtlSeconds"/>. The companion fix (InMemoryPageCache.UpdateTtl) anchors
+    /// expiry to the original cache time so a frequently-revisited section page actually reaches this cap
+    /// instead of sliding forward forever.
     /// </summary>
-    public int LinkListTtlSeconds { get; init; } = 3600;
+    public int LinkListTtlSeconds { get; init; } = 57600;
 
     /// <summary>
     /// Maximum size of a single cache entry in bytes. Default: 5 MB.

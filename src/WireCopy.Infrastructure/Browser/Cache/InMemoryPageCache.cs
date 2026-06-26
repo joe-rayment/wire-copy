@@ -297,9 +297,17 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             return;
         }
 
+        // workspace-hv8n — anchor the expiry to the ORIGINAL cache time, not "now". Recomputing from
+        // DateTime.UtcNow on every read/revisit made the TTL slide forward indefinitely: a section page reopened
+        // within its window pushed ExpiresAtUtc to now+TTL each time, so frequently-visited pages NEVER expired
+        // (and dragged their attached build cache + disk copy along). Anchoring to CachedAtUtc makes the TTL an
+        // ABSOLUTE cap. Clamp so an apply can only SHRINK the lifetime, never extend it (e.g. the link-list TTL
+        // applied over a longer default must not lengthen an entry).
+        var anchored = existing.Metadata.CachedAtUtc.AddSeconds(ttlSeconds);
+        var newExpiry = anchored < existing.Metadata.ExpiresAtUtc ? anchored : existing.Metadata.ExpiresAtUtc;
         var updatedMetadata = existing.Metadata with
         {
-            ExpiresAtUtc = DateTime.UtcNow.AddSeconds(ttlSeconds),
+            ExpiresAtUtc = newExpiry,
         };
         var updated = existing with { Metadata = updatedMetadata };
         if (_entries.TryUpdate(key, updated, existing))
