@@ -1249,22 +1249,15 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         await RefocusTerminalAsync().ConfigureAwait(false);
     }
 
-    // workspace-75ng.4: resize the terminal window to the slice the docked browser does not
-    // occupy (macOS only; no-op without tiling enabled, a captured terminal bundle id, or
-    // Accessibility permission — it degrades to the plain edge dock). Captures the terminal's
-    // pre-dock bounds ONCE so RestoreTerminalTileAsync can put it back on dismiss.
-    private async Task TileTerminalAsync(int availLeft, int availTop, int availWidth, int availHeight, int browserWidth)
+    // workspace-75ng.4: resize the terminal window to the given tile (the slice the docked
+    // browser leaves free). macOS only; no-op without tiling enabled, a captured terminal
+    // bundle id, or Accessibility permission — it degrades to the plain edge dock. Captures the
+    // terminal's pre-dock bounds ONCE so RestoreTerminalTileAsync can put it back on dismiss.
+    private async Task TileTerminalAsync(TerminalTiling.WindowRect terminalRect)
     {
         if (!_browserConfig.TileTerminalWithSidecar
             || !OperatingSystem.IsMacOS()
             || _terminalBundleId is null)
-        {
-            return;
-        }
-
-        var terminalRect = TerminalTiling.ComputeTerminalRect(
-            availLeft, availTop, availWidth, availHeight, browserWidth, _browserConfig.DockSide);
-        if (terminalRect is null)
         {
             return;
         }
@@ -1290,7 +1283,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
 
         var setResult = await RunOsascriptAsync(
-            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, terminalRect.Value)).ConfigureAwait(false);
+            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, terminalRect)).ConfigureAwait(false);
         if (setResult is { ExitCode: not 0 })
         {
             _logger.LogWarning(
@@ -1344,102 +1337,51 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
             var windowId = windowInfo.GetProperty("windowId").GetInt32();
 
-            // CDP forbids combining windowState with explicit bounds, so un-minimize
-            // in one call before positioning in the next.
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-            }).ConfigureAwait(false);
-
-            // workspace-75ng: ANCHOR the window back on-screen before measuring. The window
-            // is parked far off-screen (-32000) by default now, and window.screen.avail*
-            // read from an off-screen window reports geometry for a phantom / leftmost
-            // display — which docked the window on the FAR LEFT (and on multi-monitor Macs,
-            // off the visible area entirely). Moving it to the global origin (0,0 = the
-            // primary display's top-left) makes the screen read resolve to a real display.
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object> { ["left"] = 0, ["top"] = 0 },
-            }).ConfigureAwait(false);
-
-            // Give the renderer a beat to re-associate window.screen with the on-screen
-            // display before we read its work area (the move above is asynchronous to JS).
-            await Task.Delay(60).ConfigureAwait(false);
-
-            // Position on the configured side/fraction of the available screen area
-            // (as the page sees it). Defaults to the right half (workspace-v7mb).
-            // Read the work-area ORIGIN too (availLeft/availTop) so the dock lands on the
-            // display the window actually sits on, not always the primary one
-            // (workspace-nqqs). CDP setWindowBounds and screen.avail* share the same
-            // virtual-screen coordinate space, so these compose correctly.
-            var screen = await _page.EvaluateAsync<int[]>(
-                "() => [window.screen.availWidth, window.screen.availHeight, " +
-                "Math.round(window.screen.availLeft || 0), Math.round(window.screen.availTop || 0)]")
-                .ConfigureAwait(false);
-            var screenWidth = screen is { Length: > 0 } ? screen[0] : 1280;
-            var screenHeight = screen is { Length: > 1 } ? screen[1] : 800;
-            var availLeft = screen is { Length: > 2 } ? screen[2] : 0;
-            var availTop = screen is { Length: > 3 } ? screen[3] : 0;
-            var bounds = DockGeometry.Compute(
-                screenWidth,
-                screenHeight,
-                availLeft,
-                availTop,
-                _browserConfig.DockSide,
-                _browserConfig.DockFraction,
-                _browserConfig.DockWidthPx);
-
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object>
-                {
-                    ["left"] = bounds.Left,
-                    ["top"] = bounds.Top,
-                    ["width"] = bounds.Width,
-                    ["height"] = bounds.Height,
-                },
-            }).ConfigureAwait(false);
-
-            // Activate the LENS tab in the docked window when it exists — the sidecar
-            // shows the lens, never the fetch tab (workspace-qigc). Fall back to the
-            // fetch page so the pre-lens dock paths keep working. NOTE: this OS-activates
-            // the browser window (steals focus); the forced refocus at the end takes it back.
+            // Activate the LENS tab in the docked window when it exists — the sidecar shows the
+            // lens, never the fetch tab (workspace-qigc). Fall back to the fetch page so the
+            // pre-lens dock paths keep working. NOTE: this OS-activates the browser window
+            // (steals focus); the forced refocus at the end takes it back.
             var front = _lensPage ?? _page;
             await front.BringToFrontAsync().ConfigureAwait(false);
 
-            // Phone-shaped lens (workspace-o5yf): pin the lens viewport to a mobile CSS
-            // width so responsive sites collapse to one column and the spotlight's
-            // targets are always on-screen. Height tracks the window minus chrome. This can
-            // resize the headed window, so it runs BEFORE the work-area snap below.
-            if (_lensPage != null && _browserConfig.LensViewportWidth > 0)
+            // workspace-75ng: place the docked window via SidecarDocker — anchor on-screen,
+            // read a STABLE work area (defeats the phantom read that mis-placed it far-left /
+            // off-screen), place flush, then re-place at the Chromium-CLAMPED width capped to a
+            // phone-width fraction so it is never full-width or past the Dock. All the geometry
+            // decisions are unit-tested cross-platform via the IDockWindowGeometry seam.
+            var geo = new CdpDockWindowGeometry(_page, cdp, windowId);
+            var placement = await SidecarDocker.PlaceAsync(
+                geo, _browserConfig.DockSide, _browserConfig.DockWidthPx, _browserConfig.DockFraction, _logger)
+                .ConfigureAwait(false);
+
+            if (placement is { } p)
             {
-                try
+                // Phone-shaped lens (workspace-o5yf): pin the lens viewport to a mobile CSS width
+                // so responsive sites collapse to one column. Sticky emulation — independent of
+                // the window size — so it runs after placement using the placed height.
+                if (_lensPage != null && _browserConfig.LensViewportWidth > 0)
                 {
-                    await _lensPage.SetViewportSizeAsync(
-                        _browserConfig.LensViewportWidth,
-                        Math.Max(600, bounds.Height - 110)).ConfigureAwait(false);
+                    try
+                    {
+                        await _lensPage.SetViewportSizeAsync(
+                            _browserConfig.LensViewportWidth,
+                            Math.Max(600, p.Browser.Height - 110)).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed to set lens viewport (non-fatal)");
+                    }
                 }
-                catch (Exception ex)
+
+                // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
+                // browser leaves free (computed from the placed browser width). Only on the dock
+                // transition, never per spotlight update (avoids flicker).
+                var terminalRect = SidecarGeometry.PlanTerminalTile(p.Display, _browserConfig.DockSide, p.Browser.Width);
+                if (terminalRect is { } tr)
                 {
-                    _logger.LogDebug(ex, "Failed to set lens viewport (non-fatal)");
+                    await TileTerminalAsync(tr).ConfigureAwait(false);
                 }
             }
-
-            // workspace-75ng: SNAP the window flush inside the work area (Rectangle-style).
-            // Chromium clamps the requested phone width to a platform minimum, so positioning
-            // the left at availWidth-requestedWidth pushed the right edge PAST the Dock. Read
-            // the ACTUAL size back and pin it inside [availLeft, availLeft+availWidth] so it
-            // never spills over the Dock/menu bar — and use that real width for tiling.
-            var finalWidth = await SnapWindowToWorkAreaAsync(
-                cdp, windowId, availLeft, availTop, screenWidth, screenHeight).ConfigureAwait(false);
-
-            // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
-            // browser does not occupy (terminal left, browser right), using the browser's REAL
-            // width. Only on the dock transition, never per spotlight update (avoids flicker).
-            await TileTerminalAsync(availLeft, availTop, screenWidth, screenHeight, finalWidth).ConfigureAwait(false);
 
             _isDocked = true;
             _userWantsDock = true;
@@ -1455,59 +1397,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             _logger.LogDebug(ex, "Failed to dock browser window (non-fatal)");
             return null;
-        }
-    }
-
-    /// <summary>
-    /// Pins the docked window flush inside the work area (workspace-75ng), Rectangle-style:
-    /// reads the window's ACTUAL size (Chromium clamps the requested phone width to a platform
-    /// minimum, so trusting the requested width overshot the Dock), clamps width/height to the
-    /// work area, and re-pins the left so the window sits flush against the docked edge without
-    /// spilling over the Dock or menu bar. Returns the final window width (for terminal tiling).
-    /// </summary>
-    private async Task<int> SnapWindowToWorkAreaAsync(
-        Microsoft.Playwright.ICDPSession cdp, int windowId, int availLeft, int availTop, int availWidth, int availHeight)
-    {
-        try
-        {
-            var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var b = info.GetProperty("bounds");
-            var actualWidth = b.GetProperty("width").GetInt32();
-            var actualHeight = b.GetProperty("height").GetInt32();
-
-            var finalWidth = Math.Clamp(actualWidth, 1, Math.Max(1, availWidth));
-            var finalHeight = Math.Clamp(actualHeight, 1, Math.Max(1, availHeight));
-
-            // Right dock → pin the right edge to the work-area right edge (the Dock's edge when
-            // the Dock is on the right); left dock → pin to the left work-area edge.
-            var left = _browserConfig.DockSide == DockSide.Left
-                ? availLeft
-                : availLeft + availWidth - finalWidth;
-
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object>
-                {
-                    ["left"] = left,
-                    ["top"] = availTop,
-                    ["width"] = finalWidth,
-                    ["height"] = finalHeight,
-                },
-            }).ConfigureAwait(false);
-
-            var snapInfo =
-                $"left={left} top={availTop} {finalWidth}x{finalHeight} (actual width {actualWidth}; "
-                + $"work area {availLeft},{availTop} {availWidth}x{availHeight}, dock side {_browserConfig.DockSide})";
-            _logger.LogInformation("Sidecar snapped to work area: {Snap}", snapInfo);
-
-            return finalWidth;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to snap docked window to work area (non-fatal)");
-            return availWidth; // fall back so tiling still computes a complement
         }
     }
 
@@ -1585,5 +1474,84 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _playwright = null;
         }
+    }
+
+    /// <summary>
+    /// CDP-backed <see cref="IDockWindowGeometry"/> (workspace-75ng): the real implementation
+    /// of the dock-placement seam. Reads <c>window.screen.avail*</c> off the fetch page and
+    /// moves/sizes the window via <c>Browser.setWindowBounds</c>. The placement ALGORITHM lives
+    /// in <see cref="SidecarDocker"/>/<see cref="SidecarGeometry"/> so it is testable without a
+    /// browser or a Mac; this class is just the thin I/O adapter.
+    /// </summary>
+    private sealed class CdpDockWindowGeometry(IPage page, Microsoft.Playwright.ICDPSession cdp, int windowId)
+        : IDockWindowGeometry
+    {
+        public async Task NormalizeAsync() =>
+            await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "normal" }).ConfigureAwait(false);
+
+        public async Task MoveAsync(int left, int top) =>
+            await SetBoundsRawAsync(new Dictionary<string, object> { ["left"] = left, ["top"] = top }).ConfigureAwait(false);
+
+        public Task SettleAsync() => Task.Delay(60);
+
+        public async Task<SidecarGeometry.DisplayInfo?> ReadDisplayAsync()
+        {
+            try
+            {
+                var s = await page.EvaluateAsync<int[]>(
+                    "() => [window.screen.availWidth, window.screen.availHeight, " +
+                    "Math.round(window.screen.availLeft || 0), Math.round(window.screen.availTop || 0)]")
+                    .ConfigureAwait(false);
+                if (s is not { Length: >= 4 })
+                {
+                    return null;
+                }
+
+                return new SidecarGeometry.DisplayInfo(s[2], s[3], s[0], s[1]);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<TerminalTiling.WindowRect?> ReadWindowAsync()
+        {
+            try
+            {
+                var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
+                if (info is null)
+                {
+                    return null;
+                }
+
+                var b = info.Value.GetProperty("bounds");
+                return new TerminalTiling.WindowRect(
+                    b.GetProperty("left").GetInt32(),
+                    b.GetProperty("top").GetInt32(),
+                    b.GetProperty("width").GetInt32(),
+                    b.GetProperty("height").GetInt32());
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task SetWindowAsync(TerminalTiling.WindowRect rect) =>
+            await SetBoundsRawAsync(new Dictionary<string, object>
+            {
+                ["left"] = rect.X,
+                ["top"] = rect.Y,
+                ["width"] = rect.Width,
+                ["height"] = rect.Height,
+            }).ConfigureAwait(false);
+
+        private async Task SetBoundsRawAsync(Dictionary<string, object> bounds) =>
+            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
+            {
+                ["windowId"] = windowId,
+                ["bounds"] = bounds,
+            }).ConfigureAwait(false);
     }
 }

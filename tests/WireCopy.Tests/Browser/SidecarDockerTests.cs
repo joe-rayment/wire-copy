@@ -1,0 +1,175 @@
+// Licensed under the MIT License. See LICENSE in the repository root.
+
+using FluentAssertions;
+using WireCopy.Infrastructure.Browser;
+using WireCopy.Infrastructure.Configuration;
+using Xunit;
+
+namespace WireCopy.Tests.Browser;
+
+/// <summary>
+/// Drives the full dock-placement FLOW (workspace-75ng) against a fake window controller that
+/// simulates the macOS conditions which broke in the field and which Xvfb can't reproduce: a
+/// phantom work-area read from a just-un-parked window, and Chromium clamping the requested
+/// phone width UP to a platform minimum. Proves the placement is always on-screen, flush, and
+/// never full-width — in this Linux environment, no Mac required.
+/// </summary>
+public class SidecarDockerTests
+{
+    /// <summary>
+    /// Fake geometry controller. Returns a queue of display reads (to simulate a phantom-then-
+    /// real transition), enforces a Chromium-style minimum width on every SetWindow, and records
+    /// the final applied rect.
+    /// </summary>
+    private sealed class FakeGeo : IDockWindowGeometry
+    {
+        private readonly Queue<SidecarGeometry.DisplayInfo?> _displays;
+        private readonly int _minWidthClamp;
+        private SidecarGeometry.DisplayInfo? _lastDisplay;
+
+        public FakeGeo(IEnumerable<SidecarGeometry.DisplayInfo?> displays, int minWidthClamp)
+        {
+            _displays = new Queue<SidecarGeometry.DisplayInfo?>(displays);
+            _minWidthClamp = minWidthClamp;
+        }
+
+        public TerminalTiling.WindowRect Current { get; private set; } = new(-32000, -32000, 800, 600);
+
+        public int SetCount { get; private set; }
+
+        public Task NormalizeAsync() => Task.CompletedTask;
+
+        public Task MoveAsync(int left, int top)
+        {
+            Current = Current with { X = left, Y = top };
+            return Task.CompletedTask;
+        }
+
+        public Task SettleAsync() => Task.CompletedTask;
+
+        public Task<SidecarGeometry.DisplayInfo?> ReadDisplayAsync()
+        {
+            // Once the queue is drained, keep returning the last value (steady state).
+            if (_displays.Count > 0)
+            {
+                _lastDisplay = _displays.Dequeue();
+            }
+
+            return Task.FromResult(_lastDisplay);
+        }
+
+        public Task<TerminalTiling.WindowRect?> ReadWindowAsync() =>
+            Task.FromResult<TerminalTiling.WindowRect?>(Current);
+
+        public Task SetWindowAsync(TerminalTiling.WindowRect rect)
+        {
+            SetCount++;
+
+            // Chromium refuses to make the window narrower than its platform minimum.
+            var clampedWidth = System.Math.Max(rect.Width, _minWidthClamp);
+            Current = rect with { Width = clampedWidth };
+            return Task.CompletedTask;
+        }
+    }
+
+    private static SidecarGeometry.DisplayInfo D(int l, int t, int w, int h) => new(l, t, w, h);
+
+    [Fact]
+    public async Task Place_WithWidthClamp_EndsFlushRight_NotPastEdge()
+    {
+        // Work area 1280x720, dock right, request 390 — but Chromium clamps the window to 600.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 600);
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5);
+
+        result.Should().NotBeNull();
+        var b = result!.Value.Browser;
+        b.Width.Should().Be(600, "the window obeys Chromium's clamp");
+        b.X.Should().Be(1280 - 600, "the CLAMPED width is re-placed flush — not left positioned for 390");
+        (b.X + b.Width).Should().Be(1280, "right edge flush with the work area, never past the Dock");
+        geo.Current.Should().Be(b, "the final applied bounds match the returned rect");
+    }
+
+    [Fact]
+    public async Task Place_RecoversFromPhantomFirstRead()
+    {
+        // First read is a phantom from the still-off-screen window (implausible), then the real
+        // display appears. The docker must place using the REAL work area, not the phantom.
+        var geo = new FakeGeo(
+            [D(0, 0, 0, 0), D(0, 0, 1280, 720), D(0, 0, 1280, 720)],
+            minWidthClamp: 500);
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+
+        result.Should().NotBeNull();
+        result!.Value.Display.Should().Be(D(0, 0, 1280, 720), "the phantom read was rejected; the real display drove placement");
+        var b = result.Value.Browser;
+        (b.X + b.Width).Should().Be(1280, "placed flush on the real display");
+    }
+
+    [Fact]
+    public async Task Place_HugeClamp_NeverFullWidth_StaysOnScreen()
+    {
+        // Pathological: Chromium reports a near-full-screen width. The result must be capped and
+        // fully on-screen — the "opens full-width, pushed off screen" bug must be impossible.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 2000);
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+
+        var b = result!.Value.Browser;
+        var cap = (int)System.Math.Round(1280 * DockGeometry.MaxFraction);
+        b.Width.Should().BeLessThanOrEqualTo(cap, "never full-width");
+        b.X.Should().BeGreaterThanOrEqualTo(0, "never off the left");
+        (b.X + b.Width).Should().BeLessThanOrEqualTo(1280, "never off the right");
+        b.X.Should().BeGreaterThan(0, "leaves room for the terminal");
+    }
+
+    [Fact]
+    public async Task Place_RightDock_NeverOverlapsDock_AcrossWorkAreas()
+    {
+        // Sweep several work areas (incl. a Dock-on-right-reducing-availWidth and a menu-bar
+        // offset) and clamps; the right edge must always land exactly on the work-area edge.
+        foreach (var (display, clamp) in new[]
+        {
+            (D(0, 0, 1280, 720), 500),
+            (D(0, 38, 1440, 860), 700),   // menu bar
+            (D(0, 0, 1080, 720), 900),    // narrow work area (Dock on right ate width)
+            (D(1512, 0, 1512, 982), 600), // secondary display
+        })
+        {
+            var geo = new FakeGeo([display], clamp);
+            var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+            var b = result!.Value.Browser;
+
+            (b.X + b.Width).Should().Be(display.AvailLeft + display.AvailWidth,
+                $"flush on {display.AvailWidth}x{display.AvailHeight}@{display.AvailLeft},{display.AvailTop} clamp={clamp}");
+            b.X.Should().BeGreaterThanOrEqualTo(display.AvailLeft);
+            b.Y.Should().Be(display.AvailTop);
+        }
+    }
+
+    [Fact]
+    public async Task Place_NoPlausibleDisplay_ReturnsNull_PlacementSkipped()
+    {
+        // Every read is a phantom → the docker refuses to guess and skips placement (leaving the
+        // window where it is) rather than docking it off-screen.
+        var geo = new FakeGeo([D(0, 0, 0, 0)], minWidthClamp: 500);
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Place_AnchorsWindowOnScreenBeforeMeasuring()
+    {
+        // The window starts parked off-screen at -32000; the docker must move it on-screen
+        // (anchor) before it ends up placed — so the final rect is never at the parked origin.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 500);
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+
+        result!.Value.Browser.X.Should().BeGreaterThanOrEqualTo(0, "never left parked off-screen");
+        geo.SetCount.Should().BeGreaterThanOrEqualTo(2, "places once, then re-places at the clamped width");
+    }
+}
