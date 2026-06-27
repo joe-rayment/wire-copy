@@ -63,6 +63,44 @@ internal static class SelectorDerivation
     }
 
     /// <summary>
+    /// workspace-q77e: true when a model-supplied URL pattern pins to a SINGLE
+    /// article rather than a reusable section — a long, multi-hyphen path
+    /// segment that is really a headline slug (e.g.
+    /// <c>/us-releases-powerful-anthropic-model-mythos-to-some-us-companies/</c>).
+    /// Such a pattern matches one story today and nothing tomorrow, so it must
+    /// be stripped from durable SECTION identifiers exactly as
+    /// <see cref="StripVolatileIds"/> strips date-stamped id fragments from
+    /// selectors. Short, generic hub segments (<c>/opinion/</c>, <c>/tech/</c>,
+    /// <c>/personal-finance/</c>) are kept: a segment is volatile only when it
+    /// carries 3+ hyphens or runs past 28 characters — neither of which a real
+    /// section-hub path segment does.
+    /// </summary>
+    public static bool IsVolatileUrlPattern(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return true;
+        }
+
+        return pattern
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(IsVolatileSegment);
+    }
+
+    /// <summary>
+    /// workspace-q77e: drops single-article (headline-slug) URL patterns from a
+    /// section's identifiers, keeping only short reusable hub segments. See
+    /// <see cref="IsVolatileUrlPattern"/>.
+    /// </summary>
+    public static List<string> StripVolatileUrlPatterns(IEnumerable<string> patterns)
+    {
+        ArgumentNullException.ThrowIfNull(patterns);
+        return patterns
+            .Where(p => !string.IsNullOrWhiteSpace(p) && !IsVolatileUrlPattern(p))
+            .ToList();
+    }
+
+    /// <summary>
     /// Derives the shared, discriminating parent-selector fragment(s) common to
     /// every link's <see cref="LinkInfo.ParentSelector"/>. A fragment is
     /// "discriminating" only if it carries a class (<c>.</c>), id (<c>#</c>), or
@@ -151,7 +189,7 @@ internal static class SelectorDerivation
         }
 
         var commonSet = common
-            .Where(s => !IsNumeric(s))
+            .Where(s => !IsNumeric(s) && !IsVolatileSegment(s))
             .ToHashSet(StringComparer.Ordinal);
 
         if (commonSet.Count == 0)
@@ -211,4 +249,11 @@ internal static class SelectorDerivation
 
     private static bool IsNumeric(string segment) =>
         segment.Length > 0 && segment.All(char.IsDigit);
+
+    /// <summary>
+    /// workspace-q77e: a single path segment that reads as a headline slug
+    /// rather than a reusable hub — 3+ hyphens or longer than 28 characters.
+    /// </summary>
+    private static bool IsVolatileSegment(string segment) =>
+        segment.Count(c => c == '-') >= 3 || segment.Length > 28;
 }

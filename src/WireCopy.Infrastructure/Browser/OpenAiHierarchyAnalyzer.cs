@@ -685,6 +685,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("     - section index/hub pages (e.g. a bare \"/opinion\" or \"/sports\" link)");
         sb.AppendLine("     - author/byline pages and tag/topic landing pages");
         sb.AppendLine("     - /video/ or podcast hub links, live-blog index shells");
+        sb.AppendLine("     - podcast EPISODES and 'featured podcasts' / audio-player rails (these are");
+        sb.AppendLine("       not news stories even when each row links somewhere)");
         sb.AppendLine("     - social, share, login, and other navigation/utility links");
         sb.AppendLine("     - sponsor posts / advertiser slots, and tertiary site chrome such as");
         sb.AppendLine("       a parent-company link, 'about', leaderboards, or event calendars");
@@ -804,11 +806,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("   - top_story: the single most prominent lead story;");
         sb.AppendLine("   - tiers: ordered groups of remaining stories (most prominent first);");
         sb.AppendLine("   - exclude: links that are NOT stories (subscribe/newsletter CTAs, section");
-        sb.AppendLine("     hub/index pages, author/tag pages, video hubs, sign-in, social/nav).");
+        sb.AppendLine("     hub/index pages, author/tag pages, video hubs, sign-in, social/nav,");
+        sb.AppendLine("     sponsor/advertiser slots, podcast episodes and 'featured podcasts' /");
+        sb.AppendLine("     audio-player rails, and event-calendar / job-board boxes).");
         sb.AppendLine("   For EVERY option set a DURABLE identifier: parent_selector = the shortest");
         sb.AppendLine("   class/id-bearing CSS fragment shared by those links (e.g. 'section.lead',");
-        sb.AppendLine("   'section.feed'); url_pattern = a shared path segment like '/opinion/' when one");
-        sb.AppendLine("   exists; else empty string. Always fill example_link_indices with the link");
+        sb.AppendLine("   'section.feed'); url_pattern = a SHORT shared HUB segment like '/opinion/'");
+        sb.AppendLine("   (NEVER a single story's full path or headline slug) when one exists, else");
+        sb.AppendLine("   empty string. Always fill example_link_indices with the link");
         sb.AppendLine("   numbers the option refers to. These identifiers must generalize to a LATER");
         sb.AppendLine("   visit when the article URLs have changed — never identify a story by its");
         sb.AppendLine("   exact URL. On AGGREGATOR pages (stories link to many different hosts),");
@@ -843,8 +848,12 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("Return durable sections (most prominent first):");
         sb.AppendLine("- name: short label (the first/lead section should be the single top story);");
         sb.AppendLine("- parent_selectors: shortest class/id-bearing CSS fragments identifying the");
-        sb.AppendLine("  section's links (e.g. 'section.lead'); url_patterns: shared path segments");
-        sb.AppendLine("  (e.g. '/opinion/'); set at least one of the two per section so it generalizes;");
+        sb.AppendLine("  section's links (e.g. 'section.lead'); url_patterns: a SHORT path SEGMENT");
+        sb.AppendLine("  every story in the section shares (e.g. '/opinion/', '/tech/'). A url_pattern");
+        sb.AppendLine("  is a reusable hub segment, NEVER a single story's full path or headline slug");
+        sb.AppendLine("  (e.g. '/us-lifts-block-on-mythos-5/' identifies ONE article and is dead on the");
+        sb.AppendLine("  next visit) — when stories share no short segment, leave url_patterns EMPTY and");
+        sb.AppendLine("  rely on parent_selectors. Set at least one durable identifier per section;");
         sb.AppendLine("- story_indices: the link numbers currently in this section (so the identifier");
         sb.AppendLine("  can be re-derived if needed);");
         sb.AppendLine("- start_collapsed: true for low-priority sections.");
@@ -891,17 +900,45 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         sb.AppendLine();
-        sb.AppendLine("The user answered your questions as follows:");
         var byId = proposal.Questions.ToDictionary(q => q.Id, q => q, StringComparer.Ordinal);
-        foreach (var answer in answers)
+        var qaAnswers = answers.Where(a => !string.Equals(a.QuestionId, "adjustment", StringComparison.Ordinal)).ToList();
+        var userInstructions = answers
+            .Where(a => string.Equals(a.QuestionId, "adjustment", StringComparison.Ordinal))
+            .ToList();
+
+        if (qaAnswers.Count > 0)
         {
-            var promptText = byId.TryGetValue(answer.QuestionId, out var q) ? q.Prompt : answer.QuestionId;
-            sb.AppendLine($"  Q: {promptText}");
-            sb.AppendLine($"  A: {answer.Answer}");
+            sb.AppendLine("The user answered your questions as follows:");
+            foreach (var answer in qaAnswers)
+            {
+                var promptText = byId.TryGetValue(answer.QuestionId, out var q) ? q.Prompt : answer.QuestionId;
+                sb.AppendLine($"  Q: {promptText}");
+                sb.AppendLine($"  A: {answer.Answer}");
+            }
+
+            sb.AppendLine();
         }
 
-        sb.AppendLine();
-        sb.Append("Produce the final durable pattern, honouring these answers.");
+        if (userInstructions.Count > 0)
+        {
+            // workspace-q77e: the user's free-text steering is a DIRECT command,
+            // not just another answer. Surfacing it as a buried 'Q: adjustment'
+            // line let a weak model under-weight it; promote it to the
+            // highest-priority directive so the revised pattern actually obeys
+            // (drop/keep the named things, re-order, change the lead).
+            sb.AppendLine("DIRECT USER INSTRUCTION(S) — HIGHEST PRIORITY. The user typed these to change");
+            sb.AppendLine("the layout. Revise the pattern to satisfy them even when that overrides your");
+            sb.AppendLine("earlier proposal or the answers above — e.g. add the named things to");
+            sb.AppendLine("exclude_selectors/exclude_indices, drop a section, or re-order/re-pick the lead:");
+            foreach (var instruction in userInstructions)
+            {
+                sb.AppendLine($"  • {instruction.Answer}");
+            }
+
+            sb.AppendLine();
+        }
+
+        sb.Append("Produce the final durable pattern, honouring the user's input above.");
         return sb.ToString();
     }
 
@@ -1249,7 +1286,13 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
-            var urlPatterns = (s.UrlPatterns ?? new()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+
+            // workspace-q77e: a model that returns a section's lead-article slug
+            // as a url_pattern pins the section to ONE story — durable today,
+            // dead tomorrow. Strip those the same way StripVolatileIds strips
+            // date-stamped ids; an emptied list then re-derives a real shared
+            // segment below.
+            var urlPatterns = SelectorDerivation.StripVolatileUrlPatterns(s.UrlPatterns ?? new());
 
             // B3 fallback only when the model omitted durable identifiers.
             if (selectors.Count == 0 && members.Count > 0)
@@ -1257,7 +1300,12 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 selectors = SelectorDerivation.DeriveParentSelectors(members);
             }
 
-            if (urlPatterns.Count == 0 && members.Count > 0)
+            // workspace-q77e: only derive a url_pattern when the section has NO
+            // durable selector to stand on. Bolting a derived path onto a
+            // selector-identified section adds nothing but risk — for a
+            // one-story section (e.g. the lead) DeriveUrlPatterns re-emits that
+            // story's own slug, undoing the volatile-pattern strip above.
+            if (urlPatterns.Count == 0 && selectors.Count == 0 && members.Count > 0)
             {
                 urlPatterns = SelectorDerivation.DeriveUrlPatterns(members);
             }

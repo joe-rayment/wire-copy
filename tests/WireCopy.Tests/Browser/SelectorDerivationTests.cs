@@ -66,6 +66,40 @@ public class SelectorDerivationTests
         result.Should().NotContain("/2026/");
     }
 
+    [Theory]
+    [InlineData("/us-releases-powerful-anthropic-model-mythos-to-some-us-companies/")] // headline slug
+    [InlineData("/this-is-a-very-long-single-story-path-segment/")] // long single segment
+    [InlineData("/a-b-c-d/")] // 3+ hyphens
+    [InlineData("")] // blank
+    public void IsVolatileUrlPattern_SingleArticleSlugs_ReturnTrue(string pattern)
+    {
+        SelectorDerivation.IsVolatileUrlPattern(pattern).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("/opinion/")]
+    [InlineData("/tech/")]
+    [InlineData("/personal-finance/")] // multi-word hub, 1 hyphen, short
+    [InlineData("/article/")]
+    public void IsVolatileUrlPattern_ShortHubSegments_ReturnFalse(string pattern)
+    {
+        SelectorDerivation.IsVolatileUrlPattern(pattern).Should().BeFalse();
+    }
+
+    [Fact]
+    public void StripVolatileUrlPatterns_KeepsHubsDropsSlugs()
+    {
+        var input = new[]
+        {
+            "/opinion/",
+            "/us-releases-powerful-anthropic-model-mythos-to-some-us-companies/",
+            "/tech/",
+        };
+
+        SelectorDerivation.StripVolatileUrlPatterns(input)
+            .Should().BeEquivalentTo(new[] { "/opinion/", "/tech/" });
+    }
+
     [Fact]
     public void DeriveUrlPatterns_NoSharedSegment_ReturnsEmpty()
     {
