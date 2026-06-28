@@ -296,7 +296,7 @@ internal static class SearchCommandHandler
                 return true;
 
             case "layout":
-                // workspace-5oe9.10: ':layout' and Ctrl+L both open the single
+                // workspace-1dmr: ':layout' and the 'g l' chord both open the single
                 // strategy chooser (StrategyChooserHandler) — no second entry point.
                 await StrategyChooserHandler.HandleOpenChooserAsync(ctx, options, ct).ConfigureAwait(false);
                 return true;

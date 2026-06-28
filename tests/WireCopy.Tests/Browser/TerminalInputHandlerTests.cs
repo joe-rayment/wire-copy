@@ -224,9 +224,10 @@ public class TerminalInputHandlerTests
     }
 
     [Fact]
-    public void MapKeyToCommand_ShiftL_ReturnsGoForward()
+    public void MapKeyToCommand_ShiftB_ReturnsGoForward()
     {
-        var result = _sut.MapKeyToCommand(ConsoleKey.L, ConsoleModifiers.Shift);
+        // workspace-1dmr: forward history pairs with 'b' = back (was the dead Shift+L).
+        var result = _sut.MapKeyToCommand(ConsoleKey.B, ConsoleModifiers.Shift);
         result.Type.Should().Be(CommandType.GoForward);
     }
 

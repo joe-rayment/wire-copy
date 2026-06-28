@@ -32,7 +32,7 @@ public class KeybindingPopupTests
         keys.Should().Contain("Enter");
         keys.Should().Contain("s");
         keys.Should().Contain("v");
-        keys.Should().Contain("b");
+        keys.Should().Contain("b / B");
         keys.Should().Contain("q");
     }
 
@@ -44,7 +44,7 @@ public class KeybindingPopupTests
 
         keys.Should().Contain("s");
         keys.Should().Contain("v");
-        keys.Should().Contain("b");
+        keys.Should().Contain("b / B");
         keys.Should().Contain("q");
     }
 
@@ -132,7 +132,7 @@ public class KeybindingPopupTests
     [Fact]
     public void ComputeInnerWidth_GrowsForLongDescriptions()
     {
-        // The longest Hierarchical row today: "O — dock browser right (follows selection)".
+        // longest is derived from the live bindings (so it survives a remap).
         var bindings = KeybindingPopup.GetBindings(ViewMode.Hierarchical);
         var maxKeyWidth = bindings.Max(b => RenderHelpers.GetDisplayWidth(b.Key));
         var longest = bindings.Max(b => maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(b.Description));

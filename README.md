@@ -123,14 +123,14 @@ Press `?` on any screen for the full, current list.
 | `Space` | Toggle expand/collapse · toggle selection |
 | `s` / `A` | Save to reading list / save all links |
 | `v` / `t` | Reader / tree view |
-| `Ctrl+L` | Set up site layout (AI) |
-| `Shift+O` | Dock / undock the live browser sidecar (follows selection) |
+| `g l` | Set up site layout (AI) — also `:layout` |
+| `|` | Dock / undock the live browser sidecar (follows selection) |
 | `y` | Open the sidecar's current page in the app |
 | `Shift+R` | Force refresh (bypass cache) |
 | `Shift+I` | Interactive refresh (log in by hand in the visible browser) |
 | `\` | Prefetch progress panel |
 | `/` `n` `N` | Search · next / previous match |
-| `b` / `Backspace` | Go back · `Shift+L` go forward |
+| `b` / `Shift+B` | Go back / forward (also `Backspace` = back) |
 
 ### Reader View
 
@@ -138,10 +138,11 @@ Press `?` on any screen for the full, current list.
 |-----|--------|
 | `j` / `k`, `Ctrl+D` / `Ctrl+U` | Scroll · page down / up |
 | `[` / `]` / `0` | Narrow / widen / reset content width |
-| `L` | Tune article layout visually (headline / body / ignore, confirmed on the live page) |
-| `Shift+E` | Regenerate article layout (re-run the AI extractor) |
+| `e` | Regenerate article layout (re-run the AI extractor) |
+| `Shift+E` | Tune article layout visually (headline / body / ignore, confirmed on the live page) |
 | `f`, `<` / `>` | Speed reading on/off · slower / faster |
 | `s` / `o` | Save to reading list / open in system browser |
+| `|` | Dock / undock the live browser sidecar |
 | `v` | Back to link view |
 
 ### Reading List

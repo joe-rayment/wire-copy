@@ -530,6 +530,15 @@ public class TerminalInputHandler : IInputHandler
                 return new NavigationCommand { Type = CommandType.GoToTop, Count = count };
             }
 
+            // workspace-1dmr: 'g l' opens the AI layout wizard (Helix-style goto
+            // submenu), replacing the Ctrl+L that collided with clear-screen.
+            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.L)
+            {
+                _waitingForSecondKey = false;
+                _numericPrefix = 0;
+                return new NavigationCommand { Type = CommandType.ChooseLayout };
+            }
+
             if (_waitingForSecondKey)
             {
                 _waitingForSecondKey = false;
@@ -607,7 +616,11 @@ public class TerminalInputHandler : IInputHandler
             's' => new NavigationCommand { Type = CommandType.SaveToCollection },
             'S' => new NavigationCommand { Type = CommandType.SaveToSpecific },
             'A' => new NavigationCommand { Type = CommandType.SaveAllToReadingList },
-            'E' => new NavigationCommand { Type = CommandType.RegenerateArticleLayout },
+
+            // workspace-1dmr: article-layout fixes are an e/E pair — lowercase
+            // 'e' re-extracts (regenerate), Shift+E opens the manual tuner.
+            'e' => new NavigationCommand { Type = CommandType.RegenerateArticleLayout },
+            'E' => new NavigationCommand { Type = CommandType.TuneArticleLayout },
             'd' => new NavigationCommand { Type = CommandType.DeleteItem },
             'p' => new NavigationCommand { Type = CommandType.GeneratePodcast },
             'a' => new NavigationCommand { Type = CommandType.AddBookmark },
@@ -618,14 +631,14 @@ public class TerminalInputHandler : IInputHandler
             '{' => new NavigationCommand { Type = CommandType.ParagraphUp },
             '}' => new NavigationCommand { Type = CommandType.ParagraphDown },
             '?' => new NavigationCommand { Type = CommandType.ShowHelp },
-            'D' => new NavigationCommand { Type = CommandType.DumpHtml },
             'o' => new NavigationCommand { Type = CommandType.OpenInBrowser },
 
-            // 'O' (not a vim motion; pairs with 'o' = open-in-browser). Avoids the
-            // vim word-motion key 'w' so the dock switcher doesn't shadow navigation.
-            'O' => new NavigationCommand { Type = CommandType.ToggleBrowserDock },
+            // workspace-1dmr: dock the live browser as a side pane on '|' (the
+            // tmux/vim "vertical split" mnemonic). Frees the capital 'O', which
+            // read as "open" and was a lone capital. Dump-HTML is debug-only and
+            // now lives on the ':dump' command, not a prime key.
+            '|' => new NavigationCommand { Type = CommandType.ToggleBrowserDock },
             'y' => new NavigationCommand { Type = CommandType.AdoptLensPage },
-            'L' => new NavigationCommand { Type = CommandType.TuneArticleLayout },
             'z' => new NavigationCommand { Type = CommandType.Undo },
             'x' => new NavigationCommand { Type = CommandType.CancelRun },
             'f' => new NavigationCommand { Type = CommandType.ToggleSpeedRead },
@@ -648,7 +661,11 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.R => new NavigationCommand { Type = CommandType.ForceRefresh },
                 ConsoleKey.I => new NavigationCommand { Type = CommandType.InteractiveRefresh },
                 ConsoleKey.X => new NavigationCommand { Type = CommandType.ClearCollection },
-                ConsoleKey.L => new NavigationCommand { Type = CommandType.GoForward },
+
+                // workspace-1dmr: history forward pairs with 'b' = back (Shift+B).
+                // The old Shift+L was dead — the KeyChar switch grabbed 'L' for the
+                // article tuner before this branch ever ran.
+                ConsoleKey.B => new NavigationCommand { Type = CommandType.GoForward },
 
                 // workspace-vkhr: Shift+P restores the detached podcast-generation
                 // modal. No-op when no active background job exists.
@@ -664,7 +681,9 @@ public class TerminalInputHandler : IInputHandler
                 ConsoleKey.D => new NavigationCommand { Type = CommandType.PageDown },
                 ConsoleKey.U => new NavigationCommand { Type = CommandType.PageUp },
                 ConsoleKey.P => new NavigationCommand { Type = CommandType.CycleTheme },
-                ConsoleKey.L => new NavigationCommand { Type = CommandType.ChooseLayout },
+
+                // workspace-1dmr: the AI layout wizard moved OFF Ctrl+L (universal
+                // clear/redraw) to the 'g l' chord (and the ':layout' command).
                 ConsoleKey.C => new NavigationCommand { Type = CommandType.Quit },
                 _ => new NavigationCommand { Type = CommandType.NoOp }
             };
