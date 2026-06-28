@@ -119,10 +119,13 @@ internal class LauncherRenderer
             _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
         }
 
+        // workspace-g801: surface the launcher's signature 1-9 quick-jump (the tile
+        // badges already advertise it); the destructive 'd delete' moves to ?-help
+        // rather than sitting on the footer of the very first screen forever.
         var hints = FormatPrimaryKbdHint("Enter", "open", p) + "  " +
+                    FormatMutedKbdHint("1-9", "jump", p) + "  " +
                     FormatMutedKbdHint("o", "go to url", p) + "  " +
                     FormatMutedKbdHint("a", "add", p) + "  " +
-                    FormatMutedKbdHint("d", "delete", p) + "  " +
                     FormatMutedKbdHint("?", "help", p);
 
         _ = width;

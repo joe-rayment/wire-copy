@@ -61,7 +61,7 @@ public class InteractiveRefreshCopyTests
     {
         // workspace-u5vu: Shift+I on a link-list page outside preview mode is
         // often a reach for the layout wizard — the prompt points at Ctrl+L.
-        TerminalPageRenderer.LayoutSetupPointer.Should().Contain("Ctrl+l");
+        TerminalPageRenderer.LayoutSetupPointer.Should().Contain("g l");
         TerminalPageRenderer.LayoutSetupPointer.Length.Should().BeLessThanOrEqualTo(54,
             "the pointer must fit the centered box content width at 80 cols");
     }

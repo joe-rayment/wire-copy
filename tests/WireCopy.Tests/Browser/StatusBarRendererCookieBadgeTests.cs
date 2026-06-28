@@ -207,8 +207,8 @@ public class StatusBarRendererActionBadgeTests
 
         output.Should().Contain("captcha at www.nytimes.com",
             "specific variants keep the verb-led copy from workspace-0b9s — only Generic was changed");
-        output.Should().Contain("Shift+O",
-            "captcha variants still advertise Shift+O to open in the real browser");
+        output.Should().Contain("|",
+            "captcha variants still advertise | to dock the real browser");
         output.Should().NotContain("uncertain interruption");
     }
 

@@ -487,13 +487,13 @@ internal class StatusBarRenderer
         }
         else
         {
-            // workspace-wef6.2: the standalone "index" and "AI" badges fold
-            // into the Ctrl+l hint copy (:layout when an AI hierarchy exists,
-            // :set up when not) instead of separate trivia fragments.
+            // workspace-g801: the layout badge points new users at the AI setup
+            // wizard ('g l'). Once the site IS configured the badge is just noise
+            // shown forever, so suppress it — reconfigure lives in help / ':layout'.
             if (mode == ViewMode.Hierarchical &&
-                context.CurrentPage?.Classification == PageClassification.LinkList)
+                context.CurrentPage?.Classification == PageClassification.LinkList &&
+                !context.IsAiHierarchy)
             {
-                var layoutHint = context.IsAiHierarchy ? ":layout" : ":set up";
                 items.Add(new StatusItem
                 {
                     Channel = StatusChannel.Ambient,
@@ -502,8 +502,8 @@ internal class StatusBarRenderer
                     {
                         new[]
                         {
-                            new StatusSegment("Ctrl+l", StatusStyle.Accent),
-                            new StatusSegment(layoutHint, StatusStyle.Dim),
+                            new StatusSegment("g l", StatusStyle.Accent),
+                            new StatusSegment(":set up", StatusStyle.Dim),
                         },
                     },
                 });
@@ -621,7 +621,7 @@ internal class StatusBarRenderer
         // Shift+R retry rather than a confidently wrong claim.
         var isGeneric = requiredAction.Variant == HumanActionVariant.Generic;
         var verb = isGeneric ? "uncertain interruption" : GetActionVerb(requiredAction.Variant);
-        var key = isGeneric ? "Shift+R" : "Shift+O";
+        var key = isGeneric ? "Shift+R" : "|";
         var action = isGeneric ? "retry" : "open";
 
         return new StatusItem
@@ -1004,32 +1004,37 @@ internal class StatusBarRenderer
             ];
         }
 
+        // workspace-g801: tiers are longest→shortest; the composer shows the
+        // largest that fits. '?:help' is dropped here — it already renders in the
+        // dedicated trailing help slot, so listing it again only wasted space and
+        // crowded out real actions. Destructive keys (delete/clear) live in the
+        // longest tier only, so they fall away first under squeeze.
         return mode switch
         {
             ViewMode.Hierarchical =>
             [
-                [("Enter", "open"), ("Space", "select"), ("s", "save"), ("A", "save-all"), ("Shift+R", "refresh"), ("v", "reader"), ("?", "help")],
-                [("Enter", "open"), ("Space", "select"), ("s", "save"), ("Shift+R", "refresh"), ("v", "reader"), ("?", "help")],
-                [("s", "save"), ("?", "help")],
+                [("Enter", "open"), ("s", "save"), ("|", "browser"), ("Space", "select"), ("A", "save-all"), ("Shift+R", "refresh"), ("v", "reader")],
+                [("Enter", "open"), ("s", "save"), ("|", "browser"), ("v", "reader")],
+                [("Enter", "open"), ("s", "save")],
             ],
             ViewMode.Readable =>
             [
-                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back"), ("?", "help")],
-                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("v", "links"), ("b", "back"), ("?", "help")],
-                [("?", "help")],
+                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back")],
+                [("s", "save"), ("f", "speed-read"), ("v", "links"), ("b", "back")],
+                [("s", "save"), ("v", "links")],
             ],
             ViewMode.CollectionList =>
             [
-                [("Enter", "open"), ("d", "delete"), ("b", "back"), ("?", "help")],
-                [("Enter", "open"), ("b", "back"), ("?", "help")],
-                [("?", "help")],
+                [("Enter", "open"), ("d", "delete"), ("b", "back")],
+                [("Enter", "open"), ("b", "back")],
+                [("Enter", "open")],
             ],
             ViewMode.CollectionItems =>
             [
-                [("Enter", "open"), ("d", "remove"), ("X", "clear"), ("J/K", "reorder"), ("p", "podcast"), (":", "cmd"), ("b", "back"), ("?", "help")],
-                [("Enter", "open"), ("d", "remove"), ("p", "podcast"), ("b", "back"), ("?", "help")],
-                [("Enter", "open"), ("b", "back"), ("?", "help")],
-                [("?", "help")],
+                [("Enter", "open"), ("p", "podcast"), ("J/K", "reorder"), ("d", "remove"), ("Shift+X", "clear"), (":", "cmd"), ("b", "back")],
+                [("Enter", "open"), ("p", "podcast"), ("d", "remove"), ("b", "back")],
+                [("Enter", "open"), ("b", "back")],
+                [("Enter", "open")],
             ],
             ViewMode.Launcher => throw new InvalidOperationException("StatusBar is not rendered for the launcher"),
             _ =>

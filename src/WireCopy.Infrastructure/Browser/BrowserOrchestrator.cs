@@ -77,6 +77,10 @@ public partial class BrowserOrchestrator : IBrowserService
     private bool _sidecarUnavailable;
     private bool _sidecarHintShown;
 
+    // workspace-g801: teach the sidecar dock key once per session when the user
+    // first lands on a link list with the sidecar available but not engaged.
+    private bool _sidecarTeachShown;
+
     // workspace-mctt: lens URL the user navigated to (adoption offer target).
     private volatile string? _divergedLensUrl;
 
@@ -841,6 +845,9 @@ public partial class BrowserOrchestrator : IBrowserService
             // reuse instead of a headless launch the summon would throw away.
             await EnsureSidecarEngagedAsync(CancellationToken.None).ConfigureAwait(false);
 
+            // workspace-g801: if the sidecar didn't auto-dock, teach the dock key once.
+            await MaybeTeachSidecarDockAsync(CancellationToken.None).ConfigureAwait(false);
+
             // Eagerly warm up the browser for paywalled or JS-heavy domains
             var warmupBrowserAvailable = (_browserSession as IBrowserSession)?.IsBrowserAvailable ?? false;
             var needsBrowserWarmup = _browserConfig.IsPaywalledDomain(url) || _preloadService.IsDomainNeedsJs(url);
@@ -1280,15 +1287,17 @@ public partial class BrowserOrchestrator : IBrowserService
                 case BrowserWindowState.Docked:
                     _navigationService.Announce(
                         DockGlyph(),
-                        "Sidecar open",
-                        new[] { new StatusKeyHint("O", "immersive view") },
+                        "Live page docked",
+                        new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                        ttl: TimeSpan.FromSeconds(5),
                         shortText: DockGlyph());
                     break;
                 case BrowserWindowState.Minimized:
                     _navigationService.Announce(
                         glyph: null,
-                        "Immersive view",
-                        new[] { new StatusKeyHint("O", "sidecar") });
+                        "Live page hidden",
+                        new[] { new StatusKeyHint("|", "show") },
+                        ttl: TimeSpan.FromSeconds(4));
                     break;
                 default:
                     _navigationService.SetStatusMessage(
@@ -1362,8 +1371,9 @@ public partial class BrowserOrchestrator : IBrowserService
                 _sidecarHintShown = true;
                 _navigationService.Announce(
                     DockGlyph(),
-                    "Sidecar open",
-                    new[] { new StatusKeyHint("O", "immersive view") },
+                    "Live page docked",
+                    new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                    ttl: TimeSpan.FromSeconds(5),
                     shortText: DockGlyph());
                 await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
             }
@@ -1400,8 +1410,9 @@ public partial class BrowserOrchestrator : IBrowserService
             _sidecarHintShown = true;
             _navigationService.Announce(
                 DockGlyph(),
-                "Sidecar open",
-                new[] { new StatusKeyHint("O", "immersive view") },
+                "Live page docked",
+                new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                ttl: TimeSpan.FromSeconds(5),
                 shortText: DockGlyph());
         }
         else
@@ -1419,6 +1430,42 @@ public partial class BrowserOrchestrator : IBrowserService
         // Re-render so the app immediately shrinks into the uncovered columns (or
         // clears the "opening…" status on failure); the render hook then syncs the
         // spotlight, which follow-navigates and highlights the current selection.
+        await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// workspace-g801: when the user first lands on a link list and the live-browser
+    /// sidecar is available but NOT auto-engaged, flash the dock shortcut for a few
+    /// seconds — once per session. EnsureSidecarEngagedAsync handles the auto-dock
+    /// path (and its own hint), so this only fires when docking is the user's to do.
+    /// </summary>
+    private async Task MaybeTeachSidecarDockAsync(CancellationToken cancellationToken)
+    {
+        if (_sidecarTeachShown
+            || _sidecarHintShown
+            || _sidecarUnavailable
+            || !_inputHandler.IsInteractive
+            || _browserSession is not IBrowserSession session
+            || session.IsDocked
+            || _navigationService.CurrentContext.ViewMode != ViewMode.Hierarchical
+            || !BrowserDockCommandHandler.IsSummonableUrl(_navigationService.CurrentPage?.Url))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsLinux()
+            && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))
+            && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+        {
+            return;
+        }
+
+        _sidecarTeachShown = true;
+        _navigationService.Announce(
+            DockGlyph(),
+            "See the live page beside the app",
+            new[] { new StatusKeyHint("|", "dock") },
+            ttl: TimeSpan.FromSeconds(6));
         await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
     }
 

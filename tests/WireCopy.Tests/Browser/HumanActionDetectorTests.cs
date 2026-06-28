@@ -455,7 +455,7 @@ public class HumanActionDetectorTests
 
         body.Should().Contain("press R");
         hint.Should().Contain("nytimes.com");
-        hint.Should().Contain("Shift+O:open");
+        hint.Should().Contain("|:open");
         hint.Should().Contain("b:back");
     }
 

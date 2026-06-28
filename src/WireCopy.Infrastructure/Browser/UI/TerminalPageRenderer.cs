@@ -22,9 +22,9 @@ public class TerminalPageRenderer : IPageRenderer
 {
     /// <summary>
     /// workspace-u5vu: the pointer shown when Shift+I was likely a reach for
-    /// the layout setup wizard (which lives on Ctrl+L / preview-mode Shift+I).
+    /// the layout setup wizard (which lives on the 'g l' chord / ':layout').
     /// </summary>
-    public const string LayoutSetupPointer = "Looking for layout setup? Esc, then Ctrl+l.";
+    public const string LayoutSetupPointer = "Looking for layout setup? Esc, then g l.";
 
     private const string Reset = "\x1b[0m";
     private const int MinBoxWidth = 30;
@@ -268,7 +268,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         var bodyStyled = $"{p.SecondaryText.AnsiFg}{bodyPlain}{Reset}";
 
-        // Hint line: highlight the key verbs (Shift+O / Shift+R / Shift+I / b)
+        // Hint line: highlight the key verbs (| / Shift+R / Shift+I / b)
         var hintStyled = StyleHintLine(hintPlain, p);
 
         var lines = new List<CenteredBoxLine>
@@ -304,7 +304,7 @@ public class TerminalPageRenderer : IPageRenderer
             Domain.Enums.Browser.HumanActionVariant.Captcha => (
                 "Site is showing a CAPTCHA",
                 $"Solve it in the browser window, then press R",
-                $"{d} \u2014 Shift+O:open  b:back"),
+                $"{d} \u2014 |:open  b:back"),
             Domain.Enums.Browser.HumanActionVariant.Login => (
                 $"Log in at {d} in your browser",
                 "Then press R to refresh.",
@@ -312,15 +312,15 @@ public class TerminalPageRenderer : IPageRenderer
             Domain.Enums.Browser.HumanActionVariant.CookieConsent => (
                 "Cookie consent banner blocking content",
                 "Accept it in the browser, then press R",
-                $"{d} \u2014 Shift+O:open  b:back"),
+                $"{d} \u2014 |:open  b:back"),
             Domain.Enums.Browser.HumanActionVariant.TwoFactor => (
                 $"Two-factor code required at {d}",
                 "Complete verification in the browser, then press R",
-                "Shift+O:open  b:back"),
+                "|:open  b:back"),
             Domain.Enums.Browser.HumanActionVariant.Paywall => (
                 $"Article is paywalled at {d}",
                 "Log in or open in browser",
-                "Shift+O:open  b:back"),
+                "|:open  b:back"),
             Domain.Enums.Browser.HumanActionVariant.RegionBlock => (
                 "Site blocks this region (HTTP 451)",
                 "Try a different network or VPN",
@@ -328,11 +328,11 @@ public class TerminalPageRenderer : IPageRenderer
             Domain.Enums.Browser.HumanActionVariant.RedirectLoop => (
                 "Site is stuck in a redirect loop",
                 "Open it in your browser, then press R",
-                $"{d} \u2014 Shift+O:open  b:back"),
+                $"{d} \u2014 |:open  b:back"),
             _ => (
                 $"Action needed at {d}",
                 "Open it in your browser, then press R",
-                "Shift+O:open  b:back"),
+                "|:open  b:back"),
         };
     }
 #pragma warning restore SA1204
@@ -636,11 +636,11 @@ public class TerminalPageRenderer : IPageRenderer
 #pragma warning disable SA1204 // Static helpers kept after the methods that use them for readability.
     private static string StyleHintLine(string hint, ThemePalette p)
     {
-        // Style recognised key tokens (Shift+O, Shift+R, Shift+I, Enter, b, Esc) in AccentFg
+        // Style recognised key tokens (|, Shift+R, Shift+I, Enter, b, Esc) in AccentFg
         // and the surrounding ":verb" descriptors in DimFg/SecondaryText. Falls back to a
         // single-color render when the hint contains no recognised tokens.
         var styled = hint;
-        var tokens = new[] { "Shift+O", "Shift+R", "Shift+I", "Enter", "Esc" };
+        var tokens = new[] { "Shift+R", "Shift+I", "Enter", "Esc", "|" };
         foreach (var token in tokens)
         {
             if (!styled.Contains(token, StringComparison.Ordinal))

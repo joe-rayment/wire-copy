@@ -495,7 +495,7 @@ public class CacheRenderingTests
         output.Should().Contain("⏸", "pause glyph (⏸) is the badge anchor");
         output.Should().Contain("captcha", "Captcha variant verb is 'captcha'");
         output.Should().Contain("www.nytimes.com");
-        output.Should().Contain("Shift+O");
+        output.Should().Contain("|");
     }
 
     [Fact]

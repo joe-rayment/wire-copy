@@ -126,7 +126,7 @@ public class StatusLineCoverageTests
             requiredAction: new HumanActionRequired(HumanActionVariant.Captcha, "nytimes.com"));
 
         model.PlainText.Should().Contain("⏸ captcha");
-        model.PlainText.Should().Contain("Shift+O", "the recovery key survives degradation");
+        model.PlainText.Should().Contain("|", "the recovery key survives degradation");
         RenderHelpers.GetDisplayWidth(model.PlainText).Should().BeLessThanOrEqualTo(44);
     }
 

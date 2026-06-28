@@ -342,6 +342,11 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SetStatusMessage(string message)
     {
+        if (HasActiveKeyedHint())
+        {
+            return;
+        }
+
         Announce(glyph: null, text: message);
     }
 
@@ -350,6 +355,11 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SetStatusMessage(string message, TimeSpan duration)
     {
+        if (HasActiveKeyedHint())
+        {
+            return;
+        }
+
         Announce(glyph: null, text: message, ttl: duration);
     }
 
@@ -824,6 +834,18 @@ public class NavigationService : INavigationService
                 : _activities.Values.OrderBy(a => a.Priority).ThenBy(a => a.Source, StringComparer.Ordinal).First();
         }
     }
+
+    /// <summary>
+    /// workspace-g801: true while a DELIBERATE keyed hint (an Announce carrying
+    /// shortcut keys, e.g. the sidecar teach flash) is still within its TTL. The
+    /// keyless <see cref="SetStatusMessage"/> shim defers to it so incidental
+    /// status spam (e.g. the dock spotlight's "highlight skipped") can't stomp a
+    /// teaching moment the instant it appears.
+    /// </summary>
+    private bool HasActiveKeyedHint() =>
+        _announcement is { Keys.Count: > 0 }
+        && _announcementSetAt is { } setAt
+        && _clock.GetUtcNow().UtcDateTime - setAt <= _announcementTtl;
 
     private StatusAnnouncement? GetActiveAnnouncement()
     {
