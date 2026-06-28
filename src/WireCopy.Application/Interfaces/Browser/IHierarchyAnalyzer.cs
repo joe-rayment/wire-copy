@@ -53,6 +53,23 @@ public interface IHierarchyAnalyzer
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// workspace-q77e — incremental refinement. Given the layout the user is
+    /// CURRENTLY looking at (and already implicitly accepted) plus one plain-English
+    /// change they typed, returns an edited layout that applies ONLY that change and
+    /// keeps everything else identical. Unlike re-running
+    /// <see cref="InferPatternFromAnswersAsync"/> from the original proposal, this
+    /// never re-derives from scratch, so a small tweak cannot throw away the parts of
+    /// an almost-perfect layout that were already working.
+    /// </summary>
+    Task<InferredPattern> RefineLayoutAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        SiteHierarchyConfig currentConfig,
+        string instruction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// workspace-frpl.10 (B9b) — a NEW single-label classify (distinct from the
     /// interactive-wizard surface above): given the section headings present on a
     /// page today and a durable intent (the recipe step's section name + aliases),

@@ -499,6 +499,61 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     }
 
     /// <inheritdoc />
+    public async Task<InferredPattern> RefineLayoutAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        SiteHierarchyConfig currentConfig,
+        string instruction,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(currentConfig);
+        ArgumentException.ThrowIfNullOrWhiteSpace(instruction);
+
+        var apiKey = GetApiKey()
+            ?? throw new InvalidOperationException(
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
+
+        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        var systemPrompt = BuildRefineSystemPrompt(screenshot is { Length: > 0 });
+        var userPrompt = BuildRefineUserPrompt(contentLinks, pageUrl, currentConfig, instruction);
+
+        _logger.LogInformation(
+            "Refining layout for {Url} ({SectionCount} current sections) via {Model}: {Instruction}",
+            pageUrl,
+            currentConfig.Sections.Count,
+            _config.Model,
+            instruction.Length > 80 ? instruction[..80] : instruction);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+                var options = BuildOptions(
+                    schemaName: "site_pattern",
+                    schema: SetupPatternSchema,
+                    schemaDescription: "The current layout edited by exactly the user's change; everything else identical.",
+                    reasoningEffortOverride: _config.SetupReasoningEffort);
+
+                var responseText = await _chatCompleter(
+                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+
+                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+            }
+            catch (JsonException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(ex, "Malformed JSON in refine-layout response, retrying");
+                userPrompt = new StringBuilder(userPrompt)
+                    .Append("\n\nIMPORTANT: respond with ONLY the JSON object — no commentary.")
+                    .ToString();
+            }
+        }
+
+        throw new InvalidOperationException("Failed to parse refine-layout response after retries");
+    }
+
+    /// <inheritdoc />
     public async Task<SectionClassification> ClassifySectionAsync(
         IReadOnlyList<string> candidateLabels,
         string intent,
@@ -955,6 +1010,88 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         sb.Append("Produce the final durable pattern, honouring the user's input above.");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// workspace-q77e: the refine prompt EDITS an already-approved layout. Its
+    /// whole job is to change exactly what the user asked and leave the rest
+    /// byte-for-byte the same, so refinement is incremental, not a fresh guess.
+    /// </summary>
+    private static string BuildRefineSystemPrompt(bool hasScreenshot)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are EDITING a homepage layout the user already approved — not building one from scratch.");
+        sb.AppendLine(VisionGuidance(hasScreenshot));
+        sb.AppendLine();
+        sb.AppendLine("You are given the CURRENT layout (sections in order, each with durable selectors /");
+        sb.AppendLine("url_patterns + start_collapsed, plus the exclude lists) and ONE change the user typed.");
+        sb.AppendLine("Apply the SMALLEST edit that satisfies that change and KEEP EVERYTHING ELSE IDENTICAL:");
+        sb.AppendLine("- echo every untouched section's `name` field BYTE-FOR-BYTE from the current layout");
+        sb.AppendLine("  (do not reword, shorten, or 'improve' a name you weren't asked to change), and copy");
+        sb.AppendLine("  its order, parent_selectors, url_patterns and start_collapsed EXACTLY — never");
+        sb.AppendLine("  reorder, re-derive or drop a section the change didn't mention;");
+        sb.AppendLine("- keep the existing exclude_selectors / exclude_url_patterns, only adding/removing the");
+        sb.AppendLine("  ones the change requires;");
+        sb.AppendLine("- never throw away stories that are currently shown unless the user asked to hide them.");
+        sb.AppendLine();
+        sb.AppendLine("Return the FULL layout in the schema (all sections + exclude lists), i.e. the current");
+        sb.AppendLine("one with the user's change applied. Keep identifiers durable: parent_selectors are the");
+        sb.AppendLine("shortest class/id CSS fragments; a url_pattern is a SHORT shared hub segment (e.g.");
+        sb.AppendLine("'/opinion/'), NEVER a single story's slug; on aggregators use parent_selectors only.");
+        sb.AppendLine("Sponsor/advert/promo, podcast/audio, and event-calendar rails go in exclude_selectors,");
+        sb.AppendLine("never a section. Set start_collapsed only for lower-priority STORY sections.");
+        sb.AppendLine();
+        sb.AppendLine("Set `confidence` and leave `confirm_question` null unless the change is genuinely");
+        sb.Append("ambiguous (then ONE short question with durable options).");
+        return sb.ToString();
+    }
+
+    private static string BuildRefineUserPrompt(
+        List<LinkInfo> contentLinks, string pageUrl, SiteHierarchyConfig currentConfig, string instruction)
+    {
+        var sb = new StringBuilder();
+        sb.Append(BuildCuratedUserPrompt(contentLinks, pageUrl));
+        sb.AppendLine();
+        sb.AppendLine("CURRENT LAYOUT (the user approved this — preserve it except for the change below):");
+        if (currentConfig.Sections.Count == 0)
+        {
+            sb.AppendLine("  (no sections yet)");
+        }
+
+        for (int i = 0; i < currentConfig.Sections.Count; i++)
+        {
+            var s = currentConfig.Sections[i];
+            var ids = new List<string>();
+            if (s.ParentSelectors.Count > 0)
+            {
+                ids.Add($"selectors=[{string.Join(" , ", s.ParentSelectors)}]");
+            }
+
+            if (s.UrlPatterns.Count > 0)
+            {
+                ids.Add($"url_patterns=[{string.Join(" , ", s.UrlPatterns)}]");
+            }
+
+            var collapsed = s.StartCollapsed ? " (collapsed)" : string.Empty;
+            sb.AppendLine($"  section {i + 1}: \"{s.Name}\"{collapsed} {string.Join(" ", ids)}");
+        }
+
+        if (currentConfig.ExcludeSelectors.Count > 0)
+        {
+            sb.AppendLine($"  exclude_selectors=[{string.Join(" , ", currentConfig.ExcludeSelectors)}]");
+        }
+
+        if (currentConfig.ExcludeUrlPatterns.Count > 0)
+        {
+            sb.AppendLine($"  exclude_url_patterns=[{string.Join(" , ", currentConfig.ExcludeUrlPatterns)}]");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("THE ONE CHANGE THE USER TYPED (apply only this, keep the rest identical):");
+        sb.AppendLine($"  • {instruction.Trim()}");
+        sb.AppendLine();
+        sb.Append("Return the full edited layout.");
         return sb.ToString();
     }
 

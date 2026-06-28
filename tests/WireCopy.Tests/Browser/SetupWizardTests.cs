@@ -721,6 +721,19 @@ public class SetupWizardTests
     }
 
     [Fact]
+    public void BuildPreviewCard_UndoAvailable_HintOffersUndo()
+    {
+        var config = SomeConfig();
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://x.com/a", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 80, ParentSelector = "section.lead a" },
+        };
+
+        SetupWizard.BuildPreviewCard(config, links, canUndo: false).Hint.Should().NotContain("undo");
+        SetupWizard.BuildPreviewCard(config, links, canUndo: true).Hint.Should().Contain("z undo");
+    }
+
+    [Fact]
     public void BuildPreviewCard_ZeroMatches_WarnsBeforeSaving()
     {
         var config = SomeConfig();

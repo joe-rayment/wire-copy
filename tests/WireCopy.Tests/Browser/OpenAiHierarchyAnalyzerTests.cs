@@ -99,6 +99,68 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public async Task RefineLayoutAsync_PromptCarriesCurrentLayoutAndChange_AndPreserves()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        var current = new SiteHierarchyConfig
+        {
+            Domain = "example.com",
+            UrlPattern = "^https?://(www\\.)?example\\.com/?",
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "gpt-5-mini",
+            Sections = new List<HierarchySection>
+            {
+                new() { Name = "Top story", SortOrder = 0, ParentSelectors = new() { "strong.L5" } },
+                new() { Name = "Main feed", SortOrder = 1, ParentSelectors = new() { "div.ii > strong" } },
+            },
+            ExcludeSelectors = new List<string> { "div#events" },
+        };
+
+        var prompt = string.Empty;
+        OpenAiHierarchyAnalyzer.ChatCompleter completer = (_, _, messages, _, _) =>
+        {
+            foreach (var m in messages)
+            {
+                foreach (var part in m.Content)
+                {
+                    if (part.Kind == ChatMessageContentPartKind.Text)
+                    {
+                        prompt += part.Text + "\n";
+                    }
+                }
+            }
+
+            // The model echoes the two current sections back unchanged and only
+            // ADDS the sponsor exclusion the instruction asked for.
+            return Task.FromResult(
+                "{\"sections\":[" +
+                "{\"name\":\"Top story\",\"parent_selectors\":[\"strong.L5\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+                "{\"name\":\"Main feed\",\"parent_selectors\":[\"div.ii > strong\"],\"url_patterns\":[],\"story_indices\":[1],\"start_collapsed\":false}]," +
+                "\"exclude_selectors\":[\"div#events\",\"div#radymre\"],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}");
+        };
+
+        var analyzer = CreateAnalyzer(completer);
+
+        var result = await analyzer.RefineLayoutAsync(
+            new byte[] { 1, 2, 3 },
+            CreateSampleLinks(),
+            "https://example.com/",
+            current,
+            "hide the sponsor posts");
+
+        // The refine prompt must show the model the current layout + the change.
+        prompt.Should().Contain("Top story").And.Contain("Main feed").And.Contain("strong.L5");
+        prompt.Should().Contain("hide the sponsor posts");
+        prompt.ToLowerInvariant().Should().Contain("keep");
+        prompt.Should().Contain("CURRENT LAYOUT");
+
+        // The two working sections survive; only the requested exclusion is added.
+        result.Config.Sections.Select(s => s.Name).Should().Equal("Top story", "Main feed");
+        result.Config.ExcludeSelectors.Should().Contain("div#radymre").And.Contain("div#events");
+    }
+
+    [Fact]
     public void IsConfigured_NoApiKey_ReturnsFalse()
     {
         _settingsStore.Get("OpenAiApiKey").Returns((string?)null);

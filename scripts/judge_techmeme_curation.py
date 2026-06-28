@@ -74,6 +74,7 @@ def main():
     ap.add_argument("--no-save", action="store_true", help="do not Enter-save the layout")
     ap.add_argument("--dock", action="store_true", help="Shift+O dock the real page and grab it")
     ap.add_argument("--effort", default="", help="override OpenAiHierarchy:SetupReasoningEffort (minimal/low/medium/high)")
+    ap.add_argument("--undo", action="store_true", help="after the steer, press 'z' to undo and capture the revert")
     args = ap.parse_args()
 
     if args.effort:
@@ -170,6 +171,13 @@ def main():
                         screen = cap(t, "03. RE-PREVIEW after steer", "02-reprev.txt")
                         m = re.search(r"(\d+) of (\d+) story links covered", screen)
                         cov_reprev = (int(m.group(1)), int(m.group(2))) if m else None
+
+                        if args.undo:
+                            # workspace-q77e: press 'z' to undo the refine; the
+                            # preview must revert to the pre-steer layout.
+                            t.send_keys("z")
+                            time.sleep(2)
+                            cap(t, "03b. AFTER UNDO (should match pre-steer 01-preview)", "02b-after-undo.txt")
 
                 if not args.no_save and "Your new layout" in t.capture():
                     t.send_keys("Enter")

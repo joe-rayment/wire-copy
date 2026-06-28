@@ -38,6 +38,9 @@ internal static class SetupWizard
     /// <summary>Card-loop sentinel: Space on an adjustable card (the preview).</summary>
     private const int AdjustChoice = -2;
 
+    /// <summary>Card-loop sentinel: 'z' (Undo) on the preview — revert the last refine.</summary>
+    private const int UndoChoice = -3;
+
     /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
     /// so the flow is unit-testable with a mock analyzer + scripted input.
@@ -169,6 +172,11 @@ internal static class SetupWizard
         // coverage into the next preview so each adjustment round shows what
         // changed ("12 of 40 · was 5").
         int? previousCovered = null;
+
+        // workspace-q77e: the layout as it was BEFORE the last refine, so 'z'
+        // can undo a tweak that made things worse without losing the
+        // almost-perfect version (or starting the whole wizard over).
+        SiteHierarchyConfig? undoConfig = null;
         while (!ct.IsCancellationRequested)
         {
             if (IsDegenerate(config, links))
@@ -186,6 +194,7 @@ internal static class SetupWizard
                     screenshot,
                     proposal,
                     answers,
+                    config,
                     budget,
                     freeTextPrompt,
                     pickLeadFromTree,
@@ -213,7 +222,7 @@ internal static class SetupWizard
             var askable = confirmQuestion != null && IsDiscriminating(confirmQuestion) && !budget.Exhausted
                 ? confirmQuestion
                 : null;
-            var preview = BuildPreviewCard(config, links, previousCovered, askable);
+            var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null);
             previousCovered = Coverage(config, links).Covered;
             var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
             if (lens != null)
@@ -257,7 +266,18 @@ internal static class SetupWizard
                     return new Result { Config = config };
                 case CancelChoice:
                     return new Result { Cancelled = true };
+                case UndoChoice:
+                    if (undoConfig != null)
+                    {
+                        config = undoConfig;
+                        undoConfig = null;
+                        confirmQuestion = null;
+                        previousCovered = null;
+                    }
+
+                    continue;
                 case AdjustChoice:
+                    var before = config;
                     var adjusted = await RunAdjustAsync(
                         analyzer,
                         input,
@@ -268,6 +288,7 @@ internal static class SetupWizard
                         screenshot,
                         proposal,
                         answers,
+                        config,
                         budget,
                         freeTextPrompt,
                         pickLeadFromTree,
@@ -275,6 +296,7 @@ internal static class SetupWizard
                         ct).ConfigureAwait(false);
                     if (adjusted != null)
                     {
+                        undoConfig = before; // remember the pre-refine layout for 'z'
                         config = adjusted.Config;
                         confirmQuestion = adjusted.ConfirmQuestion;
                     }
@@ -484,7 +506,8 @@ internal static class SetupWizard
         SiteHierarchyConfig config,
         List<LinkInfo> links,
         int? previousCovered = null,
-        SetupQuestion? confirmQuestion = null)
+        SetupQuestion? confirmQuestion = null,
+        bool canUndo = false)
     {
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
         var options = config.Sections.Select(section => new SetupWizardOverlay.CardOption
@@ -527,7 +550,9 @@ internal static class SetupWizard
                 : "The page now shows the layout that will be saved.",
             Options = options,
             Footnote = footnote,
-            Hint = "↑/↓ preview a section · Enter save · Space adjust · Esc discard",
+            Hint = canUndo
+                ? "↑/↓ preview · Enter save · Space refine · z undo last change · Esc discard"
+                : "↑/↓ preview a section · Enter save · Space adjust · Esc discard",
         };
     }
 
@@ -653,6 +678,7 @@ internal static class SetupWizard
         byte[]? screenshot,
         SiteSetupProposal proposal,
         List<SetupAnswer> answers,
+        SiteHierarchyConfig currentConfig,
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
@@ -710,29 +736,54 @@ internal static class SetupWizard
         }
 
         SetupAnswer? adjustment = null;
+        string? instruction = null;
         if (allowPick && choice == 0)
         {
             var picked = await pickLeadFromTree!(ct).ConfigureAwait(false);
-            adjustment = picked != null ? LeadOverrideAnswer(picked) : null;
+            if (picked != null)
+            {
+                adjustment = LeadOverrideAnswer(picked);
+                instruction = $"Make this the single lead (top) story, keeping every other section " +
+                              $"unchanged: \"{Truncate(picked.DisplayText, 90)}\"" +
+                              (string.IsNullOrWhiteSpace(picked.ParentSelector) ? string.Empty : $" (parent {picked.ParentSelector}).");
+            }
         }
         else
         {
             var freeText = await freeTextPrompt(ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(freeText))
             {
-                adjustment = new SetupAnswer { QuestionId = "adjustment", Answer = freeText.Trim() };
+                instruction = freeText.Trim();
+                adjustment = new SetupAnswer { QuestionId = "adjustment", Answer = instruction };
             }
         }
 
-        if (adjustment == null || !budget.TrySpend())
+        if (adjustment == null || instruction == null || !budget.TrySpend())
         {
             return null;
         }
 
+        // workspace-q77e: the failure/degenerate-repair path (shape != null) has
+        // no good layout to preserve, so it re-derives from the proposal +
+        // accumulated answers as before. The normal preview "adjust" REFINES the
+        // layout the user is looking at — the model edits the current config and
+        // keeps the working parts, instead of regenerating from scratch (which
+        // could throw away an almost-perfect layout over one tweak).
+        if (shape != null)
+        {
+            answers.Add(adjustment);
+            return await RunWithProgressAsync(
+                analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
+                "Rebuilding your layout",
+                overlay,
+                render,
+                ct).ConfigureAwait(false);
+        }
+
         answers.Add(adjustment);
         return await RunWithProgressAsync(
-            analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
-            "Rebuilding your layout",
+            analyzer.RefineLayoutAsync(screenshot, links, pageUrl, currentConfig, instruction, ct),
+            "Applying your change",
             overlay,
             render,
             ct).ConfigureAwait(false);
@@ -784,6 +835,8 @@ internal static class SetupWizard
                     return card.Cursor;
                 case CommandType.ToggleSelection when adjustable:
                     return AdjustChoice;
+                case CommandType.Undo when adjustable:
+                    return UndoChoice;
                 case CommandType.GoBack or CommandType.Quit:
                     return CancelChoice;
                 case CommandType.TerminalResized:
