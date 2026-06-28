@@ -86,7 +86,7 @@ class Gate:
 
 def drive_to_preview(t, gate):
     """Ctrl+L → AI → answer question cards → return the preview screen (or None)."""
-    t.send_keys("C-l")
+    t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
     # Slow, link-heavy pages (memeorandum: 600+ links) take longer to open the
     # chooser; the pre-flight phase also captures a screenshot first.
     t.wait_for("How should WireCopy read this site?", timeout=60)

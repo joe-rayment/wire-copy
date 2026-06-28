@@ -88,6 +88,31 @@ public class NavigationTreeBuilderHierarchyTests
     }
 
     [Fact]
+    public async Task BuildTreeAsync_LeadSectionMaxLinks_CapsLeadAndReoffersOverflow()
+    {
+        // workspace-9wm6: a capped lead keeps only the top story; the greedy
+        // builder re-offers the overflow to the next section, so nothing is lost.
+        var links = new List<LinkInfo>
+        {
+            CreateContentLink(url: "https://example.com/a", text: "A", parentSelector: "div.col > div.item > strong"),
+            CreateContentLink(url: "https://example.com/b", text: "B", parentSelector: "div.col > div.item > strong"),
+            CreateContentLink(url: "https://example.com/c", text: "C", parentSelector: "div.col > div.item > strong"),
+        };
+
+        var config = CreateConfig(
+            new HierarchySection { Name = "Lead", SortOrder = 0, ParentSelectors = new() { "div.item > strong" }, MaxLinks = 1 },
+            new HierarchySection { Name = "Feed", SortOrder = 1, ParentSelectors = new() { "div.col" } });
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        var nodes = tree.GetAllNodes().ToList();
+        var lead = nodes.Single(n => n.IsGroupHeader && n.Link.DisplayText == "Lead");
+        var feed = nodes.Single(n => n.IsGroupHeader && n.Link.DisplayText == "Feed");
+        lead.Children.Should().HaveCount(1, "the capped lead keeps only the top story");
+        feed.Children.Should().HaveCount(2, "the overflow is re-offered to the next section, not dropped");
+    }
+
+    [Fact]
     public async Task BuildTreeAsync_WithConfig_DropsLinksMatchingExcludeRules()
     {
         // workspace-5oe9.1: durable exclusion drops ads/promos by selector and

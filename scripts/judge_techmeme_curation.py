@@ -130,7 +130,7 @@ def main():
             cap(t, "00. techmeme loaded — link tree on load", "00-load.txt")
 
             if args.dock:
-                t.send_keys("O")
+                t.send_keys("|")
                 try:
                     t.wait_for("docked", timeout=30)
                 except Exception:
@@ -139,7 +139,8 @@ def main():
                 x_screenshot(os.path.join(out, "real-page-docked.png"))
 
             if not args.no_wizard:
-                t.send_keys("C-l")
+                t.send_keys("g")  # 'g l' chord opens the AI layout wizard (was Ctrl+L)
+                t.send_keys("l")
                 t.wait_for("How should WireCopy read this site?", timeout=25)
                 cap(t, "01. Ctrl+L entry card", "01a-entry.txt")
                 t.send_keys("Enter")  # Let AI find the stories

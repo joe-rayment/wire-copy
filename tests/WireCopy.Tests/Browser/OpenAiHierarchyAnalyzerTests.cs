@@ -160,6 +160,68 @@ public class OpenAiHierarchyAnalyzerTests
         result.Config.ExcludeSelectors.Should().Contain("div#radymre").And.Contain("div#events");
     }
 
+    private static List<LinkInfo> StoryLinks(int count, int score, string parent) =>
+        Enumerable.Range(0, count).Select(i => new LinkInfo
+        {
+            Url = $"https://x.com/story{i}",
+            DisplayText = $"Story {i}",
+            Type = LinkType.Content,
+            ImportanceScore = score,
+            ParentSelector = parent,
+        }).ToList();
+
+    [Fact]
+    public void ParsePatternFromAnswers_OverBroadExclude_DroppedToProtectStories()
+    {
+        // workspace-9wm6: 4 high-importance stories under 'div.river'; the model
+        // wrongly excludes the whole container. The guard must drop that rule.
+        var links = StoryLinks(4, score: 90, parent: "div.river > div.item");
+        var json =
+            "{\"sections\":[{\"name\":\"Feed\",\"parent_selectors\":[\"div.river\"],\"url_patterns\":[]," +
+            "\"story_indices\":[0,1,2,3],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[\"div.river\",\"div#ad\"],\"exclude_url_patterns\":[]," +
+            "\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.ExcludeSelectors.Should().NotContain("div.river", "it would hide all 4 stories");
+        result.Config.ExcludeSelectors.Should().Contain("div#ad", "surgical excludes hitting no stories survive");
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_BroadLead_PinnedToOne_WhenOverflowCoveredElsewhere()
+    {
+        // Lead selector matches all 3 headlines; the Feed section also matches them,
+        // so the overflow is safe to shed — pin the lead to the single top story.
+        var links = StoryLinks(3, score: 85, parent: "div.col > div.item > strong");
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"Lead\",\"parent_selectors\":[\"div.item > strong\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+            "{\"name\":\"Feed\",\"parent_selectors\":[\"div.col > div.item\"],\"url_patterns\":[],\"story_indices\":[1,2],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections[0].MaxLinks.Should().Be(1);
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_BroadLead_NotPinned_WhenOverflowWouldBeLost()
+    {
+        // Lead matches all 3; the Feed section matches none of them, so capping the
+        // lead would HIDE two stories — leave the lead uncapped.
+        var links = StoryLinks(3, score: 85, parent: "div.col > div.item > strong");
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"Lead\",\"parent_selectors\":[\"div.item > strong\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+            "{\"name\":\"Feed\",\"parent_selectors\":[\"div.unrelated\"],\"url_patterns\":[],\"story_indices\":[],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections[0].MaxLinks.Should().BeNull();
+    }
+
     [Fact]
     public void IsConfigured_NoApiKey_ReturnsFalse()
     {

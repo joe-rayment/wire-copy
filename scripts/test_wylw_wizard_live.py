@@ -167,7 +167,7 @@ def main():
             transcript(t, log, "1. link list loaded, sidecar docked")
 
             # --- Ctrl+L -> AI-first entry card ---
-            t.send_keys("C-l")
+            t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
             t.wait_for("How should WireCopy read this site?", timeout=20)
             transcript(t, log, "2. Ctrl+L entry card (AI-first)")
             t.send_keys("Enter")  # ✨ Let AI find the stories
@@ -249,7 +249,7 @@ def main():
                                 "(no section headers / section count in the header)")
             # The saved sections must shape the tree without any AI call:
             # the wizard's section names appear as group headers.
-            t2.send_keys("C-l")
+            t2.send_keys("g"); t2.send_keys("l")  # g l = AI wizard (was Ctrl+L)
             t2.wait_for("Layout", timeout=20)
             screen = transcript(t2, log, "9. Ctrl+L on revisit — configured summary (not setup)")
             if "Reconfigure with AI" not in screen:

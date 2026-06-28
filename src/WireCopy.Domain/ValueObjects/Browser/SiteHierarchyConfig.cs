@@ -60,4 +60,12 @@ public record HierarchySection
     public List<string> ParentSelectors { get; init; } = new();
     public List<string> UrlPatterns { get; init; } = new();
     public bool StartCollapsed { get; init; }
+
+    /// <summary>
+    /// workspace-9wm6: optional cap on how many matched links this section keeps
+    /// (in document order). Null = unlimited. Used to pin a "lead" section to the
+    /// single top story when its selector is too broad; the greedy tree builder
+    /// then re-offers the overflow to later sections, so no story is lost.
+    /// </summary>
+    public int? MaxLinks { get; init; }
 }

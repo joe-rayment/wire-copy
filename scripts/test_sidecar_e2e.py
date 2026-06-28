@@ -211,9 +211,9 @@ def main():
                 failures.append(f"resize round-trip left the layout shrunken (edge {edge150})")
 
             # --- 6. 'O' -> immersive and back ---
-            t.send_keys("O")
+            t.send_keys("|")
             t.wait_until_gone("docked", timeout=15)
-            t.send_keys("O")
+            t.send_keys("|")
             t.wait_for("docked", timeout=30)
             time.sleep(1)
 
@@ -251,7 +251,7 @@ def main():
             # --- 7d. workspace-8qyo: the article layout TUNER, frame by frame ---
             t.send_keys("j", "Enter")
             t.wait_for("Paragraph", timeout=25)
-            t.send_keys("L")
+            t.send_keys("E")  # E = tune article layout (was L)
             t.wait_for("1/3 Headline", timeout=20)
             t.screenshot("tuner step 1 (headline)")
             t.send_keys("j")          # cycle a candidate

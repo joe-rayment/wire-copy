@@ -117,7 +117,7 @@ def wait_for_load(t, timeout=90):
 
 def drive_wizard(t, timeout=200):
     """Open Ctrl+L and accept-all through the AI setup wizard. Returns status str."""
-    t.send_keys("C-l")
+    t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
     time.sleep(2)
     # Entry card: AI is the highlighted default — Enter selects it.
     if "Set up this site" in t.capture():

@@ -168,6 +168,14 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                     continue;
                 }
 
+                // workspace-9wm6: a capped section (e.g. a pinned single-story
+                // lead) stops claiming once full, so the greedy loop re-offers
+                // the overflow to later sections instead of dropping it.
+                if (section.MaxLinks is { } cap && sectionLinks.Count >= cap)
+                {
+                    break;
+                }
+
                 var link = contentLinks[i];
                 if (MatchesSection(link, section))
                 {

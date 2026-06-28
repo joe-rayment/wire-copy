@@ -1523,6 +1523,51 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 .ToList();
         }
 
+        // workspace-9wm6: drop an over-broad exclude rule before it nukes real
+        // stories. The model occasionally excludes a whole story CONTAINER (e.g.
+        // 'div.itc1 > div.ifsp' on techmeme), collapsing coverage to a fraction
+        // of the page. A rule that would hide a large share of the page's
+        // HIGH-importance links (score >= 80 — genuine stories) is wrong by
+        // construction; keep only the surgical ones that target chrome/sponsors.
+        var highScore = contentLinks.Where(l => l.ImportanceScore >= 80 && !l.IsGroupHeader).ToList();
+        if (highScore.Count > 0)
+        {
+            var maxHidden = highScore.Count * 0.25;
+            excludeSelectors = excludeSelectors
+                .Where(sel => highScore.Count(l =>
+                    !string.IsNullOrEmpty(l.ParentSelector)
+                    && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase)) <= maxHidden)
+                .ToList();
+            excludeUrlPatterns = excludeUrlPatterns
+                .Where(pat => highScore.Count(l =>
+                    l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase)) <= maxHidden)
+                .ToList();
+        }
+
+        // workspace-9wm6: a "lead" section is the SINGLE top story. When the
+        // model's first section has a too-broad selector that matches several
+        // headlines, pin it to one — but ONLY when every overflow link is also
+        // claimed by a later section, so tightening the lead never hides a story
+        // (the capped section re-offers its overflow downstream in the builder).
+        if (sections.Count >= 2)
+        {
+            bool Excluded(LinkInfo l) =>
+                excludeSelectors.Any(sel => !string.IsNullOrEmpty(l.ParentSelector)
+                    && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase))
+                || excludeUrlPatterns.Any(pat => l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase));
+
+            var visible = contentLinks.Where(l => !l.IsGroupHeader && !Excluded(l)).ToList();
+            var leadMatches = visible
+                .Where(l => NavigationTreeBuilder.MatchesSection(l, sections[0]))
+                .ToList();
+            if (leadMatches.Count > 1
+                && leadMatches.Skip(1).All(l =>
+                    sections.Skip(1).Any(sec => NavigationTreeBuilder.MatchesSection(l, sec))))
+            {
+                sections[0] = sections[0] with { MaxLinks = 1 };
+            }
+        }
+
         var domain = SafeHost(pageUrl);
         var config = new SiteHierarchyConfig
         {
