@@ -215,6 +215,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
         """);
 
+    // workspace-q77e: model section names that mark a non-story rail (sponsor /
+    // advertiser / promo / podcast / audio / event-calendar). These are excluded
+    // wholesale, never rendered as a (even collapsed) section. Whole-word so a
+    // real "Sports" or editorial section is not swept up.
+    private static readonly Regex NonStoryRailName = new(
+        @"\b(sponsor(ed|s)?|advertis\w*|promo(s|tion(al)?)?|podcasts?|audio|calendar)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private readonly OpenAiHierarchyConfiguration _config;
     private readonly OpenAiTtsConfiguration _ttsConfig;
     private readonly IUserSettingsStore _settingsStore;
@@ -422,7 +430,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     schemaName: "site_setup_questions",
                     schema: SetupQuestionsSchema,
                     schemaDescription: "A proposed layout pattern plus a bounded set of clarifying questions.",
-                    reasoningEffortOverride: "low",
+                    reasoningEffortOverride: _config.SetupReasoningEffort,
                     maxOutputTokensOverride: EstimateSetupOutputTokens(_config.MaxSetupQuestions));
 
                 var responseText = await _chatCompleter(
@@ -470,7 +478,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 var options = BuildOptions(
                     schemaName: "site_pattern",
                     schema: SetupPatternSchema,
-                    schemaDescription: "Durable selector/url-pattern sections + exclusion rules.");
+                    schemaDescription: "Durable selector/url-pattern sections + exclusion rules.",
+                    reasoningEffortOverride: _config.SetupReasoningEffort);
 
                 var responseText = await _chatCompleter(
                     apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
@@ -856,11 +865,18 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("  rely on parent_selectors. Set at least one durable identifier per section;");
         sb.AppendLine("- story_indices: the link numbers currently in this section (so the identifier");
         sb.AppendLine("  can be re-derived if needed);");
-        sb.AppendLine("- start_collapsed: true for low-priority sections.");
+        sb.AppendLine("- start_collapsed: true for lower-priority STORY sections (real stories that");
+        sb.AppendLine("  belong below the fold) — NOT a way to bury non-stories.");
+        sb.AppendLine();
+        sb.AppendLine("CRITICAL: sponsor/advertiser posts, podcast or audio rails, and");
+        sb.AppendLine("event-calendar / job-board boxes are NOT sections — not even collapsed ones.");
+        sb.AppendLine("Put their container selector in exclude_selectors so they vanish; never emit a");
+        sb.AppendLine("section named 'Sponsors', 'Podcasts', 'Promos', 'Events', etc. A reader wants");
+        sb.AppendLine("stories only — a collapsed 'Podcasts' section is still clutter, not curation.");
         sb.AppendLine();
         sb.AppendLine("Also return exclude_selectors / exclude_url_patterns (durable identifiers for the");
-        sb.AppendLine("non-stories to hide: utility links, sponsor slots, tertiary chrome like a");
-        sb.AppendLine("parent-company link) and exclude_indices (their link numbers). NEVER identify a");
+        sb.AppendLine("non-stories to hide: utility links, sponsor/podcast/event rails, tertiary chrome");
+        sb.AppendLine("like a parent-company link) and exclude_indices (their link numbers). NEVER identify a");
         sb.AppendLine("link by its exact URL — only by selector or path pattern. On AGGREGATOR pages");
         sb.AppendLine("(stories span many hosts) url_patterns cannot generalize — use parent_selectors");
         sb.AppendLine("only. Honour the user's answers.");
@@ -1273,6 +1289,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 .ToList();
 
         var sections = new List<HierarchySection>();
+        var railExcludeSelectors = new List<string>();
+        var railExcludeUrlPatterns = new List<string>();
         foreach (var s in parsed.Sections ?? new())
         {
             var members = LinksAt(s.StoryIndices);
@@ -1315,6 +1333,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 continue; // no durable identifier — skip this section
             }
 
+            // workspace-q77e: a sponsor / podcast / promo / calendar rail is NOT
+            // a section — the model keeps trying to "hide" it as a collapsed
+            // low-priority section (it even names them "promos", "Featured
+            // podcasts", "(keep out)"), which still renders the junk. When the
+            // model's own name marks a section as such a rail, route its durable
+            // identifiers to the exclude lists instead. Never demote the lead
+            // (the first kept section), so a real layout always survives.
+            if (sections.Count > 0 && IsNonStoryRailSectionName(s.Name))
+            {
+                railExcludeSelectors.AddRange(selectors);
+                railExcludeUrlPatterns.AddRange(urlPatterns);
+                continue;
+            }
+
             sections.Add(new HierarchySection
             {
                 Name = string.IsNullOrWhiteSpace(s.Name) ? $"Section {sections.Count + 1}" : s.Name!,
@@ -1326,12 +1358,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         var excludeSelectors = (parsed.ExcludeSelectors ?? new())
+            .Concat(railExcludeSelectors)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(SelectorDerivation.StripVolatileIds)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .ToList();
         var excludeUrlPatterns = (parsed.ExcludeUrlPatterns ?? new())
+            .Concat(railExcludeUrlPatterns)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -1408,6 +1442,15 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         "group_by" => SetupQuestionKind.GroupBy,
         _ => SetupQuestionKind.PickMain,
     };
+
+    /// <summary>
+    /// workspace-q77e: true when the model's own section NAME marks it as a
+    /// non-story rail (sponsor/advert/promo/podcast/audio/calendar). The model
+    /// reliably labels these rails descriptively but then keeps them as a
+    /// collapsed section; this lets the parser route them to the exclude lists.
+    /// </summary>
+    internal static bool IsNonStoryRailSectionName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && NonStoryRailName.IsMatch(name);
 
     private static string SafeHost(string url) => HierarchyDomainKey.FromUrl(url);
 #pragma warning restore SA1202

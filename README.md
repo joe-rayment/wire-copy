@@ -188,7 +188,8 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiTts:Voice` | TTS voice | `nova` |
 | `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
 | `OpenAiHierarchy:Model` | Chat model for AI site setup / extraction | `gpt-5-mini` |
-| `OpenAiHierarchy:ReasoningEffort` | Reasoning tier (`minimal` / `low` / `medium`) | `minimal` |
+| `OpenAiHierarchy:ReasoningEffort` | Reasoning tier for cheap revisit/classification calls (`minimal` / `low` / `medium`) | `minimal` |
+| `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `Ctrl+L` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Visibility` | `Auto` (headed when a display + sidecar make sense, else headless), `Visible`, or `Headless` | `Auto` |
 | `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; `O` docks on demand) | `false` |

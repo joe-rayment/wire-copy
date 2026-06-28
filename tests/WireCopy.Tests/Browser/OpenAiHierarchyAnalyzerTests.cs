@@ -73,6 +73,31 @@ public class OpenAiHierarchyAnalyzerTests
         };
     }
 
+    [Theory]
+    [InlineData("Right rail — Sponsor Posts")]
+    [InlineData("Right-rail promos / sponsor column (keep out)")]
+    [InlineData("Featured podcasts (sidebar)")]
+    [InlineData("Right rail — podcasts (promo widgets)")]
+    [InlineData("Events / calendar (promo)")]
+    [InlineData("Audio / listen")]
+    public void IsNonStoryRailSectionName_RailNames_ReturnTrue(string name)
+    {
+        OpenAiHierarchyAnalyzer.IsNonStoryRailSectionName(name).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Top story")]
+    [InlineData("Main column — prominent headlines")]
+    [InlineData("Main river (other large headlines)")]
+    [InlineData("Newest / time-sorted list")]
+    [InlineData("Opinion")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void IsNonStoryRailSectionName_StorySections_ReturnFalse(string? name)
+    {
+        OpenAiHierarchyAnalyzer.IsNonStoryRailSectionName(name).Should().BeFalse();
+    }
+
     [Fact]
     public void IsConfigured_NoApiKey_ReturnsFalse()
     {

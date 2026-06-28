@@ -30,6 +30,18 @@ public class OpenAiHierarchyConfiguration
     public string ReasoningEffort { get; init; } = "minimal";
 
     /// <summary>
+    /// workspace-q77e: reasoning-effort tier for the ONE-TIME Ctrl+L site setup
+    /// (the propose + infer-pattern round trips and free-text adjustments). The
+    /// decisive infer-pattern call previously fell back to <see cref="ReasoningEffort"/>
+    /// (<c>minimal</c>), which made the saved layout inconsistent run-to-run on
+    /// messy aggregators (podcasts/sponsor rails sometimes kept, sometimes
+    /// dropped). Setup happens once per site and revisits never call the model,
+    /// so a higher default (<c>medium</c>) buys a reliably clean layout for a few
+    /// cents, one time. Lower to <c>low</c> to trade some accuracy for latency.
+    /// </summary>
+    public string SetupReasoningEffort { get; init; } = "medium";
+
+    /// <summary>
     /// Gets the maximum completion tokens. 4096 mirrors the previous Anthropic
     /// budget — generous headroom for the largest curated-section payload we
     /// have observed (~30 stories × 4 fields).

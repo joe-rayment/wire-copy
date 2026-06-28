@@ -73,7 +73,11 @@ def main():
     ap.add_argument("--no-wizard", action="store_true", help="just load + screenshot, no Ctrl+L")
     ap.add_argument("--no-save", action="store_true", help="do not Enter-save the layout")
     ap.add_argument("--dock", action="store_true", help="Shift+O dock the real page and grab it")
+    ap.add_argument("--effort", default="", help="override OpenAiHierarchy:SetupReasoningEffort (minimal/low/medium/high)")
     args = ap.parse_args()
+
+    if args.effort:
+        os.environ["OpenAiHierarchy__SetupReasoningEffort"] = args.effort
 
     out = os.path.join(BASE_OUT, args.label)
     os.makedirs(out, exist_ok=True)
