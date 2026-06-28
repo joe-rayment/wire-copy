@@ -184,3 +184,6 @@ scripts/test_yib5_first_time_setup.py
 # Credential files (local only)
 creds/
 /claude-dev
+
+# Build artifacts
+dist/
