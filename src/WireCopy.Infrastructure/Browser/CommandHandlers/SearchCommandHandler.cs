@@ -524,7 +524,7 @@ internal static class SearchCommandHandler
             // must not read as success — nudge the user to the question-driven
             // setup instead of silently shipping document order.
             ctx.NavigationService.SetStatusMessage(result.NeedsClarification
-                ? "AI couldn't find a clear structure — press Ctrl+l to set it up with questions"
+                ? "AI couldn't find a clear structure — press g l to set it up with questions"
                 : $"✔ Re-analyzed · {result.Summary}");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }

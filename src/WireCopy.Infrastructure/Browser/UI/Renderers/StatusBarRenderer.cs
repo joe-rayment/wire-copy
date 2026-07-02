@@ -611,7 +611,7 @@ internal class StatusBarRenderer
 
     /// <summary>
     /// HITL alert item: long copy names the verb + domain + recovery key;
-    /// short copy keeps the glyph, verb, and key ("\u23f8 login\u00b7Shift+O").
+    /// short copy keeps the glyph, verb, and key ("\u23f8 login\u00b7|").
     /// </summary>
     private static StatusItem BuildAlertItem(HumanActionRequired requiredAction)
     {

@@ -283,7 +283,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         if (orderedKeys.Count == 0 && curated.StoryOrderLinkKeys.Count > 0)
         {
             _logger.LogWarning(
-                "AI-curated snapshot matched 0 of {Total} ranked links — stale snapshot, rendering document order; reconfigure via Ctrl+l",
+                "AI-curated snapshot matched 0 of {Total} ranked links — stale snapshot, rendering document order; reconfigure via g l",
                 curated.StoryOrderLinkKeys.Count);
         }
 

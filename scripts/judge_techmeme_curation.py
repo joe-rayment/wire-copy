@@ -72,7 +72,7 @@ def main():
     ap.add_argument("--no-reset", action="store_true", help="keep existing config/cache")
     ap.add_argument("--no-wizard", action="store_true", help="just load + screenshot, no Ctrl+L")
     ap.add_argument("--no-save", action="store_true", help="do not Enter-save the layout")
-    ap.add_argument("--dock", action="store_true", help="Shift+O dock the real page and grab it")
+    ap.add_argument("--dock", action="store_true", help="dock the real page (|) and grab it")
     ap.add_argument("--effort", default="", help="override OpenAiHierarchy:SetupReasoningEffort (minimal/low/medium/high)")
     ap.add_argument("--undo", action="store_true", help="after the steer, press 'z' to undo and capture the revert")
     args = ap.parse_args()

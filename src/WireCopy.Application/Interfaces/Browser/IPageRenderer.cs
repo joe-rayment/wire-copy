@@ -81,7 +81,7 @@ public interface IPageRenderer
     /// workspace-u5vu: true when the user pressed Shift+I on a link-list page
     /// outside preview mode — the context where they likely reached for the
     /// layout setup wizard (preview-mode Shift+I) — so the prompt points them
-    /// at Ctrl+L.
+    /// at the g l wizard.
     /// </param>
     void RenderInteractiveRefresh(string url, HumanActionRequired? requiredAction, bool layoutSetupHint = false);
 

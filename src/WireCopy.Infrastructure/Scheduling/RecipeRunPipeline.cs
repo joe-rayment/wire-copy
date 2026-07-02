@@ -222,7 +222,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             return (
                 ResolutionStatus.SectionNotFound.ToString(),
                 0,
-                $"No saved layout config for {step.SourceUrl} — configure it once (Ctrl+L) so scheduled runs can resolve sections");
+                $"No saved layout config for {step.SourceUrl} — configure it once (g l) so scheduled runs can resolve sections");
         }
 
         var resolution = _resolver.Resolve(load.Config, load.Links, step);

@@ -723,7 +723,7 @@ public class PageLoader : IPageLoader
                 // PollForChallengeResolutionAsync window. The reader-view box
                 // appears in <1s with verb-led copy ("Site is showing a CAPTCHA",
                 // "Solve it in the browser, then press R"), and the user can
-                // Shift+O to open in their real browser, solve, then press R
+                // 'o' to open in their real browser, solve, then press R
                 // to retry. The 60s blind wait gave the user nothing actionable
                 // to do for a full minute and almost never resolved on its own
                 // in headless mode anyway.

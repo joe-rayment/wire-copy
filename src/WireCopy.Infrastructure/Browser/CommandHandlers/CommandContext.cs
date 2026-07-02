@@ -94,7 +94,7 @@ internal class CommandContext
     /// <summary>
     /// workspace-kdda: opens the URL in the app's headed Chrome (the session
     /// the preloader shares) so the user can clear an active CAPTCHA / login
-    /// gate without replacing the current TUI page. Used by Shift+O on the
+    /// gate without replacing the current TUI page. Used by the HITL open key (|) on the
     /// link list when the preload service is reporting an active
     /// <c>BlockedAction</c>.
     /// </summary>

@@ -12,7 +12,7 @@ A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers,
 - **Bookmark your favourite news sites and blogs** and jump straight back to them — no tab bar to wrangle, just a grid of named cards on the launcher.
 - **Browse pages from the keyboard** — articles and link lists render as a clean tree without ads, cookie banners, share widgets, or layout chrome. Aggregators like Techmeme and Hacker News work too: outbound story links are treated as the content they are.
 - **Keep the real page in view** — the sidecar docks a slim live browser beside the terminal that scrolls to and highlights whatever you select, so you never lose the page's visual context.
-- **Let AI lay out a site for you** — press `Ctrl+L` once per site and the setup wizard reads the page, asks only the questions it genuinely can't answer (each option lights up on the live page — you can click the answer in the browser window), and previews the resulting layout *as the actual link tree* before anything is saved.
+- **Let AI lay out a site for you** — press `g l` once per site and the setup wizard reads the page, asks only the questions it genuinely can't answer (each option lights up on the live page — you can click the answer in the browser window), and previews the resulting layout *as the actual link tree* before anything is saved.
 - **Read articles in a focused reader view** — pick a comfortable width, search inside the page, tune the extraction visually when a site misbehaves, and turn on speed-reading when you want to skim.
 - **Save articles to reading lists** for later, with read / unread tracking and per-item caching so everything still works after you've closed the tab.
 - **Turn a reading list into a narrated audiobook** — generate an M4B with chapter markers and (optionally) publish it as a podcast feed so you can subscribe in your podcast app. Generation runs in the background: back out of the progress screen any time and the run keeps going.
@@ -47,7 +47,7 @@ See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configur
 - **Launcher** — Bookmark grid with numbered quick-jump shortcuts, a URL bar, and a one-key Setup screen (`c`)
 - **Link Tree** — Browse a page's links in a categorized, collapsible tree (content, navigation, external, footer), with aggregator-aware classification
 - **Live browser sidecar** — A phone-width real browser docks beside the terminal, follows your selection, and highlights the story you're on; `y` adopts whatever page you navigated it to
-- **AI site setup** (`Ctrl+L`) — A preview-first wizard infers a durable, reusable layout per site; what you confirm is the real rendered tree, not a description of it
+- **AI site setup** (`g l`) — A preview-first wizard infers a durable, reusable layout per site; what you confirm is the real rendered tree, not a description of it
 - **Reader View** — Distraction-free article reading with adjustable width, search, speed-reading, and a visual layout tuner (`L`) for stubborn sites
 - **Collections** — Save articles to reading lists with read/unread tracking and per-item caching
 - **Podcast generation** — Convert a reading list into a narrated M4B with chapter markers; runs in the background with live progress in the status bar
@@ -56,9 +56,9 @@ See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configur
 - **Page caching** for instant back/forward navigation, plus background prefetch of likely next reads
 - **Anti-detection browsing** via Patchright (patched Playwright) for sites with bot protection
 
-## Site layout setup (`Ctrl+L`)
+## Site layout setup (`g l`)
 
-Sites vary wildly in how they structure their pages. Press `Ctrl+L` on any link-list page:
+Sites vary wildly in how they structure their pages. Press `g l` on any link-list page:
 
 - **Unconfigured site** → a short entry card: *Let AI find the stories* (recommended), *Document order* (every link, no AI), or *Compare all strategies* (probe and preview Document Order / AI Curated / RSS side by side).
 - **AI setup** → the model reads the page and proposes a reusable pattern. If it's genuinely unsure between concrete alternatives it asks — at most three questions, each option highlighted live on the sidecar page so you answer by looking (or by clicking the element in the browser window). Then it shows the **result**: the candidate layout applied to the real link tree, with per-section match counts and honest coverage ("124 of 187 story links covered"). `Enter` saves exactly what you see, `Space` adjusts (point at the lead story or steer with free text), `Esc` discards.
@@ -190,7 +190,7 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
 | `OpenAiHierarchy:Model` | Chat model for AI site setup / extraction | `gpt-5-mini` |
 | `OpenAiHierarchy:ReasoningEffort` | Reasoning tier for cheap revisit/classification calls (`minimal` / `low` / `medium`) | `minimal` |
-| `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `Ctrl+L` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
+| `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `g l` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Visibility` | `Auto` (headed when a display + sidecar make sense, else headless), `Visible`, or `Headless` | `Auto` |
 | `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; `O` docks on demand) | `false` |

@@ -384,7 +384,7 @@ internal static class ScheduleCommandHandler
         if (!analyzer.IsConfigured)
         {
             ctx.NavigationService.SetStatusMessage(
-                $"'{bookmark.Name}' isn't set up yet — inline AI setup needs an OpenAI key (press c on the launcher), or configure the site via Ctrl+L.",
+                $"'{bookmark.Name}' isn't set up yet — inline AI setup needs an OpenAI key (press c on the launcher), or configure the site via g l.",
                 TimeSpan.FromSeconds(10));
             return null;
         }

@@ -38,7 +38,7 @@ internal sealed class SectionResolver : ISectionResolver
             {
                 Status = ResolutionStatus.SectionNotFound,
                 Diagnostic = $"Section '{step.SectionName}' (or SortOrder {step.SortOrderFallback}) is not in the " +
-                             $"saved layout for {config.Domain} — re-run AI setup (Ctrl+l) for this site.",
+                             $"saved layout for {config.Domain} — re-run AI setup (g l) for this site.",
             };
         }
 
@@ -97,7 +97,7 @@ internal sealed class SectionResolver : ISectionResolver
                 Status = ResolutionStatus.ZeroMatch,
                 MatchCount = 0,
                 Diagnostic = $"Section '{section.Name}' matched 0 articles on {config.Domain} today; " +
-                             "the site may have changed — re-run AI setup (Ctrl+l).",
+                             "the site may have changed — re-run AI setup (g l).",
             };
         }
 

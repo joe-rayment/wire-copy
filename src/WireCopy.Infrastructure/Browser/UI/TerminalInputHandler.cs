@@ -522,7 +522,8 @@ public class TerminalInputHandler : IInputHandler
             var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
             _pendingKeyTask = null;
 
-            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G)
+            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G
+                && (keyInfo.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0)
             {
                 _waitingForSecondKey = false;
                 var count = _numericPrefix;
@@ -532,7 +533,8 @@ public class TerminalInputHandler : IInputHandler
 
             // workspace-1dmr: 'g l' opens the AI layout wizard (Helix-style goto
             // submenu), replacing the Ctrl+L that collided with clear-screen.
-            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.L)
+            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.L
+                && (keyInfo.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt | ConsoleModifiers.Shift)) == 0)
             {
                 _waitingForSecondKey = false;
                 _numericPrefix = 0;
@@ -541,7 +543,13 @@ public class TerminalInputHandler : IInputHandler
 
             if (_waitingForSecondKey)
             {
+                // workspace-9k27: a broken chord ABORTS — swallow the second key
+                // instead of letting it fall through and execute an unrelated
+                // (possibly destructive) command like 'g d' = delete. Matches
+                // vim/Helix behavior for a mistyped goto chord.
                 _waitingForSecondKey = false;
+                _numericPrefix = 0;
+                continue;
             }
 
             // In launcher view, digits 1-9 jump-select the corresponding bookmark
@@ -573,7 +581,8 @@ public class TerminalInputHandler : IInputHandler
                 continue;
             }
 
-            if (keyInfo.Key == ConsoleKey.G && (keyInfo.Modifiers & ConsoleModifiers.Shift) == 0)
+            if (keyInfo.Key == ConsoleKey.G
+                && (keyInfo.Modifiers & (ConsoleModifiers.Shift | ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0)
             {
                 _waitingForSecondKey = true;
                 continue;

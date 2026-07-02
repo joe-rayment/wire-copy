@@ -411,7 +411,7 @@ public class PageLoadPipeline
             _navigationService.SetAiHierarchy(true);
             if (hierarchyConfig!.NeedsReanalyze)
             {
-                _navigationService.SetStatusMessage("Saved layout is a legacy snapshot · Ctrl+l to re-run AI setup");
+                _navigationService.SetStatusMessage("Saved layout is a legacy snapshot · g l to re-run AI setup");
             }
         }
         else if (route == HierarchyRoute.RssFeed)
@@ -429,7 +429,7 @@ public class PageLoadPipeline
                 // Feed unavailable — fallback to document-order
                 tree = await _treeBuilder.BuildTreeAsync(links, cancellationToken).ConfigureAwait(false);
                 _navigationService.SetAiHierarchy(false);
-                _navigationService.SetStatusMessage("Saved RSS feed unavailable · Ctrl+l to reconfigure");
+                _navigationService.SetStatusMessage("Saved RSS feed unavailable · g l to reconfigure");
             }
         }
         else if (route == HierarchyRoute.AiSnapshot)
@@ -441,7 +441,7 @@ public class PageLoadPipeline
             _navigationService.SetAiHierarchy(true);
             _navigationService.SetStatusMessage(
                 ConfigMigration.NeedsReanalysis(hierarchyConfig)
-                    ? "AI curated (legacy snapshot) · Ctrl+l to re-run so it survives revisits"
+                    ? "AI curated (legacy snapshot) · g l to re-run so it survives revisits"
                     : $"AI curated · {hierarchyConfig.AiResult!.StoryOrderLinkKeys.Count} stories");
         }
         else
@@ -577,7 +577,7 @@ public class PageLoadPipeline
         // is what keeps a configured site curated after a restart.
         //
         // workspace-wylw: the build-cache entry's config is a SNAPSHOT taken at
-        // extraction time. A config saved AFTER that (Ctrl+L wizard, chooser,
+        // extraction time. A config saved AFTER that (g l wizard, chooser,
         // reconfigure) lives only in the store, so a cache-hit revisit — same
         // session or after a restart — silently rendered document order. The
         // store is the durable source of truth; prefer it whenever it has a
@@ -1053,7 +1053,7 @@ public class PageLoadPipeline
         var hintLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
         if (hintLinkCount >= 3)
         {
-            _navigationService.SetStatusMessage("Ctrl+l to customize layout");
+            _navigationService.SetStatusMessage("g l to customize layout");
         }
 
         return null;
