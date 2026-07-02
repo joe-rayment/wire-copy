@@ -108,13 +108,22 @@ internal class LauncherRenderer
     /// so the eye lands on Enter first. Version is no longer shown here —
     /// it lives under the tagline in the header card (workspace-m8x2).
     /// </summary>
-    public void RenderFooter(int width, string? scheduledRunBadge = null)
+    public void RenderFooter(int width, string? scheduledRunBadge = null, string? statusMessage = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        // workspace-frpl.13 (B11): a scheduled run that failed/recovered while the user
-        // was away surfaces here on next focus — never silent, collapsed when many.
-        if (!string.IsNullOrEmpty(scheduledRunBadge))
+        // workspace-xx61 (511u): the launcher has no status bar, so a status
+        // message set by a launcher action (e.g. "Couldn't save bookmark") was
+        // never shown anywhere — surface it here or failures stay silent. The
+        // footer budget is one extra line (PositionAtBottom leaves 2), so a
+        // transient status takes the badge slot; the badge returns next render.
+        // Otherwise (workspace-frpl.13 B11): a scheduled run that failed/recovered
+        // while the user was away surfaces here on next focus — never silent.
+        if (!string.IsNullOrEmpty(statusMessage))
+        {
+            _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{statusMessage}{Reset}");
+        }
+        else if (!string.IsNullOrEmpty(scheduledRunBadge))
         {
             _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
         }
@@ -1190,13 +1199,16 @@ internal class LauncherRenderer
         _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
         _helpers.WriteLine();
 
-        var collLabel = "[c]  READING LIST";
+        // workspace-xx61: 'c' opens Setup (LauncherCommandHandler), NOT the
+        // reading list — the old "[c] READING LIST" label was simply wrong (and a
+        // first-run reading list is empty anyway). Point at what 'c' really does.
+        var collLabel = "[c]  SETUP";
         var collPad = Math.Max(0, (width - collLabel.Length) / 2);
         _helpers.WriteLine(
             $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
-            $"  {p.PrimaryText.AnsiFg}{Bold}READING LIST{Reset}");
+            $"  {p.PrimaryText.AnsiFg}{Bold}SETUP{Reset}");
 
-        var domainPad = Math.Max(0, (width - "reading list".Length) / 2);
-        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}reading list{Reset}");
+        var domainPad = Math.Max(0, (width - "API keys & settings".Length) / 2);
+        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}API keys & settings{Reset}");
     }
 }

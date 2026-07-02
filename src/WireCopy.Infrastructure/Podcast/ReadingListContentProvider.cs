@@ -79,7 +79,11 @@ internal sealed class ReadingListContentProvider
     {
         ArgumentNullException.ThrowIfNull(collection);
 
-        var items = collection.Items;
+        // workspace-xx61: snapshot the items up front. Generation can be detached
+        // to the background while the user returns to the collection and deletes /
+        // reorders entries, mutating collection.Items mid-extraction — iterating a
+        // live copy would skip or duplicate articles.
+        var items = collection.Items.ToList();
         _lastFailures = [];
         _browserDriverCrashed = false;
 

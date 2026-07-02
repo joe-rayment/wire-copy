@@ -167,11 +167,42 @@ public class NavigationServiceCollectionTests
     [Fact]
     public void CollectionItemSelectedIndex_CanBeSetAndRetrieved()
     {
+        // Arrange — the getter clamps to the active collection's bounds
+        // (workspace-xx61 nlde), so give it a collection large enough.
+        var collection = Collection.Create("Test Collection");
+        for (var i = 0; i < 10; i++)
+        {
+            collection.AddItem($"https://example.com/{i}", $"Item {i}");
+        }
+
+        _sut.UpdateActiveCollection(collection);
+
         // Act
         _sut.CollectionItemSelectedIndex = 7;
 
         // Assert
         _sut.CollectionItemSelectedIndex.Should().Be(7);
+    }
+
+    [Fact]
+    public void CollectionItemSelectedIndex_ClampsWhenCollectionShrinks()
+    {
+        // workspace-xx61 (nlde): a stale index must never escape the current
+        // item bounds after the collection shrinks underneath it.
+        var collection = Collection.Create("Test Collection");
+        var items = new List<CollectionItem>();
+        for (var i = 0; i < 5; i++)
+        {
+            items.Add(collection.AddItem($"https://example.com/{i}", $"Item {i}"));
+        }
+
+        _sut.UpdateActiveCollection(collection);
+        _sut.CollectionItemSelectedIndex = 4;
+
+        collection.RemoveItem(items[4].Id);
+        collection.RemoveItem(items[3].Id);
+
+        _sut.CollectionItemSelectedIndex.Should().Be(2);
     }
 
     [Fact]

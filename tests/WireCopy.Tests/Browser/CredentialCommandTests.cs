@@ -258,6 +258,7 @@ public class CredentialCommandTests
         var cred = CreateTestCredential("nytimes.com");
         _credentialRepo.GetByDomainAsync("nytimes.com", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<SiteCredential?>(cred));
+        ConfirmRemoval();
 
         await SearchCommandHandler.HandleCommandLineInput(
             _ctx, "cred rm nytimes.com", _options, CancellationToken.None);
@@ -290,11 +291,33 @@ public class CredentialCommandTests
         var cred = CreateTestCredential("nytimes.com");
         _credentialRepo.GetByDomainAsync("nytimes.com", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<SiteCredential?>(cred));
+        ConfirmRemoval();
 
         await SearchCommandHandler.HandleCommandLineInput(
             _ctx, "cred rm", _options, CancellationToken.None);
 
         await _credentialRepo.Received(1).DeleteAsync(cred.Id, Arg.Any<CancellationToken>());
+    }
+
+    // workspace-xx61: credential removal now asks for confirmation; simulate 'y'.
+    private void ConfirmRemoval() =>
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'y' }));
+
+    [Fact]
+    public async Task CredRemove_Declined_KeepsCredential()
+    {
+        var cred = CreateTestCredential("nytimes.com");
+        _credentialRepo.GetByDomainAsync("nytimes.com", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<SiteCredential?>(cred));
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'n' }));
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "cred rm nytimes.com", _options, CancellationToken.None);
+
+        await _credentialRepo.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Keeping");
     }
 
     #endregion

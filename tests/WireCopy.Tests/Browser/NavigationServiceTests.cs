@@ -31,6 +31,22 @@ public class NavigationServiceTests
     }
 
     [Fact]
+    public void GoBack_RestoresSelectionAndScrollPosition()
+    {
+        // workspace-xx61: returning to a list lands the user back at their place.
+        var page1 = CreateTestPage("https://example.com/1", "Page 1");
+        _sut.NavigateTo(page1);
+        _sut.SetSelectedIndex(7);
+        _sut.SetScrollOffset(42);
+
+        _sut.NavigateTo(CreateTestPage("https://example.com/2", "Page 2"));
+        _sut.GoBack();
+
+        _sut.CurrentContext.SelectedLinkIndex.Should().Be(7);
+        _sut.CurrentContext.ScrollOffset.Should().Be(42);
+    }
+
+    [Fact]
     public void NavigateTo_ResetsScrollOffsetToZero()
     {
         // Arrange

@@ -287,6 +287,24 @@ internal static class CredentialCommandHandler
                 return;
             }
 
+            // workspace-xx61: deleting a saved login is destructive and was
+            // irreversible on a single keystroke. Gate it like the much-less
+            // destructive ':cache clear' already is.
+            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var confirmed = await ConfirmationDialog.ConfirmAsync(
+                ctx.InputHandler,
+                "Remove credential",
+                $"Remove the saved login for {domain}?",
+                palette,
+                ct,
+                isDestructive: true).ConfigureAwait(false);
+            if (!confirmed)
+            {
+                ctx.NavigationService.SetStatusMessage("Keeping the credential");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+
             await repo.DeleteAsync(credential.Id, ct).ConfigureAwait(false);
             await unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
 

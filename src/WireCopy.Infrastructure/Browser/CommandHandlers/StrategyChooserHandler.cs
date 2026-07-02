@@ -516,6 +516,19 @@ internal static class StrategyChooserHandler
             completed = !result.Cancelled;
             return result;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // workspace-xx61: a model/network failure during setup must NOT tear
+            // down the whole session. The finally restores the original tree +
+            // overlay, so recover in place and tell the user what happened.
+            ctx.Logger.LogWarning(ex, "AI layout setup failed");
+            ctx.NavigationService.SetStatusMessage("AI setup failed — check your connection and try again");
+            return new SetupWizard.Result { Cancelled = true };
+        }
         finally
         {
             if (!completed && originalTree != null)

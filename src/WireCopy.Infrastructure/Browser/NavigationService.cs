@@ -128,7 +128,7 @@ public class NavigationService : INavigationService
     {
         if (_currentPage != null)
         {
-            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
+            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
             _logger.LogDebug("Pushed {Title} to back history (count: {Count})",
                 _currentPage.Metadata.Title,
                 _backHistory.Count);
@@ -173,13 +173,13 @@ public class NavigationService : INavigationService
 
         if (_currentPage != null)
         {
-            _forwardHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
+            _forwardHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
         }
 
         var entry = _backHistory.Pop();
         _currentPage = entry.Page;
-        _selectedLinkIndex = 0;
-        _scrollOffset = 0;
+        _selectedLinkIndex = Math.Max(0, entry.SelectedLinkIndex);
+        _scrollOffset = Math.Max(0, entry.ScrollOffset);
         _readerCursorLine = 0;
         _speedReadActive = false;
         _currentViewMode = entry.ViewMode;
@@ -201,13 +201,13 @@ public class NavigationService : INavigationService
 
         if (_currentPage != null)
         {
-            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode));
+            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
         }
 
         var entry = _forwardHistory.Pop();
         _currentPage = entry.Page;
-        _selectedLinkIndex = 0;
-        _scrollOffset = 0;
+        _selectedLinkIndex = Math.Max(0, entry.SelectedLinkIndex);
+        _scrollOffset = Math.Max(0, entry.ScrollOffset);
         _readerCursorLine = 0;
         _speedReadActive = false;
         _currentViewMode = entry.ViewMode;
@@ -672,7 +672,21 @@ public class NavigationService : INavigationService
     /// </summary>
     public int CollectionItemSelectedIndex
     {
-        get => _collectionState.CollectionItemSelectedIndex;
+        // workspace-xx61 (nlde): the collection can shrink underneath a stale
+        // index (background refresh, undo replay), so clamp at the single read
+        // point every handler and renderer goes through. -1 is the CTA button
+        // sentinel and passes through untouched.
+        get
+        {
+            var idx = _collectionState.CollectionItemSelectedIndex;
+            if (idx < 0)
+            {
+                return idx;
+            }
+
+            var count = _collectionState.ActiveCollection?.Items.Count ?? 0;
+            return Math.Min(idx, Math.Max(0, count - 1));
+        }
         set => _collectionState.CollectionItemSelectedIndex = value;
     }
 
@@ -864,5 +878,7 @@ public class NavigationService : INavigationService
         return _announcement;
     }
 
-    private record struct HistoryEntry(Page Page, ViewMode ViewMode);
+    // workspace-xx61: carry the selection + scroll so back/forward restores the
+    // user's place instead of dumping them at the top of the list.
+    private record struct HistoryEntry(Page Page, ViewMode ViewMode, int SelectedLinkIndex, int ScrollOffset);
 }

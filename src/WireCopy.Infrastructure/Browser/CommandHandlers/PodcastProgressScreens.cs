@@ -897,7 +897,7 @@ internal static class PodcastProgressScreens
             if (command.RawKeyChar == 'c' && !string.IsNullOrEmpty(result.LocalFilePath))
             {
                 CopyToClipboardOsc52(result.LocalFilePath);
-                ctx.NavigationService.SetStatusMessage("File path copied to clipboard");
+                ctx.NavigationService.SetStatusMessage("File path copied (if your terminal supports it)");
                 continue;
             }
 
@@ -953,7 +953,7 @@ internal static class PodcastProgressScreens
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to open output folder for {Path}", localFilePath);
-            ctx.NavigationService.SetStatusMessage("Couldn't open folder — file path copied to clipboard instead");
+            ctx.NavigationService.SetStatusMessage("Couldn't open folder — file path copied (if your terminal supports it)");
             CopyToClipboardOsc52(localFilePath);
         }
     }
@@ -1141,7 +1141,9 @@ internal static class PodcastProgressScreens
         switch (shape)
         {
             case CompletionShape.FullSuccess:
-                lines.Add($"  {p.SecondaryText.AnsiFg}Feed URL copied to clipboard. Subscribe in your podcast app:{Reset}");
+                // workspace-xx61: OSC 52 clipboard success can't be detected, so
+                // don't assert it — the URL is shown above as the reliable copy.
+                lines.Add($"  {p.SecondaryText.AnsiFg}Feed URL is shown above (also copied to your clipboard if your terminal supports it). Subscribe in your podcast app:{Reset}");
                 lines.Add($"    {p.SecondaryText.AnsiFg}Apple Podcasts / Overcast → Add show by URL → paste{Reset}");
                 lines.Add($"    {p.SecondaryText.AnsiFg}Pocket Casts → Search → \"Add by URL\" → paste{Reset}");
                 lines.Add($"    {p.SecondaryText.AnsiFg}Any RSS reader → Add feed → paste{Reset}");

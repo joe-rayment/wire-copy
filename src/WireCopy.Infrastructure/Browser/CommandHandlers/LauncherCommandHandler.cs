@@ -499,7 +499,10 @@ internal static class LauncherCommandHandler
         }
         catch (Exception ex)
         {
+            // workspace-xx61: never fail silently — the delete path sets a status,
+            // so a failed save must too, or the user assumes the bookmark stuck.
             ctx.Logger.LogWarning(ex, "Failed to add bookmark");
+            ctx.NavigationService.SetStatusMessage("Couldn't save bookmark");
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
