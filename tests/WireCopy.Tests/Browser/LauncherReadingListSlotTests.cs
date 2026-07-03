@@ -367,6 +367,24 @@ public class LauncherReadingListDispatchTests
     }
 
     [Fact]
+    public async Task DeleteItem_AtReadingListSlot_ExplainsWhyNothingHappened()
+    {
+        // workspace-ej1i.1: the protected no-op must tell the user WHY —
+        // silence reads as "the d key is broken".
+        _ctx.Bookmarks = CreateBookmarks(3);
+        _navigationService.LauncherSelectedIndex = 1;
+
+        await LauncherCommandHandler.Handle(
+            _ctx,
+            new NavigationCommand { Type = CommandType.DeleteItem },
+            _options,
+            CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be(
+            "Reading List can't be deleted — clear it from the collection view");
+    }
+
+    [Fact]
     public async Task DeleteItem_AtSlot2_RemovesBookmarkOne()
     {
         // With Reading List at slot 1, slot 2 → bookmark[1] (the second
@@ -423,5 +441,21 @@ public class LauncherReadingListDispatchTests
             "virtual 1 is the Reading List slot — no bookmark mapping");
         LauncherCommandHandler.BookmarkIndexFromVirtual(2).Should().Be(1);
         LauncherCommandHandler.BookmarkIndexFromVirtual(5).Should().Be(4);
+    }
+
+    [Fact]
+    public void VirtualIndexFromBookmark_IsInverseOfBookmarkIndexFromVirtual()
+    {
+        LauncherCommandHandler.VirtualIndexFromBookmark(0).Should().Be(0);
+        LauncherCommandHandler.VirtualIndexFromBookmark(1).Should().Be(2,
+            "bookmark 1 renders after the Reading List slot at virtual 2");
+        LauncherCommandHandler.VirtualIndexFromBookmark(4).Should().Be(5);
+
+        // Round-trip over the bookmark-bearing slots.
+        for (var bookmarkIdx = 0; bookmarkIdx < 8; bookmarkIdx++)
+        {
+            var virtualIdx = LauncherCommandHandler.VirtualIndexFromBookmark(bookmarkIdx);
+            LauncherCommandHandler.BookmarkIndexFromVirtual(virtualIdx).Should().Be(bookmarkIdx);
+        }
     }
 }

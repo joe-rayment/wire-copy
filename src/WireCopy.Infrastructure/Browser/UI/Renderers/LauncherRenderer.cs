@@ -112,13 +112,14 @@ internal class LauncherRenderer
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
-        // workspace-xx61 (511u): the launcher has no status bar, so a status
-        // message set by a launcher action (e.g. "Couldn't save bookmark") was
-        // never shown anywhere — surface it here or failures stay silent. The
-        // footer budget is one extra line (PositionAtBottom leaves 2), so a
-        // transient status takes the badge slot; the badge returns next render.
-        // Otherwise (workspace-frpl.13 B11): a scheduled run that failed/recovered
-        // while the user was away surfaces here on next focus — never silent.
+        // workspace-xx61 (511u) + workspace-ej1i: the launcher has no status bar,
+        // so a status message set by a launcher action (e.g. "Couldn't move
+        // bookmark", "Already at top") was never shown anywhere — surface it here
+        // or failures stay silent. The footer budget is one extra line
+        // (PositionAtBottom leaves 2), so a transient status takes the badge slot;
+        // the badge returns next render. Otherwise (workspace-frpl.13 B11): a
+        // scheduled run that failed/recovered while the user was away surfaces
+        // here on next focus — never silent.
         if (!string.IsNullOrEmpty(statusMessage))
         {
             _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{statusMessage}{Reset}");
@@ -131,11 +132,13 @@ internal class LauncherRenderer
         // workspace-g801: surface the launcher's signature 1-9 quick-jump (the tile
         // badges already advertise it); the destructive 'd delete' moves to ?-help
         // rather than sitting on the footer of the very first screen forever.
+        // workspace-ej1i.3: "?" is labelled "all keys" so it reads as the gateway
+        // to the full binding list.
         var hints = FormatPrimaryKbdHint("Enter", "open", p) + "  " +
                     FormatMutedKbdHint("1-9", "jump", p) + "  " +
                     FormatMutedKbdHint("o", "go to url", p) + "  " +
                     FormatMutedKbdHint("a", "add", p) + "  " +
-                    FormatMutedKbdHint("?", "help", p);
+                    FormatMutedKbdHint("?", "all keys", p);
 
         _ = width;
         _helpers.WriteLine($" {hints}");
@@ -776,8 +779,9 @@ internal class LauncherRenderer
     /// Builds the wordmark / narrow-title header as a list of lines suitable
     /// for inclusion in the launcher's virtual content stream.
     /// When <paramref name="showSetupHint"/> is true, the trailing blank line
-    /// inside the box is replaced with a centred "Set up API keys" hint in the
-    /// accent colour (workspace-ayt8). Net header height is unchanged.
+    /// inside the box is replaced with an "Optional: add API keys" hint in the
+    /// accent colour (workspace-ayt8, copy softened in workspace-4z4f). Net
+    /// header height is unchanged.
     /// </summary>
 #pragma warning disable SA1202 // exposed internal for LauncherTaglineAlignmentTests; private siblings precede.
     internal static List<string> BuildHeaderLines(int width, ThemePalette p, bool showSetupHint)
@@ -808,7 +812,9 @@ internal class LauncherRenderer
 
         string SetupHintBoxLine()
         {
-            const string fullLabel = "→ Set up API keys to enable AI features";
+            // workspace-4z4f.1: the hint must read as optional — browsing
+            // already works without keys; the keys unlock podcasts + AI layout.
+            const string fullLabel = "→ Optional: add API keys for podcasts & AI layout";
             const string suffix = " · press c";
             var accent = p.GetAccentFg().AnsiFg;
             var muted = p.SecondaryText.AnsiFg;

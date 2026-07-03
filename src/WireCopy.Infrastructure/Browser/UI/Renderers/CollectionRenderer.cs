@@ -170,7 +170,10 @@ internal class CollectionRenderer
 
         if (collection.Items.Count == 0)
         {
-            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet — press{Reset} {p.GetAccentFg().AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}on any article to start your list{Reset}");
+            // workspace-wyxx.2: name the prerequisite AND the way back to it —
+            // the user is inside the collection view here, so "go back to your
+            // articles" is the missing step, not just the `s` key.
+            _helpers.WriteLine($"  {p.SecondaryText.AnsiFg}Nothing saved yet — go back to your articles ({Reset}{p.GetAccentFg().AnsiFg}b{Reset}{p.SecondaryText.AnsiFg}) and press{Reset} {p.GetAccentFg().AnsiFg}s{Reset} {p.SecondaryText.AnsiFg}to add them here{Reset}");
         }
         else if (isCompact)
         {

@@ -115,12 +115,12 @@ public class TerminalInputHandler : IInputHandler
    d               Delete bookmark
    Shift+J / K     Reorder bookmarks
    :rename <name>  Rename selected bookmark
-   c               Reading list
+   c               Setup / settings
    :home           Return to launcher
 
  Reading List
    Space           Select / deselect item or section
-   s               Save to Reading List (or all selected)
+   s               Save to Reading List / (in Collections) set as default
    Shift+A         Save all links to Reading List
    Shift+S         Save to specific collection
    d               Delete / remove item

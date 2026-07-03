@@ -1025,8 +1025,8 @@ internal class StatusBarRenderer
             ],
             ViewMode.CollectionList =>
             [
-                [("Enter", "open"), ("d", "delete"), ("b", "back")],
-                [("Enter", "open"), ("b", "back")],
+                [("Enter", "open"), ("s", "set default"), ("d", "delete"), ("b", "back")],
+                [("Enter", "open"), ("s", "set default"), ("b", "back")],
                 [("Enter", "open")],
             ],
             ViewMode.CollectionItems =>

@@ -74,6 +74,7 @@ internal static class KeybindingPopup
             ViewMode.CollectionList =>
             [
                 ("Enter", "open collection"),
+                ("s", "set as default collection"),
                 ("d", "delete collection"),
                 (":new", "create collection"),
                 ("b", "go back"),

@@ -13,7 +13,7 @@ namespace WireCopy.Tests.Browser;
 
 /// <summary>
 /// Regression tests for workspace-ayt8: when no API credentials are configured,
-/// the launcher renders a non-focusable "Set up API keys · press c" hint
+/// the launcher renders a non-focusable "Optional: add API keys · press c" hint
 /// inside the wordmark/header box (replacing the trailing blank line). The
 /// `c` keystroke opens the unified Setup screen (rebound from `S` in
 /// workspace-jby8 to avoid the save-letter overlap). The hint must NOT add rows
@@ -55,14 +55,14 @@ public class LauncherSetupHintTests
     {
         var screen = RenderLauncherScreen(showSetupHint: true);
 
-        screen.Should().Contain("Set up API keys",
+        screen.Should().Contain("Optional: add API keys",
             "the setup hint must be rendered when ShowSetupHint=true");
         screen.Should().Contain("press c",
             "the hint must advertise the dedicated keybinding");
 
         // Hint should appear before the URL bar in the rendered output —
         // i.e. inside the header box, not as a separate band below the URL bar.
-        var hintIdx = screen.IndexOf("Set up API keys", System.StringComparison.Ordinal);
+        var hintIdx = screen.IndexOf("Optional: add API keys", System.StringComparison.Ordinal);
         var urlBarIdx = screen.IndexOf("Go to URL", System.StringComparison.Ordinal);
         urlBarIdx.Should().BeGreaterThan(0, "URL bar must render");
         hintIdx.Should().BeLessThan(urlBarIdx,
@@ -74,9 +74,9 @@ public class LauncherSetupHintTests
     {
         var screen = RenderLauncherScreen(showSetupHint: false);
 
-        screen.Should().NotContain("Set up API keys",
+        screen.Should().NotContain("Optional: add API keys",
             "configured users must not see the hint anywhere");
-        screen.Should().NotContain("→ Set up API keys to enable AI features · press c",
+        screen.Should().NotContain("→ Optional: add API keys for podcasts & AI layout · press c",
             "configured users must not see the dedicated-keybinding affordance");
     }
 
@@ -87,7 +87,7 @@ public class LauncherSetupHintTests
         // honour the flag now that the hint is baked into BuildHeaderLines.
         var screen = RenderLauncherScreen(showSetupHint: true, bookmarks: new List<Bookmark>());
 
-        screen.Should().Contain("Set up API keys");
+        screen.Should().Contain("Optional: add API keys");
     }
 
     private static string RenderLauncherScreen(

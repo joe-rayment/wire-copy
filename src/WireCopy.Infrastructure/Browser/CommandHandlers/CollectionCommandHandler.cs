@@ -87,9 +87,15 @@ internal static class CollectionCommandHandler
                         await service.SaveToReadingListAsync(
                             saveNode.Link.Url, saveNode.Link.DisplayText, ct).ConfigureAwait(false);
                         ctx.Logger.LogInformation("Saved to Reading List: {Title}", saveNode.Link.DisplayText);
+
+                        // workspace-yejq.6: name the destination. `s` always
+                        // targets the Reading List (SaveToReadingListAsync is
+                        // hardcoded to it) — announce that truthfully rather
+                        // than the starred "default" collection, which does
+                        // not govern this save path.
                         ctx.NavigationService.Announce(
                             "✓",
-                            $"Saved: {saveNode.Link.DisplayText}",
+                            $"Saved to Reading List: {saveNode.Link.DisplayText}",
                             new[] { new StatusKeyHint("c", "list") },
                             shortText: "✓ saved");
                     }
@@ -122,9 +128,11 @@ internal static class CollectionCommandHandler
                     var service = ctx.CreateCollectionService(scope);
                     await service.SaveToReadingListAsync(url, title, ct).ConfigureAwait(false);
                     ctx.Logger.LogInformation("Saved to Reading List from reader: {Title}", title);
+
+                    // workspace-yejq.6: same destination-naming as the link-view save.
                     ctx.NavigationService.Announce(
                         "✓",
-                        $"Saved: {title}",
+                        $"Saved to Reading List: {title}",
                         new[] { new StatusKeyHint("c", "list") },
                         shortText: "✓ saved");
                 }
@@ -150,53 +158,59 @@ internal static class CollectionCommandHandler
                 await service.SetDefaultCollectionAsync(col.Id, ct).ConfigureAwait(false);
                 ctx.DefaultCollectionId = col.Id;
                 ctx.Logger.LogInformation("Set default collection: {Name}", col.Name);
+
+                // workspace-yejq.3: the `s` = set-default overload was a silent
+                // action — announce the result so the dual behaviour of `s`
+                // is discoverable in the view where it applies.
+                ctx.NavigationService.Announce(
+                    Indicators.Star.ToString(),
+                    $"Default collection: {col.Name}",
+                    shortText: $"{Indicators.Star} default");
             }
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to set default collection");
+                ctx.NavigationService.SetStatusMessage("Couldn't set default collection");
             }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         // After the toast is staged and the page has been re-rendered, play the
-        // row flash on the saved card. This runs synchronously (~400ms) and
-        // is skipped when animations are globally disabled. Skipped if the
-        // selection moved during the await (race protection).
-        if (flashPosition is { } pos
-            && !string.IsNullOrEmpty(flashText)
-            && !ctx.DisableAnimations
-            && SelectionStillOnSavedNode(ctx, savedNodeId))
-        {
-            try
-            {
-                var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-
-                // Match the title-text width budget used by BuildSelectedCardLine —
-                // truncate so the flash never spills past the card edge.
-                var maxWidth = Math.Max(1, (options.TerminalWidth / 2) - 4);
-                var displayText = RenderHelpers.TruncateText(flashText!, maxWidth);
-                SaveFlashAnimation.PlayRow(displayText, pos.Row, pos.Col, palette);
-            }
-            catch (Exception ex)
-            {
-                ctx.Logger.LogDebug(ex, "Save flash animation failed");
-            }
-        }
+        // row flash on the saved card.
+        PlaySaveFlash(ctx, options, flashPosition, flashText, savedNodeId);
     }
 
     public static async Task HandleSaveToSpecific(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var tree = ctx.NavigationService.CurrentPage?.LinkTree;
 
+        // Flash target captured before the awaits (mirrors HandleSaveToCollection).
+        (int Row, int Col)? flashPosition = null;
+        string? flashText = null;
+        Guid? savedNodeId = null;
+
         if (ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical)
         {
             var saveNode = tree?.GetSelectedNode();
             if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
             {
-                var collectionName = await ctx.InputHandler.PromptForInputAsync("Save to collection: ", ct).ConfigureAwait(false);
+                // workspace-yejq.1: show the existing collection names inside the
+                // prompt so users reuse a collection instead of accidentally
+                // creating a near-duplicate through a typo.
+                var prompt = await BuildSaveToSpecificPromptAsync(ctx, options, ct).ConfigureAwait(false);
+
+                var collectionName = await ctx.InputHandler.PromptForInputAsync(prompt, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(collectionName))
                 {
+                    // workspace-yejq.5: capture the flash target BEFORE the save
+                    // awaits, mirroring HandleSaveToCollection — a re-render
+                    // between now and the flash should still hit the row the
+                    // user pressed Shift+S on.
+                    flashPosition = ComputeSelectedRowFlashPosition(tree!, ctx, options);
+                    flashText = saveNode.Link.DisplayText;
+                    savedNodeId = saveNode.Id;
+
                     try
                     {
                         using var scope = ctx.ScopeFactory.CreateScope();
@@ -209,8 +223,14 @@ internal static class CollectionCommandHandler
                                 "Saved to collection '{Collection}': {Title}",
                                 collectionName,
                                 saveNode.Link.DisplayText);
-                            ctx.NavigationService.SetStatusMessage(
-                                $"Saved to {collectionName}: {saveNode.Link.DisplayText}");
+
+                            // workspace-yejq.2: same Announce vocabulary as the
+                            // `s` quick save — glyph + follow-up key.
+                            ctx.NavigationService.Announce(
+                                "✓",
+                                $"Saved to {collectionName}: {saveNode.Link.DisplayText}",
+                                new[] { new StatusKeyHint("c", "list") },
+                                shortText: "✓ saved");
                         }
                         else
                         {
@@ -218,20 +238,33 @@ internal static class CollectionCommandHandler
                                 "Already in collection '{Collection}': {Title}",
                                 collectionName,
                                 saveNode.Link.DisplayText);
-                            ctx.NavigationService.SetStatusMessage(
-                                $"Already in {collectionName}");
+
+                            // workspace-yejq.4: duplicate gets an indicator glyph
+                            // and no success flash.
+                            ctx.NavigationService.Announce(
+                                "ℹ",
+                                $"Already in {collectionName}",
+                                shortText: "ℹ already saved");
+                            flashPosition = null;
+                            flashText = null;
                         }
                     }
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to collection");
                         ctx.NavigationService.SetStatusMessage("Failed to save");
+                        flashPosition = null;
+                        flashText = null;
                     }
                 }
             }
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+        // workspace-yejq.5: the non-duplicate save path gets the same row
+        // flash as the `s` quick save.
+        PlaySaveFlash(ctx, options, flashPosition, flashText, savedNodeId);
     }
 
     public static async Task HandleSaveAllToReadingList(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -434,7 +467,9 @@ internal static class CollectionCommandHandler
                 }
                 catch (Exception ex)
                 {
+                    // workspace-wyxx.1: reorder failures must not be silent.
                     ctx.Logger.LogWarning(ex, "Failed to move item up");
+                    ctx.NavigationService.SetStatusMessage("Couldn't reorder");
                 }
             }
         }
@@ -469,7 +504,9 @@ internal static class CollectionCommandHandler
                 }
                 catch (Exception ex)
                 {
+                    // workspace-wyxx.1: reorder failures must not be silent.
                     ctx.Logger.LogWarning(ex, "Failed to move item down");
+                    ctx.NavigationService.SetStatusMessage("Couldn't reorder");
                 }
             }
         }
@@ -502,6 +539,80 @@ internal static class CollectionCommandHandler
             ctx.Logger.LogError(ex, "Failed to open collections");
             ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Builds the Shift+S prompt, listing the existing collection names inline
+    /// ("Save to collection [Reading List, Favorites]: ") so users reuse
+    /// collections instead of accidentally creating new ones (workspace-yejq.1).
+    /// Falls back to the bare prompt when there are no collections or the
+    /// lookup fails.
+    /// </summary>
+    private static async Task<string> BuildSaveToSpecificPromptAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        const string barePrompt = "Save to collection: ";
+        try
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var service = ctx.CreateCollectionService(scope);
+            var collections = await service.GetAllCollectionsAsync(ct).ConfigureAwait(false);
+            if (collections is not { Count: > 0 })
+            {
+                return barePrompt;
+            }
+
+            // Leave room on the prompt line for the user's typing.
+            var namesBudget = Math.Max(12, options.TerminalWidth - 40);
+            var names = RenderHelpers.TruncateText(
+                string.Join(", ", collections.Select(c => c.Name)), namesBudget);
+            return $"Save to collection [{names}]: ";
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Couldn't list collection names for the save prompt");
+            return barePrompt;
+        }
+    }
+
+    /// <summary>
+    /// Plays the save-success row flash on the captured screen position. The
+    /// flash runs synchronously (~400ms), is skipped when animations are
+    /// globally disabled, and is skipped if the selection moved during the
+    /// save await (race protection). Shared by the `s` quick save and the
+    /// Shift+S save-to-specific paths (workspace-yejq.5).
+    /// </summary>
+    private static void PlaySaveFlash(
+        CommandContext ctx,
+        RenderOptions options,
+        (int Row, int Col)? flashPosition,
+        string? flashText,
+        Guid? savedNodeId)
+    {
+        if (flashPosition is not { } pos
+            || string.IsNullOrEmpty(flashText)
+            || ctx.DisableAnimations
+            || !SelectionStillOnSavedNode(ctx, savedNodeId))
+        {
+            return;
+        }
+
+        try
+        {
+            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+            // Match the title-text width budget used by BuildSelectedCardLine —
+            // truncate so the flash never spills past the card edge.
+            var maxWidth = Math.Max(1, (options.TerminalWidth / 2) - 4);
+            var displayText = RenderHelpers.TruncateText(flashText!, maxWidth);
+            SaveFlashAnimation.PlayRow(displayText, pos.Row, pos.Col, palette);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogDebug(ex, "Save flash animation failed");
         }
     }
 

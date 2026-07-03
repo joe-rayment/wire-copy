@@ -53,6 +53,7 @@ public class NavigationService : INavigationService
     private int _speedReadWpm = 750;
     private ToastNotification? _activeToast;
     private DateTime? _toastShownAt;
+    private bool _podcastNudgeShown;
 
     // Layout preview state
     private List<LayoutCandidate>? _previewLayouts;
@@ -776,6 +777,21 @@ public class NavigationService : INavigationService
     {
         _collectionState.EnterCollection(collection);
         _currentViewMode = ViewMode.CollectionItems;
+
+        // workspace-4z4f.2: podcast generation is invisible until this screen,
+        // so the first time a NON-EMPTY collection opens, teach the key once.
+        // Conditional on items existing so the nudge never advertises a
+        // non-actionable feature; the key is spelled inside the text because
+        // the collection views render the transient as plain status text.
+        if (!_podcastNudgeShown && collection.Items.Count > 0)
+        {
+            _podcastNudgeShown = true;
+            Announce(
+                "🎧",
+                "p: make a podcast from this list",
+                ttl: TimeSpan.FromSeconds(8),
+                shortText: "🎧 p:podcast");
+        }
     }
 
     /// <summary>
