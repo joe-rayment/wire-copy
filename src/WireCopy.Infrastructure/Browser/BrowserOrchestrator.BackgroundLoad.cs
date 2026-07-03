@@ -273,7 +273,17 @@ public partial class BrowserOrchestrator
                 }
 
                 _lineCacheManager.InvalidateLineCache();
+
+                // workspace-u45c: the quality retry silently swapped the page
+                // under the user — announce it so the sudden content change
+                // reads as an upgrade, not a glitch.
+                _navigationService.Announce("⟳", "Found better content", shortText: "⟳ improved");
+
                 await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+
+                // Parity with the background-load completion path: reveal the
+                // improved content with the same animation.
+                PlayDecryptRevealAnimation(improvedPage);
             }
             else
             {

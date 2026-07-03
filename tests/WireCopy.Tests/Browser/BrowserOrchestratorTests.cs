@@ -568,6 +568,93 @@ public class BrowserOrchestratorNavigationTests
     }
 
     [Fact]
+    public async Task RunAsync_ForceRefresh_HitlGate_RendersHumanActionBoxNotGenericError()
+    {
+        // workspace-u45c item 1: a force refresh that hits a CAPTCHA/login
+        // gate must render the variant-aware HITL box (like the background
+        // load path), not the generic "Something went wrong" error.
+        SetupPageLoad("https://example.com");
+
+        var action = new HumanActionRequired(HumanActionVariant.Captcha, "example.com");
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.Url == "https://example.com" && r.ForceRefresh),
+            Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Failure(action, "bot challenge detected"));
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? new NavigationCommand { Type = CommandType.ForceRefresh }
+                    : new NavigationCommand { Type = CommandType.Quit };
+            });
+
+        await _sut.RunAsync("https://example.com");
+
+        _renderer.Received().RenderHumanAction(
+            Arg.Is<HumanActionRequired>(a => a.Variant == HumanActionVariant.Captcha),
+            "https://example.com");
+        _renderer.DidNotReceive().RenderError(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task RunAsync_ForceRefresh_GenericFailure_StillRendersError()
+    {
+        // Companion to the HITL case: a plain failure (no RequiredAction)
+        // keeps the existing generic error path.
+        SetupPageLoad("https://example.com");
+
+        _pageLoader.LoadAsync(
+            Arg.Is<PageLoadRequest>(r => r.Url == "https://example.com" && r.ForceRefresh),
+            Arg.Any<CancellationToken>())
+            .Returns(PageLoadResult.Failure("connection reset"));
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? new NavigationCommand { Type = CommandType.ForceRefresh }
+                    : new NavigationCommand { Type = CommandType.Quit };
+            });
+
+        await _sut.RunAsync("https://example.com");
+
+        _renderer.Received().RenderError(Arg.Any<string>(), "https://example.com");
+        _renderer.DidNotReceive().RenderHumanAction(Arg.Any<HumanActionRequired>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task RunAsync_InteractiveRefresh_Accepted_AnnouncesCompletion()
+    {
+        // workspace-u45c item 2: accepting an interactive refresh announces
+        // "manual refresh complete" so success has visible feedback.
+        SetupPageLoad("https://example.com");
+
+        var callCount = 0;
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount switch
+                {
+                    1 => new NavigationCommand { Type = CommandType.InteractiveRefresh },
+                    2 => new NavigationCommand { Type = CommandType.ActivateLink }, // accept the refresh
+                    _ => new NavigationCommand { Type = CommandType.Quit },
+                };
+            });
+
+        await _sut.RunAsync("https://example.com");
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain(
+            "manual refresh complete",
+            because: "a successful accepted refresh must announce completion instead of finishing silently");
+    }
+
+    [Fact]
     public async Task RunAsync_CancellationToken_StopsGracefully()
     {
         // Arrange

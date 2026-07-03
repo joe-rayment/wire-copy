@@ -87,10 +87,15 @@ public interface IPageRenderer
 
     /// <summary>
     /// Renders a message telling the user to complete login in the browser window.
+    /// workspace-mokw: when <paramref name="elapsedMs"/> / <paramref name="timeoutMs"/>
+    /// are supplied, the waiting line carries a spinner plus an
+    /// "Xs elapsed (Ym timeout)" clock so the poll loop doesn't look hung.
     /// </summary>
     /// <param name="url">URL that triggered the login requirement.</param>
     /// <param name="domain">Domain requiring login.</param>
-    void RenderManualLogin(string url, string domain);
+    /// <param name="elapsedMs">Milliseconds spent waiting so far (0 = no clock shown).</param>
+    /// <param name="timeoutMs">Total wait budget in milliseconds (0 = no clock shown).</param>
+    void RenderManualLogin(string url, string domain, long elapsedMs = 0, long timeoutMs = 0);
 
     /// <summary>
     /// Renders status bar at bottom of screen.

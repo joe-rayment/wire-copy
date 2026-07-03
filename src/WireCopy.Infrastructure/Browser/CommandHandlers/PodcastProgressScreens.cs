@@ -320,7 +320,8 @@ internal static class PodcastProgressScreens
 
                     // Once generation has finished, any exit key just collects
                     // the result.
-                    if (command.Type is CommandType.GoBack or CommandType.CancelRun &&
+                    if ((command.Type is CommandType.GoBack or CommandType.CancelRun ||
+                         command.RawKeyChar is 'd' or 'D') &&
                         generationTask.IsCompleted)
                     {
                         break;
@@ -332,7 +333,11 @@ internal static class PodcastProgressScreens
                     // manager so the status-bar badge, the CTA progress, and
                     // the Shift+P restore path can all find it. Going back
                     // must never threaten the run.
-                    if (command.Type == CommandType.GoBack && jobManager is not null)
+                    // workspace-nahg item 3: 'd' is the explicit, discoverable
+                    // detach verb — same behaviour as Esc, but advertised in
+                    // the hint line so detach isn't an overloaded Esc.
+                    if ((command.Type == CommandType.GoBack || command.RawKeyChar is 'd' or 'D') &&
+                        jobManager is not null)
                     {
                         try
                         {
@@ -358,11 +363,18 @@ internal static class PodcastProgressScreens
                     // default exit. With no job manager wired (degraded/test
                     // paths) GoBack also lands here so the modal stays
                     // escapable.
-                    if (command.Type == CommandType.CancelRun || command.Type == CommandType.GoBack)
+                    if (command.Type == CommandType.CancelRun || command.Type == CommandType.GoBack ||
+                        command.RawKeyChar is 'd' or 'D')
                     {
                         var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
                         if (shouldCancel)
                         {
+                            // workspace-nahg item 2: visible feedback while the
+                            // generation task unwinds its in-flight articles —
+                            // the await below can take seconds and the screen
+                            // would otherwise sit frozen on stale progress.
+                            PaintCancellingNotice(ctx, options);
+
                             await genCts.CancelAsync().ConfigureAwait(false);
                             try
                             {
@@ -676,7 +688,8 @@ internal static class PodcastProgressScreens
 
                     // Once generation has finished, any exit key just collects
                     // the result.
-                    if (command.Type is CommandType.GoBack or CommandType.CancelRun &&
+                    if ((command.Type is CommandType.GoBack or CommandType.CancelRun ||
+                         command.RawKeyChar is 'd' or 'D') &&
                         generationTask.IsCompleted)
                     {
                         break;
@@ -686,7 +699,8 @@ internal static class PodcastProgressScreens
                     // re-detaches. Idempotent — the job is already registered
                     // on the manager, so we just exit the attached loop
                     // without touching the manager state.
-                    if (command.Type == CommandType.GoBack)
+                    // workspace-nahg item 3: 'd' is the explicit detach verb.
+                    if (command.Type == CommandType.GoBack || command.RawKeyChar is 'd' or 'D')
                     {
                         detachedAgain = true;
                         ctx.NavigationService.SetStatusMessage(
@@ -700,6 +714,10 @@ internal static class PodcastProgressScreens
                         var shouldCancel = await ShowCancellationConfirmAsync(ctx, ct).ConfigureAwait(false);
                         if (shouldCancel)
                         {
+                            // workspace-nahg item 2: visible feedback while the
+                            // in-flight articles unwind after the cancel.
+                            PaintCancellingNotice(ctx, options);
+
                             jobManager.RequestCancellation();
                             try
                             {
@@ -773,13 +791,83 @@ internal static class PodcastProgressScreens
         return null;
     }
 
+    /// <summary>
+    /// workspace-nahg item 1: visual confirm modal for cancelling a run.
+    /// Renders the same small 3-row bordered box the cost-gate uses
+    /// (via <see cref="PodcastInlineBox"/>) instead of the bare
+    /// "Cancel podcast generation? (y/n):" text prompt, and reads a single
+    /// keystroke: y confirms, n / Esc / q declines. Unhandled keys flash the
+    /// border in the warning colour (workspace-nahg item 4).
+    /// </summary>
     internal static async Task<bool> ShowCancellationConfirmAsync(
         CommandContext ctx,
         CancellationToken ct)
     {
-        var response = await ctx.InputHandler.PromptForInputAsync(
-            "Cancel podcast generation? (y/n): ", ct).ConfigureAwait(false);
-        return string.Equals(response, "y", StringComparison.OrdinalIgnoreCase);
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var options = ctx.GetCurrentRenderOptions();
+        var summary = "Cancel podcast generation?";
+        var hint = $"{palette.GetAccentFg().AnsiFg}[y]{Reset} {palette.PrimaryText.AnsiFg}yes{Reset}  " +
+                   $"{palette.GetAccentFg().AnsiFg}[n]{Reset} {palette.PrimaryText.AnsiFg}no{Reset}";
+        var hintPlain = "[y] yes  [n] no";
+
+        try
+        {
+            PodcastInlineBox.RenderBox(options, palette, summary, hint, hintPlain);
+
+            while (!ct.IsCancellationRequested)
+            {
+                var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+
+                if (command.Type == CommandType.TerminalResized)
+                {
+                    options = ctx.GetCurrentRenderOptions();
+                    PodcastInlineBox.RenderBox(options, palette, summary, hint, hintPlain);
+                    continue;
+                }
+
+                if (command.RawKeyChar is 'y' or 'Y')
+                {
+                    return true;
+                }
+
+                if (command.RawKeyChar is 'n' or 'N' ||
+                    command.Type is CommandType.GoBack or CommandType.Quit)
+                {
+                    return false;
+                }
+
+                await PodcastInlineBox.FlashInvalidKeyAsync(
+                    options, palette, summary, hint, hintPlain, ct).ConfigureAwait(false);
+            }
+
+            return false;
+        }
+        finally
+        {
+            // The progress loop repaints the full screen on its next frame,
+            // but blank the box rows anyway so nothing lingers if the caller
+            // returns without another frame (e.g. immediate exit).
+            PodcastInlineBox.ClearBoxRows(options);
+        }
+    }
+
+    /// <summary>
+    /// workspace-nahg item 2: paints a single "Cancelling…" status row where
+    /// the confirm box sat, so the screen doesn't sit frozen while the
+    /// generation task unwinds its in-flight articles after the user confirms
+    /// a cancel. Painted once (not animated) — the await that follows can
+    /// take a few seconds and this row is the honest signal that the app is
+    /// working on tearing the run down.
+    /// </summary>
+    internal static void PaintCancellingNotice(CommandContext ctx, RenderOptions options)
+    {
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+        var row = Math.Max(0, options.TerminalHeight - 4);
+        helpers.WriteAt(
+            0,
+            row,
+            $"  {palette.GetWarningFg().AnsiFg}⟳ Cancelling in-flight articles…{Reset}");
     }
 
     internal static async Task<CompletionScreenAction> ShowCompletionScreenAsync(
@@ -1513,8 +1601,12 @@ internal static class PodcastProgressScreens
 
         // workspace-m8es.2: backing out is the safe, primary exit (the run
         // keeps going); cancelling spend is the deliberate, secondary one.
+        // workspace-nahg item 3: 'd' names detach explicitly so "keep it
+        // running in the background" is a discoverable verb, not an
+        // overloaded Esc (which means cancel on the cost-gate modal).
         helpers.WriteLine(
-            $"  {p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:back (keeps generating){Reset}   " +
+            $"  {p.GetAccentFg().AnsiFg}d{Reset}{p.SecondaryText.AnsiFg}:detach (keeps generating){Reset}   " +
+            $"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.SecondaryText.AnsiFg}:back{Reset}   " +
             $"{p.GetAccentFg().AnsiFg}x{Reset}{p.SecondaryText.AnsiFg}:cancel run{Reset}");
     }
 

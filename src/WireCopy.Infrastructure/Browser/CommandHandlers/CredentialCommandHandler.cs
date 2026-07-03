@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
@@ -236,9 +237,24 @@ internal static class CredentialCommandHandler
             await repo.AddAsync(credential, ct).ConfigureAwait(false);
             await unitOfWork.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            var msg = loginSteps != null
-                ? $"Credential saved for {credential.Domain} (multi-step login)"
-                : $"Credential saved for {credential.Domain}";
+            // workspace-mokw: an unknown site saved with no login config at all
+            // (user skipped/cancelled step 2) will silently fail auto-login
+            // later — say so now, while the user still has context.
+            var hasLoginConfig = loginUrl != null || usernameSelector != null || passwordSelector != null;
+            string msg;
+            if (loginSteps != null)
+            {
+                msg = $"Credential saved for {credential.Domain} (multi-step login)";
+            }
+            else if (hasLoginConfig)
+            {
+                msg = $"Credential saved for {credential.Domain}";
+            }
+            else
+            {
+                msg = $"Credential saved for {credential.Domain} (no login config — auto-login may not work; use :cred edit to add selectors)";
+            }
+
             ctx.NavigationService.SetStatusMessage(msg);
             ctx.Logger.LogInformation("Added credential for domain: {Domain}", credential.Domain);
         }
@@ -345,7 +361,19 @@ internal static class CredentialCommandHandler
             ctx.NavigationService.SetStatusMessage($"Testing login for {domain}...");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            var result = await autoLogin.LoginAsync(domain, ct).ConfigureAwait(false);
+            // workspace-mokw: LoginAsync drives a headed browser through the
+            // whole login flow and can take tens of seconds — without a
+            // spinner the command reads as hung. Re-render the loading box
+            // (spinner + elapsed) on a 500ms tick until the result lands.
+            var loginTask = autoLogin.LoginAsync(domain, ct);
+            var sw = Stopwatch.StartNew();
+            while (!loginTask.IsCompleted && !ct.IsCancellationRequested)
+            {
+                ctx.Renderer.RenderLoading(domain, $"Testing login for {domain}...", sw.ElapsedMilliseconds);
+                await Task.WhenAny(loginTask, Task.Delay(500, ct)).ConfigureAwait(false);
+            }
+
+            var result = await loginTask.ConfigureAwait(false);
 
             if (result.Success)
             {

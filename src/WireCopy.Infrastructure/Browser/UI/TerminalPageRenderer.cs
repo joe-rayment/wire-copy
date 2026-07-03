@@ -396,11 +396,30 @@ public class TerminalPageRenderer : IPageRenderer
     }
 #pragma warning restore SA1204
 
-    public void RenderManualLogin(string url, string domain)
+    public void RenderManualLogin(string url, string domain, long elapsedMs = 0, long timeoutMs = 0)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var truncatedUrl = RenderHelpers.TruncateUrl(url, MaxBoxContentWidth - 2);
         var loginMsg = RenderHelpers.TruncateText($"Login required for {domain}", MaxBoxContentWidth - 2);
+
+        // workspace-mokw: the manual-login wait polls for up to 3 minutes —
+        // without a moving spinner + elapsed/timeout clock the box reads as
+        // a hang. Spinner reuses the RenderLoading frame cadence.
+        var frameIndex = (int)((elapsedMs / 500) % SpinnerFrames.Length);
+        var spinner = SpinnerFrames[frameIndex];
+        string waitingPlain;
+        string waitingStyled;
+        if (timeoutMs > 0)
+        {
+            var clock = $"Waiting for login... {FormatWaitClock(elapsedMs)} elapsed ({FormatWaitClock(timeoutMs)} timeout)";
+            waitingPlain = $"{spinner} {clock}";
+            waitingStyled = $"{p.PromptFg.AnsiFg}{spinner}{Reset} {p.SecondaryText.AnsiFg}{clock}{Reset}";
+        }
+        else
+        {
+            waitingPlain = "Waiting for login to complete...";
+            waitingStyled = $"{p.SecondaryText.AnsiFg}{waitingPlain}{Reset}";
+        }
 
         var lines = new List<CenteredBoxLine>
         {
@@ -409,12 +428,33 @@ public class TerminalPageRenderer : IPageRenderer
             CenteredBoxLine.Empty,
             new($"{p.SecondaryText.AnsiFg}{truncatedUrl}{Reset}", truncatedUrl),
             CenteredBoxLine.Empty,
-            new($"{p.SecondaryText.AnsiFg}Waiting for login to complete...{Reset}", "Waiting for login to complete..."),
+            new(waitingStyled, waitingPlain),
             CenteredBoxLine.Empty,
         };
 
         RenderCenteredBox(lines, p.GetMutedFg());
     }
+
+    /// <summary>
+    /// workspace-mokw: formats a millisecond count as a compact wall-clock
+    /// string for the manual-login wait line — "45s" under a minute,
+    /// "2m15s" (or "3m" when the seconds are zero) above it. Static and
+    /// public so tests can pin the format without rendering.
+    /// </summary>
+#pragma warning disable SA1204 // Static members should appear before non-static members — kept adjacent to RenderManualLogin for readability.
+    public static string FormatWaitClock(long ms)
+    {
+        var totalSeconds = Math.Max(0, ms / 1000);
+        if (totalSeconds < 60)
+        {
+            return $"{totalSeconds}s";
+        }
+
+        var minutes = totalSeconds / 60;
+        var seconds = totalSeconds % 60;
+        return seconds == 0 ? $"{minutes}m" : $"{minutes}m{seconds}s";
+    }
+#pragma warning restore SA1204
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {

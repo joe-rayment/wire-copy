@@ -182,6 +182,31 @@ public class PodcastProgressScreenAttachedTests
     }
 
     [Fact]
+    public async Task Attached_DetachKey_WhileRunning_RedetachesWithoutCancelling()
+    {
+        // workspace-nahg item 3: 'd' is the explicit detach verb — same
+        // contract as Esc/GoBack, but discoverable from the hint line.
+        var manager = new PodcastBackgroundJobManager();
+        var collection = Collection.Create("Test");
+        collection.AddItem("https://example.com/a", "A");
+        var tcs = new TaskCompletionSource<PodcastResult>();
+        using var cts = new CancellationTokenSource();
+        manager.StartJob(collection, targets: null, tcs.Task, cts);
+
+        // The real input handler maps a bare 'd' to DeleteItem with
+        // RawKeyChar 'd' — the modal must read the raw key.
+        _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(new NavigationCommand { Type = CommandType.DeleteItem, RawKeyChar = 'd' });
+
+        var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
+            _ctx, _options, manager, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        result.Should().BeNull("'d' detaches instead of collecting a result");
+        cts.IsCancellationRequested.Should().BeFalse("'d' must never cancel the run");
+        manager.HasActiveJob.Should().BeTrue("the job stays registered for the next Shift+P");
+    }
+
+    [Fact]
     public async Task Attached_CancelRun_WithConfirm_CancelsTheRun()
     {
         var manager = new PodcastBackgroundJobManager();
@@ -192,10 +217,14 @@ public class PodcastProgressScreenAttachedTests
         cts.Token.Register(() => tcs.TrySetCanceled(cts.Token));
         manager.StartJob(collection, targets: null, tcs.Task, cts);
 
+        // workspace-nahg item 1: the confirm is now a visual modal read via
+        // WaitForInputAsync — first key is 'x' (CancelRun), second is the
+        // confirm keystroke 'y' inside the modal.
+        var inputCalls = 0;
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(new NavigationCommand { Type = CommandType.CancelRun });
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns("y");
+            .Returns(_ => ++inputCalls == 1
+                ? Task.FromResult(new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' })
+                : Task.FromResult(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'y' }));
 
         var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
             _ctx, _options, manager, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
@@ -215,14 +244,22 @@ public class PodcastProgressScreenAttachedTests
         using var cts = new CancellationTokenSource();
         manager.StartJob(collection, targets: null, tcs.Task, cts);
 
+        // workspace-nahg item 1: the confirm modal reads its keystroke via
+        // WaitForInputAsync — 'x' opens it, 'n' declines, then the modal's
+        // caller loops back to waiting for input (blocked task).
         var prompted = new TaskCompletionSource();
         var inputCalls = 0;
         _inputHandler.WaitForInputAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => ++inputCalls == 1
-                ? Task.FromResult(new NavigationCommand { Type = CommandType.CancelRun })
-                : new TaskCompletionSource<NavigationCommand>().Task);
-        _inputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => { prompted.TrySetResult(); return "n"; });
+            .Returns(_ => ++inputCalls switch
+            {
+                1 => Task.FromResult(new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' }),
+                2 => Task.Run(() =>
+                {
+                    prompted.TrySetResult();
+                    return new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'n' };
+                }),
+                _ => new TaskCompletionSource<NavigationCommand>().Task,
+            });
 
         var modalTask = PodcastProgressScreens.ShowProgressScreenAttachedAsync(
             _ctx, _options, manager, CancellationToken.None);
