@@ -115,9 +115,9 @@ internal class LauncherRenderer
         // workspace-xx61 (511u) + workspace-ej1i: the launcher has no status bar,
         // so a status message set by a launcher action (e.g. "Couldn't move
         // bookmark", "Already at top") was never shown anywhere — surface it here
-        // or failures stay silent. The footer budget is one extra line
-        // (PositionAtBottom leaves 2), so a transient status takes the badge slot;
-        // the badge returns next render. Otherwise (workspace-frpl.13 B11): a
+        // or failures stay silent. The footer budget is one extra line because
+        // PositionAtBottom leaves 2 — a transient status takes the badge slot
+        // and the badge returns next render. Otherwise (workspace-frpl.13 B11): a
         // scheduled run that failed/recovered while the user was away surfaces
         // here on next focus — never silent.
         if (!string.IsNullOrEmpty(statusMessage))
