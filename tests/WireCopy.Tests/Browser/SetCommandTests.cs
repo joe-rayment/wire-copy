@@ -151,7 +151,10 @@ public class SetCommandTests
 
         _settingsStore.Received(1).Remove("OpenAiApiKey");
         _ttsService.Received(1).SetApiKeyOverride(string.Empty);
+
+        // workspace-igh6.1: the destructive clear tells the user how to recover.
         _navigationService.CurrentContext.StatusMessage.Should().Contain("cleared");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain(":set apikey");
     }
 
     #endregion
@@ -168,7 +171,10 @@ public class SetCommandTests
 
         _settingsStore.Received(1).Remove("GcsBucketName");
         _gcsConfig.BucketName.Should().BeNull();
+
+        // workspace-igh6.1: the destructive clear tells the user how to recover.
         _navigationService.CurrentContext.StatusMessage.Should().Contain("cleared");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain(":set bucket");
     }
 
     #endregion

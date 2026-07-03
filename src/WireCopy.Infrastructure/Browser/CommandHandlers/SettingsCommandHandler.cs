@@ -1860,7 +1860,7 @@ internal static class SettingsCommandHandler
         CancellationToken ct)
     {
         var input = await ctx.InputHandler.PromptForInputAsync(
-            "Auto-purge window in hours (default 36, 'reset' to revert): ",
+            "Auto-purge window in hours (positive integer, default 36, 'reset' to revert): ",
             ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(input))
@@ -1924,7 +1924,7 @@ internal static class SettingsCommandHandler
             var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
             ttsService.SetApiKeyOverride(string.Empty);
 
-            ctx.NavigationService.SetStatusMessage("API key cleared");
+            ctx.NavigationService.SetStatusMessage("API key cleared — run :set apikey to restore");
         }
         catch (Exception ex)
         {
@@ -1946,7 +1946,7 @@ internal static class SettingsCommandHandler
             var gcsConfig = scope.ServiceProvider.GetRequiredService<IOptions<GcsConfiguration>>().Value;
             gcsConfig.BucketName = null;
 
-            ctx.NavigationService.SetStatusMessage("Bucket name cleared");
+            ctx.NavigationService.SetStatusMessage("Bucket name cleared — run :set bucket to restore");
         }
         catch (Exception ex)
         {
@@ -1974,7 +1974,7 @@ internal static class SettingsCommandHandler
                 settingsStore.Remove(KeyGcsServiceAccountKeyPath);
             }
 
-            ctx.NavigationService.SetStatusMessage("Service account key cleared");
+            ctx.NavigationService.SetStatusMessage("Service account key cleared — run :set key to restore");
         }
         catch (Exception ex)
         {

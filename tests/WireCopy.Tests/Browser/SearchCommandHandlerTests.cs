@@ -269,4 +269,99 @@ public class SearchCommandHandlerTests
     }
 
     #endregion
+
+    #region Unknown commands (workspace-syj1.1 / .5)
+
+    [Fact]
+    public async Task HandleCommandLineInput_MistypedCommand_ShowsUnknownCommandInsteadOfNavigating()
+    {
+        var handled = await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "hlep", _options, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        _navigatedUrl.Should().BeNull("a bare word without a dot is a typo'd command, not a URL");
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Unknown command: hlep. Type :help for commands");
+        _renderCalled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleCommandLineInput_MistypedCommandWithArgument_ShowsUnknownCommandInsteadOfNavigating()
+    {
+        // workspace-syj1.5: ':opne google.com' must not become https://opne%20google.com
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "opne google.com", _options, CancellationToken.None);
+
+        _navigatedUrl.Should().BeNull("input containing a space is never a URL");
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Unknown command: opne. Type :help for commands");
+    }
+
+    [Fact]
+    public async Task HandleCommandLineInput_HostWithPort_StillNavigates()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "localhost:8080", _options, CancellationToken.None);
+
+        _navigatedUrl.Should().Be("https://localhost:8080");
+    }
+
+    [Theory]
+    [InlineData("wikipedia.org", true)]
+    [InlineData("sub.domain.co.uk", true)]
+    [InlineData("example.com/some/path?q=1", true)]
+    [InlineData("http://anything", true)]
+    [InlineData("https://anything", true)]
+    [InlineData("localhost", true)]
+    [InlineData("LOCALHOST", true)]
+    [InlineData("localhost:8080", true)]
+    [InlineData("devbox:3000", true)]
+    [InlineData("hlep", false)]
+    [InlineData("opne google.com", false)]
+    [InlineData("two words", false)]
+    [InlineData("q!", false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData(":8080", false)]
+    [InlineData("host:notaport", false)]
+    [InlineData("host:", false)]
+    public void LooksLikeUrl_ClassifiesInput(string input, bool expected)
+    {
+        SearchCommandHandler.LooksLikeUrl(input).Should().Be(expected, $"input was '{input}'");
+    }
+
+    #endregion
+
+    #region Missing-argument usage messages (workspace-syj1.2)
+
+    [Fact]
+    public async Task HandleCommandLineInput_OpenWithoutArgument_ShowsUsage()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "open", _options, CancellationToken.None);
+
+        _navigatedUrl.Should().BeNull();
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Usage: :open <url>");
+        _renderCalled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleCommandLineInput_NewWithoutArgument_ShowsUsage()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "new", _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Usage: :new <name>");
+        _renderCalled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleCommandLineInput_RenameWithoutArgument_ShowsUsage()
+    {
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "rename", _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Usage: :rename <name>");
+        _renderCalled.Should().BeTrue();
+    }
+
+    #endregion
 }

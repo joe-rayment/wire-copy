@@ -51,8 +51,18 @@ internal static class ScheduleCommandHandler
             var recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
             var cursor = 0;
 
+            // workspace-br7w.3: after a run-now kicks off, re-read the recipes on every
+            // subsequent keypress so the row's "last run" cell updates in place when the
+            // background run finishes — no restart of the screen required.
+            var refreshAfterRunNow = false;
+
             while (!ct.IsCancellationRequested)
             {
+                if (refreshAfterRunNow)
+                {
+                    recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
+                }
+
                 cursor = Math.Clamp(cursor, 0, Math.Max(0, recipes.Count - 1));
                 await RenderListAsync(ctx, overlay, recipes, cursor, configStore, options, ct).ConfigureAwait(false);
                 var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
@@ -96,9 +106,13 @@ internal static class ScheduleCommandHandler
                 if (recipes.Count > 0 && key is 'R')
                 {
                     var outcome = runNow.StartInBackground(recipes[cursor]);
+
+                    // workspace-br7w.3: plain language (no "launcher badge" jargon) and
+                    // keep the list refreshing so the result appears in this row.
+                    refreshAfterRunNow |= outcome == RunNowOutcome.Started;
                     ctx.NavigationService.SetStatusMessage(
                         outcome == RunNowOutcome.Started
-                            ? $"Running '{recipes[cursor].Name}' now — watch the launcher badge for the result"
+                            ? $"Running '{recipes[cursor].Name}' in the background — the result will appear on its row here when it finishes"
                             : "A generation is already in progress — try again when it finishes",
                         TimeSpan.FromSeconds(8));
                     continue;
@@ -159,7 +173,7 @@ internal static class ScheduleCommandHandler
         {
             Title = "Schedules",
             Prompt = recipes.Count == 0
-                ? "No schedules yet. A schedule pulls sections from your sites on a cadence and auto-publishes a podcast while WireCopy is open."
+                ? "No schedules yet. A schedule pulls saved sections (like \"Top Stories\") from your bookmarked sites on a cadence and auto-publishes a podcast while WireCopy is open. Sections are saved per site with the Ctrl+L setup wizard."
                 : "Recurring section recipes → auto-published podcast (runs while WireCopy is open).",
             Hint = recipes.Count == 0
                 ? "a: new · Esc: close"
@@ -176,7 +190,13 @@ internal static class ScheduleCommandHandler
             {
                 var enabled = r.Enabled ? "●" : "○";
                 var last = DescribeLastResult(r);
-                var reconfigure = await AnyStepNeedsReconfigureAsync(r, configStore).ConfigureAwait(false) ? "  ⚠ needs reconfigure" : string.Empty;
+
+                // workspace-br7w.2: name the affected steps so the warning is actionable
+                // ("⚠ needs reconfigure: News, Top 5") instead of an unexplained symbol.
+                var brokenSteps = await StepsNeedingReconfigureAsync(r, configStore).ConfigureAwait(false);
+                var reconfigure = brokenSteps.Count > 0
+                    ? $"  ⚠ needs reconfigure: {string.Join(", ", brokenSteps)}"
+                    : string.Empty;
                 card.Options.Add(new SetupWizardOverlay.CardOption
                 {
                     Label = $"{enabled} {r.Name}  ·  {ScheduleEditing.DescribeCadence(r.Cadence)}  ·  {last}{reconfigure}",
@@ -229,18 +249,24 @@ internal static class ScheduleCommandHandler
         }
     }
 
-    private static async Task<bool> AnyStepNeedsReconfigureAsync(ScheduleRecipe recipe, IHierarchyConfigStore configStore)
+    /// <summary>
+    /// workspace-br7w.2: returns the section names of the steps whose durable section can
+    /// no longer be resolved (config deleted / re-analysis flagged / section gone), so the
+    /// list row can NAME the broken steps instead of showing a bare warning symbol.
+    /// </summary>
+    private static async Task<List<string>> StepsNeedingReconfigureAsync(ScheduleRecipe recipe, IHierarchyConfigStore configStore)
     {
+        var names = new List<string>();
         foreach (var step in recipe.Steps)
         {
             var config = await configStore.GetConfigAsync(step.SourceUrl).ConfigureAwait(false);
             if (ScheduleEditing.StepNeedsReconfigure(config, step))
             {
-                return true;
+                names.Add(step.SectionName);
             }
         }
 
-        return false;
+        return names;
     }
 
     /// <summary>Create (existing == null) or edit a recipe. Returns the saved recipe, or null if cancelled.</summary>
@@ -312,9 +338,12 @@ internal static class ScheduleCommandHandler
         {
             var labels = steps.Select((s, i) => $"{i + 1}. {s.SectionName}  ({TakeModeLabel(s)}{(s.Required ? ", required" : ", optional")})  — {s.Domain}").ToList();
             labels.Add("＋ Add a source/section");
-            labels.Add(steps.Count > 0 ? "✓ Done — choose cadence" : "✓ Done (needs at least one required step)");
 
-            var choice = await PickAsync(ctx, overlay, options, "Sources", "Each source pins a durable section. Top → first, etc. ↑/↓ move · Enter select · x remove · Esc cancel", labels, 0, ct, allowRemoveAt: steps.Count).ConfigureAwait(false);
+            // workspace-br7w.4: the Done label reflects the SAME condition the Done
+            // validation below checks (≥1 REQUIRED step) — not merely "any step".
+            labels.Add(steps.Any(s => s.Required) ? "✓ Done — choose cadence" : "✓ Done (needs ≥1 required step)");
+
+            var choice = await PickAsync(ctx, overlay, options, "Sources", "Each source pins a durable section. Top → first, etc. ↑/↓ move · Enter edit/select · x remove · Esc cancel", labels, 0, ct, allowRemoveAt: steps.Count).ConfigureAwait(false);
 
             if (choice.Cancelled)
             {
@@ -323,6 +352,8 @@ internal static class ScheduleCommandHandler
 
             if (choice.RemovedIndex is { } removeAt && removeAt < steps.Count)
             {
+                // workspace-br7w.7: confirm the removal in the status line.
+                ctx.NavigationService.SetStatusMessage($"Removed step: {steps[removeAt].SectionName}", TimeSpan.FromSeconds(5));
                 steps.RemoveAt(removeAt);
                 continue;
             }
@@ -330,7 +361,21 @@ internal static class ScheduleCommandHandler
             var index = choice.Index;
             if (index < steps.Count)
             {
-                continue; // selecting an existing step is a no-op for now (reorder is x+re-add in v1)
+                // workspace-br7w.1: selecting an existing step opens a small per-step
+                // menu (change take mode / toggle required / remove) instead of being
+                // a silent no-op. Reorder remains x + re-add in v1.
+                var (remove, updated) = await EditStepAsync(ctx, overlay, palette, options, steps[index], ct).ConfigureAwait(false);
+                if (remove)
+                {
+                    ctx.NavigationService.SetStatusMessage($"Removed step: {steps[index].SectionName}", TimeSpan.FromSeconds(5));
+                    steps.RemoveAt(index);
+                }
+                else if (updated != null)
+                {
+                    steps[index] = updated;
+                }
+
+                continue;
             }
 
             if (index == steps.Count)
@@ -384,7 +429,7 @@ internal static class ScheduleCommandHandler
         if (!analyzer.IsConfigured)
         {
             ctx.NavigationService.SetStatusMessage(
-                $"'{bookmark.Name}' isn't set up yet — inline AI setup needs an OpenAI key (press c on the launcher), or configure the site via Ctrl+L.",
+                $"'{bookmark.Name}' isn't set up yet — auto-setup needs an OpenAI API key (set it in Config / AI settings, via :config), or open this site (Ctrl+L) and run the Setup Wizard.",
                 TimeSpan.FromSeconds(10));
             return null;
         }
@@ -479,6 +524,33 @@ internal static class ScheduleCommandHandler
 
         var section = sections[sectionPick.Index];
 
+        var take = await PickTakeAsync(ctx, overlay, palette, options, ct).ConfigureAwait(false);
+        if (take == null)
+        {
+            return null;
+        }
+
+        var requiredPick = await PickAsync(ctx, overlay, options, "Required?", "A required section that yields nothing fails the run loudly (never a silent empty episode). Enter select · Esc back", new List<string> { "Required (must contribute)", "Optional (skip if empty)" }, 0, ct).ConfigureAwait(false);
+        if (requiredPick.Cancelled)
+        {
+            return null;
+        }
+
+        return ScheduleEditing.BuildStep(bookmark.Url, new Uri(bookmark.Url).Host, config.UrlPattern, section, take.Value.Mode, take.Value.Count, required: requiredPick.Index == 0);
+    }
+
+    /// <summary>
+    /// Shared "how many stories?" picker (add-step + per-step edit). Returns the chosen
+    /// mode with a NORMALISED count (WholeSection ⇒ null, SingleTopStory ⇒ 1, TopN ⇒ N),
+    /// or null when the user backed out.
+    /// </summary>
+    private static async Task<(TakeMode Mode, int? Count)?> PickTakeAsync(
+        CommandContext ctx,
+        SetupWizardOverlay.State overlay,
+        ThemePalette palette,
+        RenderOptions options,
+        CancellationToken ct)
+    {
         var modePick = await PickAsync(ctx, overlay, options, "How many stories?", "Enter select · Esc back", new List<string> { "Whole section", "Just the top story", "Top N stories…" }, 0, ct).ConfigureAwait(false);
         if (modePick.Cancelled)
         {
@@ -491,7 +563,7 @@ internal static class ScheduleCommandHandler
             2 => TakeMode.TopN,
             _ => TakeMode.WholeSection,
         };
-        int? takeCount = null;
+        int? takeCount = takeMode == TakeMode.SingleTopStory ? 1 : null;
         if (takeMode == TakeMode.TopN)
         {
             var countText = await PromptTextAsync(ctx, palette, "How many stories (N)?", "3", ct, v => int.TryParse(v, out var n) && n >= 1 ? null : "Enter a whole number ≥ 1").ConfigureAwait(false);
@@ -503,13 +575,65 @@ internal static class ScheduleCommandHandler
             takeCount = int.Parse(countText);
         }
 
-        var requiredPick = await PickAsync(ctx, overlay, options, "Required?", "A required section that yields nothing fails the run loudly (never a silent empty episode). Enter select · Esc back", new List<string> { "Required (must contribute)", "Optional (skip if empty)" }, 0, ct).ConfigureAwait(false);
-        if (requiredPick.Cancelled)
+        return (takeMode, takeCount);
+    }
+
+    /// <summary>
+    /// workspace-br7w.1 — the small per-step menu opened by selecting an existing step
+    /// in the sources list: change the take mode, toggle required/optional, or remove
+    /// the step. Returns (Remove, Updated); both false/null when the user backed out.
+    /// </summary>
+    private static async Task<(bool Remove, RecipeStep? Updated)> EditStepAsync(
+        CommandContext ctx,
+        SetupWizardOverlay.State overlay,
+        ThemePalette palette,
+        RenderOptions options,
+        RecipeStep step,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
         {
-            return null;
+            var menu = await PickAsync(
+                ctx,
+                overlay,
+                options,
+                $"Edit step — {step.SectionName}",
+                $"{step.SectionName} ({step.Domain}). To reorder, remove (x) and re-add. Enter select · Esc back",
+                new List<string>
+                {
+                    $"How many stories: {TakeModeLabel(step)} — change…",
+                    $"{(step.Required ? "Required (must contribute)" : "Optional (skip if empty)")} — toggle",
+                    "Remove this step",
+                    "← Back",
+                },
+                0,
+                ct).ConfigureAwait(false);
+
+            if (menu.Cancelled || menu.Index == 3)
+            {
+                return (false, null);
+            }
+
+            switch (menu.Index)
+            {
+                case 0:
+                    var take = await PickTakeAsync(ctx, overlay, palette, options, ct).ConfigureAwait(false);
+                    if (take != null)
+                    {
+                        // PickTakeAsync already normalised the count for the mode, so the
+                        // record copy keeps RecipeStep.Create's TakeMode/TakeCount invariants.
+                        return (false, step with { TakeMode = take.Value.Mode, TakeCount = take.Value.Count });
+                    }
+
+                    break; // cancelled the take picker → back to the menu
+                case 1:
+                    return (false, step with { Required = !step.Required });
+                case 2:
+                    return (true, null);
+            }
         }
 
-        return ScheduleEditing.BuildStep(bookmark.Url, new Uri(bookmark.Url).Host, config.UrlPattern, section, takeMode, takeCount, required: requiredPick.Index == 0);
+        return (false, null);
     }
 
     private static async Task<Cadence?> PickCadenceAsync(
@@ -550,7 +674,7 @@ internal static class ScheduleCommandHandler
         }
 
         var defaultTime = existing?.LocalTime.ToString("HH:mm") ?? "07:00";
-        var timeText = await PromptTextAsync(ctx, palette, "Time of day (24h, HH:mm)", defaultTime, ct, v => TimeOnly.TryParse(v, out _) ? null : "Enter a time like 07:00").ConfigureAwait(false);
+        var timeText = await PromptTextAsync(ctx, palette, "Time of day (24h, HH:mm, local time)", defaultTime, ct, v => TimeOnly.TryParse(v, out _) ? null : "Enter a time like 07:00").ConfigureAwait(false);
         if (timeText == null)
         {
             return null;

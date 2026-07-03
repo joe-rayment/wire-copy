@@ -139,41 +139,26 @@ internal static class ViewCommandHandler
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
     }
 
-    public static async Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    public static Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var mode = ctx.NavigationService.CurrentContext.ViewMode;
-        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-
-        // Render the popup overlay (paints over current content)
-        UI.Components.KeybindingPopup.Render(
-            mode,
-            palette,
-            options.TerminalWidth,
-            options.TerminalHeight);
-
-        // Wait for any keypress to dismiss (re-render on resize)
-        while (!ct.IsCancellationRequested)
-        {
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-            if (command.Type == CommandType.TerminalResized)
-            {
-                // Re-render page + popup on resize
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                options = ctx.GetCurrentRenderOptions();
-                UI.Components.KeybindingPopup.Render(
-                    mode,
-                    palette,
-                    options.TerminalWidth,
-                    options.TerminalHeight);
-                continue;
-            }
-
-            break;
-        }
-
-        // Restore the original page render
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        return ShowHelpPopupAsync(
+            ctx,
+            options,
+            (palette, opts) => UI.Components.KeybindingPopup.Render(mode, palette, opts.TerminalWidth, opts.TerminalHeight),
+            ct);
     }
+
+    /// <summary>
+    /// workspace-syj1.4 — ':help' documents the ':' commands themselves (verb, args,
+    /// one-liner) rather than the '?' keybinding popup, which describes keys.
+    /// </summary>
+    public static Task HandleShowCommandLineHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+        => ShowHelpPopupAsync(
+            ctx,
+            options,
+            (palette, opts) => UI.Components.KeybindingPopup.RenderCommandReference(palette, opts.TerminalWidth, opts.TerminalHeight),
+            ct);
 
     public static async Task HandleDumpHtml(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
@@ -284,5 +269,36 @@ internal static class ViewCommandHandler
         }
 
         return string.Equals(uri.Host, domain, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task ShowHelpPopupAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Action<Themes.ThemePalette, RenderOptions> renderPopup,
+        CancellationToken ct)
+    {
+        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // Render the popup overlay (paints over current content)
+        renderPopup(palette, options);
+
+        // Wait for any keypress to dismiss (re-render on resize)
+        while (!ct.IsCancellationRequested)
+        {
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            if (command.Type == CommandType.TerminalResized)
+            {
+                // Re-render page + popup on resize
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                options = ctx.GetCurrentRenderOptions();
+                renderPopup(palette, options);
+                continue;
+            }
+
+            break;
+        }
+
+        // Restore the original page render
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 }

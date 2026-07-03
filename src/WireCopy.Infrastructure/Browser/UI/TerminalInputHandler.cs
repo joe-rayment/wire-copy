@@ -196,8 +196,21 @@ public class TerminalInputHandler : IInputHandler
         return PromptForInputCoreAsync(prompt, cancellationToken, isSecret, row, col, initialInput, interceptKey, clearWidth);
     }
 
+    /// <summary>
+    /// workspace-syj1.3 — specialised entry point for the ':' command line: renders a
+    /// faint ghost <paramref name="hint"/> (e.g. " (:help)") right after the prompt.
+    /// The hint disappears on the first keystroke (the input redraw pads the full
+    /// width). Lives on the concrete class, like <see cref="PromptForFieldInputAsync"/>,
+    /// so the 7-arg <see cref="IInputHandler"/> signature — and its NSubstitute mocks —
+    /// stay untouched.
+    /// </summary>
+    public Task<string?> PromptForInputWithHintAsync(string prompt, string hint, CancellationToken cancellationToken, int? col = null)
+    {
+        return PromptForInputCoreAsync(prompt, cancellationToken, isSecret: false, row: null, col: col, initialInput: null, interceptKey: null, clearWidth: null, ghostHint: hint);
+    }
+
 #pragma warning disable SA1202 // private core kept adjacent to the two public wrappers that delegate to it
-    private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth)
+    private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth, string? ghostHint = null)
     {
         EnsureKeyReaderStarted();
 
@@ -242,6 +255,18 @@ public class TerminalInputHandler : IInputHandler
             var maxInputCells = clearWidth.HasValue
                 ? Math.Max(1, clearWidth.Value - prompt.Length)
                 : Math.Max(1, Console.WindowWidth - 1 - promptStart);
+
+            // workspace-syj1.3: faint ghost hint after the prompt (e.g. ':' → ' (:help)').
+            // The first keystroke's RedrawInput pads the full input width, wiping it.
+            if (!string.IsNullOrEmpty(ghostHint) && string.IsNullOrEmpty(initialInput))
+            {
+                var visibleHint = ghostHint.Length <= maxInputCells ? ghostHint : ghostHint[..maxInputCells];
+                Console.Write("\x1b[2m");
+                Console.Write(palette.SecondaryText.AnsiFg);
+                Console.Write(visibleHint);
+                Console.Write("\x1b[0m");
+                Console.SetCursorPosition(promptStart, targetRow);
+            }
 
             if (!string.IsNullOrEmpty(initialInput))
             {

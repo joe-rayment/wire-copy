@@ -76,8 +76,13 @@ internal static class SearchCommandHandler
         // workspace-8fkv: start the command line at the docked content origin so a
         // left-docked browser doesn't sit over it. Only override the default column when a
         // left dock actually shifts the origin, so the undocked / right-dock call is unchanged.
-        var input = await ctx.InputHandler.PromptForInputAsync(
-            ":", ct, col: options.ContentLeftOffset > 0 ? options.ContentLeftOffset : null).ConfigureAwait(false);
+        // workspace-syj1.3: on the real terminal handler, show a faint ' (:help)' ghost
+        // hint after the ':' so the command line is discoverable; substitutes fall back
+        // to the plain 7-arg prompt.
+        var promptCol = options.ContentLeftOffset > 0 ? options.ContentLeftOffset : (int?)null;
+        var input = ctx.InputHandler is UI.TerminalInputHandler terminalInput
+            ? await terminalInput.PromptForInputWithHintAsync(":", " (:help)", ct, promptCol).ConfigureAwait(false)
+            : await ctx.InputHandler.PromptForInputAsync(":", ct, col: promptCol).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(input))
         {
             return await HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);
@@ -120,7 +125,9 @@ internal static class SearchCommandHandler
                 return true;
 
             case "help" or "h":
-                await ViewCommandHandler.HandleShowHelp(ctx, options, ct).ConfigureAwait(false);
+                // workspace-syj1.4: ':help' shows the command-line reference; the '?' key
+                // keeps showing the per-view keybinding popup.
+                await ViewCommandHandler.HandleShowCommandLineHelp(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
             case "open" or "go" or "o":
@@ -131,6 +138,8 @@ internal static class SearchCommandHandler
                 }
                 else
                 {
+                    // workspace-syj1.2: a missing required argument must say so.
+                    ctx.NavigationService.SetStatusMessage($"Usage: :{command} <url>");
                     await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
 
@@ -189,6 +198,11 @@ internal static class SearchCommandHandler
                         ctx.Logger.LogWarning(ex, "Failed to create collection");
                     }
                 }
+                else
+                {
+                    // workspace-syj1.2: a missing required argument must say so.
+                    ctx.NavigationService.SetStatusMessage("Usage: :new <name>");
+                }
 
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
@@ -232,6 +246,11 @@ internal static class SearchCommandHandler
                             }
                         }
                     }
+                }
+                else
+                {
+                    // workspace-syj1.2: a missing required argument must say so.
+                    ctx.NavigationService.SetStatusMessage("Usage: :rename <name>");
                 }
 
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -317,10 +336,74 @@ internal static class SearchCommandHandler
                 return true;
 
             default:
-                var navigateUrl = NormalizeUrl(input);
-                await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);
+                // workspace-syj1.1/.5: only fall through to URL navigation when the input
+                // actually looks like a URL. A mistyped command (":opne google.com",
+                // ":hlep") must say so instead of silently navigating to nonsense.
+                if (LooksLikeUrl(input))
+                {
+                    var navigateUrl = NormalizeUrl(input);
+                    await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);
+                    return true;
+                }
+
+                ctx.NavigationService.SetStatusMessage($"Unknown command: {command}. Type :help for commands");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return true;
         }
+    }
+
+    /// <summary>
+    /// workspace-syj1.1 — the command-line's URL heuristic: a single token (no spaces)
+    /// that either already carries an http(s) scheme, contains a dot in its host,
+    /// is localhost, or is a host:port pair. Anything else is treated as a mistyped
+    /// command, not a navigation target.
+    /// </summary>
+    internal static bool LooksLikeUrl(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return false;
+        }
+
+        var candidate = input.Trim();
+        if (candidate.Any(char.IsWhiteSpace))
+        {
+            return false; // multi-token input is a (typo'd) command, never a URL
+        }
+
+        if (candidate.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            candidate.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Look at the host part only — a path/query never makes a bare word a URL.
+        var host = candidate;
+        var slash = host.IndexOf('/');
+        if (slash >= 0)
+        {
+            host = host[..slash];
+        }
+
+        var colon = host.LastIndexOf(':');
+        if (colon >= 0)
+        {
+            var port = host[(colon + 1)..];
+            if (port.Length == 0 || !port.All(char.IsAsciiDigit))
+            {
+                return false;
+            }
+
+            host = host[..colon];
+            if (host.Length > 0)
+            {
+                return true; // host:port (e.g. localhost:8080, devbox:3000)
+            }
+
+            return false;
+        }
+
+        return host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || host.Contains('.');
     }
 
     private static async Task HandleExportCommand(CommandContext ctx, string? format, RenderOptions options, CancellationToken ct)
