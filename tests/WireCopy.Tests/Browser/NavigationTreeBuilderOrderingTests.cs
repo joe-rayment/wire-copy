@@ -73,6 +73,27 @@ public class NavigationTreeBuilderOrderingTests
     }
 
     [Fact]
+    public void Publisher_OpensWithStory_NeverReordersInterleavedOrBelowFoldChrome()
+    {
+        // workspace-2k28: when the group already OPENS with a lead-grade story, nothing moves —
+        // a later sub-floor link (interleaved, or a below-fold terse item) must NOT be floated
+        // over/under by a still-later lead-grade link. Reproduces the mixed-markup river shape.
+        var links = new List<LinkInfo>
+        {
+            Content("lead story above the fold", 90, external: false),      // opens with a story
+            Content("terse below-fold item A", 78, external: false),        // sub-floor
+            Content("terse below-fold item B", 78, external: false),        // sub-floor
+            Content("older long article below the fold", 92, external: false), // lead-grade, but LATER in DOM
+        };
+
+        ContentOrder(_builder.BuildGroupedTree(links)).Should().Equal(
+            "lead story above the fold",
+            "terse below-fold item A",
+            "terse below-fold item B",
+            "older long article below the fold");
+    }
+
+    [Fact]
     public void Publisher_CuratedOnDomainRiver_KeepsEditorialDomOrder_NoImportanceResort()
     {
         // Regression guard (review finding): a curated/reverse-chron on-domain list (danluu.com

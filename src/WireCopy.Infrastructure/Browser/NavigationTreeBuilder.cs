@@ -24,15 +24,9 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     // workspace-gyw5: on a publisher page, Content links scoring BELOW this are below-fold /
     // low-text promo, podcast, newsletter and column-hub chrome — never the lead stories. Real
     // above-fold headlines clear it (base 70 + text + above-fold/font geometry boosts push them to
-    // 88-100; observed NYT chrome tops out at 85, observed NYT/danluu lead stories are >=88). We
-    // DEMOTE sub-floor links below the lead-grade ones but PRESERVE DOM ORDER within each tier, so
-    // a curated or reverse-chronological on-domain river (e.g. danluu.com) keeps its editorial
-    // order — only the low-value tail sinks. A full importance re-sort scrambled such rivers.
-    // CAVEAT (workspace-2k28): this leans on the browser-path geometry boost. On a geometry-null
-    // fetch (HTTP fallback / pre-geometry cache) scores compress toward base, so if such a page
-    // MIXES article-wrapped headlines (>=86) with plain-markup ones (<86) a leading low-scorer can
-    // still be demoted below a later high-scorer. It is a no-op when the group is uniform (all one
-    // side of the floor) and the primary user-facing path is browser-rendered (geometry present).
+    // 88-100; observed NYT chrome tops out at 85, observed NYT/danluu lead stories are >=88). Used
+    // only to find where a LEADING chrome block ends (see OrderAndCapContentLinks); the exact value
+    // matters little as long as the leading promos fall below it and the first real story clears it.
     internal const int LeadImportanceFloor = 86;
 
     private readonly ILogger<NavigationTreeBuilder> _logger;
@@ -191,28 +185,23 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     /// <summary>
     /// workspace-gyw5: order the Content group's lead correctly (sole caller is
     /// <see cref="BuildGroupedTree"/>), then apply the <see cref="MaxContentLinks"/> cap. A
-    /// PUBLISHER front page (e.g. NYT) floats a block of low-value promo/podcast/newsletter/
-    /// column-hub links (importance &lt;= 85) ABOVE its real top-story headlines (importance
-    /// &gt;= 88) in DOM order, so the tree led with menu/promo chrome. We DEMOTE those sub-floor
-    /// links below the lead-grade ones while PRESERVING DOM ORDER within each tier — so a curated
-    /// or reverse-chronological on-domain river (e.g. danluu.com, a section index) keeps its
-    /// editorial order and only the low-value tail sinks. (A full importance re-sort scrambled such
-    /// rivers by headline length; hence a stable partition, not a sort.) An AGGREGATOR river
-    /// (Hacker News, Techmeme), whose DOM order IS the editorial rank and whose importance does NOT
-    /// track it, is left entirely in DOM order — detected by most Content links being off-domain
-    /// (<see cref="LinkInfo.IsExternal"/>). The cap then keeps the top-N by the resulting order.
+    /// PUBLISHER front page (e.g. NYT) OPENS with a block of low-value promo/podcast/newsletter/
+    /// column-hub links (importance &lt;= 85) ahead of its real top-story headlines (importance
+    /// &gt;= 88), so the tree led with menu/promo chrome. We move ONLY that LEADING chrome block —
+    /// the sub-floor links before the first lead-grade story — to the end; everything from the
+    /// first story onward keeps its exact DOM order. So a curated or reverse-chronological on-domain
+    /// river (e.g. danluu.com, a section index) that opens with a real story is never reordered
+    /// (workspace-2k28: a full or partition re-sort still inverted below-fold order; this does not).
+    /// An AGGREGATOR river (Hacker News, Techmeme), whose DOM order IS the editorial rank and whose
+    /// importance does NOT track it, is left entirely in DOM order — detected by most Content links
+    /// being off-domain (<see cref="LinkInfo.IsExternal"/>). The cap then keeps the top-N.
     /// </summary>
     private List<LinkInfo> OrderAndCapContentLinks(List<LinkInfo> contentLinks)
     {
         var externalFraction = contentLinks.Count(l => l.IsExternal) / (double)contentLinks.Count;
         var isAggregator = externalFraction >= AggregatorExternalContentFraction;
 
-        // Publisher: stable partition — lead-grade links (>= floor) first in DOM order, sub-floor
-        // chrome after in DOM order. OrderByDescending is a STABLE sort, so within each tier the
-        // links keep their original (editorial / chronological) order; only the low-value tail moves.
-        var ordered = isAggregator
-            ? contentLinks
-            : contentLinks.OrderByDescending(l => l.ImportanceScore >= LeadImportanceFloor).ToList();
+        var ordered = isAggregator ? contentLinks : DemoteLeadingChrome(contentLinks);
 
         if (ordered.Count > MaxContentLinks)
         {
@@ -220,12 +209,41 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 "Capped content links from {Total} to {Max} ({Ordering})",
                 ordered.Count,
                 MaxContentLinks,
-                isAggregator ? "DOM rank" : "chrome demoted");
+                isAggregator ? "DOM rank" : "leading chrome demoted");
             ordered = ordered.Take(MaxContentLinks).ToList();
         }
 
         return ordered;
     }
+
+    /// <summary>
+    /// workspace-gyw5 / workspace-2k28: if the Content group OPENS with a run of sub-floor chrome
+    /// (importance &lt; <see cref="LeadImportanceFloor"/>) before the first lead-grade story, move
+    /// ONLY that leading run to the end; otherwise leave the group untouched. This demotes the NYT
+    /// leading promo/podcast block without ever reordering a page that already opens with a real
+    /// story — so curated / reverse-chronological on-domain rivers (and geometry-null pages, where
+    /// nothing clears the floor) keep their exact DOM order.
+    /// </summary>
+#pragma warning disable SA1204 // static helper kept adjacent to its sole caller (OrderAndCapContentLinks)
+    private static List<LinkInfo> DemoteLeadingChrome(List<LinkInfo> contentLinks)
+    {
+        var firstStory = contentLinks.FindIndex(l => l.ImportanceScore >= LeadImportanceFloor);
+
+        // Opens with a story at index 0, or has no lead-grade link at all, so there is no leading
+        // chrome block to demote — leave the group untouched.
+        if (firstStory <= 0)
+        {
+            return contentLinks;
+        }
+
+        // Move the stories to the front and the leading chrome block behind them; both keep their
+        // original DOM order.
+        var reordered = new List<LinkInfo>(contentLinks.Count);
+        reordered.AddRange(contentLinks.Skip(firstStory));
+        reordered.AddRange(contentLinks.Take(firstStory));
+        return reordered;
+    }
+#pragma warning restore SA1204
 
     private NavigationTree BuildWithHierarchyConfig(List<LinkInfo> links, SiteHierarchyConfig hierarchyConfig)
     {
