@@ -18,7 +18,7 @@ namespace WireCopy.Infrastructure.Browser;
 /// <summary>
 /// Encapsulates the page-loading pipeline: article cache lookup, build cache,
 /// HTTP/browser fetch, bot challenge handling, content quality retry, paywall
-/// retry, auto-login fallback, and headless-to-headed escalation.
+/// retry, and auto-login fallback.
 ///
 /// Extracted from <see cref="BrowserOrchestrator"/> to reduce its size and
 /// separate orchestration concerns from page-loading concerns.
@@ -95,8 +95,8 @@ public class PageLoadPipeline
 
     /// <summary>
     /// Runs the full page-loading pipeline for a URL: article cache, build cache,
-    /// network fetch, bot challenge, content quality retry, paywall retry, auto-login,
-    /// and headless-to-headed escalation.
+    /// network fetch, bot challenge, content quality retry, paywall retry, and
+    /// auto-login.
     /// </summary>
     /// <param name="url">URL to load.</param>
     /// <param name="reportStage">Optional callback to report loading stage progress.</param>
@@ -108,7 +108,6 @@ public class PageLoadPipeline
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading page: {Url}", url);
-        _logger.LogDebug("BrowserConfig.Headless = {Headless}", _browserConfig.EffectiveHeadless);
 
 #pragma warning disable S1854 // Required by definite assignment rules
         var fetchMethod = FetchMethod.Http;
@@ -261,7 +260,7 @@ public class PageLoadPipeline
         reportStage?.Invoke("Loading via browser...");
 
         var loadResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceBrowser = true },
+            new PageLoadRequest { Url = url, ForceBrowser = true },
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
@@ -318,7 +317,7 @@ public class PageLoadPipeline
             reportStage?.Invoke("Retrying with browser...");
             (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                 url,
-                new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, ForceRefresh = true },
                 page,
                 lastBuildResult,
                 fetchMethod,
@@ -334,7 +333,7 @@ public class PageLoadPipeline
         // If so, return the current page immediately and schedule retries in the background.
         // The user can interact with the (possibly truncated) content while retries run.
         Task<PageLoadPipelineResult>? qualityRetryTask = null;
-        var needsQualityRetry = NeedsQualityRetry(page, fetchMethod, loadResult, browserAvailable);
+        var needsQualityRetry = NeedsQualityRetry(page, fetchMethod, browserAvailable);
 
         if (needsQualityRetry)
         {
@@ -342,9 +341,8 @@ public class PageLoadPipeline
             StoreBuildCache(url, page, lastBuildResult);
 
             var capturedFetchMethod = fetchMethod;
-            var capturedLoadResult = loadResult;
             qualityRetryTask = Task.Run(() =>
-                RunQualityRetriesAsync(url, page, capturedFetchMethod, capturedLoadResult, browserAvailable, cancellationToken),
+                RunQualityRetriesAsync(url, page, capturedFetchMethod, browserAvailable, cancellationToken),
                 cancellationToken);
         }
         else
@@ -671,14 +669,10 @@ public class PageLoadPipeline
     public async Task<PageLoadResult?> HandleBotChallengeIfNeededAsync(
         string url,
         PageLoadResult loadResult,
-        CancellationToken cancellationToken,
-        bool? headlessOverride = null)
+        CancellationToken cancellationToken)
     {
-        var headless = headlessOverride ?? _browserConfig.EffectiveHeadless;
-
         if (loadResult.FetchMethod != FetchMethod.Browser ||
-            !PageLoader.IsBotChallengePage(loadResult.Html) ||
-            headless)
+            !PageLoader.IsBotChallengePage(loadResult.Html))
         {
             return null;
         }
@@ -709,7 +703,7 @@ public class PageLoadPipeline
             {
                 if (_browserSession is IBrowserSession session && session.IsBrowserAvailable)
                 {
-                    var page = await session.GetOrCreatePageAsync(headless).ConfigureAwait(false);
+                    var page = await session.GetOrCreatePageAsync().ConfigureAwait(false);
                     var currentSource = await page.ContentAsync().ConfigureAwait(false);
                     if (!PageLoader.IsBotChallengePage(currentSource))
                     {
@@ -744,7 +738,7 @@ public class PageLoadPipeline
 
         _pageCache.Remove(url);
         var retryResult = await _pageLoader.LoadAsync(
-            new PageLoadRequest { Url = url, Headless = headless, ForceRefresh = true },
+            new PageLoadRequest { Url = url, ForceRefresh = true },
             cancellationToken).ConfigureAwait(false);
 
         return retryResult.Success ? retryResult : null;
@@ -780,10 +774,10 @@ public class PageLoadPipeline
     /// <summary>
     /// Determines whether the page needs background quality improvement retries.
     /// </summary>
-    private bool NeedsQualityRetry(
+#pragma warning disable SA1204 // kept adjacent to RunQualityRetriesAsync (the retries it gates) for readability
+    private static bool NeedsQualityRetry(
         Page page,
         FetchMethod fetchMethod,
-        PageLoadResult loadResult,
         bool browserAvailable)
     {
         if (!browserAvailable)
@@ -799,14 +793,6 @@ public class PageLoadPipeline
             return true;
         }
 
-        // Bot challenge in headless mode — retry headed so user can solve CAPTCHA
-        if (fetchMethod == FetchMethod.Browser &&
-            _browserConfig.EffectiveHeadless &&
-            PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
-        {
-            return true;
-        }
-
         // Empty LinkList — browser may have hit a challenge or JS rendering issue
         if (page.Classification == PageClassification.LinkList &&
             !page.HasLinks())
@@ -816,6 +802,7 @@ public class PageLoadPipeline
 
         return false;
     }
+#pragma warning restore SA1204
 
     /// <summary>
     /// Runs quality improvement retries in the background. Returns an improved result
@@ -825,7 +812,6 @@ public class PageLoadPipeline
         string url,
         Page originalPage,
         FetchMethod fetchMethod,
-        PageLoadResult loadResult,
         bool browserAvailable,
         CancellationToken cancellationToken)
     {
@@ -866,7 +852,7 @@ public class PageLoadPipeline
 
                                 (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                                     url,
-                                    new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
+                                    new PageLoadRequest { Url = url, ForceRefresh = true },
                                     page,
                                     lastBuildResult,
                                     fetchMethod,
@@ -892,26 +878,7 @@ public class PageLoadPipeline
 
                 (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
                     url,
-                    new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true, ForceBrowser = true },
-                    page,
-                    lastBuildResult,
-                    fetchMethod,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            // Headless challenge fallback — applies to ALL classifications.
-            // Cloudflare-protected homepages get classified as LinkList from URL alone,
-            // but the HTML is a challenge page with no real content.
-            if (loadResult.FetchMethod == FetchMethod.Browser &&
-                _browserConfig.EffectiveHeadless &&
-                PageLoader.IsBotChallengePage(loadResult.Html ?? string.Empty))
-            {
-                _logger.LogWarning(
-                    "Quality retry: bot challenge in headless, retrying headed: {Url}", url);
-
-                (page, lastBuildResult, fetchMethod) = await RetryLoadAndBuildAsync(
-                    url,
-                    new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                    new PageLoadRequest { Url = url, ForceRefresh = true, ForceBrowser = true },
                     page,
                     lastBuildResult,
                     fetchMethod,
@@ -1102,7 +1069,7 @@ public class PageLoadPipeline
             {
                 if (_browserSession is IBrowserSession session && session.HasActiveBrowser && session.IsBrowserAvailable)
                 {
-                    var page = await session.GetOrCreatePageAsync(false).ConfigureAwait(false);
+                    var page = await session.GetOrCreatePageAsync().ConfigureAwait(false);
                     var currentUrl = page.Url;
 
                     // Login complete when URL no longer contains login/signin paths

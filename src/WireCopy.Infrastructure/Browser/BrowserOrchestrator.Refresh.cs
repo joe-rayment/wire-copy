@@ -28,7 +28,7 @@ public partial class BrowserOrchestrator
             _renderer.RenderLoading(url);
 
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = _browserConfig.EffectiveHeadless, ForceRefresh = true },
+                new PageLoadRequest { Url = url, ForceRefresh = true },
                 cancellationToken).ConfigureAwait(false);
 
             if (!loadResult.Success)
@@ -96,7 +96,7 @@ public partial class BrowserOrchestrator
             _renderer.RenderLoading(url);
 
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
+                new PageLoadRequest { Url = url, ForceRefresh = true, ForceBrowser = true },
                 cancellationToken).ConfigureAwait(false);
 
             if (_browserSession is IBrowserSession restoreSession)
@@ -110,8 +110,7 @@ public partial class BrowserOrchestrator
             var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(
                 url,
                 loadResult,
-                cancellationToken,
-                headlessOverride: false).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
             // Carry headed-browser cookies to the HTTP cookie jar so the
             // preloader picks up the post-gate session. Best-effort.
@@ -155,7 +154,7 @@ public partial class BrowserOrchestrator
             // Force headed browser for interactive refresh — skip HTTP, go straight to browser
             // so the user gets a visible window they can interact with (login, captcha, etc.)
             var loadResult = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true, ForceBrowser = true },
+                new PageLoadRequest { Url = url, ForceRefresh = true, ForceBrowser = true },
                 cancellationToken).ConfigureAwait(false);
 
             if (!loadResult.Success)
@@ -171,7 +170,7 @@ public partial class BrowserOrchestrator
             }
 
             // If bot challenge detected, use the challenge polling helper (force headed)
-            var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken, headlessOverride: false).ConfigureAwait(false);
+            var challengeResult = await _pipeline.HandleBotChallengeIfNeededAsync(url, loadResult, cancellationToken).ConfigureAwait(false);
             if (challengeResult != null)
             {
                 loadResult = challengeResult;
@@ -248,7 +247,7 @@ public partial class BrowserOrchestrator
                 return;
             }
 
-            var page = await session.GetOrCreatePageAsync(false).ConfigureAwait(false);
+            var page = await session.GetOrCreatePageAsync().ConfigureAwait(false);
             var playwrightCookies = await page.Context.CookiesAsync().ConfigureAwait(false);
             var storedCookies = playwrightCookies.Select(c =>
                 new Application.Interfaces.StoredCookie(

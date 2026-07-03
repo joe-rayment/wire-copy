@@ -72,7 +72,7 @@ public class PageLoaderTests
         var request = new PageLoadRequest { Url = "https://example.com" };
 
         // The browser session will be called as a fallback.
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -98,7 +98,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
 
         // Force the browser leg to fail so PreferBrowser falls back to HTTP.
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         var request = new PageLoadRequest { Url = "https://macleans.ca/", PreferBrowser = true };
@@ -121,7 +121,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -140,7 +140,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -179,7 +179,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
@@ -196,7 +196,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient: null);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -218,7 +218,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("Browser unavailable"));
 
         // Act
@@ -276,7 +276,7 @@ public class PageLoaderTests
         // Arrange
         var sut = CreateSut(httpClient: null);
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act & Assert
@@ -294,7 +294,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
@@ -313,7 +313,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
@@ -332,7 +332,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com" };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser"));
 
         // Act
@@ -475,7 +475,7 @@ public class PageLoaderTests
             .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
         page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(page));
 
         // Wall-clock guard: if we're still polling, this would take ~60s. Cap at 5s.
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -518,7 +518,7 @@ public class PageLoaderTests
             .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
         page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -549,7 +549,7 @@ public class PageLoaderTests
             .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
         page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -580,7 +580,7 @@ public class PageLoaderTests
             .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
         page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -601,7 +601,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com", PreferBrowser = true };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -621,7 +621,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient);
         var request = new PageLoadRequest { Url = "https://example.com", PreferBrowser = true };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -638,7 +638,7 @@ public class PageLoaderTests
         var sut = CreateSut(httpClient: null);
         var request = new PageLoadRequest { Url = "https://example.com", PreferBrowser = true };
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("No browser available"));
 
         // Act
@@ -664,7 +664,7 @@ public class PageLoaderTests
         // Assert - Should succeed via HTTP without ever touching browser
         result.Success.Should().BeTrue();
         result.Metadata!.Title.Should().Be("HTTP First");
-        await _browserSession.DidNotReceive().GetOrCreatePageAsync(Arg.Any<bool>());
+        await _browserSession.DidNotReceive().GetOrCreatePageAsync();
     }
 
     [Fact]
@@ -687,7 +687,7 @@ public class PageLoaderTests
             .Returns(Task.FromResult(Substitute.For<IJSHandle>()));
         page.EvaluateAsync<int?>(Arg.Any<string>()).Returns(Task.FromResult<int?>(0));
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(page));
 
         // Act
         var result = await sut.LoadAsync(request);
@@ -864,7 +864,7 @@ public class PageLoaderRetryOnStalePageTests
         var freshHtml = "<html><head><title>Recovered</title></head><body><p>article body</p></body></html>";
         var freshPage = CreateHealthyPage(freshHtml, "https://example.com/article");
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns(Task.FromResult(stalePage), Task.FromResult(freshPage));
 
         // Force the browser path (no HttpClient → BrowserFetchAsync is taken directly).
@@ -877,7 +877,7 @@ public class PageLoaderRetryOnStalePageTests
             "the loader must retry with a fresh page when the first call hits a stale-target Playwright exception");
         result.Html.Should().Be(freshHtml);
         await _browserSession.Received(1).InvalidatePageAsync();
-        await _browserSession.Received(2).GetOrCreatePageAsync(Arg.Any<bool>());
+        await _browserSession.Received(2).GetOrCreatePageAsync();
     }
 
     [Fact]
@@ -889,7 +889,7 @@ public class PageLoaderRetryOnStalePageTests
         var stale1 = CreateThrowingPage("Target page, context or browser has been closed");
         var stale2 = CreateThrowingPage("Target closed");
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns(Task.FromResult(stale1), Task.FromResult(stale2));
 
         var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
@@ -902,7 +902,7 @@ public class PageLoaderRetryOnStalePageTests
             "stale-page failures must surface the user-actionable copy, not the raw Playwright message");
         result.ErrorMessage.Should().Contain("Shift+R");
         await _browserSession.Received(1).InvalidatePageAsync();
-        await _browserSession.Received(2).GetOrCreatePageAsync(Arg.Any<bool>());
+        await _browserSession.Received(2).GetOrCreatePageAsync();
     }
 
     [Fact]
@@ -913,7 +913,7 @@ public class PageLoaderRetryOnStalePageTests
         // that has no chance of succeeding.
         var pageWithDnsError = CreateThrowingPage("net::ERR_NAME_NOT_RESOLVED at https://invalid.example");
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns(Task.FromResult(pageWithDnsError));
 
         var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
@@ -924,7 +924,7 @@ public class PageLoaderRetryOnStalePageTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("net::ERR_NAME_NOT_RESOLVED");
         await _browserSession.DidNotReceive().InvalidatePageAsync();
-        await _browserSession.Received(1).GetOrCreatePageAsync(Arg.Any<bool>());
+        await _browserSession.Received(1).GetOrCreatePageAsync();
     }
 
     [Fact]
@@ -939,7 +939,7 @@ public class PageLoaderRetryOnStalePageTests
         // the workspace-m7nc stale-page retry (a loop is not a stale target).
         var loopingPage = CreateThrowingPage("net::ERR_TOO_MANY_REDIRECTS at https://macleans.ca/");
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns(Task.FromResult(loopingPage));
 
         var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);
@@ -957,7 +957,7 @@ public class PageLoaderRetryOnStalePageTests
 
         // A loop is not a stale target — no wasted invalidate-and-retry round-trip.
         await _browserSession.DidNotReceive().InvalidatePageAsync();
-        await _browserSession.Received(1).GetOrCreatePageAsync(Arg.Any<bool>());
+        await _browserSession.Received(1).GetOrCreatePageAsync();
     }
 
     [Fact]
@@ -972,7 +972,7 @@ public class PageLoaderRetryOnStalePageTests
         var bouncedPage = CreateThrowingPage(
             "Navigation to \"https://macleans.ca/\" is interrupted by another navigation to \"chrome-error://chromewebdata/\"");
 
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns(Task.FromResult(bouncedPage));
 
         var sut = new PageLoader(_browserConfig, _logger, _browserSession, httpClient: null);

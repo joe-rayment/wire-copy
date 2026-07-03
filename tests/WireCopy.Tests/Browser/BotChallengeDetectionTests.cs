@@ -143,21 +143,6 @@ public class BotChallengeDetectionTests
         cache.Contains(request.Url).Should().BeTrue();
     }
 
-    // --- BrowserSession headless mode tracking tests ---
-
-    [Fact]
-    public void WarmUpAsync_UsesConfiguredHeadlessSetting()
-    {
-        // Verify that WarmUpAsync creates a driver with the configured headless setting.
-        // We can't test the actual driver creation (needs Chrome), but we can verify
-        // the config is read correctly.
-        var config = new BrowserConfiguration { Headless = false };
-        config.Headless.Should().BeFalse();
-
-        var configTrue = new BrowserConfiguration { Headless = true };
-        configTrue.Headless.Should().BeTrue();
-    }
-
     [Fact]
     public void PostLoadDelayMs_DefaultIs500()
     {

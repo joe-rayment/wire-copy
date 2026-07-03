@@ -96,14 +96,9 @@ public class Program
                 await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
             }
 
-            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
-            if (host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.EffectiveHeadless && browserSession.IsBrowserAvailable)
-            {
-                await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
-            }
 
             var store = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduleStore>();
             var recipes = await store.GetAllAsync();
@@ -185,15 +180,9 @@ public class Program
                 await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
             }
 
-            var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
-            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
-            if (browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
-            {
-                await host.Services.GetRequiredService<IBrowserSessionControl>().WarmUpAsync();
-            }
 
             var loader = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IHeadlessSectionLoader>();
             var resolver = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.ISectionResolver>();
@@ -318,30 +307,14 @@ public class Program
             // cached it forever, sending focus to the wrong app on every refocus.
             await host.Services.GetRequiredService<IBrowserSessionControl>().CaptureTerminalIdentityAsync();
 
-            // workspace-nk8a: warm up the browser SYNCHRONOUSLY before the TUI takes
-            // over, so any first-run chromium download (~270 MB) and Playwright Node
-            // driver chatter happens in normal console mode rather than corrupting the
-            // TUI's absolute cursor positioning. Subsequent runs are fast (cached).
-            // Skip warmup in headed mode to avoid a visible Chrome window appearing
-            // before the user navigates anywhere.
-            var browserConfig = host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value;
-            var browserSession = host.Services.GetRequiredService<IBrowserSession>();
+            // No startup warmup: the browser is always headful (never-headless law), and a
+            // headed warmup here would pop a visible Chrome window before the user navigates
+            // anywhere. The browser launches lazily on first use instead (workspace-9k27.10 —
+            // this preserves the pre-cleanup behavior, where the old headless-only warmup gate
+            // never fired).
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
-            if (browserConfig.EffectiveHeadless && browserSession.IsBrowserAvailable)
-            {
-                var session = host.Services.GetRequiredService<IBrowserSessionControl>();
-                Console.WriteLine("Preparing browser…");
-                try
-                {
-                    await session.WarmUpAsync();
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "Browser warmup failed (non-fatal)");
-                }
-            }
 
             var browser = host.Services.GetRequiredService<IBrowserService>();
             await browser.RunAsync(url);

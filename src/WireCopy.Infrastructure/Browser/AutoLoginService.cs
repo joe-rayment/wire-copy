@@ -79,9 +79,9 @@ public class AutoLoginService : IAutoLoginService
         // 3. Determine login URL
         var loginUrl = credential.LoginUrl ?? $"https://{domain}/login";
 
-        // 4. Acquire browser page with Background priority (non-headless for login forms)
+        // 4. Acquire browser page with Background priority (always headful — login forms need a visible window)
         using var lease = await _pageAccessQueue.AcquireAsync(
-            PageAccessPriority.Background, headless: false, cancellationToken).ConfigureAwait(false);
+            PageAccessPriority.Background, cancellationToken).ConfigureAwait(false);
         var page = lease.Page;
 
         try

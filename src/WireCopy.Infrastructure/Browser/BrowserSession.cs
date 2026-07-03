@@ -21,7 +21,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // enough negative to clear any real multi-display arrangement, so the window is never in
     // the visible region yet stays at windowState=normal — Chromium keeps painting it (no
     // minimize/occlusion throttle, helped by --disable-backgrounding-occluded-windows), so
-    // the live page is current the instant it re-docks.
+    // the live page is current the instant it re-docks. That flag is a DELIBERATE tradeoff:
+    // the parked window keeps rendering (and consuming CPU/battery) even while off-screen,
+    // in exchange for an instant-current live page on dock — do not "optimize" it away.
     private const int OffScreenCoordinate = -32000;
 
     private readonly BrowserConfiguration _browserConfig;
@@ -38,7 +40,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // follow-navigation can never interrupt a load and a load can never blank the
     // page the user is reading beside the terminal.
     private IPage? _lensPage;
-    private bool _pageIsHeadless;
     private bool _isDocked;
 
     // Sticky user intent (workspace-v7mb): distinct from _isDocked (the window's current
@@ -108,7 +109,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// <inheritdoc />
     // Same atomic-read rationale as HasActiveBrowser: a momentarily stale value
     // is acceptable for this probe — the spotlight re-checks on every sync.
-    public bool IsDocked => !_disposed && _isDocked && _page != null && !_pageIsHeadless;
+    public bool IsDocked => !_disposed && _isDocked && _page != null;
 
     /// <inheritdoc />
     public bool WantsSidecar => !_disposed && _userWantsDock;
@@ -170,10 +171,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         await _lock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_disposed || _context == null || _pageIsHeadless)
+            if (_disposed || _context == null)
             {
-                // The lens only exists beside a HEADED window; callers that need one
-                // summon it first (SummonAndDockAsync → GetOrCreatePageAsync(false)).
+                // The lens only exists beside a launched (always headed) window; callers
+                // that need one summon it first (SummonAndDockAsync → GetOrCreatePageAsync).
                 return null;
             }
 
@@ -207,7 +208,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
-    public async Task<IPage> GetOrCreatePageAsync(bool headless)
+    public async Task<IPage> GetOrCreatePageAsync()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         await _lock.WaitAsync().ConfigureAwait(false);
@@ -217,35 +218,23 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             if (_page != null)
             {
-                // Only recreate when switching headless→headed (needed for Shift+I interactive).
-                // Headed→headless is skipped: a headed browser can serve headless requests fine,
-                // and the relaunch costs 10-30 seconds that makes the app feel frozen.
-                if (_pageIsHeadless && !headless)
+                // Verify the existing page is still alive
+                try
                 {
-                    _logger.LogInformation(
-                        "Switching headless→headed browser for interactive use");
-                    await DisposeContextUnsafeAsync().ConfigureAwait(false);
+                    _ = _page.Url;
+                    _logger.LogDebug("Reusing existing Playwright page");
+                    return _page;
                 }
-                else
+                catch (PlaywrightException ex)
                 {
-                    // Verify the existing page is still alive
-                    try
-                    {
-                        _ = _page.Url;
-                        _logger.LogDebug("Reusing existing Playwright page");
-                        return _page;
-                    }
-                    catch (PlaywrightException ex)
-                    {
-                        _logger.LogWarning(ex, "Existing Playwright page is dead, creating a new one");
-                        await DisposeContextUnsafeAsync().ConfigureAwait(false);
-                    }
+                    _logger.LogWarning(ex, "Existing Playwright page is dead, creating a new one");
+                    await DisposeContextUnsafeAsync().ConfigureAwait(false);
                 }
             }
 
-            // NEVER-HEADLESS POLICY: the browser is always launched headful regardless of the requested
-            // `headless` flag (LaunchBrowserAsync forces it). Headless is bot-detected/blocked on this app's
-            // target sites, so it is disabled unconditionally.
+            // NEVER-HEADLESS POLICY: the browser is always launched headful — LaunchBrowserAsync
+            // hardcodes Headless=false. Headless is bot-detected/blocked on this app's target
+            // sites, so it is disabled unconditionally and there is no headless code path at all.
             _logger.LogInformation("Creating new Playwright browser session (headful — never headless)");
             try
             {
@@ -286,8 +275,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     public async Task WarmUpAsync()
     {
-        _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.EffectiveHeadless);
-        await GetOrCreatePageAsync(_browserConfig.EffectiveHeadless).ConfigureAwait(false);
+        _logger.LogDebug("Warming up browser session (headful — never headless)");
+        await GetOrCreatePageAsync().ConfigureAwait(false);
         _logger.LogDebug("Browser session warm-up complete");
     }
 
@@ -327,7 +316,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// <inheritdoc />
     public async Task RestoreWindowAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return;
         }
@@ -368,7 +357,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // windowState=normal off-screen: invisible and focus-neutral, but still rendering.
     public async Task MinimizeWindowAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return;
         }
@@ -394,7 +383,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// <inheritdoc />
     public async Task<BrowserWindowState?> ToggleWindowDockAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return null;
         }
@@ -424,10 +413,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
-            // Ensure a HEADED window exists (switches headless→headed if a headless
-            // page is currently serving the reader). The dedicated preload context is
-            // untouched, so background prefetch keeps running on its own headless tabs.
-            await GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
+            // Ensure the (always headed) window exists.
+            await GetOrCreatePageAsync().ConfigureAwait(false);
 
             // Make sure the lens tab exists — docking activates it. The summon does NOT
             // navigate anymore (workspace-u4o9): navigation is the dock spotlight's job
@@ -578,7 +565,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // visibility; never launch a second context.
             if (_context == null)
             {
-                await GetOrCreatePageAsync(_browserConfig.EffectiveHeadless).ConfigureAwait(false);
+                await GetOrCreatePageAsync().ConfigureAwait(false);
             }
 
             var ctx = _context;
@@ -593,7 +580,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // the window straight back to the lens/fetch tab so prefetch never
             // steals the page the user is reading (workspace-wo4q).
             var front = _lensPage ?? _page;
-            if (!_pageIsHeadless && front != null)
+            if (front != null)
             {
                 try
                 {
@@ -765,7 +752,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// </summary>
     private async Task<string?> GetWindowStateAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return null;
         }
@@ -1114,13 +1101,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // (e.g., Shift+I login) are picked up on browser restart.
             await InjectStoredCookiesAsync().ConfigureAwait(false);
 
-            // Set the mode flag BEFORE any window positioning below: Minimize/Dock guard
-            // on _pageIsHeadless, and the failable launch work (install, context launch,
-            // page creation, cookie injection) has already succeeded by this point. If
-            // that earlier work throws, the flag stays stale so the next call retries the
-            // mode switch; the positioning calls below swallow their own exceptions.
-            _pageIsHeadless = false; // never-headless policy — the launched browser is always headful
-
             // The browser is always headful (never-headless policy), so the headed-window wiring always runs.
             // Reset the docked flag if THIS headed window is later closed/crashes so the persistent "docked"
             // affordance can't lie (workspace-v7mb).
@@ -1227,7 +1207,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// </summary>
     private async Task ParkWindowOffScreenAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return;
         }
@@ -1380,7 +1360,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// </summary>
     private async Task<BrowserWindowState?> DockWindowAsync()
     {
-        if (_disposed || _page == null || _pageIsHeadless)
+        if (_disposed || _page == null)
         {
             return null;
         }

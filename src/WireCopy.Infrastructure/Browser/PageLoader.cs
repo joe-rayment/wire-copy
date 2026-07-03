@@ -692,13 +692,13 @@ public class PageLoader : IPageLoader
                 if (_pageAccessQueue != null)
                 {
                     lease = await _pageAccessQueue
-                        .AcquireAsync(PageAccessPriority.Foreground, request.Headless, pageCts.Token)
+                        .AcquireAsync(PageAccessPriority.Foreground, pageCts.Token)
                         .ConfigureAwait(false);
                     page = lease.Page;
                 }
                 else
                 {
-                    page = await _browserSession.GetOrCreatePageAsync(request.Headless).WaitAsync(pageCts.Token).ConfigureAwait(false);
+                    page = await _browserSession.GetOrCreatePageAsync().WaitAsync(pageCts.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

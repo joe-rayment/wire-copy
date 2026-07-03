@@ -1,14 +1,12 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser;
-using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast.Cache;
 
 namespace WireCopy.Infrastructure.Podcast;
@@ -25,7 +23,6 @@ internal sealed class ReadingListContentProvider
 
     private readonly IPageLoader _pageLoader;
     private readonly IReadableContentExtractor _contentExtractor;
-    private readonly BrowserConfiguration _browserConfig;
     private readonly IPreloadService _preloadService;
     private readonly IPageCache _pageCache;
     private readonly IBrowserSession _browserSession;
@@ -38,7 +35,6 @@ internal sealed class ReadingListContentProvider
     public ReadingListContentProvider(
         IPageLoader pageLoader,
         IReadableContentExtractor contentExtractor,
-        IOptions<BrowserConfiguration> browserConfig,
         IPreloadService preloadService,
         IPageCache pageCache,
         IBrowserSession browserSession,
@@ -48,7 +44,6 @@ internal sealed class ReadingListContentProvider
     {
         _pageLoader = pageLoader;
         _contentExtractor = contentExtractor;
-        _browserConfig = browserConfig.Value;
         _preloadService = preloadService;
         _pageCache = pageCache;
         _browserSession = browserSession;
@@ -299,7 +294,7 @@ internal sealed class ReadingListContentProvider
             var request = new PageLoadRequest { Url = item.Url, PreferBrowser = true };
 
             using (var lease = await _pageAccessQueue.AcquireAsync(
-                PageAccessPriority.Background, _browserConfig.EffectiveHeadless, cancellationToken).ConfigureAwait(false))
+                PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
             {
                 lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken).ConfigureAwait(false);
             }
@@ -337,13 +332,12 @@ internal sealed class ReadingListContentProvider
                     item.Url);
 
                 using (var lease = await _pageAccessQueue.AcquireAsync(
-                    PageAccessPriority.Background, _browserConfig.EffectiveHeadless, cancellationToken).ConfigureAwait(false))
+                    PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
                 {
                     lastLoadResult = await _pageLoader.LoadAsync(
                         new PageLoadRequest
                         {
                             Url = item.Url,
-                            Headless = _browserConfig.EffectiveHeadless,
                             PreferBrowser = true,
                             ForceRefresh = true,
                         },
@@ -392,13 +386,12 @@ internal sealed class ReadingListContentProvider
                         item.Url);
 
                     using (var lease = await _pageAccessQueue.AcquireAsync(
-                        PageAccessPriority.Background, false, cancellationToken).ConfigureAwait(false))
+                        PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
                     {
                         lastLoadResult = await _pageLoader.LoadAsync(
                             new PageLoadRequest
                             {
                                 Url = item.Url,
-                                Headless = false,
                                 ForceRefresh = true,
                             },
                             cancellationToken).ConfigureAwait(false);

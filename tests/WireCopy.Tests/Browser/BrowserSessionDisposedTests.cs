@@ -34,7 +34,7 @@ public class BrowserSessionDisposedTests
         session.Dispose();
 
         // Act
-        var act = async () => await session.GetOrCreatePageAsync(headless: true);
+        var act = async () => await session.GetOrCreatePageAsync();
 
         // Assert
         await act.Should().ThrowAsync<ObjectDisposedException>()
@@ -87,7 +87,7 @@ public class BrowserSessionDisposedTests
         // Arrange - Mock IBrowserSession to throw ObjectDisposedException
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.IsBrowserAvailable.Returns(true);
-        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        browserSession.GetOrCreatePageAsync()
             .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();
@@ -111,7 +111,7 @@ public class BrowserSessionDisposedTests
         // Arrange - HTTP fails (403), then browser session is disposed
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.IsBrowserAvailable.Returns(true);
-        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        browserSession.GetOrCreatePageAsync()
             .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();
@@ -138,7 +138,7 @@ public class BrowserSessionDisposedTests
         // Arrange - Browser disposed, but HTTP should still work as fallback
         var browserSession = Substitute.For<IBrowserSession>();
         browserSession.IsBrowserAvailable.Returns(true);
-        browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        browserSession.GetOrCreatePageAsync()
             .Returns<Microsoft.Playwright.IPage>(_ => throw new ObjectDisposedException("BrowserSession"));
 
         var logger = Substitute.For<ILogger<PageLoader>>();

@@ -20,7 +20,7 @@ public interface IBrowserSession : IBrowserSessionControl
     /// <summary>
     /// Gets a value indicating whether the headed browser window is currently docked
     /// beside the terminal. Drives the persistent "⇉ docked" status-bar affordance so
-    /// the "concert" state is always visible (workspace-v7mb). False when headless,
+    /// the "concert" state is always visible (workspace-v7mb). False when
     /// minimized, closed, or no window exists.
     /// </summary>
     bool IsWindowDocked { get; }
@@ -41,7 +41,7 @@ public interface IBrowserSession : IBrowserSessionControl
     /// <summary>
     /// Gets a value indicating whether the headed browser window is currently
     /// docked to the right half of the screen (concert view). False when
-    /// minimized, headless, or no page is active. Used by the dock spotlight
+    /// minimized or no page is active. Used by the dock spotlight
     /// to decide whether selection-follow highlighting should run at all.
     /// </summary>
     bool IsDocked { get; }
@@ -70,18 +70,18 @@ public interface IBrowserSession : IBrowserSessionControl
     /// <summary>
     /// Gets or creates a Playwright page instance. Returns the existing page
     /// if one is active, or creates a new one if none exists or the previous
-    /// session has crashed.
+    /// session has crashed. The browser is always launched headful — never
+    /// headless (never-headless law; see BrowserSession.LaunchBrowserAsync).
     /// </summary>
-    /// <param name="headless">Whether to run the browser in headless mode.</param>
     /// <returns>An active Playwright page instance.</returns>
-    Task<IPage> GetOrCreatePageAsync(bool headless);
+    Task<IPage> GetOrCreatePageAsync();
 
     /// <summary>
     /// Gets (lazily creating) the dedicated LENS tab — the page the docked sidecar
     /// displays and the ONLY page the dock spotlight navigates (workspace-qigc).
     /// Fetch traffic stays on the page returned by <see cref="GetOrCreatePageAsync"/>,
     /// so follow-navigation and page loads can never interrupt each other. Returns
-    /// null when no headed context exists (headless session, no display, disposed) —
+    /// null when no context exists (not yet launched, no display, disposed) —
     /// callers that need a window summon one first.
     /// </summary>
     Task<IPage?> GetLensPageAsync();
@@ -114,7 +114,7 @@ public interface IBrowserSession : IBrowserSessionControl
 
     /// <summary>
     /// Restores a minimized browser window to normal size for interactive use.
-    /// No-op if headless or no active page.
+    /// No-op if no active page.
     /// </summary>
     Task RestoreWindowAsync();
 
@@ -122,7 +122,7 @@ public interface IBrowserSession : IBrowserSessionControl
     /// Returns the browser window to its background state so it doesn't cover the
     /// terminal: minimized normally, but RE-DOCKED when the user wants the sidecar
     /// (workspace-exbz) — background quieting must not strip a dock the user asked
-    /// for. No-op if headless or no active page.
+    /// for. No-op if no active page.
     /// </summary>
     Task MinimizeWindowAsync();
 
@@ -130,7 +130,7 @@ public interface IBrowserSession : IBrowserSessionControl
     /// Toggles the headed browser window between docked — pinned to the right half
     /// of the screen so the terminal "lens" and the live page sit side by side —
     /// and minimized (full-TUI). Returns the resulting state, or <c>null</c> when
-    /// there is no headed window to toggle (headless or no active page).
+    /// there is no headed window to toggle (no active page).
     /// </summary>
     Task<BrowserWindowState?> ToggleWindowDockAsync();
 
@@ -138,10 +138,9 @@ public interface IBrowserSession : IBrowserSessionControl
     /// Lens-on-demand: ensures a headed browser window showing <paramref name="url"/>
     /// and docks it to the right half of the screen. Unlike
     /// <see cref="ToggleWindowDockAsync"/> — which only toggles an EXISTING headed
-    /// window — this opens (or switches a headless page to) a headed window, navigates
-    /// it to the URL, then docks. So pressing the dock key while reading a cached or
-    /// headless article summons the live page beside the terminal. The dedicated
-    /// headless preload context is left untouched. Returns the resulting window state,
+    /// window — this opens a headed window if none exists, navigates it to the URL,
+    /// then docks. So pressing the dock key while reading a cached article summons
+    /// the live page beside the terminal. Returns the resulting window state,
     /// or <c>null</c> when no URL is supplied or the summon fails.
     /// </summary>
     /// <param name="url">URL to open in the headed window (the page the terminal is reading).</param>

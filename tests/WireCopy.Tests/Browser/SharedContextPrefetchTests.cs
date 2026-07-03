@@ -46,7 +46,7 @@ public class SharedContextPrefetchTests
         Microsoft.Playwright.IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -93,7 +93,7 @@ public class SharedContextPrefetchTests
         Microsoft.Playwright.IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -152,7 +152,7 @@ public class SharedContextPrefetchTests
         using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
         try
         {
-            await session.GetOrCreatePageAsync(headless: false);
+            await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {

@@ -55,15 +55,13 @@ public class PodcastOrchestratorTests : IDisposable
         _browserSession.IsBrowserAvailable.Returns(true);
         _articleCache = Substitute.For<IArticleContentCache>();
 
-        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
         var pageAccessQueue = Substitute.For<IPageAccessQueue>();
-        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             _pageLoader,
             _contentExtractor,
-            browserConfig,
             _preloadService,
             _pageCache,
             _browserSession,
@@ -1638,15 +1636,13 @@ public class PodcastOrchestratorTests : IDisposable
         browserSession.IsBrowserAvailable.Returns(true);
         var articleCache = Substitute.For<IArticleContentCache>();
 
-        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
         var pageAccessQueue = Substitute.For<IPageAccessQueue>();
-        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             pageLoader,
             contentExtractor,
-            browserConfig,
             preloadService,
             pageCache,
             browserSession,
@@ -2018,15 +2014,13 @@ public class PodcastOrchestratorTests : IDisposable
         browserSession.IsBrowserAvailable.Returns(true);
         var articleCache = Substitute.For<IArticleContentCache>();
 
-        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
         var pageAccessQueue = Substitute.For<IPageAccessQueue>();
-        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             pageLoader,
             contentExtractor,
-            browserConfig,
             preloadService,
             pageCache,
             browserSession,

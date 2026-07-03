@@ -8,14 +8,15 @@ namespace WireCopy.Tests.Browser;
 
 /// <summary>
 /// Unit tests for the workspace-j0b8 "missing display" heuristic. When
-/// <c>BrowserSession.LaunchBrowserAsync</c> is called with <c>headless=false</c>
+/// <c>BrowserSession.LaunchBrowserAsync</c> launches the (always headed) browser
 /// in an environment that has no X server, Playwright surfaces a
 /// <c>TargetClosedException</c> whose message embeds the Chromium
 /// "Looks like you launched a headed browser without having a XServer running"
 /// banner. The <see cref="BrowserSession.LooksLikeMissingDisplay"/> heuristic
-/// picks this case out so <c>GetOrCreatePageAsync</c> can auto-fall-back to
-/// headless instead of surfacing "Page navigated mid-load" to the user (the
-/// macleans.ca symptom from workspace-hrrf).
+/// picks this case out so <c>GetOrCreatePageAsync</c> can fail LOUDLY with an
+/// actionable "run under xvfb-run" message (never-headless law, workspace-8ne3)
+/// instead of surfacing "Page navigated mid-load" to the user (the macleans.ca
+/// symptom from workspace-hrrf).
 /// </summary>
 [Trait("Category", "Unit")]
 public class BrowserSessionMissingDisplayTests

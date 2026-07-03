@@ -840,9 +840,9 @@ public partial class BrowserOrchestrator : IBrowserService
 
             PlayDecryptRevealAnimation(page);
 
-            // workspace-exbz: engage the sidecar BEFORE the headless warmup below — the
-            // summon switches the session headed, which turns the warmup into a cheap
-            // reuse instead of a headless launch the summon would throw away.
+            // workspace-exbz: engage the sidecar BEFORE the warmup below — the summon
+            // launches the (always headful) browser, which turns the warmup into a
+            // cheap page reuse instead of a fresh launch.
             await EnsureSidecarEngagedAsync(CancellationToken.None).ConfigureAwait(false);
 
             // workspace-g801: if the sidecar didn't auto-dock, teach the dock key once.
