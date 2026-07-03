@@ -52,17 +52,20 @@ public class LauncherFooterTests
     }
 
     [Fact]
-    public void RenderFooter_ScheduledRunBadge_TakesPriorityOverStatusMessage()
+    public void RenderFooter_TransientStatus_TakesPriorityOverScheduledRunBadge()
     {
+        // workspace-xx61 (511u): the status message is transient (a keypress just
+        // happened); the badge is persistent and returns on the next render, so
+        // the status wins the single auxiliary line or feedback is lost.
         var (output, linesWritten) = CaptureFooter(
             scheduledRunBadge: "1 scheduled run failed",
             statusMessage: "Already at top");
         var stripped = StripAnsi(output);
 
-        stripped.Should().Contain("1 scheduled run failed",
-            "failure badges are the higher-stakes signal for the auxiliary line");
-        stripped.Should().NotContain("Already at top",
-            "only one auxiliary line exists; the badge wins the slot");
+        stripped.Should().Contain("Already at top",
+            "the transient status would be lost forever if the persistent badge won the slot");
+        stripped.Should().NotContain("1 scheduled run failed",
+            "only one auxiliary line exists; the badge returns next render");
         linesWritten.Should().Be(2);
     }
 
