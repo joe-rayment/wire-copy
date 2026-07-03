@@ -44,7 +44,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -137,7 +137,7 @@ public class BrowserWindowDockIntegrationTests
         lens!.ViewportSize.Should().NotBeNull();
         lens.ViewportSize!.Width.Should().Be(375, "the lens viewport is pinned to iPhone-SE width");
 
-        var page = await session.GetOrCreatePageAsync(headless: false);
+        var page = await session.GetOrCreatePageAsync();
         var screen = await page.EvaluateAsync<int[]>(
             "() => [window.screen.availWidth, window.screen.availHeight]");
         var screenW = screen[0];
@@ -167,7 +167,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -211,7 +211,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -260,7 +260,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -319,7 +319,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -367,7 +367,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {
@@ -412,7 +412,7 @@ public class BrowserWindowDockIntegrationTests
         IPage page;
         try
         {
-            page = await session.GetOrCreatePageAsync(headless: false);
+            page = await session.GetOrCreatePageAsync();
         }
         catch (Exception ex)
         {

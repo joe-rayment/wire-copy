@@ -54,7 +54,7 @@ public class AutoLoginServiceTests
         _submitLocator.WaitForAsync(Arg.Any<LocatorWaitForOptions>()).Returns(Task.CompletedTask);
 
         // Default: AcquireAsync returns a lease with our mock page
-        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(_ => new PageLease(_page, () => { }));
 
         // Set up service scope factory mock
@@ -397,7 +397,6 @@ public class AutoLoginServiceTests
 
         await _pageAccessQueue.Received(1).AcquireAsync(
             PageAccessPriority.Background,
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -411,21 +410,6 @@ public class AutoLoginServiceTests
 
         await _pageAccessQueue.DidNotReceive().AcquireAsync(
             PageAccessPriority.Foreground,
-            Arg.Any<bool>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Login_AcquiresNonHeadlessBrowser()
-    {
-        var credential = CreateCredential();
-        SetupSuccessfulLogin(credential);
-
-        await _service.LoginAsync("example.com");
-
-        await _pageAccessQueue.Received(1).AcquireAsync(
-            Arg.Any<PageAccessPriority>(),
-            false,
             Arg.Any<CancellationToken>());
     }
 
@@ -441,7 +425,7 @@ public class AutoLoginServiceTests
 
         var leaseDisposed = false;
         var lease = new PageLease(_page, () => leaseDisposed = true);
-        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         await _service.LoginAsync("example.com");
@@ -463,7 +447,7 @@ public class AutoLoginServiceTests
 
         var leaseDisposed = false;
         var lease = new PageLease(_page, () => leaseDisposed = true);
-        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         await _service.LoginAsync("example.com");
@@ -545,7 +529,6 @@ public class AutoLoginServiceTests
 
         await _pageAccessQueue.DidNotReceive().AcquireAsync(
             Arg.Any<PageAccessPriority>(),
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -562,7 +545,6 @@ public class AutoLoginServiceTests
 
         await _pageAccessQueue.DidNotReceive().AcquireAsync(
             Arg.Any<PageAccessPriority>(),
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 

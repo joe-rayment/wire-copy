@@ -14,10 +14,8 @@ public record PageLoadRequest
     /// </summary>
     public required string Url { get; init; }
 
-    /// <summary>
-    /// Whether to use headless browser mode.
-    /// </summary>
-    public bool Headless { get; init; } = true;
+    // Note: there is deliberately no Headless option — the browser is NEVER headless
+    // (see BrowserSession.LaunchBrowserAsync, the single hardcoded-headful launch site).
 
     /// <summary>
     /// Maximum time to wait for page load (milliseconds).

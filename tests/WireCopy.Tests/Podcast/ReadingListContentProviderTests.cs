@@ -43,15 +43,13 @@ public class ReadingListContentProviderTests
         _articleCache = Substitute.For<IArticleContentCache>();
 
         // Default: AcquireAsync returns a no-op lease
-        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
-        var browserConfig = Options.Create(new BrowserConfiguration { Headless = true });
 
         _provider = new ReadingListContentProvider(
             _pageLoader,
             _contentExtractor,
-            browserConfig,
             _preloadService,
             _pageCache,
             _browserSession,
@@ -465,18 +463,7 @@ public class ReadingListContentProviderTests
         var url = "https://example.com/article1";
         var collection = CreateCollection(url);
 
-        // Create provider with Headless = false (headed mode)
-        var headedConfig = Options.Create(new BrowserConfiguration { Headless = false });
-        var headedProvider = new ReadingListContentProvider(
-            _pageLoader,
-            _contentExtractor,
-            headedConfig,
-            _preloadService,
-            _pageCache,
-            _browserSession,
-            _pageAccessQueue,
-            _articleCache,
-            NullLogger<ReadingListContentProvider>.Instance);
+        // The browser is always headed (never-headless law) — the shared provider IS the headed provider.
 
         _pageCache.Contains(url).Returns(false);
         _preloadService.WaitForInFlightAsync(url, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
@@ -511,7 +498,7 @@ public class ReadingListContentProviderTests
                 return extractCount >= 2 ? CreateReadableContent() : null;
             });
 
-        var results = await headedProvider.GetAllArticleContentAsync(collection);
+        var results = await _provider.GetAllArticleContentAsync(collection);
 
         // In headed mode, Layer 3 should still fire (previously was dead code)
         results.Should().HaveCount(1);
@@ -849,7 +836,6 @@ public class ReadingListContentProviderTests
 
         await _pageAccessQueue.Received().AcquireAsync(
             PageAccessPriority.Background,
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -894,7 +880,6 @@ public class ReadingListContentProviderTests
         // Should have acquired Background lease twice (Layer 1 + Layer 2)
         await _pageAccessQueue.Received(2).AcquireAsync(
             PageAccessPriority.Background,
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -944,7 +929,6 @@ public class ReadingListContentProviderTests
         // Layer 1 + Layer 2 + Layer 3 = 3 Background lease acquisitions
         await _pageAccessQueue.Received(3).AcquireAsync(
             PageAccessPriority.Background,
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -962,7 +946,7 @@ public class ReadingListContentProviderTests
         var lease = new PageLease(
             Substitute.For<Microsoft.Playwright.IPage>(),
             () => leaseDisposed = true);
-        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        _pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(lease);
 
         var loadResult = CreateSuccessResult(url);
@@ -996,7 +980,6 @@ public class ReadingListContentProviderTests
 
         await _pageAccessQueue.DidNotReceive().AcquireAsync(
             PageAccessPriority.Foreground,
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1019,7 +1002,6 @@ public class ReadingListContentProviderTests
 
         await _pageAccessQueue.DidNotReceive().AcquireAsync(
             Arg.Any<PageAccessPriority>(),
-            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 

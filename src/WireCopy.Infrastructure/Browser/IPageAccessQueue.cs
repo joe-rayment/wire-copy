@@ -39,10 +39,9 @@ public interface IPageAccessQueue
     /// Foreground requests are served before background requests.
     /// </summary>
     /// <param name="priority">The priority level of the request.</param>
-    /// <param name="headless">Whether the browser should be headless.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A lease that must be disposed to release the page.</returns>
-    Task<PageLease> AcquireAsync(PageAccessPriority priority, bool headless, CancellationToken cancellationToken);
+    Task<PageLease> AcquireAsync(PageAccessPriority priority, CancellationToken cancellationToken);
 }
 
 /// <summary>

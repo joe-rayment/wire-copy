@@ -17,23 +17,20 @@ public class BrowserConfiguration
     public bool Headless { get; init; } = true;
 
     /// <summary>
-    /// The browser visibility policy (workspace-8cf2). Default <see cref="BrowserVisibility.Auto"/>:
-    /// interactive session with a display → visible browser everywhere (fetches, prefetch,
-    /// sidecar); unattended or display-less → headless. See <see cref="EffectiveHeadless"/>.
+    /// The browser visibility policy (workspace-8cf2). Kept only so existing settings files bind
+    /// without error — it no longer influences anything: the browser is ALWAYS visible (headful).
+    /// An explicit Visibility=Headless is IGNORED (surfaced in <see cref="DescribeVisibilityResolution"/>).
     /// </summary>
     public BrowserVisibility Visibility { get; init; } = BrowserVisibility.Auto;
 
-    /// <summary>
-    /// The RESOLVED headless decision for this process — the only thing fetch/warmup code should read.
-    /// HARD PROJECT POLICY: the browser is NEVER headless. Headless is bot-detected and blocked on the
-    /// sites this app targets (Cloudflare, NYT, macleans.ca), so it is disabled unconditionally — the app
-    /// runs a REAL headful browser, under a virtual display (Xvfb) on a display-less host (the `run`
-    /// script provides one). Visibility / interactive / display no longer gate this; an explicit
-    /// Visibility=Headless is IGNORED (surfaced in <see cref="DescribeVisibilityResolution"/>).
-    /// </summary>
-#pragma warning disable S2325 // instance config API by design (read as config.EffectiveHeadless); the constant value IS the never-headless policy
-    public bool EffectiveHeadless => false;
-#pragma warning restore S2325
+    // NEVER-HEADLESS LAW (workspace-8ne3, plumbing deleted in workspace-9k27.10): the browser is
+    // NEVER headless — headless is bot-detected and blocked on the sites this app targets
+    // (Cloudflare, NYT, macleans.ca). There is deliberately NO EffectiveHeadless property (and no
+    // headless knob anywhere): the single Playwright launch chokepoint,
+    // BrowserSession.LaunchBrowserAsync, hardcodes `Headless = false`. On a display-less host the
+    // app runs under a virtual display (the `run` script provides Xvfb) — it fails loudly rather
+    // than degrade to headless. Do NOT reintroduce a resolved-headless flag here; any code that
+    // needs "is the browser headless?" already knows the answer: it isn't.
 
     /// <summary>
     /// When true, disables all UI animations. The timer-tick mechanism in the input handler

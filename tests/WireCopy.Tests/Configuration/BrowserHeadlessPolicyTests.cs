@@ -1,37 +1,60 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using FluentAssertions;
+using WireCopy.Application.DTOs.Browser;
+using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Configuration;
 using Xunit;
 
 namespace WireCopy.Tests;
 
 /// <summary>
-/// NEVER-HEADLESS POLICY (workspace-8ne3): the browser must never run headless. These tests pin the
-/// configuration-level guarantee — EffectiveHeadless is false for EVERY visibility setting, including an
-/// explicit Visibility=Headless and the legacy Headless=true field, both of which are ignored.
+/// NEVER-HEADLESS LAW (workspace-8ne3; plumbing deleted in workspace-9k27.10): the browser must never
+/// run headless. Since workspace-9k27.10 the law is STRUCTURAL — there is no headless knob anywhere,
+/// so a headless launch cannot even be requested. These tests pin that unexpressibility: the moment
+/// anyone re-introduces a resolved-headless flag, a request-level Headless option, or a headless
+/// parameter on the page-access APIs, they fail. The single Playwright launch chokepoint is
+/// <c>BrowserSession.LaunchBrowserAsync</c>, which hardcodes <c>Headless = false</c> (its runtime
+/// proof is the headed dock integration suites, which launch a REAL headful Chromium under Xvfb).
 /// </summary>
 [Trait("Category", "Unit")]
 public class BrowserHeadlessPolicyTests
 {
-    [Theory]
-    [InlineData(BrowserVisibility.Auto)]
-    [InlineData(BrowserVisibility.Visible)]
-    [InlineData(BrowserVisibility.Headless)]
-    public void EffectiveHeadless_IsAlwaysFalse_RegardlessOfVisibility(BrowserVisibility visibility)
+    [Fact]
+    public void BrowserConfiguration_HasNoEffectiveHeadlessMember()
     {
-        var config = new BrowserConfiguration { Visibility = visibility };
-
-        config.EffectiveHeadless.Should().BeFalse(
-            "headless is disabled by hard project policy — the browser is always headful");
+        typeof(BrowserConfiguration).GetMember("EffectiveHeadless").Should().BeEmpty(
+            "the resolved-headless decision was deleted (workspace-9k27.10) — headless is always false "
+            + "and must stay unexpressible; do not re-add a resolved flag");
     }
 
     [Fact]
-    public void EffectiveHeadless_IsFalse_EvenWhenLegacyHeadlessFieldIsTrue()
+    public void PageLoadRequest_HasNoHeadlessOption()
     {
-        var config = new BrowserConfiguration { Headless = true, Visibility = BrowserVisibility.Headless };
+        typeof(PageLoadRequest).GetProperty("Headless").Should().BeNull(
+            "page-load requests must not be able to ask for a headless browser");
+    }
 
-        config.EffectiveHeadless.Should().BeFalse("the legacy Headless field and Visibility=Headless are ignored");
+    [Fact]
+    public void GetOrCreatePageAsync_TakesNoHeadlessParameter()
+    {
+        var method = typeof(IBrowserSession).GetMethod(nameof(IBrowserSession.GetOrCreatePageAsync));
+
+        method.Should().NotBeNull();
+        method!.GetParameters().Should().BeEmpty(
+            "page creation must not be able to request a headless browser — the launch site is "
+            + "hardcoded headful");
+    }
+
+    [Fact]
+    public void PageAccessQueue_AcquireAsync_TakesNoHeadlessParameter()
+    {
+        var method = typeof(IPageAccessQueue).GetMethod(nameof(IPageAccessQueue.AcquireAsync));
+
+        method.Should().NotBeNull();
+        method!.GetParameters().Select(p => p.ParameterType).Should().NotContain(
+            typeof(bool),
+            "the page-access lease must not thread a headless flag to the session");
     }
 
     [Theory]
@@ -44,5 +67,14 @@ public class BrowserHeadlessPolicyTests
 
         description.Should().Contain("VISIBLE");
         description.Should().NotContain("Browser mode: HEADLESS");
+    }
+
+    [Fact]
+    public void DescribeVisibilityResolution_FlagsAnIgnoredHeadlessRequest()
+    {
+        var description = new BrowserConfiguration { Visibility = BrowserVisibility.Headless }
+            .DescribeVisibilityResolution();
+
+        description.Should().Contain("IGNORED", "an explicit Visibility=Headless must be called out as ignored");
     }
 }

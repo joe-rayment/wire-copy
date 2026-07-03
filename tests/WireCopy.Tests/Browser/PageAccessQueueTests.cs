@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Playwright;
 using NSubstitute;
+using NSubstitute.Extensions;
 using WireCopy.Infrastructure.Browser;
 using Xunit;
 
@@ -21,7 +22,7 @@ public class PageAccessQueueTests : IDisposable
         _browserSession = Substitute.For<IBrowserSession>();
         _browserSession.IsBrowserAvailable.Returns(true);
         _page = Substitute.For<IPage>();
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
+        _browserSession.GetOrCreatePageAsync().Returns(Task.FromResult(_page));
         _queue = new PageAccessQueue(_browserSession, NullLogger<PageAccessQueue>.Instance);
     }
 
@@ -36,30 +37,30 @@ public class PageAccessQueueTests : IDisposable
     public async Task Foreground_AcquiresPageImmediately()
     {
         using var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
-    public async Task Foreground_PassesHeadlessFlag()
+    public async Task Foreground_CreatesPageViaSession()
     {
         using var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: false, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
-        await _browserSession.Received(1).GetOrCreatePageAsync(false);
+        await _browserSession.Received(1).GetOrCreatePageAsync();
     }
 
     [Fact]
     public async Task Foreground_ReleasesLock_OnDispose()
     {
         var lease1 = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
         lease1.Dispose();
 
         // Should be able to acquire again without blocking
         using var lease2 = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         lease2.Page.Should().BeSameAs(_page);
     }
@@ -68,7 +69,7 @@ public class PageAccessQueueTests : IDisposable
     public async Task Foreground_DoubleDispose_Safe()
     {
         var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
         lease.Dispose();
         lease.Dispose(); // Should not throw
     }
@@ -81,7 +82,7 @@ public class PageAccessQueueTests : IDisposable
     public async Task Background_AcquiresPageWhenFree()
     {
         using var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         lease.Page.Should().BeSameAs(_page);
     }
@@ -92,7 +93,7 @@ public class PageAccessQueueTests : IDisposable
         _queue.IsBackgroundActive.Should().BeFalse();
 
         var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         _queue.IsBackgroundActive.Should().BeTrue();
 
@@ -110,11 +111,11 @@ public class PageAccessQueueTests : IDisposable
     {
         // Background acquires first
         var bgLease = await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         // Foreground should block until background releases
         var fgTask = _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         // Give foreground task a moment to start waiting
         await Task.Delay(50);
@@ -133,11 +134,11 @@ public class PageAccessQueueTests : IDisposable
     {
         // Foreground acquires first
         var fgLease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         // Background should block
         var bgTask = _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         await Task.Delay(50);
         bgTask.IsCompleted.Should().BeFalse("background should block while foreground holds lock");
@@ -156,7 +157,7 @@ public class PageAccessQueueTests : IDisposable
         for (var i = 0; i < 5; i++)
         {
             var priority = i % 2 == 0 ? PageAccessPriority.Foreground : PageAccessPriority.Background;
-            using var lease = await _queue.AcquireAsync(priority, headless: true, CancellationToken.None);
+            using var lease = await _queue.AcquireAsync(priority, CancellationToken.None);
             lease.Page.Should().BeSameAs(_page);
         }
     }
@@ -170,12 +171,12 @@ public class PageAccessQueueTests : IDisposable
     {
         // Hold the lock
         var bgLease = await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, cts.Token);
+            PageAccessPriority.Foreground, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         bgLease.Dispose();
@@ -186,12 +187,12 @@ public class PageAccessQueueTests : IDisposable
     {
         // Hold the lock
         var fgLease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var act = async () => await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, cts.Token);
+            PageAccessPriority.Background, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         fgLease.Dispose();
@@ -204,38 +205,40 @@ public class PageAccessQueueTests : IDisposable
     [Fact]
     public async Task Foreground_ReleasesLock_WhenPageCreationFails()
     {
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         await act.Should().ThrowAsync<PlaywrightException>();
 
-        // Lock should be released - can acquire again
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
+        // Lock should be released - can acquire again. (Configure() re-specifies the
+        // parameterless method without invoking the throw configured above.)
+        _browserSession.Configure().GetOrCreatePageAsync().Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
         lease.Page.Should().BeSameAs(_page);
     }
 
     [Fact]
     public async Task Background_ReleasesLock_WhenPageCreationFails()
     {
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>())
+        _browserSession.GetOrCreatePageAsync()
             .Returns<IPage>(_ => throw new PlaywrightException("Page creation failed"));
 
         var act = async () => await _queue.AcquireAsync(
-            PageAccessPriority.Background, headless: true, CancellationToken.None);
+            PageAccessPriority.Background, CancellationToken.None);
 
         await act.Should().ThrowAsync<PlaywrightException>();
 
         _queue.IsBackgroundActive.Should().BeFalse("background flag should reset on failure");
 
-        // Lock should be released
-        _browserSession.GetOrCreatePageAsync(Arg.Any<bool>()).Returns(Task.FromResult(_page));
+        // Lock should be released. (Configure() re-specifies the parameterless
+        // method without invoking the throw configured above.)
+        _browserSession.Configure().GetOrCreatePageAsync().Returns(Task.FromResult(_page));
         using var lease = await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
         lease.Page.Should().BeSameAs(_page);
     }
 
@@ -245,7 +248,7 @@ public class PageAccessQueueTests : IDisposable
         _queue.Dispose();
 
         var act = async () => await _queue.AcquireAsync(
-            PageAccessPriority.Foreground, headless: true, CancellationToken.None);
+            PageAccessPriority.Foreground, CancellationToken.None);
 
         act.Should().ThrowAsync<ObjectDisposedException>();
     }

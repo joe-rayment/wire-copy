@@ -41,17 +41,16 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
     /// <inheritdoc />
     public async Task<PageLease> AcquireAsync(
         PageAccessPriority priority,
-        bool headless,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (priority == PageAccessPriority.Foreground)
         {
-            return await AcquireForegroundAsync(headless, cancellationToken).ConfigureAwait(false);
+            return await AcquireForegroundAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return await AcquireBackgroundAsync(headless, cancellationToken).ConfigureAwait(false);
+        return await AcquireBackgroundAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -66,7 +65,7 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
         _foregroundWaiting.Dispose();
     }
 
-    private async Task<PageLease> AcquireForegroundAsync(bool headless, CancellationToken cancellationToken)
+    private async Task<PageLease> AcquireForegroundAsync(CancellationToken cancellationToken)
     {
         if (!_browserSession.IsBrowserAvailable)
         {
@@ -91,7 +90,7 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
 
         try
         {
-            var page = await _browserSession.GetOrCreatePageAsync(headless).ConfigureAwait(false);
+            var page = await _browserSession.GetOrCreatePageAsync().ConfigureAwait(false);
             _logger.LogDebug("Foreground acquired browser page");
             return new PageLease(page, () => ReleaseForeground());
         }
@@ -102,7 +101,7 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
         }
     }
 
-    private async Task<PageLease> AcquireBackgroundAsync(bool headless, CancellationToken cancellationToken)
+    private async Task<PageLease> AcquireBackgroundAsync(CancellationToken cancellationToken)
     {
         if (!_browserSession.IsBrowserAvailable)
         {
@@ -121,7 +120,7 @@ internal sealed class PageAccessQueue : IPageAccessQueue, IDisposable
 
         try
         {
-            var page = await _browserSession.GetOrCreatePageAsync(headless).ConfigureAwait(false);
+            var page = await _browserSession.GetOrCreatePageAsync().ConfigureAwait(false);
             _logger.LogDebug("Background acquired browser page");
             return new PageLease(page, () => ReleaseBackground());
         }

@@ -100,13 +100,12 @@ public class PodcastOrchestratorJournalIntegrationTests : IDisposable
         browserSession.IsBrowserAvailable.Returns(true);
         var articleCache = Substitute.For<IArticleContentCache>();
         var pageAccessQueue = Substitute.For<IPageAccessQueue>();
-        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+        pageAccessQueue.AcquireAsync(Arg.Any<PageAccessPriority>(), Arg.Any<CancellationToken>())
             .Returns(_ => new PageLease(Substitute.For<Microsoft.Playwright.IPage>(), () => { }));
 
         var contentProvider = new ReadingListContentProvider(
             pageLoader,
             contentExtractor,
-            Options.Create(new BrowserConfiguration { Headless = true }),
             preloadService,
             pageCache,
             browserSession,

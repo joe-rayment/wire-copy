@@ -85,22 +85,15 @@ public partial class BrowserOrchestrator
     /// one a user can plausibly clear in their headed browser
     /// (CAPTCHA / Login / CookieConsent / TwoFactor). No-op for variants
     /// that don't resolve via headed interaction (Paywall, RegionBlock,
-    /// RedirectLoop, Generic) and for headless runs where there is no visible
-    /// window. (A RedirectLoop throws before any pollable page exists and a
-    /// Cloudflare bounce won't settle on its own — the user must open it in
-    /// their real browser and press R.)
+    /// RedirectLoop, Generic). (A RedirectLoop throws before any pollable page
+    /// exists and a Cloudflare bounce won't settle on its own — the user must
+    /// open it in their real browser and press R.)
     /// </summary>
     private void StartHumanActionWatcher(
         string url,
         Application.DTOs.Browser.HumanActionRequired action,
         CancellationToken cancellationToken)
     {
-        if (_browserConfig.EffectiveHeadless)
-        {
-            _logger.LogDebug("Skipping human-action watcher: headless mode, no visible window to poll");
-            return;
-        }
-
         if (!IsWatchableVariant(action.Variant))
         {
             _logger.LogDebug(
@@ -159,7 +152,7 @@ public partial class BrowserOrchestrator
                 string currentUrl;
                 try
                 {
-                    var page = await session.GetOrCreatePageAsync(headless: false).ConfigureAwait(false);
+                    var page = await session.GetOrCreatePageAsync().ConfigureAwait(false);
                     currentUrl = page.Url;
                     currentHtml = await page.ContentAsync().ConfigureAwait(false);
                 }
@@ -207,7 +200,7 @@ public partial class BrowserOrchestrator
         {
             _pageCache.Remove(url);
             var result = await _pageLoader.LoadAsync(
-                new PageLoadRequest { Url = url, Headless = false, ForceRefresh = true },
+                new PageLoadRequest { Url = url, ForceRefresh = true },
                 cancellationToken).ConfigureAwait(false);
             return result.Success ? result : null;
         }
