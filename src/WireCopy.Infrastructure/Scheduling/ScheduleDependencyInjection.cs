@@ -18,7 +18,7 @@ public static class ScheduleDependencyInjection
         services.AddHostedService<ScheduledRunLifecycleService>();
 
         // workspace-frpl.6 (B5): headless section loader for scheduled runs.
-        services.AddSingleton<IHeadlessSectionLoader, HeadlessSectionLoadAdapter>();
+        services.AddSingleton<IUnattendedSectionLoader, UnattendedSectionLoadAdapter>();
 
         // workspace-frpl.8 (B7): the per-occurrence run pipeline. SCOPED so it shares
         // the same EF unit-of-work as the scheduler's per-tick scope (the scope that

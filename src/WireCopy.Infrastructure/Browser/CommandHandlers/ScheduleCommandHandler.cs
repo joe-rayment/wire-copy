@@ -359,8 +359,8 @@ internal static class ScheduleCommandHandler
 
     /// <summary>
     /// workspace-frpl.15 (B12b) — set an UNCONFIGURED bookmarked site up inline: confirm,
-    /// load it headlessly through B5's preload-context-serialized path, run the SAME
-    /// SetupWizard the Ctrl+L flow uses (headless adapters, null screenshot), and persist
+    /// load it unattended through B5's preload-context-serialized path, run the SAME
+    /// SetupWizard the Ctrl+L flow uses (unattended adapters, null screenshot), and persist
     /// the resulting durable config so its section becomes pickable. Returns the saved
     /// config, or null if AI is unavailable / the user cancelled / no config was produced.
     /// </summary>
@@ -374,7 +374,7 @@ internal static class ScheduleCommandHandler
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
-        var loader = scope.ServiceProvider.GetService<IHeadlessSectionLoader>();
+        var loader = scope.ServiceProvider.GetService<IUnattendedSectionLoader>();
         var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
         if (analyzer is null || loader is null || configStore is null)
         {
@@ -389,13 +389,13 @@ internal static class ScheduleCommandHandler
             return null;
         }
 
-        var setup = await PickAsync(ctx, overlay, options, "Set up this site?", $"'{bookmark.Name}' has no saved layout. Set it up now with AI over a headless load? Enter select · Esc back", new List<string> { "Set up with AI now", "Cancel" }, 0, ct).ConfigureAwait(false);
+        var setup = await PickAsync(ctx, overlay, options, "Set up this site?", $"'{bookmark.Name}' has no saved layout. Set it up now with AI over a background load? Enter select · Esc back", new List<string> { "Set up with AI now", "Cancel" }, 0, ct).ConfigureAwait(false);
         if (setup.Cancelled || setup.Index != 0)
         {
             return null;
         }
 
-        // Headless load (B5 serializes against the preload loop); show a static spinner card.
+        // Unattended background load (headful browser; B5 serializes against the preload loop); show a static spinner card.
         overlay.Mode = SetupWizardOverlay.Mode.Analyzing;
         overlay.AnalyzingLabel = $"Loading {bookmark.Name}…";
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

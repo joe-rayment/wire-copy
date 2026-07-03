@@ -3,22 +3,23 @@
 namespace WireCopy.Infrastructure.Configuration;
 
 /// <summary>
-/// The ONE browser-visibility policy (workspace-8cf2): headed is the rule,
-/// headless the exception. Resolved once per process and logged at startup so
-/// "why is this headless" is never a mystery.
+/// LEGACY settings-binding enum (workspace-8cf2, retired by workspace-8ne3/9k27.10).
+/// The browser is ALWAYS headful — there is no visibility policy to resolve
+/// anymore. This type exists only so old settings files with a
+/// <c>Browser.Visibility</c> value still deserialize; every value is ignored
+/// (an explicit <see cref="Headless"/> is called out as IGNORED in
+/// <c>BrowserConfiguration.DescribeVisibilityResolution</c>). On a display-less
+/// host the app runs under a virtual display (Xvfb via the run script) — it
+/// never degrades to headless.
 /// </summary>
 public enum BrowserVisibility
 {
-    /// <summary>
-    /// Resolve automatically: VISIBLE when the session is interactive (a real
-    /// TTY) and a display exists; headless for unattended runs (cron/scheduled,
-    /// redirected stdio) and display-less hosts (CI, SSH).
-    /// </summary>
+    /// <summary>Legacy value; ignored — the browser is always headful.</summary>
     Auto,
 
-    /// <summary>Always headed. Falls back to headless only if no display exists (launch-time fallback).</summary>
+    /// <summary>Legacy value; ignored — the browser is always headful.</summary>
     Visible,
 
-    /// <summary>Always headless (explicit opt-out of the visible-first rule).</summary>
+    /// <summary>Legacy value; IGNORED and flagged at startup — the browser is always headful.</summary>
     Headless,
 }

@@ -174,9 +174,9 @@ public class SemanticSectionRecoveryTests
         // The resolver returns ZeroMatch (config section selectors don't match the
         // drifted links); the pipeline must consult the recovery tier and, on a
         // Recovered result, assemble + publish (a degraded-but-recovered PartialSuccess).
-        var loader = Substitute.For<Application.Interfaces.Scheduling.IHeadlessSectionLoader>();
+        var loader = Substitute.For<Application.Interfaces.Scheduling.IUnattendedSectionLoader>();
         loader.LoadLinksAndConfigAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = Application.DTOs.Scheduling.LoadOutcome.Ok, Links = DriftedLinks(), Config = Config });
+            .Returns(new UnattendedSectionLoad { Outcome = Application.DTOs.Scheduling.LoadOutcome.Ok, Links = DriftedLinks(), Config = Config });
 
         var recovery = Substitute.For<Application.Interfaces.Scheduling.ISemanticSectionRecovery>();
         recovery.TryRecoverAsync(Arg.Any<SiteHierarchyConfig>(), Arg.Any<IReadOnlyList<LinkInfo>>(), Arg.Any<RecipeStep>(), Arg.Any<CancellationToken>())

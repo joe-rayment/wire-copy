@@ -78,11 +78,11 @@ public class RecipeRunPipelineE2eTests
             Content("https://www.techmeme.com/t3", "TM Third", "div.top a"),
         };
 
-        var loader = Substitute.For<IHeadlessSectionLoader>();
+        var loader = Substitute.For<IUnattendedSectionLoader>();
         loader.LoadLinksAndConfigAsync(NytUrl, Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = LoadOutcome.Ok, Links = nytLinks, Config = nytConfig });
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = nytLinks, Config = nytConfig });
         loader.LoadLinksAndConfigAsync(TechmemeUrl, Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = LoadOutcome.Ok, Links = techmemeLinks, Config = techmemeConfig });
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = techmemeLinks, Config = techmemeConfig });
 
         // --- the recipe: NYT front → Techmeme single top story → NYT business ---
         var recipe = ScheduleRecipe.Create(

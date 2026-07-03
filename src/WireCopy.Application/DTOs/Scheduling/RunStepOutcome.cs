@@ -8,7 +8,7 @@ namespace WireCopy.Application.DTOs.Scheduling;
 /// exactly which sources contributed and which were blocked/empty — never a silent
 /// near-empty episode. <see cref="Status"/> is one of Resolved/ZeroMatch/
 /// SectionNotFound/Blocked/LoadFailed (the run-time superset of <c>ResolutionStatus</c>
-/// plus the headless-load failures).
+/// plus the unattended-load failures).
 /// </summary>
 public sealed record RunStepOutcome
 {

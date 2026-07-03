@@ -37,9 +37,9 @@ public class RecipeRunGcsBridgeTests
         var settings = Substitute.For<IUserSettingsStore>();
         settings.Get("GcsBucketName").Returns("tr_list_reader");
 
-        var loader = Substitute.For<IHeadlessSectionLoader>();
+        var loader = Substitute.For<IUnattendedSectionLoader>();
         loader.LoadLinksAndConfigAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad
+            .Returns(new UnattendedSectionLoad
             {
                 Outcome = LoadOutcome.Ok,
                 Links = new List<LinkInfo> { new() { Url = "u1", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 50, ParentSelector = "div.top a" } },
@@ -81,9 +81,9 @@ public class RecipeRunGcsBridgeTests
         var settings = Substitute.For<IUserSettingsStore>();
         settings.Get("GcsBucketName").Returns("tr_list_reader");
 
-        var loader = Substitute.For<IHeadlessSectionLoader>();
+        var loader = Substitute.For<IUnattendedSectionLoader>();
         loader.LoadLinksAndConfigAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad
+            .Returns(new UnattendedSectionLoad
             {
                 Outcome = LoadOutcome.Ok,
                 Links = new List<LinkInfo> { new() { Url = "u1", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 50, ParentSelector = "div.top a" } },

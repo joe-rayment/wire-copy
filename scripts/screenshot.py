@@ -139,6 +139,14 @@ def _find_chrome() -> str | None:
             except Exception:
                 pass
 
+    # Check the Playwright browser cache (the app's own vendored Chromium)
+    pw_paths = sorted(
+        glob.glob(str(Path.home() / ".cache" / "ms-playwright" / "chromium-*" / "chrome-linux" / "chrome")),
+        reverse=True)
+    for p in pw_paths:
+        if os.access(p, os.X_OK):
+            return p
+
     # Check Selenium cache
     cache_dir = Path.home() / ".cache" / "selenium" / "chrome"
     paths = sorted(glob.glob(str(cache_dir / "linux64" / "*" / "chrome")), reverse=True)
@@ -177,9 +185,20 @@ class CDPBrowser:
             s.bind(("", 0))
             self._debug_port = s.getsockname()[1]
 
+        # NEVER headless (workspace-8ne3/9k27): headless is bot-detected and
+        # blocked on the sites this project targets. Run HEADFUL — under the
+        # ambient DISPLAY, or a private Xvfb this script spawns itself.
+        self._xvfb = None
+        if not os.environ.get("DISPLAY"):
+            display = ":94"
+            self._xvfb = subprocess.Popen(
+                ["Xvfb", display, "-screen", "0", f"{max(self.width, 1280)}x{max(self.height, 900)}x24"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.environ["DISPLAY"] = display
+            time.sleep(1)
+
         args = [
             chrome_path,
-            "--headless=new",
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
@@ -385,6 +404,12 @@ class CDPBrowser:
                 except Exception:
                     pass
             self.process = None
+        if getattr(self, "_xvfb", None):
+            try:
+                self._xvfb.terminate()
+            except Exception:
+                pass
+            self._xvfb = None
 
 
 def take_screenshot(

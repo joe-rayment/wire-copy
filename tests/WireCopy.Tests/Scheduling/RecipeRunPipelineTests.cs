@@ -39,7 +39,7 @@ public class RecipeRunPipelineTests
         ModelVersion = "test",
     };
 
-    private readonly IHeadlessSectionLoader _loader = Substitute.For<IHeadlessSectionLoader>();
+    private readonly IUnattendedSectionLoader _loader = Substitute.For<IUnattendedSectionLoader>();
     private readonly ISectionResolver _resolver = Substitute.For<ISectionResolver>();
     private readonly IPodcastOrchestrator _orchestrator = Substitute.For<IPodcastOrchestrator>();
     private readonly IPodcastBackgroundJobManager _jobManager = Substitute.For<IPodcastBackgroundJobManager>();
@@ -208,11 +208,11 @@ public class RecipeRunPipelineTests
 
     private void LoadOk(string url) =>
         _loader.LoadLinksAndConfigAsync(url, Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = LoadOutcome.Ok, Links = Array.Empty<LinkInfo>(), Config = Cfg });
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = Array.Empty<LinkInfo>(), Config = Cfg });
 
     private void LoadBlocked(string url) =>
         _loader.LoadLinksAndConfigAsync(url, Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = LoadOutcome.Blocked });
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Blocked });
 
     private void ResolveAs(string sectionName, SectionResolution resolution) =>
         _resolver.Resolve(Arg.Any<SiteHierarchyConfig>(), Arg.Any<IReadOnlyList<LinkInfo>>(),

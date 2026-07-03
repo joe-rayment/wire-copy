@@ -39,7 +39,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// <summary>The assembled-item floor below which we refuse to publish (an empty/near-empty episode is never useful).</summary>
     private const int MinimumItems = 1;
 
-    private readonly IHeadlessSectionLoader _loader;
+    private readonly IUnattendedSectionLoader _loader;
     private readonly ISectionResolver _resolver;
     private readonly IPodcastOrchestrator _orchestrator;
     private readonly IPodcastBackgroundJobManager _jobManager;
@@ -52,7 +52,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly IUserSettingsStore? _settingsStore;
 
     public RecipeRunPipeline(
-        IHeadlessSectionLoader loader,
+        IUnattendedSectionLoader loader,
         ISectionResolver resolver,
         IPodcastOrchestrator orchestrator,
         IPodcastBackgroundJobManager jobManager,
@@ -213,7 +213,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             var diagnostic = load.Outcome == LoadOutcome.Blocked
                 ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
                   "The scheduled run skipped this step rather than publish an empty episode."
-                : $"Headless load failed ({load.Outcome}) for {step.SourceUrl}.";
+                : $"Background load failed ({load.Outcome}) for {step.SourceUrl}.";
             return (load.Outcome.ToString(), 0, diagnostic);
         }
 

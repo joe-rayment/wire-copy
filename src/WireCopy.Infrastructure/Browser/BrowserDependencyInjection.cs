@@ -166,7 +166,7 @@ public static class BrowserDependencyInjection
         // workspace-frpl.11 (B8): opportunistic cookie freshness — a headless scheduled
         // load that renders a logged-in page refreshes cookies.json from the foreground
         // session so later runs stay authenticated. Previously the class existed but was
-        // unregistered; the HeadlessSectionLoadAdapter consumes it via IAutoCookieRefresher.
+        // unregistered; the UnattendedSectionLoadAdapter consumes it via IAutoCookieRefresher.
         services.AddSingleton<IAutoCookieRefresher>(sp => new AutoCookieRefresher(
             sp.GetRequiredService<IBrowserSession>(),
             sp.GetRequiredService<ICookieManager>(),

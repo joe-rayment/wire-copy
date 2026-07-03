@@ -12,13 +12,13 @@ using Xunit;
 namespace WireCopy.Tests.Scheduling;
 
 [Trait("Category", "Unit")]
-public class HeadlessSectionLoadAdapterTests
+public class UnattendedSectionLoadAdapterTests
 {
     private readonly IPreloadService _preload = Substitute.For<IPreloadService>();
     private readonly ILinkExtractor _extractor = Substitute.For<ILinkExtractor>();
     private readonly IHierarchyConfigStore _configStore = Substitute.For<IHierarchyConfigStore>();
 
-    private HeadlessSectionLoadAdapter NewAdapter() => new(_preload, _extractor, _configStore);
+    private UnattendedSectionLoadAdapter NewAdapter() => new(_preload, _extractor, _configStore);
 
     [Fact]
     public async Task OkLoad_ExtractsLinks_AndMatchesConfig_ViaTheRenderedPath()
@@ -72,7 +72,7 @@ public class HeadlessSectionLoadAdapterTests
     {
         // By construction it only takes IPreloadService + ILinkExtractor +
         // IHierarchyConfigStore — never NavigationService or IPageAccessQueue.
-        var paramTypes = typeof(HeadlessSectionLoadAdapter)
+        var paramTypes = typeof(UnattendedSectionLoadAdapter)
             .GetConstructors().Single().GetParameters().Select(p => p.ParameterType.Name).ToList();
         paramTypes.Should().NotContain(n => n.Contains("NavigationService", StringComparison.Ordinal));
         paramTypes.Should().NotContain(n => n.Contains("PageAccessQueue", StringComparison.Ordinal));

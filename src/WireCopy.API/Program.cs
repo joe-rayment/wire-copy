@@ -41,8 +41,9 @@ public class Program
             return await RunBrowseAsync(new BrowseOptions { Url = url });
         }
 
-        // workspace-frpl.18 (B14): headless section-resolution debug verb. Loads a URL
-        // via the same headless path scheduled runs use and prints the resolution
+        // workspace-frpl.18 (B14): unattended section-resolution debug verb (no TUI;
+        // the browser itself is headful as always). Loads a URL via the same
+        // unattended path scheduled runs use and prints the resolution
         // (status, match tier, items, sample link selectors) as JSON so the durability
         // gate can assert selector-tier resolution, render parity, and drift-skip.
         if (args.Length >= 1 && args[0].Equals("resolve-section", StringComparison.OrdinalIgnoreCase))
@@ -163,7 +164,7 @@ public class Program
         var configUrlPattern = args.Length > 3 ? args[3] : string.Empty;
 
         // Information level so the durability gate can grep the log for any stray
-        // analyzer invocation during a (config-cached) headless resolution.
+        // analyzer invocation during a (config-cached) unattended resolution.
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
@@ -184,7 +185,7 @@ public class Program
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
 
-            var loader = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IHeadlessSectionLoader>();
+            var loader = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IUnattendedSectionLoader>();
             var resolver = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.ISectionResolver>();
 
             var load = await loader.LoadLinksAndConfigAsync(url);
@@ -310,7 +311,7 @@ public class Program
             // No startup warmup: the browser is always headful (never-headless law), and a
             // headed warmup here would pop a visible Chrome window before the user navigates
             // anywhere. The browser launches lazily on first use instead (workspace-9k27.10 —
-            // this preserves the pre-cleanup behavior, where the old headless-only warmup gate
+            // this preserves the pre-cleanup behavior, where the old (always-false) warmup gate
             // never fired).
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")

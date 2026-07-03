@@ -99,9 +99,9 @@ public class SchedulerShutdownContractTests
                 Cadence.Daily(new TimeOnly(7, 0)),
                 new[] { RecipeStep.Create("https://x.example/", "x.example", "x", "Top", required: true) }));
 
-            var loader = Substitute.For<IHeadlessSectionLoader>();
+            var loader = Substitute.For<IUnattendedSectionLoader>();
             loader.LoadLinksAndConfigAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(new HeadlessSectionLoad
+                .Returns(new UnattendedSectionLoad
                 {
                     Outcome = LoadOutcome.Ok,
                     Links = new List<LinkInfo>
@@ -125,7 +125,7 @@ public class SchedulerShutdownContractTests
             services.AddSingleton<IScheduledRunRepository>(Runs);
             services.AddSingleton<IPodcastGenerationGate>(Gate);
             services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork());
-            services.AddSingleton<IHeadlessSectionLoader>(loader);
+            services.AddSingleton<IUnattendedSectionLoader>(loader);
             services.AddSingleton<ISectionResolver, SectionResolver>(); // REAL resolver
             services.AddSingleton(orchestrator);
             services.AddSingleton(jobManager);

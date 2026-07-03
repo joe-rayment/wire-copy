@@ -33,7 +33,7 @@ public class HeadlessCookieFreshnessTests
     private readonly IHierarchyConfigStore _configStore = Substitute.For<IHierarchyConfigStore>();
     private readonly IAutoCookieRefresher _refresher = Substitute.For<IAutoCookieRefresher>();
 
-    private HeadlessSectionLoadAdapter Adapter() => new(_preload, _extractor, _configStore, _refresher);
+    private UnattendedSectionLoadAdapter Adapter() => new(_preload, _extractor, _configStore, _refresher);
 
     [Fact]
     public async Task SuccessfulLoad_RefreshesCookies_WithLoadedHtmlAndFinalUrl()
@@ -69,7 +69,7 @@ public class HeadlessCookieFreshnessTests
         _extractor.ExtractLinksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new List<LinkInfo>());
 
-        var adapter = new HeadlessSectionLoadAdapter(_preload, _extractor, _configStore); // no refresher
+        var adapter = new UnattendedSectionLoadAdapter(_preload, _extractor, _configStore); // no refresher
 
         var result = await adapter.LoadLinksAndConfigAsync("https://x/");
 
@@ -82,9 +82,9 @@ public class HeadlessCookieFreshnessTests
         // A required step whose source is Blocked: the run fails the quality floor
         // (no silent empty episode) AND the recorded step outcome carries the human
         // "sign in to refresh your session" guidance for B11 to surface.
-        var loader = Substitute.For<IHeadlessSectionLoader>();
+        var loader = Substitute.For<IUnattendedSectionLoader>();
         loader.LoadLinksAndConfigAsync("https://www.nytimes.com/", Arg.Any<CancellationToken>())
-            .Returns(new HeadlessSectionLoad { Outcome = LoadOutcome.Blocked });
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Blocked });
 
         var orchestrator = Substitute.For<IPodcastOrchestrator>();
         var runRepo = Substitute.For<IScheduledRunRepository>();

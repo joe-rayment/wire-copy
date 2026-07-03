@@ -6,18 +6,19 @@ using WireCopy.Domain.ValueObjects.Browser;
 namespace WireCopy.Application.Interfaces.Scheduling;
 
 /// <summary>
-/// workspace-frpl.6 — headless "load a homepage → extracted links + its saved
+/// workspace-frpl.6 — unattended (no-TUI, still HEADFUL browser) "load a
+/// homepage → extracted links + its saved
 /// layout config" for the scheduler. Reuses the existing rendered-load path and
 /// the durable config store; does NOT touch NavigationService or the foreground
 /// page-access queue.
 /// </summary>
-public interface IHeadlessSectionLoader
+public interface IUnattendedSectionLoader
 {
-    Task<HeadlessSectionLoad> LoadLinksAndConfigAsync(string sourceUrl, CancellationToken cancellationToken = default);
+    Task<UnattendedSectionLoad> LoadLinksAndConfigAsync(string sourceUrl, CancellationToken cancellationToken = default);
 }
 
 /// <summary>The links + matched config a scheduled step needs, plus the load classification.</summary>
-public sealed record HeadlessSectionLoad
+public sealed record UnattendedSectionLoad
 {
     public required LoadOutcome Outcome { get; init; }
 
