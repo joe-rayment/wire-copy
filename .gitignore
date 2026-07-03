@@ -1,5 +1,8 @@
-# Beads issue tracker export (local-only)
-.beads/
+# Beads issue tracker: ignore the directory's CONTENTS (db/backups/runtime) but NOT the
+# directory itself, so the `!.beads/issues.jsonl` negation below can re-include the passive
+# export. A bare `.beads/` excludes the whole dir and git can't re-include a file whose parent
+# dir is excluded, which broke `bd`'s auto-export `git add .beads/issues.jsonl`.
+.beads/*
 
 # Workspace-local vendored .NET SDK (bootstrapped by ./scripts/bootstrap-dotnet.sh)
 /.dotnet
