@@ -116,14 +116,99 @@ internal static class KeybindingPopup
     }
 
     /// <summary>
+    /// workspace-syj1.4 — the ':' command-line reference shown by ':help', so typing
+    /// ':help' documents the colon commands rather than the keybinding popup ('?').
+    /// Verb, argument shape, one-line description.
+    /// </summary>
+    public static (string Key, string Description)[] GetCommandLineBindings()
+    {
+        return
+        [
+            (":open <url>", "open a URL (also :go, :o)"),
+            (":back / :forward", "history (also :b, :f)"),
+            (":home", "back to the launcher"),
+            (":add", "add a bookmark"),
+            (":rename <name>", "rename bookmark / collection"),
+            (":collections", "open reading list (also :readlater)"),
+            (":new <name>", "create a collection"),
+            (":export [format]", "export the open collection"),
+            (":podcast", "generate / restore a podcast"),
+            (":schedules", "recurring podcast schedules"),
+            (":settings", "podcast settings"),
+            (":config", "settings screen"),
+            (":set apikey|bucket|key", "set a credential/setting"),
+            (":clear apikey|bucket|key", "clear a credential/setting"),
+            (":cred", "site login credentials"),
+            (":cookies", "cookie import / status"),
+            (":cache [info|clear]", "page cache stats / clear"),
+            (":layout", "site layout chooser (Ctrl+L)"),
+            (":reanalyze", "fresh AI layout analysis"),
+            (":dump", "dump raw HTML to fixtures/"),
+            (":help", "this reference · ? key hints"),
+            (":q", "quit"),
+        ];
+    }
+
+    /// <summary>
     /// Renders the keybinding popup at the bottom of the terminal.
     /// Returns the number of lines used by the popup (for cursor restoration).
     /// </summary>
     public static int Render(ViewMode mode, ThemePalette palette, int terminalWidth, int terminalHeight)
-    {
-        var bindings = GetBindings(mode);
-        var title = StatusBarRenderer.GetModeLabel(mode);
+        => RenderCore(GetBindings(mode), StatusBarRenderer.GetModeLabel(mode), palette, terminalWidth, terminalHeight);
 
+    /// <summary>
+    /// workspace-syj1.4 — renders the ':' command reference popup (same chrome as the
+    /// keybinding popup, command-line content). Returns the number of lines used.
+    /// </summary>
+    public static int RenderCommandReference(ThemePalette palette, int terminalWidth, int terminalHeight)
+        => RenderCore(GetCommandLineBindings(), "Command line", palette, terminalWidth, terminalHeight);
+
+    /// <summary>
+    /// Measures the inner content width needed so the longest row
+    /// (key column + gap + description) and the top-border title both fit.
+    /// Clamped to a 30-column floor and the terminal width minus margins;
+    /// when the terminal is narrower than the content, descriptions are
+    /// truncated at render time rather than overflowing the border.
+    /// </summary>
+    internal static int ComputeInnerWidth(
+        (string Key, string Description)[] bindings, string title, int maxKeyWidth, int terminalWidth)
+    {
+        var needed = 0;
+        foreach (var (_, desc) in bindings)
+        {
+            needed = Math.Max(needed, maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(desc));
+        }
+
+        // Top border is ┌─<title padded><dashes>┐ spanning innerWidth + 2 between
+        // the corners; keep at least one trailing dash after the title.
+        needed = Math.Max(needed, RenderHelpers.GetDisplayWidth($" {title} ") + 1);
+
+        return Math.Clamp(needed, 30, Math.Max(30, terminalWidth - 4));
+    }
+
+    /// <summary>
+    /// Builds the visible (ANSI-free) content of each binding row, padded to
+    /// exactly <paramref name="innerWidth"/> columns. Descriptions that don't
+    /// fit are ellipsis-truncated so no row can exceed the border width.
+    /// </summary>
+    internal static (string KeyPadded, string Description, int Padding)[] BuildRows(
+        (string Key, string Description)[] bindings, int maxKeyWidth, int innerWidth)
+    {
+        var rows = new (string, string, int)[bindings.Length];
+        for (var i = 0; i < bindings.Length; i++)
+        {
+            var (key, desc) = bindings[i];
+            var keyPadded = key + new string(' ', Math.Max(0, maxKeyWidth + 1 - RenderHelpers.GetDisplayWidth(key)));
+            var fitted = RenderHelpers.TruncateText(desc, Math.Max(0, innerWidth - maxKeyWidth - 1));
+            var contentWidth = maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(fitted);
+            rows[i] = (keyPadded, fitted, Math.Max(0, innerWidth - contentWidth));
+        }
+
+        return rows;
+    }
+
+    private static int RenderCore((string Key, string Description)[] bindings, string title, ThemePalette palette, int terminalWidth, int terminalHeight)
+    {
         // Calculate popup dimensions
         var maxKeyWidth = 0;
         foreach (var (key, _) in bindings)
@@ -204,49 +289,5 @@ internal static class KeybindingPopup
         }
 
         return popupHeight + 1; // +1 for hint line
-    }
-
-    /// <summary>
-    /// Measures the inner content width needed so the longest row
-    /// (key column + gap + description) and the top-border title both fit.
-    /// Clamped to a 30-column floor and the terminal width minus margins;
-    /// when the terminal is narrower than the content, descriptions are
-    /// truncated at render time rather than overflowing the border.
-    /// </summary>
-    internal static int ComputeInnerWidth(
-        (string Key, string Description)[] bindings, string title, int maxKeyWidth, int terminalWidth)
-    {
-        var needed = 0;
-        foreach (var (_, desc) in bindings)
-        {
-            needed = Math.Max(needed, maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(desc));
-        }
-
-        // Top border is ┌─<title padded><dashes>┐ spanning innerWidth + 2 between
-        // the corners; keep at least one trailing dash after the title.
-        needed = Math.Max(needed, RenderHelpers.GetDisplayWidth($" {title} ") + 1);
-
-        return Math.Clamp(needed, 30, Math.Max(30, terminalWidth - 4));
-    }
-
-    /// <summary>
-    /// Builds the visible (ANSI-free) content of each binding row, padded to
-    /// exactly <paramref name="innerWidth"/> columns. Descriptions that don't
-    /// fit are ellipsis-truncated so no row can exceed the border width.
-    /// </summary>
-    internal static (string KeyPadded, string Description, int Padding)[] BuildRows(
-        (string Key, string Description)[] bindings, int maxKeyWidth, int innerWidth)
-    {
-        var rows = new (string, string, int)[bindings.Length];
-        for (var i = 0; i < bindings.Length; i++)
-        {
-            var (key, desc) = bindings[i];
-            var keyPadded = key + new string(' ', Math.Max(0, maxKeyWidth + 1 - RenderHelpers.GetDisplayWidth(key)));
-            var fitted = RenderHelpers.TruncateText(desc, Math.Max(0, innerWidth - maxKeyWidth - 1));
-            var contentWidth = maxKeyWidth + 1 + RenderHelpers.GetDisplayWidth(fitted);
-            rows[i] = (keyPadded, fitted, Math.Max(0, innerWidth - contentWidth));
-        }
-
-        return rows;
     }
 }
