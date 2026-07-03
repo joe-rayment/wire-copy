@@ -1384,7 +1384,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // off-screen), place flush, then re-place at the Chromium-CLAMPED width capped to a
             // phone-width fraction so it is never full-width or past the Dock. All the geometry
             // decisions are unit-tested cross-platform via the IDockWindowGeometry seam.
-            var geo = new CdpDockWindowGeometry(_page, cdp, windowId);
+            var geo = new CdpDockWindowGeometry(_page, cdp, windowId, _browserConfig.DockSettleDelayMs);
 
             // workspace-9k27.8: dock onto the display the TERMINAL occupies, not
             // the primary. Probe the terminal window's position via osascript on
@@ -1452,7 +1452,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // The sidecar is a companion view, not a focus target — hand keyboard focus back to
             // the terminal. Delay + FORCE so it wins the race against the BringToFront above
             // (which activated the browser window) — the workspace-75ng focus-steal fix.
-            await Task.Delay(180).ConfigureAwait(false);
+            await Task.Delay(_browserConfig.DockRefocusDelayMs).ConfigureAwait(false);
             await RefocusTerminalAsync(force: true).ConfigureAwait(false);
             return BrowserWindowState.Docked;
         }
@@ -1546,16 +1546,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// in <see cref="SidecarDocker"/>/<see cref="SidecarGeometry"/> so it is testable without a
     /// browser or a Mac; this class is just the thin I/O adapter.
     /// </summary>
-    private sealed class CdpDockWindowGeometry(IPage page, Microsoft.Playwright.ICDPSession cdp, int windowId)
+    private sealed class CdpDockWindowGeometry(IPage page, Microsoft.Playwright.ICDPSession cdp, int windowId, int settleDelayMs = 60)
         : IDockWindowGeometry
     {
+        private readonly int _settleDelayMs = settleDelayMs;
+
         public async Task NormalizeAsync() =>
             await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "normal" }).ConfigureAwait(false);
 
         public async Task MoveAsync(int left, int top) =>
             await SetBoundsRawAsync(new Dictionary<string, object> { ["left"] = left, ["top"] = top }).ConfigureAwait(false);
 
-        public Task SettleAsync() => Task.Delay(60);
+        public Task SettleAsync() => Task.Delay(_settleDelayMs);
 
         public async Task<SidecarGeometry.DisplayInfo?> ReadDisplayAsync()
         {

@@ -173,4 +173,55 @@ public class SelectorDerivationTests
         newsHeader.Children.Select(c => c.Link.Url)
             .Should().BeEquivalentTo(new[] { "https://x.com/news/b1", "https://x.com/news/b2" });
     }
+
+    // ---- workspace-9k27.5: volatile-pattern stripping hardening ----
+
+    [Theory]
+    [InlineData("div.item > .css-1x2y3z > a", "div.item > a")]
+    [InlineData("main .sc-bdVaJa strong", "main strong")]
+    [InlineData("div.jss123 > div.story", "div.story")]
+    [InlineData("section.svelte-1a2b3c a.headline", "section a.headline")]
+    public void StripVolatileIds_RemovesBuildHashClasses(string input, string expectedContains)
+    {
+        var stripped = SelectorDerivation.StripVolatileIds(input);
+
+        stripped.Should().NotContain(".css-").And.NotContain(".sc-")
+            .And.NotContain(".jss").And.NotContain(".svelte-");
+        foreach (var token in expectedContains.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (token is ">") { continue; }
+            stripped.Should().Contain(token.TrimStart('>').Trim());
+        }
+    }
+
+    [Theory]
+    [InlineData("div.headline > strong.L5")] // real durable class survives
+    [InlineData("div.topcol2 a")]            // digit-bearing but structural id-like class survives? topcol2 has 1 digit at end, len<5 hash body — keep
+    public void StripVolatileIds_KeepsDurableClasses(string selector)
+    {
+        SelectorDerivation.StripVolatileIds(selector).Should().Be(selector);
+    }
+
+    [Theory]
+    [InlineData("/chatgpt-atlas-review/", true)]   // 2 hyphens + slug-length body
+    [InlineData("/us-releases-powerful-anthropic-model/", true)] // 3+ hyphens
+    [InlineData("/opinion/", false)]
+    [InlineData("/top-stories/", false)]
+    [InlineData("/personal-finance/", false)]
+    public void IsVolatileUrlPattern_ClassifiesSlugsVsHubs(string pattern, bool volatile_)
+    {
+        SelectorDerivation.IsVolatileUrlPattern(pattern).Should().Be(volatile_);
+    }
+
+    [Fact]
+    public void MeaningfulPathSegments_DropsSlugSegments()
+    {
+        // workspace-9k27.5: the exclude fallback unions these — a headline slug
+        // must never become a durable exclude segment.
+        var segments = SelectorDerivation.MeaningfulPathSegments(
+            "https://x.com/news/2026/07/some-very-long-headline-slug-goes-here").ToList();
+
+        segments.Should().Contain("news");
+        segments.Should().NotContain(s => s.Contains("headline"));
+    }
 }

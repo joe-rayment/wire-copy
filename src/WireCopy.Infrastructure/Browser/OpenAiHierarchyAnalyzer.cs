@@ -1501,11 +1501,18 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        var excludeUrlPatterns = (parsed.ExcludeUrlPatterns ?? new())
-            .Concat(railExcludeUrlPatterns)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.Ordinal)
+        var excludeUrlPatterns = SelectorDerivation.StripVolatileUrlPatterns(
+            (parsed.ExcludeUrlPatterns ?? new())
+                .Concat(railExcludeUrlPatterns)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal))
             .ToList();
+
+        // workspace-9k27.5: excludes get the same volatility stripping as
+        // section url_patterns — a single-article slug exclude matches nothing
+        // on the next visit anyway, and the index-derived fallback below no
+        // longer unions headline-slug segments (MeaningfulPathSegments drops
+        // them), so one excluded hub link can't emit a page-wide '/news/' rule.
 
         // Fall back to deriving exclude identifiers from indices when the model
         // gave none.

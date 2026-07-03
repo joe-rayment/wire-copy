@@ -100,6 +100,28 @@ public class BrowserConfiguration
     public bool TileTerminalWithSidecar { get; init; }
 
     /// <summary>
+    /// workspace-9k27.17: X/Y the headed window is PARKED at when hidden. Far
+    /// negative so it clears any real multi-display arrangement while staying
+    /// windowState=normal (Chromium keeps painting it — instant re-dock).
+    /// Tunable because window managers differ: some Linux WMs clamp/refuse the
+    /// move, and Windows treats -32000 as the legacy minimize coordinate.
+    /// </summary>
+    public int ParkCoordinate { get; init; } = -32000;
+
+    /// <summary>
+    /// workspace-9k27.17: delay before the forced terminal refocus after a dock
+    /// (lets the browser's BringToFront settle first so the refocus wins).
+    /// Raise on a slow machine if focus lands on the browser after docking.
+    /// </summary>
+    public int DockRefocusDelayMs { get; init; } = 180;
+
+    /// <summary>
+    /// workspace-9k27.17: pause between work-area stability reads while the
+    /// just-anchored window re-associates with its display.
+    /// </summary>
+    public int DockSettleDelayMs { get; init; } = 60;
+
+    /// <summary>
     /// Browser-side input within this window means the user is ACTIVELY using the
     /// shared browser — prefetch pauses immediately (workspace-mya7).
     /// </summary>

@@ -36,6 +36,15 @@ internal static class SelectorDerivation
         @"#(?=[A-Za-z0-9_-]*\d[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+",
         RegexOptions.Compiled);
 
+    // workspace-9k27.5: CSS-in-JS / build-hash class fragments are regenerated
+    // on every site deploy — '.css-1x2y3z' (emotion), '.sc-bdVaJa' (styled
+    // components), '.jss123', '.svelte-1a2b3c' — so a selector that leans on
+    // one dies silently at the next deploy. Match the known library prefixes
+    // plus any class whose suffix is a digit-bearing 5+ char hash.
+    private static readonly Regex VolatileClassFragment = new(
+        @"\.(?:css|sc|svelte|emotion)-[A-Za-z0-9]+|\.jss\d+|\.[A-Za-z]+-(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{5,}",
+        RegexOptions.Compiled);
+
     /// <summary>
     /// workspace-romy.10: strips volatile (digit-bearing) id fragments from a
     /// selector so model-returned identifiers stay durable across visits. On
@@ -53,6 +62,10 @@ internal static class SelectorDerivation
         }
 
         var stripped = VolatileIdFragment.Replace(selector, string.Empty);
+
+        // workspace-9k27.5: build-hash classes die on the next deploy — strip
+        // them the same way (only ever broadens the selector).
+        stripped = VolatileClassFragment.Replace(stripped, string.Empty);
 
         // Drop compounds left empty (a bare '#260611p44' between combinators)
         // so we don't emit 'div.clus >  > div.ii'.
@@ -239,7 +252,7 @@ internal static class SelectorDerivation
         return uri.AbsolutePath
             .Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.ToLowerInvariant())
-            .Where(s => !IsNumeric(s));
+            .Where(s => !IsNumeric(s) && !IsVolatileSegment(s));
     }
 
     private static bool IsDiscriminating(string token) =>
@@ -251,9 +264,13 @@ internal static class SelectorDerivation
         segment.Length > 0 && segment.All(char.IsDigit);
 
     /// <summary>
-    /// workspace-q77e: a single path segment that reads as a headline slug
-    /// rather than a reusable hub — 3+ hyphens or longer than 28 characters.
+    /// workspace-q77e/9k27.5: a single path segment that reads as a headline
+    /// slug rather than a reusable hub — 3+ hyphens, longer than 28 chars, or
+    /// 2 hyphens with a slug-length body (>18 chars). Real hubs stay:
+    /// '/opinion/', '/top-stories/', '/personal-finance/'.
     /// </summary>
     private static bool IsVolatileSegment(string segment) =>
-        segment.Count(c => c == '-') >= 3 || segment.Length > 28;
+        segment.Count(c => c == '-') >= 3
+        || segment.Length > 28
+        || (segment.Count(c => c == '-') == 2 && segment.Length > 18);
 }
