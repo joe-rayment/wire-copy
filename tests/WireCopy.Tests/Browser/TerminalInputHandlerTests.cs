@@ -592,4 +592,39 @@ public class TerminalInputHandlerTests
     }
 
     #endregion
+
+    #region Pending count-prefix indicator (workspace-1m3h.1)
+
+    [Theory]
+    [InlineData(5, "5×")]
+    [InlineData(10, "10×")]
+    [InlineData(120, "120×")]
+    public void FormatPendingCount_ShowsCountWithRepeatMarker(int count, string expected)
+    {
+        TerminalInputHandler.FormatPendingCount(count).Should().Be(expected);
+    }
+
+    #endregion
+
+    #region Help text (workspace-5wzs)
+
+    [Fact]
+    public void GetHelpText_LinkTreeView_DocumentsSpaceAsSelectDeselect()
+    {
+        // workspace-5wzs: Space maps to ToggleSelection (save-selection toggle),
+        // never expand/collapse — the help text must match the actual binding.
+        var help = _sut.GetHelpText();
+
+        help.Should().NotContain("Toggle expand/collapse");
+        help.Should().Contain("Select / deselect item");
+    }
+
+    [Fact]
+    public void MapKeyInfo_Spacebar_ReturnsToggleSelection()
+    {
+        var result = _sut.MapKeyToCommand(ConsoleKey.Spacebar, 0);
+        result.Type.Should().Be(CommandType.ToggleSelection);
+    }
+
+    #endregion
 }

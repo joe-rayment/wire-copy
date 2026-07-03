@@ -41,7 +41,7 @@ different screens (the **Overloaded keys** section lists those).
 | Key | Action | |
 |-----|--------|--|
 | `Enter` | Follow the selected link | |
-| `Space` | Toggle expand/collapse · toggle multi-select | |
+| `Space` | Select / deselect the current item (multi-select) | |
 | `s` / `Shift+S` | Save selected to default list / to a chosen list | |
 | `A` | Save **all** visible links to a list | *(capital kept: in the `s`/`S` save family)* |
 | `g l` | Set up site layout (AI wizard) — also `:layout` | ⟳ *was `Ctrl+L`* |
@@ -149,7 +149,7 @@ Open with `:`. Available everywhere.
 | `c` | **Launcher** → Setup/settings · **elsewhere** → open Collections |
 | `d` | **Launcher** → delete bookmark · **list** → delete collection · **items** → remove item |
 | `h` / `l` | **tree** → collapse/expand · **reader** → narrow/widen width · **launcher** → grid left/right |
-| `Space` | **tree** → expand/select · **reader** → toggle speed-read · **wizard** → refine |
+| `Space` | **tree** → select/deselect · **reader** → toggle speed-read · **wizard** → refine |
 | `o` | **launcher** → URL bar · **tree** → open selected link · **reader** → open page in system browser |
 
 ---

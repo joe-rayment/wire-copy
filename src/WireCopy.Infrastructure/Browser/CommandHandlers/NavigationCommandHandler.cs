@@ -314,6 +314,13 @@ internal static class NavigationCommandHandler
             ctx.LineCacheManager.InvalidateLineCache();
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
+        else
+        {
+            // workspace-1em8: forward with nothing ahead previously did nothing
+            // at all — tell the user why the key had no effect.
+            ctx.NavigationService.SetStatusMessage("No forward history");
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
     }
 
     public static async Task HandleExpandNode(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -836,6 +843,16 @@ internal static class NavigationCommandHandler
             }
 
             ctx.NavigationService.SetReaderCursorLine(newCursor);
+        }
+
+        // workspace-1m3h.3: the cursor didn't move — we're at a document bound.
+        // Say so briefly instead of silently swallowing the keypress.
+        if (ctx.NavigationService.ReaderCursorLine == cursor)
+        {
+            ctx.NavigationService.Announce(
+                glyph: null,
+                delta > 0 ? "Bottom of article" : "Top of article",
+                ttl: TimeSpan.FromSeconds(1.5));
         }
 
         AdjustScrollForCursor(ctx, options);

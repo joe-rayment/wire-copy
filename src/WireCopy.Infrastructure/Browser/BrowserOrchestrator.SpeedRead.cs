@@ -119,15 +119,22 @@ public partial class BrowserOrchestrator
         var cursor = _navigationService.ReaderCursorLine;
         var totalLines = lines.Count;
 
+        // workspace-1m3h.4: the cache now ends with the end-of-article footer
+        // (— end — / stats lines). Speed reading must finish at the last CONTENT
+        // line rather than stepping through and "reading" the footer.
+        var contentEnd = _lineCacheManager.ContentLineCount > 0
+            ? Math.Min(_lineCacheManager.ContentLineCount, totalLines)
+            : totalLines;
+
         var newCursor = cursor + 1;
 
         // Skip blank lines
-        while (newCursor < totalLines && string.IsNullOrEmpty(lines[newCursor]))
+        while (newCursor < contentEnd && string.IsNullOrEmpty(lines[newCursor]))
         {
             newCursor++;
         }
 
-        if (newCursor >= totalLines)
+        if (newCursor >= contentEnd)
         {
             return false; // End of article
         }

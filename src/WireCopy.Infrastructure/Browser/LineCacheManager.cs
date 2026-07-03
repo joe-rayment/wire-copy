@@ -24,6 +24,7 @@ internal class LineCacheManager
     private List<string>? _cachedLines;
     private List<ParagraphSpan>? _paragraphSpans;
     private int _cachedWidth;
+    private int _contentLineCount;
 
     public LineCacheManager(NavigationService navigationService, IThemeProvider themeProvider)
     {
@@ -36,6 +37,14 @@ internal class LineCacheManager
     public IReadOnlyList<ParagraphSpan>? ParagraphSpans => _paragraphSpans;
 
     public int CachedWidth => _cachedWidth;
+
+    /// <summary>
+    /// workspace-1m3h.4: number of cached lines that are real article content
+    /// (headline + paragraphs), i.e. the index where the appended end-of-article
+    /// footer starts. Speed reading stops here instead of narrating the footer.
+    /// Zero when the cache is empty.
+    /// </summary>
+    public int ContentLineCount => _contentLineCount;
 
     /// <summary>
     /// Ensures the line cache is populated and matches the current content width.
@@ -69,6 +78,14 @@ internal class LineCacheManager
         }
 
         headlineLines.AddRange(contentLines);
+
+        // workspace-1m3h.4: append the end-of-article footer (— end — / stats)
+        // to the cache itself so it scrolls into view as real content on long
+        // articles, instead of only being painted when spare viewport rows
+        // happened to remain (which only short articles ever had).
+        _contentLineCount = headlineLines.Count;
+        headlineLines.AddRange(BuildEndOfArticleFooterLines(page.ReadableContent, contentWidth, palette));
+
         _cachedLines = headlineLines;
         _cachedWidth = contentWidth;
     }
@@ -81,6 +98,7 @@ internal class LineCacheManager
         _cachedLines = null;
         _paragraphSpans = null;
         _cachedWidth = 0;
+        _contentLineCount = 0;
     }
 
     /// <summary>
@@ -209,6 +227,39 @@ internal class LineCacheManager
     }
 
     /// <summary>
+    /// workspace-1m3h.4: builds the end-of-article footer lines (blank, centered
+    /// "— end —", centered "N min read · X words", blank) that are appended to
+    /// the line cache so they scroll into view like any other content. Centered
+    /// within the content column; the renderer's LeftMargin centers the column
+    /// itself in the terminal.
+    /// </summary>
+    internal static List<string> BuildEndOfArticleFooterLines(ReadableContent content, int maxWidth, ThemePalette palette)
+    {
+        const string reset = "\x1b[0m";
+
+        var wordCount = 0;
+        foreach (var para in content.Paragraphs)
+        {
+            wordCount += string.IsNullOrWhiteSpace(para)
+                ? 0
+                : para.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        }
+
+        var readTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 250.0));
+
+        var endMarker = "— end —";
+        var statsText = $"{readTimeMinutes} min read · {wordCount:N0} words";
+
+        return new List<string>(4)
+        {
+            string.Empty,
+            CenterLine(endMarker, maxWidth, palette.SecondaryText.AnsiFg, reset),
+            CenterLine(statsText, maxWidth, palette.GetMutedFg().AnsiFg, reset),
+            string.Empty,
+        };
+    }
+
+    /// <summary>
     /// Pre-wraps all paragraphs into a flat list of display lines for the reader view.
     /// </summary>
     internal static List<string> WrapAllContent(ReadableContent content, int maxWidth)
@@ -256,12 +307,20 @@ internal class LineCacheManager
     }
 
     /// <summary>
-    /// Pre-populates the cache for testing purposes.
+    /// Pre-populates the cache for testing purposes. All lines are treated as
+    /// content unless <paramref name="contentLineCount"/> marks a footer start.
     /// </summary>
-    internal void SetCacheForTesting(List<string> lines, int width)
+    internal void SetCacheForTesting(List<string> lines, int width, int contentLineCount = -1)
     {
         _cachedLines = lines;
         _cachedWidth = width;
+        _contentLineCount = contentLineCount >= 0 ? contentLineCount : lines.Count;
+    }
+
+    private static string CenterLine(string text, int maxWidth, string colorAnsi, string reset)
+    {
+        var pad = Math.Max(0, (maxWidth - text.Length) / 2);
+        return $"{new string(' ', pad)}{colorAnsi}{text}{reset}";
     }
 
     private int ComputeCharOffset(int lineIndex)
