@@ -22,6 +22,39 @@ public class OpenAiTtsIntegrationTests
         return new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
     }
 
+    // workspace-xott: env-gated (NOT [Fact(Skip)]) so it actually runs live when OPENAI_API_KEY is
+    // set (and passes trivially in CI without one). Confirms the instructions field now flows through
+    // the SDK's SpeechGenerationOptions.Instructions (2.12.0) instead of the removed raw-HTTP fallback,
+    // and still yields real audio.
+    [Fact]
+    public async Task GenerateAudioAsync_WithStyleInstructions_ProducesAudioViaSdk()
+    {
+        if (!HasApiKey)
+        {
+            return;
+        }
+
+        var config = Options.Create(new OpenAiTtsConfiguration
+        {
+            ApiKey = ApiKey!,
+            Model = "gpt-4o-mini-tts",
+            // "verse" is a voice added in SDK 2.12.0 that the old closed MapVoice switch would have
+            // silently coerced to Nova — using it here proves the verbatim-passthrough fix reaches
+            // the real API alongside the instructions path.
+            Voice = "verse",
+            Instructions = "Speak slowly, in a calm and measured tone.",
+            OutputFormat = "mp3",
+        });
+        var service = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
+
+        var result = await service.GenerateAudioAsync(
+            "This is a workspace xott instructions verification.", "xott");
+
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        result.AudioData.Should().NotBeNullOrEmpty();
+        result.CharactersProcessed.Should().BeGreaterThan(0);
+    }
+
     [Fact(Skip = "Requires OPENAI_API_KEY environment variable")]
     public void IsConfigured_WithApiKey_ReturnsTrue()
     {
