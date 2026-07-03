@@ -172,6 +172,14 @@ public partial class BrowserOrchestrator : IBrowserService
         _dockSpotlight = dockSpotlight;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
+        // workspace-9k27.7: browse-mode logs are file-only, so a macOS Automation/
+        // Accessibility failure must surface in the status bar (once) or the user
+        // just sees focus/tiling silently misbehave.
+        if (_browserSession is IBrowserSession sessionWithNotices)
+        {
+            sessionWithNotices.PermissionNoticeSink = message => _navigationService.SetStatusMessage(message);
+        }
+
         // workspace-mctt: the user navigated the lens themselves — offer to read it
         // here instead of yanking their page away. Shown on the next render tick.
         _dockSpotlight.LensDiverged += url =>
@@ -1300,8 +1308,14 @@ public partial class BrowserOrchestrator : IBrowserService
                         ttl: TimeSpan.FromSeconds(4));
                     break;
                 default:
+                    // workspace-2hfr: a null state with a summonable URL means a summon
+                    // was ATTEMPTED and failed — saying "open an article first" while the
+                    // user is already on one is misleading. Reserve that copy for the
+                    // genuinely-no-page case (launcher, skeleton, data:).
                     _navigationService.SetStatusMessage(
-                        "No live page to show beside the app yet — open an article first");
+                        BrowserDockCommandHandler.IsSummonableUrl(currentUrl)
+                            ? "Couldn't open the live page beside the app — press | to retry (details in logs/wirecopy-*.log)"
+                            : "No live page to show beside the app yet — open an article first");
                     break;
             }
         }
@@ -1395,6 +1409,14 @@ public partial class BrowserOrchestrator : IBrowserService
         {
             _sidecarUnavailable = true;
             _logger.LogInformation("Sidecar disabled for this session: no display (DISPLAY/WAYLAND_DISPLAY unset)");
+
+            // workspace-2hfr: say it once in the TUI — otherwise the sidecar just
+            // never appears and the user has no idea why. Re-render so the line is
+            // painted now (this branch runs after the post-navigation render, and
+            // it never runs again — _sidecarUnavailable short-circuits next time).
+            _navigationService.SetStatusMessage(
+                "Live page sidecar unavailable: no display detected (DISPLAY/WAYLAND_DISPLAY unset)");
+            await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1417,13 +1439,22 @@ public partial class BrowserOrchestrator : IBrowserService
         }
         else
         {
-            _navigationService.SetStatusMessage("Couldn't open the live page beside the app");
+            // workspace-2hfr: the cause is in the file log (SummonAndDockAsync logs the
+            // swallowed exception at Warning) — point there, and when this failure trips
+            // the auto-engage breaker, SAY SO instead of silently never docking again.
             if (++_sidecarSummonFailures >= MaxSidecarSummonFailures)
             {
                 _sidecarUnavailable = true;
                 _logger.LogWarning(
                     "Sidecar disabled for this session after {Count} failed summons",
                     _sidecarSummonFailures);
+                _navigationService.SetStatusMessage(
+                    "Couldn't open the live page beside the app — auto-open paused for this session (| retries, details in logs/wirecopy-*.log)");
+            }
+            else
+            {
+                _navigationService.SetStatusMessage(
+                    "Couldn't open the live page beside the app (details in logs/wirecopy-*.log)");
             }
         }
 

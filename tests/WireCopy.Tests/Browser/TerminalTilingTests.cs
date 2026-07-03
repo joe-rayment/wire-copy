@@ -48,6 +48,55 @@ public class TerminalTilingTests
             .Should().Contain("bundle identifier is \"weird\\\"id\\\\x\"");
         TerminalTiling.BuildSetBoundsScript("weird\"id\\x", default)
             .Should().Contain("bundle identifier is \"weird\\\"id\\\\x\"");
+        TerminalTiling.BuildRestoreMatchedWindowScript(
+                "weird\"id\\x", default, default, 8)
+            .Should().Contain("bundle identifier is \"weird\\\"id\\\\x\"");
+    }
+
+    // ---- workspace-9k27.6 (minor): the restore must target the window WE tiled, ----
+    // ---- never `window 1` (a multi-window terminal's frontmost may differ).     ----
+
+    [Fact]
+    public void BuildRestoreMatchedWindowScript_MatchesTheTiledWindow_NotWindow1()
+    {
+        var script = TerminalTiling.BuildRestoreMatchedWindowScript(
+            "com.mitchellh.ghostty",
+            expectedTile: new TerminalTiling.WindowRect(0, 25, 1000, 875),
+            restoreTo: new TerminalTiling.WindowRect(10, 20, 1600, 900),
+            tolerancePx: 8);
+
+        script.Should().NotContain("window 1", "the restore must never act on the frontmost window blindly");
+        script.Should().Contain("repeat with w in windows", "every window is checked against the tile");
+        script.Should().Contain("bundle identifier is \"com.mitchellh.ghostty\"");
+
+        // The match compares against the TILE we set…
+        script.Should().Contain("(0)").And.Contain("(25)").And.Contain("(1000)").And.Contain("(875)");
+        script.Should().Contain("<= 8", "the tolerance guards against WM nudges of a few px");
+
+        // …and the matched window is put back to the PRE-DOCK bounds, position before size.
+        script.Should().Contain("set position of w to {10, 20}");
+        script.Should().Contain("set size of w to {1600, 900}");
+        script.IndexOf("set position", StringComparison.Ordinal)
+            .Should().BeLessThan(script.IndexOf("set size", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildRestoreMatchedWindowScript_ReportsRestoredOrNoMatch()
+    {
+        var script = TerminalTiling.BuildRestoreMatchedWindowScript(
+            "com.apple.Terminal", default, default, 8);
+
+        // The caller decides logging (and whether the user's layout won) off these
+        // two verdicts, so the script must print exactly one of them.
+        script.Should().Contain("return \"" + TerminalTiling.RestoreResultRestored + "\"");
+        script.Should().Contain("return \"" + TerminalTiling.RestoreResultNoMatch + "\"");
+    }
+
+    [Fact]
+    public void BuildRestoreMatchedWindowScript_NegativeToleranceClampsToZero()
+    {
+        TerminalTiling.BuildRestoreMatchedWindowScript("com.apple.Terminal", default, default, -5)
+            .Should().Contain("<= 0", "a negative tolerance must not produce an always-false match");
     }
 
     [Theory]

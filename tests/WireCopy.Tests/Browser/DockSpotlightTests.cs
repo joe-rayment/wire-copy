@@ -183,6 +183,68 @@ public class DockSpotlightTests
     }
 
     [Fact]
+    public async Task MissHint_ReArmsAfterASuccessfulSync_OnTheSamePage()
+    {
+        // workspace-2hfr (minor 2): the not-found hint is throttled to once per page,
+        // but a SUCCESSFUL sync is a state change — the next genuine miss on the same
+        // page must be reported again, not silently swallowed by the stale throttle.
+        var session = Substitute.For<IBrowserSession>();
+        session.IsDocked.Returns(true);
+        session.HasActiveBrowser.Returns(true);
+
+        var page = Substitute.For<Microsoft.Playwright.IPage>();
+        page.Url.Returns("https://a/");
+        session.GetLensPageAsync().Returns(Task.FromResult<Microsoft.Playwright.IPage?>(page));
+
+        // Miss, then success, then miss again. (The rescue-expansion probes return
+        // NSubstitute's default null and therefore change nothing.)
+        var syncCalls = 0;
+        page.EvaluateAsync<string>(SpotlightScript.Sync, Arg.Any<object?>())
+            .Returns(_ => Interlocked.Increment(ref syncCalls) switch
+            {
+                2 => "ok",
+                _ => "not-found",
+            });
+
+        var hints = new List<string>();
+        await using var spotlight = CreateSpotlight(session);
+        spotlight.StatusMessageSink = message =>
+        {
+            lock (hints)
+            {
+                hints.Add(message);
+            }
+        };
+
+        spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/1", "one"));
+        await WaitForAsync(() =>
+        {
+            lock (hints)
+            {
+                return hints.Count == 1;
+            }
+        });
+
+        spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/2", "two"));
+        await WaitForAsync(() => Volatile.Read(ref syncCalls) >= 2);
+
+        spotlight.RequestSync(new SpotlightTarget("https://a/", "https://a/3", "three"));
+        await WaitForAsync(() =>
+        {
+            lock (hints)
+            {
+                return hints.Count == 2;
+            }
+        });
+
+        lock (hints)
+        {
+            hints.Should().HaveCount(2, "the success between the two misses re-arms the once-per-page throttle");
+            hints.Should().AllSatisfy(h => h.Should().Contain("isn't visible on the live page"));
+        }
+    }
+
+    [Fact]
     public async Task DisposeAsync_WithIdlePump_CompletesQuickly()
     {
         var session = Substitute.For<IBrowserSession>();

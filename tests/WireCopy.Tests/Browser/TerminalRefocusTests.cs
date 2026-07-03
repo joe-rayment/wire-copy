@@ -128,4 +128,78 @@ public class TerminalRefocusTests
             .Should().Contain("frontmost is true")
             .And.Contain("bundle identifier");
     }
+
+    // ---- workspace-9k27.7: refocus debounce — skipped calls must never extend the ----
+    // ---- window (the old Exchange-before-check starved non-forced refocus).       ----
+
+    private const long WindowTicks = 500 * TimeSpan.TicksPerMillisecond;
+
+    [Fact]
+    public void TryClaimRefocusSlot_FirstClaim_Proceeds_AndStampsTheSlot()
+    {
+        long slot = 0;
+        var t0 = TimeSpan.TicksPerDay; // any non-zero "now"
+
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks).Should().BeTrue();
+        slot.Should().Be(t0, "a successful claim stamps the timestamp");
+    }
+
+    [Fact]
+    public void TryClaimRefocusSlot_WithinWindow_Skips_WithoutTouchingTheSlot()
+    {
+        long slot = 0;
+        var t0 = TimeSpan.TicksPerDay;
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks);
+
+        var t1 = t0 + (400 * TimeSpan.TicksPerMillisecond);
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t1, force: false, WindowTicks)
+            .Should().BeFalse("400ms < the 500ms window");
+        slot.Should().Be(t0, "a SKIPPED call must not extend the window — the starvation bug");
+    }
+
+    [Fact]
+    public void TryClaimRefocusSlot_BurstOfSkippedCalls_CannotStarveALaterClaim()
+    {
+        long slot = 0;
+        var t0 = TimeSpan.TicksPerDay;
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks);
+
+        // A burst of calls inside the window, each of which the OLD code would have
+        // stamped — pushing the window endlessly forward.
+        for (var ms = 100; ms <= 400; ms += 100)
+        {
+            TerminalRefocus.TryClaimRefocusSlot(
+                    ref slot, t0 + (ms * TimeSpan.TicksPerMillisecond), force: false, WindowTicks)
+                .Should().BeFalse();
+        }
+
+        // 600ms after the LAST SUCCESSFUL claim the slot must open again.
+        TerminalRefocus.TryClaimRefocusSlot(
+                ref slot, t0 + (600 * TimeSpan.TicksPerMillisecond), force: false, WindowTicks)
+            .Should().BeTrue("the burst of skipped calls never restarted the window");
+    }
+
+    [Fact]
+    public void TryClaimRefocusSlot_Forced_AlwaysProceeds_AndStamps()
+    {
+        long slot = 0;
+        var t0 = TimeSpan.TicksPerDay;
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks);
+
+        var t1 = t0 + (50 * TimeSpan.TicksPerMillisecond);
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t1, force: true, WindowTicks)
+            .Should().BeTrue("the dock path's final refocus must win even inside the window");
+        slot.Should().Be(t1, "a forced claim re-stamps so followers debounce against IT");
+    }
+
+    [Fact]
+    public void TryClaimRefocusSlot_TwoClaimsAtTheSameInstant_OnlyOneWins()
+    {
+        long slot = 0;
+        var t0 = TimeSpan.TicksPerDay;
+
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks).Should().BeTrue();
+        TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks)
+            .Should().BeFalse("the second caller sees the first one's stamp");
+    }
 }

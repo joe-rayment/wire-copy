@@ -22,6 +22,12 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 internal static class TerminalTiling
 {
+    /// <summary>Stdout of <see cref="BuildRestoreMatchedWindowScript"/> when a window was restored.</summary>
+    internal const string RestoreResultRestored = "restored";
+
+    /// <summary>Stdout of <see cref="BuildRestoreMatchedWindowScript"/> when no window matched the tile.</summary>
+    internal const string RestoreResultNoMatch = "no-match";
+
     /// <summary>
     /// osascript that prints the front window's position and size for the process with the
     /// given bundle id, as "x, y, w, h". Used to capture the terminal's bounds before tiling
@@ -48,6 +54,48 @@ internal static class TerminalTiling
             + id + "\")\n"
             + "set position of window 1 to {" + x + ", " + y + "}\n"
             + "set size of window 1 to {" + w + ", " + h + "}\n"
+            + "end tell";
+    }
+
+    /// <summary>
+    /// osascript that finds the terminal window still sitting ON the tile we set (within
+    /// <paramref name="tolerancePx"/>) and restores THAT window to <paramref name="restoreTo"/>,
+    /// printing <see cref="RestoreResultRestored"/> or <see cref="RestoreResultNoMatch"/>.
+    ///
+    /// <para>
+    /// workspace-9k27.6 (minor): the plain set-bounds script acts on <c>window 1</c> — the
+    /// terminal app's FRONTMOST window at restore time, which in a multi-window terminal may
+    /// not be the window we tiled. Matching by the tiled bounds targets the right window and
+    /// doubles as the "user rearranged it" check: a moved/resized window matches nothing, so
+    /// the user's layout is never clobbered.
+    /// </para>
+    /// </summary>
+    internal static string BuildRestoreMatchedWindowScript(
+        string bundleId, WindowRect expectedTile, WindowRect restoreTo, int tolerancePx)
+    {
+        var id = EscapeForAppleScript(bundleId);
+        var inv = CultureInfo.InvariantCulture;
+        var tol = Math.Max(0, tolerancePx).ToString(inv);
+        return
+            "tell application \"System Events\" to tell (first process whose bundle identifier is \"" + id + "\")\n"
+            + "repeat with w in windows\n"
+            + "set {wx, wy} to position of w\n"
+            + "set {ww, wh} to size of w\n"
+            + "set dx to wx - (" + expectedTile.X.ToString(inv) + ")\n"
+            + "if dx < 0 then set dx to -dx\n"
+            + "set dy to wy - (" + expectedTile.Y.ToString(inv) + ")\n"
+            + "if dy < 0 then set dy to -dy\n"
+            + "set dw to ww - (" + expectedTile.Width.ToString(inv) + ")\n"
+            + "if dw < 0 then set dw to -dw\n"
+            + "set dh to wh - (" + expectedTile.Height.ToString(inv) + ")\n"
+            + "if dh < 0 then set dh to -dh\n"
+            + "if dx <= " + tol + " and dy <= " + tol + " and dw <= " + tol + " and dh <= " + tol + " then\n"
+            + "set position of w to {" + restoreTo.X.ToString(inv) + ", " + restoreTo.Y.ToString(inv) + "}\n"
+            + "set size of w to {" + restoreTo.Width.ToString(inv) + ", " + restoreTo.Height.ToString(inv) + "}\n"
+            + "return \"" + RestoreResultRestored + "\"\n"
+            + "end if\n"
+            + "end repeat\n"
+            + "return \"" + RestoreResultNoMatch + "\"\n"
             + "end tell";
     }
 

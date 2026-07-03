@@ -65,6 +65,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // the user has since rearranged the terminal (their layout then wins).
     private TerminalTiling.WindowRect? _lastTerminalTileRect;
 
+    // workspace-9k27.7: one-shot latch for the user-visible macOS permission notice
+    // (0 = not shown). Browse-mode logs are file-only, so an osascript Automation/
+    // Accessibility failure logged at Warning is invisible in the TUI without this.
+    private int _permissionNoticeShown;
+
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
@@ -113,6 +118,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     /// <inheritdoc />
     public bool WantsSidecar => !_disposed && _userWantsDock;
+
+    /// <inheritdoc />
+    public Action<string>? PermissionNoticeSink { get; set; }
 
     /// <inheritdoc />
     public async Task<DateTimeOffset?> ReadLastUserInputAsync()
@@ -429,7 +437,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "SummonAndDockAsync failed for {Url} (non-fatal)", url);
+            // workspace-2hfr: Warning, not Debug — this is the exception behind the
+            // user-facing "Couldn't open the live page beside the app" line, and the
+            // file log is the only place the actual cause can be diagnosed from.
+            _logger.LogWarning(ex, "SummonAndDockAsync failed for {Url}", url);
             return null;
         }
     }
@@ -798,6 +809,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 + "Falling back to the TERM_PROGRAM name map.",
                 result.Value.ExitCode,
                 result.Value.StdErr.Trim());
+            NotifyPermissionIssueOnce();
             return;
         }
 
@@ -825,17 +837,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // Debounce: skip if another refocus happened within the last 500ms — UNLESS forced.
         // The dock path forces a final refocus AFTER bringing the browser to front, so it must
         // win even if a park/dock refocus fired moments earlier (workspace-75ng focus-steal).
-        // workspace-9k27.7: only stamp the timestamp when we actually PROCEED — the old
-        // Exchange-before-check meant a burst of skipped calls kept extending the window
-        // and could starve non-forced refocus indefinitely.
-        var now = DateTime.UtcNow.Ticks;
-        var previous = Interlocked.Read(ref _lastRefocusTicks);
-        if (!force && TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
+        // workspace-9k27.7: the timestamp is only stamped when a claim actually PROCEEDS —
+        // the old Exchange-before-check meant a burst of skipped calls kept extending the
+        // window and could starve non-forced refocus indefinitely. Claimed via
+        // CompareExchange so two racing callers can't both take the same slot.
+        if (!TerminalRefocus.TryClaimRefocusSlot(
+                ref _lastRefocusTicks,
+                DateTime.UtcNow.Ticks,
+                force,
+                TimeSpan.FromMilliseconds(500).Ticks))
         {
             return;
         }
-
-        Interlocked.Exchange(ref _lastRefocusTicks, now);
 
         // Re-activate the EXACT terminal captured at startup (by bundle id), falling back to
         // the TERM_PROGRAM name map. Null when neither is known — we deliberately do NOT guess
@@ -862,12 +875,44 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy & Security → Automation permissions.",
                 result.Value.ExitCode,
                 result.Value.StdErr.Trim());
+            NotifyPermissionIssueOnce();
             return;
         }
 
         _logger.LogDebug(
             "Refocused terminal via {Target}",
             _terminalBundleId is not null ? $"bundle id {_terminalBundleId}" : $"TERM_PROGRAM={termProgram}");
+    }
+
+    /// <summary>
+    /// workspace-9k27.7: surfaces ONE user-visible status line the first time an osascript
+    /// call fails for permission-ish reasons. Every failure path already logs a Warning, but
+    /// browse mode logs to file only, so without this the user just experiences "focus keeps
+    /// landing on the wrong app" / "my terminal never resizes" with no visible explanation.
+    /// The latch is only consumed when a sink is actually wired (the notice must not be
+    /// swallowed by an early failure that happens before the orchestrator attaches the sink).
+    /// </summary>
+    private void NotifyPermissionIssueOnce()
+    {
+        if (PermissionNoticeSink is not { } sink)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _permissionNoticeShown, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            sink("macOS automation blocked — focus return/window tiling degraded. "
+                + "Grant access: System Settings → Privacy & Security → Automation + Accessibility");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Permission notice sink threw (non-fatal)");
+        }
     }
 
     /// <summary>
@@ -908,6 +953,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             _logger.LogWarning(
                 ex,
                 "osascript invocation failed — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
+            NotifyPermissionIssueOnce();
             return null;
         }
     }
@@ -1282,6 +1328,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 _logger.LogWarning(
                     "Could not read the terminal window bounds for side-by-side tiling — skipping the resize. "
                     + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.");
+                NotifyPermissionIssueOnce();
                 return;
             }
         }
@@ -1295,6 +1342,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.",
                 setResult.Value.ExitCode,
                 setResult.Value.StdErr.Trim());
+            NotifyPermissionIssueOnce();
         }
         else
         {
@@ -1316,36 +1364,38 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         var rect = _terminalTileBounds.Value;
         _terminalTileBounds = null;
-
-        // workspace-9k27.6: if the user moved/resized the terminal while docked,
-        // their arrangement wins — restoring stale pre-dock bounds would clobber
-        // it. Only put the window back when it still sits where WE tiled it.
-        if (_lastTerminalTileRect is { } tiled)
-        {
-            var getResult = await RunOsascriptAsync(
-                TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
-            var current = getResult is { ExitCode: 0 } ? TerminalTiling.TryParseBounds(getResult.Value.StdOut) : null;
-            if (current is { } cur && !TerminalTileRecovery.ShouldRestore(
-                    cur,
-                    new TerminalTileRecovery.TileRecord(_terminalBundleId, 0, 0, 0, 0, tiled.X, tiled.Y, tiled.Width, tiled.Height)))
-            {
-                _logger.LogInformation("Terminal was rearranged while docked — keeping the user's layout instead of restoring pre-dock bounds");
-                _lastTerminalTileRect = null;
-                TerminalTileRecovery.Clear(_logger);
-                return;
-            }
-        }
-
+        var tiled = _lastTerminalTileRect;
         _lastTerminalTileRect = null;
 
-        var result = await RunOsascriptAsync(
-            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, rect)).ConfigureAwait(false);
-        if (result is { ExitCode: not 0 })
+        // The tile set-bounds never succeeded — the terminal was never actually
+        // resized, so "restoring" now would clobber a window we never touched.
+        if (tiled is null)
+        {
+            TerminalTileRecovery.Clear(_logger);
+            return;
+        }
+
+        // workspace-9k27.6: the restore script finds the window still sitting ON
+        // the tile WE set and restores exactly that one — never `window 1`, which
+        // in a multi-window terminal may be a different window, and never a window
+        // the user has since moved/resized (their arrangement wins; no match = no-op).
+        var result = await RunOsascriptAsync(TerminalTiling.BuildRestoreMatchedWindowScript(
+            _terminalBundleId, tiled.Value, rect, TerminalTileRecovery.MatchTolerancePx)).ConfigureAwait(false);
+        if (result is { ExitCode: 0 } r)
+        {
+            if (r.StdOut.Trim() == TerminalTiling.RestoreResultNoMatch)
+            {
+                _logger.LogInformation(
+                    "Terminal was rearranged while docked — keeping the user's layout instead of restoring pre-dock bounds");
+            }
+        }
+        else if (result is { ExitCode: not 0 })
         {
             _logger.LogWarning(
                 "Failed to restore the terminal window after un-tiling (osascript exit {ExitCode}): {Error}",
                 result.Value.ExitCode,
                 result.Value.StdErr.Trim());
+            NotifyPermissionIssueOnce();
         }
 
         // Restored (or attempted) — the crash-recovery record is no longer needed.

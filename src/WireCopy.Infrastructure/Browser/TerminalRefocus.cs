@@ -110,6 +110,38 @@ internal static class TerminalRefocus
             && !trimmed.Any(char.IsWhiteSpace);
     }
 
+    /// <summary>
+    /// Atomically claims the refocus debounce slot (workspace-9k27.7). A forced claim
+    /// always wins and stamps the timestamp. A non-forced claim only proceeds when the
+    /// window has elapsed AND it wins the CompareExchange — crucially, a SKIPPED call
+    /// never writes the timestamp, so a burst of skipped calls cannot keep extending
+    /// the window and starve non-forced refocus forever (the old Exchange-before-check
+    /// bug). Pure state-machine over a caller-owned ticks field: unit-testable.
+    /// </summary>
+    /// <param name="lastClaimTicks">Caller-owned field holding the last successful claim's ticks.</param>
+    /// <param name="nowTicks">Current time in ticks.</param>
+    /// <param name="force">True to bypass the debounce window entirely.</param>
+    /// <param name="windowTicks">Debounce window length in ticks.</param>
+    /// <returns>True when the caller should perform the refocus.</returns>
+    internal static bool TryClaimRefocusSlot(ref long lastClaimTicks, long nowTicks, bool force, long windowTicks)
+    {
+        if (force)
+        {
+            Interlocked.Exchange(ref lastClaimTicks, nowTicks);
+            return true;
+        }
+
+        var previous = Interlocked.Read(ref lastClaimTicks);
+        if (nowTicks - previous < windowTicks)
+        {
+            return false; // skipped — deliberately does NOT touch the timestamp
+        }
+
+        // CompareExchange so two racing callers can't both claim the same slot: the
+        // loser sees a changed value and skips (its rival is already refocusing).
+        return Interlocked.CompareExchange(ref lastClaimTicks, nowTicks, previous) == previous;
+    }
+
     private static string EscapeForAppleScript(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
              .Replace("\"", "\\\"", StringComparison.Ordinal);
