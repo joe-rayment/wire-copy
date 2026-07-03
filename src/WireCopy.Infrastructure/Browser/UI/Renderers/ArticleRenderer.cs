@@ -1,6 +1,5 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
-using System.Text;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Browser;
@@ -89,17 +88,10 @@ internal class ArticleRenderer
             }
         }
 
+        // workspace-1m3h.4: the end-of-article footer is part of the cached
+        // line list itself (LineCacheManager.BuildEndOfArticleFooterLines), so
+        // it scrolls into view as real content — no viewport-spare-row paint.
         var linesRendered = endLine - startLine;
-        var atEndOfArticle = endLine >= allLines.Count;
-
-        if (atEndOfArticle && linesRendered + 4 <= viewportHeight)
-        {
-            var width = Math.Max(1, options.TerminalWidth - 2);
-            var wordCount = EstimateWordCount(allLines);
-            var readTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 250.0));
-            RenderEndOfArticleFooter(p, width, wordCount, readTimeMinutes);
-            linesRendered += 4;
-        }
 
         for (var i = linesRendered; i < viewportHeight; i++)
         {
@@ -154,56 +146,6 @@ internal class ArticleRenderer
             var readTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 250.0));
             RenderEndOfArticleFooter(p, width, wordCount, readTimeMinutes);
         }
-    }
-
-    private static int EstimateWordCount(List<string> lines)
-    {
-        var count = 0;
-        foreach (var line in lines)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
-
-            // Strip ANSI escape sequences before counting words
-            var clean = StripAnsi(line).Trim();
-            if (clean.Length > 0)
-            {
-                count += clean.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-            }
-        }
-
-        return count;
-    }
-
-    private static string StripAnsi(string input)
-    {
-        var sb = new StringBuilder(input.Length);
-        var i = 0;
-        while (i < input.Length)
-        {
-            if (input[i] == '\x1b' && i + 1 < input.Length && input[i + 1] == '[')
-            {
-                i += 2;
-                while (i < input.Length && input[i] != 'm')
-                {
-                    i++;
-                }
-
-                if (i < input.Length)
-                {
-                    i++; // skip 'm'
-                }
-            }
-            else
-            {
-                sb.Append(input[i]);
-                i++;
-            }
-        }
-
-        return sb.ToString();
     }
 
     private void RenderEndOfArticleFooter(ThemePalette p, int width, int wordCount, int readTimeMinutes)

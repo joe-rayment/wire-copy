@@ -550,6 +550,13 @@ public partial class BrowserOrchestrator : IBrowserService
                     {
                         // Reached end of article
                         _navigationService.StopSpeedRead();
+
+                        // workspace-eh1l.3: say WHY the ▶WPM badge vanished —
+                        // a silent auto-stop read as a glitch. Short TTL.
+                        _navigationService.Announce(
+                            "✓",
+                            "Finished reading",
+                            ttl: TimeSpan.FromSeconds(2.5));
                     }
 
                     await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
@@ -577,6 +584,17 @@ public partial class BrowserOrchestrator : IBrowserService
                     {
                         _navigationService.StopSpeedRead();
                         speedReadDelay = null;
+
+                        // workspace-eh1l.1: the keypress is consumed to stop the
+                        // auto-advance — announce that instead of silently eating
+                        // it. Deliberately NOT re-dispatched as a fresh command:
+                        // Space maps to the speed-read toggle in Readable (it
+                        // would restart what it just stopped) and keys like 'q'
+                        // shouldn't quit from a stop-reading reflex press.
+                        _navigationService.Announce(
+                            "⏸",
+                            "Speed reading stopped",
+                            ttl: TimeSpan.FromSeconds(2));
                         await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                         continue; // Consume the keypress
                     }

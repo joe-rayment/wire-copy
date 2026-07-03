@@ -23,6 +23,7 @@ public class TerminalInputHandler : IInputHandler
     private readonly TerminalAnimationController _animationController;
     private bool _waitingForSecondKey; // For 'gg' command
     private int _numericPrefix; // For count-prefixed motions (e.g., 10j)
+    private int _pendingCountPaintedWidth; // Visible width of the painted count indicator (0 = none)
     private bool _keyReaderStarted;
     private Task<ConsoleKeyInfo>? _pendingKeyTask;
     private Task<bool>? _pendingResizeTask;
@@ -81,7 +82,7 @@ public class TerminalInputHandler : IInputHandler
  Link Tree View
    h / ←           Collapse group
    l / →           Expand group
-   Space           Toggle expand/collapse
+   Space           Select / deselect item
 
  Reader View
    h / ← / -       Narrow width
@@ -553,6 +554,7 @@ public class TerminalInputHandler : IInputHandler
                 _waitingForSecondKey = false;
                 var count = _numericPrefix;
                 _numericPrefix = 0;
+                ClearPendingCountIndicator();
                 return new NavigationCommand { Type = CommandType.GoToTop, Count = count };
             }
 
@@ -563,6 +565,7 @@ public class TerminalInputHandler : IInputHandler
             {
                 _waitingForSecondKey = false;
                 _numericPrefix = 0;
+                ClearPendingCountIndicator();
                 return new NavigationCommand { Type = CommandType.ChooseLayout };
             }
 
@@ -574,6 +577,7 @@ public class TerminalInputHandler : IInputHandler
                 // vim/Helix behavior for a mistyped goto chord.
                 _waitingForSecondKey = false;
                 _numericPrefix = 0;
+                ClearPendingCountIndicator();
                 continue;
             }
 
@@ -597,12 +601,14 @@ public class TerminalInputHandler : IInputHandler
             if (keyInfo.KeyChar >= '1' && keyInfo.KeyChar <= '9' && !_waitingForSecondKey)
             {
                 _numericPrefix = (_numericPrefix * 10) + (keyInfo.KeyChar - '0');
+                ShowPendingCountIndicator();
                 continue;
             }
 
             if (keyInfo.KeyChar == '0' && _numericPrefix > 0)
             {
                 _numericPrefix = _numericPrefix * 10;
+                ShowPendingCountIndicator();
                 continue;
             }
 
@@ -615,6 +621,11 @@ public class TerminalInputHandler : IInputHandler
 
             var count2 = _numericPrefix;
             _numericPrefix = 0;
+            if (count2 > 0)
+            {
+                // The motion key resolved (or dropped) the pending count.
+                ClearPendingCountIndicator();
+            }
 
             var command = MapKeyInfoToCommand(keyInfo);
             if (keyInfo.KeyChar >= 32)
@@ -638,7 +649,74 @@ public class TerminalInputHandler : IInputHandler
         return new NavigationCommand { Type = CommandType.Quit };
     }
 
+    /// <summary>
+    /// workspace-1m3h.1: paints the pending count-prefix (e.g. "10×") at the
+    /// bottom-right of the terminal, vim-style, so typing "10" before "j" gives
+    /// visible feedback instead of appearing to swallow keys. Cleared when the
+    /// motion key resolves or the prefix is dropped; any full re-render also
+    /// paints over it, which is fine — the indicator is transient by design.
+    /// </summary>
+    private void ShowPendingCountIndicator()
+    {
+        if (!IsInteractive)
+        {
+            return;
+        }
+
+        try
+        {
+            var text = FormatPendingCount(_numericPrefix);
+            var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+            var row = Math.Max(0, Console.WindowHeight - 1);
+            var col = Math.Max(0, Console.WindowWidth - text.Length - 1);
+            Console.SetCursorPosition(col, row);
+            Console.Write($"{palette.GetAccentFg().AnsiFg}{text}\x1b[0m");
+            _pendingCountPaintedWidth = text.Length;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentOutOfRangeException or InvalidOperationException or PlatformNotSupportedException)
+        {
+            // No addressable console (redirected output, dumb terminal) —
+            // the count still applies, it just isn't echoed.
+        }
+    }
+
+    /// <summary>
+    /// Erases the painted count indicator (spaces over the same cells).
+    /// The next full render repaints the status bar over this region anyway.
+    /// </summary>
+    private void ClearPendingCountIndicator()
+    {
+        if (_pendingCountPaintedWidth == 0 || !IsInteractive)
+        {
+            return;
+        }
+
+        try
+        {
+            var row = Math.Max(0, Console.WindowHeight - 1);
+            var col = Math.Max(0, Console.WindowWidth - _pendingCountPaintedWidth - 1);
+            Console.SetCursorPosition(col, row);
+            Console.Write(new string(' ', _pendingCountPaintedWidth));
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentOutOfRangeException or InvalidOperationException or PlatformNotSupportedException)
+        {
+            // Console went away between paint and clear — nothing to erase.
+        }
+        finally
+        {
+            _pendingCountPaintedWidth = 0;
+        }
+    }
+
 #pragma warning disable SA1204 // Static members grouped with related non-static key mapping methods
+#pragma warning disable SA1202 // Internal test-visible helper placed near its private caller
+    /// <summary>
+    /// workspace-1m3h.1: display text for the pending count-prefix indicator
+    /// ("10×" — the × marks it as a repeat count awaiting its motion key).
+    /// </summary>
+    internal static string FormatPendingCount(int count) => $"{count}×";
+#pragma warning restore SA1202
+
     private static NavigationCommand MapKeyInfoToCommand(ConsoleKeyInfo keyInfo)
     {
         return keyInfo.KeyChar switch

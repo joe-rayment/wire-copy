@@ -28,7 +28,10 @@ internal static class KeybindingPopup
             ViewMode.Hierarchical =>
             [
                 ("Enter", "open link"),
-                ("Space", "toggle expand/collapse"),
+
+                // workspace-5wzs: Space maps to ToggleSelection (select/deselect
+                // the current link), never expand/collapse (h/l do that).
+                ("Space", "select / deselect item"),
                 ("s", "save to reading list"),
                 ("A", "save all links"),
                 ("j / k", "down / up"),
@@ -61,6 +64,7 @@ internal static class KeybindingPopup
                 ("j / k", "scroll down / up"),
                 ("Ctrl+D / Ctrl+U", "page down / up"),
                 ("f", "speed read on/off"),
+                ("Space", "speed read on/off"),
                 ("< / >", "slower / faster WPM"),
                 ("v", "switch to link view"),
                 ("r / t", "reader / tree view"),

@@ -49,6 +49,29 @@ public class KeybindingPopupTests
     }
 
     [Fact]
+    public void GetBindings_Hierarchical_DocumentsSpaceAsSelectDeselect()
+    {
+        // workspace-5wzs: Space maps to ToggleSelection in the link tree —
+        // the popup must not claim it expands/collapses groups.
+        var bindings = KeybindingPopup.GetBindings(ViewMode.Hierarchical);
+
+        bindings.Should().Contain(b => b.Key == "Space" && b.Description.Contains("select / deselect"));
+        bindings.Should().NotContain(b => b.Key == "Space" && b.Description.Contains("expand"));
+    }
+
+    [Fact]
+    public void GetBindings_Readable_DocumentsSpaceAsSpeedReadToggle()
+    {
+        // workspace-eh1l.2: Space already toggles speed reading in Readable view
+        // (BrowserOrchestrator routes ToggleSelection → speed-read toggle there)
+        // but the popup never said so.
+        var bindings = KeybindingPopup.GetBindings(ViewMode.Readable);
+
+        bindings.Should().Contain(b => b.Key == "Space" && b.Description.Contains("speed read"),
+            "the Readable popup must document Space = speed read on/off");
+    }
+
+    [Fact]
     public void GetBindings_CollectionList_DocumentsSetDefaultOverloadOfS()
     {
         // workspace-yejq.3: `s` in the Collections list sets the default

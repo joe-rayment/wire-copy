@@ -290,6 +290,86 @@ public class NavigationCommandHandlerScrollTests
 
     #endregion
 
+    #region Document bound announcements (workspace-1m3h.3)
+
+    [Fact]
+    public async Task HandleMoveDown_Readable_AtLastLine_AnnouncesBottomOfArticle()
+    {
+        _navigationService.SetReaderCursorLine(49); // last of 50 lines
+
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
+
+        _navigationService.ReaderCursorLine.Should().Be(49);
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Bottom of article");
+    }
+
+    [Fact]
+    public async Task HandleMoveUp_Readable_AtFirstLine_AnnouncesTopOfArticle()
+    {
+        _navigationService.SetReaderCursorLine(0);
+
+        await NavigationCommandHandler.HandleMoveUp(_ctx, new NavigationCommand { Type = CommandType.MoveUp }, _options, CancellationToken.None);
+
+        _navigationService.ReaderCursorLine.Should().Be(0);
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Top of article");
+    }
+
+    [Fact]
+    public async Task HandleMoveDown_Readable_MidDocument_DoesNotAnnounceBound()
+    {
+        _navigationService.SetReaderCursorLine(10);
+
+        await NavigationCommandHandler.HandleMoveDown(_ctx, new NavigationCommand { Type = CommandType.MoveDown }, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().BeNull(
+            "a cursor move that succeeded must not claim a document bound was hit");
+    }
+
+    [Fact]
+    public async Task HandlePageDown_Readable_AtLastLine_AnnouncesBottomOfArticle()
+    {
+        _navigationService.SetReaderCursorLine(49);
+
+        await NavigationCommandHandler.HandlePageDown(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Bottom of article");
+    }
+
+    #endregion
+
+    #region HandleGoForward - no forward history (workspace-1em8)
+
+    [Fact]
+    public async Task HandleGoForward_NoForwardHistory_SetsStatusMessage()
+    {
+        _navigationService.CanGoForward.Should().BeFalse("test page is the only history entry");
+
+        await NavigationCommandHandler.HandleGoForward(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("No forward history");
+        _renderCalled.Should().BeTrue("the status message must actually be painted");
+    }
+
+    [Fact]
+    public async Task HandleGoForward_WithForwardHistory_NavigatesWithoutNoHistoryMessage()
+    {
+        var page2 = Domain.Entities.Browser.Page.Create(
+            "https://example.com/next",
+            "<html><body>Next</body></html>",
+            new Domain.ValueObjects.Browser.PageMetadata { Title = "Next" });
+        _navigationService.NavigateTo(page2);
+        _navigationService.GoBack();
+        _navigationService.CanGoForward.Should().BeTrue();
+
+        await NavigationCommandHandler.HandleGoForward(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentPage!.Url.Should().Be("https://example.com/next");
+        (_navigationService.CurrentContext.StatusMessage ?? string.Empty)
+            .Should().NotContain("No forward history");
+    }
+
+    #endregion
+
     #region HandleGoToTop - Hierarchical with collapsed groups
 
     [Fact]

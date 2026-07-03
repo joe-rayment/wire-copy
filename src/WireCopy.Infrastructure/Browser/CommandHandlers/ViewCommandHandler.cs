@@ -59,16 +59,9 @@ internal static class ViewCommandHandler
     public static async Task HandleIncreaseWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
-        ctx.ContentWidthOverride = Math.Clamp(current + WidthStep, MinContentWidth, MaxContentWidth);
-        ctx.NavigationService.Announce(
-            glyph: null,
-            $"Width {ctx.ContentWidthOverride}",
-            new[]
-            {
-                new StatusKeyHint("[", "narrow"),
-                new StatusKeyHint("]", "widen"),
-                new StatusKeyHint("0", "reset"),
-            });
+        var newWidth = Math.Clamp(current + WidthStep, MinContentWidth, MaxContentWidth);
+        ctx.ContentWidthOverride = newWidth;
+        AnnounceWidthChange(ctx, current, newWidth, boundLabel: "maximum");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
@@ -77,16 +70,9 @@ internal static class ViewCommandHandler
     public static async Task HandleDecreaseWidth(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         var current = ctx.ContentWidthOverride ?? DefaultContentWidth;
-        ctx.ContentWidthOverride = Math.Clamp(current - WidthStep, MinContentWidth, MaxContentWidth);
-        ctx.NavigationService.Announce(
-            glyph: null,
-            $"Width {ctx.ContentWidthOverride}",
-            new[]
-            {
-                new StatusKeyHint("[", "narrow"),
-                new StatusKeyHint("]", "widen"),
-                new StatusKeyHint("0", "reset"),
-            });
+        var newWidth = Math.Clamp(current - WidthStep, MinContentWidth, MaxContentWidth);
+        ctx.ContentWidthOverride = newWidth;
+        AnnounceWidthChange(ctx, current, newWidth, boundLabel: "minimum");
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
@@ -259,6 +245,28 @@ internal static class ViewCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// workspace-1m3h.2/.5: announces a width adjustment as a transition
+    /// ("Width 60 → 70") so the old value is visible; when the clamp left the
+    /// width unchanged we're at a bound and say that instead
+    /// ("Width 120 (maximum)" / "Width 40 (minimum)").
+    /// </summary>
+    private static void AnnounceWidthChange(CommandContext ctx, int oldWidth, int newWidth, string boundLabel)
+    {
+        var text = newWidth == oldWidth
+            ? $"Width {newWidth} ({boundLabel})"
+            : $"Width {oldWidth} → {newWidth}";
+        ctx.NavigationService.Announce(
+            glyph: null,
+            text,
+            new[]
+            {
+                new StatusKeyHint("[", "narrow"),
+                new StatusKeyHint("]", "widen"),
+                new StatusKeyHint("0", "reset"),
+            });
     }
 
     private static bool UrlMatchesDomain(string url, string domain)

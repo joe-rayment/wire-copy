@@ -374,23 +374,48 @@ public class ViewCommandHandlerTests
     #region Width Change Status Messages
 
     [Fact]
-    public async Task HandleIncreaseWidth_SetsStatusMessageWithNewWidth()
+    public async Task HandleIncreaseWidth_SetsStatusMessageWithOldAndNewWidth()
     {
         _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 70");
+        // workspace-1m3h.5: announcement shows the transition, not just the result
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 60 → 70");
     }
 
     [Fact]
-    public async Task HandleDecreaseWidth_SetsStatusMessageWithNewWidth()
+    public async Task HandleDecreaseWidth_SetsStatusMessageWithOldAndNewWidth()
     {
         _ctx.ContentWidthOverride = null; // default = 60
 
         await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
 
-        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 50");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 60 → 50");
+    }
+
+    [Fact]
+    public async Task HandleIncreaseWidth_AtMax_AnnouncesMaximumInsteadOfTransition()
+    {
+        // workspace-1m3h.2: at the bound the width doesn't change — the message
+        // must say so rather than imply an adjustment happened.
+        _ctx.ContentWidthOverride = 120;
+
+        await ViewCommandHandler.HandleIncreaseWidth(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 120 (maximum)");
+        _navigationService.CurrentContext.StatusMessage.Should().NotContain("→");
+    }
+
+    [Fact]
+    public async Task HandleDecreaseWidth_AtMin_AnnouncesMinimumInsteadOfTransition()
+    {
+        _ctx.ContentWidthOverride = 40;
+
+        await ViewCommandHandler.HandleDecreaseWidth(_ctx, _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Width 40 (minimum)");
+        _navigationService.CurrentContext.StatusMessage.Should().NotContain("→");
     }
 
     [Fact]
