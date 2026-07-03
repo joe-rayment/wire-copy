@@ -1114,25 +1114,20 @@ internal static class StrategyChooserHandler
             row.SpinnerFrame = 0;
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            ScrapingStrategyAvailability availability;
-            try
-            {
-                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                probeCts.CancelAfter(StrategyProbeBudget);
-                availability = await strategy.IsAvailableAsync(stContext, probeCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                ctx.Logger.LogWarning(
+            // workspace-kany: a multi-second IsAvailableAsync used to be awaited
+            // directly, freezing the ⠋ spinner on its first frame; the pump
+            // repaints the row (spinner + elapsed seconds) every tick instead.
+            var availability = await ProbeWithProgressAsync(
+                token => strategy.IsAvailableAsync(stContext, token),
+                row,
+                token => ctx.RenderCurrentPageAsync(options, token),
+                StrategyProbeBudget,
+                ProgressPump.DefaultInterval,
+                onTimeout: () => ctx.Logger.LogWarning(
                     "Strategy probe for {Id} exceeded {Budget}s budget",
                     strategy.Id,
-                    StrategyProbeBudget.TotalSeconds);
-                availability = new ScrapingStrategyAvailability
-                {
-                    IsAvailable = false,
-                    ReasonWhenUnavailable = $"probe timed out after {StrategyProbeBudget.TotalSeconds:0}s",
-                };
-            }
+                    StrategyProbeBudget.TotalSeconds),
+                ct).ConfigureAwait(false);
 
             if (!availability.IsAvailable)
             {
@@ -1323,6 +1318,55 @@ internal static class StrategyChooserHandler
             .ToList();
     }
 #pragma warning restore SA1202
+
+    /// <summary>
+    /// workspace-kany: drives one strategy availability probe through
+    /// <see cref="ProgressPump"/> so the overlay stays visibly alive — every
+    /// tick advances the row's spinner frame and updates its detail to
+    /// "probing… Ns" before repainting, instead of awaiting
+    /// <c>IsAvailableAsync</c> directly with a frozen first spinner frame.
+    /// A probe that exceeds <paramref name="probeBudget"/> is reported as
+    /// unavailable (naming the budget) exactly as before; cancellation of
+    /// <paramref name="ct"/> still propagates.
+    /// </summary>
+    internal static async Task<ScrapingStrategyAvailability> ProbeWithProgressAsync(
+        Func<CancellationToken, Task<ScrapingStrategyAvailability>> probe,
+        StrategyChooserOverlay.Row row,
+        Func<CancellationToken, Task> render,
+        TimeSpan probeBudget,
+        TimeSpan tickInterval,
+        Action? onTimeout,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(render);
+
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(probeBudget);
+        try
+        {
+            return await ProgressPump.RunAsync(
+                probe(probeCts.Token),
+                async elapsed =>
+                {
+                    row.SpinnerFrame++;
+                    row.Detail = $"probing… {elapsed.TotalSeconds:0}s";
+                    await render(ct).ConfigureAwait(false);
+                },
+                tickInterval,
+                ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            onTimeout?.Invoke();
+            return new ScrapingStrategyAvailability
+            {
+                IsAvailable = false,
+                ReasonWhenUnavailable = $"probe timed out after {probeBudget.TotalSeconds:0}s",
+            };
+        }
+    }
 
     private static string ExtractDomain(string url) => HierarchyDomainKey.FromUrl(url);
 }

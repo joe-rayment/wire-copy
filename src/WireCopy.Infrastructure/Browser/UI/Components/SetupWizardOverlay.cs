@@ -29,7 +29,11 @@ internal static class SetupWizardOverlay
 
     public static void Render(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
     {
-        var lines = BuildLines(state, out var title);
+        // workspace-f25j.4: the box must fit the terminal — title row + content
+        // + bottom border + 1-row margins. Anything past this capacity is
+        // windowed (scrolled to the focused option) instead of silently clipped.
+        var maxContentLines = Math.Max(1, terminalHeight - 4);
+        var lines = BuildLines(state, maxContentLines, out var title);
         if (lines.Count == 0)
         {
             return;
@@ -76,7 +80,7 @@ internal static class SetupWizardOverlay
         // Local helpers capture the palette for styled segments.
         (string Plain, string Styled) PlainStyled(string plain, string styled) => (plain, styled);
 
-        List<(string Plain, string Styled)> BuildLines(State s, out string boxTitle)
+        List<(string Plain, string Styled)> BuildLines(State s, int maxContent, out string boxTitle)
         {
             var result = new List<(string, string)>();
             if (s.Mode == Mode.Analyzing)
@@ -95,13 +99,18 @@ internal static class SetupWizardOverlay
                 return result;
             }
 
+            // workspace-f25j.4: window the option rows so the focused option is
+            // always on screen, with an explicit "N more" note instead of a
+            // silent clip.
+            var window = ComputeCardWindow(card, maxContent);
+
             if (!string.IsNullOrEmpty(card.Prompt))
             {
                 result.Add(PlainStyled(card.Prompt, $"{Bold}{palette.PrimaryText.AnsiFg}{card.Prompt}{Reset}"));
                 result.Add(PlainStyled(string.Empty, string.Empty));
             }
 
-            for (var i = 0; i < card.Options.Count; i++)
+            for (var i = window.OptionOffset; i < window.OptionOffset + window.OptionCount; i++)
             {
                 var opt = card.Options[i];
                 var isCursor = i == card.Cursor;
@@ -117,10 +126,10 @@ internal static class SetupWizardOverlay
                 result.Add(PlainStyled(plain, $"{nameStyled}{idStyled}"));
             }
 
-            if (!string.IsNullOrEmpty(card.Footnote))
+            if (!string.IsNullOrEmpty(window.Footnote))
             {
                 result.Add(PlainStyled(string.Empty, string.Empty));
-                result.Add(PlainStyled(card.Footnote!, $"{Dim}{palette.SecondaryText.AnsiFg}{card.Footnote}{Reset}"));
+                result.Add(PlainStyled(window.Footnote!, $"{Dim}{palette.SecondaryText.AnsiFg}{window.Footnote}{Reset}"));
             }
 
             if (!string.IsNullOrEmpty(card.Hint))
@@ -137,27 +146,103 @@ internal static class SetupWizardOverlay
     /// durable identifier on each option. Used by component tests to assert the
     /// identifier is visible without scraping the ANSI Console output.
     /// </summary>
-    public static IReadOnlyList<string> DescribeCard(WizardCard card)
+    public static IReadOnlyList<string> DescribeCard(WizardCard card, int? maxContentLines = null)
     {
         ArgumentNullException.ThrowIfNull(card);
+        var window = ComputeCardWindow(card, maxContentLines ?? int.MaxValue);
         var lines = new List<string> { card.Title };
         if (!string.IsNullOrEmpty(card.Prompt))
         {
             lines.Add(card.Prompt);
         }
 
-        foreach (var opt in card.Options)
+        for (var i = window.OptionOffset; i < window.OptionOffset + window.OptionCount; i++)
         {
+            var opt = card.Options[i];
             var id = opt.Identifier.Length > 0 ? $"   {opt.Identifier}" : string.Empty;
             lines.Add($"{opt.Label}{id}");
         }
 
-        if (!string.IsNullOrEmpty(card.Footnote))
+        if (!string.IsNullOrEmpty(window.Footnote))
         {
-            lines.Add(card.Footnote!);
+            lines.Add(window.Footnote!);
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// workspace-f25j.4: which slice of a card's options fits into
+    /// <paramref name="maxContentLines"/> content rows alongside the fixed
+    /// prompt/footnote/hint rows. When everything fits this is the whole list
+    /// and the untouched footnote; when it does not, the window scrolls to keep
+    /// <see cref="WizardCard.Cursor"/> visible and the footnote gains an
+    /// explicit "↑/↓ N more" overflow note (created if the card had none).
+    /// </summary>
+    internal static CardWindow ComputeCardWindow(WizardCard card, int maxContentLines)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        var promptRows = string.IsNullOrEmpty(card.Prompt) ? 0 : 2;
+        var hintRows = string.IsNullOrEmpty(card.Hint) ? 0 : 1;
+        var footnoteRows = string.IsNullOrEmpty(card.Footnote) ? 0 : 2;
+
+        if (promptRows + card.Options.Count + footnoteRows + hintRows <= maxContentLines)
+        {
+            return new CardWindow(0, card.Options.Count, card.Footnote);
+        }
+
+        // Overflowing: the footnote block always renders (it carries the note).
+        var maxVisible = Math.Max(1, maxContentLines - promptRows - hintRows - 2);
+        var (offset, visible) = ComputeOptionWindow(card.Options.Count, card.Cursor, maxVisible);
+        var hiddenAbove = offset;
+        var hiddenBelow = card.Options.Count - offset - visible;
+
+        var noteParts = new List<string>(2);
+        if (hiddenAbove > 0)
+        {
+            noteParts.Add($"↑ {hiddenAbove} more above");
+        }
+
+        if (hiddenBelow > 0)
+        {
+            noteParts.Add($"↓ {hiddenBelow} more below");
+        }
+
+        var note = string.Join(" · ", noteParts);
+        string? footnote;
+        if (note.Length == 0)
+        {
+            footnote = card.Footnote;
+        }
+        else if (string.IsNullOrEmpty(card.Footnote))
+        {
+            footnote = note;
+        }
+        else
+        {
+            footnote = $"{card.Footnote} · {note}";
+        }
+
+        return new CardWindow(offset, visible, footnote);
+    }
+
+    /// <summary>
+    /// workspace-f25j.4: first visible option index + visible count for a list
+    /// of <paramref name="optionCount"/> rows of which at most
+    /// <paramref name="maxVisible"/> fit, scrolled so <paramref name="cursor"/>
+    /// stays inside the window.
+    /// </summary>
+    internal static (int Offset, int Visible) ComputeOptionWindow(int optionCount, int cursor, int maxVisible)
+    {
+        maxVisible = Math.Max(1, maxVisible);
+        if (optionCount <= maxVisible)
+        {
+            return (0, optionCount);
+        }
+
+        var clampedCursor = Math.Clamp(cursor, 0, optionCount - 1);
+        var offset = Math.Clamp(clampedCursor - maxVisible + 1, 0, optionCount - maxVisible);
+        return (offset, maxVisible);
     }
 
     private static int PlainLength((string Plain, string Styled) line) => PlainWidth(line.Plain);
@@ -204,4 +289,7 @@ internal static class SetupWizardOverlay
         /// </summary>
         public string HighlightSelector { get; init; } = string.Empty;
     }
+
+    /// <summary>workspace-f25j.4: the visible option slice + effective footnote for a card.</summary>
+    internal sealed record CardWindow(int OptionOffset, int OptionCount, string? Footnote);
 }
