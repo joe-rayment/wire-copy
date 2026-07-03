@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Configuration;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
@@ -125,7 +126,7 @@ internal static class CookiesCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to read cookie status");
-            ctx.NavigationService.SetStatusMessage($"Cookie status failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Cookie status failed: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -241,7 +242,7 @@ internal static class CookiesCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to import cookies");
-            ctx.NavigationService.SetStatusMessage($"Cookie import failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Cookie import failed: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -280,7 +281,7 @@ internal static class CookiesCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to clear cookies");
-            ctx.NavigationService.SetStatusMessage($"Cookie clear failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Cookie clear failed: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

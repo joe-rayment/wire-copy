@@ -60,7 +60,7 @@ internal static class CollectionCommandHandler
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save selected items");
-                    ctx.NavigationService.SetStatusMessage("Failed to save selected items");
+                    ctx.NavigationService.SetStatusMessage("Failed to save selected items", StatusSeverity.Error);
                     ctx.NavigationService.ShowToast(
                         ToastType.Error,
                         "Couldn't save selected items",
@@ -102,7 +102,7 @@ internal static class CollectionCommandHandler
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to default collection");
-                        ctx.NavigationService.SetStatusMessage("Failed to save");
+                        ctx.NavigationService.SetStatusMessage("Failed to save", StatusSeverity.Error);
                         ctx.NavigationService.ShowToast(
                             ToastType.Error,
                             "Couldn't save",
@@ -139,7 +139,7 @@ internal static class CollectionCommandHandler
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save from reader view");
-                    ctx.NavigationService.SetStatusMessage("Failed to save");
+                    ctx.NavigationService.SetStatusMessage("Failed to save", StatusSeverity.Error);
                     ctx.NavigationService.ShowToast(
                         ToastType.Error,
                         "Couldn't save",
@@ -170,7 +170,7 @@ internal static class CollectionCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to set default collection");
-                ctx.NavigationService.SetStatusMessage("Couldn't set default collection");
+                ctx.NavigationService.SetStatusMessage("Couldn't set default collection", StatusSeverity.Error);
             }
         }
 
@@ -252,7 +252,7 @@ internal static class CollectionCommandHandler
                     catch (Exception ex)
                     {
                         ctx.Logger.LogWarning(ex, "Failed to save to collection");
-                        ctx.NavigationService.SetStatusMessage("Failed to save");
+                        ctx.NavigationService.SetStatusMessage("Failed to save", StatusSeverity.Error);
                         flashPosition = null;
                         flashText = null;
                     }
@@ -301,7 +301,7 @@ internal static class CollectionCommandHandler
                 catch (Exception ex)
                 {
                     ctx.Logger.LogWarning(ex, "Failed to save all to Reading List");
-                    ctx.NavigationService.SetStatusMessage("Failed to save");
+                    ctx.NavigationService.SetStatusMessage("Failed to save", StatusSeverity.Error);
                     ctx.NavigationService.ShowToast(
                         ToastType.Error,
                         "Couldn't save",
@@ -385,7 +385,7 @@ internal static class CollectionCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to delete collection");
-                ctx.NavigationService.SetStatusMessage("Failed to delete");
+                ctx.NavigationService.SetStatusMessage("Failed to delete", StatusSeverity.Error);
             }
         }
 
@@ -436,7 +436,7 @@ internal static class CollectionCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to clear collection");
-            ctx.NavigationService.SetStatusMessage("Failed to clear");
+            ctx.NavigationService.SetStatusMessage("Failed to clear", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -469,7 +469,7 @@ internal static class CollectionCommandHandler
                 {
                     // workspace-wyxx.1: reorder failures must not be silent.
                     ctx.Logger.LogWarning(ex, "Failed to move item up");
-                    ctx.NavigationService.SetStatusMessage("Couldn't reorder");
+                    ctx.NavigationService.SetStatusMessage("Couldn't reorder", StatusSeverity.Error);
                 }
             }
         }
@@ -506,7 +506,7 @@ internal static class CollectionCommandHandler
                 {
                     // workspace-wyxx.1: reorder failures must not be silent.
                     ctx.Logger.LogWarning(ex, "Failed to move item down");
-                    ctx.NavigationService.SetStatusMessage("Couldn't reorder");
+                    ctx.NavigationService.SetStatusMessage("Couldn't reorder", StatusSeverity.Error);
                 }
             }
         }
@@ -537,7 +537,7 @@ internal static class CollectionCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogError(ex, "Failed to open collections");
-            ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}", StatusSeverity.Error);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }

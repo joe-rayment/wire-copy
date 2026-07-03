@@ -35,6 +35,7 @@ public class NavigationService : INavigationService
     private int _scrollOffset;
     private string? _searchQuery;
     private int _searchMatchIndex;
+    private int _searchMatchCount;
     private readonly Dictionary<string, ActivityIndicator> _activities = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _activityLock = new();
     private StatusAnnouncement? _announcement;
@@ -43,6 +44,15 @@ public class NavigationService : INavigationService
     // workspace-9k27.11: keyless message deferred while a keyed hint holds the
     // slot; promoted (latest-wins) when the hint's TTL lapses.
     private (string Message, TimeSpan Ttl)? _pendingStatusMessage;
+
+    // workspace-9k27.11: severity of the announcement currently in the slot.
+    // Error announcements can't be stomped by keyless Info traffic (Info
+    // defers instead), and are themselves allowed to stomp keyed hints.
+    private StatusSeverity _announcementSeverity = StatusSeverity.Info;
+
+    // workspace-9k27.11: a keyed teach hint stomped by an error is stashed with
+    // its remaining TTL and restored once the error expires.
+    private (StatusAnnouncement Hint, TimeSpan Remaining)? _stashedKeyedHint;
     private TimeSpan _announcementTtl = StatusMessageDuration;
     private readonly TimeProvider _clock;
     private bool _isFromCache;
@@ -94,6 +104,7 @@ public class NavigationService : INavigationService
         LoadedAt = _currentPage?.LoadedAt ?? DateTime.UtcNow,
         SearchQuery = _searchQuery,
         SearchMatchIndex = _searchMatchIndex,
+        SearchMatchCount = _searchMatchCount,
         StatusMessage = GetActiveAnnouncement()?.Text,
         ActiveAnnouncement = GetActiveAnnouncement(),
         ActiveActivity = GetTopActivity(),
@@ -148,6 +159,12 @@ public class NavigationService : INavigationService
         _readerCursorLine = 0;
         _speedReadActive = false;
         _currentViewMode = ViewMode.Hierarchical;
+
+        // workspace-6z3a.3: a search belongs to the page it was typed on — a
+        // NEW page must not inherit the stale query (n/N would jump around a
+        // page the user never searched). Back/forward restore prior pages, so
+        // they deliberately keep the query.
+        ClearSearchState();
 
         _logger.LogInformation("Navigated to: {Title} ({Url})",
             page.Metadata.Title,
@@ -304,6 +321,10 @@ public class NavigationService : INavigationService
             _pendingStatusMessage = null;
         }
 
+        // workspace-9k27.11: a deliberate new announcement supersedes any hint
+        // stashed by an error stomp — a stale hint must not pop back later.
+        _stashedKeyedHint = null;
+
         _announcement = new StatusAnnouncement
         {
             Glyph = glyph,
@@ -313,6 +334,7 @@ public class NavigationService : INavigationService
         };
         _announcementSetAt = _clock.GetUtcNow().UtcDateTime;
         _announcementTtl = ttl ?? StatusMessageDuration;
+        _announcementSeverity = StatusSeverity.Info;
     }
 
     /// <summary>
@@ -355,16 +377,7 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SetStatusMessage(string message)
     {
-        if (HasActiveKeyedHint())
-        {
-            // workspace-9k27.11: DEFER, don't drop — errors ("Export failed…")
-            // route through this shim too, and eating them while a teach flash
-            // holds the slot inverted the g801 bug. Latest deferred message wins.
-            _pendingStatusMessage = (message, StatusMessageDuration);
-            return;
-        }
-
-        Announce(glyph: null, text: message);
+        SetStatusMessage(message, StatusMessageDuration, StatusSeverity.Info);
     }
 
     /// <summary>
@@ -372,8 +385,59 @@ public class NavigationService : INavigationService
     /// </summary>
     public void SetStatusMessage(string message, TimeSpan duration)
     {
-        if (HasActiveKeyedHint())
+        SetStatusMessage(message, duration, StatusSeverity.Info);
+    }
+
+    /// <summary>
+    /// workspace-9k27.11: sets a status message with an explicit severity.
+    /// Error messages take the Transient slot immediately — a keyed teach hint
+    /// still within its TTL is stashed and restored (with its remaining time)
+    /// once the error expires. Info messages defer behind an active keyed hint
+    /// or error (latest deferred message wins) instead of being dropped.
+    /// </summary>
+    public void SetStatusMessage(string message, StatusSeverity severity)
+    {
+        SetStatusMessage(message, StatusMessageDuration, severity);
+    }
+
+    /// <summary>
+    /// Sets a status message with an explicit severity and expiry duration.
+    /// See <see cref="SetStatusMessage(string, StatusSeverity)"/> for the
+    /// severity semantics (workspace-9k27.11).
+    /// </summary>
+    public void SetStatusMessage(string message, TimeSpan duration, StatusSeverity severity)
+    {
+        if (severity == StatusSeverity.Error)
         {
+            // Errors own the slot NOW. A live keyed hint is parked with its
+            // remaining TTL so the teaching moment resumes after the error.
+            if (HasActiveKeyedHint())
+            {
+                var elapsed = _clock.GetUtcNow().UtcDateTime - _announcementSetAt!.Value;
+                var remaining = _announcementTtl - elapsed;
+                if (remaining > TimeSpan.Zero)
+                {
+                    _stashedKeyedHint = (_announcement!, remaining);
+                }
+            }
+
+            _announcement = new StatusAnnouncement
+            {
+                Glyph = null,
+                Text = message,
+                Keys = Array.Empty<StatusKeyHint>(),
+            };
+            _announcementSetAt = _clock.GetUtcNow().UtcDateTime;
+            _announcementTtl = duration;
+            _announcementSeverity = StatusSeverity.Error;
+            return;
+        }
+
+        if (HasActiveKeyedHint() || HasActiveErrorMessage())
+        {
+            // workspace-9k27.11: DEFER, don't drop — eating keyless messages
+            // while a teach flash held the slot inverted the g801 bug. The
+            // latest deferred message wins; it surfaces when the TTL lapses.
             _pendingStatusMessage = (message, duration);
             return;
         }
@@ -388,7 +452,9 @@ public class NavigationService : INavigationService
     {
         _announcement = null;
         _announcementSetAt = null;
+        _announcementSeverity = StatusSeverity.Info;
         _pendingStatusMessage = null;
+        _stashedKeyedHint = null;
     }
 
     /// <summary>
@@ -595,6 +661,11 @@ public class NavigationService : INavigationService
         _readerCursorLine = 0;
         _speedReadActive = false;
 
+        // workspace-6z3a.4: matches are computed per view (tree nodes vs reader
+        // lines) — a query typed in one view is meaningless in the other, so a
+        // view switch ends the search instead of leaving a stale /query badge.
+        ClearSearchState();
+
         _logger.LogDebug("Switched to {Mode} view", _currentViewMode);
     }
 
@@ -611,16 +682,20 @@ public class NavigationService : INavigationService
         _readerCursorLine = 0;
         _speedReadActive = false;
 
+        // workspace-6z3a.4: see ToggleViewMode — a view switch ends the search.
+        ClearSearchState();
+
         _logger.LogDebug("Set view mode to {Mode}", mode);
     }
 
     /// <summary>
-    /// Sets the current search query and resets match index.
+    /// Sets the current search query and resets match index and count.
     /// </summary>
     public void SetSearchQuery(string? query)
     {
         _searchQuery = query;
         _searchMatchIndex = 0;
+        _searchMatchCount = 0;
     }
 
     /// <summary>
@@ -629,6 +704,16 @@ public class NavigationService : INavigationService
     public void SetSearchMatchIndex(int index)
     {
         _searchMatchIndex = Math.Max(0, index);
+    }
+
+    /// <summary>
+    /// workspace-6z3a.2: records how many matches the active search found in
+    /// the current view, so the status bar can render "/query 2/14 (n/N)"
+    /// (or "0 matches") instead of a bare query.
+    /// </summary>
+    public void SetSearchMatchCount(int count)
+    {
+        _searchMatchCount = Math.Max(0, count);
     }
 
     /// <summary>
@@ -873,6 +958,17 @@ public class NavigationService : INavigationService
         _originalTree = null;
     }
 
+    /// <summary>
+    /// workspace-6z3a.3/.4: forgets the active search entirely (query, match
+    /// index, match count). Called when the page or the view changes.
+    /// </summary>
+    private void ClearSearchState()
+    {
+        _searchQuery = null;
+        _searchMatchIndex = 0;
+        _searchMatchCount = 0;
+    }
+
     private ActivityIndicator? GetTopActivity()
     {
         lock (_activityLock)
@@ -895,6 +991,17 @@ public class NavigationService : INavigationService
         && _announcementSetAt is { } setAt
         && _clock.GetUtcNow().UtcDateTime - setAt <= _announcementTtl;
 
+    /// <summary>
+    /// workspace-9k27.11: true while an Error-severity status message is still
+    /// within its TTL. Keyless Info traffic defers behind it instead of
+    /// stomping it — an error must stay readable for its full TTL.
+    /// </summary>
+    private bool HasActiveErrorMessage() =>
+        _announcementSeverity == StatusSeverity.Error
+        && _announcement != null
+        && _announcementSetAt is { } setAt
+        && _clock.GetUtcNow().UtcDateTime - setAt <= _announcementTtl;
+
     private StatusAnnouncement? GetActiveAnnouncement()
     {
         if (_announcement == null || _announcementSetAt == null)
@@ -906,6 +1013,18 @@ public class NavigationService : INavigationService
         {
             _announcement = null;
             _announcementSetAt = null;
+            _announcementSeverity = StatusSeverity.Info;
+
+            // workspace-9k27.11: a keyed hint stomped by an error resumes with
+            // whatever TTL it had left the moment the error expires.
+            if (_stashedKeyedHint is { } stashed)
+            {
+                _stashedKeyedHint = null;
+                _announcement = stashed.Hint;
+                _announcementSetAt = _clock.GetUtcNow().UtcDateTime;
+                _announcementTtl = stashed.Remaining;
+                return _announcement;
+            }
 
             // workspace-9k27.11: a keyless message deferred behind a keyed hint
             // surfaces the moment the hint expires, with its own fresh TTL.

@@ -465,17 +465,28 @@ internal class StatusBarRenderer
 
         if (!string.IsNullOrEmpty(context.SearchQuery))
         {
+            // workspace-6z3a.2: show WHERE the user is in the results —
+            // "/query 2/14 (n/N)" — and be explicit when nothing matched.
+            var fullVariant = context.SearchMatchCount > 0
+                ? new[]
+                {
+                    new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt),
+                    new StatusSegment($" {context.SearchMatchIndex + 1}/{context.SearchMatchCount}", StatusStyle.Secondary),
+                    new StatusSegment(" (n/N)", StatusStyle.Secondary),
+                }
+                : new[]
+                {
+                    new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt),
+                    new StatusSegment(" 0 matches", StatusStyle.Secondary),
+                };
+
             items.Add(new StatusItem
             {
                 Channel = StatusChannel.Ambient,
                 Priority = 2,
                 Variants = new[]
                 {
-                    new[]
-                    {
-                        new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt),
-                        new StatusSegment(" (n/N)", StatusStyle.Secondary),
-                    },
+                    fullVariant,
                     new[] { new StatusSegment($"/{context.SearchQuery}", StatusStyle.Prompt) },
                 },
             });

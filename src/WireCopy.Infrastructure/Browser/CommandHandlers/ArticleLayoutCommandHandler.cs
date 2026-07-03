@@ -79,7 +79,7 @@ internal static class ArticleLayoutCommandHandler
 #pragma warning restore CA1031
         {
             ctx.Logger.LogWarning(ex, "Manual article-layout regeneration threw for {Url}", page.Url);
-            ctx.NavigationService.SetStatusMessage("Regenerate failed — see logs");
+            ctx.NavigationService.SetStatusMessage("Regenerate failed — see logs", StatusSeverity.Error);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }

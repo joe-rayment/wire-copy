@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
@@ -519,7 +520,7 @@ internal static class LauncherCommandHandler
             // workspace-xx61: never fail silently — the delete path sets a status,
             // so a failed save must too, or the user assumes the bookmark stuck.
             ctx.Logger.LogWarning(ex, "Failed to add bookmark");
-            ctx.NavigationService.SetStatusMessage("Couldn't save bookmark");
+            ctx.NavigationService.SetStatusMessage("Couldn't save bookmark", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -604,7 +605,7 @@ internal static class LauncherCommandHandler
                         catch (Exception ex)
                         {
                             ctx.Logger.LogWarning(ex, "Failed to move bookmark {Direction}", moveUp ? "up" : "down");
-                            ctx.NavigationService.SetStatusMessage("Couldn't move bookmark");
+                            ctx.NavigationService.SetStatusMessage("Couldn't move bookmark", StatusSeverity.Error);
                         }
                     }
                 }

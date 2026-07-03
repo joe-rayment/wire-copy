@@ -178,7 +178,7 @@ internal static class StrategyChooserHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to apply scraping strategy");
-            ctx.NavigationService.SetStatusMessage($"Apply failed · {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Apply failed · {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -407,7 +407,7 @@ internal static class StrategyChooserHandler
         catch (Exception ex)
         {
             ctx.Logger.LogError(ex, "Strategy chooser failed");
-            ctx.NavigationService.SetStatusMessage("Strategy chooser failed");
+            ctx.NavigationService.SetStatusMessage("Strategy chooser failed", StatusSeverity.Error);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
         finally
@@ -543,7 +543,7 @@ internal static class StrategyChooserHandler
             // down the whole session. The finally restores the original tree +
             // overlay, so recover in place and tell the user what happened.
             ctx.Logger.LogWarning(ex, "AI layout setup failed");
-            ctx.NavigationService.SetStatusMessage("AI setup failed — check your connection and try again");
+            ctx.NavigationService.SetStatusMessage("AI setup failed — check your connection and try again", StatusSeverity.Error);
             return new SetupWizard.Result { Cancelled = true };
         }
         finally

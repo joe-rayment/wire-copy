@@ -1030,7 +1030,7 @@ internal static class PodcastProgressScreens
             var folder = Path.GetDirectoryName(localFilePath);
             if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
             {
-                ctx.NavigationService.SetStatusMessage("Output folder not found");
+                ctx.NavigationService.SetStatusMessage("Output folder not found", StatusSeverity.Error);
                 return;
             }
 
@@ -1041,7 +1041,7 @@ internal static class PodcastProgressScreens
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to open output folder for {Path}", localFilePath);
-            ctx.NavigationService.SetStatusMessage("Couldn't open folder — file path copied (if your terminal supports it)");
+            ctx.NavigationService.SetStatusMessage("Couldn't open folder — file path copied (if your terminal supports it)", StatusSeverity.Error);
             CopyToClipboardOsc52(localFilePath);
         }
     }

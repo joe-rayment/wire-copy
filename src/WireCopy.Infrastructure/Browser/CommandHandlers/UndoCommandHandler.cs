@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
+using WireCopy.Domain.Enums.Browser;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -94,7 +95,7 @@ internal static class UndoCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to undo {Kind}", undo.Kind);
-            ctx.NavigationService.SetStatusMessage("Undo failed");
+            ctx.NavigationService.SetStatusMessage("Undo failed", StatusSeverity.Error);
         }
 
         ctx.PendingUndo = null;

@@ -71,7 +71,7 @@ internal static class LayoutCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to save layout config");
-            ctx.NavigationService.SetStatusMessage($"Applied · {selected.Summary} (save failed)");
+            ctx.NavigationService.SetStatusMessage($"Applied · {selected.Summary} (save failed)", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -105,7 +105,7 @@ internal static class LayoutCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to clear layout config");
-            ctx.NavigationService.SetStatusMessage("Failed to clear layout config");
+            ctx.NavigationService.SetStatusMessage("Failed to clear layout config", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

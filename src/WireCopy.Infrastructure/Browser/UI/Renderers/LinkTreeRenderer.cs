@@ -68,7 +68,7 @@ internal class LinkTreeRenderer
         RenderLinkList(tree, context, maxLines, options);
     }
 
-    public void RenderLinkNode(LinkNode node, bool isSelected, RenderOptions options)
+    public void RenderLinkNode(LinkNode node, bool isSelected, RenderOptions options, string? searchQuery = null)
     {
         if (node.IsGroupHeader)
         {
@@ -108,6 +108,11 @@ internal class LinkTreeRenderer
         }
 
         var displayText = RenderHelpers.TruncateText(node.Link.DisplayText, options.MaxContentWidth - indent.Length - 5);
+
+        // workspace-6z3a.5: mark WHY this row matched the active search. Only
+        // the displayText segment is highlighted — the line is composed inline
+        // with prefix/indent/colors, so whole-line highlighting doesn't fit.
+        displayText = HighlightSegment(displayText, searchQuery, p, colorStart);
         _helpers.WriteLine($"{colorStart}{indent}{prefix}{collapseIndicator} {displayText}{Reset}");
     }
 
@@ -183,11 +188,52 @@ internal class LinkTreeRenderer
         int width,
         ThemePalette palette,
         IReadOnlySet<string>? cachedUrls = null,
-        bool isToggled = false)
+        bool isToggled = false,
+        string? searchQuery = null)
     {
         return isSelected
-            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette, isToggled)
-            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, isToggled);
+            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery)
+            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery);
+    }
+
+    /// <summary>
+    /// workspace-6z3a.5: wraps every case-insensitive occurrence of
+    /// <paramref name="query"/> inside <paramref name="text"/> in the theme's
+    /// search-highlight colors, then restores <paramref name="resumeAnsi"/>
+    /// (the color state the surrounding line was composed with — e.g. the
+    /// selected-row background) so the rest of the segment renders unchanged.
+    /// Returns the text untouched when the query is absent or empty. The
+    /// returned string's VISIBLE length equals the input's, so padding math
+    /// based on the plain text stays valid.
+    /// </summary>
+    internal static string HighlightSegment(string text, string? query, ThemePalette palette, string resumeAnsi)
+    {
+        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        var sb = new StringBuilder();
+        var index = 0;
+        var found = false;
+        while (index < text.Length)
+        {
+            var pos = text.IndexOf(query, index, StringComparison.OrdinalIgnoreCase);
+            if (pos < 0)
+            {
+                sb.Append(text, index, text.Length - index);
+                break;
+            }
+
+            found = true;
+            sb.Append(text, index, pos - index);
+            sb.Append(palette.SearchHighlightBg.AnsiBg).Append(palette.SearchHighlightFg.AnsiFg);
+            sb.Append(text, pos, query.Length);
+            sb.Append(Reset).Append(resumeAnsi);
+            index = pos + query.Length;
+        }
+
+        return found ? sb.ToString() : text;
     }
 
     internal static string? FormatDate(DateTime? date)
@@ -404,7 +450,8 @@ internal class LinkTreeRenderer
         int lineIndex,
         int width,
         ThemePalette palette,
-        bool isToggled = false)
+        bool isToggled = false,
+        string? searchQuery = null)
     {
         var sb = new StringBuilder();
         var accentFg = palette.HeaderBorderFg.AnsiFg;
@@ -449,7 +496,10 @@ internal class LinkTreeRenderer
                 ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
                 : RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
 
-            sb.Append($"{selBg}{selFg}{Bold} {titleLine}");
+            // workspace-6z3a.5: highlight the search match; pad from the PLAIN
+            // length so the injected ANSI codes don't shift the layout.
+            var selResume = $"{selBg}{selFg}{Bold}";
+            sb.Append($"{selResume} {HighlightSegment(titleLine, searchQuery, palette, selResume)}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
         }
         else if (lineIndex == titleLine2Idx)
@@ -458,7 +508,8 @@ internal class LinkTreeRenderer
             var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
             if (!string.IsNullOrEmpty(titleLine2))
             {
-                sb.Append($"{selBg}{selFg}{Bold} {titleLine2}");
+                var selResume = $"{selBg}{selFg}{Bold}";
+                sb.Append($"{selResume} {HighlightSegment(titleLine2, searchQuery, palette, selResume)}");
                 sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine2.Length))}{Reset}");
             }
             else
@@ -498,7 +549,8 @@ internal class LinkTreeRenderer
         int lineIndex,
         int width,
         ThemePalette palette,
-        bool isToggled = false)
+        bool isToggled = false,
+        string? searchQuery = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
         var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
@@ -522,7 +574,9 @@ internal class LinkTreeRenderer
 
             var prefix = isToggled ? $"{palette.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
-            return $"{prefix}{colorFg}{titleLine}{pad}{Reset}";
+
+            // workspace-6z3a.5: highlight the search match within the title.
+            return $"{prefix}{colorFg}{HighlightSegment(titleLine, searchQuery, palette, colorFg)}{pad}{Reset}";
         }
 
         if (lineIndex == titleLine2Idx)
@@ -540,7 +594,7 @@ internal class LinkTreeRenderer
                     _ => palette.PrimaryText.AnsiFg
                 };
                 var pad = new string(' ', Math.Max(0, width - 1 - titleLine2.Length));
-                return $" {colorFg}{titleLine2}{pad}{Reset}";
+                return $" {colorFg}{HighlightSegment(titleLine2, searchQuery, palette, colorFg)}{pad}{Reset}";
             }
 
             return new string(' ', width);
@@ -667,7 +721,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds);
+                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds, context.SearchQuery);
             }
 
             linesUsed += linesNeeded;
@@ -824,13 +878,13 @@ internal class LinkTreeRenderer
         }
     }
 
-    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null, HashSet<Guid>? selectedIds = null)
+    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null, HashSet<Guid>? selectedIds = null, string? searchQuery = null)
     {
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
         {
             var sb = new StringBuilder();
             var leftToggled = selectedIds != null && selectedIds.Contains(row.Left.Id);
-            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls, leftToggled));
+            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls, leftToggled, searchQuery));
 
             if (layout.Columns == 2)
             {
@@ -841,7 +895,7 @@ internal class LinkTreeRenderer
                 {
                     var rightToggled = selectedIds != null && selectedIds.Contains(row.Right.Id);
                     var rightWidth = layout.Width - layout.CellWidth - 1;
-                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls, rightToggled));
+                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls, rightToggled, searchQuery));
                 }
                 else
                 {
