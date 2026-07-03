@@ -151,7 +151,9 @@ public partial class BrowserOrchestrator
 
             if (_browserSession is IBrowserSession minSession)
             {
-                await minSession.MinimizeWindowAsync().ConfigureAwait(false);
+                // Post-interaction cleanup: RestoreWindowAsync brought the browser forward, so
+                // hand keyboard focus back to the terminal (workspace-fihe).
+                await minSession.MinimizeWindowAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -212,20 +214,22 @@ public partial class BrowserOrchestrator
             var input = await _inputHandler.WaitForInputAsync(cancellationToken).ConfigureAwait(false);
             if (input.Type == CommandType.GoBack)
             {
-                // User pressed Esc — cancel, minimize browser
+                // User pressed Esc — cancel, minimize browser. Interaction just had the browser
+                // forward, so hand keyboard focus back to the terminal (workspace-fihe).
                 if (_browserSession is IBrowserSession cancelSession)
                 {
-                    await cancelSession.MinimizeWindowAsync().ConfigureAwait(false);
+                    await cancelSession.MinimizeWindowAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
                 }
 
                 await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
-            // Minimize browser now that interaction is complete
+            // Minimize browser now that interaction is complete. The browser was forward for the
+            // interaction, so hand keyboard focus back to the terminal (workspace-fihe).
             if (_browserSession is IBrowserSession interactiveSession)
             {
-                await interactiveSession.MinimizeWindowAsync().ConfigureAwait(false);
+                await interactiveSession.MinimizeWindowAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
             }
 
             // Accept: build page, cache, and re-render

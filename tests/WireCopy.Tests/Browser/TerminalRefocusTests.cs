@@ -202,4 +202,113 @@ public class TerminalRefocusTests
         TerminalRefocus.TryClaimRefocusSlot(ref slot, t0, force: false, WindowTicks)
             .Should().BeFalse("the second caller sees the first one's stamp");
     }
+
+    // ---- workspace-fihe: refocus must NOT fire on background parks and must NEVER yank ----
+    // ---- focus away from a user-chosen foreign app (the reported focus-war).           ----
+
+    private const string TerminalId = "com.mitchellh.ghostty";
+    private const string BrowserId = "org.chromium.Chromium";
+    private const string ForeignAppId = "com.anthropic.claude"; // the app the user tried to switch to
+
+    [Fact]
+    public void DecideRefocus_BackgroundPark_NeverRefocuses_EvenWhenTerminalIsFrontmost()
+    {
+        // The reported trigger: a background prefetch completes and parks the (never-shown)
+        // off-screen window. weJustActivatedBrowser=false => there is nothing to hand back, so
+        // the terminal must NOT be re-activated on a cadence.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: false, TerminalId, TerminalId)
+            .Should().BeFalse();
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: false, BrowserId, TerminalId)
+            .Should().BeFalse();
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: false, ForeignAppId, TerminalId)
+            .Should().BeFalse("a background park must never touch focus");
+    }
+
+    [Fact]
+    public void DecideRefocus_UserSwitchedToForeignApp_NeverStealsFocusBack()
+    {
+        // The exact focus-war: WireCopy raised the browser (weJustActivatedBrowser=true) but by
+        // the time the refocus runs the user has moved the Claude app to the front. We must leave
+        // them there — never re-activate the terminal over the foreign app.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, ForeignAppId, TerminalId)
+            .Should().BeFalse("a user-chosen foreign app must win — this is the workspace-fihe fix");
+    }
+
+    [Fact]
+    public void DecideRefocus_OurBrowserHoldsFocus_HandsBackToTerminal()
+    {
+        // The legitimate hand-back: we docked/launched and our own headed Chromium is frontmost.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, BrowserId, TerminalId)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void DecideRefocus_AlreadyOnTerminal_IsANoOp()
+    {
+        // Focus already sits on the terminal — no need to re-activate it.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, TerminalId, TerminalId)
+            .Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("missing value")]
+    public void DecideRefocus_FrontmostUnreadable_TrustsIntent_AndHandsBack(string? frontmost)
+    {
+        // osascript denied/failed => we cannot read the frontmost app. Since we know WE just
+        // raised the browser, hand focus back best-effort rather than stranding it.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, frontmost, TerminalId)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void DecideRefocus_FocusWarSequence_TerminalNotReRaisedAfterForeignFocus()
+    {
+        // End-to-end reproduction of the reported sequence, asserted deterministically:
+        // 1) dock: browser frontmost, we hand back to the terminal.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, BrowserId, TerminalId)
+            .Should().BeTrue("step 1: docking hands focus back to the terminal");
+
+        // 2) the user switches to the Claude app (foreign becomes frontmost).
+        // 3) a background prefetch completes and parks the window.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: false, ForeignAppId, TerminalId)
+            .Should().BeFalse("step 3: the background park must NOT re-raise the terminal");
+
+        // 4) even a stray hand-back path firing while Claude is frontmost must not steal focus.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, ForeignAppId, TerminalId)
+            .Should().BeFalse("step 4: the user stays in Claude — no focus-war");
+    }
+
+    [Theory]
+    [InlineData("org.chromium.Chromium", true)]           // Playwright's bundled Chromium — WireCopy's own
+    [InlineData("com.google.chrome.for.testing", true)]   // Chrome for Testing (if a channel is set)
+    [InlineData("com.google.Chrome", false)]              // the USER's real Chrome — NOT ours, must not steal
+    [InlineData("com.mitchellh.ghostty", false)]
+    [InlineData("com.anthropic.claude", false)]
+    [InlineData("com.apple.Safari", false)]
+    [InlineData("com.microsoft.edgemac", false)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    public void LooksLikeBrowserBundleId_MatchesOnlyWireCopysOwnChromium_NotTheUsersChrome(string? bundleId, bool expected)
+    {
+        // Regression guard for the workspace-fihe review: a loose "contains chrome" test matched
+        // the user's own com.google.Chrome, so a hand-back stole focus from it. Only WireCopy's
+        // bundled Chromium (org.chromium.*) and Chrome for Testing count as "ours".
+        TerminalRefocus.LooksLikeBrowserBundleId(bundleId).Should().Be(expected);
+    }
+
+    [Fact]
+    public void DecideRefocus_UsersOwnChrome_IsTreatedAsForeign_NeverStealsFocus()
+    {
+        // The exact review finding: user docks WireCopy, then switches to their OWN Google Chrome.
+        // A hand-back path fires — it must NOT re-activate the terminal over the user's Chrome.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, "com.google.Chrome", TerminalId)
+            .Should().BeFalse("the user's real Chrome is a foreign app, not WireCopy's browser");
+
+        // ...but WireCopy's OWN Chromium holding focus still hands back.
+        TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, "org.chromium.Chromium", TerminalId)
+            .Should().BeTrue();
+    }
 }

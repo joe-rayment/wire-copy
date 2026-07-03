@@ -111,6 +111,96 @@ internal static class TerminalRefocus
     }
 
     /// <summary>
+    /// workspace-fihe: decides whether a refocus should actually return keyboard focus to the
+    /// terminal. The old code fired a refocus on EVERY park — including background-prefetch
+    /// parks that never showed the browser — so it re-activated the terminal on a cadence and
+    /// fought the user switching to another app (the reported focus-war). The refocus now hands
+    /// focus back ONLY when both hold:
+    /// <list type="number">
+    /// <item>WireCopy itself just brought the browser forward (dock / dismiss / launch-flash /
+    /// restore-for-interaction) — background parks pass <paramref name="weJustActivatedBrowser"/>
+    /// = false and never refocus; there is nothing to hand back.</item>
+    /// <item>the frontmost app is still OURS (our headed Chromium, or already the terminal). If a
+    /// user-chosen FOREIGN app (e.g. the Claude app) is frontmost, the user deliberately moved
+    /// there — we never yank focus away.</item>
+    /// </list>
+    /// Pure — the whole focus-war is reproduced and pinned by cross-platform unit tests.
+    /// </summary>
+    /// <param name="weJustActivatedBrowser">
+    /// True only on a path where WireCopy itself just raised/activated the browser window.
+    /// </param>
+    /// <param name="frontmostBundleId">Bundle id of the current frontmost GUI app, or null/blank if it could not be read.</param>
+    /// <param name="terminalBundleId">The captured terminal bundle id, or null if capture failed.</param>
+    internal static bool DecideRefocus(bool weJustActivatedBrowser, string? frontmostBundleId, string? terminalBundleId)
+    {
+        // Nothing to hand back unless WE just brought the browser forward. This alone kills the
+        // reported focus-war: background prefetch parks the off-screen window without ever
+        // showing it, so they pass false and no longer re-activate the terminal.
+        if (!weJustActivatedBrowser)
+        {
+            return false;
+        }
+
+        // Frontmost app unreadable (osascript denied/failed): we already know we just raised the
+        // browser, so hand focus back best-effort rather than stranding it on the browser. NOTE
+        // this is intentionally fail-OPEN and best-effort: the "don't steal from a foreign app"
+        // check below depends on being able to READ the frontmost app, which needs System Events
+        // Automation. If that permission is denied the read always fails and this path degrades to
+        // the pre-fix behaviour (an unconditional hand-back) — but ONLY for the user-driven
+        // dock/dismiss/launch/interaction paths that reach here. Background prefetch parks never
+        // reach this method at all (they are gated out by weJustActivatedBrowser above), so the
+        // reported focus-war stays fixed regardless of this permission (workspace-fihe).
+        if (!IsUsableBundleId(frontmostBundleId))
+        {
+            return true;
+        }
+
+        // Already on the terminal — the hand-back already happened (or focus never left); no-op.
+        if (SameApp(frontmostBundleId, terminalBundleId))
+        {
+            return false;
+        }
+
+        // Our own headed Chromium holds focus → hand it back to the terminal.
+        if (LooksLikeBrowserBundleId(frontmostBundleId))
+        {
+            return true;
+        }
+
+        // A user-chosen foreign app is frontmost — the user deliberately switched away. Never
+        // steal focus back (the workspace-fihe focus-war).
+        return false;
+    }
+
+    /// <summary>
+    /// True when <paramref name="bundleId"/> is WireCopy's OWN headed browser. WireCopy launches
+    /// Playwright's BUNDLED Chromium (no Channel / ExecutablePath is configured), whose macOS
+    /// bundle id is <c>org.chromium.Chromium</c>; a configured channel would be Chrome for Testing
+    /// (<c>com.google.chrome.for.testing</c>). We match ONLY the Chromium family and Chrome for
+    /// Testing — deliberately NOT the user's own <c>com.google.Chrome</c> / <c>com.apple.Safari</c>
+    /// etc. A loose "contains chrome" test (the first cut) matched the user's real Google Chrome,
+    /// so a hand-back would have stolen focus from the browser the USER switched to — exactly the
+    /// focus-war this fix prevents (workspace-fihe).
+    /// </summary>
+    internal static bool LooksLikeBrowserBundleId(string? bundleId)
+    {
+        if (string.IsNullOrWhiteSpace(bundleId))
+        {
+            return false;
+        }
+
+        var id = bundleId.Trim();
+        return id.StartsWith("org.chromium.", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith("com.google.chrome.for.testing", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Case-insensitive bundle-id equality over trimmed, non-blank values.</summary>
+    internal static bool SameApp(string? a, string? b) =>
+        !string.IsNullOrWhiteSpace(a)
+        && !string.IsNullOrWhiteSpace(b)
+        && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Atomically claims the refocus debounce slot (workspace-9k27.7). A forced claim
     /// always wins and stamps the timestamp. A non-forced claim only proceeds when the
     /// window has elapsed AND it wins the CompareExchange — crucially, a SKIPPED call

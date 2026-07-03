@@ -129,11 +129,18 @@ public interface IBrowserSession : IBrowserSessionControl
 
     /// <summary>
     /// Returns the browser window to its background state so it doesn't cover the
-    /// terminal: minimized normally, but RE-DOCKED when the user wants the sidecar
-    /// (workspace-exbz) — background quieting must not strip a dock the user asked
-    /// for. No-op if no active page.
+    /// terminal: parked off-screen normally, but RE-DOCKED when the user wants the
+    /// sidecar (workspace-exbz) — background quieting must not strip a dock the user
+    /// asked for. No-op if no active page.
     /// </summary>
-    Task MinimizeWindowAsync();
+    /// <param name="weJustActivatedBrowser">
+    /// workspace-fihe: true ONLY for a post-interaction cleanup where WireCopy just brought the
+    /// browser forward for the user (captcha / manual login / Shift+I refresh via
+    /// <see cref="RestoreWindowAsync"/>). Such calls hand keyboard focus back to the terminal and
+    /// may re-dock the wanted sidecar. Background "get out of the way" callers (prefetch) leave it
+    /// false so they never re-activate the terminal or raise the browser on-screen (the focus-war).
+    /// </param>
+    Task MinimizeWindowAsync(bool weJustActivatedBrowser = false);
 
     /// <summary>
     /// Toggles the headed browser window between docked — pinned to the right half

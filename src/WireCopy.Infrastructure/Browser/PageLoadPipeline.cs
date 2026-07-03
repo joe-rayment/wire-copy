@@ -725,10 +725,12 @@ public class PageLoadPipeline
             }
         }
 
-        // Minimize browser after challenge resolved (or timed out)
+        // Minimize browser after challenge resolved (or timed out). RestoreWindowAsync had
+        // brought it forward for the user, so hand keyboard focus back to the terminal
+        // (workspace-fihe) instead of stranding it on the now-parked browser.
         if (_browserSession is IBrowserSession resolvedSession)
         {
-            await resolvedSession.MinimizeWindowAsync().ConfigureAwait(false);
+            await resolvedSession.MinimizeWindowAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
         }
 
         if (!resolved)

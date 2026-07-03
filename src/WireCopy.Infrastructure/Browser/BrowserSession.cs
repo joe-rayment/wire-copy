@@ -363,7 +363,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // OS-minimizing it. A minimized window is occlusion-throttled by Chromium — its live
     // page stops painting, so the spotlight/screenshots go stale. Parking keeps it at
     // windowState=normal off-screen: invisible and focus-neutral, but still rendering.
-    public async Task MinimizeWindowAsync()
+    public async Task MinimizeWindowAsync(bool weJustActivatedBrowser = false)
     {
         if (_disposed || _page == null)
         {
@@ -377,7 +377,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // post-gate cleanup calls this exact method.
         if (_userWantsDock)
         {
-            if (!_isDocked && await GetWindowStateAsync().ConfigureAwait(false) == "normal")
+            // workspace-fihe: re-dock (which brings the browser ON-SCREEN) ONLY on the
+            // interaction-cleanup path that just had the browser forward. A BACKGROUND prefetch
+            // call must never re-dock a parked window — raising the browser over the app the user
+            // switched to is the focus-war via the re-dock path. Its parked window simply stays
+            // parked until the user's next 'O' / dock action re-summons it.
+            if (weJustActivatedBrowser
+                && !_isDocked
+                && await GetWindowStateAsync().ConfigureAwait(false) == "normal")
             {
                 await DockWindowAsync().ConfigureAwait(false);
             }
@@ -385,7 +392,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        await ParkWindowOffScreenAsync().ConfigureAwait(false);
+        // Non-sidecar park. Forward the intent: an interaction-cleanup park (weJustActivatedBrowser)
+        // hands keyboard focus back to the terminal (else it would strand on the now-invisible
+        // browser the user was interacting with); a routine background park stays focus-neutral.
+        await ParkWindowOffScreenAsync(weJustActivatedBrowser).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -399,12 +409,19 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         if (_isDocked)
         {
             // The user explicitly un-docked: drop the sticky intent so a future headed
-            // relaunch does NOT auto-re-dock against their wishes. With the intent cleared,
-            // MinimizeWindowAsync re-PARKS the window off-screen (workspace-75ng) — not
-            // OS-minimized — so it keeps rendering and re-docks instantly with current
-            // content. Still reported as Minimized (hidden from view).
+            // relaunch does NOT auto-re-dock against their wishes, then re-PARK the window
+            // off-screen (workspace-75ng) — not OS-minimized — so it keeps rendering and
+            // re-docks instantly with current content. Still reported as Minimized.
+            //
+            // workspace-fihe: dismiss hands focus back to the terminal (weJustActivatedBrowser:
+            // true) because the user may have clicked into the docked live page, leaving focus on
+            // the browser we are about to hide. The refocus is gated on the browser still being
+            // frontmost, so it is a no-op when the terminal already has focus and never steals
+            // focus from a foreign app the user switched to. (Routed straight through Park rather
+            // than MinimizeWindowAsync, whose shared "get out of the way" callers must stay
+            // focus-neutral.)
             _userWantsDock = false;
-            await MinimizeWindowAsync().ConfigureAwait(false); // parks off-screen; clears _isDocked
+            await ParkWindowOffScreenAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
             return BrowserWindowState.Minimized;
         }
 
@@ -827,10 +844,56 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    private async Task RefocusTerminalAsync(bool force = false)
+    // workspace-fihe: reads the bundle id of the current frontmost GUI app so a refocus can tell
+    // whether OUR browser still holds focus (hand it back to the terminal) or the user has moved
+    // to a foreign app (leave them alone). Reuses the startup capture script; returns null on any
+    // failure so the caller falls back to its best-effort intent.
+    private async Task<string?> QueryFrontmostBundleIdAsync()
     {
         if (!OperatingSystem.IsMacOS())
         {
+            return null;
+        }
+
+        var result = await RunOsascriptAsync(TerminalRefocus.CaptureFrontmostBundleIdScript).ConfigureAwait(false);
+        if (result is not { ExitCode: 0 } r)
+        {
+            return null;
+        }
+
+        var id = r.StdOut.Trim();
+        return TerminalRefocus.IsUsableBundleId(id) ? id : null;
+    }
+
+    // workspace-fihe: <paramref name="weJustActivatedBrowser"/> is true ONLY on paths where
+    // WireCopy itself just raised/activated the browser window (dock / dismiss / launch-flash /
+    // restore-for-interaction). Background prefetch parks the off-screen window without ever
+    // showing it, so they pass false and never refocus — that unconditional re-activation on a
+    // cadence was the reported focus-war that fought the user switching to another app.
+    private async Task RefocusTerminalAsync(bool weJustActivatedBrowser, bool force = false)
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        // Fast path: a background park never brings the browser forward, so there is nothing to
+        // hand back — skip without even querying the frontmost app.
+        if (!weJustActivatedBrowser)
+        {
+            return;
+        }
+
+        // Only return focus while the frontmost app is still OURS. If the user has moved to a
+        // foreign app (e.g. the Claude app) since we raised the browser, respect it — never yank
+        // focus back. DecideRefocus is the single, unit-tested source of truth for this call.
+        var frontmost = await QueryFrontmostBundleIdAsync().ConfigureAwait(false);
+        if (!TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, frontmost, _terminalBundleId))
+        {
+            _logger.LogDebug(
+                "Not returning focus to the terminal — frontmost app '{Frontmost}' is not WireCopy's "
+                + "browser or terminal; leaving the user where they are (workspace-fihe)",
+                frontmost);
             return;
         }
 
@@ -1162,7 +1225,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
             else
             {
-                await ParkWindowOffScreenAsync().ConfigureAwait(false);
+                // Launch parks the just-raised headed window off-screen: hand the launch-flash
+                // focus back to the terminal (gated on the browser still being frontmost).
+                await ParkWindowOffScreenAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
             }
         }
         catch
@@ -1251,7 +1316,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// keyboard focus. Clears the docked flag and refocuses the terminal afterwards.
     /// Assumes a live headed <see cref="_page"/>; swallows CDP failures (non-fatal).
     /// </summary>
-    private async Task ParkWindowOffScreenAsync()
+    // workspace-fihe: <paramref name="weJustActivatedBrowser"/> is forwarded to the terminal
+    // refocus. It is true only when this park follows WireCopy raising the browser (the
+    // launch-flash park, or the dock-failure re-park), and false for the routine background /
+    // dismiss parks that never showed the window — those must not re-activate the terminal.
+    private async Task ParkWindowOffScreenAsync(bool weJustActivatedBrowser)
     {
         if (_disposed || _page == null)
         {
@@ -1295,8 +1364,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // window back so dismissing returns to the terminal-only view.
         await RestoreTerminalTileAsync().ConfigureAwait(false);
 
-        // Refocus the terminal app so keyboard input works immediately
-        await RefocusTerminalAsync().ConfigureAwait(false);
+        // Hand keyboard focus back to the terminal — but only when this park followed WireCopy
+        // raising the browser (weJustActivatedBrowser); a routine background/dismiss park never
+        // showed the window, so it must not re-activate the terminal (workspace-fihe).
+        await RefocusTerminalAsync(weJustActivatedBrowser).ConfigureAwait(false);
     }
 
     // workspace-75ng.4: resize the terminal window to the given tile (the slice the docked
@@ -1491,8 +1562,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // state must reflect the outcome, not the attempt): re-park it
                 // off-screen and report failure so the caller/UI stays truthful.
                 _logger.LogWarning("Sidecar placement returned no geometry — re-parking off-screen instead of claiming docked");
-                await ParkWindowOffScreenAsync().ConfigureAwait(false);
-                await RefocusTerminalAsync(force: true).ConfigureAwait(false);
+
+                // The park itself does not refocus (weJustActivatedBrowser: false); the forced
+                // refocus below owns the hand-back after we brought the browser forward to dock.
+                await ParkWindowOffScreenAsync(weJustActivatedBrowser: false).ConfigureAwait(false);
+                await RefocusTerminalAsync(weJustActivatedBrowser: true, force: true).ConfigureAwait(false);
                 return null;
             }
 
@@ -1503,7 +1577,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // the terminal. Delay + FORCE so it wins the race against the BringToFront above
             // (which activated the browser window) — the workspace-75ng focus-steal fix.
             await Task.Delay(_browserConfig.DockRefocusDelayMs).ConfigureAwait(false);
-            await RefocusTerminalAsync(force: true).ConfigureAwait(false);
+            await RefocusTerminalAsync(weJustActivatedBrowser: true, force: true).ConfigureAwait(false);
             return BrowserWindowState.Docked;
         }
         catch (Exception ex)
