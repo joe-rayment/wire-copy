@@ -438,6 +438,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             {
                 await page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
                 _applied = target;
+                _lastHintPageUrl = null; // workspace-2hfr: success = state change → re-arm the miss hint
                 return;
             }
 
@@ -493,6 +494,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             if (result == "ok")
             {
                 _applied = target;
+
+                // workspace-2hfr: a SUCCESSFUL sync re-arms the once-per-page miss
+                // hint — the throttle exists to avoid repeating the same hint for the
+                // same broken state, but after a success the next miss is a NEW state
+                // the user deserves to hear about (miss → hint, success, miss → hint).
+                _lastHintPageUrl = null;
                 lock (_gate)
                 {
                     _lastFailedTarget = null;

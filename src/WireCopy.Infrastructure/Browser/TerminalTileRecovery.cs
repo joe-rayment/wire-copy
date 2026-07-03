@@ -112,21 +112,13 @@ public static class TerminalTileRecovery
     }
 
     /// <summary>
-    /// Pure decision: restore only when the live window still sits where we tiled
-    /// it. A moved/resized window means the user rearranged things — leave it.
-    /// </summary>
-    internal static bool ShouldRestore(TerminalTiling.WindowRect current, TileRecord record)
-    {
-        return Math.Abs(current.X - record.TileX) <= MatchTolerancePx
-            && Math.Abs(current.Y - record.TileY) <= MatchTolerancePx
-            && Math.Abs(current.Width - record.TileW) <= MatchTolerancePx
-            && Math.Abs(current.Height - record.TileH) <= MatchTolerancePx;
-    }
-
-    /// <summary>
     /// Startup recovery (macOS): if a record was left behind by a crash while
-    /// docked, restore the terminal's pre-dock bounds — but only when the live
-    /// window still matches the recorded tile. Always clears the record.
+    /// docked, restore the terminal's pre-dock bounds. The osascript itself
+    /// finds the window still sitting ON the recorded tile (workspace-9k27.6
+    /// minor: never <c>window 1</c>, which in a multi-window terminal may be a
+    /// different window) and restores exactly that one; when no window matches
+    /// — the user moved/resized/closed it — nothing is touched. Always clears
+    /// the record.
     /// </summary>
     internal static async Task RecoverAsync(
         Func<string, Task<(int ExitCode, string StdOut, string StdErr)?>> runOsascript,
@@ -141,26 +133,32 @@ public static class TerminalTileRecovery
 
         try
         {
-            var getResult = await runOsascript(TerminalTiling.BuildGetBoundsScript(record.BundleId)).ConfigureAwait(false);
-            var current = getResult is { ExitCode: 0 } ? TerminalTiling.TryParseBounds(getResult.Value.StdOut) : null;
+            var tile = new TerminalTiling.WindowRect(record.TileX, record.TileY, record.TileW, record.TileH);
+            var preDock = new TerminalTiling.WindowRect(record.PreX, record.PreY, record.PreW, record.PreH);
+            var result = await runOsascript(TerminalTiling.BuildRestoreMatchedWindowScript(
+                record.BundleId, tile, preDock, MatchTolerancePx)).ConfigureAwait(false);
 
-            if (current is { } cur && ShouldRestore(cur, record))
+            if (result is { ExitCode: 0 } r)
             {
-                var preDock = new TerminalTiling.WindowRect(record.PreX, record.PreY, record.PreW, record.PreH);
-                var setResult = await runOsascript(TerminalTiling.BuildSetBoundsScript(record.BundleId, preDock)).ConfigureAwait(false);
-                if (setResult is { ExitCode: 0 })
+                var verdict = r.StdOut.Trim();
+                if (verdict == TerminalTiling.RestoreResultRestored)
                 {
                     logger.LogInformation(
-                        "Recovered the terminal window from a previous session's tile ({W}x{H} → {PreW}x{PreH})",
-                        cur.Width.ToString(CultureInfo.InvariantCulture),
-                        cur.Height.ToString(CultureInfo.InvariantCulture),
+                        "Recovered the terminal window from a previous session's tile ({TileW}x{TileH} → {PreW}x{PreH})",
+                        record.TileW.ToString(CultureInfo.InvariantCulture),
+                        record.TileH.ToString(CultureInfo.InvariantCulture),
                         record.PreW.ToString(CultureInfo.InvariantCulture),
                         record.PreH.ToString(CultureInfo.InvariantCulture));
                 }
                 else
                 {
-                    logger.LogWarning("Terminal tile recovery could not restore the window (osascript failed)");
+                    logger.LogInformation(
+                        "Terminal tile recovery: no window still matches the recorded tile — keeping the user's layout");
                 }
+            }
+            else
+            {
+                logger.LogWarning("Terminal tile recovery could not restore the window (osascript failed)");
             }
         }
         catch (Exception ex)
