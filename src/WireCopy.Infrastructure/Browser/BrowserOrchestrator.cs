@@ -1471,8 +1471,11 @@ public partial class BrowserOrchestrator : IBrowserService
             }
             else
             {
+                // workspace-khpe.6: a transient summon failure is recoverable — say
+                // how (the | dock toggle re-summons), mirroring the breaker-trip copy
+                // which already advertises '| retries'.
                 _navigationService.SetStatusMessage(
-                    "Couldn't open the live page beside the app (details in logs/wirecopy-*.log)");
+                    "Couldn't open the live page beside the app — press | to retry (details in logs/wirecopy-*.log)");
             }
         }
 

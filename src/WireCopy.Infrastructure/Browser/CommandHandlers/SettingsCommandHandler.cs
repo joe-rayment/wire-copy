@@ -522,10 +522,15 @@ internal static class SettingsCommandHandler
                 .ConfigureAwait(false);
 
             Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + 7);
-            Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return…{Reset}");
+            Console.Write($"{palette.SecondaryText.AnsiFg}Press any key to return{Reset}");
             try
             {
                 _ = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+
+                // workspace-khpe.7: the dismiss key is consumed above; drain any
+                // extra keys mashed while the panel was up so they don't ghost
+                // into the Settings screen once it re-renders.
+                ctx.InputHandler.DrainBufferedInput();
             }
             catch (OperationCanceledException)
             {

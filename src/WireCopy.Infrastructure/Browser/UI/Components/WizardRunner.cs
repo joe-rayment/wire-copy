@@ -24,6 +24,12 @@ namespace WireCopy.Infrastructure.Browser.UI.Components;
 /// </summary>
 internal static class WizardRunner
 {
+    /// <summary>
+    /// workspace-khpe.8: minimum terminal width the boxed wizard chrome needs.
+    /// Below this the header/field borders would overflow the right edge.
+    /// </summary>
+    internal const int MinTerminalWidth = 40;
+
     private const string Reset = "\x1b[0m";
     private const string Dim = "\x1b[2m";
 
@@ -39,6 +45,16 @@ internal static class WizardRunner
         if (steps.Count == 0)
         {
             return new Dictionary<string, string>();
+        }
+
+        // workspace-khpe.8: below this the boxed step header + fields can't render
+        // without writing past the right edge (callers optimistically size to a
+        // 40-column floor). Show a readable notice and cancel rather than paint a
+        // corrupt, unusable form.
+        if (OverlayViewport.Width < MinTerminalWidth)
+        {
+            await ShowTooNarrowNoticeAsync(input, palette, ct).ConfigureAwait(false);
+            return null;
         }
 
         var allValues = new Dictionary<string, string>();
@@ -250,6 +266,37 @@ internal static class WizardRunner
         Console.Write($"{Dim}{palette.SecondaryText.AnsiFg}{display}{Reset}");
 
         return startRow + 3; // label + value + blank line
+    }
+
+    /// <summary>
+    /// workspace-khpe.8: renders the short "terminal too narrow" notice and waits
+    /// for a keypress. Deliberately terse (two short lines) so the message itself
+    /// fits even on a very narrow terminal.
+    /// </summary>
+    private static async Task ShowTooNarrowNoticeAsync(
+        IInputHandler input, ThemePalette palette, CancellationToken ct)
+    {
+        try
+        {
+            Console.Clear();
+            Console.SetCursorPosition(0, 0);
+            Console.Write($"{palette.ErrorFg.AnsiFg}Terminal too narrow{Reset}");
+            Console.SetCursorPosition(0, 1);
+            Console.Write($"{palette.SecondaryText.AnsiFg}Need ≥{MinTerminalWidth} cols{Reset}");
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentOutOfRangeException)
+        {
+            // No addressable console — the wizard just cancels.
+        }
+
+        try
+        {
+            await input.WaitForInputAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled while waiting — treat as dismiss.
+        }
     }
 
     private static void RenderSpinner(ThemePalette palette, int row, string message)

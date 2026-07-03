@@ -33,7 +33,7 @@ public class KeybindingPopupTests
         keys.Should().Contain("s");
         keys.Should().Contain("v");
         keys.Should().Contain("b / B");
-        keys.Should().Contain("q");
+        keys.Should().Contain("q / Ctrl+C");
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class KeybindingPopupTests
         keys.Should().Contain("s");
         keys.Should().Contain("v");
         keys.Should().Contain("b / B");
-        keys.Should().Contain("q");
+        keys.Should().Contain("q / Ctrl+C");
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class KeybindingPopupTests
 
         keys.Should().Contain("Enter");
         keys.Should().Contain("o");
-        keys.Should().Contain("q");
+        keys.Should().Contain("q / Ctrl+C");
     }
 
     [Theory]
@@ -185,7 +185,52 @@ public class KeybindingPopupTests
         foreach (var mode in modes)
         {
             var bindings = KeybindingPopup.GetBindings(mode);
-            bindings.Should().Contain(b => b.Key == "q", $"quit binding should be available in {mode}");
+            bindings.Should().Contain(b => b.Key.Contains('q'), $"quit binding should be available in {mode}");
+        }
+    }
+
+    [Fact]
+    public void GetBindings_QuitDocumentsCtrlCInAllReachableModes()
+    {
+        // workspace-c8mb.3: Ctrl+C also quits but was undiscoverable — every
+        // reachable mode's quit row must advertise 'q / Ctrl+C'.
+        var modes = new[] { ViewMode.Hierarchical, ViewMode.Readable, ViewMode.CollectionList, ViewMode.CollectionItems, ViewMode.Launcher };
+
+        foreach (var mode in modes)
+        {
+            var bindings = KeybindingPopup.GetBindings(mode);
+            bindings.Should().Contain(b => b.Key == "q / Ctrl+C" && b.Description == "quit",
+                $"quit row in {mode} must advertise Ctrl+C");
+        }
+    }
+
+    [Fact]
+    public void GetBindings_CycleThemeDiscoverableInMainViews()
+    {
+        // workspace-c8mb.1: Ctrl+P cycles theme everywhere but was only listed
+        // in the launcher; the four main views must advertise it too.
+        var modes = new[] { ViewMode.Hierarchical, ViewMode.Readable, ViewMode.CollectionList, ViewMode.CollectionItems, ViewMode.Launcher };
+
+        foreach (var mode in modes)
+        {
+            var bindings = KeybindingPopup.GetBindings(mode);
+            bindings.Should().Contain(b => b.Key == "Ctrl+P" && b.Description == "cycle theme",
+                $"Ctrl+P cycle-theme hint should be available in {mode}");
+        }
+    }
+
+    [Fact]
+    public void GetBindings_EscGoBackDocumentedWhereBackApplies()
+    {
+        // workspace-c8mb.2: Esc goes back in the same modes that offer 'b' — the
+        // popup must document Esc next to the existing back binding.
+        var modes = new[] { ViewMode.Hierarchical, ViewMode.Readable, ViewMode.CollectionList, ViewMode.CollectionItems };
+
+        foreach (var mode in modes)
+        {
+            var bindings = KeybindingPopup.GetBindings(mode);
+            bindings.Should().Contain(b => b.Key == "Esc" && b.Description == "go back",
+                $"Esc go-back hint should be available in {mode}");
         }
     }
 

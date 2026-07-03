@@ -276,9 +276,62 @@ public class TerminalInputHandler : IInputHandler
                 RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
             }
 
+            // workspace-khpe.5: repaints the prompt label and current input at the
+            // (possibly recomputed) row/width, buffer and cursor intact. Used on a
+            // mid-typing terminal resize so nothing is written past the new border.
+            void RepaintPrompt()
+            {
+                Console.SetCursorPosition(targetCol, targetRow);
+                var cells = clearWidth.HasValue
+                    ? Math.Max(1, clearWidth.Value)
+                    : Math.Max(1, Console.WindowWidth - 1 - targetCol);
+                Console.Write(new string(' ', cells));
+                Console.SetCursorPosition(targetCol, targetRow);
+                Console.Write(palette.PromptFg.AnsiFg);
+                Console.Write(prompt);
+                Console.Write("\x1b[0m");
+                RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+            }
+
+            Task<ConsoleKeyInfo>? pendingKey = null;
+            Task? pendingResize = null;
             while (!cancellationToken.IsCancellationRequested)
             {
-                var keyInfo = await _keyChannel.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                // Race the next keystroke against a terminal-resize signal so the
+                // prompt can reflow instead of ignoring resizes (it reads the key
+                // channel directly, outside the main loop's resize handling). The
+                // key read is persisted across iterations so a resize never drops a
+                // keystroke; the resize read is coalesced and safe to discard.
+                pendingKey ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
+                pendingResize ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
+
+                var completed = await Task.WhenAny(pendingKey, pendingResize).ConfigureAwait(false);
+
+                if (completed == pendingResize)
+                {
+                    pendingResize = null;
+
+                    while (_resizeDetector.Resizes.TryRead(out _))
+                    {
+                        // Coalesce a burst of resize signals into one repaint.
+                    }
+
+                    // Re-anchor to the new bottom row when the prompt tracks it, and
+                    // recompute the visible input width from the new dimensions.
+                    if (row == null)
+                    {
+                        targetRow = Math.Max(0, Console.WindowHeight - 1);
+                    }
+
+                    maxInputCells = clearWidth.HasValue
+                        ? Math.Max(1, clearWidth.Value - prompt.Length)
+                        : Math.Max(1, Console.WindowWidth - 1 - promptStart);
+                    RepaintPrompt();
+                    continue;
+                }
+
+                var keyInfo = await pendingKey.ConfigureAwait(false);
+                pendingKey = null;
 
                 if (keyInfo.Key == ConsoleKey.Escape)
                 {

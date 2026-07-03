@@ -133,8 +133,17 @@ internal static class SearchCommandHandler
             case "open" or "go" or "o":
                 if (parts.Length > 1)
                 {
-                    var url = NormalizeUrl(parts[1]);
-                    await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+                    // workspace-khpe.3: validate before navigating so a mistyped or
+                    // special-character argument gets a clear message, not a load error.
+                    if (NavigationUrl.TryNormalize(parts[1], out var url, out var urlError))
+                    {
+                        await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        ctx.NavigationService.SetStatusMessage(urlError);
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -341,8 +350,19 @@ internal static class SearchCommandHandler
                 // ":hlep") must say so instead of silently navigating to nonsense.
                 if (LooksLikeUrl(input))
                 {
-                    var navigateUrl = NormalizeUrl(input);
-                    await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);
+                    // workspace-khpe.3: LooksLikeUrl gates the heuristic; the final
+                    // Uri.TryCreate catches otherwise-plausible input that still
+                    // isn't a well-formed URL.
+                    if (NavigationUrl.TryNormalize(input, out var navigateUrl, out var navError))
+                    {
+                        await ctx.NavigateToAsync(navigateUrl, options, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        ctx.NavigationService.SetStatusMessage(navError);
+                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    }
+
                     return true;
                 }
 

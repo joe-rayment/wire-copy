@@ -453,11 +453,14 @@ internal static class LauncherCommandHandler
             return;
         }
 
-        var url = input.Trim();
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        // workspace-khpe.3: validate the typed target before navigating so a
+        // malformed entry (spaces, control characters, empty host) reports a
+        // clear message on the launcher instead of an opaque load failure.
+        if (!NavigationUrl.TryNormalize(input, out var url, out var urlError))
         {
-            url = "https://" + url;
+            ctx.NavigationService.SetStatusMessage(urlError);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
         }
 
         await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);

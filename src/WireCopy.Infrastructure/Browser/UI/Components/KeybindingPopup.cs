@@ -49,8 +49,10 @@ internal static class KeybindingPopup
                 ("|", "dock browser (side pane)"),
                 ("y", "open the browser's page here"),
                 ("b / B", "go back / forward"),
+                ("Esc", "go back"),
                 (":", "command line"),
-                ("q", "quit"),
+                ("Ctrl+P", "cycle theme"),
+                ("q / Ctrl+C", "quit"),
             ],
             ViewMode.Readable =>
             [
@@ -73,7 +75,9 @@ internal static class KeybindingPopup
                 ("R", "refresh (bypass cache)"),
                 ("\\", "prefetch progress panel"),
                 ("b / B", "go back / forward"),
-                ("q", "quit"),
+                ("Esc", "go back"),
+                ("Ctrl+P", "cycle theme"),
+                ("q / Ctrl+C", "quit"),
             ],
             ViewMode.CollectionList =>
             [
@@ -82,7 +86,9 @@ internal static class KeybindingPopup
                 ("d", "delete collection"),
                 (":new", "create collection"),
                 ("b", "go back"),
-                ("q", "quit"),
+                ("Esc", "go back"),
+                ("Ctrl+P", "cycle theme"),
+                ("q / Ctrl+C", "quit"),
             ],
             ViewMode.CollectionItems =>
             [
@@ -94,7 +100,9 @@ internal static class KeybindingPopup
                 (":", "command line"),
                 ("\\", "prefetch progress panel"),
                 ("b", "go back"),
-                ("q", "quit"),
+                ("Esc", "go back"),
+                ("Ctrl+P", "cycle theme"),
+                ("q / Ctrl+C", "quit"),
             ],
             ViewMode.Launcher =>
             [
@@ -107,7 +115,7 @@ internal static class KeybindingPopup
                 (":rename", "rename bookmark"),
                 ("c", "Setup / settings"),
                 ("Ctrl+P", "cycle theme"),
-                ("q", "quit"),
+                ("q / Ctrl+C", "quit"),
             ],
             _ =>
             [
@@ -290,7 +298,7 @@ internal static class KeybindingPopup
         if (hintRow < terminalHeight - 1)
         {
             Console.SetCursorPosition(startCol, hintRow);
-            Console.Write($"{Dim}{palette.SecondaryText.AnsiFg}press any key to dismiss{Reset}");
+            Console.Write($"{Dim}{palette.SecondaryText.AnsiFg}Press any key to dismiss{Reset}");
         }
 
         return popupHeight + 1; // +1 for hint line

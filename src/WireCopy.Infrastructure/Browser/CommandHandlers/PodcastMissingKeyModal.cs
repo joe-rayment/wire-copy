@@ -53,8 +53,8 @@ internal static class PodcastMissingKeyModal
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var summary = "OpenAI TTS API key required";
         var hint = $"{palette.GetAccentFg().AnsiFg}[s]{Reset} {palette.PrimaryText.AnsiFg}set up now{Reset}  " +
-                   $"{palette.GetAccentFg().AnsiFg}[Esc]{Reset} {palette.PrimaryText.AnsiFg}back{Reset}";
-        var hintPlain = "[s] set up now  [Esc] back";
+                   $"{palette.GetAccentFg().AnsiFg}[Esc]{Reset} {palette.PrimaryText.AnsiFg}cancel{Reset}";
+        var hintPlain = "[s] set up now  [Esc] cancel";
 
         try
         {

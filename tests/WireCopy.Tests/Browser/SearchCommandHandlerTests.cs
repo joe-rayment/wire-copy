@@ -269,6 +269,20 @@ public class SearchCommandHandlerTests
         _navigatedUrl.Should().Be("http://insecure.example.com");
     }
 
+    [Fact]
+    public async Task HandleCommandLineInput_OpenCommandWithMalformedUrl_RejectsWithMessage()
+    {
+        // workspace-khpe.3: ':open' must validate its argument. An entry that
+        // normalizes to an unparseable URL is rejected with a clear message
+        // rather than navigated to and failing later as an opaque load error.
+        var handled = await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "open http://", _options, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        _navigatedUrl.Should().BeNull("a malformed :open argument must not navigate");
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Not a valid URL");
+    }
+
     #endregion
 
     #region Unknown commands (workspace-syj1.1 / .5)

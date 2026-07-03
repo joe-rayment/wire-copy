@@ -66,6 +66,15 @@ internal static class CelebrationAnimation
         // === Phase 1: Flash (200ms) — 2 frames x 100ms ===
         for (var frame = 0; frame < 2; frame++)
         {
+            // workspace-khpe.1: box coordinates were computed once from the
+            // starting dimensions; a resize mid-animation would paint the box at
+            // stale positions and corrupt the display. Bail as soon as the
+            // terminal changes size — the next full page render repaints cleanly.
+            if (DimensionsChanged(terminalWidth, terminalHeight))
+            {
+                return;
+            }
+
             var borderColor = frame == 0 ? celebrationColor : normalBorder;
             RenderBox(borderColor, palette.GetCelebrationFg().AnsiFg, displayMessage, boxLeft, boxTop, innerWidth);
             Thread.Sleep(FlashFrameMs);
@@ -74,6 +83,11 @@ internal static class CelebrationAnimation
         // === Phase 2: Sparkle (400ms) — 4 frames x 100ms ===
         for (var frame = 0; frame < 4; frame++)
         {
+            if (DimensionsChanged(terminalWidth, terminalHeight))
+            {
+                return;
+            }
+
             // Each frame adds 2-3 sparkles at random positions
             var sparkleCount = rng.Next(2, 4); // 2 or 3
             for (var s = 0; s < sparkleCount; s++)
@@ -108,10 +122,10 @@ internal static class CelebrationAnimation
         }
 
         // === Phase 3: Typewriter (600ms) — character by character ===
-        PlayTypewriterPhase(celebrationColor, displayMessage, boxLeft, boxTop, innerWidth);
+        PlayTypewriterPhase(celebrationColor, displayMessage, boxLeft, boxTop, innerWidth, terminalWidth, terminalHeight);
 
         // === Phase 4: Settle (400ms) — 4 frames x 100ms, removing sparkles ===
-        PlaySettlePhase(sparklePositions);
+        PlaySettlePhase(sparklePositions, terminalWidth, terminalHeight);
     }
 
     /// <summary>
@@ -129,12 +143,31 @@ internal static class CelebrationAnimation
         return $"\u2726 Podcast ready! {chapters} chapters \u00b7 {durationText}";
     }
 
+    /// <summary>
+    /// workspace-khpe.1: true when the live terminal no longer matches the
+    /// dimensions the animation's coordinates were computed from. Redirected /
+    /// dumb terminals report unchanged (the per-write guards absorb the rest).
+    /// </summary>
+    private static bool DimensionsChanged(int width, int height)
+    {
+        try
+        {
+            return Console.WindowWidth != width || Console.WindowHeight != height;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentOutOfRangeException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
     private static void PlayTypewriterPhase(
         string celebrationColor,
         string displayMessage,
         int boxLeft,
         int boxTop,
-        int innerWidth)
+        int innerWidth,
+        int terminalWidth,
+        int terminalHeight)
     {
         var msgRow = boxTop + 1;
         var msgStartCol = boxLeft + 1 + Math.Max(0, (innerWidth - displayMessage.Length) / 2);
@@ -157,6 +190,11 @@ internal static class CelebrationAnimation
 
         for (var i = 0; i < displayMessage.Length; i++)
         {
+            if (DimensionsChanged(terminalWidth, terminalHeight))
+            {
+                return;
+            }
+
             lock (ConsoleSync.Lock)
             {
                 try
@@ -174,13 +212,18 @@ internal static class CelebrationAnimation
         }
     }
 
-    private static void PlaySettlePhase(List<(int Row, int Col)> sparklePositions)
+    private static void PlaySettlePhase(List<(int Row, int Col)> sparklePositions, int terminalWidth, int terminalHeight)
     {
         // Distribute sparkles across the 4 frames for gradual removal
         var perFrame = Math.Max(1, (sparklePositions.Count + 3) / 4);
 
         for (var frame = 0; frame < 4; frame++)
         {
+            if (DimensionsChanged(terminalWidth, terminalHeight))
+            {
+                return;
+            }
+
             var start = frame * perFrame;
             var end = Math.Min(start + perFrame, sparklePositions.Count);
 

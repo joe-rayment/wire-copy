@@ -108,7 +108,7 @@ internal static class ViewCommandHandler
         ctx.NavigationService.Announce(
             glyph: null,
             $"Theme: {ctx.ThemeProvider.CurrentTheme}",
-            new[] { new StatusKeyHint("Ctrl+p", "next") });
+            new[] { new StatusKeyHint("Ctrl+P", "next") });
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
@@ -305,6 +305,11 @@ internal static class ViewCommandHandler
 
             break;
         }
+
+        // workspace-khpe.7: the dismiss keypress is consumed here; drop any extra
+        // keys the user mashed while the popup was up so they don't ghost into the
+        // page as commands once control returns to the main loop.
+        ctx.InputHandler.DrainBufferedInput();
 
         // Restore the original page render
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

@@ -61,6 +61,16 @@ internal static class FormField
             innerWidth = 10;
         }
 
+        // workspace-khpe.8: many callers size fieldWidth off a Math.Max(40, …)
+        // floor, which overflows the right edge on a narrower terminal. Clamp the
+        // box to what the viewport can actually hold (2 indent + 2 border + 2
+        // padding) so no row is ever written past the edge.
+        var maxInner = Math.Max(1, OverlayViewport.Width - 6);
+        if (innerWidth > maxInner)
+        {
+            innerWidth = maxInner;
+        }
+
         var boxWidth = innerWidth + 4;
         string? errorMessage = null;
         var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
@@ -199,11 +209,13 @@ internal static class FormField
         var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
         var left = OverlayViewport.Left; // workspace-s621: dock-aware origin
 
-        // Row 0: Label
+        // Row 0: Label. workspace-khpe.8: truncate to the box width so a long
+        // label can't run past the right edge on a narrow terminal.
         Console.SetCursorPosition(left, startRow);
         ClearLine(boxWidth + 2);
         Console.SetCursorPosition(left + 2, startRow);
-        Console.Write($"{palette.PrimaryText.AnsiFg}{field.Label}{Reset}");
+        var label = field.Label.Length > boxWidth ? field.Label[..boxWidth] : field.Label;
+        Console.Write($"{palette.PrimaryText.AnsiFg}{label}{Reset}");
 
         var nextRow = startRow + 1;
 
