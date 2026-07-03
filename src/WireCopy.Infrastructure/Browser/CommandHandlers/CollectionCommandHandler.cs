@@ -10,6 +10,7 @@ using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Animations;
 using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
+using static WireCopy.Infrastructure.Browser.UI.KeyRegistry;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -54,7 +55,7 @@ internal static class CollectionCommandHandler
                     ctx.NavigationService.Announce(
                         "✓",
                         $"Saved ({links.Count})",
-                        new[] { new StatusKeyHint("c", "list") },
+                        new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
                         shortText: $"✓ {links.Count}");
                 }
                 catch (Exception ex)
@@ -96,7 +97,7 @@ internal static class CollectionCommandHandler
                         ctx.NavigationService.Announce(
                             "✓",
                             $"Saved to Reading List: {saveNode.Link.DisplayText}",
-                            new[] { new StatusKeyHint("c", "list") },
+                            new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
                             shortText: "✓ saved");
                     }
                     catch (Exception ex)
@@ -133,7 +134,7 @@ internal static class CollectionCommandHandler
                     ctx.NavigationService.Announce(
                         "✓",
                         $"Saved to Reading List: {title}",
-                        new[] { new StatusKeyHint("c", "list") },
+                        new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
                         shortText: "✓ saved");
                 }
                 catch (Exception ex)
@@ -229,7 +230,7 @@ internal static class CollectionCommandHandler
                             ctx.NavigationService.Announce(
                                 "✓",
                                 $"Saved to {collectionName}: {saveNode.Link.DisplayText}",
-                                new[] { new StatusKeyHint("c", "list") },
+                                new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
                                 shortText: "✓ saved");
                         }
                         else
@@ -295,7 +296,7 @@ internal static class CollectionCommandHandler
                     ctx.NavigationService.Announce(
                         "✓",
                         $"Saved ({visibleNodes.Count})",
-                        new[] { new StatusKeyHint("c", "list") },
+                        new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
                         shortText: $"✓ {visibleNodes.Count}");
                 }
                 catch (Exception ex)

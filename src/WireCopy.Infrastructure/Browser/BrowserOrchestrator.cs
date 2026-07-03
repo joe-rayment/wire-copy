@@ -1314,7 +1314,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     _navigationService.Announce(
                         DockGlyph(),
                         "Live page docked",
-                        new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                        new[] { new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleBrowserDock), "hide"), new StatusKeyHint(KeyRegistry.KeyFor(CommandType.AdoptLensPage), "adopt page") },
                         ttl: TimeSpan.FromSeconds(5),
                         shortText: DockGlyph());
                     break;
@@ -1322,7 +1322,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     _navigationService.Announce(
                         glyph: null,
                         "Live page hidden",
-                        new[] { new StatusKeyHint("|", "show") },
+                        new[] { new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleBrowserDock), "show") },
                         ttl: TimeSpan.FromSeconds(4));
                     break;
                 default:
@@ -1404,7 +1404,7 @@ public partial class BrowserOrchestrator : IBrowserService
                 _navigationService.Announce(
                     DockGlyph(),
                     "Live page docked",
-                    new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                    new[] { new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleBrowserDock), "hide"), new StatusKeyHint(KeyRegistry.KeyFor(CommandType.AdoptLensPage), "adopt page") },
                     ttl: TimeSpan.FromSeconds(5),
                     shortText: DockGlyph());
                 await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
@@ -1451,7 +1451,7 @@ public partial class BrowserOrchestrator : IBrowserService
             _navigationService.Announce(
                 DockGlyph(),
                 "Live page docked",
-                new[] { new StatusKeyHint("|", "hide"), new StatusKeyHint("y", "adopt page") },
+                new[] { new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleBrowserDock), "hide"), new StatusKeyHint(KeyRegistry.KeyFor(CommandType.AdoptLensPage), "adopt page") },
                 ttl: TimeSpan.FromSeconds(5),
                 shortText: DockGlyph());
         }
@@ -1516,7 +1516,7 @@ public partial class BrowserOrchestrator : IBrowserService
         _navigationService.Announce(
             DockGlyph(),
             "See the live page beside the app",
-            new[] { new StatusKeyHint("|", "dock") },
+            new[] { new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleBrowserDock), "dock") },
             ttl: TimeSpan.FromSeconds(6));
         await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
     }
@@ -1546,9 +1546,9 @@ public partial class BrowserOrchestrator : IBrowserService
                 $"Speed reading {_navigationService.SpeedReadWpm} WPM",
                 new[]
                 {
-                    new StatusKeyHint("<", "slower"),
-                    new StatusKeyHint(">", "faster"),
-                    new StatusKeyHint("f", "stop"),
+                    new StatusKeyHint(KeyRegistry.KeyFor(CommandType.SpeedReadSlower), "slower"),
+                    new StatusKeyHint(KeyRegistry.KeyFor(CommandType.SpeedReadFaster), "faster"),
+                    new StatusKeyHint(KeyRegistry.KeyFor(CommandType.ToggleSpeedRead), "stop"),
                 },
                 TimeSpan.FromSeconds(4),
                 $"▶{_navigationService.SpeedReadWpm}");

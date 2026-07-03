@@ -6,6 +6,7 @@ using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.StatusLine;
+using static WireCopy.Infrastructure.Browser.UI.KeyRegistry;
 
 namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 
@@ -982,26 +983,32 @@ internal class StatusBarRenderer
     /// active, the hint slot teaches THAT state's keys instead of the generic
     /// per-view tier — the Claude Code pattern of contextual teaching.
     /// </summary>
-    private static (string Key, string Action)[][] GetHintTiers(
+#pragma warning disable SA1202 // internal test seam kept beside the private hint helpers it belongs with
+    internal static (string Key, string Action)[][] GetHintTiers(
         ViewMode mode,
         NavigationContext? context = null,
         bool preloadDetailVisible = false)
     {
+        // workspace-9k27.14: key labels interpolate from KeyRegistry (the single
+        // source of truth) rather than repeating literals. "Esc" and the abbreviated
+        // "J/K" have no atomic registry entry and stay literal; every other token here
+        // is a KeyFor(...) so a binding change flows through automatically.
         if (preloadDetailVisible)
         {
             return
             [
-                [("\\", "close"), ("Esc", "close")],
-                [("\\", "close")],
+                [(KeyFor(CommandType.TogglePreloadDetail), "close"), ("Esc", "close")],
+                [(KeyFor(CommandType.TogglePreloadDetail), "close")],
             ];
         }
 
         if (context?.IsSpeedReadActive == true && mode == ViewMode.Readable)
         {
+            var slowFast = $"{KeyFor(CommandType.SpeedReadSlower)}/{KeyFor(CommandType.SpeedReadFaster)}";
             return
             [
-                [("</>", "speed"), ("f", "stop")],
-                [("f", "stop")],
+                [(slowFast, "speed"), (KeyFor(CommandType.ToggleSpeedRead), "stop")],
+                [(KeyFor(CommandType.ToggleSpeedRead), "stop")],
             ];
         }
 
@@ -1009,9 +1016,9 @@ internal class StatusBarRenderer
         {
             return
             [
-                [("s", "save-sel"), ("Space", "select"), ("Esc", "clear")],
-                [("s", "save-sel"), ("Esc", "clear")],
-                [("s", "save-sel")],
+                [(KeyFor(CommandType.SaveToCollection), "save-sel"), (KeyFor(CommandType.ToggleSelection), "select"), ("Esc", "clear")],
+                [(KeyFor(CommandType.SaveToCollection), "save-sel"), ("Esc", "clear")],
+                [(KeyFor(CommandType.SaveToCollection), "save-sel")],
             ];
         }
 
@@ -1020,40 +1027,45 @@ internal class StatusBarRenderer
         // dedicated trailing help slot, so listing it again only wasted space and
         // crowded out real actions. Destructive keys (delete/clear) live in the
         // longest tier only, so they fall away first under squeeze.
+        var open = KeyFor(CommandType.ActivateLink);
+        var save = KeyFor(CommandType.SaveToCollection);
+        var back = KeyFor(CommandType.GoBack);
+        var width = $"{KeyFor(CommandType.DecreaseWidth)}{KeyFor(CommandType.IncreaseWidth)}";
         return mode switch
         {
             ViewMode.Hierarchical =>
             [
-                [("Enter", "open"), ("s", "save"), ("|", "browser"), ("Space", "select"), ("A", "save-all"), ("Shift+R", "refresh"), ("v", "reader")],
-                [("Enter", "open"), ("s", "save"), ("|", "browser"), ("v", "reader")],
-                [("Enter", "open"), ("s", "save")],
+                [(open, "open"), (save, "save"), (KeyFor(CommandType.ToggleBrowserDock), "browser"), (KeyFor(CommandType.ToggleSelection), "select"), (KeyFor(CommandType.SaveAllToReadingList), "save-all"), (KeyFor(CommandType.ForceRefresh), "refresh"), (KeyFor(CommandType.SwitchView), "reader")],
+                [(open, "open"), (save, "save"), (KeyFor(CommandType.ToggleBrowserDock), "browser"), (KeyFor(CommandType.SwitchView), "reader")],
+                [(open, "open"), (save, "save")],
             ],
             ViewMode.Readable =>
             [
-                [("s", "save"), ("f", "speed-read"), ("o", "browser"), ("[]", "width"), ("Shift+R", "refresh"), ("v", "links"), ("b", "back")],
-                [("s", "save"), ("f", "speed-read"), ("v", "links"), ("b", "back")],
-                [("s", "save"), ("v", "links")],
+                [(save, "save"), (KeyFor(CommandType.ToggleSpeedRead), "speed-read"), (KeyFor(CommandType.OpenInBrowser), "browser"), (width, "width"), (KeyFor(CommandType.ForceRefresh), "refresh"), (KeyFor(CommandType.SwitchView), "links"), (back, "back")],
+                [(save, "save"), (KeyFor(CommandType.ToggleSpeedRead), "speed-read"), (KeyFor(CommandType.SwitchView), "links"), (back, "back")],
+                [(save, "save"), (KeyFor(CommandType.SwitchView), "links")],
             ],
             ViewMode.CollectionList =>
             [
-                [("Enter", "open"), ("s", "set default"), ("d", "delete"), ("b", "back")],
-                [("Enter", "open"), ("s", "set default"), ("b", "back")],
-                [("Enter", "open")],
+                [(open, "open"), (save, "set default"), (KeyFor(CommandType.DeleteItem), "delete"), (back, "back")],
+                [(open, "open"), (save, "set default"), (back, "back")],
+                [(open, "open")],
             ],
             ViewMode.CollectionItems =>
             [
-                [("Enter", "open"), ("p", "podcast"), ("J/K", "reorder"), ("d", "remove"), ("Shift+X", "clear"), (":", "cmd"), ("b", "back")],
-                [("Enter", "open"), ("p", "podcast"), ("d", "remove"), ("b", "back")],
-                [("Enter", "open"), ("b", "back")],
-                [("Enter", "open")],
+                [(open, "open"), (KeyFor(CommandType.GeneratePodcast), "podcast"), ("J/K", "reorder"), (KeyFor(CommandType.DeleteItem), "remove"), (KeyFor(CommandType.ClearCollection), "clear"), (KeyFor(CommandType.OpenCommandLine), "cmd"), (back, "back")],
+                [(open, "open"), (KeyFor(CommandType.GeneratePodcast), "podcast"), (KeyFor(CommandType.DeleteItem), "remove"), (back, "back")],
+                [(open, "open"), (back, "back")],
+                [(open, "open")],
             ],
             ViewMode.Launcher => throw new InvalidOperationException("StatusBar is not rendered for the launcher"),
             _ =>
             [
-                [("q", "quit")],
+                [(KeyFor(CommandType.Quit), "quit")],
             ],
         };
     }
+#pragma warning restore SA1202
 
     private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {

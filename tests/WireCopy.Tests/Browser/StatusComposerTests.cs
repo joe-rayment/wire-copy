@@ -1,6 +1,8 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using FluentAssertions;
+using WireCopy.Application.DTOs.Browser;
+using WireCopy.Infrastructure.Browser.UI;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Browser.UI.StatusLine;
@@ -19,6 +21,14 @@ namespace WireCopy.Tests.Browser;
 public class StatusComposerTests
 {
     private static readonly DateTime T0 = new(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc);
+
+    // workspace-9k27.14: the HITL alert's recovery key is sourced from the KeyRegistry,
+    // not hard-coded. These fixtures used to pin a stale "Shift+O" that no longer maps to
+    // anything — so the composer tests stayed green while the advertised key rotted. Tying
+    // them to KeyFor means a binding change flows through here too.
+    private static readonly string AlertOpenKey = KeyRegistry.KeyFor(CommandType.ToggleBrowserDock);
+    private static string AlertLong => $"\u23f8 login at nytimes.com \u00b7 {AlertOpenKey}:open";
+    private static string AlertShort => $"\u23f8 login\u00b7{AlertOpenKey}";
 
     private static StatusItem Alert(string longText, string shortText) => new()
     {
@@ -73,7 +83,7 @@ public class StatusComposerTests
                 left: new[] { Ambient("example.com") },
                 right: new[]
                 {
-                    Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O"),
+                    Alert(AlertLong, AlertShort),
                     Transient("▶ Speed reading 350 WPM — <:slower >:faster f:stop", T0.AddSeconds(4)),
                     Ambient("⇉ docked"),
                     Ambient("3 sel"),
@@ -100,7 +110,7 @@ public class StatusComposerTests
                 left: new[] { Ambient("a-fairly-long-domain.example.com") },
                 right: new[]
                 {
-                    Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O"),
+                    Alert(AlertLong, AlertShort),
                     Ambient("⇉ docked"),
                     Ambient("/search"),
                 },
@@ -120,7 +130,7 @@ public class StatusComposerTests
         var model = composer.Compose(
             50,
             left: new[] { Ambient("nytimes.com") },
-            right: new[] { Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O") },
+            right: new[] { Alert(AlertLong, AlertShort) },
             help: Help());
 
         model.PlainText.Should().Contain("⏸ login",
@@ -200,7 +210,7 @@ public class StatusComposerTests
             left: new[] { Ambient("example.com") },
             right: new[]
             {
-                Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O"),
+                Alert(AlertLong, AlertShort),
                 Transient("Width 60 — [:narrow ]:widen", T0.AddSeconds(2)),
                 Ambient("⇉ docked", priority: 1),
                 Ambient("5 sel", priority: 2),
@@ -244,7 +254,7 @@ public class StatusComposerTests
     {
         var clock = new FakeTimeProvider(T0);
         var composer = new StatusComposer(clock);
-        var alert = Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O");
+        var alert = Alert(AlertLong, AlertShort);
 
         clock.Advance(TimeSpan.FromHours(2));
         var model = composer.Compose(120, Array.Empty<StatusItem>(), new[] { alert });
@@ -344,7 +354,7 @@ public class StatusComposerTests
         var model = composer.Compose(
             100,
             left: new[] { Ambient("example.com") },
-            right: new[] { Alert("⏸ login at nytimes.com · Shift+O:open", "⏸ login·Shift+O") },
+            right: new[] { Alert(AlertLong, AlertShort) },
             help: Help());
 
         var line = StatusBarRenderer.FormatStatusLine(model, p);

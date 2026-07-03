@@ -1,8 +1,10 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
+using static WireCopy.Infrastructure.Browser.UI.KeyRegistry;
 
 namespace WireCopy.Infrastructure.Browser.UI.Components;
 
@@ -23,106 +25,117 @@ internal static class KeybindingPopup
     /// </summary>
     public static (string Key, string Description)[] GetBindings(ViewMode mode)
     {
+        // workspace-9k27.14: key labels interpolate from KeyRegistry (the single
+        // source of truth). Composite rows are composed from atoms; a few
+        // deliberately-abbreviated forms — "b / B" (Shift+B shown as B), "R"/"I"
+        // (Shift+R/Shift+I), "X" (Shift+X), "J / K" (Shift+J/K), "q / Ctrl+C",
+        // "Esc", "1-9", ":new"/":rename" — stay literal because their display
+        // intentionally differs from the canonical registry label; the enforcement
+        // test still resolves every one of them against the real dispatch.
+        var top = $"{KeyFor(CommandType.GoToTop)} / {KeyFor(CommandType.GoToBottom)}";
+        var downUp = $"{KeyFor(CommandType.MoveDown)} / {KeyFor(CommandType.MoveUp)}";
+        var readerTree = $"{KeyFor(CommandType.SwitchToReadable)} / {KeyFor(CommandType.SwitchToHierarchical)}";
+        var searchNextPrev = $"{KeyFor(CommandType.SearchNext)} / {KeyFor(CommandType.SearchPrevious)}";
         return mode switch
         {
             ViewMode.Hierarchical =>
             [
-                ("Enter", "open link"),
+                (KeyFor(CommandType.ActivateLink), "open link"),
 
                 // workspace-5wzs: Space maps to ToggleSelection (select/deselect
                 // the current link), never expand/collapse (h/l do that).
-                ("Space", "select / deselect item"),
-                ("s", "save to reading list"),
-                ("A", "save all links"),
-                ("j / k", "down / up"),
-                ("h / l", "collapse / expand group"),
-                ("gg / G", "top / bottom"),
-                ("v", "switch to reader view"),
-                ("r / t", "reader / tree view"),
-                ("g l", "set up site layout (AI)"),
-                ("/", "search"),
-                ("n / N", "next / prev match"),
+                (KeyFor(CommandType.ToggleSelection), "select / deselect item"),
+                (KeyFor(CommandType.SaveToCollection), "save to reading list"),
+                (KeyFor(CommandType.SaveAllToReadingList), "save all links"),
+                (downUp, "down / up"),
+                ($"{KeyFor(CommandType.CollapseNode)} / {KeyFor(CommandType.ExpandNode)}", "collapse / expand group"),
+                (top, "top / bottom"),
+                (KeyFor(CommandType.SwitchView), "switch to reader view"),
+                (readerTree, "reader / tree view"),
+                (KeyFor(CommandType.ChooseLayout), "set up site layout (AI)"),
+                (KeyFor(CommandType.Search), "search"),
+                (searchNextPrev, "next / prev match"),
                 ("R", "refresh (bypass cache)"),
                 ("I", "interactive refresh (login)"),
-                ("\\", "prefetch progress panel"),
-                ("o", "open URL bar"),
-                ("|", "dock browser (side pane)"),
-                ("y", "open the browser's page here"),
+                (KeyFor(CommandType.TogglePreloadDetail), "prefetch progress panel"),
+                (KeyFor(CommandType.OpenInBrowser), "open URL bar"),
+                (KeyFor(CommandType.ToggleBrowserDock), "dock browser (side pane)"),
+                (KeyFor(CommandType.AdoptLensPage), "open the browser's page here"),
                 ("b / B", "go back / forward"),
                 ("Esc", "go back"),
-                (":", "command line"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.OpenCommandLine), "command line"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
             ViewMode.Readable =>
             [
-                ("s", "save to reading list"),
-                ("o", "open in browser"),
-                ("|", "dock / undock browser (side pane)"),
-                ("y", "open the browser's page here"),
+                (KeyFor(CommandType.SaveToCollection), "save to reading list"),
+                (KeyFor(CommandType.OpenInBrowser), "open in browser"),
+                (KeyFor(CommandType.ToggleBrowserDock), "dock / undock browser (side pane)"),
+                (KeyFor(CommandType.AdoptLensPage), "open the browser's page here"),
                 ("e / E", "regenerate / tune article layout"),
-                ("[ / ]", "narrow / widen width"),
-                ("0", "reset width"),
-                ("j / k", "scroll down / up"),
-                ("Ctrl+D / Ctrl+U", "page down / up"),
-                ("f", "speed read on/off"),
-                ("Space", "speed read on/off"),
-                ("< / >", "slower / faster WPM"),
-                ("v", "switch to link view"),
-                ("r / t", "reader / tree view"),
-                ("/", "search"),
-                ("n / N", "next / prev match"),
+                ($"{KeyFor(CommandType.DecreaseWidth)} / {KeyFor(CommandType.IncreaseWidth)}", "narrow / widen width"),
+                (KeyFor(CommandType.ResetWidth), "reset width"),
+                (downUp, "scroll down / up"),
+                ($"{KeyFor(CommandType.PageDown)} / {KeyFor(CommandType.PageUp)}", "page down / up"),
+                (KeyFor(CommandType.ToggleSpeedRead), "speed read on/off"),
+                (KeyFor(CommandType.ToggleSelection), "speed read on/off"),
+                ($"{KeyFor(CommandType.SpeedReadSlower)} / {KeyFor(CommandType.SpeedReadFaster)}", "slower / faster WPM"),
+                (KeyFor(CommandType.SwitchView), "switch to link view"),
+                (readerTree, "reader / tree view"),
+                (KeyFor(CommandType.Search), "search"),
+                (searchNextPrev, "next / prev match"),
                 ("R", "refresh (bypass cache)"),
-                ("\\", "prefetch progress panel"),
+                (KeyFor(CommandType.TogglePreloadDetail), "prefetch progress panel"),
                 ("b / B", "go back / forward"),
                 ("Esc", "go back"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
             ViewMode.CollectionList =>
             [
-                ("Enter", "open collection"),
-                ("s", "set as default collection"),
-                ("d", "delete collection"),
+                (KeyFor(CommandType.ActivateLink), "open collection"),
+                (KeyFor(CommandType.SaveToCollection), "set as default collection"),
+                (KeyFor(CommandType.DeleteItem), "delete collection"),
                 (":new", "create collection"),
-                ("b", "go back"),
+                (KeyFor(CommandType.GoBack), "go back"),
                 ("Esc", "go back"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
             ViewMode.CollectionItems =>
             [
-                ("Enter", "open article"),
-                ("d", "remove item"),
+                (KeyFor(CommandType.ActivateLink), "open article"),
+                (KeyFor(CommandType.DeleteItem), "remove item"),
                 ("X", "clear all items"),
                 ("J / K", "reorder items"),
-                ("p", "generate podcast"),
-                (":", "command line"),
-                ("\\", "prefetch progress panel"),
-                ("b", "go back"),
+                (KeyFor(CommandType.GeneratePodcast), "generate podcast"),
+                (KeyFor(CommandType.OpenCommandLine), "command line"),
+                (KeyFor(CommandType.TogglePreloadDetail), "prefetch progress panel"),
+                (KeyFor(CommandType.GoBack), "go back"),
                 ("Esc", "go back"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
             ViewMode.Launcher =>
             [
-                ("Enter", "open bookmark"),
-                ("1-9", "jump to bookmark"),
-                ("o", "open URL bar"),
-                ("a", "add bookmark"),
-                ("d", "delete bookmark"),
+                (KeyFor(CommandType.ActivateLink), "open bookmark"),
+                (KeyFor(CommandType.JumpToIndex), "jump to bookmark"),
+                (KeyFor(CommandType.OpenInBrowser), "open URL bar"),
+                (KeyFor(CommandType.AddBookmark), "add bookmark"),
+                (KeyFor(CommandType.DeleteItem), "delete bookmark"),
                 ("J / K", "reorder bookmarks"),
                 (":rename", "rename bookmark"),
-                ("c", "Setup / settings"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.OpenCollections), "Setup / settings"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
             _ =>
             [
-                ("?", "show this help"),
-                (":", "command line"),
-                ("gg / G", "top / bottom"),
-                ("Ctrl+P", "cycle theme"),
+                (KeyFor(CommandType.ShowHelp), "show this help"),
+                (KeyFor(CommandType.OpenCommandLine), "command line"),
+                (top, "top / bottom"),
+                (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
         };

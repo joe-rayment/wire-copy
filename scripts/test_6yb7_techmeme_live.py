@@ -31,6 +31,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
+from keys import choose_layout  # noqa: E402  # shared chord constants (scripts/keys.py)
 
 DISPLAY = ":97"
 SCREEN_W, SCREEN_H = 1600, 900
@@ -119,7 +120,7 @@ def main():
                     f"expected >=5 long headline rows on the first screen, saw {len(headline_rows)}")
 
             # --- Ctrl+L -> AI-first entry card ---
-            t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
+            choose_layout(t)  # g l = AI layout wizard
             t.wait_for("How should WireCopy read this site?", timeout=20)
             transcript(t, log, "2. Ctrl+L entry card (AI-first)")
             t.send_keys("Enter")  # ✨ Let AI find the stories
@@ -183,7 +184,7 @@ def main():
                 screen = transcript(t2, log, "7. REVISIT — fresh process, same URL")
                 if "section" not in screen.lower() and "▼" not in screen:
                     failures.append("revisit did not route through the saved durable config")
-                t2.send_keys("g"); t2.send_keys("l")  # g l = AI wizard (was Ctrl+L)
+                choose_layout(t2)  # g l = AI layout wizard
                 t2.wait_for("Layout", timeout=20)
                 screen = transcript(t2, log, "8. Ctrl+L on revisit — configured summary")
                 if "Reconfigure with AI" not in screen:

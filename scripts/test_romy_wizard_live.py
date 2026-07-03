@@ -33,6 +33,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
+from keys import choose_layout  # noqa: E402  # shared chord constants (scripts/keys.py)
 
 DISPLAY = ":97"
 OUT_DIR = "/workspace/output/romy-wizard-live"
@@ -86,7 +87,7 @@ class Gate:
 
 def drive_to_preview(t, gate):
     """Ctrl+L → AI → answer question cards → return the preview screen (or None)."""
-    t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
+    choose_layout(t)  # g l = AI layout wizard
     # Slow, link-heavy pages (memeorandum: 600+ links) take longer to open the
     # chooser; the pre-flight phase also captures a screenshot first.
     t.wait_for("How should WireCopy read this site?", timeout=60)

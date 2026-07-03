@@ -601,36 +601,33 @@ public class TerminalInputHandler : IInputHandler
             var keyInfo = await _pendingKeyTask.ConfigureAwait(false);
             _pendingKeyTask = null;
 
-            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.G
-                && (keyInfo.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0)
+            if (_waitingForSecondKey)
             {
+                // The goto-chord's second key is resolved by ResolveGotoChord so the
+                // mapping is a single pure function the KeyRegistry enforcement tests
+                // can drive directly (workspace-9k27.14).
                 _waitingForSecondKey = false;
                 var count = _numericPrefix;
                 _numericPrefix = 0;
                 ClearPendingCountIndicator();
-                return new NavigationCommand { Type = CommandType.GoToTop, Count = count };
-            }
 
-            // workspace-1dmr: 'g l' opens the AI layout wizard (Helix-style goto
-            // submenu), replacing the Ctrl+L that collided with clear-screen.
-            if (_waitingForSecondKey && keyInfo.Key == ConsoleKey.L
-                && (keyInfo.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt | ConsoleModifiers.Shift)) == 0)
-            {
-                _waitingForSecondKey = false;
-                _numericPrefix = 0;
-                ClearPendingCountIndicator();
-                return new NavigationCommand { Type = CommandType.ChooseLayout };
-            }
+                var chord = ResolveGotoChord(keyInfo);
+                if (chord.Type == CommandType.GoToTop)
+                {
+                    // 'g g' — carries the count prefix (5gg jumps to item 5).
+                    return chord with { Count = count };
+                }
 
-            if (_waitingForSecondKey)
-            {
+                if (chord.Type != CommandType.NoOp)
+                {
+                    // 'g l' — the AI layout wizard (workspace-1dmr).
+                    return chord;
+                }
+
                 // workspace-9k27: a broken chord ABORTS — swallow the second key
                 // instead of letting it fall through and execute an unrelated
                 // (possibly destructive) command like 'g d' = delete. Matches
                 // vim/Helix behavior for a mistyped goto chord.
-                _waitingForSecondKey = false;
-                _numericPrefix = 0;
-                ClearPendingCountIndicator();
                 continue;
             }
 
@@ -770,7 +767,37 @@ public class TerminalInputHandler : IInputHandler
     internal static string FormatPendingCount(int count) => $"{count}×";
 #pragma warning restore SA1202
 
-    private static NavigationCommand MapKeyInfoToCommand(ConsoleKeyInfo keyInfo)
+    /// <summary>
+    /// Resolves the SECOND key of a 'g' goto-chord to its command: 'g' then 'g'
+    /// jumps to the top; 'g' then 'l' opens the AI layout wizard (workspace-1dmr).
+    /// Any other second key returns NoOp, which the caller treats as an aborted
+    /// chord (swallowed, vim/Helix-style). Pure and static so the KeyRegistry
+    /// enforcement tests can drive the chord mapping directly (workspace-9k27.14).
+    /// </summary>
+    internal static NavigationCommand ResolveGotoChord(ConsoleKeyInfo secondKey)
+    {
+        if (secondKey.Key == ConsoleKey.G
+            && (secondKey.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt)) == 0)
+        {
+            return new NavigationCommand { Type = CommandType.GoToTop };
+        }
+
+        if (secondKey.Key == ConsoleKey.L
+            && (secondKey.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt | ConsoleModifiers.Shift)) == 0)
+        {
+            return new NavigationCommand { Type = CommandType.ChooseLayout };
+        }
+
+        return new NavigationCommand { Type = CommandType.NoOp };
+    }
+
+    // workspace-9k27.14: the KeyChar switch below, and the Shift-modifier switch in
+    // MapKeyToCommandStatic, are both internal so the KeyRegistry enforcement tests
+    // can drive the real dispatch. The KeyChar switch runs first, so any capital
+    // letter it claims silently shadows the matching Shift+letter binding in the
+    // modifier switch — the trap that once killed Shift+L. A disjointness test now
+    // turns that collision into a hard failure.
+    internal static NavigationCommand MapKeyInfoToCommand(ConsoleKeyInfo keyInfo)
     {
         return keyInfo.KeyChar switch
         {
@@ -814,7 +841,7 @@ public class TerminalInputHandler : IInputHandler
         };
     }
 
-    private static NavigationCommand MapKeyToCommandStatic(ConsoleKey key, ConsoleModifiers modifiers)
+    internal static NavigationCommand MapKeyToCommandStatic(ConsoleKey key, ConsoleModifiers modifiers)
     {
         if ((modifiers & ConsoleModifiers.Shift) != 0)
         {

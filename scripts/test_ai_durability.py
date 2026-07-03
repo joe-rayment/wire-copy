@@ -35,6 +35,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
+from keys import choose_layout  # noqa: E402  # shared chord constants (scripts/keys.py)
 
 WORKSPACE = "/workspace"
 DATA = "/home/agent/.local/share/WireCopy"
@@ -117,7 +118,7 @@ def wait_for_load(t, timeout=90):
 
 def drive_wizard(t, timeout=200):
     """Open Ctrl+L and accept-all through the AI setup wizard. Returns status str."""
-    t.send_keys("g"); t.send_keys("l")  # g l = AI wizard (was Ctrl+L)
+    choose_layout(t)  # g l = AI layout wizard
     time.sleep(2)
     # Entry card: AI is the highlighted default — Enter selects it.
     if "Set up this site" in t.capture():

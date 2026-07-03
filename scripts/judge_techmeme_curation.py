@@ -35,6 +35,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
+from keys import choose_layout  # noqa: E402  # shared chord constants (scripts/keys.py)
 
 DISPLAY = ":95"
 SCREEN_W, SCREEN_H = 1600, 900
@@ -139,8 +140,7 @@ def main():
                 x_screenshot(os.path.join(out, "real-page-docked.png"))
 
             if not args.no_wizard:
-                t.send_keys("g")  # 'g l' chord opens the AI layout wizard (was Ctrl+L)
-                t.send_keys("l")
+                choose_layout(t)  # g l = AI layout wizard
                 t.wait_for("How should WireCopy read this site?", timeout=25)
                 cap(t, "01. Ctrl+L entry card", "01a-entry.txt")
                 t.send_keys("Enter")  # Let AI find the stories

@@ -1,10 +1,20 @@
 # WireCopy — complete keyboard reference
 
 Every binding in the app, by context. This is the exhaustive list (more than the
-in-app `?` help). Bindings are defined in
+in-app `?` help). Bindings are **dispatched** in
 `src/WireCopy.Infrastructure/Browser/UI/TerminalInputHandler.cs`; each screen's
 handler decides which commands it honours, so a key can do different things in
 different screens (the **Overloaded keys** section lists those).
+
+> **Source of truth for key _labels_:**
+> `src/WireCopy.Infrastructure/Browser/UI/KeyRegistry.cs` maps every command to its
+> canonical key label (`workspace-9k27.14`). The in-app popup, status-bar hints, and
+> per-command hints interpolate from it, and `KeyRegistryEnforcementTests` drives the
+> real dispatch to prove every advertised key resolves to a live command (and that no
+> KeyChar-switch capital shadows a `Shift+` binding — the trap that once killed
+> `Shift+L`). If you change a binding, change it in the dispatch switch **and** the
+> registry; a stale label is a failing test, not a shipped bug. This doc is hand-kept —
+> update it too when a binding moves.
 
 > **⟳ Changed in the keybinding pass (`workspace-1dmr`)** rows are flagged `⟳`.
 > Design rules applied: prefer Helix overlap; a capital (`Shift+`) letter is only

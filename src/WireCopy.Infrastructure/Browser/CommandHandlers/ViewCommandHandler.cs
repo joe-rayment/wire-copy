@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using static WireCopy.Infrastructure.Browser.UI.KeyRegistry;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -86,9 +87,9 @@ internal static class ViewCommandHandler
             $"Width {DefaultContentWidth} (default)",
             new[]
             {
-                new StatusKeyHint("[", "narrow"),
-                new StatusKeyHint("]", "widen"),
-                new StatusKeyHint("0", "reset"),
+                new StatusKeyHint(KeyFor(CommandType.DecreaseWidth), "narrow"),
+                new StatusKeyHint(KeyFor(CommandType.IncreaseWidth), "widen"),
+                new StatusKeyHint(KeyFor(CommandType.ResetWidth), "reset"),
             });
         var newOptions = ctx.GetCurrentRenderOptions();
         ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
@@ -108,7 +109,7 @@ internal static class ViewCommandHandler
         ctx.NavigationService.Announce(
             glyph: null,
             $"Theme: {ctx.ThemeProvider.CurrentTheme}",
-            new[] { new StatusKeyHint("Ctrl+P", "next") });
+            new[] { new StatusKeyHint(KeyFor(CommandType.CycleTheme), "next") });
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
@@ -263,9 +264,9 @@ internal static class ViewCommandHandler
             text,
             new[]
             {
-                new StatusKeyHint("[", "narrow"),
-                new StatusKeyHint("]", "widen"),
-                new StatusKeyHint("0", "reset"),
+                new StatusKeyHint(KeyFor(CommandType.DecreaseWidth), "narrow"),
+                new StatusKeyHint(KeyFor(CommandType.IncreaseWidth), "widen"),
+                new StatusKeyHint(KeyFor(CommandType.ResetWidth), "reset"),
             });
     }
 
