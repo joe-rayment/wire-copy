@@ -15,11 +15,12 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// Interactive article-layout tuner (workspace-8qyo): 'L' in reader view walks
 /// HEADLINE → BODY → IGNORE in three steps. For each step, AI (when configured)
 /// and DOM heuristics propose XPath candidates; the sidecar lens highlights every
-/// match live; j/k cycles, Enter confirms (Space toggles ignores), Esc backs out.
-/// The confirmed selectors persist as the per-domain 'tuned' PageTypeEntry that
-/// <see cref="ISelectorBasedArticleExtractor"/> prefers on every future visit.
-/// Excluded regions are REMOVED before paragraph collection, so an inline promo
-/// can never truncate an article.
+/// match live; j/k (or arrows) cycles, Enter confirms (Space toggles ignores),
+/// 'h' steps back to the previous step keeping its selection (workspace-3uzl.4),
+/// Esc backs out. The confirmed selectors persist as the per-domain 'tuned'
+/// PageTypeEntry that <see cref="ISelectorBasedArticleExtractor"/> prefers on
+/// every future visit. Excluded regions are REMOVED before paragraph collection,
+/// so an inline promo can never truncate an article.
 /// </summary>
 internal static class ArticleTunerHandler
 {
@@ -65,7 +66,30 @@ internal static class ArticleTunerHandler
         Prev,
         Toggle,
         Confirm,
+
+        /// <summary>workspace-3uzl.4: 'h' — back to the previous step, keeping its selection.</summary>
+        Back,
         Cancel,
+    }
+
+    /// <summary>workspace-3uzl.4: how a step ended — the loop in HandleTuneAsync routes on this.</summary>
+    private enum StepOutcome
+    {
+        Confirmed,
+        Back,
+        Cancelled,
+    }
+
+    /// <summary>workspace-3uzl.4: how persisting ended — a failed self-test returns to step 3, not teardown.</summary>
+    private enum PersistOutcome
+    {
+        Saved,
+
+        /// <summary>The trial extraction returned nothing; the user should pick different candidates.</summary>
+        SelfTestFailed,
+
+        /// <summary>Unrecoverable (no usable domain) — retrying the same page cannot help.</summary>
+        Fatal,
     }
 
     public static async Task HandleTuneAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -96,6 +120,7 @@ internal static class ArticleTunerHandler
 
         // AI seed (best-effort): its selectors become candidate #1 of each step.
         ArticleSelectors? aiSeed = null;
+        var aiFailed = false;
         if (aiExtractor is { IsConfigured: true })
         {
             // workspace-wef6.5: the long AnalyzeAsync runs in the animated
@@ -114,10 +139,20 @@ internal static class ArticleTunerHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "AI layout proposal failed; falling back to heuristics");
+                aiFailed = true;
             }
             finally
             {
                 ctx.NavigationService.ClearActivity("ai");
+            }
+
+            // workspace-3uzl.1: a failed AI proposal used to degrade silently —
+            // the user saw fewer candidates with no explanation. Toasts render
+            // on every view, so this survives the overlay opening next.
+            if (aiFailed)
+            {
+                ctx.NavigationService.ShowToast(
+                    ToastType.Info, "AI unavailable", "showing heuristic candidates only");
             }
         }
 
@@ -127,10 +162,21 @@ internal static class ArticleTunerHandler
 
         if (headlineCands.Count == 0 || bodyCands.Count == 0)
         {
-            ctx.NavigationService.SetStatusMessage("Couldn't find layout candidates on this page");
+            // workspace-3uzl.5: name a next step instead of a bare shrug, and
+            // say when the AI seed was expected but missing.
+            var aiNote = aiExtractor is { IsConfigured: true } && aiSeed == null
+                ? " (the AI proposal was unavailable too)"
+                : string.Empty;
+            ctx.NavigationService.SetStatusMessage(
+                $"No layout candidates found{aiNote} — this page may have an unusual structure; try a different article");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
+
+        // workspace-3uzl.2: resolve lens availability ONCE so every card's
+        // footnote tells the truth — "highlighted live" only when a lens page
+        // actually exists.
+        var lensAvailable = await LensAvailableAsync(session).ConfigureAwait(false);
 
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var overlay = new SetupWizardOverlay.State { Mode = SetupWizardOverlay.Mode.Card };
@@ -143,53 +189,123 @@ internal static class ArticleTunerHandler
                 headlineCands.Count,
                 bodyCands.Count,
                 ignoreCands.Count);
-            var headline = await RunSingleStepAsync(
-                ctx,
-                overlay,
-                session,
-                options,
-                "Tune layout — 1/3 Headline",
-                "Which element is the headline?",
-                headlineCands,
-                ct).ConfigureAwait(false);
-            if (headline == null)
-            {
-                await CancelAsync(ctx, session).ConfigureAwait(false);
-                return;
-            }
 
-            var body = await RunSingleStepAsync(
-                ctx,
-                overlay,
-                session,
-                options,
-                "Tune layout — 2/3 Body",
-                "Which container holds the article text?",
-                bodyCands,
-                ct).ConfigureAwait(false);
-            if (body == null)
+            // workspace-3uzl.4: the three steps run as a state machine so 'h'
+            // (Back) can return to an earlier step — and a failed persist
+            // self-test returns to step 3 — with every step's cursor/marks
+            // preserved instead of tearing the tuner down.
+            string? headline = null;
+            string? body = null;
+            var headlineCursor = 0;
+            var bodyCursor = 0;
+            var ignoreCursor = 0;
+            var ignoreSelected = new HashSet<int>();
+            var step = 0;
+            while (!ct.IsCancellationRequested)
             {
-                await CancelAsync(ctx, session).ConfigureAwait(false);
-                return;
-            }
+                switch (step)
+                {
+                    case 0:
+                    {
+                        var (outcome, choice, cursor) = await RunSingleStepAsync(
+                            ctx,
+                            overlay,
+                            session,
+                            options,
+                            "Tune layout — 1/3 Headline",
+                            "Which element is the headline?",
+                            headlineCands,
+                            headlineCursor,
+                            allowBack: false,
+                            lensAvailable,
+                            ct).ConfigureAwait(false);
+                        headlineCursor = cursor;
+                        if (outcome != StepOutcome.Confirmed)
+                        {
+                            await CancelAsync(ctx, session).ConfigureAwait(false);
+                            return;
+                        }
 
-            var ignores = await RunMultiStepAsync(
-                ctx,
-                overlay,
-                session,
-                options,
-                "Tune layout — 3/3 Ignore",
-                "Mark visual junk to ignore (never truncates the article)",
-                ignoreCands,
-                ct).ConfigureAwait(false);
-            if (ignores == null)
-            {
-                await CancelAsync(ctx, session).ConfigureAwait(false);
-                return;
-            }
+                        headline = choice;
+                        step = 1;
+                        break;
+                    }
 
-            await PersistAsync(ctx, store, selectorExtractor, page.Url, page.RawHtml, headline, body, ignores)
-                .ConfigureAwait(false);
+                    case 1:
+                    {
+                        var (outcome, choice, cursor) = await RunSingleStepAsync(
+                            ctx,
+                            overlay,
+                            session,
+                            options,
+                            "Tune layout — 2/3 Body",
+                            "Which container holds the article text?",
+                            bodyCands,
+                            bodyCursor,
+                            allowBack: true,
+                            lensAvailable,
+                            ct).ConfigureAwait(false);
+                        bodyCursor = cursor;
+                        if (outcome == StepOutcome.Cancelled)
+                        {
+                            await CancelAsync(ctx, session).ConfigureAwait(false);
+                            return;
+                        }
+
+                        if (outcome == StepOutcome.Back)
+                        {
+                            step = 0;
+                            break;
+                        }
+
+                        body = choice;
+                        step = 2;
+                        break;
+                    }
+
+                    default:
+                    {
+                        var (outcome, ignores, cursor) = await RunMultiStepAsync(
+                            ctx,
+                            overlay,
+                            session,
+                            options,
+                            "Tune layout — 3/3 Ignore",
+                            "Mark visual junk to ignore (never truncates the article)",
+                            ignoreCands,
+                            ignoreCursor,
+                            ignoreSelected,
+                            lensAvailable,
+                            ct).ConfigureAwait(false);
+                        ignoreCursor = cursor;
+                        if (outcome == StepOutcome.Cancelled)
+                        {
+                            await CancelAsync(ctx, session).ConfigureAwait(false);
+                            return;
+                        }
+
+                        if (outcome == StepOutcome.Back)
+                        {
+                            step = 1;
+                            break;
+                        }
+
+                        var persisted = await PersistAsync(
+                            ctx, store, selectorExtractor, page.Url, page.RawHtml, headline!, body!, ignores!)
+                            .ConfigureAwait(false);
+                        if (persisted == PersistOutcome.SelfTestFailed)
+                        {
+                            // Keep the overlay alive: back to the ignore step
+                            // (or body when there are no ignore candidates to
+                            // re-pick) so the user can try different selectors.
+                            step = ignoreCands.Count > 0 ? 2 : 1;
+                            break;
+                        }
+
+                        return;
+                    }
+                }
+            }
         }
         finally
         {
@@ -199,13 +315,18 @@ internal static class ArticleTunerHandler
         }
     }
 
-    /// <summary>Candidates = AI seed first, then probes that actually match the page.</summary>
-    internal static List<(string XPath, int Matches)> BuildCandidates(
+    /// <summary>
+    /// Candidates = AI seed first, then probes that actually match the page.
+    /// workspace-3uzl.7: each candidate carries whether it came from the AI
+    /// seed so the card can label its origin.
+    /// </summary>
+    internal static List<(string XPath, int Matches, bool IsAiSeed)> BuildCandidates(
         HtmlDocument doc, IReadOnlyList<string>? aiSeed, string[] probes, int minMatches, int maxMatches)
     {
-        var result = new List<(string, int)>();
+        var result = new List<(string, int, bool)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var xpath in (aiSeed ?? Enumerable.Empty<string>()).Concat(probes))
+        foreach (var (xpath, isAiSeed) in (aiSeed ?? Enumerable.Empty<string>()).Select(x => (x, true))
+                     .Concat(probes.Select(x => (x, false))))
         {
             if (string.IsNullOrWhiteSpace(xpath) || !seen.Add(xpath))
             {
@@ -215,7 +336,7 @@ internal static class ArticleTunerHandler
             var count = CountMatches(doc, xpath);
             if (count >= minMatches && count <= maxMatches)
             {
-                result.Add((xpath, count));
+                result.Add((xpath, count, isAiSeed));
             }
         }
 
@@ -223,12 +344,13 @@ internal static class ArticleTunerHandler
     }
 
     /// <summary>Body candidates ranked by paragraph density (most article-like first).</summary>
-    internal static List<(string XPath, int Matches)> BuildBodyCandidates(
+    internal static List<(string XPath, int Matches, bool IsAiSeed)> BuildBodyCandidates(
         HtmlDocument doc, IReadOnlyList<string>? aiSeed)
     {
-        var ranked = new List<(string XPath, int Matches, int Paragraphs)>();
+        var ranked = new List<(string XPath, int Matches, bool IsAiSeed, int Paragraphs)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var xpath in (aiSeed ?? Enumerable.Empty<string>()).Concat(BodyProbes))
+        foreach (var (xpath, isAiSeed) in (aiSeed ?? Enumerable.Empty<string>()).Select(x => (x, true))
+                     .Concat(BodyProbes.Select(x => (x, false))))
         {
             if (string.IsNullOrWhiteSpace(xpath) || !seen.Add(xpath))
             {
@@ -253,15 +375,61 @@ internal static class ArticleTunerHandler
             var paragraphs = nodes.Sum(n => n.SelectNodes(".//p")?.Count ?? 0);
             if (paragraphs >= 3)
             {
-                ranked.Add((xpath, nodes.Count, paragraphs));
+                ranked.Add((xpath, nodes.Count, isAiSeed, paragraphs));
             }
         }
 
-        // AI seed (index 0 in insertion order) keeps its slot; heuristics rank by density.
+        // AI seed keeps its lead slot; heuristics rank by density.
         return ranked
-            .OrderByDescending(r => aiSeed != null && aiSeed.Contains(r.XPath) ? int.MaxValue : r.Paragraphs)
-            .Select(r => (r.XPath, r.Matches))
+            .OrderByDescending(r => r.IsAiSeed ? int.MaxValue : r.Paragraphs)
+            .Select(r => (r.XPath, r.Matches, r.IsAiSeed))
             .ToList();
+    }
+
+    /// <summary>
+    /// workspace-3uzl.2/.7: the footnote states plainly whether the sidecar lens
+    /// is live, and AI-seeded candidates are labelled " (AI)".
+    /// </summary>
+    internal static SetupWizardOverlay.WizardCard BuildCard(
+        string title,
+        string prompt,
+        List<(string XPath, int Matches, bool IsAiSeed)> candidates,
+        int cursor,
+        HashSet<int>? selected,
+        string hint,
+        bool lensAvailable)
+    {
+        var card = new SetupWizardOverlay.WizardCard
+        {
+            Title = title,
+            Prompt = prompt,
+            Cursor = cursor,
+            Hint = hint,
+            Footnote = lensAvailable
+                ? "highlighted live in the sidecar"
+                : "sidecar not docked — showing match counts only",
+        };
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            string mark;
+            if (selected == null)
+            {
+                mark = string.Empty;
+            }
+            else
+            {
+                mark = selected.Contains(i) ? "[x] " : "[ ] ";
+            }
+
+            var aiTag = candidates[i].IsAiSeed ? " (AI)" : string.Empty;
+            card.Options.Add(new SetupWizardOverlay.CardOption
+            {
+                Label = $"{mark}{candidates[i].XPath} ({candidates[i].Matches} match{(candidates[i].Matches == 1 ? string.Empty : "es")}){aiTag}",
+                Identifier = candidates[i].XPath,
+            });
+        }
+
+        return card;
     }
 
     private static int CountMatches(HtmlDocument doc, string xpath)
@@ -276,26 +444,28 @@ internal static class ArticleTunerHandler
         }
     }
 
-    private static async Task<string?> RunSingleStepAsync(
+    private static async Task<(StepOutcome Outcome, string? Choice, int Cursor)> RunSingleStepAsync(
         CommandContext ctx,
         SetupWizardOverlay.State overlay,
         IBrowserSession? session,
         RenderOptions options,
         string title,
         string prompt,
-        List<(string XPath, int Matches)> candidates,
+        List<(string XPath, int Matches, bool IsAiSeed)> candidates,
+        int initialCursor,
+        bool allowBack,
+        bool lensAvailable,
         CancellationToken ct)
     {
-        var cursor = 0;
+        // workspace-3uzl.6: mention the arrow-key synonyms; workspace-3uzl.4:
+        // advertise 'h' back where a previous step exists.
+        var hint = allowBack
+            ? "j/k or ↑/↓: next candidate · Enter: confirm · h: back · Esc: cancel"
+            : "j/k or ↑/↓: next candidate · Enter: confirm · Esc: cancel";
+        var cursor = Math.Clamp(initialCursor, 0, candidates.Count - 1);
         while (!ct.IsCancellationRequested)
         {
-            overlay.Card = BuildCard(
-                title,
-                prompt,
-                candidates,
-                cursor,
-                null,
-                "j/k: next candidate · Enter: confirm · Esc: cancel");
+            overlay.Card = BuildCard(title, prompt, candidates, cursor, null, hint, lensAvailable);
             await HighlightAsync(session, candidates[cursor].XPath).ConfigureAwait(false);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
@@ -308,42 +478,41 @@ internal static class ArticleTunerHandler
                 case TunerKey.Prev:
                     cursor = (cursor - 1 + candidates.Count) % candidates.Count;
                     break;
+                case TunerKey.Back when allowBack:
+                    return (StepOutcome.Back, null, cursor);
                 case TunerKey.Confirm:
-                    return candidates[cursor].XPath;
+                    return (StepOutcome.Confirmed, candidates[cursor].XPath, cursor);
                 case TunerKey.Cancel:
-                    return null;
+                    return (StepOutcome.Cancelled, null, cursor);
             }
         }
 
-        return null;
+        return (StepOutcome.Cancelled, null, cursor);
     }
 
-    private static async Task<List<string>?> RunMultiStepAsync(
+    private static async Task<(StepOutcome Outcome, List<string>? Choices, int Cursor)> RunMultiStepAsync(
         CommandContext ctx,
         SetupWizardOverlay.State overlay,
         IBrowserSession? session,
         RenderOptions options,
         string title,
         string prompt,
-        List<(string XPath, int Matches)> candidates,
+        List<(string XPath, int Matches, bool IsAiSeed)> candidates,
+        int initialCursor,
+        HashSet<int> selected,
+        bool lensAvailable,
         CancellationToken ct)
     {
         if (candidates.Count == 0)
         {
-            return [];
+            return (StepOutcome.Confirmed, [], 0);
         }
 
-        var cursor = 0;
-        var selected = new HashSet<int>();
+        const string hint = "j/k or ↑/↓: next · Space: mark · Enter: done · h: back · Esc: cancel";
+        var cursor = Math.Clamp(initialCursor, 0, candidates.Count - 1);
         while (!ct.IsCancellationRequested)
         {
-            overlay.Card = BuildCard(
-                title,
-                prompt,
-                candidates,
-                cursor,
-                selected,
-                "j/k: next · Space: mark · Enter: done · Esc: cancel");
+            overlay.Card = BuildCard(title, prompt, candidates, cursor, selected, hint, lensAvailable);
             await HighlightAsync(session, candidates[cursor].XPath).ConfigureAwait(false);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
@@ -363,52 +532,16 @@ internal static class ArticleTunerHandler
                     }
 
                     break;
+                case TunerKey.Back:
+                    return (StepOutcome.Back, null, cursor);
                 case TunerKey.Confirm:
-                    return selected.Select(i => candidates[i].XPath).ToList();
+                    return (StepOutcome.Confirmed, selected.Select(i => candidates[i].XPath).ToList(), cursor);
                 case TunerKey.Cancel:
-                    return null;
+                    return (StepOutcome.Cancelled, null, cursor);
             }
         }
 
-        return null;
-    }
-
-    private static SetupWizardOverlay.WizardCard BuildCard(
-        string title,
-        string prompt,
-        List<(string XPath, int Matches)> candidates,
-        int cursor,
-        HashSet<int>? selected,
-        string hint)
-    {
-        var card = new SetupWizardOverlay.WizardCard
-        {
-            Title = title,
-            Prompt = prompt,
-            Cursor = cursor,
-            Hint = hint,
-            Footnote = "highlighted live in the sidecar",
-        };
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            string mark;
-            if (selected == null)
-            {
-                mark = string.Empty;
-            }
-            else
-            {
-                mark = selected.Contains(i) ? "[x] " : "[ ] ";
-            }
-
-            card.Options.Add(new SetupWizardOverlay.CardOption
-            {
-                Label = $"{mark}{candidates[i].XPath} ({candidates[i].Matches} match{(candidates[i].Matches == 1 ? string.Empty : "es")})",
-                Identifier = candidates[i].XPath,
-            });
-        }
-
-        return card;
+        return (StepOutcome.Cancelled, null, cursor);
     }
 
     private static TunerKey Classify(NavigationCommand command)
@@ -421,6 +554,14 @@ internal static class ArticleTunerHandler
         if (command.RawKeyChar is 'k')
         {
             return TunerKey.Prev;
+        }
+
+        if (command.RawKeyChar is 'h')
+        {
+            // workspace-3uzl.4: back to the previous step (Backspace maps to
+            // CommandType.GoBack, indistinguishable from Esc, so 'h' — the vim
+            // sibling of j/k — is the dedicated back key).
+            return TunerKey.Back;
         }
 
         if (command.RawKeyChar is ' ')
@@ -439,7 +580,7 @@ internal static class ArticleTunerHandler
         };
     }
 
-    private static async Task PersistAsync(
+    private static async Task<PersistOutcome> PersistAsync(
         CommandContext ctx,
         IArticleLayoutStore store,
         ISelectorBasedArticleExtractor selectorExtractor,
@@ -453,7 +594,7 @@ internal static class ArticleTunerHandler
         if (domain is null)
         {
             ctx.NavigationService.ShowToast(ToastType.Error, "Layout NOT saved", "this page has no usable domain");
-            return;
+            return PersistOutcome.Fatal;
         }
 
         var entry = new PageTypeEntry
@@ -481,9 +622,14 @@ internal static class ArticleTunerHandler
         var trial = selectorExtractor.Extract(candidate, url, html);
         if (trial == null)
         {
+            // workspace-3uzl.3/.4: say what to DO about it — the tuner stays
+            // open on step 3 so 'h' can step back to the body/headline picks.
             ctx.Logger.LogWarning("Tuner: self-test extraction returned null — not saving");
-            ctx.NavigationService.ShowToast(ToastType.Error, "Layout NOT saved", "those selectors extract nothing here");
-            return;
+            ctx.NavigationService.ShowToast(
+                ToastType.Error,
+                "Layout NOT saved",
+                "those selectors match nothing extractable — pick a different body or headline candidate (h steps back)");
+            return PersistOutcome.SelfTestFailed;
         }
 
         var existing = await store.LoadAsync(domain).ConfigureAwait(false);
@@ -495,12 +641,34 @@ internal static class ArticleTunerHandler
         // transient messages (pre-existing; tracked separately), toasts render
         // on every view.
         ctx.NavigationService.ShowToast(ToastType.Success, $"Layout tuned for {domain}", "future visits use it");
+        return PersistOutcome.Saved;
     }
 
     private static async Task CancelAsync(CommandContext ctx, IBrowserSession? session)
     {
         ctx.NavigationService.SetStatusMessage("Layout tuning cancelled");
         await ClearLensHighlightAsync(session).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// workspace-3uzl.2: one up-front lens probe so the cards can state honestly
+    /// whether matches highlight live or only counts are shown.
+    /// </summary>
+    private static async Task<bool> LensAvailableAsync(IBrowserSession? session)
+    {
+        if (session == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await session.GetLensPageAsync().ConfigureAwait(false) != null;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static async Task HighlightAsync(IBrowserSession? session, string xpath)

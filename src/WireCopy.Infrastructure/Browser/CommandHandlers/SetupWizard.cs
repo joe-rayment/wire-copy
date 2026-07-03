@@ -625,10 +625,13 @@ internal static class SetupWizard
     internal static AdjustCardShape BuildFailureCardShape(
         SiteHierarchyConfig config, List<LinkInfo> links, ModelRoundTripBudget budget)
     {
+        // workspace-f25j.1: "couldn't find a layout that MATCHES" contradicted a
+        // footnote showing a nonzero match count — the honest claim is about
+        // RELIABLE coverage, with the footnote carrying the exact numbers.
         var (covered, total) = Coverage(config, links);
         return new AdjustCardShape(
             Title: "No reliable pattern found",
-            Prompt: "I couldn't find a layout that matches this page's stories.",
+            Prompt: "I couldn't find a layout that reliably covers this page's stories.",
             Footnote: budget.Exhausted
                 ? $"Matches {covered} of {total} story links · AI budget used up — Esc to leave unconfigured"
                 : $"The proposed layout matches {covered} of {total} story links on this page",
