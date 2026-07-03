@@ -1064,18 +1064,29 @@ public class PageLoadPipeline
     /// </summary>
     private async Task<bool> WaitForManualLoginAsync(string url, string domain, CancellationToken cancellationToken)
     {
-        _renderer.RenderManualLogin(url, domain);
+        var timeout = TimeSpan.FromMinutes(3);
+
+        _renderer.RenderManualLogin(url, domain, elapsedMs: 0, timeoutMs: (long)timeout.TotalMilliseconds);
         if (_browserSession is IBrowserSession browserSession)
         {
             await browserSession.RestoreWindowAsync().ConfigureAwait(false);
         }
 
-        var timeout = TimeSpan.FromMinutes(3);
         var sw = Stopwatch.StartNew();
 
         while (sw.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
         {
             await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+
+            // workspace-mokw: re-render each poll tick so the spinner moves and
+            // the elapsed/timeout clock counts up — a silent 3-minute wait is
+            // indistinguishable from a hang.
+            _renderer.RenderManualLogin(
+                url,
+                domain,
+                sw.ElapsedMilliseconds,
+                (long)timeout.TotalMilliseconds);
+
             try
             {
                 if (_browserSession is IBrowserSession session && session.HasActiveBrowser && session.IsBrowserAvailable)

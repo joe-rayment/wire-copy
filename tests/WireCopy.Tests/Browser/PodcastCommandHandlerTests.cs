@@ -732,16 +732,12 @@ public class PodcastCommandHandlerTests
             });
 
         // After navigating to Generate + dismissing local-only warning:
-        //   GoBack on progress screen (cancel progress).
+        //   GoBack on progress screen (cancel progress), then 'y' on the
+        //   visual confirm modal (workspace-nahg item 1).
         // GoBack wins the race because generation never completes.
         SetupGenerateInputQueue(
-            Cmd(CommandType.GoBack));
-
-        _inputHandler.PromptForInputAsync(
-            Arg.Is<string>(s => s.Contains("Cancel")),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>())
-            .Returns("y");
+            Cmd(CommandType.GoBack),
+            new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 'y' });
 
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 

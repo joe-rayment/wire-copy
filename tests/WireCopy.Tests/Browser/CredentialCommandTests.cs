@@ -297,6 +297,51 @@ public class CredentialCommandTests
         await _credentialRepo.Received(1).DeleteAsync(cred.Id, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task CredAdd_UnknownSite_LoginConfigSkipped_WarnsAutoLoginMayNotWork()
+    {
+        // workspace-mokw item 3: an unknown site saved with no loginUrl and
+        // no selectors will silently fail auto-login later — the success
+        // message must say so up-front.
+        var promptResponses = new Queue<string?>(new[]
+        {
+            "example.org",      // domain (unknown site → step 2 shown)
+            "user@test.com",    // username
+            "secret123",        // password
+            string.Empty,       // Login URL — skipped
+            string.Empty,       // Username Selector — skipped
+            string.Empty,       // Password Selector — skipped
+            string.Empty,       // Submit Selector — skipped
+        });
+
+        _inputHandler.PromptForInputAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>(),
+            Arg.Any<bool>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<string?>())
+            .Returns(x => Task.FromResult(promptResponses.Dequeue()));
+
+        _encryptionService.Encrypt(Arg.Any<string>()).Returns(new byte[] { 1, 2, 3 });
+
+        try
+        {
+            await SearchCommandHandler.HandleCommandLineInput(
+                _ctx, "cred add", _options, CancellationToken.None);
+
+            await _credentialRepo.Received(1).AddAsync(
+                Arg.Is<SiteCredential>(c => c.Domain == "example.org"),
+                Arg.Any<CancellationToken>());
+            _navigationService.CurrentContext.StatusMessage.Should()
+                .Contain("saved")
+                .And.Contain("no login config",
+                    "the user must learn the credential is incomplete while they still have context")
+                .And.Contain(":cred edit",
+                    "the message must point at the fix");
+        }
+        catch (IOException)
+        {
+            // Expected in CI — Console operations fail without a terminal
+        }
+    }
+
     #endregion
 
     #region :cred test
@@ -340,6 +385,42 @@ public class CredentialCommandTests
         _navigationService.CurrentContext.StatusMessage.Should()
             .Contain("Manual login required")
             .And.Contain("CAPTCHA detected");
+    }
+
+    [Fact]
+    public async Task CredTest_SlowLogin_RendersLoadingSpinnerWhileAwaiting()
+    {
+        // workspace-mokw item 2: LoginAsync drives a headed browser and can
+        // take tens of seconds — the handler must repaint a loading spinner
+        // while awaiting instead of freezing on the status line.
+        _autoLoginService.LoginAsync("nytimes.com", Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await Task.Delay(300);
+                return AutoLoginResult.Succeeded();
+            });
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "cred test nytimes.com", _options, CancellationToken.None);
+
+        _ctx.Renderer.Received().RenderLoading(
+            "nytimes.com",
+            Arg.Is<string>(s => s.Contains("Testing login")),
+            Arg.Any<long>());
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Login succeeded");
+    }
+
+    [Fact]
+    public async Task CredTest_InstantResult_StillReportsOutcome()
+    {
+        // Fast path: an immediately-completed login must not spin the ticker.
+        _autoLoginService.LoginAsync("nytimes.com", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AutoLoginResult.Succeeded()));
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "cred test nytimes.com", _options, CancellationToken.None);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Login succeeded");
     }
 
     [Fact]

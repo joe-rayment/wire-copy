@@ -24,7 +24,6 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 internal static class PodcastMissingKeyModal
 {
     private const string Reset = "\x1b[0m";
-    private const string Bold = "\x1b[1m";
 
     /// <summary>
     /// Outcome of the modal — drives the resume-or-cancel branch back in
@@ -61,7 +60,7 @@ internal static class PodcastMissingKeyModal
         {
             options = ctx.GetCurrentRenderOptions();
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            RenderBox(options, palette, summary, hint, hintPlain);
+            PodcastInlineBox.RenderBox(options, palette, summary, hint, hintPlain);
 
             while (true)
             {
@@ -72,7 +71,7 @@ internal static class PodcastMissingKeyModal
                 {
                     options = ctx.GetCurrentRenderOptions();
                     await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    RenderBox(options, palette, summary, hint, hintPlain);
+                    PodcastInlineBox.RenderBox(options, palette, summary, hint, hintPlain);
                     continue;
                 }
 
@@ -86,51 +85,15 @@ internal static class PodcastMissingKeyModal
                     return Outcome.SetUpNow;
                 }
 
-                RenderBox(options, palette, summary, hint, hintPlain);
+                // workspace-nahg item 4: flash the border in the warning
+                // colour so the ignored keystroke gets visible feedback.
+                await PodcastInlineBox.FlashInvalidKeyAsync(
+                    options, palette, summary, hint, hintPlain, ct).ConfigureAwait(false);
             }
         }
         finally
         {
-            ClearBoxRows(options);
-        }
-    }
-
-    private static void RenderBox(
-        RenderOptions options,
-        ThemePalette palette,
-        string summary,
-        string hint,
-        string hintPlain)
-    {
-        var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-        var width = Math.Max(60, Math.Min(options.TerminalWidth - 4, 120));
-        var boxWidth = width;
-
-        var leftPad = Math.Max(0, (options.TerminalWidth - boxWidth) / 2);
-        var pad = new string(' ', leftPad);
-        var borderFg = palette.HeaderBorderFg.AnsiFg;
-
-        var contentWidth = boxWidth - 4;
-        var summaryWidth = RenderHelpers.GetDisplayWidth(summary);
-        var hintWidth = RenderHelpers.GetDisplayWidth(hintPlain);
-        var gapWidth = Math.Max(2, contentWidth - summaryWidth - hintWidth);
-
-        var styledSummary = $"{Bold}{palette.PrimaryText.AnsiFg}{summary}{Reset}";
-
-        var topRow = Math.Max(0, options.TerminalHeight - 5);
-        helpers.WriteAt(0, topRow, $"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
-        helpers.WriteAt(0, topRow + 1, $"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{hint} {borderFg}│{Reset}");
-        helpers.WriteAt(0, topRow + 2, $"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
-    }
-
-    private static void ClearBoxRows(RenderOptions options)
-    {
-        var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-        var topRow = Math.Max(0, options.TerminalHeight - 5);
-        var blank = new string(' ', Math.Max(1, options.TerminalWidth));
-        for (var row = topRow; row < Math.Min(options.TerminalHeight - 2, topRow + 3); row++)
-        {
-            helpers.WriteAt(0, row, blank);
+            PodcastInlineBox.ClearBoxRows(options);
         }
     }
 }

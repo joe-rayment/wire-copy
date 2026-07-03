@@ -33,6 +33,15 @@ public partial class BrowserOrchestrator
 
             if (!loadResult.Success)
             {
+                // workspace-u45c: a HITL gate (CAPTCHA / login / cookie wall)
+                // is not a generic failure — throw the typed exception so the
+                // catch below renders the variant-aware action box instead of
+                // "Something went wrong", mirroring CompleteBackgroundLoadAsync.
+                if (loadResult.RequiredAction != null)
+                {
+                    throw new HumanActionRequiredException(loadResult.RequiredAction, loadResult.ErrorMessage);
+                }
+
                 throw new InvalidOperationException($"Failed to load page: {loadResult.ErrorMessage}");
             }
 
@@ -50,6 +59,19 @@ public partial class BrowserOrchestrator
             _navigationService.Announce("✓", "Refreshed — cache bypassed", shortText: "✓ refreshed");
 
             await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HumanActionRequiredException hitl)
+        {
+            // workspace-u45c: mirror CompleteBackgroundLoadAsync — render the
+            // variant-aware HITL box and start the headed-browser watcher so
+            // the app auto-loads content once the user clears the gate.
+            _logger.LogWarning(
+                "Force refresh blocked on human action ({Variant} at {Domain}) for {Url}",
+                hitl.RequiredAction.Variant,
+                hitl.RequiredAction.Domain,
+                url);
+            _renderer.RenderHumanAction(hitl.RequiredAction, url);
+            StartHumanActionWatcher(url, hitl.RequiredAction, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -221,6 +243,15 @@ public partial class BrowserOrchestrator
 
             _preloadService.NotifyPageLoaded(page);
             NotifyPreloadSelectionChanged();
+
+            // workspace-u45c: announce completion so the accepted refresh has
+            // the same "it worked" feedback ForceRefreshAsync gives. Suppressed
+            // when a HITL verdict survived the accept — the content may still
+            // be gated, and "✓ loaded" would be a lie.
+            if (loadResult.RequiredAction == null)
+            {
+                _navigationService.Announce("✓", "Content loaded — manual refresh complete", shortText: "✓ loaded");
+            }
 
             await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
         }
