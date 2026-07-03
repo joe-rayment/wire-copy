@@ -60,6 +60,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // tiles the screen so dismiss can RESTORE the terminal to full size. Null when not tiled.
     private TerminalTiling.WindowRect? _terminalTileBounds;
 
+    // workspace-9k27.6: the tile rect we last SET, so restore can detect whether
+    // the user has since rearranged the terminal (their layout then wins).
+    private TerminalTiling.WindowRect? _lastTerminalTileRect;
+
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
@@ -271,6 +275,15 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// workspace-9k27.7: public startup entry — Program.cs calls this BEFORE any
+    /// browser/GUI work, while the terminal is guaranteed frontmost. The lazy
+    /// call at first browser launch remains as a permission-granted-later retry,
+    /// but can no longer be the FIRST capture (which recorded Slack/IDE if the
+    /// user had switched apps before the first page load).
+    /// </summary>
+    public Task CaptureTerminalIdentityAsync() => CaptureTerminalBundleIdAsync();
+
     public async Task WarmUpAsync()
     {
         _logger.LogDebug("Warming up browser session (headless={Headless})", _browserConfig.EffectiveHeadless);
@@ -715,6 +728,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             }
 
             _disposed = true;
+
+            // workspace-9k27.6: give the terminal its full window back on ANY
+            // exit while docked+tiled — DisposeContextUnsafeAsync never did, so
+            // a clean quit left the user's terminal permanently shrunken.
+            await RestoreTerminalTileAsync().ConfigureAwait(false);
+
             await DisposeContextUnsafeAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -819,12 +838,17 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // Debounce: skip if another refocus happened within the last 500ms — UNLESS forced.
         // The dock path forces a final refocus AFTER bringing the browser to front, so it must
         // win even if a park/dock refocus fired moments earlier (workspace-75ng focus-steal).
+        // workspace-9k27.7: only stamp the timestamp when we actually PROCEED — the old
+        // Exchange-before-check meant a burst of skipped calls kept extending the window
+        // and could starve non-forced refocus indefinitely.
         var now = DateTime.UtcNow.Ticks;
-        var previous = Interlocked.Exchange(ref _lastRefocusTicks, now);
+        var previous = Interlocked.Read(ref _lastRefocusTicks);
         if (!force && TimeSpan.FromTicks(now - previous).TotalMilliseconds < 500)
         {
             return;
         }
+
+        Interlocked.Exchange(ref _lastRefocusTicks, now);
 
         // Re-activate the EXACT terminal captured at startup (by bundle id), falling back to
         // the TERM_PROGRAM name map. Null when neither is known — we deliberately do NOT guess
@@ -1292,6 +1316,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 setResult.Value.ExitCode,
                 setResult.Value.StdErr.Trim());
         }
+        else
+        {
+            // workspace-9k27.6: persist the pre-dock bounds + the tile so a crash
+            // while docked can restore the user's terminal on next launch.
+            _lastTerminalTileRect = terminalRect;
+            TerminalTileRecovery.Record(_terminalBundleId, _terminalTileBounds.Value, terminalRect, _logger);
+        }
     }
 
     // workspace-75ng.4: restore the terminal to its pre-dock bounds captured by
@@ -1306,6 +1337,27 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         var rect = _terminalTileBounds.Value;
         _terminalTileBounds = null;
 
+        // workspace-9k27.6: if the user moved/resized the terminal while docked,
+        // their arrangement wins — restoring stale pre-dock bounds would clobber
+        // it. Only put the window back when it still sits where WE tiled it.
+        if (_lastTerminalTileRect is { } tiled)
+        {
+            var getResult = await RunOsascriptAsync(
+                TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
+            var current = getResult is { ExitCode: 0 } ? TerminalTiling.TryParseBounds(getResult.Value.StdOut) : null;
+            if (current is { } cur && !TerminalTileRecovery.ShouldRestore(
+                    cur,
+                    new TerminalTileRecovery.TileRecord(_terminalBundleId, 0, 0, 0, 0, tiled.X, tiled.Y, tiled.Width, tiled.Height)))
+            {
+                _logger.LogInformation("Terminal was rearranged while docked — keeping the user's layout instead of restoring pre-dock bounds");
+                _lastTerminalTileRect = null;
+                TerminalTileRecovery.Clear(_logger);
+                return;
+            }
+        }
+
+        _lastTerminalTileRect = null;
+
         var result = await RunOsascriptAsync(
             TerminalTiling.BuildSetBoundsScript(_terminalBundleId, rect)).ConfigureAwait(false);
         if (result is { ExitCode: not 0 })
@@ -1315,6 +1367,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 result.Value.ExitCode,
                 result.Value.StdErr.Trim());
         }
+
+        // Restored (or attempted) — the crash-recovery record is no longer needed.
+        TerminalTileRecovery.Clear(_logger);
     }
 
     /// <summary>
@@ -1381,6 +1436,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     await TileTerminalAsync(tr).ConfigureAwait(false);
                 }
+            }
+            else
+            {
+                // workspace-9k27.9: placement failed/was skipped — the window was
+                // already normalized and moved on-screen by the anchor step, so it
+                // now sits at (0,0) over the terminal. Do NOT claim Docked (the
+                // state must reflect the outcome, not the attempt): re-park it
+                // off-screen and report failure so the caller/UI stays truthful.
+                _logger.LogWarning("Sidecar placement returned no geometry — re-parking off-screen instead of claiming docked");
+                await ParkWindowOffScreenAsync().ConfigureAwait(false);
+                await RefocusTerminalAsync(force: true).ConfigureAwait(false);
+                return null;
             }
 
             _isDocked = true;

@@ -39,6 +39,10 @@ public class NavigationService : INavigationService
     private readonly object _activityLock = new();
     private StatusAnnouncement? _announcement;
     private DateTime? _announcementSetAt;
+
+    // workspace-9k27.11: keyless message deferred while a keyed hint holds the
+    // slot; promoted (latest-wins) when the hint's TTL lapses.
+    private (string Message, TimeSpan Ttl)? _pendingStatusMessage;
     private TimeSpan _announcementTtl = StatusMessageDuration;
     private readonly TimeProvider _clock;
     private bool _isFromCache;
@@ -291,6 +295,14 @@ public class NavigationService : INavigationService
         TimeSpan? ttl = null,
         string? shortText = null)
     {
+        // workspace-9k27.11: a new keyless announcement supersedes any message
+        // deferred behind a keyed hint — otherwise a stale deferral would pop
+        // up after this one expires.
+        if (keys is not { Count: > 0 })
+        {
+            _pendingStatusMessage = null;
+        }
+
         _announcement = new StatusAnnouncement
         {
             Glyph = glyph,
@@ -344,6 +356,10 @@ public class NavigationService : INavigationService
     {
         if (HasActiveKeyedHint())
         {
+            // workspace-9k27.11: DEFER, don't drop — errors ("Export failed…")
+            // route through this shim too, and eating them while a teach flash
+            // holds the slot inverted the g801 bug. Latest deferred message wins.
+            _pendingStatusMessage = (message, StatusMessageDuration);
             return;
         }
 
@@ -357,6 +373,7 @@ public class NavigationService : INavigationService
     {
         if (HasActiveKeyedHint())
         {
+            _pendingStatusMessage = (message, duration);
             return;
         }
 
@@ -370,6 +387,7 @@ public class NavigationService : INavigationService
     {
         _announcement = null;
         _announcementSetAt = null;
+        _pendingStatusMessage = null;
     }
 
     /// <summary>
@@ -872,6 +890,16 @@ public class NavigationService : INavigationService
         {
             _announcement = null;
             _announcementSetAt = null;
+
+            // workspace-9k27.11: a keyless message deferred behind a keyed hint
+            // surfaces the moment the hint expires, with its own fresh TTL.
+            if (_pendingStatusMessage is { } pending)
+            {
+                _pendingStatusMessage = null;
+                Announce(glyph: null, text: pending.Message, ttl: pending.Ttl);
+                return _announcement;
+            }
+
             return null;
         }
 

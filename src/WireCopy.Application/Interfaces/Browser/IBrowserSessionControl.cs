@@ -13,4 +13,14 @@ public interface IBrowserSessionControl : IDisposable
     /// browser-based page load does not incur the cold-start penalty.
     /// </summary>
     Task WarmUpAsync();
+
+    /// <summary>
+    /// workspace-9k27.7: captures the identity (bundle id) of the terminal app
+    /// hosting the TUI so focus can be returned to it after browser windows
+    /// appear. MUST be called at process startup, while the terminal is still
+    /// the frontmost app — capturing lazily at first browser launch recorded
+    /// whatever app the user had switched to in the meantime. macOS-only; no-op
+    /// elsewhere and on failure (refocus then falls back to a TERM_PROGRAM map).
+    /// </summary>
+    Task CaptureTerminalIdentityAsync();
 }

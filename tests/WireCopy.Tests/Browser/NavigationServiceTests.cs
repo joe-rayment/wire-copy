@@ -31,6 +31,29 @@ public class NavigationServiceTests
     }
 
     [Fact]
+    public void SetStatusMessage_DeferredBehindKeyedHint_SurfacesWhenHintExpires()
+    {
+        // workspace-9k27.11: a keyless message (e.g. an error) arriving while a
+        // keyed teach hint holds the slot must be DEFERRED, not dropped.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero));
+        var sut = new NavigationService(_logger, clock);
+
+        sut.Announce(
+            glyph: "⇉",
+            text: "See the live page beside the app",
+            keys: new[] { new StatusKeyHint("|", "dock") },
+            ttl: TimeSpan.FromSeconds(6));
+        sut.SetStatusMessage("Export failed: disk full");
+
+        // While the hint is live it keeps the slot.
+        sut.CurrentContext.StatusMessage.Should().Contain("live page");
+
+        // Once the hint's TTL lapses the deferred error surfaces with a fresh TTL.
+        clock.Advance(TimeSpan.FromSeconds(7));
+        sut.CurrentContext.StatusMessage.Should().Be("Export failed: disk full");
+    }
+
+    [Fact]
     public void GoBack_RestoresSelectionAndScrollPosition()
     {
         // workspace-xx61: returning to a list lands the user back at their place.

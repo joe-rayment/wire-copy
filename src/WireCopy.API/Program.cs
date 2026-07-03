@@ -305,6 +305,19 @@ public class Program
                 await dbContext.InitializeDatabaseAsync();
             }
 
+            // workspace-9k27.6: if a previous session crashed while the sidecar had
+            // tiled the terminal, put the user's terminal window back (macOS only;
+            // instant no-op when no recovery record exists).
+            await WireCopy.Infrastructure.Browser.TerminalTileRecovery.RecoverAtStartupAsync(
+                host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                    .CreateLogger("TerminalTileRecovery"));
+
+            // workspace-9k27.7: capture the terminal's identity NOW, while it is
+            // guaranteed to be the frontmost app — the old first-browser-launch
+            // capture recorded whatever app the user had switched to by then and
+            // cached it forever, sending focus to the wrong app on every refocus.
+            await host.Services.GetRequiredService<IBrowserSessionControl>().CaptureTerminalIdentityAsync();
+
             // workspace-nk8a: warm up the browser SYNCHRONOUSLY before the TUI takes
             // over, so any first-run chromium download (~270 MB) and Playwright Node
             // driver chatter happens in normal console mode rather than corrupting the

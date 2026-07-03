@@ -465,6 +465,8 @@ public class InMemoryPageCacheTests : IDisposable
         // UtcNow each ApplyLinkListTtl call, so a frequently-reopened section page never expired. A short
         // link-list TTL over a long default proves the cap: repeated revisits within and past the window must
         // not push the expiry forward — once CachedAtUtc + LinkListTtl elapses the entry is gone.
+        // workspace-9k27.16: assert on the entry's absolute expiry timestamp instead of
+        // racing wall-clock sleeps against a 2s TTL (the old form flaked under load).
         var config = new CacheConfiguration
         {
             DefaultTtlSeconds = 3600,   // long default so the only cap in play is the link-list TTL
@@ -477,16 +479,17 @@ public class InMemoryPageCacheTests : IDisposable
         var url = "https://example.com/section";
         cache.Put(url, CreateResult(url, "<html>links</html>"));
 
-        // A revisit ~1s in must re-anchor to CachedAtUtc (cap stays at +2s), NOT slide to now+2s.
         cache.ApplyLinkListTtl(url);
-        Thread.Sleep(1000);
-        cache.ApplyLinkListTtl(url);
-        cache.Contains(url).Should().BeTrue("still inside the 2s absolute cap");
+        var expiryAfterFirstApply = cache.GetExpiresAtUtc(url);
+        expiryAfterFirstApply.Should().NotBeNull();
 
-        // Cross the absolute cap. A revisit here must NOT resurrect or extend the entry.
-        Thread.Sleep(1500); // ~2.5s total > 2s cap
-        cache.Contains(url).Should().BeFalse(
-            "the link-list TTL is an absolute cap anchored to CachedAtUtc — repeated revisits must not slide it forward (workspace-hv8n)");
+        // Re-applying on a revisit must re-anchor to CachedAtUtc — the expiry timestamp
+        // must NOT move forward, no matter how many times or when it is re-applied.
+        Thread.Sleep(50); // any nonzero gap: a sliding TTL would rebase to now+2s and move the timestamp
+        cache.ApplyLinkListTtl(url);
+        cache.GetExpiresAtUtc(url).Should().Be(
+            expiryAfterFirstApply,
+            "the link-list TTL is an absolute cap anchored to CachedAtUtc — a revisit must not slide it forward (workspace-hv8n)");
     }
 
     [Fact]
@@ -495,9 +498,10 @@ public class InMemoryPageCacheTests : IDisposable
         // workspace-hv8n — applying a link-list TTL longer than what is already set must NOT extend the entry's
         // lifetime; an apply can only shrink (clamp). Here a 1s default cap with a 3600s link-list TTL applied
         // on top must still expire at the original ~1s cap, not be lengthened to an hour.
+        // workspace-9k27.16: timestamp assertion instead of a wall-clock sleep race.
         var config = new CacheConfiguration
         {
-            DefaultTtlSeconds = 1,
+            DefaultTtlSeconds = 60,
             LinkListTtlSeconds = 3600,
             EvictionSweepIntervalSeconds = 3600,
         };
@@ -506,9 +510,13 @@ public class InMemoryPageCacheTests : IDisposable
             NullLogger<InMemoryPageCache>.Instance);
         var url = "https://example.com/section";
         cache.Put(url, CreateResult(url, "<html>links</html>"));
-        cache.ApplyLinkListTtl(url); // 3600s apply must clamp to the original ~1s cap, not extend it
-        Thread.Sleep(1300);
-        cache.Contains(url).Should().BeFalse(
+        var originalExpiry = cache.GetExpiresAtUtc(url);
+        originalExpiry.Should().NotBeNull();
+
+        cache.ApplyLinkListTtl(url); // 3600s apply must clamp to the original 60s cap, not extend it
+
+        cache.GetExpiresAtUtc(url).Should().Be(
+            originalExpiry,
             "a longer TTL apply must clamp (shrink-only), never extend an entry past its original cap (workspace-hv8n)");
     }
 

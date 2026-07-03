@@ -316,6 +316,17 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         }
     }
 
+    /// <summary>
+    /// Test hook (workspace-9k27.16): expose an entry's absolute expiry so TTL
+    /// tests can assert on timestamps instead of racing wall-clock sleeps.
+    /// </summary>
+    internal DateTime? GetExpiresAtUtc(string url)
+    {
+        return _entries.TryGetValue(NormalizeUrl(url), out var entry)
+            ? entry.Metadata.ExpiresAtUtc
+            : null;
+    }
+
     private static long EstimateSize(PageLoadResult result)
     {
         var htmlBytes = !string.IsNullOrEmpty(result.Html)

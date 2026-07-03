@@ -47,8 +47,14 @@ if [ "$verbose" = true ]; then
     "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@"
 else
     # Default mode: TUI on the real terminal (stdout), filter browser noise on stderr only.
+    # workspace-9k27.16: the filter is a blocklist, so a real failure that happens to match a
+    # noise token (a geckodriver crash, an extension content-script console.error) would vanish.
+    # Tee the UNFILTERED stderr to a log so nothing is ever lost, and print where it went.
+    mkdir -p logs
+    stderr_log="logs/stderr-$(date +%Y%m%d-%H%M%S).log"
+    echo "wirecopy: full unfiltered stderr → $stderr_log" >&2
     "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" \
-      2> >(grep --line-buffered -v \
+      2> >(tee -a "$stderr_log" | grep --line-buffered -v \
         -e "console.error:" \
         -e "NS_ERROR_CONTENT_BLOCKED" \
         -e "geckodriver" \
