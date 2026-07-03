@@ -36,6 +36,14 @@ public class NavigationTree
     /// </summary>
     public int SelectionCount => SelectedNodeIds.Count;
 
+    /// <summary>
+    /// workspace-9k27.1: set when a saved AI hierarchy config no longer matched
+    /// this page (coverage collapsed below the staleness floor) and the builder
+    /// fell back to document order. Consumers surface a "re-run setup" nudge
+    /// instead of claiming an AI-curated layout.
+    /// </summary>
+    public bool HierarchyConfigStale { get; set; }
+
     private List<LinkNode>? _cachedVisibleNodes;
 
     private NavigationTree(LinkNode root)

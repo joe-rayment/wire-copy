@@ -70,6 +70,57 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     }
 
     /// <summary>
+    /// workspace-9k27.1: build-time twin of the analyzer's parse-time guard.
+    /// Evaluates each exclude rule against THIS visit's high-importance,
+    /// non-sponsored links and skips any rule that would hide more than
+    /// <see cref="SiteHierarchyConfig.MaxExcludeHighImportanceFraction"/> of
+    /// them — a rule that broad is hiding stories, not chrome. Sponsored links
+    /// are left out of the numerator AND denominator so a legitimately large
+    /// sponsor section can still be excluded in full.
+    /// </summary>
+    internal static SiteHierarchyConfig GuardExcludeRules(SiteHierarchyConfig config, List<LinkInfo> contentLinks, Microsoft.Extensions.Logging.ILogger? logger = null)
+    {
+        var highScore = contentLinks
+            .Where(l => l.ImportanceScore >= SiteHierarchyConfig.HighImportanceScoreThreshold
+                && !l.IsGroupHeader
+                && !l.IsSponsored)
+            .ToList();
+        if (highScore.Count == 0)
+        {
+            return config;
+        }
+
+        // Floor of 2: on a small page any single exclusion exceeds the fraction,
+        // which would veto perfectly surgical rules. Percentages only mean
+        // something with enough links to take a percentage of.
+        var maxHidden = Math.Max(2.0, highScore.Count * SiteHierarchyConfig.MaxExcludeHighImportanceFraction);
+
+        var keptSelectors = config.ExcludeSelectors
+            .Where(sel => string.IsNullOrEmpty(sel) || highScore.Count(l =>
+                !string.IsNullOrEmpty(l.ParentSelector)
+                && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase)) <= maxHidden)
+            .ToList();
+        var keptPatterns = config.ExcludeUrlPatterns
+            .Where(pat => string.IsNullOrEmpty(pat) || highScore.Count(l =>
+                l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase)) <= maxHidden)
+            .ToList();
+
+        var droppedCount = (config.ExcludeSelectors.Count - keptSelectors.Count)
+            + (config.ExcludeUrlPatterns.Count - keptPatterns.Count);
+        if (droppedCount == 0)
+        {
+            return config;
+        }
+
+        logger?.LogWarning(
+            "Skipped {Count} saved exclude rule(s) this visit: each would hide >{Max:P0} of the page's {High} high-importance links (rule broadened since save — workspace-9k27.1)",
+            droppedCount,
+            SiteHierarchyConfig.MaxExcludeHighImportanceFraction,
+            highScore.Count);
+        return config with { ExcludeSelectors = keptSelectors, ExcludeUrlPatterns = keptPatterns };
+    }
+
+    /// <summary>
     /// workspace-5oe9.1: durable exclusion test. A content link is dropped when
     /// its <see cref="LinkInfo.ParentSelector"/> contains any configured
     /// <see cref="SiteHierarchyConfig.ExcludeSelectors"/> fragment, or its
@@ -143,23 +194,61 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         // ads/promos identified by selector/url-pattern are dropped on every
         // visit (not just the snapshot the AI was run on). Uses the same
         // Contains semantics as MatchesSection.
+        // workspace-9k27.1: re-run the proportional over-exclusion guard on
+        // EVERY visit, not just at save time — a selector that was surgical on
+        // the save-time snapshot can broaden on a redesign and nuke the page.
         if (hierarchyConfig.ExcludeSelectors.Count > 0 || hierarchyConfig.ExcludeUrlPatterns.Count > 0)
         {
+            var guarded = GuardExcludeRules(hierarchyConfig, contentLinks, _logger);
             var beforeExclude = contentLinks.Count;
-            contentLinks = contentLinks.Where(l => !IsExcluded(l, hierarchyConfig)).ToList();
+            contentLinks = contentLinks.Where(l => !IsExcluded(l, guarded)).ToList();
             var excludedCount = beforeExclude - contentLinks.Count;
             if (excludedCount > 0)
             {
                 _logger.LogInformation(
                     "Excluded {Count} content link(s) via durable rules ({Selectors} selectors, {UrlPatterns} url-patterns)",
                     excludedCount,
-                    hierarchyConfig.ExcludeSelectors.Count,
-                    hierarchyConfig.ExcludeUrlPatterns.Count);
+                    guarded.ExcludeSelectors.Count,
+                    guarded.ExcludeUrlPatterns.Count);
             }
         }
 
-        foreach (var section in orderedSections)
+        for (var sectionIdx = 0; sectionIdx < orderedSections.Count; sectionIdx++)
         {
+            var section = orderedSections[sectionIdx];
+
+            // workspace-9k27.3: the MaxLinks cap's "no story is ever lost" claim
+            // was verified only against the SAVE-TIME snapshot. Re-verify on THIS
+            // visit: honor the cap only when every overflow link is actually
+            // claimed by a later section now — otherwise (a redesign broke the
+            // downstream selector) lift the cap so the overflow isn't dropped.
+            var effectiveCap = section.MaxLinks;
+            if (section.MaxLinks is { } declaredCap)
+            {
+                var allMatches = new List<int>();
+                for (int i = 0; i < contentLinks.Count; i++)
+                {
+                    if (!matchedLinks.Contains(i) && MatchesSection(contentLinks[i], section))
+                    {
+                        allMatches.Add(i);
+                    }
+                }
+
+                var laterSections = orderedSections.Skip(sectionIdx + 1).ToList();
+                var overflowClaimedDownstream = allMatches
+                    .Skip(declaredCap)
+                    .All(i => laterSections.Any(later => MatchesSection(contentLinks[i], later)));
+                if (!overflowClaimedDownstream)
+                {
+                    _logger.LogWarning(
+                        "Section '{Section}' cap of {Cap} lifted this visit: overflow no longer matches any later section (page layout changed) — keeping all {Matches} matches instead of dropping stories",
+                        section.Name,
+                        declaredCap,
+                        allMatches.Count);
+                    effectiveCap = null;
+                }
+            }
+
             var sectionLinks = new List<LinkInfo>();
             for (int i = 0; i < contentLinks.Count; i++)
             {
@@ -171,7 +260,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 // workspace-9wm6: a capped section (e.g. a pinned single-story
                 // lead) stops claiming once full, so the greedy loop re-offers
                 // the overflow to later sections instead of dropping it.
-                if (section.MaxLinks is { } cap && sectionLinks.Count >= cap)
+                if (effectiveCap is { } cap && sectionLinks.Count >= cap)
                 {
                     break;
                 }
@@ -200,6 +289,24 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             {
                 sectionNode.AddChild(link);
             }
+        }
+
+        // workspace-9k27.1: staleness floor — when the saved sections cover
+        // almost none of this visit's stories (site redesign killed the
+        // selectors), a "curated" tree would be near-empty or empty because
+        // unmatched content is dropped below. Fall back to document order and
+        // FLAG it so the UI says so, instead of silently rendering nothing.
+        if (contentLinks.Count > 0
+            && (double)matchedLinks.Count / contentLinks.Count < SiteHierarchyConfig.StaleCoverageFraction)
+        {
+            _logger.LogWarning(
+                "Saved AI hierarchy matched only {Covered}/{Total} content links (<{Floor:P0}) — stale config; falling back to document order (workspace-9k27.1)",
+                matchedLinks.Count,
+                contentLinks.Count,
+                SiteHierarchyConfig.StaleCoverageFraction);
+            var fallback = BuildGroupedTree(links);
+            fallback.HierarchyConfigStale = true;
+            return fallback;
         }
 
         // workspace-vwkt: drop unmatched content links rather than appending them to root.

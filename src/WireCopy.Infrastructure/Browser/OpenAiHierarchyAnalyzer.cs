@@ -1527,12 +1527,26 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         // stories. The model occasionally excludes a whole story CONTAINER (e.g.
         // 'div.itc1 > div.ifsp' on techmeme), collapsing coverage to a fraction
         // of the page. A rule that would hide a large share of the page's
-        // HIGH-importance links (score >= 80 — genuine stories) is wrong by
-        // construction; keep only the surgical ones that target chrome/sponsors.
-        var highScore = contentLinks.Where(l => l.ImportanceScore >= 80 && !l.IsGroupHeader).ToList();
+        // HIGH-importance links (genuine stories) is wrong by construction; keep
+        // only the surgical ones that target chrome/sponsors.
+        // workspace-9k27.2: sponsored links are excluded from the guard's
+        // numerator AND denominator (a legitimately large sponsor section can be
+        // excluded in full); the guard also caps the UNION of all rules, not
+        // just each rule individually; dropped rules are counted so the preview
+        // card can tell the user their steering didn't take (instead of the
+        // guard silently vetoing an explicit instruction).
+        var droppedExcludeRules = 0;
+        var highScore = contentLinks
+            .Where(l => l.ImportanceScore >= SiteHierarchyConfig.HighImportanceScoreThreshold
+                && !l.IsGroupHeader
+                && !l.IsSponsored)
+            .ToList();
         if (highScore.Count > 0)
         {
-            var maxHidden = highScore.Count * 0.25;
+            // Floor of 2 — see NavigationTreeBuilder.GuardExcludeRules (small
+            // pages would otherwise veto surgical single-link excludes).
+            var maxHidden = Math.Max(2.0, highScore.Count * SiteHierarchyConfig.MaxExcludeHighImportanceFraction);
+            var beforeGuard = excludeSelectors.Count + excludeUrlPatterns.Count;
             excludeSelectors = excludeSelectors
                 .Where(sel => highScore.Count(l =>
                     !string.IsNullOrEmpty(l.ParentSelector)
@@ -1542,6 +1556,44 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 .Where(pat => highScore.Count(l =>
                     l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase)) <= maxHidden)
                 .ToList();
+
+            // Union guard: individually-surgical rules can collectively hide most
+            // of the page. Greedily drop the widest rules until the combined
+            // effect is back under the cap.
+            bool HiddenByAny(LinkInfo l) =>
+                excludeSelectors.Any(sel => !string.IsNullOrEmpty(l.ParentSelector)
+                    && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase))
+                || excludeUrlPatterns.Any(pat => l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase));
+            while (highScore.Count(HiddenByAny) > maxHidden
+                && excludeSelectors.Count + excludeUrlPatterns.Count > 0)
+            {
+                var widestSelector = excludeSelectors
+                    .OrderByDescending(sel => highScore.Count(l => !string.IsNullOrEmpty(l.ParentSelector)
+                        && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase)))
+                    .FirstOrDefault();
+                var widestPattern = excludeUrlPatterns
+                    .OrderByDescending(pat => highScore.Count(l => l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase)))
+                    .FirstOrDefault();
+                var selectorHits = widestSelector is null ? 0 : highScore.Count(l => !string.IsNullOrEmpty(l.ParentSelector)
+                    && l.ParentSelector.Contains(widestSelector, StringComparison.OrdinalIgnoreCase));
+                var patternHits = widestPattern is null ? 0 : highScore.Count(l => l.Url.Contains(widestPattern, StringComparison.OrdinalIgnoreCase));
+                if (selectorHits >= patternHits && widestSelector is not null)
+                {
+                    excludeSelectors.Remove(widestSelector);
+                }
+                else if (widestPattern is not null)
+                {
+                    excludeUrlPatterns.Remove(widestPattern);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            // Surfaced to the user via DroppedExcludeRuleCount on the config
+            // (the wizard preview footnote) — no logger in this static parser.
+            droppedExcludeRules = beforeGuard - (excludeSelectors.Count + excludeUrlPatterns.Count);
         }
 
         // workspace-9wm6: a "lead" section is the SINGLE top story. When the
@@ -1581,6 +1633,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             Kind = LayoutKind.AiCurated,
             Version = 3,
             Strategy = ScrapingStrategies.AiCuratedStrategy.StrategyId,
+            DroppedExcludeRuleCount = droppedExcludeRules,
         };
 
         // workspace-romy.8: an optional targeted confirm question, shown as

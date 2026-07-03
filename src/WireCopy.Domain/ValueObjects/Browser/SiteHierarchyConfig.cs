@@ -12,6 +12,29 @@ public enum LayoutKind
 
 public record SiteHierarchyConfig
 {
+    /// <summary>
+    /// workspace-9k27.1/.2: importance score at/above which a content link counts
+    /// as a "genuine story" for the exclusion guards (parse-time AND build-time).
+    /// </summary>
+    public const int HighImportanceScoreThreshold = 80;
+
+    /// <summary>
+    /// workspace-9k27.1/.2: an exclude rule that would hide more than this share
+    /// of the page's high-importance links is wrong by construction and is
+    /// skipped — at parse time (analyzer) and again on every revisit (builder),
+    /// so a save-time-surgical selector that broadens on a redesign can't nuke
+    /// the page.
+    /// </summary>
+    public const double MaxExcludeHighImportanceFraction = 0.25;
+
+    /// <summary>
+    /// workspace-9k27.1: minimum share of the page's content links the saved
+    /// sections must still cover on a revisit. Below this the builder falls back
+    /// to document order and flags the tree stale (never a silently empty page).
+    /// Matches the wizard's setup-time MinCoverageFraction.
+    /// </summary>
+    public const double StaleCoverageFraction = 0.10;
+
     public required string Domain { get; init; }
     public required string UrlPattern { get; init; }
     public required List<HierarchySection> Sections { get; init; }
@@ -51,6 +74,16 @@ public record SiteHierarchyConfig
     /// without telling the user.
     /// </summary>
     public bool NeedsReanalyze { get; init; }
+
+    /// <summary>
+    /// workspace-9k27.2: how many exclude rules the over-exclusion guard dropped
+    /// while parsing this config (each would have hidden too many real stories).
+    /// Transient — the wizard preview surfaces it so a user whose steering was
+    /// vetoed learns WHY the change didn't take, instead of silence. Not
+    /// persisted.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int DroppedExcludeRuleCount { get; init; }
 }
 
 public record HierarchySection

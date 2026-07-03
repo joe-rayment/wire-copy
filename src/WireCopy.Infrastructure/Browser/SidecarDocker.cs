@@ -23,14 +23,22 @@ internal static class SidecarDocker
     /// could be read (placement skipped rather than guessed).
     /// </summary>
     internal static async Task<(SidecarGeometry.DisplayInfo Display, TerminalTiling.WindowRect Browser)?> PlaceAsync(
-        IDockWindowGeometry geo, DockSide side, int requestedWidthPx, double dockFraction, ILogger? logger = null)
+        IDockWindowGeometry geo,
+        DockSide side,
+        int requestedWidthPx,
+        double dockFraction,
+        ILogger? logger = null,
+        (int X, int Y)? anchor = null)
     {
         await geo.NormalizeAsync().ConfigureAwait(false);
 
-        // Anchor the window at the global origin so its work-area read resolves to a REAL display
-        // (a window still parked off-screen reports a phantom/empty work area → far-left/full-width
-        // placement). This is the workspace-75ng anchor, now followed by a stabilizing read.
-        await geo.MoveAsync(0, 0).ConfigureAwait(false);
+        // Anchor the window so its work-area read resolves to a REAL display (a window still
+        // parked off-screen reports a phantom/empty work area → far-left/full-width placement).
+        // workspace-9k27.8: anchor at the TERMINAL's position when known — the global origin
+        // is always the PRIMARY display, which yanked the dock (and the terminal tile) onto
+        // the wrong monitor whenever the terminal lived on a secondary display.
+        var (anchorX, anchorY) = anchor ?? (0, 0);
+        await geo.MoveAsync(anchorX, anchorY).ConfigureAwait(false);
 
         var display = await ReadStableDisplayAsync(geo).ConfigureAwait(false);
         if (display is null)

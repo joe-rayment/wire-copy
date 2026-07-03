@@ -25,12 +25,14 @@ public class SidecarDockerTests
     {
         private readonly Queue<SidecarGeometry.DisplayInfo?> _displays;
         private readonly int _minWidthClamp;
+        private readonly Action<int, int>? _onMove;
         private SidecarGeometry.DisplayInfo? _lastDisplay;
 
-        public FakeGeo(IEnumerable<SidecarGeometry.DisplayInfo?> displays, int minWidthClamp)
+        public FakeGeo(IEnumerable<SidecarGeometry.DisplayInfo?> displays, int minWidthClamp, Action<int, int>? onMove = null)
         {
             _displays = new Queue<SidecarGeometry.DisplayInfo?>(displays);
             _minWidthClamp = minWidthClamp;
+            _onMove = onMove;
         }
 
         public TerminalTiling.WindowRect Current { get; private set; } = new(-32000, -32000, 800, 600);
@@ -41,6 +43,7 @@ public class SidecarDockerTests
 
         public Task MoveAsync(int left, int top)
         {
+            _onMove?.Invoke(left, top);
             Current = Current with { X = left, Y = top };
             return Task.CompletedTask;
         }
@@ -73,6 +76,36 @@ public class SidecarDockerTests
     }
 
     private static SidecarGeometry.DisplayInfo D(int l, int t, int w, int h) => new(l, t, w, h);
+
+    [Fact]
+    public async Task Place_AnchorsAtTerminalPosition_WhenKnown()
+    {
+        // workspace-9k27.8: anchoring at (0,0) always resolves the PRIMARY display's
+        // work area — a terminal on a secondary monitor got its dock (and tile) yanked
+        // to the primary. With the terminal's position passed as the anchor, the
+        // pre-read move lands on the terminal's display instead.
+        var moves = new List<(int X, int Y)>();
+        var geo = new FakeGeo([D(2560, 0, 1920, 1080)], minWidthClamp: 0, onMove: (x, y) => moves.Add((x, y)));
+
+        var result = await SidecarDocker.PlaceAsync(
+            geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5, anchor: (2600, 40));
+
+        moves[0].Should().Be((2600, 40), "the anchor move targets the terminal's display, not the global origin");
+        result.Should().NotBeNull();
+        var b = result!.Value.Browser;
+        (b.X + b.Width).Should().Be(2560 + 1920, "the dock is flush inside the SECONDARY display's work area");
+    }
+
+    [Fact]
+    public async Task Place_AnchorsAtGlobalOrigin_WhenTerminalUnknown()
+    {
+        var moves = new List<(int X, int Y)>();
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 0, onMove: (x, y) => moves.Add((x, y)));
+
+        await SidecarDocker.PlaceAsync(geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5);
+
+        moves[0].Should().Be((0, 0), "no anchor → the pre-9k27.8 primary-origin behavior is preserved");
+    }
 
     [Fact]
     public async Task Place_WithWidthClamp_EndsFlushRight_NotPastEdge()

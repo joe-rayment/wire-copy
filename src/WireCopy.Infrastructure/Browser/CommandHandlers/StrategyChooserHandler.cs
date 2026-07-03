@@ -495,6 +495,22 @@ internal static class StrategyChooserHandler
                 page.SetLinkTree(tree);
             };
 
+        // workspace-9k27.4: re-entering the wizard on an already-configured site
+        // seeds the preview from the SAVED layout (refine, don't regenerate).
+        SiteHierarchyConfig? existingConfig = null;
+        var seedStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
+        if (seedStore != null)
+        {
+            try
+            {
+                existingConfig = await seedStore.GetConfigAsync(page.Url).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogDebug(ex, "Could not load the saved config for wizard re-entry seeding (starting fresh)");
+            }
+        }
+
         var completed = false;
         try
         {
@@ -512,7 +528,8 @@ internal static class StrategyChooserHandler
                 c => PickLeadFromTreeAsync(ctx, scope, page, options, c),
                 applyPreview,
                 lens,
-                ct).ConfigureAwait(false);
+                ct,
+                existingConfig).ConfigureAwait(false);
             completed = !result.Cancelled;
             return result;
         }
@@ -924,12 +941,14 @@ internal static class StrategyChooserHandler
         // page's real tree (Enter saves exactly what is previewed) — only the
         // persistence step remains.
         var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
-        if (configStore != null)
-        {
-            await configStore.SaveConfigAsync(wizardResult.Config).ConfigureAwait(false);
-        }
+        var saved = configStore == null
+            || await configStore.SaveConfigAsync(wizardResult.Config).ConfigureAwait(false);
 
-        ctx.NavigationService.SetStatusMessage($"✔ Site set up · AI Curated · {wizardResult.Config.Sections.Count} section(s)");
+        // workspace-9k27.4: a failed write must not claim success — the layout
+        // works for THIS visit (the tree is applied) but would vanish on restart.
+        ctx.NavigationService.SetStatusMessage(saved
+            ? $"✔ Site set up · AI Curated · {wizardResult.Config.Sections.Count} section(s)"
+            : "⚠ Layout applied, but saving FAILED (disk?) — it won't survive a restart");
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
@@ -961,13 +980,13 @@ internal static class StrategyChooserHandler
         };
 
         var result = await strategy.BuildTreeAsync(stContext, ct).ConfigureAwait(false);
-        if (configStore != null)
-        {
-            await configStore.SaveConfigAsync(result.Config).ConfigureAwait(false);
-        }
+        var strategySaved = configStore == null
+            || await configStore.SaveConfigAsync(result.Config).ConfigureAwait(false);
 
         page.SetLinkTree(result.Tree);
-        ctx.NavigationService.SetStatusMessage($"✔ {result.Summary}");
+        ctx.NavigationService.SetStatusMessage(strategySaved
+            ? $"✔ {result.Summary}"
+            : "⚠ Layout applied, but saving FAILED (disk?) — it won't survive a restart");
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 

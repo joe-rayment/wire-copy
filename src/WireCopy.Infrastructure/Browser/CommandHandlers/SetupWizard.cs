@@ -65,10 +65,42 @@ internal static class SetupWizard
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
-        CancellationToken ct)
+        CancellationToken ct,
+        SiteHierarchyConfig? existingConfig = null)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
         ArgumentNullException.ThrowIfNull(budget);
+
+        // ---- workspace-9k27.4: re-entry on an already-configured site seeds
+        // the preview from the SAVED layout, so a small tweak refines the
+        // config the previous session perfected instead of regenerating from
+        // scratch (which threw away an almost-perfect layout — the very defect
+        // the incremental-refine work fixed WITHIN a session). Only when the
+        // saved config still matches this page; a dead config falls through to
+        // the full wizard.
+        if (existingConfig != null
+            && existingConfig.Sections.Count > 0
+            && !IsDegenerate(existingConfig, links))
+        {
+            return await RunPreviewLoopAsync(
+                analyzer,
+                input,
+                render,
+                overlay,
+                links,
+                pageUrl,
+                screenshot,
+                proposal: EmptyProposal(),
+                answers: new List<SetupAnswer>(),
+                config: existingConfig,
+                confirmQuestion: null,
+                budget,
+                freeTextPrompt,
+                pickLeadFromTree,
+                applyPreview,
+                lens,
+                ct).ConfigureAwait(false);
+        }
 
         // ---- Round 1: propose pattern + questions ----
         if (!budget.TrySpend())
@@ -168,144 +200,26 @@ internal static class SetupWizard
         }
 
         // ---- Preview loop: show the RESULT, not a description of it ----
-        // workspace-romy.7: previousCovered carries the last previewed config's
-        // coverage into the next preview so each adjustment round shows what
-        // changed ("12 of 40 · was 5").
-        int? previousCovered = null;
-
-        // workspace-q77e: the layout as it was BEFORE the last refine, so 'z'
-        // can undo a tweak that made things worse without losing the
-        // almost-perfect version (or starting the whole wizard over).
-        SiteHierarchyConfig? undoConfig = null;
-        while (!ct.IsCancellationRequested)
-        {
-            if (IsDegenerate(config, links))
-            {
-                // Honest failure: no fake-confident preview, no savable empty
-                // config. The user can point at a story (one more budget-guarded
-                // re-inference) or Esc to leave the page unconfigured.
-                var repaired = await RunAdjustAsync(
-                    analyzer,
-                    input,
-                    render,
-                    overlay,
-                    links,
-                    pageUrl,
-                    screenshot,
-                    proposal,
-                    answers,
-                    config,
-                    budget,
-                    freeTextPrompt,
-                    pickLeadFromTree,
-                    lens,
-                    ct,
-                    BuildFailureCardShape(config, links, budget)).ConfigureAwait(false);
-                if (repaired == null)
-                {
-                    return new Result { Cancelled = true };
-                }
-
-                config = repaired.Config;
-                confirmQuestion = repaired.ConfirmQuestion;
-                continue;
-            }
-
-            if (applyPreview != null)
-            {
-                await applyPreview(config, ct).ConfigureAwait(false);
-            }
-
-            // workspace-romy.8: a discriminating confirm question renders as
-            // extra answerable rows BELOW the sections. The cursor starts on a
-            // section row, so plain Enter still quick-accepts the layout.
-            var askable = confirmQuestion != null && IsDiscriminating(confirmQuestion) && !budget.Exhausted
-                ? confirmQuestion
-                : null;
-            var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null);
-            previousCovered = Coverage(config, links).Covered;
-            var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
-            if (lens != null)
-            {
-                await lens.ClearAsync(ct).ConfigureAwait(false);
-            }
-
-            if (askable != null && choice >= config.Sections.Count)
-            {
-                // The user answered the confirm question — one more inference
-                // round with the answer grounded in its durable identifier.
-                var optIndex = Math.Clamp(choice - config.Sections.Count, 0, askable.Options.Count - 1);
-                var chosenOption = askable.Options[optIndex];
-                var identifier = FormatIdentifier(chosenOption.ParentSelector, chosenOption.UrlPattern);
-                confirmQuestion = null;
-                if (budget.TrySpend())
-                {
-                    answers.Add(new SetupAnswer
-                    {
-                        QuestionId = "confirm",
-                        Answer = identifier.Length > 0
-                            ? $"{askable.Prompt} → {chosenOption.Label} ({identifier})"
-                            : $"{askable.Prompt} → {chosenOption.Label}",
-                    });
-                    inferred = await RunWithProgressAsync(
-                        analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
-                        "Rebuilding your layout",
-                        overlay,
-                        render,
-                        ct).ConfigureAwait(false);
-                    config = inferred.Config;
-                    confirmQuestion = inferred.ConfirmQuestion;
-                }
-
-                continue;
-            }
-
-            switch (choice)
-            {
-                case >= 0: // Enter — save exactly what is previewed
-                    return new Result { Config = config };
-                case CancelChoice:
-                    return new Result { Cancelled = true };
-                case UndoChoice:
-                    if (undoConfig != null)
-                    {
-                        config = undoConfig;
-                        undoConfig = null;
-                        confirmQuestion = null;
-                        previousCovered = null;
-                    }
-
-                    continue;
-                case AdjustChoice:
-                    var before = config;
-                    var adjusted = await RunAdjustAsync(
-                        analyzer,
-                        input,
-                        render,
-                        overlay,
-                        links,
-                        pageUrl,
-                        screenshot,
-                        proposal,
-                        answers,
-                        config,
-                        budget,
-                        freeTextPrompt,
-                        pickLeadFromTree,
-                        lens,
-                        ct).ConfigureAwait(false);
-                    if (adjusted != null)
-                    {
-                        undoConfig = before; // remember the pre-refine layout for 'z'
-                        config = adjusted.Config;
-                        confirmQuestion = adjusted.ConfirmQuestion;
-                    }
-
-                    continue;
-            }
-        }
-
-        return new Result { Cancelled = true };
+        // (extracted to RunPreviewLoopAsync so wizard re-entry can seed it
+        // directly from a saved config — workspace-9k27.4)
+        return await RunPreviewLoopAsync(
+            analyzer,
+            input,
+            render,
+            overlay,
+            links,
+            pageUrl,
+            screenshot,
+            proposal,
+            answers,
+            config,
+            confirmQuestion,
+            budget,
+            freeTextPrompt,
+            pickLeadFromTree,
+            applyPreview,
+            lens,
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -542,6 +456,13 @@ internal static class SetupWizard
             footnote += $" · was {prev}";
         }
 
+        // workspace-9k27.2: the over-exclusion guard vetoed rule(s) — tell the
+        // user WHY their "hide X" steering didn't take instead of silence.
+        if (config.DroppedExcludeRuleCount > 0)
+        {
+            footnote += $" · ⚠ {config.DroppedExcludeRuleCount} exclusion(s) skipped — too broad, would hide real stories";
+        }
+
         return new SetupWizardOverlay.WizardCard
         {
             Title = "Your new layout",
@@ -660,6 +581,184 @@ internal static class SetupWizard
             Hint: "↑/↓ choose · Enter select · Esc leave unconfigured");
     }
 
+    /// <summary>workspace-9k27.4: minimal proposal for re-entry seeding — the
+    /// repair/confirm paths need one, but a saved config has no round-1 output.</summary>
+    private static SiteSetupProposal EmptyProposal() => new()
+    {
+        ProposedPattern = new ProposedPattern(),
+    };
+
+    /// <summary>
+    /// The preview/refine loop: renders the layout-as-result card, routes
+    /// adjust/undo/confirm-question actions, and returns the saved config or a
+    /// cancellation. Entered after rounds 1-2 on a fresh setup, or DIRECTLY
+    /// with the saved config on wizard re-entry (workspace-9k27.4).
+    /// </summary>
+    private static async Task<Result> RunPreviewLoopAsync(
+        IHierarchyAnalyzer analyzer,
+        IInputHandler input,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        List<LinkInfo> links,
+        string pageUrl,
+        byte[]? screenshot,
+        SiteSetupProposal proposal,
+        List<SetupAnswer> answers,
+        SiteHierarchyConfig config,
+        SetupQuestion? confirmQuestion,
+        ModelRoundTripBudget budget,
+        Func<CancellationToken, Task<string?>> freeTextPrompt,
+        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
+        Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
+        Lens? lens,
+        CancellationToken ct)
+    {
+        // workspace-romy.7: previousCovered carries the last previewed config's
+        // coverage into the next preview so each adjustment round shows what
+        // changed ("12 of 40 · was 5").
+        int? previousCovered = null;
+
+        // workspace-q77e: the layout as it was BEFORE the last refine, so 'z'
+        // can undo a tweak that made things worse without losing the
+        // almost-perfect version (or starting the whole wizard over).
+        SiteHierarchyConfig? undoConfig = null;
+        while (!ct.IsCancellationRequested)
+        {
+            if (IsDegenerate(config, links))
+            {
+                // Honest failure: no fake-confident preview, no savable empty
+                // config. The user can point at a story (one more budget-guarded
+                // re-inference) or Esc to leave the page unconfigured.
+                var repaired = await RunAdjustAsync(
+                    analyzer,
+                    input,
+                    render,
+                    overlay,
+                    links,
+                    pageUrl,
+                    screenshot,
+                    proposal,
+                    answers,
+                    config,
+                    budget,
+                    freeTextPrompt,
+                    pickLeadFromTree,
+                    lens,
+                    ct,
+                    BuildFailureCardShape(config, links, budget)).ConfigureAwait(false);
+                if (repaired == null)
+                {
+                    return new Result { Cancelled = true };
+                }
+
+                config = repaired.Config;
+                confirmQuestion = repaired.ConfirmQuestion;
+                continue;
+            }
+
+            if (applyPreview != null)
+            {
+                await applyPreview(config, ct).ConfigureAwait(false);
+            }
+
+            // workspace-romy.8: a discriminating confirm question renders as
+            // extra answerable rows BELOW the sections. The cursor starts on a
+            // section row, so plain Enter still quick-accepts the layout.
+            var askable = confirmQuestion != null && IsDiscriminating(confirmQuestion) && !budget.Exhausted
+                ? confirmQuestion
+                : null;
+            var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null);
+            previousCovered = Coverage(config, links).Covered;
+            var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
+            if (lens != null)
+            {
+                await lens.ClearAsync(ct).ConfigureAwait(false);
+            }
+
+            if (askable != null && choice >= config.Sections.Count)
+            {
+                // The user answered the confirm question — one more inference
+                // round with the answer grounded in its durable identifier.
+                var optIndex = Math.Clamp(choice - config.Sections.Count, 0, askable.Options.Count - 1);
+                var chosenOption = askable.Options[optIndex];
+                var identifier = FormatIdentifier(chosenOption.ParentSelector, chosenOption.UrlPattern);
+                confirmQuestion = null;
+                if (budget.TrySpend())
+                {
+                    answers.Add(new SetupAnswer
+                    {
+                        QuestionId = "confirm",
+                        Answer = identifier.Length > 0
+                            ? $"{askable.Prompt} → {chosenOption.Label} ({identifier})"
+                            : $"{askable.Prompt} → {chosenOption.Label}",
+                    });
+
+                    // workspace-9k27.4: this path REGENERATES from the proposal
+                    // (accepted refines survive only as accumulated answer
+                    // text), so keep the current layout undoable — 'z' after a
+                    // confirm answer restores what the user was just looking at.
+                    undoConfig = config;
+                    var inferred = await RunWithProgressAsync(
+                        analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
+                        "Rebuilding your layout",
+                        overlay,
+                        render,
+                        ct).ConfigureAwait(false);
+                    config = inferred.Config;
+                    confirmQuestion = inferred.ConfirmQuestion;
+                }
+
+                continue;
+            }
+
+            switch (choice)
+            {
+                case >= 0: // Enter — save exactly what is previewed
+                    return new Result { Config = config };
+                case CancelChoice:
+                    return new Result { Cancelled = true };
+                case UndoChoice:
+                    if (undoConfig != null)
+                    {
+                        config = undoConfig;
+                        undoConfig = null;
+                        confirmQuestion = null;
+                        previousCovered = null;
+                    }
+
+                    continue;
+                case AdjustChoice:
+                    var before = config;
+                    var adjusted = await RunAdjustAsync(
+                        analyzer,
+                        input,
+                        render,
+                        overlay,
+                        links,
+                        pageUrl,
+                        screenshot,
+                        proposal,
+                        answers,
+                        config,
+                        budget,
+                        freeTextPrompt,
+                        pickLeadFromTree,
+                        lens,
+                        ct).ConfigureAwait(false);
+                    if (adjusted != null)
+                    {
+                        undoConfig = before; // remember the pre-refine layout for 'z'
+                        config = adjusted.Config;
+                        confirmQuestion = adjusted.ConfirmQuestion;
+                    }
+
+                    continue;
+            }
+        }
+
+        return new Result { Cancelled = true };
+    }
+
     /// <summary>
     /// The adjust loop behind Space on the preview card: point at the main story
     /// (when a tree/click picker is wired) or steer the model with free text.
@@ -714,6 +813,14 @@ internal static class SetupWizard
 
         options.Add(new SetupWizardOverlay.CardOption { Label = "Tell the AI what to change…" });
 
+        // workspace-9k27.4: remember whether this is the degenerate-REPAIR path
+        // BEFORE the null-coalescing assignment below fills in the default card
+        // shape — the old not-null check ran after that assignment and was
+        // therefore always true, which made the RefineLayoutAsync branch DEAD
+        // CODE and silently regenerated the layout from scratch on every normal
+        // adjustment (the exact defect the q77e incremental-refine work fixed).
+        var isRepair = shape != null;
+
         shape ??= new AdjustCardShape(
             Title: "Adjust the layout",
             Prompt: "What should change?",
@@ -763,13 +870,13 @@ internal static class SetupWizard
             return null;
         }
 
-        // workspace-q77e: the failure/degenerate-repair path (shape != null) has
-        // no good layout to preserve, so it re-derives from the proposal +
-        // accumulated answers as before. The normal preview "adjust" REFINES the
-        // layout the user is looking at — the model edits the current config and
-        // keeps the working parts, instead of regenerating from scratch (which
-        // could throw away an almost-perfect layout over one tweak).
-        if (shape != null)
+        // workspace-q77e: the failure/degenerate-repair path has no good layout
+        // to preserve, so it re-derives from the proposal + accumulated answers
+        // as before. The normal preview "adjust" REFINES the layout the user is
+        // looking at — the model edits the current config and keeps the working
+        // parts, instead of regenerating from scratch (which could throw away an
+        // almost-perfect layout over one tweak).
+        if (isRepair)
         {
             answers.Add(adjustment);
             return await RunWithProgressAsync(

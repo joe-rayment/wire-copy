@@ -83,7 +83,7 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         }
     }
 
-    public Task SaveConfigAsync(SiteHierarchyConfig config)
+    public Task<bool> SaveConfigAsync(SiteHierarchyConfig config)
     {
         try
         {
@@ -117,10 +117,13 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         }
         catch (Exception ex)
         {
+            // workspace-9k27.4: report the failure — the caller was showing
+            // "✔ Site set up" over a config that vanished on restart.
             _logger.LogWarning(ex, "Failed to save hierarchy config for {Domain}", config.Domain);
+            return Task.FromResult(false);
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<bool> DeleteConfigAsync(string url)

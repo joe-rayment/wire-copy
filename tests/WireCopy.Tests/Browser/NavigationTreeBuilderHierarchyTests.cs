@@ -334,4 +334,89 @@ public class NavigationTreeBuilderHierarchyTests
             .FirstOrDefault(n => n.IsGroupHeader && n.Link.DisplayText == "Empty Section");
         emptyHeader.Should().BeNull();
     }
+
+    [Fact]
+    public async Task BuildTreeAsync_StaleConfig_FallsBackToDocumentOrder_AndFlagsIt()
+    {
+        // workspace-9k27.1: a redesign killed every saved selector — the tree
+        // must NOT render empty. Fall back to document order and flag stale.
+        var links = Enumerable.Range(0, 20)
+            .Select(i => CreateContentLink(
+                url: $"https://example.com/story{i}",
+                text: $"Story {i}",
+                parentSelector: "div.newLayout2026 a"))
+            .ToList();
+
+        var config = CreateConfig(
+            new HierarchySection { Name = "Lead", SortOrder = 0, ParentSelectors = new() { "div.oldLayout a" } });
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        tree.HierarchyConfigStale.Should().BeTrue("zero sections matched — the config is stale");
+        tree.GetAllNodes().Count(n => !n.IsGroupHeader).Should().Be(20, "document-order fallback keeps every story visible");
+    }
+
+    [Fact]
+    public async Task BuildTreeAsync_HealthyConfig_IsNotFlaggedStale()
+    {
+        var links = Enumerable.Range(0, 10)
+            .Select(i => CreateContentLink(url: $"https://example.com/s{i}", text: $"S{i}", parentSelector: "main .feed a"))
+            .ToList();
+        var config = CreateConfig(
+            new HierarchySection { Name = "Feed", SortOrder = 0, ParentSelectors = new() { ".feed" } });
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        tree.HierarchyConfigStale.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task BuildTreeAsync_ExcludeRuleThatBroadenedSinceSave_IsSkippedOnRevisit()
+    {
+        // workspace-9k27.1: a save-time-surgical exclude that now matches most of
+        // the page (redesign) is skipped at build time — stories stay visible.
+        var links = Enumerable.Range(0, 12)
+            .Select(i => CreateContentLink(
+                url: $"https://example.com/story{i}",
+                text: $"Story {i}",
+                parentSelector: "div.content div.item a"))
+            .ToList();
+
+        var config = CreateConfig(
+            new HierarchySection { Name = "Feed", SortOrder = 0, ParentSelectors = new() { "div.item" } }) with
+        {
+            // Was surgical at save time; after the redesign it matches EVERY story.
+            ExcludeSelectors = new List<string> { "div.content" },
+        };
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        tree.HierarchyConfigStale.Should().BeFalse();
+        tree.GetAllNodes().Count(n => !n.IsGroupHeader).Should().Be(12, "the over-broad exclude is skipped this visit, not applied");
+    }
+
+    [Fact]
+    public async Task BuildTreeAsync_CappedLead_LiftsCap_WhenOverflowNoLongerClaimedDownstream()
+    {
+        // workspace-9k27.3: the save-time "every overflow link is claimed by a
+        // later section" promise broke (downstream selector died in a redesign).
+        // The cap must be lifted so N-1 stories aren't silently dropped.
+        var links = new List<LinkInfo>
+        {
+            CreateContentLink(url: "https://example.com/a", text: "A", parentSelector: "div.col > div.item > strong"),
+            CreateContentLink(url: "https://example.com/b", text: "B", parentSelector: "div.col > div.item > strong"),
+            CreateContentLink(url: "https://example.com/c", text: "C", parentSelector: "div.col > div.item > strong"),
+        };
+
+        var config = CreateConfig(
+            new HierarchySection { Name = "Lead", SortOrder = 0, ParentSelectors = new() { "div.item > strong" }, MaxLinks = 1 },
+            new HierarchySection { Name = "Feed", SortOrder = 1, ParentSelectors = new() { "div.deadSelector2020" } });
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        var nodes = tree.GetAllNodes().ToList();
+        var lead = nodes.Single(n => n.IsGroupHeader && n.Link.DisplayText == "Lead");
+        lead.Children.Should().HaveCount(3, "the cap is lifted when the overflow would otherwise be dropped");
+        nodes.Count(n => !n.IsGroupHeader).Should().Be(3, "no story is ever lost — now verified per-visit, not just at save time");
+    }
 }

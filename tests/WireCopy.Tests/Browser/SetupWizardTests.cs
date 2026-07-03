@@ -74,6 +74,10 @@ public class SetupWizardTests
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
             .Returns(new InferredPattern { Config = config });
+        analyzer.RefineLayoutAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteHierarchyConfig>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new InferredPattern { Config = config });
         return analyzer;
     }
 
@@ -283,8 +287,15 @@ public class SetupWizardTests
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "propose + infer + one re-inference for the pick");
-        await analyzer.Received(2).InferPatternFromAnswersAsync(
+        budget.Used.Should().Be(3, "propose + infer + one refine for the pick");
+
+        // workspace-9k27.4: a normal preview adjustment REFINES the current
+        // layout (RefineLayoutAsync) — it must NOT regenerate from the proposal
+        // (the old `shape ??=` bug sent every adjustment through re-inference).
+        await analyzer.Received(1).RefineLayoutAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Any<SiteHierarchyConfig>(), Arg.Is<string>(i => i.Contains("The real lead")), Arg.Any<CancellationToken>());
+        await analyzer.Received(1).InferPatternFromAnswersAsync(
             Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
             Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
     }
@@ -334,6 +345,15 @@ public class SetupWizardTests
                 allAnswers.Add(ci.Arg<IReadOnlyList<SetupAnswer>>().ToList());
                 return new InferredPattern { Config = SomeConfig() };
             });
+        var refineInstructions = new List<string>();
+        analyzer.RefineLayoutAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteHierarchyConfig>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                refineInstructions.Add(ci.ArgAt<string>(4));
+                return new InferredPattern { Config = SomeConfig() };
+            });
 
         // Preview: Space → adjust card: no pick wired, so cursor 0 is the
         // free-text option → Enter → free text → re-infer → preview → Enter.
@@ -353,9 +373,13 @@ public class SetupWizardTests
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "the free-text adjustment costs exactly one re-inference");
-        allAnswers.Should().HaveCount(2);
-        allAnswers[1].Should().Contain(a => a.QuestionId == "adjustment" && a.Answer == "hide the opinion pieces");
+        budget.Used.Should().Be(3, "the free-text adjustment costs exactly one refine call");
+
+        // workspace-9k27.4: the adjustment REFINES the current layout — the
+        // instruction reaches RefineLayoutAsync verbatim, and no second
+        // from-scratch re-inference happens.
+        allAnswers.Should().HaveCount(1);
+        refineInstructions.Should().ContainSingle().Which.Should().Be("hide the opinion pieces");
     }
 
     [Fact]

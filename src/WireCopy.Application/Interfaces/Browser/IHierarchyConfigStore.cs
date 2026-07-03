@@ -23,7 +23,10 @@ public interface IHierarchyConfigStore
     /// for the same domain and URL pattern.
     /// </summary>
     /// <param name="config">The config to save.</param>
-    Task SaveConfigAsync(SiteHierarchyConfig config);
+    /// <summary>Persists the config. Returns false when the write failed
+    /// (disk full / permissions) so callers can avoid claiming success
+    /// (workspace-9k27.4).</summary>
+    Task<bool> SaveConfigAsync(SiteHierarchyConfig config);
 
     /// <summary>
     /// Deletes the hierarchy config matching the given URL.

@@ -1405,8 +1405,24 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // phone-width fraction so it is never full-width or past the Dock. All the geometry
             // decisions are unit-tested cross-platform via the IDockWindowGeometry seam.
             var geo = new CdpDockWindowGeometry(_page, cdp, windowId);
+
+            // workspace-9k27.8: dock onto the display the TERMINAL occupies, not
+            // the primary. Probe the terminal window's position via osascript on
+            // macOS; elsewhere or on failure, fall back to the primary origin.
+            (int X, int Y)? anchor = null;
+            if (OperatingSystem.IsMacOS() && _terminalBundleId is not null)
+            {
+                var boundsResult = await RunOsascriptAsync(
+                    TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
+                if (boundsResult is { ExitCode: 0 }
+                    && TerminalTiling.TryParseBounds(boundsResult.Value.StdOut) is { } termRect)
+                {
+                    anchor = (termRect.X, termRect.Y);
+                }
+            }
+
             var placement = await SidecarDocker.PlaceAsync(
-                geo, _browserConfig.DockSide, _browserConfig.DockWidthPx, _browserConfig.DockFraction, _logger)
+                geo, _browserConfig.DockSide, _browserConfig.DockWidthPx, _browserConfig.DockFraction, _logger, anchor)
                 .ConfigureAwait(false);
 
             if (placement is { } p)

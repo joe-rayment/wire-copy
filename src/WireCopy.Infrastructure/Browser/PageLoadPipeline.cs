@@ -408,10 +408,22 @@ public class PageLoadPipeline
         if (route == HierarchyRoute.PatternConfig)
         {
             tree = await _treeBuilder.BuildTreeAsync(links, hierarchyConfig!, cancellationToken).ConfigureAwait(false);
-            _navigationService.SetAiHierarchy(true);
-            if (hierarchyConfig!.NeedsReanalyze)
+
+            // workspace-9k27.1: the saved sections no longer match this page —
+            // the builder fell back to document order. Say so instead of
+            // claiming an AI-curated layout over what is really a plain tree.
+            if (tree.HierarchyConfigStale)
             {
-                _navigationService.SetStatusMessage("Saved layout is a legacy snapshot · g l to re-run AI setup");
+                _navigationService.SetAiHierarchy(false);
+                _navigationService.SetStatusMessage("Saved layout no longer matches this page · g l to re-run setup");
+            }
+            else
+            {
+                _navigationService.SetAiHierarchy(true);
+                if (hierarchyConfig!.NeedsReanalyze)
+                {
+                    _navigationService.SetStatusMessage("Saved layout is a legacy snapshot · g l to re-run AI setup");
+                }
             }
         }
         else if (route == HierarchyRoute.RssFeed)
@@ -617,7 +629,17 @@ public class PageLoadPipeline
             // hierarchy builder. Build cache cannot replay an RSS fetch, so a
             // cached RSS config renders its grouped links here.
             tree = await _treeBuilder.BuildTreeAsync(cache.Links, hierarchyConfig).ConfigureAwait(false);
-            _navigationService.SetAiHierarchy(true);
+
+            // workspace-9k27.1: same staleness surfacing as the fresh-load path.
+            if (tree.HierarchyConfigStale)
+            {
+                _navigationService.SetAiHierarchy(false);
+                _navigationService.SetStatusMessage("Saved layout no longer matches this page · g l to re-run setup");
+            }
+            else
+            {
+                _navigationService.SetAiHierarchy(true);
+            }
         }
         else
         {
