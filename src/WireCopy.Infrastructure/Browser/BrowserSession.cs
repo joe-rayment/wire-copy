@@ -17,15 +17,15 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 {
-    // workspace-75ng: far off-screen X/Y the headed window is PARKED at when hidden. Far
-    // enough negative to clear any real multi-display arrangement, so the window is never in
-    // the visible region yet stays at windowState=normal — Chromium keeps painting it (no
-    // minimize/occlusion throttle, helped by --disable-backgrounding-occluded-windows), so
+    // workspace-75ng: the headed window is PARKED far off-screen when hidden — never in
+    // the visible region yet windowState=normal, so Chromium keeps painting it (no
+    // minimize/occlusion throttle, helped by --disable-backgrounding-occluded-windows) and
     // the live page is current the instant it re-docks. That flag is a DELIBERATE tradeoff:
     // the parked window keeps rendering (and consuming CPU/battery) even while off-screen,
     // in exchange for an instant-current live page on dock — do not "optimize" it away.
-    private const int OffScreenCoordinate = -32000;
-
+    // workspace-9k27.17: the coordinate itself is BrowserConfiguration.ParkCoordinate —
+    // tunable because window managers differ (some Linux WMs clamp/refuse the move,
+    // Windows treats -32000 as the legacy minimize coordinate).
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
@@ -1058,7 +1058,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // Chromium's default on-screen position and never steals keyboard focus at
                 // startup. It stays headful and renders fully (CDP extraction is window-
                 // visibility-independent); 'O' brings it on-screen to dock.
-                $"--window-position={OffScreenCoordinate},{OffScreenCoordinate}",
+                $"--window-position={_browserConfig.ParkCoordinate},{_browserConfig.ParkCoordinate}",
 
                 // workspace-75ng: keep the off-screen/occluded window PAINTING so the live
                 // page is current the instant the user docks it — otherwise Chromium throttles
@@ -1281,8 +1281,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 ["windowId"] = windowId,
                 ["bounds"] = new Dictionary<string, object>
                 {
-                    ["left"] = OffScreenCoordinate,
-                    ["top"] = OffScreenCoordinate,
+                    ["left"] = _browserConfig.ParkCoordinate,
+                    ["top"] = _browserConfig.ParkCoordinate,
                 },
             }).ConfigureAwait(false);
         }
