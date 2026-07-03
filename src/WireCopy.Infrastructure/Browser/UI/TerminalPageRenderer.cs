@@ -444,7 +444,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _launcherRenderer.RenderFooter(options.TerminalWidth, options.ScheduledRunBadge);
+        _launcherRenderer.RenderFooter(options.TerminalWidth, options.ScheduledRunBadge, options.StatusMessage);
         RenderPreloadDetailOverlay(options);
     }
 

@@ -86,8 +86,8 @@ public class CollectionCommandStatusTests
 
         await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
 
-        _lastStatusMessage.Should().Be("Saved: My Article");
-        _navService.CurrentContext.StatusMessage.Should().Be("Saved: My Article",
+        _lastStatusMessage.Should().Be("Saved to Reading List: My Article");
+        _navService.CurrentContext.StatusMessage.Should().Be("Saved to Reading List: My Article",
             "status message persists until auto-expiry (3s)");
     }
 
@@ -109,7 +109,7 @@ public class CollectionCommandStatusTests
         var announcement = _navService.CurrentContext.ActiveAnnouncement;
         announcement.Should().NotBeNull();
         announcement!.Glyph.Should().Be("✓");
-        announcement.Text.Should().Be("Saved: My Article");
+        announcement.Text.Should().Be("Saved to Reading List: My Article");
         announcement.Keys.Should().ContainSingle(k => k.Key == "c" && k.Action == "list");
     }
 
@@ -160,7 +160,7 @@ public class CollectionCommandStatusTests
 
         disabledCtx.NavService.CurrentContext.ActiveAnnouncement.Should().NotBeNull(
             "the save announcement still fires even when animations are disabled");
-        disabledCtx.NavService.CurrentContext.ActiveAnnouncement!.Text.Should().Be("Saved: My Article");
+        disabledCtx.NavService.CurrentContext.ActiveAnnouncement!.Text.Should().Be("Saved to Reading List: My Article");
         disabledCtx.Ctx.DisableAnimations.Should().BeTrue();
     }
 
@@ -183,7 +183,7 @@ public class CollectionCommandStatusTests
         await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
 
         // Assert
-        _lastStatusMessage.Should().Be("Saved: Reader Article");
+        _lastStatusMessage.Should().Be("Saved to Reading List: Reader Article");
         await _collectionService.Received(1).SaveToReadingListAsync(
             "https://example.com/article", "Reader Article", Arg.Any<CancellationToken>());
     }
@@ -220,6 +220,179 @@ public class CollectionCommandStatusTests
         await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Already in Favorites");
+    }
+
+    [Fact]
+    public async Task HandleSaveToSpecific_Success_AnnouncesWithGlyphAndFollowUpKey()
+    {
+        // workspace-yejq.2: Shift+S success uses the same Announce vocabulary
+        // as the `s` quick save instead of a plain status message.
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Favorites");
+        _collectionService.SaveToCollectionByNameAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CollectionItem.Create(Guid.NewGuid(), "https://example.com/article", "My Article"));
+
+        await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
+
+        var announcement = _navService.CurrentContext.ActiveAnnouncement;
+        announcement.Should().NotBeNull();
+        announcement!.Glyph.Should().Be("✓");
+        announcement.Text.Should().Be("Saved to Favorites: My Article");
+        announcement.Keys.Should().ContainSingle(k => k.Key == "c" && k.Action == "list");
+    }
+
+    [Fact]
+    public async Task HandleSaveToSpecific_Duplicate_AnnouncesWithInfoGlyph()
+    {
+        // workspace-yejq.4: the duplicate case carries an indicator glyph.
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _ctx.InputHandler.PromptForInputAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns("Favorites");
+        _collectionService.SaveToCollectionByNameAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((CollectionItem?)null);
+
+        await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
+
+        var announcement = _navService.CurrentContext.ActiveAnnouncement;
+        announcement.Should().NotBeNull();
+        announcement!.Glyph.Should().Be("ℹ");
+        announcement.Text.Should().Be("Already in Favorites");
+    }
+
+    [Fact]
+    public async Task HandleSaveToSpecific_PromptListsExistingCollectionNames()
+    {
+        // workspace-yejq.1: the prompt surfaces the existing collection names
+        // so users reuse rather than accidentally create collections.
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Collection>
+            {
+                Collection.Create("Reading List"),
+                Collection.Create("Favorites"),
+            });
+
+        string? seenPrompt = null;
+        _ctx.InputHandler.PromptForInputAsync(
+            Arg.Do<string>(p => seenPrompt = p), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+
+        await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
+
+        seenPrompt.Should().Be("Save to collection [Reading List, Favorites]: ");
+    }
+
+    [Fact]
+    public async Task HandleSaveToSpecific_NoCollections_UsesBarePrompt()
+    {
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Collection>());
+
+        string? seenPrompt = null;
+        _ctx.InputHandler.PromptForInputAsync(
+            Arg.Do<string>(p => seenPrompt = p), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+
+        await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
+
+        seenPrompt.Should().Be("Save to collection: ");
+    }
+
+    [Fact]
+    public async Task HandleSaveToSpecific_CollectionLookupFails_StillPrompts()
+    {
+        SetupHierarchicalWithSelectedLink("My Article", "https://example.com/article");
+        _collectionService.GetAllCollectionsAsync(Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<Collection>>(_ => throw new InvalidOperationException("DB error"));
+
+        string? seenPrompt = null;
+        _ctx.InputHandler.PromptForInputAsync(
+            Arg.Do<string>(p => seenPrompt = p), Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+
+        await CollectionCommandHandler.HandleSaveToSpecific(_ctx, _options, CancellationToken.None);
+
+        seenPrompt.Should().Be("Save to collection: ",
+            "a failed name lookup must degrade to the bare prompt, not break Shift+S");
+    }
+
+    #endregion
+
+    #region SetDefaultCollection (s in CollectionList)
+
+    [Fact]
+    public async Task HandleSaveToCollection_InCollectionList_SetsDefaultAndAnnounces()
+    {
+        // workspace-yejq.3: the `s` = set-default overload was silent.
+        var collection = Collection.Create("Tech News");
+        _ctx.Collections = new List<Collection> { collection };
+        _navService.EnterCollections();
+        _navService.CollectionSelectedIndex = 0;
+
+        await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
+
+        await _collectionService.Received(1)
+            .SetDefaultCollectionAsync(collection.Id, Arg.Any<CancellationToken>());
+        _ctx.DefaultCollectionId.Should().Be(collection.Id);
+        _navService.CurrentContext.StatusMessage.Should().Be("Default collection: Tech News");
+    }
+
+    [Fact]
+    public async Task HandleSaveToCollection_InCollectionList_Failure_ShowsError()
+    {
+        var collection = Collection.Create("Tech News");
+        _ctx.Collections = new List<Collection> { collection };
+        _navService.EnterCollections();
+        _navService.CollectionSelectedIndex = 0;
+        _collectionService.SetDefaultCollectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("DB error")));
+
+        await CollectionCommandHandler.HandleSaveToCollection(_ctx, _options, CancellationToken.None);
+
+        _navService.CurrentContext.StatusMessage.Should().Be("Couldn't set default collection");
+    }
+
+    #endregion
+
+    #region HandleReorderUp / HandleReorderDown feedback
+
+    [Fact]
+    public async Task HandleReorderUp_WhenServiceThrows_ShowsCouldntReorder()
+    {
+        // workspace-wyxx.1: reorder failures must not be silent.
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/1", "First");
+        collection.AddItem("https://example.com/2", "Second");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _navService.CollectionItemSelectedIndex = 1;
+        _collectionService.MoveItemUpAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("DB error")));
+
+        await CollectionCommandHandler.HandleReorderUp(_ctx, _options, CancellationToken.None);
+
+        _navService.CurrentContext.StatusMessage.Should().Be("Couldn't reorder");
+    }
+
+    [Fact]
+    public async Task HandleReorderDown_WhenServiceThrows_ShowsCouldntReorder()
+    {
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://example.com/1", "First");
+        collection.AddItem("https://example.com/2", "Second");
+        _navService.EnterCollections();
+        _navService.EnterCollection(collection);
+        _navService.CollectionItemSelectedIndex = 0;
+        _collectionService.MoveItemDownAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("DB error")));
+
+        await CollectionCommandHandler.HandleReorderDown(_ctx, _options, CancellationToken.None);
+
+        _navService.CurrentContext.StatusMessage.Should().Be("Couldn't reorder");
     }
 
     #endregion

@@ -194,7 +194,13 @@ internal static class LauncherCommandHandler
 
                 // Reading List slot is protected (workspace-ul5z): the user cannot
                 // delete it via `d` \u2014 they must clear it via the collection screen.
-                if (ctx.Bookmarks != null && idx >= 0 && !IsReadingListSlot(idx, bookmarkCount))
+                // workspace-ej1i.1: say so instead of silently doing nothing.
+                if (ctx.Bookmarks != null && idx >= 0 && IsReadingListSlot(idx, bookmarkCount))
+                {
+                    ctx.NavigationService.SetStatusMessage(
+                        "Reading List can't be deleted \u2014 clear it from the collection view");
+                }
+                else if (ctx.Bookmarks != null && idx >= 0)
                 {
                     var bookmarkIdx = BookmarkIndexFromVirtual(idx);
                     if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
@@ -404,6 +410,17 @@ internal static class LauncherCommandHandler
         return virtualIdx - 1;
     }
 
+    /// <summary>
+    /// Inverse of <see cref="BookmarkIndexFromVirtual"/>: maps a bookmark-list
+    /// index back to its virtual launcher slot (Reading List at virtual 1).
+    ///   bookmark 0 → virtual 0
+    ///   bookmark N (≥ 1) → virtual N + 1
+    /// </summary>
+    internal static int VirtualIndexFromBookmark(int bookmarkIdx)
+    {
+        return bookmarkIdx <= 0 ? bookmarkIdx : bookmarkIdx + 1;
+    }
+
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
     {
         // Select the URL bar visually. Force the page scroll back to the top
@@ -505,61 +522,89 @@ internal static class LauncherCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
-    private static async Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    private static Task HandleReorderUp(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        var idx = ctx.NavigationService.LauncherSelectedIndex;
-        if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
-        {
-            var bookmark = ctx.Bookmarks[idx];
-            try
-            {
-                using var scope = ctx.ScopeFactory.CreateScope();
-                var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                await bookmarkService.MoveBookmarkUpAsync(bookmark.Id, ct).ConfigureAwait(false);
-                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
-
-                // Follow the bookmark to its new position
-                if (ctx.Bookmarks != null)
-                {
-                    var newIdx = IndexOfBookmarkById(ctx.Bookmarks, bookmark.Id);
-                    ctx.NavigationService.LauncherSelectedIndex =
-                        newIdx >= 0 ? newIdx : Math.Max(0, idx - 1);
-                }
-            }
-            catch (Exception ex)
-            {
-                ctx.Logger.LogWarning(ex, "Failed to move bookmark up");
-            }
-        }
-
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        return HandleReorder(ctx, options, ct, moveUp: true);
     }
 
-    private static async Task HandleReorderDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    private static Task HandleReorderDown(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        return HandleReorder(ctx, options, ct, moveUp: false);
+    }
+
+    /// <summary>
+    /// Shift+K / Shift+J bookmark reordering. The selection is a VIRTUAL
+    /// launcher index (Reading List occupies virtual slot 1, workspace-ul5z),
+    /// so it is mapped through <see cref="BookmarkIndexFromVirtual"/> before
+    /// touching the bookmark list — the pre-ej1i code indexed bookmarks with
+    /// the raw virtual index and moved the wrong bookmark for any slot past
+    /// the Reading List. Feedback (workspace-ej1i.2/.4): boundary no-ops say
+    /// "Already at top/bottom", the protected slot says why it won't move,
+    /// and persistence failures report "Couldn't move bookmark".
+    /// </summary>
+    private static async Task HandleReorder(CommandContext ctx, RenderOptions options, CancellationToken ct, bool moveUp)
     {
         var idx = ctx.NavigationService.LauncherSelectedIndex;
-        if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
-        {
-            var bookmark = ctx.Bookmarks[idx];
-            try
-            {
-                using var scope = ctx.ScopeFactory.CreateScope();
-                var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
-                await bookmarkService.MoveBookmarkDownAsync(bookmark.Id, ct).ConfigureAwait(false);
-                await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+        var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
 
-                // Follow the bookmark to its new position
-                if (ctx.Bookmarks != null)
-                {
-                    var newIdx = IndexOfBookmarkById(ctx.Bookmarks, bookmark.Id);
-                    var maxIdx = Math.Max(0, ctx.Bookmarks.Count - 1);
-                    ctx.NavigationService.LauncherSelectedIndex =
-                        newIdx >= 0 ? newIdx : Math.Min(maxIdx, idx + 1);
-                }
-            }
-            catch (Exception ex)
+        if (ctx.Bookmarks != null && idx >= 0)
+        {
+            if (IsReadingListSlot(idx, bookmarkCount))
             {
-                ctx.Logger.LogWarning(ex, "Failed to move bookmark down");
+                ctx.NavigationService.SetStatusMessage("Reading List stays at slot 2 — it can't be reordered");
+            }
+            else
+            {
+                var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
+                {
+                    if (moveUp && bookmarkIdx == 0)
+                    {
+                        ctx.NavigationService.SetStatusMessage("Already at top");
+                    }
+                    else if (!moveUp && bookmarkIdx == ctx.Bookmarks.Count - 1)
+                    {
+                        ctx.NavigationService.SetStatusMessage("Already at bottom");
+                    }
+                    else
+                    {
+                        var bookmark = ctx.Bookmarks[bookmarkIdx];
+                        try
+                        {
+                            using var scope = ctx.ScopeFactory.CreateScope();
+                            var bookmarkService = scope.ServiceProvider.GetRequiredService<IBookmarkService>();
+                            if (moveUp)
+                            {
+                                await bookmarkService.MoveBookmarkUpAsync(bookmark.Id, ct).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await bookmarkService.MoveBookmarkDownAsync(bookmark.Id, ct).ConfigureAwait(false);
+                            }
+
+                            await ctx.RefreshBookmarksAsync(ct).ConfigureAwait(false);
+
+                            // Follow the bookmark to its new position (in virtual space).
+                            if (ctx.Bookmarks != null)
+                            {
+                                var newBookmarkIdx = IndexOfBookmarkById(ctx.Bookmarks, bookmark.Id);
+                                if (newBookmarkIdx < 0)
+                                {
+                                    newBookmarkIdx = moveUp
+                                        ? Math.Max(0, bookmarkIdx - 1)
+                                        : Math.Min(Math.Max(0, ctx.Bookmarks.Count - 1), bookmarkIdx + 1);
+                                }
+
+                                ctx.NavigationService.LauncherSelectedIndex = VirtualIndexFromBookmark(newBookmarkIdx);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            ctx.Logger.LogWarning(ex, "Failed to move bookmark {Direction}", moveUp ? "up" : "down");
+                            ctx.NavigationService.SetStatusMessage("Couldn't move bookmark");
+                        }
+                    }
+                }
             }
         }
 

@@ -49,6 +49,17 @@ public class KeybindingPopupTests
     }
 
     [Fact]
+    public void GetBindings_CollectionList_DocumentsSetDefaultOverloadOfS()
+    {
+        // workspace-yejq.3: `s` in the Collections list sets the default
+        // collection — the popup must teach the overload where it applies.
+        var bindings = KeybindingPopup.GetBindings(ViewMode.CollectionList);
+
+        bindings.Should().Contain(b => b.Key == "s" && b.Description.Contains("default"),
+            "the Collections list popup must document `s` = set as default collection");
+    }
+
+    [Fact]
     public void GetBindings_Launcher_ContainsEssentialBindings()
     {
         var bindings = KeybindingPopup.GetBindings(ViewMode.Launcher);

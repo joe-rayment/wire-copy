@@ -115,13 +115,18 @@ public class LauncherBookmarkCommandTests
 
     #region ReorderUp (Shift+K)
 
+    // Virtual slot layout (workspace-ul5z): 0 = bookmark[0], 1 = Reading List,
+    // N (≥ 2) = bookmark[N-1]. workspace-ej1i fixed the reorder handlers to map
+    // through BookmarkIndexFromVirtual — pre-fix they indexed bookmarks with
+    // the raw virtual index and moved the wrong bookmark.
+
     [Fact]
-    public async Task ReorderUp_CallsBookmarkServiceMoveUp()
+    public async Task ReorderUp_AtVirtual2_MovesBookmarkOne()
     {
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = 1;
+        _navigationService.LauncherSelectedIndex = 2; // bookmark[1]
 
         await LauncherCommandHandler.Handle(_ctx,
             new NavigationCommand { Type = CommandType.ReorderUp },
@@ -136,7 +141,7 @@ public class LauncherBookmarkCommandTests
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = 1;
+        _navigationService.LauncherSelectedIndex = 2; // bookmark[1]
         _refreshBookmarksCalled = false;
 
         await LauncherCommandHandler.Handle(_ctx,
@@ -152,7 +157,7 @@ public class LauncherBookmarkCommandTests
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = 1;
+        _navigationService.LauncherSelectedIndex = 2;
         _renderCalled = false;
 
         await LauncherCommandHandler.Handle(_ctx,
@@ -163,28 +168,46 @@ public class LauncherBookmarkCommandTests
     }
 
     [Fact]
-    public async Task ReorderUp_OnCollectionsTile_DoesNotCallService()
+    public async Task ReorderUp_OnReadingListSlot_DoesNotCallService_AndExplainsWhy()
     {
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        // Collections tile is at index == bookmarks.Count
-        _navigationService.LauncherSelectedIndex = bookmarks.Count;
+        _navigationService.LauncherSelectedIndex = 1; // Reading List slot
 
         await LauncherCommandHandler.Handle(_ctx,
             new NavigationCommand { Type = CommandType.ReorderUp },
             _options, CancellationToken.None);
 
         await _bookmarkService.DidNotReceive().MoveBookmarkUpAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _navigationService.CurrentContext.StatusMessage.Should().Contain("Reading List",
+            "the protected slot must say why nothing moved (workspace-ej1i)");
     }
 
     [Fact]
-    public async Task ReorderUp_WhenServiceThrows_StillRendersAndDoesNotCrash()
+    public async Task ReorderUp_AtTop_SetsAlreadyAtTopMessage_WithoutServiceCall()
     {
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = 1;
+        _navigationService.LauncherSelectedIndex = 0; // bookmark[0] — already first
+
+        await LauncherCommandHandler.Handle(_ctx,
+            new NavigationCommand { Type = CommandType.ReorderUp },
+            _options, CancellationToken.None);
+
+        await _bookmarkService.DidNotReceive().MoveBookmarkUpAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Already at top",
+            "boundary no-ops must be announced (workspace-ej1i.4)");
+    }
+
+    [Fact]
+    public async Task ReorderUp_WhenServiceThrows_ShowsCouldntMoveAndStillRenders()
+    {
+        var bookmarks = CreateBookmarks(3);
+        _ctx.Bookmarks = bookmarks;
+        _navigationService.EnterLauncher();
+        _navigationService.LauncherSelectedIndex = 2; // bookmark[1]
         _renderCalled = false;
 
         _bookmarkService.MoveBookmarkUpAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -195,6 +218,8 @@ public class LauncherBookmarkCommandTests
             _options, CancellationToken.None);
 
         _renderCalled.Should().BeTrue();
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Couldn't move bookmark",
+            "reorder persistence failures must not be silent (workspace-ej1i.2)");
     }
 
     #endregion
@@ -202,12 +227,12 @@ public class LauncherBookmarkCommandTests
     #region ReorderDown (Shift+J)
 
     [Fact]
-    public async Task ReorderDown_CallsBookmarkServiceMoveDown()
+    public async Task ReorderDown_AtVirtual2_MovesBookmarkOne()
     {
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = 1;
+        _navigationService.LauncherSelectedIndex = 2; // bookmark[1]
 
         await LauncherCommandHandler.Handle(_ctx,
             new NavigationCommand { Type = CommandType.ReorderDown },
@@ -249,18 +274,55 @@ public class LauncherBookmarkCommandTests
     }
 
     [Fact]
-    public async Task ReorderDown_OnCollectionsTile_DoesNotCallService()
+    public async Task ReorderDown_OnReadingListSlot_DoesNotCallService()
     {
         var bookmarks = CreateBookmarks(3);
         _ctx.Bookmarks = bookmarks;
         _navigationService.EnterLauncher();
-        _navigationService.LauncherSelectedIndex = bookmarks.Count;
+        _navigationService.LauncherSelectedIndex = 1; // Reading List slot
 
         await LauncherCommandHandler.Handle(_ctx,
             new NavigationCommand { Type = CommandType.ReorderDown },
             _options, CancellationToken.None);
 
         await _bookmarkService.DidNotReceive().MoveBookmarkDownAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReorderDown_AtBottom_SetsAlreadyAtBottomMessage_WithoutServiceCall()
+    {
+        var bookmarks = CreateBookmarks(3);
+        _ctx.Bookmarks = bookmarks;
+        _navigationService.EnterLauncher();
+        // With 3 bookmarks the last slot is virtual 3 = bookmark[2].
+        _navigationService.LauncherSelectedIndex = 3;
+
+        await LauncherCommandHandler.Handle(_ctx,
+            new NavigationCommand { Type = CommandType.ReorderDown },
+            _options, CancellationToken.None);
+
+        await _bookmarkService.DidNotReceive().MoveBookmarkDownAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Already at bottom",
+            "boundary no-ops must be announced (workspace-ej1i.4)");
+    }
+
+    [Fact]
+    public async Task ReorderDown_LastBookmark_WasUnreachablePreFix_NowAddressable()
+    {
+        // Regression guard: pre-ej1i the guard `idx < Bookmarks.Count` made the
+        // last bookmark (virtual index == Bookmarks.Count) unreorderable at all.
+        // Moving the SECOND-to-last bookmark down must now work from its
+        // virtual slot.
+        var bookmarks = CreateBookmarks(4);
+        _ctx.Bookmarks = bookmarks;
+        _navigationService.EnterLauncher();
+        _navigationService.LauncherSelectedIndex = 3; // bookmark[2] of 4 — movable down
+
+        await LauncherCommandHandler.Handle(_ctx,
+            new NavigationCommand { Type = CommandType.ReorderDown },
+            _options, CancellationToken.None);
+
+        await _bookmarkService.Received(1).MoveBookmarkDownAsync(bookmarks[2].Id, Arg.Any<CancellationToken>());
     }
 
     #endregion

@@ -108,22 +108,32 @@ internal class LauncherRenderer
     /// so the eye lands on Enter first. Version is no longer shown here —
     /// it lives under the tagline in the header card (workspace-m8x2).
     /// </summary>
-    public void RenderFooter(int width, string? scheduledRunBadge = null)
+    public void RenderFooter(int width, string? scheduledRunBadge = null, string? statusMessage = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
 
         // workspace-frpl.13 (B11): a scheduled run that failed/recovered while the user
         // was away surfaces here on next focus — never silent, collapsed when many.
+        // workspace-ej1i: the launcher previously swallowed transient status
+        // messages entirely (delete/reorder feedback was set but never painted).
+        // The auxiliary footer line now shows the active status message when no
+        // scheduled-run badge needs the slot.
         if (!string.IsNullOrEmpty(scheduledRunBadge))
         {
             _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
         }
+        else if (!string.IsNullOrEmpty(statusMessage))
+        {
+            _helpers.WriteLine($" {p.PromptFg.AnsiFg}{statusMessage}{Reset}");
+        }
 
+        // workspace-ej1i.3: "?" opens the full keybinding list — label it as
+        // such so users know more keys exist beyond the footer's top five.
         var hints = FormatPrimaryKbdHint("Enter", "open", p) + "  " +
                     FormatMutedKbdHint("o", "go to url", p) + "  " +
                     FormatMutedKbdHint("a", "add", p) + "  " +
                     FormatMutedKbdHint("d", "delete", p) + "  " +
-                    FormatMutedKbdHint("?", "help", p);
+                    FormatMutedKbdHint("?", "all keys", p);
 
         _ = width;
         _helpers.WriteLine($" {hints}");
@@ -764,8 +774,9 @@ internal class LauncherRenderer
     /// Builds the wordmark / narrow-title header as a list of lines suitable
     /// for inclusion in the launcher's virtual content stream.
     /// When <paramref name="showSetupHint"/> is true, the trailing blank line
-    /// inside the box is replaced with a centred "Set up API keys" hint in the
-    /// accent colour (workspace-ayt8). Net header height is unchanged.
+    /// inside the box is replaced with an "Optional: add API keys" hint in the
+    /// accent colour (workspace-ayt8, copy softened in workspace-4z4f). Net
+    /// header height is unchanged.
     /// </summary>
 #pragma warning disable SA1202 // exposed internal for LauncherTaglineAlignmentTests; private siblings precede.
     internal static List<string> BuildHeaderLines(int width, ThemePalette p, bool showSetupHint)
@@ -796,7 +807,9 @@ internal class LauncherRenderer
 
         string SetupHintBoxLine()
         {
-            const string fullLabel = "→ Set up API keys to enable AI features";
+            // workspace-4z4f.1: the hint must read as optional — browsing
+            // already works without keys; the keys unlock podcasts + AI layout.
+            const string fullLabel = "→ Optional: add API keys for podcasts & AI layout";
             const string suffix = " · press c";
             var accent = p.GetAccentFg().AnsiFg;
             var muted = p.SecondaryText.AnsiFg;
