@@ -201,7 +201,7 @@ internal static class ViewCommandHandler
         }
         catch (Exception ex)
         {
-            ctx.NavigationService.SetStatusMessage($"Dump failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Dump failed: {ex.Message}", StatusSeverity.Error);
             ctx.Logger.LogWarning(ex, "Failed to dump page HTML");
         }
 
@@ -254,7 +254,7 @@ internal static class ViewCommandHandler
         }
         catch (Exception ex)
         {
-            ctx.NavigationService.SetStatusMessage($"Failed to open browser: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Failed to open browser: {ex.Message}", StatusSeverity.Error);
             ctx.Logger.LogWarning(ex, "Failed to open URL in browser: {Url}", url);
         }
 

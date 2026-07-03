@@ -485,7 +485,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to toggle PodcastCostGateAlwaysShow");
-            ctx.NavigationService.SetStatusMessage("Failed to update cost-gate setting");
+            ctx.NavigationService.SetStatusMessage("Failed to update cost-gate setting", StatusSeverity.Error);
         }
     }
 
@@ -848,7 +848,7 @@ internal static class SettingsCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to persist API key");
-                ctx.NavigationService.SetStatusMessage("API key verified but failed to save");
+                ctx.NavigationService.SetStatusMessage("API key verified but failed to save", StatusSeverity.Error);
             }
 
             if (resumeAfterSave != null)
@@ -860,7 +860,7 @@ internal static class SettingsCommandHandler
         else
         {
             ttsService.SetApiKeyOverride(string.Empty);
-            ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid API key");
+            ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid API key", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1402,7 +1402,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to persist bucket name");
-            ctx.NavigationService.SetStatusMessage("Failed to save bucket name");
+            ctx.NavigationService.SetStatusMessage("Failed to save bucket name", StatusSeverity.Error);
         }
 
         return Task.CompletedTask;
@@ -1730,13 +1730,13 @@ internal static class SettingsCommandHandler
             }
             else
             {
-                ctx.NavigationService.SetStatusMessage(result.ErrorMessage ?? "Failed to save service account key");
+                ctx.NavigationService.SetStatusMessage(result.ErrorMessage ?? "Failed to save service account key", StatusSeverity.Error);
             }
         }
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to persist service account key");
-            ctx.NavigationService.SetStatusMessage("Failed to save service account key");
+            ctx.NavigationService.SetStatusMessage("Failed to save service account key", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1821,7 +1821,7 @@ internal static class SettingsCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to clear TTS instructions override");
-                ctx.NavigationService.SetStatusMessage("Failed to reset TTS instructions");
+                ctx.NavigationService.SetStatusMessage("Failed to reset TTS instructions", StatusSeverity.Error);
             }
 
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1843,7 +1843,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to persist TTS instructions");
-            ctx.NavigationService.SetStatusMessage("Failed to save TTS instructions");
+            ctx.NavigationService.SetStatusMessage("Failed to save TTS instructions", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1884,7 +1884,7 @@ internal static class SettingsCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to clear auto-purge override");
-                ctx.NavigationService.SetStatusMessage("Failed to reset auto-purge window");
+                ctx.NavigationService.SetStatusMessage("Failed to reset auto-purge window", StatusSeverity.Error);
             }
 
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1907,7 +1907,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to persist auto-purge window");
-            ctx.NavigationService.SetStatusMessage("Failed to save auto-purge window");
+            ctx.NavigationService.SetStatusMessage("Failed to save auto-purge window", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1929,7 +1929,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to remove API key");
-            ctx.NavigationService.SetStatusMessage("Failed to clear API key");
+            ctx.NavigationService.SetStatusMessage("Failed to clear API key", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1951,7 +1951,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to remove bucket name");
-            ctx.NavigationService.SetStatusMessage("Failed to clear bucket name");
+            ctx.NavigationService.SetStatusMessage("Failed to clear bucket name", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -1979,7 +1979,7 @@ internal static class SettingsCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to remove service account key");
-            ctx.NavigationService.SetStatusMessage("Failed to clear service account key");
+            ctx.NavigationService.SetStatusMessage("Failed to clear service account key", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

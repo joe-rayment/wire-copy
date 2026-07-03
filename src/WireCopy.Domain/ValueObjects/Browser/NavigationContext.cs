@@ -72,6 +72,13 @@ public record NavigationContext
     public int SearchMatchIndex { get; init; }
 
     /// <summary>
+    /// workspace-6z3a.2: total number of matches the active search found in the
+    /// current view (0 when the query matched nothing). Rendered in the status
+    /// bar as "/query 2/14 (n/N)".
+    /// </summary>
+    public int SearchMatchCount { get; init; }
+
+    /// <summary>
     /// Transient status message displayed for one render cycle (e.g., theme name after cycling).
     /// Back-compat plain-text view of <see cref="ActiveAnnouncement"/>.
     /// </summary>

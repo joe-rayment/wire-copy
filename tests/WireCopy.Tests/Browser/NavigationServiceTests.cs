@@ -54,6 +54,135 @@ public class NavigationServiceTests
     }
 
     [Fact]
+    public void SetStatusMessage_Error_TakesSlotImmediately_OverKeyedHint()
+    {
+        // workspace-9k27.11: errors are never deferred — a teach flash must not
+        // hide "Export failed" for 6 seconds.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero));
+        var sut = new NavigationService(_logger, clock);
+
+        sut.Announce(
+            glyph: "⇉",
+            text: "See the live page beside the app",
+            keys: new[] { new StatusKeyHint("|", "dock") },
+            ttl: TimeSpan.FromSeconds(6));
+        sut.SetStatusMessage("Export failed: disk full", StatusSeverity.Error);
+
+        sut.CurrentContext.StatusMessage.Should().Be("Export failed: disk full");
+    }
+
+    [Fact]
+    public void SetStatusMessage_Error_RestoresStompedKeyedHint_ForItsRemainingTtl()
+    {
+        // workspace-9k27.11: the stomped teach hint resumes with the time it
+        // had left once the error expires — then expires normally itself.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero));
+        var sut = new NavigationService(_logger, clock);
+
+        sut.Announce(
+            glyph: "⇉",
+            text: "See the live page beside the app",
+            keys: new[] { new StatusKeyHint("|", "dock") },
+            ttl: TimeSpan.FromSeconds(6));
+        clock.Advance(TimeSpan.FromSeconds(2)); // hint has 4s left
+        sut.SetStatusMessage("Export failed: disk full", StatusSeverity.Error); // 3s default TTL
+
+        sut.CurrentContext.StatusMessage.Should().Be("Export failed: disk full");
+
+        // Error expires → the hint comes back, keys intact.
+        clock.Advance(TimeSpan.FromSeconds(3.5));
+        sut.CurrentContext.StatusMessage.Should().Contain("live page");
+        sut.CurrentContext.ActiveAnnouncement!.Keys.Should().NotBeEmpty();
+
+        // The restored hint runs out its REMAINING 4s, not a fresh 6s.
+        clock.Advance(TimeSpan.FromSeconds(4.1));
+        sut.CurrentContext.ActiveAnnouncement.Should().BeNull();
+    }
+
+    [Fact]
+    public void SetStatusMessage_Info_DeferredBehindActiveError_SurfacesAfterErrorExpires()
+    {
+        // workspace-9k27.11: info must not stomp a visible error, and must not
+        // be dropped either — it queues and surfaces when the error's TTL ends.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero));
+        var sut = new NavigationService(_logger, clock);
+
+        sut.SetStatusMessage("Failed to save API key", StatusSeverity.Error);
+        sut.SetStatusMessage("Theme: Phosphor");
+
+        sut.CurrentContext.StatusMessage.Should().Be("Failed to save API key");
+
+        clock.Advance(TimeSpan.FromSeconds(3.5));
+        sut.CurrentContext.StatusMessage.Should().Be("Theme: Phosphor");
+    }
+
+    [Fact]
+    public void NavigateTo_ClearsSearchState()
+    {
+        // workspace-6z3a.3: a new page must not inherit the previous page's query.
+        _sut.NavigateTo(CreateTestPage("https://example.com/1", "Page 1"));
+        _sut.SetSearchQuery("robots");
+        _sut.SetSearchMatchIndex(2);
+        _sut.SetSearchMatchCount(5);
+
+        _sut.NavigateTo(CreateTestPage("https://example.com/2", "Page 2"));
+
+        _sut.CurrentContext.SearchQuery.Should().BeNull();
+        _sut.CurrentContext.SearchMatchIndex.Should().Be(0);
+        _sut.CurrentContext.SearchMatchCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void SetViewMode_ClearsSearchState()
+    {
+        // workspace-6z3a.4: matches are computed per view — switching views ends the search.
+        _sut.NavigateTo(CreateTestPage());
+        _sut.SetSearchQuery("robots");
+        _sut.SetSearchMatchCount(3);
+
+        _sut.SetViewMode(ViewMode.Readable);
+
+        _sut.CurrentContext.SearchQuery.Should().BeNull();
+        _sut.CurrentContext.SearchMatchCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ToggleViewMode_ClearsSearchState()
+    {
+        _sut.NavigateTo(CreateTestPage());
+        _sut.SetSearchQuery("robots");
+        _sut.SetSearchMatchCount(3);
+
+        _sut.ToggleViewMode();
+
+        _sut.CurrentContext.SearchQuery.Should().BeNull();
+        _sut.CurrentContext.SearchMatchCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void SetSearchQuery_ResetsMatchIndexAndCount()
+    {
+        _sut.SetSearchQuery("old");
+        _sut.SetSearchMatchIndex(4);
+        _sut.SetSearchMatchCount(9);
+
+        _sut.SetSearchQuery("new");
+
+        _sut.CurrentContext.SearchMatchIndex.Should().Be(0);
+        _sut.CurrentContext.SearchMatchCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void SetSearchMatchCount_IsReflectedInContext_AndClampedAtZero()
+    {
+        _sut.SetSearchMatchCount(14);
+        _sut.CurrentContext.SearchMatchCount.Should().Be(14);
+
+        _sut.SetSearchMatchCount(-3);
+        _sut.CurrentContext.SearchMatchCount.Should().Be(0);
+    }
+
+    [Fact]
     public void GoBack_RestoresSelectionAndScrollPosition()
     {
         // workspace-xx61: returning to a list lands the user back at their place.

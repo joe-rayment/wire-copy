@@ -7,6 +7,7 @@ using NSubstitute;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
 using Xunit;
@@ -326,6 +327,46 @@ public class SearchCommandHandlerTests
     public void LooksLikeUrl_ClassifiesInput(string input, bool expected)
     {
         SearchCommandHandler.LooksLikeUrl(input).Should().Be(expected, $"input was '{input}'");
+    }
+
+    #endregion
+
+    #region Search match outcome (workspace-6z3a.1 / .2 / .6)
+
+    [Fact]
+    public void ReportSearchMatchOutcome_ZeroMatches_SetsCountAndNoMatchesMessage()
+    {
+        // workspace-6z3a.1/.6: a search that finds nothing must SAY so — this is
+        // the single source every entry point (/, n, N) flows through.
+        BrowserOrchestrator.ReportSearchMatchOutcome(_navigationService, "zebra", 0);
+
+        _navigationService.CurrentContext.SearchMatchCount.Should().Be(0);
+        _navigationService.CurrentContext.StatusMessage.Should().Be("No matches for \"zebra\"");
+    }
+
+    [Fact]
+    public void ReportSearchMatchOutcome_ZeroMatches_ShownImmediately_EvenWhileKeyedHintActive()
+    {
+        // workspace-6z3a x 9k27.11: "No matches" is user-initiated feedback and
+        // must not be swallowed by an active keyed teach hint.
+        _navigationService.Announce(
+            glyph: "⇉",
+            text: "See the live page beside the app",
+            keys: new[] { new StatusKeyHint("|", "dock") },
+            ttl: TimeSpan.FromSeconds(6));
+
+        BrowserOrchestrator.ReportSearchMatchOutcome(_navigationService, "zebra", 0);
+
+        _navigationService.CurrentContext.StatusMessage.Should().Be("No matches for \"zebra\"");
+    }
+
+    [Fact]
+    public void ReportSearchMatchOutcome_WithMatches_SetsCountWithoutStatusMessage()
+    {
+        BrowserOrchestrator.ReportSearchMatchOutcome(_navigationService, "ai", 14);
+
+        _navigationService.CurrentContext.SearchMatchCount.Should().Be(14);
+        _navigationService.CurrentContext.StatusMessage.Should().BeNull();
     }
 
     #endregion

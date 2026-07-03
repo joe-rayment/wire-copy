@@ -315,7 +315,7 @@ internal static class ScheduleCommandHandler
         }
         catch (ArgumentException ex)
         {
-            ctx.NavigationService.SetStatusMessage($"Could not save: {ex.Message}", TimeSpan.FromSeconds(8));
+            ctx.NavigationService.SetStatusMessage($"Could not save: {ex.Message}", TimeSpan.FromSeconds(8), StatusSeverity.Error);
             return null;
         }
 
@@ -687,7 +687,7 @@ internal static class ScheduleCommandHandler
         }
         catch (ArgumentException ex)
         {
-            ctx.NavigationService.SetStatusMessage($"Invalid cadence: {ex.Message}", TimeSpan.FromSeconds(6));
+            ctx.NavigationService.SetStatusMessage($"Invalid cadence: {ex.Message}", TimeSpan.FromSeconds(6), StatusSeverity.Error);
             return null;
         }
     }

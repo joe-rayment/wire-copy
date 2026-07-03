@@ -1742,6 +1742,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     }
                 }
 
+                ReportSearchMatchOutcome(_navigationService, searchQuery, matches.Count);
                 if (matches.Count > 0)
                 {
                     var wrappedIndex = matchIndex % matches.Count;
@@ -1767,6 +1768,7 @@ public partial class BrowserOrchestrator : IBrowserService
                     }
                 }
 
+                ReportSearchMatchOutcome(_navigationService, searchQuery, matches.Count);
                 if (matches.Count > 0)
                 {
                     var wrappedIndex = matchIndex % matches.Count;
@@ -1794,6 +1796,7 @@ public partial class BrowserOrchestrator : IBrowserService
                 }
             }
 
+            ReportSearchMatchOutcome(_navigationService, searchQuery, matches.Count);
             if (matches.Count > 0)
             {
                 var wrappedIndex = matchIndex % matches.Count;
@@ -1807,6 +1810,25 @@ public partial class BrowserOrchestrator : IBrowserService
                 page.LinkTree.SelectNodeById(visibleNodes[nodeIndex].Id);
                 AdjustScrollForSelection(page.LinkTree, options);
             }
+        }
+    }
+
+    /// <summary>
+    /// workspace-6z3a.1/.2/.6: records the match count for the status bar's
+    /// "/query 2/14 (n/N)" indicator and, when the search found NOTHING, says
+    /// so instead of silently doing nothing. Lives at the single source every
+    /// search entry point (/, n, N) flows through. The no-match message is
+    /// Error severity so an active keyed teach hint can't swallow the feedback
+    /// the user just asked for (workspace-9k27.11).
+    /// </summary>
+#pragma warning disable SA1202 // Kept beside ScrollToSearchMatch, the only caller — internal solely for unit tests
+    internal static void ReportSearchMatchOutcome(NavigationService navigationService, string searchQuery, int matchCount)
+#pragma warning restore SA1202
+    {
+        navigationService.SetSearchMatchCount(matchCount);
+        if (matchCount == 0)
+        {
+            navigationService.SetStatusMessage($"No matches for \"{searchQuery}\"", StatusSeverity.Error);
         }
     }
 

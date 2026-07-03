@@ -449,7 +449,7 @@ internal static class SearchCommandHandler
         }
         catch (Exception ex)
         {
-            ctx.NavigationService.SetStatusMessage($"Export failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Export failed: {ex.Message}", StatusSeverity.Error);
             ctx.Logger.LogWarning(ex, "Failed to export collection");
         }
 
@@ -614,7 +614,7 @@ internal static class SearchCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to re-analyze page hierarchy");
-            ctx.NavigationService.SetStatusMessage("Re-analysis failed");
+            ctx.NavigationService.SetStatusMessage("Re-analysis failed", StatusSeverity.Error);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
     }
@@ -638,7 +638,7 @@ internal static class SearchCommandHandler
             catch (Exception ex)
             {
                 ctx.Logger.LogWarning(ex, "Failed to rename bookmark");
-                ctx.NavigationService.SetStatusMessage("Failed to rename bookmark");
+                ctx.NavigationService.SetStatusMessage("Failed to rename bookmark", StatusSeverity.Error);
             }
         }
     }

@@ -8,6 +8,7 @@ using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Credentials;
 using WireCopy.Domain.Enums;
+using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Credentials;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
@@ -92,7 +93,7 @@ internal static class CredentialCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to list credentials");
-            ctx.NavigationService.SetStatusMessage("Failed to list credentials");
+            ctx.NavigationService.SetStatusMessage("Failed to list credentials", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -261,7 +262,7 @@ internal static class CredentialCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to add credential");
-            ctx.NavigationService.SetStatusMessage($"Failed to add credential: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Failed to add credential: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -330,7 +331,7 @@ internal static class CredentialCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to remove credential");
-            ctx.NavigationService.SetStatusMessage($"Failed to remove credential: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Failed to remove credential: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -393,7 +394,7 @@ internal static class CredentialCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to test credential");
-            ctx.NavigationService.SetStatusMessage($"Login test failed: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Login test failed: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
@@ -553,7 +554,7 @@ internal static class CredentialCommandHandler
         catch (Exception ex)
         {
             ctx.Logger.LogWarning(ex, "Failed to edit credential");
-            ctx.NavigationService.SetStatusMessage($"Failed to edit credential: {ex.Message}");
+            ctx.NavigationService.SetStatusMessage($"Failed to edit credential: {ex.Message}", StatusSeverity.Error);
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

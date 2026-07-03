@@ -410,7 +410,7 @@ internal static class PodcastCommandHandler
             ctx.Logger.LogError(ex, "Podcast generation failed with unexpected error");
             try
             {
-                ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}");
+                ctx.NavigationService.SetStatusMessage($"Podcast error: {ex.Message}", StatusSeverity.Error);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             }
             catch (Exception renderEx)
