@@ -149,69 +149,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
               "additionalProperties": false,
               "properties": {
                 "label": { "type": "string" },
-                "parent_selector": { "type": "string" },
-                "url_pattern": { "type": "string" },
                 "example_link_indices": { "type": "array", "items": { "type": "integer" } }
               },
-              "required": ["label", "parent_selector", "url_pattern", "example_link_indices"]
+              "required": ["label", "example_link_indices"]
             }
           }
-        }
-        """);
-
-    private static readonly BinaryData SetupPatternSchema = BinaryData.FromString(
-        """
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "sections": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "name": { "type": "string" },
-                  "parent_selectors": { "type": "array", "items": { "type": "string" } },
-                  "url_patterns": { "type": "array", "items": { "type": "string" } },
-                  "story_indices": { "type": "array", "items": { "type": "integer" } },
-                  "start_collapsed": { "type": "boolean" }
-                },
-                "required": ["name", "parent_selectors", "url_patterns", "story_indices", "start_collapsed"]
-              }
-            },
-            "exclude_selectors": { "type": "array", "items": { "type": "string" } },
-            "exclude_url_patterns": { "type": "array", "items": { "type": "string" } },
-            "exclude_indices": { "type": "array", "items": { "type": "integer" } },
-            "confidence": { "type": "number" },
-            "confirm_question": {
-              "anyOf": [
-                { "type": "null" },
-                {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "prompt": { "type": "string" },
-                    "options": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "label": { "type": "string" },
-                          "parent_selector": { "type": "string" },
-                          "url_pattern": { "type": "string" }
-                        },
-                        "required": ["label", "parent_selector", "url_pattern"]
-                      }
-                    }
-                  },
-                  "required": ["prompt", "options"]
-                }
-              ]
-            }
-          },
-          "required": ["sections", "exclude_selectors", "exclude_url_patterns", "exclude_indices", "confidence", "confirm_question"]
         }
         """);
 
@@ -488,11 +430,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             try
             {
                 var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+
+                // workspace-45ji: options carry link INDICES only; code derives the
+                // durable identifiers in ParseSetupQuestions. Cheap classification tier.
                 var options = BuildOptions(
                     schemaName: "site_setup_questions",
                     schema: SetupQuestionsSchema,
-                    schemaDescription: "A proposed layout pattern plus a bounded set of clarifying questions.",
-                    reasoningEffortOverride: _config.SetupReasoningEffort,
+                    schemaDescription: "A proposed layout + clarifying questions, referencing links by INDEX only.",
+                    reasoningEffortOverride: _config.ReasoningEffort,
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
@@ -503,7 +448,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     throw new LayoutTruncationException(outputCap, null);
                 }
 
-                return ParseSetupQuestions(responseText, _config.MaxSetupQuestions);
+                return ParseSetupQuestions(responseText, _config.MaxSetupQuestions, contentLinks);
             }
             catch (LayoutTruncationException ex) when (attempt == 0)
             {
@@ -626,11 +571,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             try
             {
                 var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+
+                // workspace-45ji: refine is a judge too — return the edited layout
+                // as link INDICES; code re-derives durable selectors.
                 var options = BuildOptions(
-                    schemaName: "site_pattern",
-                    schema: SetupPatternSchema,
-                    schemaDescription: "The current layout edited by exactly the user's change; everything else identical.",
-                    reasoningEffortOverride: _config.SetupReasoningEffort,
+                    schemaName: "site_pattern_indices",
+                    schema: SetupPatternIndicesSchema,
+                    schemaDescription: "The current layout edited by exactly the user's change, as link INDICES.",
+                    reasoningEffortOverride: _config.ReasoningEffort,
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
@@ -981,26 +929,20 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("     hub/index pages, author/tag pages, video hubs, sign-in, social/nav,");
         sb.AppendLine("     sponsor/advertiser slots, podcast episodes and 'featured podcasts' /");
         sb.AppendLine("     audio-player rails, and event-calendar / job-board boxes).");
-        sb.AppendLine("   For EVERY option set a DURABLE identifier: parent_selector = the shortest");
-        sb.AppendLine("   class/id-bearing CSS fragment shared by those links (e.g. 'section.lead',");
-        sb.AppendLine("   'section.feed'); url_pattern = a SHORT shared HUB segment like '/opinion/'");
-        sb.AppendLine("   (NEVER a single story's full path or headline slug) when one exists, else");
-        sb.AppendLine("   empty string. Always fill example_link_indices with the link");
-        sb.AppendLine("   numbers the option refers to. These identifiers must generalize to a LATER");
-        sb.AppendLine("   visit when the article URLs have changed — never identify a story by its");
-        sb.AppendLine("   exact URL. On AGGREGATOR pages (stories link to many different hosts),");
-        sb.AppendLine("   url_pattern cannot generalize — leave it empty and identify sections by");
-        sb.AppendLine("   parent_selector alone. Aggregator clusters (a lead headline plus related");
-        sb.AppendLine("   coverage/discussion sublinks) map naturally to tiers: leads in a top tier,");
-        sb.AppendLine("   secondary coverage in a lower (or excluded) tier.");
+        sb.AppendLine("   For EVERY option, fill example_link_indices with the link NUMBERS it refers");
+        sb.AppendLine("   to — that is the ONLY identifier you provide. Do NOT emit CSS selectors or");
+        sb.AppendLine("   URL patterns; the app derives a durable, reusable identifier from those links");
+        sb.AppendLine("   in code. Aggregator clusters (a lead headline plus related coverage/discussion");
+        sb.AppendLine("   sublinks) map naturally to tiers: leads in a top tier, secondary coverage in a");
+        sb.AppendLine("   lower (or excluded) tier.");
         sb.AppendLine();
         sb.AppendLine($"2. questions: AT MOST {maxQuestions} questions, and ONLY where you are genuinely");
         sb.AppendLine("   torn between concrete alternatives. A question must DISCRIMINATE: each");
         sb.AppendLine("   answer must produce a materially different layout (different lead, different");
         sb.AppendLine("   grouping, something hidden or kept). The user answers by LOOKING at the");
-        sb.AppendLine("   page — every option is highlighted live — so options MUST carry durable");
-        sb.AppendLine("   identifiers (parent_selector and/or url_pattern) pointing at real elements");
-        sb.AppendLine("   (a hide-or-keep pair may reference the same element). Never ask 'does this");
+        sb.AppendLine("   page — every option is highlighted live — so every option MUST list the");
+        sb.AppendLine("   example_link_indices of the real links it points at (a hide-or-keep pair may");
+        sb.AppendLine("   reference the same links). Never ask 'does this");
         sb.AppendLine("   look right?', never offer a lone yes/no, never ask anything whose answer");
         sb.AppendLine("   would not change the sections you output. Set default_answer to your best");
         sb.AppendLine("   guess. Use kind: pick_main (which of these is the lead), confirm_exclude");
@@ -1121,25 +1063,23 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are EDITING a homepage layout the user already approved — not building one from scratch.");
+        sb.AppendLine("Work in link INDEX NUMBERS only — never CSS selectors or URLs; the app derives those itself.");
         sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
-        sb.AppendLine("You are given the CURRENT layout (sections in order, each with durable selectors /");
-        sb.AppendLine("url_patterns + start_collapsed, plus the exclude lists) and ONE change the user typed.");
+        sb.AppendLine("You are given the CURRENT layout (sections in order, each listing the link NUMBERS it");
+        sb.AppendLine("contains + start_collapsed, plus the excluded link numbers) and ONE change the user typed.");
         sb.AppendLine("Apply the SMALLEST edit that satisfies that change and KEEP EVERYTHING ELSE IDENTICAL:");
         sb.AppendLine("- echo every untouched section's `name` field BYTE-FOR-BYTE from the current layout");
         sb.AppendLine("  (do not reword, shorten, or 'improve' a name you weren't asked to change), and copy");
-        sb.AppendLine("  its order, parent_selectors, url_patterns and start_collapsed EXACTLY — never");
-        sb.AppendLine("  reorder, re-derive or drop a section the change didn't mention;");
-        sb.AppendLine("- keep the existing exclude_selectors / exclude_url_patterns, only adding/removing the");
-        sb.AppendLine("  ones the change requires;");
+        sb.AppendLine("  its order, story_indices and start_collapsed EXACTLY — never reorder, re-pick or");
+        sb.AppendLine("  drop a section the change didn't mention;");
+        sb.AppendLine("- keep the existing exclude_indices, only adding/removing the ones the change requires;");
         sb.AppendLine("- never throw away stories that are currently shown unless the user asked to hide them.");
         sb.AppendLine();
-        sb.AppendLine("Return the FULL layout in the schema (all sections + exclude lists), i.e. the current");
-        sb.AppendLine("one with the user's change applied. Keep identifiers durable: parent_selectors are the");
-        sb.AppendLine("shortest class/id CSS fragments; a url_pattern is a SHORT shared hub segment (e.g.");
-        sb.AppendLine("'/opinion/'), NEVER a single story's slug; on aggregators use parent_selectors only.");
-        sb.AppendLine("Sponsor/advert/promo, podcast/audio, and event-calendar rails go in exclude_selectors,");
-        sb.AppendLine("never a section. Set start_collapsed only for lower-priority STORY sections.");
+        sb.AppendLine("Return the FULL edited layout as indices: every section's name + story_indices +");
+        sb.AppendLine("start_collapsed, and exclude_indices. Sponsor/advert/promo, podcast/audio, and");
+        sb.AppendLine("event-calendar rails go in exclude_indices, never a section. Set start_collapsed only");
+        sb.AppendLine("for lower-priority STORY sections.");
         sb.AppendLine();
         sb.AppendLine("Set `confidence` and leave `confirm_question` null unless the change is genuinely");
         sb.Append("ambiguous (then ONE short question with durable options).");
@@ -1158,32 +1098,27 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             sb.AppendLine("  (no sections yet)");
         }
 
+        // workspace-45ji: describe the current layout as link INDEX membership (the
+        // model now edits index lists, not selectors). Each section shows which
+        // numbered links it currently matches.
+        List<int> MembersOf(HierarchySection sec) => Enumerable.Range(0, contentLinks.Count)
+            .Where(idx => NavigationTreeBuilder.MatchesSection(contentLinks[idx], sec))
+            .ToList();
+
         for (int i = 0; i < currentConfig.Sections.Count; i++)
         {
             var s = currentConfig.Sections[i];
-            var ids = new List<string>();
-            if (s.ParentSelectors.Count > 0)
-            {
-                ids.Add($"selectors=[{string.Join(" , ", s.ParentSelectors)}]");
-            }
-
-            if (s.UrlPatterns.Count > 0)
-            {
-                ids.Add($"url_patterns=[{string.Join(" , ", s.UrlPatterns)}]");
-            }
-
             var collapsed = s.StartCollapsed ? " (collapsed)" : string.Empty;
-            sb.AppendLine($"  section {i + 1}: \"{s.Name}\"{collapsed} {string.Join(" ", ids)}");
+            sb.AppendLine($"  section {i + 1}: \"{s.Name}\"{collapsed} — links [{string.Join(", ", MembersOf(s))}]");
         }
 
-        if (currentConfig.ExcludeSelectors.Count > 0)
+        var excludedIndices = Enumerable.Range(0, contentLinks.Count)
+            .Where(idx => currentConfig.ExcludeSelectors.Any(x => contentLinks[idx].ParentSelector?.Contains(x, StringComparison.OrdinalIgnoreCase) ?? false)
+                || currentConfig.ExcludeUrlPatterns.Any(p => contentLinks[idx].Url.Contains(p, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        if (excludedIndices.Count > 0)
         {
-            sb.AppendLine($"  exclude_selectors=[{string.Join(" , ", currentConfig.ExcludeSelectors)}]");
-        }
-
-        if (currentConfig.ExcludeUrlPatterns.Count > 0)
-        {
-            sb.AppendLine($"  exclude_url_patterns=[{string.Join(" , ", currentConfig.ExcludeUrlPatterns)}]");
+            sb.AppendLine($"  excluded links [{string.Join(", ", excludedIndices)}]");
         }
 
         sb.AppendLine();
@@ -1484,7 +1419,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     /// <see cref="MaxExampleIndicesPerOption"/> indices per option — so a
     /// misbehaving model can never blow past the wizard's bounds.
     /// </summary>
-    internal static SiteSetupProposal ParseSetupQuestions(string responseText, int maxQuestions)
+    internal static SiteSetupProposal ParseSetupQuestions(
+        string responseText, int maxQuestions, IReadOnlyList<LinkInfo>? contentLinks = null)
     {
         var jsonText = StripOptionalFences(responseText);
         var parsed = JsonSerializer.Deserialize<SetupQuestionsResponse>(jsonText, ParseOptions)
@@ -1493,9 +1429,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var pattern = parsed.ProposedPattern ?? new ProposedPatternResponse();
         var proposed = new ProposedPattern
         {
-            TopStory = pattern.TopStory != null ? MapOption(pattern.TopStory) : null,
-            Tiers = (pattern.Tiers ?? new()).Select(MapOption).ToList(),
-            Exclude = (pattern.Exclude ?? new()).Select(MapOption).ToList(),
+            TopStory = pattern.TopStory != null ? MapOption(pattern.TopStory, contentLinks) : null,
+            Tiers = (pattern.Tiers ?? new()).Select(o => MapOption(o, contentLinks)).ToList(),
+            Exclude = (pattern.Exclude ?? new()).Select(o => MapOption(o, contentLinks)).ToList(),
         };
 
         var questions = (parsed.Questions ?? new())
@@ -1508,7 +1444,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 DefaultAnswer = q.DefaultAnswer ?? string.Empty,
                 Options = (q.Options ?? new())
                     .Take(MaxOptionsPerQuestion)
-                    .Select(MapOption)
+                    .Select(o => MapOption(o, contentLinks))
                     .ToList(),
             })
             .ToList();
@@ -1518,10 +1454,13 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
     /// <summary>
     /// workspace-5oe9.7: parses the round-2 response into a durable
-    /// <see cref="SiteHierarchyConfig"/>. Prefers model-returned selectors;
-    /// falls back to <see cref="SelectorDerivation"/> over a section's
-    /// story_indices when the model omitted them. workspace-romy.8: wrapped in
-    /// <see cref="InferredPattern"/> with confidence + optional confirm question.
+    /// <see cref="SiteHierarchyConfig"/>. workspace-45ji: the model now returns
+    /// story_indices / exclude_indices ONLY, so <see cref="SelectorDerivation"/>
+    /// over a section's links is the PRIMARY source of durable identifiers. The
+    /// "use model-supplied selectors when present" branches are retained as a
+    /// defensive net for legacy/canned responses (and unit tests) — in production
+    /// they no longer fire because the schema forbids selectors. workspace-romy.8:
+    /// wrapped in <see cref="InferredPattern"/> with confidence + optional confirm.
     /// </summary>
     internal static InferredPattern ParsePatternFromAnswers(
         string responseText, List<LinkInfo> contentLinks, string pageUrl, string modelVersion)
@@ -1766,7 +1705,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 Kind = SetupQuestionKind.PickMain,
                 Options = (cq.Options ?? new())
                     .Take(MaxOptionsPerQuestion)
-                    .Select(MapOption)
+                    .Select(o => MapOption(o, contentLinks))
                     .ToList(),
             };
         }
@@ -1779,13 +1718,37 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         };
     }
 
-    private static SetupOption MapOption(OptionResponse o) => new()
+    private static SetupOption MapOption(OptionResponse o, IReadOnlyList<LinkInfo>? contentLinks)
     {
-        Label = o.Label ?? string.Empty,
-        ParentSelector = SelectorDerivation.StripVolatileIds(o.ParentSelector ?? string.Empty),
-        UrlPattern = o.UrlPattern ?? string.Empty,
-        ExampleLinkIndices = (o.ExampleLinkIndices ?? new()).Take(MaxExampleIndicesPerOption).ToList(),
-    };
+        var parentSelector = SelectorDerivation.StripVolatileIds(o.ParentSelector ?? string.Empty);
+        var urlPattern = o.UrlPattern ?? string.Empty;
+        var indices = (o.ExampleLinkIndices ?? new()).Take(MaxExampleIndicesPerOption).ToList();
+
+        // workspace-45ji: the model returns INDICES only — derive the option's
+        // durable identifier from its example links in code. (A model-supplied
+        // selector, if any — legacy responses / tests — is still honoured.)
+        if (string.IsNullOrWhiteSpace(parentSelector) && string.IsNullOrWhiteSpace(urlPattern)
+            && contentLinks is { Count: > 0 } && indices.Count > 0)
+        {
+            var members = indices
+                .Where(i => i >= 0 && i < contentLinks.Count)
+                .Select(i => contentLinks[i])
+                .ToList();
+            parentSelector = SelectorDerivation.DeriveParentSelectors(members).FirstOrDefault() ?? string.Empty;
+            if (string.IsNullOrEmpty(parentSelector))
+            {
+                urlPattern = SelectorDerivation.DeriveUrlPatterns(members).FirstOrDefault() ?? string.Empty;
+            }
+        }
+
+        return new SetupOption
+        {
+            Label = o.Label ?? string.Empty,
+            ParentSelector = parentSelector,
+            UrlPattern = urlPattern,
+            ExampleLinkIndices = indices,
+        };
+    }
 
     private static SetupQuestionKind MapQuestionKind(string? kind) => kind switch
     {

@@ -149,8 +149,9 @@ public class OpenAiHierarchyAnalyzerTests
             current,
             "hide the sponsor posts");
 
-        // The refine prompt must show the model the current layout + the change.
-        prompt.Should().Contain("Top story").And.Contain("Main feed").And.Contain("strong.L5");
+        // workspace-45ji: the refine prompt shows the current layout as section
+        // names + link-INDEX membership (not raw selectors) and the change.
+        prompt.Should().Contain("Top story").And.Contain("Main feed").And.Contain("links [");
         prompt.Should().Contain("hide the sponsor posts");
         prompt.ToLowerInvariant().Should().Contain("keep");
         prompt.Should().Contain("CURRENT LAYOUT");
@@ -688,6 +689,52 @@ public class OpenAiHierarchyAnalyzerTests
             "\"tiers\":[{\"label\":\"Feed\",\"parent_selector\":\"section.feed\",\"url_pattern\":\"\",\"example_link_indices\":[1,2]}]," +
             "\"exclude\":[{\"label\":\"Ads\",\"parent_selector\":\"aside.promo\",\"url_pattern\":\"\",\"example_link_indices\":[3]}]}," +
             $"\"questions\":[{qs}]}}";
+    }
+
+    [Fact]
+    public async Task ProposeSetupQuestionsAsync_IndicesOnlyOption_DerivesSelectorInCode()
+    {
+        // workspace-45ji: the model returns options with example_link_indices ONLY
+        // (no parent_selector/url_pattern) — the durable identifier is derived from
+        // the example links in code (ParseSetupQuestions/MapOption).
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var json = "{\"proposed_pattern\":{" +
+                   "\"top_story\":{\"label\":\"Lead\",\"example_link_indices\":[0]}," +
+                   "\"tiers\":[{\"label\":\"Feed\",\"example_link_indices\":[1,2]}],\"exclude\":[]}," +
+                   "\"questions\":[]}";
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult(json));
+
+        var proposal = await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        proposal.ProposedPattern.TopStory!.ParentSelector.Should().Be("section.lead",
+            "derived from the lead link's parent selector, not emitted by the model");
+        proposal.ProposedPattern.TopStory!.ExampleLinkIndices.Should().Contain(0);
+        proposal.ProposedPattern.Tiers.Single().ParentSelector.Should().Be("section.feed");
+    }
+
+    [Fact]
+    public async Task RefineLayoutAsync_IndicesOnlyResponse_DerivesSelectorsFromStoryIndices()
+    {
+        // workspace-45ji: refine returns indices only; code derives the section selectors.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var current = new SiteHierarchyConfig
+        {
+            Domain = "x.com",
+            UrlPattern = "^https?://x\\.com/?",
+            CreatedAt = DateTime.UtcNow,
+            ModelVersion = "gpt-5-mini",
+            Sections = new List<HierarchySection> { new() { Name = "Top Story", SortOrder = 0, ParentSelectors = new() { "section.lead" } } },
+        };
+        var json = "{\"sections\":[{\"name\":\"Top Story\",\"story_indices\":[0],\"start_collapsed\":false}," +
+                   "{\"name\":\"Feed\",\"story_indices\":[1,2],\"start_collapsed\":false}]," +
+                   "\"exclude_indices\":[3],\"confidence\":0.9,\"confirm_question\":null}";
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult(json));
+
+        var config = (await analyzer.RefineLayoutAsync(null, SetupLinks(), "https://x.com/", current, "put the feed second")).Config;
+
+        config.Sections.Should().HaveCount(2);
+        config.Sections.SelectMany(s => s.ParentSelectors).Should().Contain("section.lead").And.Contain("section.feed");
+        config.ExcludeSelectors.Should().Contain("aside.promo");
     }
 
     [Fact]
