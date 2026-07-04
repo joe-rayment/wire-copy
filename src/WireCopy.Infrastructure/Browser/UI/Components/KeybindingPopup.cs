@@ -170,6 +170,7 @@ internal static class KeybindingPopup
             (":layout", "site layout chooser (Ctrl+L)"),
             (":reanalyze", "fresh AI layout analysis"),
             (":dump", "dump raw HTML to fixtures/"),
+            (":logs", "view recent logs (scroll · f level · / search · c copy · e export)"),
             (":help", "this reference · ? key hints"),
             (":q", "quit"),
         ];

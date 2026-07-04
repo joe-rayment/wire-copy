@@ -53,6 +53,7 @@ See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configur
 - **Podcast generation** — Convert a reading list into a narrated M4B with chapter markers; runs in the background with live progress in the status bar
 - **Scheduled recipes** — Recurring podcast episodes assembled from named site sections (`:schedule`)
 - **Helix-style keybindings** (`j`/`k`, `h`/`l`, `gg`/`G`) and in-page search (`/`, `n`/`N`)
+- **In-app log viewer** (`:logs`) — scroll, filter by level, search, and **copy** (OSC 52 clipboard) or **export to a file** the recent log entries, so you can capture a problem's exact details without leaving the app
 - **Page caching** for instant back/forward navigation, plus background prefetch of likely next reads
 - **Anti-detection browsing** via Patchright (patched Playwright) for sites with bot protection
 
@@ -160,7 +161,7 @@ Press `?` on any screen for the full, current list.
 | Key | Action |
 |-----|--------|
 | `gg` / `G` | Jump to top / bottom |
-| `:` | Command line (`:layout`, `:schedule`, `:config`, `:cred`, `:podcast`, `:collections`, …) |
+| `:` | Command line (`:layout`, `:schedule`, `:config`, `:cred`, `:podcast`, `:collections`, `:logs`, …) |
 | `Ctrl+P` | Cycle theme |
 | `?` | Help |
 | `q` / `Ctrl+C` | Quit |

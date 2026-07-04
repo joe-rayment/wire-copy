@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Infrastructure.Bookmarks;
 using WireCopy.Infrastructure.Browser;
@@ -268,12 +269,14 @@ public class Program
             return 1;
         }
 
-        // Reconfigure Serilog to file-only for browse mode (suppress console output for TUI)
+        // Reconfigure Serilog to file-only for browse mode (suppress console output for TUI).
+        // workspace-v3pz: also fan out to the in-memory ring so `:logs` can show them.
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
             .MinimumLevel.Override("System", LogEventLevel.Warning)
             .WriteTo.File("logs/wirecopy-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .WriteTo.Sink(LogBuffer)
             .CreateLogger();
 
         // Pass null when no URL provided to trigger the launcher home screen
@@ -357,6 +360,13 @@ public class Program
     /// </summary>
     internal static readonly TimeSpan SchedulerShutdownTimeout = TimeSpan.FromSeconds(45);
 
+    /// <summary>
+    /// workspace-v3pz: the single in-memory log ring shared between Serilog
+    /// (<c>WriteTo.Sink</c>) and DI (<see cref="ILogBuffer"/>), so the in-app
+    /// <c>:logs</c> viewer shows exactly what was logged this session.
+    /// </summary>
+    internal static readonly WireCopy.Infrastructure.Logging.RingBufferLogSink LogBuffer = new(2000);
+
     internal static IHostBuilder CreateBrowseHostBuilder() =>
         Host.CreateDefaultBuilder()
             .UseSerilog()
@@ -376,6 +386,7 @@ public class Program
             .ConfigureServices((context, services) =>
             {
                 services.AddTerminalBrowser();
+                services.AddSingleton<ILogBuffer>(LogBuffer); // workspace-v3pz
                 services.AddPersistence();
                 services.AddCollections();
                 services.AddBookmarks();

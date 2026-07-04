@@ -130,6 +130,12 @@ internal static class SearchCommandHandler
                 await ViewCommandHandler.HandleShowCommandLineHelp(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
+            case "logs" or "log":
+                // workspace-v3pz: pull up recent log entries in-app (scroll / filter /
+                // search / copy / export) so a problem's details can be captured.
+                await LogViewerCommandHandler.HandleAsync(ctx, options, ct).ConfigureAwait(false);
+                return true;
+
             case "open" or "go" or "o":
                 if (parts.Length > 1)
                 {

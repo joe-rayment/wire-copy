@@ -140,7 +140,28 @@ Open with `:`. Available everywhere.
 | `:dump` / `:dump-html` | Dump raw page HTML (debug) | ⟳ *was the `D` key* |
 | `:config`, `:set <k> <v>`, `:settings` | Configuration |
 | `:cred` / `:credentials`, `:cookies` | Paywall login credentials / cookies |
+| `:logs` / `:log` | In-app log viewer (see below) |
 | `:help` / `:h`, `:quit` / `:q` | Help · quit |
+
+---
+
+## Log viewer (`:logs`)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` (or `↓` / `↑`) | Scroll one line |
+| `Ctrl+D` / `Ctrl+U` | Half-page down / up |
+| `gg` / `G` | Top / bottom (`G` re-enables tail-follow) |
+| `f` | Cycle the minimum level filter (all → Debug → … → Error → Critical → all) |
+| `/` | Filter to lines matching a search (message or source); empty clears |
+| `c` | Copy the shown lines to the system clipboard (OSC 52) |
+| `e` | Export the shown lines to `logs/wirecopy-export-<time>.txt` |
+| `Esc` / `q` | Back to the previous screen |
+
+> **Clipboard note:** `c` uses the OSC 52 escape, so the copy happens in your
+> terminal emulator (works over SSH). It needs OSC 52 enabled, and under tmux
+> `set -g set-clipboard on`. If your terminal blocks it, use `e` to export —
+> that always works.
 
 ---
 
