@@ -250,6 +250,38 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
+    /// workspace-cbjx.2: prompts for the main story's URL so the lead can be set
+    /// by pasting a link instead of scrolling the tree. Returns the raw text
+    /// (resolved against the page's links by <see cref="SetupWizard.ResolveLeadByUrl"/>);
+    /// null/empty cancels.
+    /// </summary>
+    private static async Task<string?> PromptForLeadUrlAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new UI.Components.FormFieldConfig
+        {
+            Label = "Paste the main story's URL",
+            Subtitle = "The link that should lead the page — copy it from the browser or the list",
+            Placeholder = "https://…  ·  Enter to set · Esc to go back",
+        };
+
+        var fieldWidth = Math.Min(100, Math.Max(40, options.TerminalWidth - 6));
+        var fieldHeight = UI.Components.FormField.HeightFor(field);
+        var startRow = Math.Max(0, options.TerminalHeight - fieldHeight - 1);
+
+        return await UI.Components.FormField.PromptAsync(
+            ctx.InputHandler,
+            field,
+            palette,
+            startRow,
+            fieldWidth,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Opens the scraping-strategy chooser for the current page.
     /// Pre-flight phase: user picks which strategies to probe via Space.
     /// Probing phase: live overlay shows ⠋/✓/✗ per row.
@@ -530,7 +562,8 @@ internal static class StrategyChooserHandler
                 applyPreview,
                 lens,
                 ct,
-                existingConfig).ConfigureAwait(false);
+                existingConfig,
+                promptLeadUrl: c => PromptForLeadUrlAsync(ctx, options, c)).ConfigureAwait(false);
             completed = !result.Cancelled;
             return result;
         }
@@ -656,6 +689,20 @@ internal static class StrategyChooserHandler
             return null;
         }
 
+        // workspace-cbjx.1: reveal EVERY story before the pick. The picker walks
+        // the tree flat with j/k (visible nodes only, no wrap) and does not expand
+        // sections, so any collapsed group — above all the large External bucket on
+        // aggregators, where the real stories live — would hide its stories and the
+        // pick would feel frozen at the bottom of the visible list (the user's
+        // "unresponsive, had to hit q" report). Expanding up front makes every
+        // story reachable; land the selection on the first real story, not a header.
+        tree.ExpandAll();
+        tree.EnsureSelection();
+        if (tree.GetSelectedNode()?.IsGroupHeader == true)
+        {
+            tree.SelectNext();
+        }
+
         var links = ctx.PageCache.TryGetBuildCache(page.Url)?.Links ?? new List<LinkInfo>();
         var session = scope.ServiceProvider.GetService<IBrowserSession>();
         var lensPage = await ArmLensPickAsync(session, ctx.Logger).ConfigureAwait(false);
@@ -694,16 +741,35 @@ internal static class StrategyChooserHandler
                         }
 
                         break;
-                    case CommandType.MoveDown or CommandType.ExpandNode:
-                        tree.SelectNext();
-                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+                    // workspace-cbjx.1: route navigation through the SAME handlers
+                    // the normal link tree uses, so the pick screen scrolls to follow
+                    // the selection (grid-aware move + AdjustScrollForSelection) and
+                    // honours gg/G and h/l. The old raw tree.SelectNext moved the
+                    // selection but never updated NavigationService's scroll offset, so
+                    // the viewport froze the moment the selection left the first screen —
+                    // the "unresponsive at the bottom" report.
+                    case CommandType.MoveDown:
+                        await NavigationCommandHandler.HandleMoveDown(ctx, command, options, ct).ConfigureAwait(false);
                         break;
-                    case CommandType.MoveUp or CommandType.CollapseNode:
-                        tree.SelectPrevious();
-                        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    case CommandType.MoveUp:
+                        await NavigationCommandHandler.HandleMoveUp(ctx, command, options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.GoToTop:
+                        await NavigationCommandHandler.HandleGoToTop(ctx, command, options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.GoToBottom:
+                        await NavigationCommandHandler.HandleGoToBottom(ctx, command, options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.ExpandNode:
+                        await NavigationCommandHandler.HandleExpandNode(ctx, options, ct).ConfigureAwait(false);
+                        break;
+                    case CommandType.CollapseNode:
+                        await NavigationCommandHandler.HandleCollapseNode(ctx, options, ct).ConfigureAwait(false);
                         break;
                     case CommandType.ActivateLink:
-                        var node = tree.GetSelectedNode();
+                        // Read from the tree the navigation handlers actually moved.
+                        var node = (ctx.NavigationService.CurrentPage?.LinkTree ?? tree).GetSelectedNode();
                         if (node == null || node.IsGroupHeader)
                         {
                             ctx.NavigationService.SetStatusMessage("Pick a story, not a section header — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));

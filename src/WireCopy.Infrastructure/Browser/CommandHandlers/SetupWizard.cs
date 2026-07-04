@@ -66,7 +66,8 @@ internal static class SetupWizard
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
         CancellationToken ct,
-        SiteHierarchyConfig? existingConfig = null)
+        SiteHierarchyConfig? existingConfig = null,
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
         ArgumentNullException.ThrowIfNull(budget);
@@ -99,7 +100,8 @@ internal static class SetupWizard
                 pickLeadFromTree,
                 applyPreview,
                 lens,
-                ct).ConfigureAwait(false);
+                ct,
+                promptLeadUrl).ConfigureAwait(false);
         }
 
         // ---- Round 1: propose pattern + questions ----
@@ -219,7 +221,8 @@ internal static class SetupWizard
             pickLeadFromTree,
             applyPreview,
             lens,
-            ct).ConfigureAwait(false);
+            ct,
+            promptLeadUrl).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -565,6 +568,85 @@ internal static class SetupWizard
     }
 
     /// <summary>
+    /// workspace-cbjx.2: resolves a user-typed URL to the page link it names, so
+    /// the lead can be set by URL instead of scrolling. Matches on a normalized
+    /// URL (scheme/www/query/fragment/trailing-slash stripped): exact first, then
+    /// either-direction containment; ties break toward real Content and higher
+    /// importance. Returns null when nothing plausibly matches.
+    /// </summary>
+    internal static LinkInfo? ResolveLeadByUrl(string url, List<LinkInfo> links)
+    {
+        if (string.IsNullOrWhiteSpace(url) || links == null || links.Count == 0)
+        {
+            return null;
+        }
+
+        var target = NormalizeUrl(url);
+        if (target.Length == 0)
+        {
+            return null;
+        }
+
+        var candidates = links
+            .Where(l => !l.IsGroupHeader && !string.IsNullOrEmpty(l.Url))
+            .ToList();
+
+        var exact = candidates
+            .Where(l => NormalizeUrl(l.Url) == target)
+            .OrderByDescending(l => l.Type == LinkType.Content)
+            .ThenByDescending(l => l.ImportanceScore)
+            .FirstOrDefault();
+        if (exact != null)
+        {
+            return exact;
+        }
+
+        return candidates
+            .Select(l => (Link: l, Norm: NormalizeUrl(l.Url)))
+            .Where(x => x.Norm.Length > 0 && (x.Norm.Contains(target, StringComparison.Ordinal) || target.Contains(x.Norm, StringComparison.Ordinal)))
+            .OrderByDescending(x => x.Link.Type == LinkType.Content)
+            .ThenByDescending(x => x.Norm.Length) // the most specific match
+            .ThenByDescending(x => x.Link.ImportanceScore)
+            .Select(x => x.Link)
+            .FirstOrDefault();
+    }
+
+    /// <summary>Strips scheme, leading www., query, fragment and trailing slash; lower-cases.</summary>
+    internal static string NormalizeUrl(string url)
+    {
+        var s = url.Trim();
+        if (s.Length == 0)
+        {
+            return s;
+        }
+
+        var scheme = s.IndexOf("://", StringComparison.Ordinal);
+        if (scheme >= 0)
+        {
+            s = s[(scheme + 3)..];
+        }
+
+        var hash = s.IndexOf('#', StringComparison.Ordinal);
+        if (hash >= 0)
+        {
+            s = s[..hash];
+        }
+
+        var query = s.IndexOf('?', StringComparison.Ordinal);
+        if (query >= 0)
+        {
+            s = s[..query];
+        }
+
+        if (s.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[4..];
+        }
+
+        return s.TrimEnd('/').ToLowerInvariant();
+    }
+
+    /// <summary>
     /// workspace-6yb7.6: the honest failure card shown instead of a preview
     /// when the config (still) matches ~none of the page's story links.
     /// </summary>
@@ -614,7 +696,8 @@ internal static class SetupWizard
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
     {
         // workspace-romy.7: previousCovered carries the last previewed config's
         // coverage into the next preview so each adjustment round shows what
@@ -648,7 +731,8 @@ internal static class SetupWizard
                     pickLeadFromTree,
                     lens,
                     ct,
-                    BuildFailureCardShape(config, links, budget)).ConfigureAwait(false);
+                    BuildFailureCardShape(config, links, budget),
+                    promptLeadUrl).ConfigureAwait(false);
                 if (repaired == null)
                 {
                     return new Result { Cancelled = true };
@@ -747,7 +831,9 @@ internal static class SetupWizard
                         freeTextPrompt,
                         pickLeadFromTree,
                         lens,
-                        ct).ConfigureAwait(false);
+                        ct,
+                        shape: null,
+                        promptLeadUrl: promptLeadUrl).ConfigureAwait(false);
                     if (adjusted != null)
                     {
                         undoConfig = before; // remember the pre-refine layout for 'z'
@@ -786,7 +872,8 @@ internal static class SetupWizard
         Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Lens? lens,
         CancellationToken ct,
-        AdjustCardShape? shape = null)
+        AdjustCardShape? shape = null,
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
     {
         // workspace-romy.7: an exhausted budget gets an honest dead-end card
         // instead of options that would silently no-op after selection.
@@ -808,10 +895,23 @@ internal static class SetupWizard
         }
 
         var allowPick = pickLeadFromTree != null;
+        var allowUrl = promptLeadUrl != null;
         var options = new List<SetupWizardOverlay.CardOption>();
+        var pickIndex = -1;
+        var urlIndex = -1;
         if (allowPick)
         {
+            pickIndex = options.Count;
             options.Add(new SetupWizardOverlay.CardOption { Label = "Point at the main story" });
+        }
+
+        // workspace-cbjx.2: let the user name the lead by URL instead of scrolling
+        // to it — much easier on a long aggregator list, and a keyboard-only path
+        // when the sidecar isn't docked.
+        if (allowUrl)
+        {
+            urlIndex = options.Count;
+            options.Add(new SetupWizardOverlay.CardOption { Label = "Enter the main story's URL" });
         }
 
         options.Add(new SetupWizardOverlay.CardOption { Label = "Tell the AI what to change…" });
@@ -847,15 +947,35 @@ internal static class SetupWizard
 
         SetupAnswer? adjustment = null;
         string? instruction = null;
-        if (allowPick && choice == 0)
+        if (allowPick && choice == pickIndex)
         {
             var picked = await pickLeadFromTree!(ct).ConfigureAwait(false);
             if (picked != null)
             {
                 adjustment = LeadOverrideAnswer(picked);
-                instruction = $"Make this the single lead (top) story, keeping every other section " +
-                              $"unchanged: \"{Truncate(picked.DisplayText, 90)}\"" +
-                              (string.IsNullOrWhiteSpace(picked.ParentSelector) ? string.Empty : $" (parent {picked.ParentSelector}).");
+                instruction = LeadInstruction(picked);
+            }
+        }
+        else if (allowUrl && choice == urlIndex)
+        {
+            var urlText = await promptLeadUrl!(ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(urlText))
+            {
+                var picked = ResolveLeadByUrl(urlText.Trim(), links);
+                if (picked != null)
+                {
+                    // Matched a real link: anchor the lead on its durable selector.
+                    instruction = LeadInstruction(picked);
+                    adjustment = LeadOverrideAnswer(picked)
+                        ?? new SetupAnswer { QuestionId = "lead-url", Answer = instruction };
+                }
+                else
+                {
+                    // No link matched the URL — still steer the model with it.
+                    instruction = $"Make the story whose URL is \"{Truncate(urlText.Trim(), 200)}\" the single " +
+                                  "lead (top) story, keeping every other section unchanged.";
+                    adjustment = new SetupAnswer { QuestionId = "lead-url", Answer = instruction };
+                }
             }
         }
         else
@@ -904,6 +1024,12 @@ internal static class SetupWizard
 
     private static string Truncate(string text, int max) =>
         text.Length <= max ? text : text[..max] + "…";
+
+    /// <summary>The refine instruction that pins <paramref name="lead"/> as the single top story.</summary>
+    private static string LeadInstruction(LinkInfo lead) =>
+        $"Make this the single lead (top) story, keeping every other section " +
+        $"unchanged: \"{Truncate(lead.DisplayText, 90)}\"" +
+        (string.IsNullOrWhiteSpace(lead.ParentSelector) ? string.Empty : $" (parent {lead.ParentSelector}).");
 
     /// <summary>
     /// The one card input loop: ↑/↓ cycles options (highlighting each on the

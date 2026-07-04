@@ -814,4 +814,57 @@ public class SetupWizardTests
         cards.SelectMany(c => c).Should().Contain(l => l.Contains("Top Story — 1 link(s)", StringComparison.Ordinal));
         cleared.Should().BeGreaterThan(0, "highlights are cleared after the preview step");
     }
+
+    // ---- workspace-cbjx.2: set the lead by URL ----
+
+    private static List<LinkInfo> UrlLinks() => new()
+    {
+        new LinkInfo { Url = "https://example.com/story-one?utm=x#top", DisplayText = "Story One", Type = LinkType.Content, ImportanceScore = 90, ParentSelector = "section.lead a" },
+        new LinkInfo { Url = "https://www.example.com/story-two/", DisplayText = "Story Two", Type = LinkType.Content, ImportanceScore = 70 },
+        new LinkInfo { Url = "https://example.com/promo", DisplayText = "Subscribe", Type = LinkType.External, ImportanceScore = 20 },
+        new LinkInfo { Url = "", DisplayText = "No URL", Type = LinkType.Content, ImportanceScore = 50 },
+    };
+
+    [Theory]
+    [InlineData("https://example.com/story-one")]                 // scheme + no query/fragment
+    [InlineData("http://www.example.com/story-one/?ref=twitter")]  // scheme/www/query/trailing-slash differ
+    [InlineData("example.com/story-one#anything")]                 // no scheme, fragment
+    public void ResolveLeadByUrl_NormalizesAndMatches(string typed)
+    {
+        var picked = SetupWizard.ResolveLeadByUrl(typed, UrlLinks());
+        picked.Should().NotBeNull();
+        picked!.DisplayText.Should().Be("Story One");
+    }
+
+    [Fact]
+    public void ResolveLeadByUrl_MatchesTheSecondStoryByUrl()
+    {
+        var picked = SetupWizard.ResolveLeadByUrl("https://example.com/story-two", UrlLinks());
+        picked!.DisplayText.Should().Be("Story Two", "normalization strips www. and the trailing slash");
+    }
+
+    [Fact]
+    public void ResolveLeadByUrl_NoMatch_ReturnsNull()
+    {
+        SetupWizard.ResolveLeadByUrl("https://other.com/nope", UrlLinks()).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ResolveLeadByUrl_BlankInput_ReturnsNull(string blank)
+    {
+        SetupWizard.ResolveLeadByUrl(blank, UrlLinks()).Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveLeadByUrl_NeverResolvesToAnEmptyUrlLink()
+    {
+        // The last row has an empty Url; no target may resolve onto it.
+        foreach (var typed in new[] { "https://example.com/story-one", "https://example.com/", "example.com" })
+        {
+            var picked = SetupWizard.ResolveLeadByUrl(typed, UrlLinks());
+            (picked == null || !string.IsNullOrEmpty(picked.Url)).Should().BeTrue();
+        }
+    }
 }
