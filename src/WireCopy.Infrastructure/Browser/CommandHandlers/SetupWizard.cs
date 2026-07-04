@@ -947,13 +947,14 @@ internal static class SetupWizard
 
         SetupAnswer? adjustment = null;
         string? instruction = null;
+        LinkInfo? resolvedLead = null;
         if (allowPick && choice == pickIndex)
         {
-            var picked = await pickLeadFromTree!(ct).ConfigureAwait(false);
-            if (picked != null)
+            resolvedLead = await pickLeadFromTree!(ct).ConfigureAwait(false);
+            if (resolvedLead != null)
             {
-                adjustment = LeadOverrideAnswer(picked);
-                instruction = LeadInstruction(picked);
+                adjustment = LeadOverrideAnswer(resolvedLead);
+                instruction = LeadInstruction(resolvedLead);
             }
         }
         else if (allowUrl && choice == urlIndex)
@@ -961,12 +962,12 @@ internal static class SetupWizard
             var urlText = await promptLeadUrl!(ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(urlText))
             {
-                var picked = ResolveLeadByUrl(urlText.Trim(), links);
-                if (picked != null)
+                resolvedLead = ResolveLeadByUrl(urlText.Trim(), links);
+                if (resolvedLead != null)
                 {
                     // Matched a real link: anchor the lead on its durable selector.
-                    instruction = LeadInstruction(picked);
-                    adjustment = LeadOverrideAnswer(picked)
+                    instruction = LeadInstruction(resolvedLead);
+                    adjustment = LeadOverrideAnswer(resolvedLead)
                         ?? new SetupAnswer { QuestionId = "lead-url", Answer = instruction };
                 }
                 else
@@ -988,6 +989,22 @@ internal static class SetupWizard
             }
         }
 
+        // workspace-zd96: when the lead resolves to a real page link (URL or tree
+        // pick), derive the story river straight from the DOM — deterministically,
+        // with NO model round-trip and NO budget spend. This is what makes "point
+        // at the main story / paste its URL" reliable on aggregators: the old path
+        // handed a text hint to the model, which on Techmeme returned a Top Story
+        // matching ZERO links and ad-shaped sections. The derived river matches the
+        // lead by construction, so a 0-link section is impossible.
+        if (resolvedLead != null)
+        {
+            var derived = BuildDeterministicLeadOverride(resolvedLead, links, currentConfig);
+            if (derived != null)
+            {
+                return derived;
+            }
+        }
+
         if (adjustment == null || instruction == null || !budget.TrySpend())
         {
             return null;
@@ -1002,21 +1019,96 @@ internal static class SetupWizard
         if (isRepair)
         {
             answers.Add(adjustment);
-            return await RunWithProgressAsync(
+            var rebuilt = await RunWithProgressAsync(
                 analyzer.InferPatternFromAnswersAsync(screenshot, links, pageUrl, proposal, answers, ct),
                 "Rebuilding your layout",
                 overlay,
                 render,
                 ct).ConfigureAwait(false);
+            return PruneEmptySections(rebuilt, links);
         }
 
         answers.Add(adjustment);
-        return await RunWithProgressAsync(
+        var refined = await RunWithProgressAsync(
             analyzer.RefineLayoutAsync(screenshot, links, pageUrl, currentConfig, instruction, ct),
             "Applying your change",
             overlay,
             render,
             ct).ConfigureAwait(false);
+        return PruneEmptySections(refined, links);
+    }
+
+    /// <summary>
+    /// workspace-zd96: builds the lead-override config straight from the DOM —
+    /// a single durable "Top stories" river section derived by
+    /// <see cref="LeadOverrideDerivation"/> — so the resolved lead and its sibling
+    /// stories are captured without a model call, and a 0-link section is
+    /// impossible. Returns null when nothing generalizes (caller falls back).
+    /// </summary>
+    private static InferredPattern? BuildDeterministicLeadOverride(
+        LinkInfo lead, List<LinkInfo> links, SiteHierarchyConfig currentConfig)
+    {
+        var deriv = LeadOverrideDerivation.Derive(lead, links);
+        if (deriv is null || deriv.StoryMatchCount <= 0)
+        {
+            return null;
+        }
+
+        var config = currentConfig with
+        {
+            Sections = new List<HierarchySection>
+            {
+                new()
+                {
+                    Name = "Top stories",
+                    SortOrder = 0,
+                    ParentSelectors = deriv.RiverSelectors,
+                },
+            },
+            ExcludeSelectors = deriv.ExcludeSelectors,
+            ModelVersion = string.IsNullOrEmpty(currentConfig.ModelVersion)
+                ? "lead-derived"
+                : currentConfig.ModelVersion + "+lead-derived",
+            NeedsReanalyze = false,
+        };
+
+        // Only take the deterministic shortcut when it actually produces a sound
+        // layout over THIS page's links. If the river matches (almost) nothing —
+        // e.g. the lead's selector doesn't generalize — fall back to the model
+        // instead of handing the preview loop a degenerate config it would try to
+        // repair forever.
+        if (IsDegenerate(config, links))
+        {
+            return null;
+        }
+
+        return new InferredPattern { Config = config, Confidence = 1.0 };
+    }
+
+    /// <summary>
+    /// workspace-zd96: drops any section that matches no Content link on the page,
+    /// so a model refine can never surface a "Top Story — 0 links" row. A config
+    /// where EVERY section is empty is left intact for the degenerate gate to
+    /// handle honestly. Null passes through.
+    /// </summary>
+    private static InferredPattern? PruneEmptySections(InferredPattern? pattern, List<LinkInfo> links)
+    {
+        if (pattern is null)
+        {
+            return null;
+        }
+
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+        var nonEmpty = pattern.Config.Sections
+            .Where(sec => contentLinks.Any(l => NavigationTreeBuilder.MatchesSection(l, sec)))
+            .ToList();
+
+        if (nonEmpty.Count == pattern.Config.Sections.Count || nonEmpty.Count == 0)
+        {
+            return pattern;
+        }
+
+        return pattern with { Config = pattern.Config with { Sections = nonEmpty } };
     }
 
     private static string EscapeAttrValue(string value) =>

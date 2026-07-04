@@ -1,0 +1,4002 @@
+[
+{
+"url": "https://www.techmeme.com/m",
+"displayText": "Mobile",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.prenavbar > div.topline > div.topllinks",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/about#aot",
+"displayText": "Advertise",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.prenavbar > div.topline > div.topllinks",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://news.techmeme.com/",
+"displayText": "Site News",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.prenavbar > div.topline > div.topllinks",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/contact",
+"displayText": "Contact Editors",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.prenavbar > div.topline > div.topllinks",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/",
+"displayText": "Home",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.navbar > div.navtabs > span.iamhere",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.mediagazer.com/",
+"displayText": "Mediagazer",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "body > div.pagecont > div.navbar > div.navtabs > div.sisnav",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.memeorandum.com/",
+"displayText": "memeorandum",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "body > div.pagecont > div.navbar > div.navtabs > div.sisnav",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.wesmirch.com/",
+"displayText": "WeSmirch",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "body > div.pagecont > div.navbar > div.navtabs > div.sisnav",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/river",
+"displayText": "River",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "html > body > div.pagecont > div.navbar > div.navtabs",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/lb",
+"displayText": "Leaderboards",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "html > body > div.pagecont > div.navbar > div.navtabs",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/about",
+"displayText": "About",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "html > body > div.pagecont > div.navbar > div.navtabs",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/events",
+"displayText": "Events",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "html > body > div.pagecont > div.navbar > div.navtabs",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/newsletter?from=tmd",
+"displayText": "Newsletter",
+"type": 1,
+"importanceScore": 38,
+"parentSelector": "body > div.pagecont > div.navbar > div.navtabs > span",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://newsletter.semianalysis.com/",
+"displayText": "SemiAnalysis",
+"type": 3,
+"importanceScore": 32,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://newsletter.semianalysis.com/p/meta-compute-everyone-wants-to-be?triedRedirect=true",
+"displayText": "Meta could use its compute for its own models, ad scaling, SpaceX-like neocloud deals, and hosting 3rd-party models; it may be close to an Anthropic deal",
+"type": 0,
+"importanceScore": 100,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L3",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://cloudedjudgement.substack.com/p/clouded-judgement-7326-the-end-of",
+"displayText": "Clouded Judgement",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/benbajarin/status/2073129001221234908",
+"displayText": "@benbajarin",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/edzitron/status/2073107236516229261",
+"displayText": "@edzitron",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/analysisop/status/2072817310755070217",
+"displayText": "@analysisop",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/rhouseresearch/status/2072808088344600757",
+"displayText": "@rhouseresearch",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/semianalysis_/status/2072809720474181971",
+"displayText": "@semianalysis_",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/timkellogg.me/post/3mpqis7txec2p",
+"displayText": "@timkellogg.me",
+"type": 3,
+"importanceScore": 28,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://cloudedjudgement.substack.com/",
+"displayText": "Clouded Judgement",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/benbajarin",
+"displayText": "@benbajarin",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/edzitron",
+"displayText": "@edzitron",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/analysisop",
+"displayText": "@analysisop",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/rhouseresearch",
+"displayText": "@rhouseresearch",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/semianalysis_",
+"displayText": "@semianalysis_",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/timkellogg.me",
+"displayText": "@timkellogg.me",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://spyglass.org/",
+"displayText": "Spyglass",
+"type": 3,
+"importanceScore": 32,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://spyglass.org/meta-cloud/",
+"displayText": "Meta getting into the cloud business has been inevitable for a long time, as it seeks to diversify beyond ad revenue and monetize its AI buildout",
+"type": 0,
+"importanceScore": 100,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.bbc.com/news/",
+"displayText": "BBC",
+"type": 3,
+"importanceScore": 32,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bbc.com/news/articles/cvgm4e0316zo",
+"displayText": "Instagram has been running ads promoting child sexual abuse material in India, with terms like \u201crape video\u201d and \u201cchild video\u201d and linking to Telegram channels",
+"type": 0,
+"importanceScore": 100,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L3",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.hindustantimes.com/india-news/centre-to-summon-meta-officials-over-instagram-ads-promoting-child-sexual-abuse-in-india-101783127223406.html",
+"displayText": "Hindustan Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.malaymail.com/news/life/2026/07/04/how-did-child-sexual-abuse-ads-end-up-on-instagram-india-wants-answers-from-meta/226324",
+"displayText": "Malay Mail",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.medianama.com/2026/07/223-bbc-investigation-meity-summon-meta-instagram-ads-promoting-child-sexual-abuse-material/",
+"displayText": "MediaNama",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timesofindia.indiatimes.com/india/child-abuse-ads-on-instagram-govt-to-summon-meta/articleshow/132171518.cms",
+"displayText": "Times of India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.moneycontrol.com/news/india/govt-rejects-meta-s-third-party-content-defence-over-child-sexual-abuse-ads-seeks-explanation-report-13965678.html",
+"displayText": "Moneycontrol",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.newsbytesapp.com/news/science/investigation-claims-instagram-hosted-ads-linking-to-illegal-child-abuse/story",
+"displayText": "NewsBytes",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.telegraphindia.com/world/instagram-shows-advertisements-for-child-abuse-content-bbc-probe-reveals/cid/2168433",
+"displayText": "Telegraph India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.deccanherald.com/india/instagram-ads-promoting-child-sexual-abuse-centre-to-seek-explanation-from-meta-4061123",
+"displayText": "Deccan Herald",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.opindia.com/news-updates/instagram-in-india-found-promoting-child-sexual-abuse-ads-on-its-platform-report/",
+"displayText": "OpIndia",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timesofindia.indiatimes.com/business/india-business/centre-cracks-whip-on-meta-over-instagram-ads-promoting-child-sexual-abuse-material/articleshow/132160554.cmhttps://www.firstpost.com/india/meity-to-summon-meta-over-reports-of-instagram-ads-allegedly-promoting-child-sexual-abuse-14028680.html",
+"displayText": "Times of India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thehindubusinessline.com/info-tech/govt-to-summon-meta-on-instagram-ads-promoting-child-sexual-abuse-material-in-india/article71179685.ece",
+"displayText": "The Hindu BusinessLine",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://in.mashable.com/tech/111625/instagram-runs-child-sexual-abuse-material-ads-in-india-explosive-new-report-reveals",
+"displayText": "Mashable India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.news18.com/india/buy-rape-video-as-low-as-rs-99-inside-report-on-instagram-promoting-child-sexual-abuse-ws-l-10189160.html",
+"displayText": "News18",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timesofindia.indiatimes.com/india/evening-news-wrap-rss-demands-strict-action-over-ram-temple-donation-scam-centre-summons-meta-over-instagram-ads-promoting-child-abuse-material-more/articleshow/132162779.cms",
+"displayText": "Times of India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://inc42.com/buzz/centre-summons-meta-over-instagram-ads-promoting-child-sexual-abuse/",
+"displayText": "Inc42",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.fortuneindia.com/technology/meity-to-summon-meta-over-instagram-ads-seek-explanation-from-company-sources/146477",
+"displayText": "Fortune India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bbc.com/news/videos/c1jy7nknr6do",
+"displayText": "BBC",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ndtv.com/india-news/centre-summons-meta-officials-over-child-abuse-ads-on-instagram-sources-11722801/amp/1",
+"displayText": "NDTV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.news18.com/india/centre-to-summon-meta-after-report-flags-instagram-ads-promoting-child-sexual-abuse-material-ws-l-10188994.html",
+"displayText": "News18",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://economictimes.indiatimes.com/tech/technology/ashwini-vaishnaw-directs-meity-to-summon-meta-regarding-instagram-ads-promoting-child-sexual-abuse-material/articleshow/132160557.cms",
+"displayText": "The Economic Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.livemint.com/news/india/meta-trouble-indian-govt-it-minister-ashwini-vaishnaw-summons-instagram-ads-alleged-promotion-child-sexual-abuse-report-11783080920927.html",
+"displayText": "Livemint",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://theprint.in/economy/govt-to-summon-meta-over-instagram-ads-promoting-child-sexual-abuse-material/2976765/",
+"displayText": "ThePrint",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timesofindia.indiatimes.com/business/india-business/centre-cracks-whip-on-meta-over-instagram-ads-promoting-child-sexual-abuse-material/articleshow/132160554.cms",
+"displayText": "Times of India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.business-standard.com/industry/news/vaishnaw-meity-summon-meta-instagram-child-abuse-content-126070300877_1.html",
+"displayText": "Business Standard",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ndtvprofit.com/technology/govt-to-summon-meta-over-instagram-ads-promoting-child-sexual-abuse-material-in-india-11722828",
+"displayText": "ndtvprofit.com",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.hindustantimes.com/india-news/govt-to-summon-meta-over-instagram-ads-promoting-child-sexual-abuse-material-sources-ashwini-vaishnaw-101783079342315.html",
+"displayText": "Hindustan Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.moneycontrol.com/news/business/companies/it-minister-ashwini-vaishnaw-directs-meity-to-summon-meta-over-instagram-ads-promoting-child-sexual-abuse-material-13965529.html",
+"displayText": "Moneycontrol",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.indiatvnews.com/technology/news/centre-to-summon-meta-officials-over-child-abuse-ads-on-instagram-in-india-2026-07-03-1047032",
+"displayText": "India TV News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.indiatoday.in/india/story/govt-to-summon-meta-officials-over-instagram-ads-promoting-child-sexual-abuse-2939944-2026-07-03",
+"displayText": "India Today",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.republicworld.com/tech/government-to-summon-meta-over-instagram-ads-allegedly-promoting-child-sexual-abuse-material-in-india-2026-07-03-131111",
+"displayText": "Republic World",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timelinedaily.com/business/instagram-ad-flagged-for-promoting-child-sexual-abuse-material-in-india",
+"displayText": "TimelineDaily",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.siasat.com/instagram-ran-ads-promoting-child-sexual-abuse-videos-in-india-3500675/",
+"displayText": "The Siasat Daily",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.freepressjournal.in/tech/no-system-perfect-our-review-process-may-not-detect-all-policy-violations-meta-says-after-instagram-found-running-ads-promoting-child-sexual-abuse-material-in-india",
+"displayText": "Free Press Journal",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.digitaltrends.com/social-media/meta-under-scrutiny-after-instagram-approved-child-abuse-advertisements-in-india/",
+"displayText": "Digital Trends",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.timesnownews.com/technology-science/metas-instagram-accused-of-hosting-child-sexual-abuse-ads-in-india-article-154902257",
+"displayText": "Times Now",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.storyboard18.com/digital/instagram-ads-promote-child-abuse-material-bbc-finds-ws-l-103081.htm",
+"displayText": "Storyboard18",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.news9live.com/technology/tech-news/instagram-displayed-csam-ads-in-india-meta-removes-accounts-after-bbc-report-2985816",
+"displayText": "News9live",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/amitkilhor/status/2072970278242758965",
+"displayText": "@amitkilhor",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/zoo_bear/status/2072949098848653581",
+"displayText": "@zoo_bear",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/zoo_bear/status/2072950578007949585",
+"displayText": "@zoo_bear",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/feed/update/urn:li:share:7478770026385395714",
+"displayText": "Armando de Miranda",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/emily.space/post/3mpq2xin7q22e",
+"displayText": "@emily.space",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://hachyderm.io/@haubles/116855948046540242",
+"displayText": "@haubles@hachyderm.io",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/technology/comments/1umcdmt/india_instagram_running_ads_promoting_child/",
+"displayText": "r/technology",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/india/comments/1um65qy/instagram_running_ads_promoting_child_sexual/",
+"displayText": "r/india",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/NotADragQueen/comments/1um5zlg/instagram_running_ads_promoting_child_sexual/",
+"displayText": "r/NotADragQueen",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.hindustantimes.com/",
+"displayText": "Hindustan Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.malaymail.com/",
+"displayText": "Malay Mail",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.medianama.com/",
+"displayText": "MediaNama",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://timesofindia.indiatimes.com/",
+"displayText": "Times of India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.moneycontrol.com/",
+"displayText": "Moneycontrol",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.newsbytesapp.com/",
+"displayText": "NewsBytes",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.telegraphindia.com/",
+"displayText": "Telegraph India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.deccanherald.com/",
+"displayText": "Deccan Herald",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.opindia.com/",
+"displayText": "OpIndia",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.thehindubusinessline.com/",
+"displayText": "The Hindu BusinessLine",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://in.mashable.com/",
+"displayText": "Mashable India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.news18.com/",
+"displayText": "News18",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://inc42.com/",
+"displayText": "Inc42",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.fortuneindia.com/",
+"displayText": "Fortune India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ndtv.com/",
+"displayText": "NDTV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://economictimes.indiatimes.com/",
+"displayText": "The Economic Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.livemint.com/",
+"displayText": "Livemint",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://theprint.in/",
+"displayText": "ThePrint",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.business-standard.com/",
+"displayText": "Business Standard",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ndtvprofit.com/",
+"displayText": "ndtvprofit.com",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.indiatvnews.com/",
+"displayText": "India TV News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.indiatoday.in/",
+"displayText": "India Today",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.republicworld.com/",
+"displayText": "Republic World",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://timelinedaily.com/",
+"displayText": "TimelineDaily",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.siasat.com/",
+"displayText": "The Siasat Daily",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.freepressjournal.in/",
+"displayText": "Free Press Journal",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.digitaltrends.com/",
+"displayText": "Digital Trends",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.timesnownews.com/",
+"displayText": "Times Now",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.storyboard18.com/",
+"displayText": "Storyboard18",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.news9live.com/",
+"displayText": "News9live",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/amitkilhor",
+"displayText": "@amitkilhor",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/zoo_bear",
+"displayText": "@zoo_bear",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/",
+"displayText": "Armando de Miranda",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/emily.space",
+"displayText": "@emily.space",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://hachyderm.io/@haubles",
+"displayText": "@haubles@hachyderm.io",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/technology/",
+"displayText": "r/technology",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/india/",
+"displayText": "r/india",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/NotADragQueen/",
+"displayText": "r/NotADragQueen",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thedeepview.com/",
+"displayText": "The Deep View",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thedeepview.com/articles/how-apple-s-decade-long-bet-on-chips-won-ai",
+"displayText": "Q&A with Doug Brooks, senior product manager of Apple silicon, about Mac minis becoming preferred AI agent machines, future of on-device AI, and more",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L2",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jasonhiner/status/2072801939272745275",
+"displayText": "@jasonhiner",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/ddmcd.bsky.social/post/3mpta2i7duc2m",
+"displayText": "@ddmcd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jasonhiner",
+"displayText": "@jasonhiner",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/ddmcd.bsky.social",
+"displayText": "@ddmcd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bloomberg.com/",
+"displayText": "Bloomberg",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bloomberg.com/news/articles/2026-07-02/booming-ai-chip-trade-seals-hong-kong-s-role-as-gateway-to-china",
+"displayText": "Official data shows Hong Kong accounted for 50%+ of China's $239B in chip imports in the first five months of 2026, a record share, up from ~33% a decade ago",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L2",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://kr-asia.com/hong-kongs-hub-ambitions-are-not-a-zero-sum-game",
+"displayText": "KrASIA",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.scmp.com/business/china-business/article/3359267/mainland-investors-buying-mood-hong-kong-shares-favouring-smic-zhipu-ai",
+"displayText": "South China Morning Post",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.csmonitor.com/Editorials/the-monitors-view/2026/0702/Hong-Kong-mirrors-China-s-larger-challenges-on-trust",
+"displayText": "Christian Science Monitor",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/business/status/2072830284756562408",
+"displayText": "@business",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/charlesmok_booming-ai-chip-trade-seals-hong-kongs-role-share-7478926870030319616-jdGi",
+"displayText": "Charles Mok",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://kr-asia.com/",
+"displayText": "KrASIA",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.scmp.com/",
+"displayText": "South China Morning Post",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.csmonitor.com/",
+"displayText": "Christian Science Monitor",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/business",
+"displayText": "@business",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/in/charlesmok",
+"displayText": "Charles Mok",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bloomberg.com/news/articles/2026-07-04/micron-breaks-ground-on-9-billion-western-japan-plant-expansion",
+"displayText": "Micron breaks ground on its ~$9.3B Hiroshima factory expansion, part of its global ramp-up to meet AI demand, and plans to start HBM shipments from summer 2028",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L2",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techinasia.com/news/micron-breaks-ground-93b-japan-memory-expansion",
+"displayText": "Tech in Asia",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.fool.com/investing/2026/07/03/1-unstoppable-stock-to-buy-before-it-soars-75-to-j/",
+"displayText": "Motley Fool",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techradar.com/pro/anthropics-claude-to-help-micron-design-better-hbm-dram-and-ssd-for-ai-even-as-both-companies-refuse-to-address-computational-storage-directly",
+"displayText": "TechRadar",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/business/status/2073266781355905369",
+"displayText": "@business",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/hardware/comments/1un4zh2/micron_breaks_ground_on_9_billion_plant_expansion/",
+"displayText": "r/hardware",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techinasia.com/",
+"displayText": "Tech in Asia",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.fool.com/",
+"displayText": "Motley Fool",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techradar.com/",
+"displayText": "TechRadar",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/hardware/",
+"displayText": "r/hardware",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theinformation.com/",
+"displayText": "The Information",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theinformation.com/briefings/alibaba-bans-employees-using-claude",
+"displayText": "Sources: Alibaba banned Claude Code internally and asked its employees to remove all Claude models from their work computers due to Anthropic security concerns",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L2",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reuters.com/world/china/alibaba-ban-claude-code-workplace-over-alleged-backdoor-risks-source-says-2026-07-03/",
+"displayText": "Reuters",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.xda-developers.com/gave-claude-code-memory-between-sessions-setup-started-running-itself/",
+"displayText": "XDA Developers",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thenextweb.com/news/alibaba-bans-claude-code-anthropic-tracking-chinese-users",
+"displayText": "The Next Web",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.makeuseof.com/found-free-tool-that-fixes-claude-codes-biggest-limitation/",
+"displayText": "MakeUseOf",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://en.sedaily.com/international/2026/07/04/alibaba-bans-claude-code-as-anthropic-blocks-chinese-access",
+"displayText": "Seoul Economic Daily",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.scmp.com/tech/big-tech/article/3359375/alibaba-bans-staff-using-claude-code-over-anthropic-spyware-concerns",
+"displayText": "South China Morning Post",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://americanbazaaronline.com/2026/07/03/alibaba-bans-use-of-anthropics-claude-code-over-security-risks-484010/",
+"displayText": "The American Bazaar",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://cybersecuritynews.com/alibaba-to-ban-claude-code/",
+"displayText": "Cyber Security News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.neowin.net/news/alibaba-takes-drastic-action-in-war-with-anthropic/",
+"displayText": "Neowin",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://blockonomi.com/alibaba-baba-stock-company-prohibits-claude-code-due-to-security-worries/",
+"displayText": "Blockonomi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://the-decoder.com/claude-codes-complicated-china-problem-involves-bans-on-both-sides-of-the-pacific/",
+"displayText": "The Decoder",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.morningstar.com/news/dow-jones/202607032148/alibaba-set-to-ban-staff-from-using-claude-over-security-fears",
+"displayText": "Dow Jones Newswires",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.caixinglobal.com/2026-07-03/alibaba-bans-staff-from-using-anthropic-ai-tools-over-security-concerns-102460685.html",
+"displayText": "Caixin Global",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://crypto.news/alibaba-bans-claude-code-over-alleged-backdoor-security-concerns/",
+"displayText": "crypto.news",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ft.com/content/ad033063-60f9-4c0c-8d8a-9193a83e6f60",
+"displayText": "Financial Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/kevinsxu/status/2073124707008733264",
+"displayText": "@kevinsxu",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/andrewcurran_/status/2073066341180006799",
+"displayText": "@andrewcurran_",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/poezhao0605/status/2072965498619437557",
+"displayText": "@poezhao0605",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/yacinemtb/status/2072999094092521942",
+"displayText": "@yacinemtb",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/hiteshdotcom/status/2072991855416094947",
+"displayText": "@hiteshdotcom",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/ajbutton2/status/2072959188108804603",
+"displayText": "@ajbutton2",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/chorzempamartin/status/2072959051013464156",
+"displayText": "@chorzempamartin",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/carnage4life.bsky.social/post/3mpqvmf57b22o",
+"displayText": "@carnage4life",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.reuters.com/",
+"displayText": "Reuters",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.xda-developers.com/",
+"displayText": "XDA Developers",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thenextweb.com/",
+"displayText": "The Next Web",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.makeuseof.com/",
+"displayText": "MakeUseOf",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://en.sedaily.com/",
+"displayText": "Seoul Economic Daily",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://americanbazaaronline.com/",
+"displayText": "The American Bazaar",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://cybersecuritynews.com/",
+"displayText": "Cyber Security News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.neowin.net/",
+"displayText": "Neowin",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://blockonomi.com/",
+"displayText": "Blockonomi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://the-decoder.com/",
+"displayText": "The Decoder",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.djnewswires.com/",
+"displayText": "Dow Jones Newswires",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.caixinglobal.com/",
+"displayText": "Caixin Global",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://crypto.news/",
+"displayText": "crypto.news",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ft.com/",
+"displayText": "Financial Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/kevinsxu",
+"displayText": "@kevinsxu",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/andrewcurran_",
+"displayText": "@andrewcurran_",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/poezhao0605",
+"displayText": "@poezhao0605",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/yacinemtb",
+"displayText": "@yacinemtb",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/hiteshdotcom",
+"displayText": "@hiteshdotcom",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/ajbutton2",
+"displayText": "@ajbutton2",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/chorzempamartin",
+"displayText": "@chorzempamartin",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/carnage4life.bsky.social",
+"displayText": "@carnage4life",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://techcrunch.com/",
+"displayText": "TechCrunch",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://techcrunch.com/2026/06/30/the-deepmind-trio-who-built-a-poker-ai-are-now-making-money-for-quant-hedge-funds/",
+"displayText": "Prague-based EquiLibre, which offers AI for quant hedge funds and is founded by three ex-Google DeepMind researchers, raised a Series A at a $500M valuation",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://siliconangle.com/2026/07/01/ai-stock-trading-startup-equilibre-raises-funding-500m-valuation/",
+"displayText": "SiliconANGLE",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.eu-startups.com/2026/07/equilibre-secures-series-a-at-e438-million-valutation-to-scale-ai-trading-agents-handling-billions-daily/",
+"displayText": "EU-Startups",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://tech.eu/2026/07/01/ex-deepmind-researchers-land-record-creandum-funding-to-scale-ai-agents-for-nasdaq/",
+"displayText": "Tech.eu",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thesaasnews.com/news/ai-stock-trading-startup-equilibre-raises-funding-at-a-500m-valuation-siliconangle/",
+"displayText": "The SaaS News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/agustinlebron3/status/2072293502168277261",
+"displayText": "@agustinlebron3",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/lifrordi/status/2072664533491921289",
+"displayText": "@lifrordi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/feed/update/urn:li:activity:7478024273375363072",
+"displayText": "Creandum",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://siliconangle.com/",
+"displayText": "SiliconANGLE",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.eu-startups.com/",
+"displayText": "EU-Startups",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://tech.eu/",
+"displayText": "Tech.eu",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thesaasnews.com/",
+"displayText": "The SaaS News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/agustinlebron3",
+"displayText": "@agustinlebron3",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/lifrordi",
+"displayText": "@lifrordi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://se.linkedin.com/company/creandum",
+"displayText": "Creandum",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theguardian.com/",
+"displayText": "The Guardian",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theguardian.com/news/ng-interactive/2026/jun/30/theres-this-deep-mystery-of-what-actually-is-this-thing-the-philosopher-inside-google-deepmind",
+"displayText": "A profile of Google DeepMind philosopher Iason Gabriel, whose work has tracked, and in many cases predicted, the ethical challenges posed by the success of LLMs",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/iasongabriel/status/2071876014293045681",
+"displayText": "@iasongabriel",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/ethicsinai/status/2072703528049516659",
+"displayText": "@ethicsinai",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/tomrachman/status/2072972064923791799",
+"displayText": "@tomrachman",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/david_gunkel/status/2072109574274879599",
+"displayText": "@david_gunkel",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jhimmelreich/status/2071949403456205266",
+"displayText": "@jhimmelreich",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/leonieclaude/status/2071999305167294682",
+"displayText": "@leonieclaude",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/dr_atoosa/status/2071918694280675659",
+"displayText": "@dr_atoosa",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/librahim_no-single-discipline-has-all-the-answers-activity-7478741765655797761-Yfaw",
+"displayText": "Lila Ibrahim",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/mortenbay_theres-this-deep-mystery-of-what-actually-share-7477808027534794752-WxxZ",
+"displayText": "Morten Bay, Ph.D.",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/iasongabriel",
+"displayText": "@iasongabriel",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/ethicsinai",
+"displayText": "@ethicsinai",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/tomrachman",
+"displayText": "@tomrachman",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/david_gunkel",
+"displayText": "@david_gunkel",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jhimmelreich",
+"displayText": "@jhimmelreich",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/leonieclaude",
+"displayText": "@leonieclaude",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/dr_atoosa",
+"displayText": "@dr_atoosa",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://uk.linkedin.com/in/librahim",
+"displayText": "Lila Ibrahim",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/in/mortenbay",
+"displayText": "Morten Bay, Ph.D.",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://betakit.com/",
+"displayText": "BetaKit",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://betakit.com/stathera-raises-55-million-usd-for-semiconductor-clock-tech-amid-data-centre-boom/",
+"displayText": "Montreal-based Stathera, a maker of MEMS-based silicon timing components for chips, raised a $55M Series B led by Maverick Silicon, taking total funding to $75M",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.prnewswire.com/news-releases/stathera-announces-us55-million-series-b-to-scale-silicon-timing-and-accelerate-next-generation-ai-data-center-solutions-302813712.html",
+"displayText": "Stathera",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.finsmes.com/2026/06/stathera-raises-us55m-in-series-b-funding.html",
+"displayText": "FinSMEs",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://siliconangle.com/2026/06/30/stathera-nabs-35m-make-vacuum-sealed-silicon-oscillators-ai-chips/",
+"displayText": "SiliconANGLE",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.axios.com/pro/enterprise-software-deals/2026/06/30/semiconductor-stathera-sitime-chips-ai",
+"displayText": "Axios",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/joshsminer_proud-to-announce-that-maverick-silicon-led-share-7477759046834397184-HuVZ",
+"displayText": "Josh Miner",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/silicontiming-seriesb-aiinfrastructure-share-7477736849852235778-y9GF",
+"displayText": "Stathera, Inc.",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/posts/george-xereas-6a619265_stathera-announces-us55-million-series-b-activity-7477754140299907072-3Icw",
+"displayText": "George Xereas",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.prnewswire.com/news/stathera/",
+"displayText": "Stathera",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.finsmes.com/",
+"displayText": "FinSMEs",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.axios.com/",
+"displayText": "Axios",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/in/joshsminer",
+"displayText": "Josh Miner",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://ca.linkedin.com/company/stathera",
+"displayText": "Stathera, Inc.",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://ca.linkedin.com/in/george-xereas-6a619265",
+"displayText": "George Xereas",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.variety.com/",
+"displayText": "Variety",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://variety.com/2026/film/news/midjourney-studios-ai-copyright-discovery-1236800902/",
+"displayText": "Midjourney wants Disney, Universal, and Warner Bros. to reveal in court how they use AI across their companies; studios sued Midjourney in 2025 for infringement",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.engadget.com/2207936/midjourney-wants-studios-that-sued-show-court-ai-use/",
+"displayText": "Engadget",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.mandatory.com/news/1805306-disney-warner-bros-universal-could-be-forced-to-reveal-their-ai-use",
+"displayText": "Mandatory",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://runtimewire.com/article/midjourney-medical-scanner-video-david-holz-proof-gap",
+"displayText": "RuntimeWire",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.avclub.com/midjourney-ai-lawsuit-disney-warner-bros-universal-everybodys-doin-it",
+"displayText": "The A.V. Club",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/Fauxmoi/comments/1um100o/midjourney_seeks_to_reveal_studios_use_of_ai_in/",
+"displayText": "r/Fauxmoi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/DC_Cinematic/comments/1ulyvr6/midjourney_is_trying_to_force_warner_bros_to/",
+"displayText": "r/DC_Cinematic",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://mediagazer.com/#a260703p9",
+"displayText": "See also Mediagazer",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.dbpt > span.moreat",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.engadget.com/",
+"displayText": "Engadget",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.mandatory.com/",
+"displayText": "Mandatory",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://runtimewire.com/",
+"displayText": "RuntimeWire",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.avclub.com/",
+"displayText": "The A.V. Club",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/Fauxmoi/",
+"displayText": "r/Fauxmoi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/DC_Cinematic/",
+"displayText": "r/DC_Cinematic",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.idrive.com_idrive_signup_c2c_landing-oJFzBY2N-_inf_.htm",
+"displayText": "IDrive",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div#topcol1 > div.itc1 > div.ifsp > div.item > cite",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://technode.global/",
+"displayText": "TNGlobal",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://technode.global/2026/07/03/singapores-dconstruct-raises-125m-series-a-as-robonexus-accelerator-concludes-inaugural-cohort/",
+"displayText": "Singapore-based dConstruct Robotics, which develops spatial tech to let autonomous robots operate in complex, GPS-denied environments, raised a $125M Series A",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://e27.co/singapores-dconstruct-lands-us125m-series-a-to-scale-robotics-for-gps-denied-environments-20260703/",
+"displayText": "e27",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.youtube.com/watch?v=92ukVAySpEY",
+"displayText": "CNA on YouTube",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techinasia.com/news/sg-robotics-accelerator-cohort-sees-125m-raise-exit",
+"displayText": "Tech in Asia",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://e27.co/",
+"displayText": "e27",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.youtube.com/@channelnewsasia",
+"displayText": "CNA on YouTube",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bloomberg.com/news/articles/2026-07-02/china-quant-funds-draw-billions-as-ai-trounces-human-traders",
+"displayText": "A look at the quant fund frenzy in China, as assets under management have more than doubled to ~$384B in less than a year amid rapid AI adoption",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.linkedin.com/feed/update/urn:li:share:7478727662123868160",
+"displayText": "Chris Zhang",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ft.com/content/5128e476-db8b-48ac-a8fb-0f16d0f5c2ed",
+"displayText": "An interview with Sriram Krishnan, who says \u201cthere will not be an FDA for AI\u201d under Trump, blames the AI backlash on the industry's \u201cdoomer\u201d messaging, and more",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.last.item > div.ii > strong.L1",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.benzinga.com/markets/tech/26/07/60268084/trump-wont-create-ai-regulator-says-former-white-house-adviser-sriram-krishnan-amid-data-center-backlash-that-is-never-never-going-to-happen",
+"displayText": "Benzinga",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/sriramk/status/2073105386878460093",
+"displayText": "@sriramk",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/gerritd/status/2073103942863741330",
+"displayText": "@gerritd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/gerritd/status/2073103321041383860",
+"displayText": "@gerritd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/gerritd/status/2073102803313242159",
+"displayText": "@gerritd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/caseynewton.bsky.social/post/3mpr5muibjk2e",
+"displayText": "@caseynewton",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.benzinga.com/",
+"displayText": "Benzinga",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/sriramk",
+"displayText": "@sriramk",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/gerritd",
+"displayText": "@gerritd",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/caseynewton.bsky.social",
+"displayText": "@caseynewton",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.soxton.ai_-HTDiPEpl.htm",
+"displayText": "Soxton",
+"type": 1,
+"importanceScore": 42,
+"parentSelector": "div > div#topcol2 > div#jnqiswbey > div.item > cite",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/equals.com_-Zp0wlhtz.htm",
+"displayText": "Equals",
+"type": 1,
+"importanceScore": 42,
+"parentSelector": "div > div#topcol2 > div#jnqiswbey > div.item > cite",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.zoho.com_blog-OOqiKhIh.htm",
+"displayText": "Zoho",
+"type": 1,
+"importanceScore": 42,
+"parentSelector": "div > div#topcol2 > div#jnqiswbey > div.item > cite",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.zoho.com_blog_analytics_dresner-study-2026.html-sle33YCc.htm",
+"displayText": "Zoho named an overall leader in Dresner's 2026 Wisdom of Crowds\u00ae BI Market Study",
+"type": 0,
+"importanceScore": 100,
+"parentSelector": "div#topcol2 > div#jnqiswbey > div.item > div.ii > strong.L1",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.idrive.com_idrive_signup_c2c_landing-oJFzBY2N.htm",
+"displayText": "IDrive",
+"type": 1,
+"importanceScore": 42,
+"parentSelector": "div > div#topcol2 > div#jnqiswbey > div.item > cite",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/followthepodcast.com_686c7cf4314cb06e1a9e1283-cy6goOI5.htm",
+"displayText": "Big Technology Podcast:",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.bigtechnology.com__UOuJgSqfU0Ts-wc1xNrHn.htm",
+"displayText": "Zuckerberg's Disappointment, OpenAI's Equity Gamble, Alex Karp's Rally Cry",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.nytimes.com_column_hard-fork-oUHvHndZ.htm",
+"displayText": "Hard Fork:",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.nytimes.com_column_hard-fork_al1pllHplr12-3PC4GEjr.htm",
+"displayText": "Fable Ban Reversed + Dr. Dana Suskind on Parenting With A.I. + Prediction Market Drama",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/pod.link_1875709419-A9xvSoTk.htm",
+"displayText": "The Upstarts Podcast:",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.upstartsmedia.com__nfZd0N2NV1K4-IWyDdfND.htm",
+"displayText": "Blitzy's Brian Elliott: Cursor And Claude Code Are Looking At Your Enterprise Code 'Through A Straw'",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/pod.link_1867297203-e1bUZ0Da.htm",
+"displayText": "The Nick, Dick and Paul Show:",
+"type": 0,
+"importanceScore": 74,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/omny.fm_shows_the-nick-dick-and-paul-show_tndps-ep25-omny-7hxnhGcK.htm",
+"displayText": "Re-Release: The Death of Hollywood? W/ Allan Loeb",
+"type": 0,
+"importanceScore": 92,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.greatchatpod.com_-FRVL2cVE.htm",
+"displayText": "Great Chat:",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.greatchatpod.com__E0Bil3RkS9AV-zCbjt4fH.htm",
+"displayText": "Maybe Twitter isn't real life",
+"type": 0,
+"importanceScore": 82,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/news.microsoft.com_tools-and-weapons-podcast_-vXaoKY6B.htm",
+"displayText": "Tools and Weapons with Brad Smith:",
+"type": 0,
+"importanceScore": 84,
+"parentSelector": "div.ed > div > div#topcol2 > div#podcasts > div.podcast",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/news.microsoft.com_tools-and-weapons-podcast__ygmSvRf5Gips-e7Loo9Dy.htm",
+"displayText": "Connecting the Unconnected: Doreen Bogdan-Martin",
+"type": 0,
+"importanceScore": 92,
+"parentSelector": "div > div#topcol2 > div#podcasts > div.podcast > strong",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://mediagazer.com/#a260703p8",
+"displayText": "A look at ABC News' 24-hour Fourth of July programming marathon for the US' 250th anniversary, which it calls \u201cthe longest commercial broadcast in history\u201d",
+"type": 0,
+"importanceScore": 89,
+"parentSelector": "div > div#topcol3 > div#countercol > div.fromsis > div.ii",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://mediagazer.com/#a260703p7",
+"displayText": "UK Culture Secretary Lisa Nandy says she and her department will stop using X because the site favors \u201cabuse and misinformation over meaningful debate\u201d",
+"type": 0,
+"importanceScore": 89,
+"parentSelector": "div > div#topcol3 > div#countercol > div.fromsis > div.ii",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://mediagazer.com/#a260703p3",
+"displayText": "Three men have been found not guilty of murdering the journalist Lyra McKee in 2019; the New IRA claimed responsibility for the killing",
+"type": 0,
+"importanceScore": 89,
+"parentSelector": "div > div#topcol3 > div#countercol > div.fromsis > div.ii",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.raisesummit.com_-bA2rIvLH.htm",
+"displayText": "Jul 8-9RAISE SummitParis",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/finance.yahoo.com_quote_ASML-0R1342zm.htm",
+"displayText": "Jul 15Earnings: ASML",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/finance.yahoo.com_quotes_NFLX_TSM-PiaryHxz.htm",
+"displayText": "Jul 16Earnings: NFLX, TSM",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/finance.yahoo.com_quote_INTC-uw0pkCE4.htm",
+"displayText": "Jul 23Earnings: INTC",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/finance.yahoo.com_quote_MSFT-Iz1dVFXF.htm",
+"displayText": "Jul 30Earnings: MSFT",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/blackhat.com_us-26_-8lEf6RM2.htm",
+"displayText": "Aug 1-6Black Hat USALas Vegas",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/defcon.org_-xaslKHcf.htm",
+"displayText": "Aug 6-9DEF CONLas Vegas",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.vmware.com_explore_us-hQYYSn1F.htm",
+"displayText": "Aug 31-Sep 3VMware ExploreLas Vegas",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/abstract.convex.dev_-BdwEKMqb.htm",
+"displayText": "Sep 2Abstract by ConvexSan Francisco",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.featured.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.ifa-berlin.com_-KWTZZBMg.htm",
+"displayText": "Sep 4-8IFABerlin",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.salesforce.com_dreamforce_-mzwPrvCD.htm",
+"displayText": "Sep 15-17HYBRID: Dreamforce REGISTER NOWSan Francisco",
+"type": 0,
+"importanceScore": 85,
+"parentSelector": "div.ed > div > div#events > div.featured.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/www.meta.com_connect_-VNNSSI8K.htm",
+"displayText": "Sep 23-24Meta ConnectMenlo Park, CA",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/openai.com_index_devday-2026_-59SNGKtP.htm",
+"displayText": "Sep 29OpenAI DevDaySan Francisco",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/techcrunch.com_events_techcrunch-disrupt_-P3HewbZ3.htm",
+"displayText": "Oct 13-15TechCrunch DisruptSan Francisco",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/r2/techlive.wsj.com_event_california-2026_-lXGr3MIV.htm",
+"displayText": "Nov 3-4WSJ Tech Live CaliforniaNapa Valley, CA",
+"type": 0,
+"importanceScore": 80,
+"parentSelector": "div.ed > div > div#events > div.ne > div.rhov",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://news.techmeme.com/160425/icalendar",
+"displayText": "Add to your calendar",
+"type": 1,
+"importanceScore": 34,
+"parentSelector": "div.ed > div > div#events > div.efoot > div.fn2",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.bloomberg.com/news/articles/2026-07-03/stubhub-probed-by-texas-over-fifa-world-cup-ticket-cancellations",
+"displayText": "Texas Attorney General Ken Paxton opens an investigation into StubHub following complaints of last-minute ticket cancellations for FIFA World Cup 2026 matches",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.pymnts.com/legal/2026/texas-attorney-general-investigates-stubhub-over-world-cup-ticket-cancellations/",
+"displayText": "PYMNTS",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.fox5dc.com/sports/fans-lawsuit-stubhub-world-cup-tickets",
+"displayText": "WTTG-TV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://finance.yahoo.com/markets/stocks/articles/stubhub-stock-gained-30-5-232014442.html",
+"displayText": "Motley Fool",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://wsvn.com/news/local/miami-dade/south-florida-couple-receives-free-world-cup-tickets-after-stubhub-abruptly-refunded-previous-purchase/",
+"displayText": "WSVN-TV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.pymnts.com/",
+"displayText": "PYMNTS",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.fox5dc.com/",
+"displayText": "WTTG-TV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.wsvn.com/",
+"displayText": "WSVN-TV",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.wsj.com/",
+"displayText": "Wall Street Journal",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.wsj.com/business/jeff-bezos-donald-trump-relationship-7e6a742e?st=SHNRtW&amp;reflink=article_copyURL_share",
+"displayText": "How Jeff Bezos' changing relationship with President Trump has helped Amazon and Blue Origin, such as more federal contracts awarded during Trump's second term",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://gizmodo.com/jeff-bezos-blue-origin-runs-on-sycophancy-to-trump-2000781175",
+"displayText": "Gizmodo",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/el_reportero/status/2073041986395771277",
+"displayText": "@el_reportero",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/carlquintanilla/status/2073016719774240841",
+"displayText": "@carlquintanilla",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jdawsey1/status/2072853116270137644",
+"displayText": "@jdawsey1",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/katwomanwalks.bsky.social/post/3mpqmwqyg4k24",
+"displayText": "@katwomanwalks",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/okane.fyi/post/3mpqj3eifhs2g",
+"displayText": "@okane.fyi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/annmlipton.bsky.social/post/3mppfciwa6k2l",
+"displayText": "@annmlipton",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/pbump.com/post/3mpqj3e3u4225",
+"displayText": "@pbump.com",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/politics/comments/1um05p7/how_bezos_learned_to_love_trumpand_win_more/",
+"displayText": "r/politics",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://gizmodo.com/",
+"displayText": "Gizmodo",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/el_reportero",
+"displayText": "@el_reportero",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/carlquintanilla",
+"displayText": "@carlquintanilla",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/jdawsey1",
+"displayText": "@jdawsey1",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/katwomanwalks.bsky.social",
+"displayText": "@katwomanwalks",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/okane.fyi",
+"displayText": "@okane.fyi",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/annmlipton.bsky.social",
+"displayText": "@annmlipton",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/pbump.com",
+"displayText": "@pbump.com",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/politics/",
+"displayText": "r/politics",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reuters.com/world/worlds-biggest-domain-seller-fears-indias-fake-site-crackdown-could-damage-2026-07-03/",
+"displayText": "Filing: GoDaddy challenges a New Delhi court ruling requiring domain sellers to stop offering privacy by default, saying it could expose website owners globally",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.last.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://gizmodo.com/godaddy-sounds-alarm-over-how-india-law-would-upend-internet-privacy-everywhere-2000781210",
+"displayText": "Gizmodo",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.medianama.com/2026/07/223-godaddy-delhi-high-court-domain-privacy-case-appeal/",
+"displayText": "MediaNama",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://inc42.com/buzz/godaddy-challenges-hc-order-targeting-fake-domain-names-report/",
+"displayText": "Inc42",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thenextweb.com/news/godaddy-india-fake-site-crackdown-domain-privacy",
+"displayText": "The Next Web",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.businesstoday.in/technology/news/story/godaddy-warns-indias-fake-website-crackdown-could-damage-the-internet-and-users-privacy-540849-2026-07-03",
+"displayText": "Business Today",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.moneycontrol.com/technology/godaddy-challenges-delhi-high-court-s-anti-fake-website-directives-article-13965316.html",
+"displayText": "Moneycontrol",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/thevivekkumar/status/2073015603225583952",
+"displayText": "@thevivekkumar",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.businesstoday.in/",
+"displayText": "Business Today",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/thevivekkumar",
+"displayText": "@thevivekkumar",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reuters.com/world/india/india-investigating-tata-data-leak-that-exposed-apple-iphone-secrets-2026-07-03/",
+"displayText": "India's IT secretary said the country is investigating a data breach at Apple supplier Tata, which exposed files that included photos of iPhone 18 Pro models",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.notebookcheck.net/Apple-iPhone-18-Pro-and-iPhone-18-Pro-Max-Larger-batteries-confirmed-by-certification.1334831.0.html",
+"displayText": "Notebookcheck",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thetechportal.com/2026/07/03/india-probes-tata-electronics-data-breach-that-exposed-apple-iphone-18-pro-photos-supplier-details/",
+"displayText": "The Tech Portal",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thehindubusinessline.com/news/government-investigating-alleged-data-breach-at-tata-electronics-related-to-iphone/article71179515.ece",
+"displayText": "The Hindu BusinessLine",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ithinkdiff.com/india-tata-electronics-breach-iphone-18-pro-investigation/",
+"displayText": "iThinkDifferent",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.fortuneindia.com/business-news/govt-probes-tata-electronics-data-breach-linked-to-apples-iphone-18-pro/146449",
+"displayText": "Fortune India",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.businesstoday.in/technology/news/story/we-are-investigating-centre-responds-to-apples-iphone-18-pro-supplier-data-leak-after-tata-electronics-breach-540856-2026-07-03",
+"displayText": "Business Today",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://clashreport.com/world/articles/apples-supply-chain-shift-from-china-to-india-backfires-with-massive-data-leak-e6535jcy6ur",
+"displayText": "Clash Report",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.moneycontrol.com/technology/meity-begins-probe-into-tata-electronics-cyber-leak-exposing-confidential-apple-iphone-18-pro-files-article-13965295.html",
+"displayText": "Moneycontrol",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/adityakalra/status/2072992151378792802",
+"displayText": "@adityakalra",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/worldnews/comments/1un2x02/india_investigating_tata_data_leak_that_exposed/",
+"displayText": "r/worldnews",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/india/comments/1umohoy/india_investigating_tata_data_leak_that_exposed/",
+"displayText": "r/india",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.notebookcheck.net/",
+"displayText": "Notebookcheck",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thetechportal.com/",
+"displayText": "The Tech Portal",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.ithinkdiff.com/",
+"displayText": "iThinkDifferent",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://clashreport.com/",
+"displayText": "Clash Report",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://x.com/adityakalra",
+"displayText": "@adityakalra",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/worldnews/",
+"displayText": "r/worldnews",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://www.politico.com/",
+"displayText": "Politico",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.politico.com/news/2026/07/02/gillibrand-son-crypto-fund-investors-00985811",
+"displayText": "Pitch document: Chris Larsen, Palmer Luckey, and others invested undisclosed amounts in APEC, a derivatives exchange founded by Senator Kirsten Gillibrand's son",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://coingape.com/markets/xrp-price-outlook-as-ripple-co-founder-returns-to-the-spotlight-over-apec/",
+"displayText": "CoinGape",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thecoinrepublic.com/2026/07/03/ripple-chair-backed-senators-son-amid-crypto-bill-ethics-talks/",
+"displayText": "The Coin Republic",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://thenextweb.com/news/erebor-bank-palmer-luckey-8bn-valuation",
+"displayText": "The Next Web",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://coinpedia.org/news/ripples-billionaire-co-founder-invests-in-startup-linked-to-senator-gillibrands-family/",
+"displayText": "Coinpedia Fintech News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.cryptotimes.io/2026/07/03/ripple-founder-gillibrand-deal-intensifies-clarity-act-ethics-fight/",
+"displayText": "The Crypto Times",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://crypto.news/ripple-co-founder-chris-larsen-invests-in-startup-tied-to-senator-gillibrands-son/",
+"displayText": "crypto.news",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://cointelegraph.com/news/ripple-chris-larsen-senator-gillibrand-son-venture-market-structure-bill",
+"displayText": "Cointelegraph",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://coingape.com/",
+"displayText": "CoinGape",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.thecoinrepublic.com/",
+"displayText": "The Coin Republic",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://coinpedia.org/",
+"displayText": "Coinpedia Fintech News",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.cryptotimes.io/",
+"displayText": "The Crypto Times",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "http://cointelegraph.com/",
+"displayText": "Cointelegraph",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theverge.com/",
+"displayText": "The Verge",
+"type": 3,
+"importanceScore": 24,
+"parentSelector": "table.shrtbl > tbody > tr > td > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.theverge.com/tech/959848/bittorrent-story-25-years-piracy",
+"displayText": "A look back at BitTorrent, launched by Bram Cohen 25 years ago, and how media piracy fueled its growth while its architecture shielded it from legal liability",
+"type": 0,
+"importanceScore": 97,
+"parentSelector": "div.itc1 > div.itc2 > div.last.item > div.ii > strong",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/jank0.bsky.social/post/3mpoex22sgk2f",
+"displayText": "@jank0",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/mfortki.bsky.social/post/3mpo2vxo6ws2f",
+"displayText": "@mfortki",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://wandering.shop/@fugueish/116853673685531561",
+"displayText": "@fugueish@wandering.shop",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://tldr.nettime.org/@remixtures/116852293336910621",
+"displayText": "@remixtures@tldr.nettime.org",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/technology/comments/1uli72t/bittorrents_disastrous_legendary_and/",
+"displayText": "r/technology",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/Piracy/comments/1ulsupe/bittorrents_disastrous_legendary_and/",
+"displayText": "r/Piracy",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div > div.dbpt > div.dbpt > span.bls > span.ditemblock",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://mediagazer.com/#a260702p12",
+"displayText": "See also Mediagazer",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.dbpt > span.moreat",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/jank0.bsky.social",
+"displayText": "@jank0",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://bsky.app/profile/mfortki.bsky.social",
+"displayText": "@mfortki",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://wandering.shop/@fugueish",
+"displayText": "@fugueish@wandering.shop",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://tldr.nettime.org/@remixtures",
+"displayText": "@remixtures@tldr.nettime.org",
+"type": 0,
+"importanceScore": 70,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.reddit.com/r/Piracy/",
+"displayText": "r/Piracy",
+"type": 3,
+"importanceScore": 20,
+"parentSelector": "div.last.item > div > div.dbpt > div.di > cite",
+"isExternal": true,
+"isSponsored": false,
+"headerType": 0
+},
+{
+"url": "https://www.techmeme.com/newsletter?from=tmdf",
+"displayText": "Newsletter",
+"type": 1,
+"importanceScore": 30,
+"parentSelector": "html > body > div.pagecont > div.navbar > div.navtabs",
+"isExternal": false,
+"isSponsored": false,
+"headerType": 0
+}
+]
