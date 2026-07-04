@@ -217,6 +217,18 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
         """);
 
+    // workspace-45ji.3: tiny schema for the OPTIONAL vision lead-tiebreak — one
+    // integer (the index of the visually dominant candidate, or -1 to keep).
+    private static readonly BinaryData LeadVerifySchema = BinaryData.FromString(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "lead_index": { "type": "integer" } },
+          "required": ["lead_index"]
+        }
+        """);
+
     // workspace-q77e: model section names that mark a non-story rail (sponsor /
     // advertiser / promo / podcast / audio / event-calendar). These are excluded
     // wholesale, never rendered as a (even collapsed) section. Whole-word so a
@@ -648,6 +660,67 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
 
         return ParseSectionClassification(responseText, candidateLabels);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> VerifyLeadWithVisionAsync(
+        byte[] screenshot,
+        IReadOnlyList<LinkInfo> candidates,
+        string pageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (screenshot is not { Length: > 0 } || candidates is null || candidates.Count < 2)
+        {
+            return -1;
+        }
+
+        var apiKey = GetApiKey();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return -1;
+        }
+
+        _logger.LogInformation("Vision lead-verify: judging {Count} candidate lead(s)", candidates.Count);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("A SCREENSHOT of a news homepage is attached. Below are candidate LEAD stories,");
+        sb.AppendLine("numbered from 0. Reply with the number of the ONE that is the VISUALLY DOMINANT");
+        sb.AppendLine("lead — the largest / top-most headline on the page. If none is clearly dominant,");
+        sb.AppendLine("reply -1. Judge by the SCREENSHOT, not the wording.");
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var text = candidates[i].DisplayText ?? string.Empty;
+            sb.AppendLine($"  [{i}] {(text.Length > 120 ? text[..120] : text)}");
+        }
+
+        try
+        {
+            var messages = BuildMessages(
+                "You pick the single visually dominant lead story from a screenshot. Output only lead_index.",
+                sb.ToString(),
+                screenshot);
+            var options = BuildOptions(
+                schemaName: "lead_verify",
+                schema: LeadVerifySchema,
+                schemaDescription: "Index of the visually dominant lead candidate, or -1 to keep the current lead.",
+                reasoningEffortOverride: _config.ReasoningEffort);
+
+            var responseText = await _chatCompleter(
+                apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(responseText))
+            {
+                return -1;
+            }
+
+            var parsed = JsonSerializer.Deserialize<LeadVerifyResponse>(StripOptionalFences(responseText), ParseOptions);
+            var idx = parsed?.LeadIndex ?? -1;
+            return idx >= 0 && idx < candidates.Count ? idx : -1;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Vision lead-verify failed; keeping the deterministic lead");
+            return -1;
+        }
     }
 
     /// <summary>
@@ -1864,6 +1937,12 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         [JsonPropertyName("confidence")]
         public double Confidence { get; set; }
+    }
+
+    private sealed class LeadVerifyResponse
+    {
+        [JsonPropertyName("lead_index")]
+        public int LeadIndex { get; set; } = -1;
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(

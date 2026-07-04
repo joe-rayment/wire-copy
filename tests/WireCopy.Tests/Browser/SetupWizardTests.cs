@@ -857,6 +857,69 @@ public class SetupWizardTests
         SetupWizard.ResolveLeadByUrl(blank, UrlLinks()).Should().BeNull();
     }
 
+    // ---- workspace-45ji.3: vision lead-tiebreak helpers ----
+
+    private static SiteHierarchyConfig TwoSectionConfig() => new()
+    {
+        Domain = "x.com",
+        UrlPattern = "^https?://x\\.com/?",
+        CreatedAt = DateTime.UtcNow,
+        ModelVersion = "gpt-5-mini",
+        Sections = new List<HierarchySection>
+        {
+            new() { Name = "A", SortOrder = 0, ParentSelectors = new() { "section.a" } },
+            new() { Name = "B", SortOrder = 1, ParentSelectors = new() { "section.b" } },
+        },
+    };
+
+    private static List<LinkInfo> TwoLeadLinks(int secondScore) => new()
+    {
+        new LinkInfo { Url = "https://x.com/alpha", DisplayText = "Alpha lead story headline now", Type = LinkType.Content, ImportanceScore = 100, ParentSelector = "section.a a" },
+        new LinkInfo { Url = "https://x.com/beta", DisplayText = "Beta lead story headline too", Type = LinkType.Content, ImportanceScore = secondScore, ParentSelector = "section.b a" },
+        new LinkInfo { Url = "https://x.com/minor", DisplayText = "minor", Type = LinkType.Content, ImportanceScore = 30, ParentSelector = "section.b a" },
+    };
+
+    [Fact]
+    public void LeadIsAmbiguous_TwoNearEqualLeads_IsTrue_AndCandidatesAreTheCluster()
+    {
+        var config = TwoSectionConfig();
+        var links = TwoLeadLinks(secondScore: 98); // within the 5-pt margin
+
+        SetupWizard.LeadIsAmbiguous(config, links).Should().BeTrue();
+        var cands = SetupWizard.LeadCandidates(config, links);
+        cands.Select(l => l.Url).Should().Equal("https://x.com/alpha", "https://x.com/beta");
+    }
+
+    [Fact]
+    public void LeadIsAmbiguous_ClearDominantLead_IsFalse()
+    {
+        SetupWizard.LeadIsAmbiguous(TwoSectionConfig(), TwoLeadLinks(secondScore: 80)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void PromoteLeadSection_MovesTheChosenLeadsSectionToFront()
+    {
+        var config = TwoSectionConfig();
+        var links = TwoLeadLinks(secondScore: 98);
+
+        var promoted = SetupWizard.PromoteLeadSection(config, links[1], links); // Beta is in section B
+
+        promoted.Sections.Select(s => s.Name).Should().Equal("B", "A");
+        promoted.Sections[0].SortOrder.Should().Be(0);
+        promoted.Sections[1].SortOrder.Should().Be(1);
+    }
+
+    [Fact]
+    public void PromoteLeadSection_LeadAlreadyLeading_IsNoOp()
+    {
+        var config = TwoSectionConfig();
+        var links = TwoLeadLinks(secondScore: 98);
+
+        var same = SetupWizard.PromoteLeadSection(config, links[0], links); // Alpha already in the first section
+
+        same.Sections.Select(s => s.Name).Should().Equal("A", "B");
+    }
+
     [Fact]
     public void ResolveLeadByUrl_NeverResolvesToAnEmptyUrlLink()
     {

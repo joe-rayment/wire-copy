@@ -82,4 +82,18 @@ public interface IHierarchyAnalyzer
         IReadOnlyList<string> candidateLabels,
         string intent,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// workspace-45ji.3: OPTIONAL vision tiebreak for the LEAD only. Given a
+    /// screenshot and a small set of near-equally-prominent candidate lead links,
+    /// returns the INDEX (into <paramref name="candidates"/>) of the one that is
+    /// visually dominant on the page, or -1 to keep the current lead. Invoked ONLY
+    /// when the deterministic gate cannot decide the lead (an importance
+    /// tie-cluster) and a screenshot exists — never the default path. Tiny output.
+    /// </summary>
+    Task<int> VerifyLeadWithVisionAsync(
+        byte[] screenshot,
+        IReadOnlyList<LinkInfo> candidates,
+        string pageUrl,
+        CancellationToken cancellationToken = default);
 }

@@ -738,6 +738,41 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public async Task VerifyLeadWithVisionAsync_ReturnsModelIndex_WhenInRange()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult("{\"lead_index\":1}"));
+
+        var idx = await analyzer.VerifyLeadWithVisionAsync(new byte[] { 1, 2, 3 }, SetupLinks(), "https://x.com/");
+
+        idx.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("{\"lead_index\":99}")] // out of range → keep
+    [InlineData("{\"lead_index\":-1}")] // model declined
+    [InlineData("")]                     // empty completion
+    public async Task VerifyLeadWithVisionAsync_KeepsCurrentLead_OnOutOfRangeOrDecline(string response)
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult(response));
+
+        (await analyzer.VerifyLeadWithVisionAsync(new byte[] { 1 }, SetupLinks(), "https://x.com/")).Should().Be(-1);
+    }
+
+    [Fact]
+    public async Task VerifyLeadWithVisionAsync_NoScreenshotOrTooFewCandidates_ShortCircuitsToMinusOne()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var calls = 0;
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => { calls++; return Task.FromResult("{\"lead_index\":0}"); });
+
+        (await analyzer.VerifyLeadWithVisionAsync(Array.Empty<byte>(), SetupLinks(), "https://x.com/")).Should().Be(-1);
+        (await analyzer.VerifyLeadWithVisionAsync(new byte[] { 1 }, SetupLinks().Take(1).ToList(), "https://x.com/")).Should().Be(-1);
+        calls.Should().Be(0, "no model call when there is nothing to judge");
+    }
+
+    [Fact]
     public async Task ProposeSetupQuestionsAsync_ClampsToMaxQuestions()
     {
         _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");

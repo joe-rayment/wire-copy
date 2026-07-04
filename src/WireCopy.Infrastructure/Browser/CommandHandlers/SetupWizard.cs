@@ -32,6 +32,12 @@ internal static class SetupWizard
     /// </summary>
     internal const double MinCoverageFraction = 0.10;
 
+    /// <summary>
+    /// workspace-45ji.3: the importance band (points) within which two story links
+    /// count as equally prominent — a lead tie the screenshot can break.
+    /// </summary>
+    internal const int LeadAmbiguityMargin = 5;
+
     /// <summary>Card-loop sentinel: Esc/quit (a chosen option is &gt;= 0).</summary>
     private const int CancelChoice = -1;
 
@@ -199,6 +205,29 @@ internal static class SetupWizard
                 ct).ConfigureAwait(false);
             config = inferred.Config;
             confirmQuestion = inferred.ConfirmQuestion;
+        }
+
+        // ---- workspace-45ji.3: OPTIONAL vision tiebreak for the LEAD. The
+        // deterministic gates above stay primary; only when importance leaves a
+        // cluster of near-equally-prominent candidates AND a screenshot exists do
+        // we spend ONE call to ask which is visually dominant, then durably reorder
+        // so its section leads. A -1 (or any failure) keeps the deterministic lead.
+        if (screenshot is { Length: > 0 } &&
+            !IsDegenerate(config, links) &&
+            LeadIsAmbiguous(config, links) &&
+            budget.TrySpend())
+        {
+            var candidates = LeadCandidates(config, links);
+            var chosen = await RunWithProgressAsync(
+                analyzer.VerifyLeadWithVisionAsync(screenshot, candidates, pageUrl, ct),
+                "Checking the lead",
+                overlay,
+                render,
+                ct).ConfigureAwait(false);
+            if (chosen >= 0 && chosen < candidates.Count)
+            {
+                config = PromoteLeadSection(config, candidates[chosen], links);
+            }
         }
 
         // ---- Preview loop: show the RESULT, not a description of it ----
@@ -390,6 +419,71 @@ internal static class SetupWizard
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The near-equally-prominent lead candidates (story-shaped Content links within
+    /// <see cref="LeadAmbiguityMargin"/> of the top importance), highest first, capped.
+    /// </summary>
+    internal static List<LinkInfo> LeadCandidates(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var content = links
+            .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader && !l.IsSponsored)
+            .ToList();
+        if (content.Count == 0)
+        {
+            return new List<LinkInfo>();
+        }
+
+        var max = content.Max(l => l.ImportanceScore);
+        return content
+            .Where(l => max - l.ImportanceScore <= LeadAmbiguityMargin)
+            .OrderByDescending(l => l.ImportanceScore)
+            .Take(6)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The layout has a LEAD the deterministic ranking can't decide: a config with
+    /// sections plus at least two near-equally-prominent candidates. A screenshot
+    /// tiebreak (workspace-45ji.3) can help here; otherwise the deterministic lead stands.
+    /// </summary>
+    internal static bool LeadIsAmbiguous(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return config.Sections.Count > 0 && LeadCandidates(config, links).Count >= 2;
+    }
+
+    /// <summary>
+    /// Durable, non-destructive lead promotion: move the section that contains
+    /// <paramref name="lead"/> to the front (renumbering SortOrder). No-op when the
+    /// lead's section is already first or not found — every other section is kept.
+    /// </summary>
+    internal static SiteHierarchyConfig PromoteLeadSection(SiteHierarchyConfig config, LinkInfo lead, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var idx = config.Sections.FindIndex(s => NavigationTreeBuilder.MatchesSection(lead, s));
+        if (idx <= 0)
+        {
+            return config;
+        }
+
+        var reordered = new List<HierarchySection> { config.Sections[idx] };
+        for (var i = 0; i < config.Sections.Count; i++)
+        {
+            if (i != idx)
+            {
+                reordered.Add(config.Sections[i]);
+            }
+        }
+
+        for (var i = 0; i < reordered.Count; i++)
+        {
+            reordered[i] = reordered[i] with { SortOrder = i };
+        }
+
+        return config with { Sections = reordered };
     }
 
     /// <summary>
