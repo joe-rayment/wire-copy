@@ -215,6 +215,66 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
         """);
 
+    // workspace-zd96: the INDICES-ONLY infer schema. The model returns link
+    // NUMBERS only (which links are stories, which section each is in, which are
+    // ads/rails to exclude, which is the lead) — never CSS selectors or URL
+    // patterns. SelectorDerivation turns the chosen indices into durable
+    // identifiers in code (ParsePatternFromAnswers already derives when the model
+    // omits them). This kills the reasoning-vs-output token contention that
+    // starved the old selector-emitting call (workspace-i1lv) and removes the
+    // run-to-run selector drift the medium-effort call was papering over.
+    private static readonly BinaryData SetupPatternIndicesSchema = BinaryData.FromString(
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "story_indices": { "type": "array", "items": { "type": "integer" } },
+                  "start_collapsed": { "type": "boolean" }
+                },
+                "required": ["name", "story_indices", "start_collapsed"]
+              }
+            },
+            "exclude_indices": { "type": "array", "items": { "type": "integer" } },
+            "confidence": { "type": "number" },
+            "confirm_question": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "prompt": { "type": "string" },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "label": { "type": "string" },
+                          "parent_selector": { "type": "string" },
+                          "url_pattern": { "type": "string" }
+                        },
+                        "required": ["label", "parent_selector", "url_pattern"]
+                      }
+                    }
+                  },
+                  "required": ["prompt", "options"]
+                }
+              ]
+            }
+          },
+          "required": ["sections", "exclude_indices", "confidence", "confirm_question"]
+        }
+        """);
+
     // workspace-q77e: model section names that mark a non-story rail (sponsor /
     // advertiser / promo / podcast / audio / event-calendar). These are excluded
     // wholesale, never rendered as a (even collapsed) section. Whole-word so a
@@ -483,8 +543,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var systemPrompt = BuildInferPatternSystemPrompt(screenshot is { Length: > 0 });
         var userPrompt = BuildInferPatternUserPrompt(contentLinks, pageUrl, proposal, answers);
 
-        // workspace-i1lv: the heaviest setup call (full sections config at medium
-        // reasoning) — the one that starved at the old shared 4096 cap.
+        // workspace-zd96: this call is now a JUDGE — it returns link INDICES only
+        // (story vs exclude, grouped into sections, lead first); SelectorDerivation
+        // turns them into durable identifiers in code (ParsePatternFromAnswers
+        // derives from story_indices / exclude_indices when the model omits
+        // selectors). Emitting no selectors makes the output tiny, so the
+        // reasoning-vs-output token contention that starved the old medium-effort
+        // selector-emitting call (workspace-i1lv) is gone — run at the cheap
+        // classification tier (_config.ReasoningEffort, default minimal).
         var outputCap = _config.SetupMaxTokens;
         for (int attempt = 0; attempt < 2; attempt++)
         {
@@ -492,10 +558,10 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             {
                 var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
                 var options = BuildOptions(
-                    schemaName: "site_pattern",
-                    schema: SetupPatternSchema,
-                    schemaDescription: "Durable selector/url-pattern sections + exclusion rules.",
-                    reasoningEffortOverride: _config.SetupReasoningEffort,
+                    schemaName: "site_pattern_indices",
+                    schema: SetupPatternIndicesSchema,
+                    schemaDescription: "Link INDICES only: the lead, story sections, and ads/rails to exclude.",
+                    reasoningEffortOverride: _config.ReasoningEffort,
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
@@ -948,42 +1014,33 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     private static string BuildInferPatternSystemPrompt(bool hasScreenshot)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("You are finalizing a REUSABLE homepage layout pattern from the user's answers.");
+        sb.AppendLine("You are the JUDGE for a reusable homepage layout. Work ONLY with the numbered");
+        sb.AppendLine("link list below — return link INDEX NUMBERS, never CSS selectors or URLs. The");
+        sb.AppendLine("app turns your chosen indices into durable identifiers itself.");
         sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
-        sb.AppendLine("Return durable sections (most prominent first):");
-        sb.AppendLine("- name: short label (the first/lead section should be the single top story);");
-        sb.AppendLine("- parent_selectors: shortest class/id-bearing CSS fragments identifying the");
-        sb.AppendLine("  section's links (e.g. 'section.lead'); url_patterns: a SHORT path SEGMENT");
-        sb.AppendLine("  every story in the section shares (e.g. '/opinion/', '/tech/'). A url_pattern");
-        sb.AppendLine("  is a reusable hub segment, NEVER a single story's full path or headline slug");
-        sb.AppendLine("  (e.g. '/us-lifts-block-on-mythos-5/' identifies ONE article and is dead on the");
-        sb.AppendLine("  next visit) — when stories share no short segment, leave url_patterns EMPTY and");
-        sb.AppendLine("  rely on parent_selectors. Set at least one durable identifier per section;");
-        sb.AppendLine("- story_indices: the link numbers currently in this section (so the identifier");
-        sb.AppendLine("  can be re-derived if needed);");
+        sb.AppendLine("Group the STORY links into sections (most prominent first):");
+        sb.AppendLine("- name: short label (the first/lead section is the single top story — one index);");
+        sb.AppendLine("- story_indices: the link numbers that belong in this section;");
         sb.AppendLine("- start_collapsed: true for lower-priority STORY sections (real stories that");
         sb.AppendLine("  belong below the fold) — NOT a way to bury non-stories.");
         sb.AppendLine();
-        sb.AppendLine("CRITICAL: sponsor/advertiser posts, podcast or audio rails, and");
-        sb.AppendLine("event-calendar / job-board boxes are NOT sections — not even collapsed ones.");
-        sb.AppendLine("Put their container selector in exclude_selectors so they vanish; never emit a");
-        sb.AppendLine("section named 'Sponsors', 'Podcasts', 'Promos', 'Events', etc. A reader wants");
-        sb.AppendLine("stories only — a collapsed 'Podcasts' section is still clutter, not curation.");
+        sb.AppendLine("CRITICAL: sponsor/advertiser posts, podcast or audio rails, event-calendar /");
+        sb.AppendLine("job-board boxes, nav/utility links and tertiary chrome (e.g. a parent-company");
+        sb.AppendLine("link) are NOT sections — not even collapsed ones. Put their link numbers in");
+        sb.AppendLine("exclude_indices so they vanish; never emit a section named 'Sponsors',");
+        sb.AppendLine("'Podcasts', 'Promos', 'Events', etc. A reader wants stories only.");
         sb.AppendLine();
-        sb.AppendLine("Also return exclude_selectors / exclude_url_patterns (durable identifiers for the");
-        sb.AppendLine("non-stories to hide: utility links, sponsor/podcast/event rails, tertiary chrome");
-        sb.AppendLine("like a parent-company link) and exclude_indices (their link numbers). NEVER identify a");
-        sb.AppendLine("link by its exact URL — only by selector or path pattern. On AGGREGATOR pages");
-        sb.AppendLine("(stories span many hosts) url_patterns cannot generalize — use parent_selectors");
-        sb.AppendLine("only. Honour the user's answers.");
+        sb.AppendLine("Use the geometry signals (vis lines, ImportanceScore, SectionTitle) as the");
+        sb.AppendLine("primary evidence for prominence and story-vs-chrome; the screenshot, when");
+        sb.AppendLine("present, is a tiebreaker for the LEAD only. Honour the user's answers.");
         sb.AppendLine();
-        sb.AppendLine("Also return `confidence` (0..1, how sure you are this layout matches the");
-        sb.AppendLine("page's editorial hierarchy) and `confirm_question`: null when confident,");
-        sb.AppendLine("or ONE targeted question (e.g. 'Which of these is the main story?') with");
-        sb.AppendLine("2-4 options when genuinely torn. Each option needs a label plus a durable");
-        sb.AppendLine("parent_selector and/or url_pattern pointing at real elements. The user can");
-        sb.Append("ignore the question and save as-is, so never gate the layout on it.");
+        sb.AppendLine("Also return `confidence` (0..1, how sure you are this matches the page's");
+        sb.AppendLine("editorial hierarchy) and `confirm_question`: null when confident, or ONE");
+        sb.AppendLine("targeted question (e.g. 'Which of these is the main story?') with 2-4 options");
+        sb.AppendLine("when genuinely torn. Each option needs a label plus a durable parent_selector");
+        sb.AppendLine("and/or url_pattern pointing at real elements. The user can ignore the question");
+        sb.Append("and save as-is, so never gate the layout on it.");
         return sb.ToString();
     }
 
