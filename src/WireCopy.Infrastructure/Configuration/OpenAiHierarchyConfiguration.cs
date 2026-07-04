@@ -49,6 +49,19 @@ public class OpenAiHierarchyConfiguration
     public int MaxTokens { get; init; } = 4096;
 
     /// <summary>
+    /// workspace-i1lv: output-token cap for the ONE-TIME <c>g l</c> setup calls
+    /// (propose / infer-pattern / refine). These run at <see cref="SetupReasoningEffort"/>
+    /// (<c>medium</c>) on gpt-5-mini, where <c>max_completion_tokens</c> is shared
+    /// by reasoning AND the emitted JSON. The old shared 4096 cap
+    /// (<see cref="MaxTokens"/>) let medium reasoning starve the durable-pattern
+    /// output to empty on the heavier infer/repair rounds — the "AI setup failed"
+    /// bug. 12288 gives reasoning room AND a full sections config; setup runs once
+    /// per site and revisits never call the model, so the extra ceiling is cheap.
+    /// The analyzer escalates beyond this on a truncation retry.
+    /// </summary>
+    public int SetupMaxTokens { get; init; } = 12288;
+
+    /// <summary>
     /// TTL (days) for cached AI Curated results. After this age the analyzer
     /// re-runs on the next visit so layouts adapt to site changes.
     /// </summary>

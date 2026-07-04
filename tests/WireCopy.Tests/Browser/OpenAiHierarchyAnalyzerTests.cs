@@ -826,6 +826,81 @@ public class OpenAiHierarchyAnalyzerTests
             .BeGreaterThanOrEqualTo(OpenAiHierarchyAnalyzer.EstimateSetupOutputTokens(4));
     }
 
+    // ---- workspace-i1lv: reasoning-token starvation regression coverage ----
+
+    private static SiteSetupProposal EmptyProposal() => new()
+    {
+        ProposedPattern = new ProposedPattern(),
+        Questions = new List<SetupQuestion>(),
+    };
+
+    [Fact]
+    public async Task InferPatternFromAnswersAsync_RequestsSetupMaxTokensCap()
+    {
+        // The infer-pattern call previously used the default 4096 cap (no override),
+        // which reasoning tokens starved on gpt-5-mini. It must now request the
+        // dedicated, larger setup cap.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        ChatCompletionOptions? captured = null;
+        var analyzer = CreateAnalyzer((_, _, _, options, _) =>
+        {
+            captured = options;
+            return Task.FromResult(InferPatternJson);
+        });
+
+        await analyzer.InferPatternFromAnswersAsync(
+            null, SetupLinks(), "https://x.com/", EmptyProposal(), new List<SetupAnswer>());
+
+        captured!.MaxOutputTokenCount.Should()
+            .BeGreaterThanOrEqualTo(_config.SetupMaxTokens,
+                "the infer-pattern call must carry the reasoning-model setup cap, not the 4096 default");
+    }
+
+    [Fact]
+    public async Task InferPatternFromAnswersAsync_EmptyCompletion_RetriesWithLargerCap_ThenSucceeds()
+    {
+        // An empty completion = reasoning burned max_completion_tokens before any
+        // JSON. The retry must RAISE the cap (give reasoning room), not just re-send
+        // the prompt — the old JsonException retry appended input and always failed.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+
+        var caps = new List<int?>();
+        var calls = 0;
+        var analyzer = CreateAnalyzer((_, _, _, options, _) =>
+        {
+            calls++;
+            caps.Add(options.MaxOutputTokenCount);
+            return Task.FromResult(calls == 1 ? string.Empty : InferPatternJson);
+        });
+
+        var result = await analyzer.InferPatternFromAnswersAsync(
+            null, SetupLinks(), "https://x.com/", EmptyProposal(), new List<SetupAnswer>());
+
+        calls.Should().Be(2, "an empty (truncated) completion triggers exactly one retry");
+        result.Config.Sections.Should().HaveCount(2, "the retry recovers a valid layout");
+        caps.Should().HaveCount(2);
+        caps[0].Should().NotBeNull();
+        caps[1].Should().NotBeNull();
+        caps[0]!.Value.Should().BeGreaterThanOrEqualTo(_config.SetupMaxTokens);
+        caps[1]!.Value.Should().BeGreaterThan(caps[0]!.Value,
+            "the retry must raise the output-token cap, not merely re-issue the same request");
+    }
+
+    [Fact]
+    public async Task InferPatternFromAnswersAsync_PersistentTruncation_ThrowsTypedException()
+    {
+        // If it keeps truncating, the caller must receive the typed truncation
+        // signal (so the UI reports the real cause), not a bare JsonException.
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        var analyzer = CreateAnalyzer((_, _, _, _, _) => Task.FromResult(string.Empty));
+
+        var act = async () => await analyzer.InferPatternFromAnswersAsync(
+            null, SetupLinks(), "https://x.com/", EmptyProposal(), new List<SetupAnswer>());
+
+        await act.Should().ThrowAsync<LayoutTruncationException>();
+    }
+
     [Fact]
     public void ParseCuratedResponse_StaticHelper_FiltersOutOfRangeIndices()
     {

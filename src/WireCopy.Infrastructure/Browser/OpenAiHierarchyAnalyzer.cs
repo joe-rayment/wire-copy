@@ -421,6 +421,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var systemPrompt = BuildSetupQuestionsSystemPrompt(_config.MaxSetupQuestions, screenshot is { Length: > 0 });
         var userPrompt = BuildCuratedUserPrompt(contentLinks, pageUrl);
 
+        // workspace-i1lv: the setup cap must cover reasoning + JSON on gpt-5-mini.
+        var outputCap = Math.Max(EstimateSetupOutputTokens(_config.MaxSetupQuestions), _config.SetupMaxTokens);
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try
@@ -431,12 +433,23 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     schema: SetupQuestionsSchema,
                     schemaDescription: "A proposed layout pattern plus a bounded set of clarifying questions.",
                     reasoningEffortOverride: _config.SetupReasoningEffort,
-                    maxOutputTokensOverride: EstimateSetupOutputTokens(_config.MaxSetupQuestions));
+                    maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
                     apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
 
+                if (string.IsNullOrWhiteSpace(responseText))
+                {
+                    throw new LayoutTruncationException(outputCap, null);
+                }
+
                 return ParseSetupQuestions(responseText, _config.MaxSetupQuestions);
+            }
+            catch (LayoutTruncationException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(
+                    "Setup-questions completion truncated at {Cap} tokens, retrying with a larger cap", ex.OutputTokenCap);
+                outputCap = checked(outputCap * 2);
             }
             catch (JsonException ex) when (attempt == 0)
             {
@@ -470,6 +483,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var systemPrompt = BuildInferPatternSystemPrompt(screenshot is { Length: > 0 });
         var userPrompt = BuildInferPatternUserPrompt(contentLinks, pageUrl, proposal, answers);
 
+        // workspace-i1lv: the heaviest setup call (full sections config at medium
+        // reasoning) — the one that starved at the old shared 4096 cap.
+        var outputCap = _config.SetupMaxTokens;
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try
@@ -479,12 +495,24 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     schemaName: "site_pattern",
                     schema: SetupPatternSchema,
                     schemaDescription: "Durable selector/url-pattern sections + exclusion rules.",
-                    reasoningEffortOverride: _config.SetupReasoningEffort);
+                    reasoningEffortOverride: _config.SetupReasoningEffort,
+                    maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
                     apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
 
+                if (string.IsNullOrWhiteSpace(responseText))
+                {
+                    throw new LayoutTruncationException(outputCap, null);
+                }
+
                 return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+            }
+            catch (LayoutTruncationException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(
+                    "Infer-pattern completion truncated at {Cap} tokens, retrying with a larger cap", ex.OutputTokenCap);
+                outputCap = checked(outputCap * 2);
             }
             catch (JsonException ex) when (attempt == 0)
             {
@@ -525,6 +553,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             _config.Model,
             instruction.Length > 80 ? instruction[..80] : instruction);
 
+        // workspace-i1lv: same reasoning-model headroom as infer-pattern.
+        var outputCap = _config.SetupMaxTokens;
         for (int attempt = 0; attempt < 2; attempt++)
         {
             try
@@ -534,12 +564,24 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     schemaName: "site_pattern",
                     schema: SetupPatternSchema,
                     schemaDescription: "The current layout edited by exactly the user's change; everything else identical.",
-                    reasoningEffortOverride: _config.SetupReasoningEffort);
+                    reasoningEffortOverride: _config.SetupReasoningEffort,
+                    maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
                     apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
 
+                if (string.IsNullOrWhiteSpace(responseText))
+                {
+                    throw new LayoutTruncationException(outputCap, null);
+                }
+
                 return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+            }
+            catch (LayoutTruncationException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(
+                    "Refine-layout completion truncated at {Cap} tokens, retrying with a larger cap", ex.OutputTokenCap);
+                outputCap = checked(outputCap * 2);
             }
             catch (JsonException ex) when (attempt == 0)
             {
@@ -1227,6 +1269,18 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             {
                 sb.Append(part.Text);
             }
+        }
+
+        // workspace-i1lv: on a reasoning model, hitting max_completion_tokens
+        // (finish_reason=length) — or otherwise returning no text — means the
+        // reasoning burned the budget before any JSON was emitted. Surface it as
+        // a typed truncation so the caller retries with a LARGER cap instead of
+        // failing on a bare JsonException the wizard blames on the network.
+        if (completion.FinishReason == ChatFinishReason.Length || sb.Length == 0)
+        {
+            throw new LayoutTruncationException(
+                options.MaxOutputTokenCount,
+                completion.Usage?.OutputTokenDetails?.ReasoningTokenCount);
         }
 
         return sb.ToString();

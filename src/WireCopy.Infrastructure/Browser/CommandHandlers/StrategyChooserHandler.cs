@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.ClientModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
@@ -536,6 +537,26 @@ internal static class StrategyChooserHandler
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (LayoutTruncationException ex)
+        {
+            // workspace-i1lv: the model ran out of output-token room building the
+            // layout (reasoning ate the budget). NOT a connection problem — say so,
+            // so the user retries the right thing instead of checking their network.
+            ctx.Logger.LogWarning(
+                ex, "AI layout setup truncated (cap={Cap}, reasoning={Reasoning})", ex.OutputTokenCap, ex.ReasoningTokenCount);
+            ctx.NavigationService.SetStatusMessage(
+                "AI setup ran out of room building the layout — please try again", StatusSeverity.Error);
+            return new SetupWizard.Result { Cancelled = true };
+        }
+        catch (ClientResultException ex)
+        {
+            // workspace-i1lv: an OpenAI HTTP error (rate limit / 5xx / bad request)
+            // — distinct from a local connectivity failure.
+            ctx.Logger.LogWarning(ex, "AI layout setup failed: OpenAI request error ({Status})", ex.Status);
+            ctx.NavigationService.SetStatusMessage(
+                "OpenAI is busy or rejected the request — try again in a moment", StatusSeverity.Error);
+            return new SetupWizard.Result { Cancelled = true };
         }
         catch (Exception ex)
         {
