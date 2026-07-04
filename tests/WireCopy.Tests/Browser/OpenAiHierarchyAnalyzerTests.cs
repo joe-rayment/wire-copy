@@ -308,7 +308,7 @@ public class OpenAiHierarchyAnalyzerTests
         result.Sections.Should().HaveCount(1);
         result.Sections[0].Name.Should().Be("Top Stories");
         result.Sections[0].ParentSelectors.Should().Contain("article > h3");
-        result.ModelVersion.Should().Be("gpt-5-mini");
+        result.ModelVersion.Should().Be("gpt-5-nano"); // workspace-r8on: judge default
     }
 
     [Fact]
@@ -478,7 +478,7 @@ public class OpenAiHierarchyAnalyzerTests
 
         result.Sections.Should().HaveCount(1);
         result.Sections[0].StartCollapsed.Should().BeTrue();
-        result.ModelVersion.Should().Be("gpt-5-mini");
+        result.ModelVersion.Should().Be("gpt-5-mini", "the static helper echoes the passed model version");
     }
 
     [Fact]
@@ -735,6 +735,72 @@ public class OpenAiHierarchyAnalyzerTests
         config.Sections.Should().HaveCount(2);
         config.Sections.SelectMany(s => s.ParentSelectors).Should().Contain("section.lead").And.Contain("section.feed");
         config.ExcludeSelectors.Should().Contain("aside.promo");
+    }
+
+    // ---- workspace-r8on: per-role models + local endpoint ----
+
+    [Fact]
+    public async Task JudgeModel_DefaultsToGpt5Nano_AndSettingsStoreOverrides()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        string? captured = null;
+        var analyzer = CreateAnalyzer((_, model, _, _, _) => { captured = model; return Task.FromResult(ProposalJson(0)); });
+        await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+        captured.Should().Be("gpt-5-nano", "the judge default is gpt-5-nano");
+
+        _settingsStore.Get("LayoutModel").Returns("custom-judge");
+        string? captured2 = null;
+        var analyzer2 = CreateAnalyzer((_, model, _, _, _) => { captured2 = model; return Task.FromResult(ProposalJson(0)); });
+        await analyzer2.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+        captured2.Should().Be("custom-judge", "the LayoutModel setting overrides the judge model");
+    }
+
+    [Fact]
+    public async Task VerifyModel_ResolvesFromSettingsStore()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns("sk-test-key");
+        _settingsStore.Get("VerifyModel").Returns("nano-vision");
+        string? captured = null;
+        var analyzer = CreateAnalyzer((_, model, _, _, _) => { captured = model; return Task.FromResult("{\"lead_index\":0}"); });
+
+        await analyzer.VerifyLeadWithVisionAsync(new byte[] { 1 }, SetupLinks(), "https://x.com/");
+
+        captured.Should().Be("nano-vision");
+    }
+
+    [Fact]
+    public void IsConfigured_TrueWithLocalEndpoint_EvenWithoutAnOpenAiKey()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns((string?)null);
+        _settingsStore.Get("LayoutEndpoint").Returns("http://localhost:11434/v1");
+        CreateAnalyzer((_, _, _, _, _) => Task.FromResult(string.Empty)).IsConfigured.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LocalEndpoint_UsesOllamaKey_WithoutRequiringAnOpenAiKey()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns((string?)null);
+        _settingsStore.Get("LayoutEndpoint").Returns("http://localhost:11434/v1");
+        string? capturedKey = null;
+        var analyzer = CreateAnalyzer((apiKey, _, _, _, _) => { capturedKey = apiKey; return Task.FromResult(ProposalJson(0)); });
+
+        await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        capturedKey.Should().Be("ollama", "a local endpoint sends the dummy key, no OpenAI key needed");
+    }
+
+    [Fact]
+    public async Task LocalEndpoint_WithCustomLayoutApiKey_SendsThatKey()
+    {
+        _settingsStore.Get("OpenAiApiKey").Returns((string?)null);
+        _settingsStore.Get("LayoutEndpoint").Returns("http://localhost:11434/v1");
+        _settingsStore.Get("LayoutApiKey").Returns("tok-123");
+        string? capturedKey = null;
+        var analyzer = CreateAnalyzer((apiKey, _, _, _, _) => { capturedKey = apiKey; return Task.FromResult(ProposalJson(0)); });
+
+        await analyzer.ProposeSetupQuestionsAsync(null, SetupLinks(), "https://x.com/");
+
+        capturedKey.Should().Be("tok-123");
     }
 
     [Fact]

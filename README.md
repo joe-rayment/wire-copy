@@ -190,8 +190,12 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiTts:Voice` | TTS voice (`alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`) | `coral` |
 | `OpenAiTts:Instructions` | Style instruction sent to `gpt-4o-mini-tts` (empty = none) | `Speak like a playful but knowing news anchor` |
 | `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
-| `OpenAiHierarchy:Model` | Chat model for AI site setup / extraction | `gpt-5-mini` |
-| `OpenAiHierarchy:ReasoningEffort` | Reasoning tier for cheap revisit/classification calls (`minimal` / `low` / `medium`) | `minimal` |
+| `OpenAiHierarchy:JudgeModel` | Model for the AI-layout **judge** (returns link indices only; selectors are derived in code) | `gpt-5-nano` |
+| `OpenAiHierarchy:VerifyModel` | Model for the optional vision lead-tiebreak | `gpt-5-nano` |
+| `OpenAiHierarchy:ArticleModel` | Model for article extraction (HTML→JSON, strict schema + self-test; stays on the API) | `gpt-5-nano` |
+| `OpenAiHierarchy:LayoutEndpoint` | Optional OpenAI-compatible base URL for the judge/verify calls — set to a local Ollama (`http://localhost:11434/v1`) running a small VLM to run the **judge offline**. Opt-in, capable machines only; only the small judge runs locally (selectors are code, article stays on the API). Switch it from Setup (`c` → **Layout model**) | (empty = OpenAI API) |
+| `OpenAiHierarchy:LayoutApiKey` | Token sent when `LayoutEndpoint` is set (Ollama ignores it; the client needs a non-empty value) | `ollama` |
+| `OpenAiHierarchy:ReasoningEffort` | Reasoning tier for the judge / cheap revisit-classification calls (`minimal` / `low` / `medium`) | `minimal` |
 | `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `g l` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Visibility` | Legacy — **ignored**. The browser is always headful (headless is bot-blocked on the sites this targets); display-less hosts run under a virtual display via the `run` script. Kept only so old settings files still bind | (ignored) |

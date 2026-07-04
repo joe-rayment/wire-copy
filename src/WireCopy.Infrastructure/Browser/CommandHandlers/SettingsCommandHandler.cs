@@ -52,6 +52,12 @@ internal static class SettingsCommandHandler
     internal const string KeyOutputRetentionHours = "PodcastOutputRetentionHours";
     internal const string KeyPodcastCostGateAlwaysShow = "PodcastCostGateAlwaysShow";
 
+    // workspace-r8on: layout-judge model + optional local (Ollama) endpoint.
+    internal const string KeyLayoutModel = "LayoutModel";
+    internal const string KeyLayoutEndpoint = "LayoutEndpoint";
+    internal const string KeyLayoutApiKey = "LayoutApiKey";
+    internal const string DefaultOllamaEndpoint = "http://localhost:11434/v1";
+
     private const string Reset = "\x1b[0m";
 
     /// <summary>
@@ -69,6 +75,7 @@ internal static class SettingsCommandHandler
         TtsInstructions,
         AutoPurgeHours,
         CostGateAlwaysShow,
+        LayoutModel,
     }
 
     /// <summary>
@@ -120,6 +127,7 @@ internal static class SettingsCommandHandler
         var rows = new[]
         {
             SetupRow.OpenAiKey,
+            SetupRow.LayoutModel,
             SetupRow.GcsKey,
             SetupRow.GcsBucket,
             SetupRow.OutputFolder,
@@ -177,6 +185,12 @@ internal static class SettingsCommandHandler
                 settingsStore.Get(KeyPodcastCostGateAlwaysShow), out var alwaysShowParsed)
                 && alwaysShowParsed;
 
+            // workspace-r8on: layout-judge model — OpenAI (default) or a local Ollama.
+            var layoutEndpoint = settingsStore.Get(KeyLayoutEndpoint);
+            var layoutIsLocal = !string.IsNullOrWhiteSpace(layoutEndpoint);
+            var layoutModelName = settingsStore.Get(KeyLayoutModel) ?? "gpt-5-nano";
+            var layoutDisplay = layoutIsLocal ? $"Local · {layoutModelName}" : $"OpenAI · {layoutModelName}";
+
             // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Credentials{Reset}");
             RenderRow(
@@ -193,6 +207,21 @@ internal static class SettingsCommandHandler
                 hasOpenAi ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 hasOpenAi ? "Change" : "Set up",
                 helperText: "Used for TTS audio and AI Curated link layout");
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.LayoutModel,
+                layoutIsLocal ? "◐" : "●",
+                palette.PromptFg.AnsiFg,
+                "Layout model",
+                layoutDisplay,
+                palette.PromptFg.AnsiFg,
+                "Change",
+                helperText: "Judge for AI link layout · Local runs a small VLM via Ollama (capable machines only)");
 
             RenderRow(
                 helpers,
@@ -406,6 +435,9 @@ internal static class SettingsCommandHandler
         {
             case SetupRow.OpenAiKey:
                 await HandleSetApiKey(ctx, options, ct).ConfigureAwait(false);
+                return;
+            case SetupRow.LayoutModel:
+                await HandleSetLayoutModel(ctx, options, ct).ConfigureAwait(false);
                 return;
             case SetupRow.GcsKey:
                 await HandleSetKey(ctx, options, ct).ConfigureAwait(false);
@@ -1790,6 +1822,63 @@ internal static class SettingsCommandHandler
     /// configuration default; the literal "none" persists an empty override
     /// so no <c>instructions</c> field is sent on requests).
     /// </summary>
+    /// <summary>
+    /// workspace-r8on: switch the AI-layout JUDGE between the OpenAI API
+    /// (gpt-5-nano, default) and a local Ollama VLM. Type a model name to go local
+    /// (sets the Ollama endpoint + a dummy key); 'openai' to return to the API;
+    /// blank keeps the current choice. Only the small judge runs locally —
+    /// selectors are code and article extraction stays on the API.
+    /// </summary>
+    private static async Task HandleSetLayoutModel(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var isLocal = !string.IsNullOrWhiteSpace(store.Get(KeyLayoutEndpoint));
+        var currentModel = store.Get(KeyLayoutModel) ?? (isLocal ? string.Empty : "gpt-5-nano");
+
+        var prompt = isLocal
+            ? $"Layout judge — local Ollama model [{currentModel}] · 'openai' for the API · blank keeps: "
+            : "Layout judge — a local Ollama model NAME (e.g. qwen2.5vl) for offline, or 'openai' for the API · blank keeps: ";
+
+        var input = await ctx.InputHandler.PromptForInputAsync(
+            prompt, ct, isSecret: false, initialInput: isLocal ? currentModel : string.Empty).ConfigureAwait(false);
+        if (input == null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+        if (trimmed.Length == 0)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return; // keep current
+        }
+
+        if (trimmed.Equals("openai", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("api", StringComparison.OrdinalIgnoreCase))
+        {
+            store.Remove(KeyLayoutEndpoint);
+            store.Remove(KeyLayoutApiKey);
+            store.Remove(KeyLayoutModel);
+            ctx.NavigationService.SetStatusMessage("Layout model → OpenAI gpt-5-nano");
+        }
+        else
+        {
+            store.Set(KeyLayoutEndpoint, DefaultOllamaEndpoint);
+            store.Set(KeyLayoutApiKey, "ollama");
+            store.Set(KeyLayoutModel, trimmed);
+            ctx.NavigationService.SetStatusMessage(
+                $"Layout judge → LOCAL {trimmed} via Ollama — needs a capable machine and `ollama pull {trimmed}`",
+                StatusSeverity.Info);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
     private static async Task HandleSetTtsInstructions(
         CommandContext ctx,
         RenderOptions options,

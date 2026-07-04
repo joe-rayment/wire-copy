@@ -26,6 +26,7 @@ public class OpenAiArticleExtractorTests
         var hierConfig = Options.Create(new OpenAiHierarchyConfiguration
         {
             Model = "gpt-test",
+            ArticleModel = "gpt-test", // workspace-r8on: extractor now reads ArticleModel
             MonthlyTokenBudget = monthlyTokenBudget,
         });
         var ttsConfig = Options.Create(new OpenAiTtsConfiguration

@@ -197,9 +197,10 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
                     MaxOutputTokenCount = _config.MaxTokens,
                 };
 
+                var articleModel = ArticleModel();
                 var completion = await _chatCompleter(
                     apiKey,
-                    _config.Model,
+                    articleModel,
                     messages,
                     options,
                     ct).ConfigureAwait(false);
@@ -209,7 +210,7 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
                     RecordTokens(completion.TotalTokens);
                 }
 
-                return ParseResponse(completion.Text, domain, url, _config.Model);
+                return ParseResponse(completion.Text, domain, url, articleModel);
             }
             catch (JsonException ex) when (attempt == 0)
             {
@@ -512,6 +513,14 @@ internal sealed class OpenAiArticleExtractor : IAiArticleExtractor
     private static string CurrentBudgetPeriod() => DateTime.UtcNow.ToString("yyyyMM", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string BudgetSettingsKey(string period) => $"AiArticleTokens:{period}";
+
+    // workspace-r8on: article model resolves from the settings store first, then
+    // config default (gpt-5-nano). Article extraction stays on the OpenAI API.
+    private string ArticleModel()
+    {
+        var stored = _settingsStore.Get("ArticleModel");
+        return string.IsNullOrWhiteSpace(stored) ? _config.ArticleModel : stored;
+    }
 
     private string? GetApiKey()
     {

@@ -16,11 +16,55 @@ public class OpenAiHierarchyConfiguration
     public const string SectionName = "OpenAiHierarchy";
 
     /// <summary>
-    /// Gets the OpenAI chat model to use for hierarchy / curated analysis.
-    /// Default: <c>gpt-5-mini</c> — cheap, vision-capable, supports strict
-    /// JSON Schema and the <c>minimal</c> reasoning effort tier.
+    /// Legacy shared chat model (workspace-r8on split it into per-role models
+    /// below). Kept so existing settings/appsettings still bind; no longer read
+    /// by the analyzer or extractor — see <see cref="JudgeModel"/>,
+    /// <see cref="VerifyModel"/>, <see cref="ArticleModel"/>.
     /// </summary>
     public string Model { get; init; } = "gpt-5-mini";
+
+    /// <summary>
+    /// workspace-r8on: the JUDGE model — the layout calls (propose / infer /
+    /// refine / curated / hierarchy / classify), which now emit link INDICES only.
+    /// Default <c>gpt-5-nano</c>: vision-capable, ~5× cheaper than gpt-5-mini, and
+    /// its tiny integer/index output can't truncate. Overridable per-user via the
+    /// <c>LayoutModel</c> settings key (the Setup switch). Points at
+    /// <see cref="LayoutEndpoint"/> when that is set (e.g. a local Ollama).
+    /// </summary>
+    public string JudgeModel { get; init; } = "gpt-5-nano";
+
+    /// <summary>
+    /// workspace-r8on: model for the OPTIONAL vision lead-tiebreak
+    /// (<c>VerifyLeadWithVisionAsync</c>). Default <c>gpt-5-nano</c> (vision).
+    /// Shares <see cref="LayoutEndpoint"/> with the judge. Settings key
+    /// <c>VerifyModel</c>.
+    /// </summary>
+    public string VerifyModel { get; init; } = "gpt-5-nano";
+
+    /// <summary>
+    /// workspace-r8on: model for ARTICLE extraction (HTML→JSON, strict schema +
+    /// quality-floor self-test). Default <c>gpt-5-nano</c>. Stays on the OpenAI
+    /// API — no local path. Settings key <c>ArticleModel</c>.
+    /// </summary>
+    public string ArticleModel { get; init; } = "gpt-5-nano";
+
+    /// <summary>
+    /// workspace-r8on: OPTIONAL OpenAI-compatible base URL for the judge/verify
+    /// calls. Empty = the OpenAI API (default). Set to a local Ollama endpoint
+    /// (e.g. <c>http://localhost:11434/v1</c>) running a small VLM to run the
+    /// judge offline — the ONLY model that must exist locally, since selectors
+    /// are derived in code. Opt-in, for capable machines only (a CPU/8 GB box
+    /// can't run a VLM reliably). Settings key <c>LayoutEndpoint</c>.
+    /// </summary>
+    public string LayoutEndpoint { get; init; } = string.Empty;
+
+    /// <summary>
+    /// workspace-r8on: API key/token sent when <see cref="LayoutEndpoint"/> is set
+    /// (Ollama ignores it but the OpenAI client requires a non-empty credential —
+    /// defaults to <c>ollama</c>). Empty with no endpoint = use the shared OpenAI
+    /// key. Settings key <c>LayoutApiKey</c>.
+    /// </summary>
+    public string LayoutApiKey { get; init; } = string.Empty;
 
     /// <summary>
     /// Gets the reasoning-effort tier passed to the model. Default

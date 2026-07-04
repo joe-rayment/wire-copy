@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenAI;
 using OpenAI.Chat;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
@@ -268,7 +269,13 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         _ttsConfig = ttsConfig.Value;
         _settingsStore = settingsStore;
         _logger = logger;
-        _chatCompleter = chatCompleter ?? DefaultChatCompleterAsync;
+
+        // workspace-r8on: the default completer resolves the (optional) local
+        // endpoint at call time from the settings store, so the ChatCompleter
+        // delegate signature stays as tests expect it.
+        _chatCompleter = chatCompleter
+            ?? ((apiKey, model, messages, options, ct) =>
+                DefaultChatCompleterAsync(apiKey, model, messages, options, ct, LayoutEndpoint()));
     }
 
     /// <summary>
@@ -283,7 +290,8 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         CancellationToken cancellationToken);
 
     /// <inheritdoc />
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(GetApiKey());
+    // workspace-r8on: configured when an OpenAI key exists OR a local endpoint is set.
+    public bool IsConfigured => LayoutEndpoint() is not null || !string.IsNullOrWhiteSpace(GetApiKey());
 
     /// <inheritdoc />
     public async Task<SiteHierarchyConfig> AnalyzePageHierarchyAsync(
@@ -293,7 +301,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         string? promptSuffix = null,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -310,7 +318,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             pageUrl,
             links.Count,
             screenshot.Length,
-            _config.Model);
+            JudgeModel());
 
         for (int attempt = 0; attempt < 2; attempt++)
         {
@@ -323,9 +331,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     schemaDescription: "Visual link hierarchy detected for the page.");
 
                 var responseText = await _chatCompleter(
-                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
-                var config = ParseHierarchyResponse(responseText, domain, pageUrl, _config.Model);
+                var config = ParseHierarchyResponse(responseText, domain, pageUrl, JudgeModel());
 
                 _logger.LogInformation(
                     "AI hierarchy analysis complete: {SectionCount} sections detected for {Domain}",
@@ -360,7 +368,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         string? reasoningEffortOverride = null,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -390,7 +398,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             pageUrl,
             contentLinks.Count,
             screenshot is { Length: > 0 },
-            _config.Model);
+            JudgeModel());
 
         for (int attempt = 0; attempt < 2; attempt++)
         {
@@ -404,7 +412,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     reasoningEffortOverride: reasoningEffortOverride);
 
                 var responseText = await _chatCompleter(
-                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
                 return ParseCuratedResponse(responseText, contentLinks);
             }
@@ -427,7 +435,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         string pageUrl,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -453,7 +461,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
-                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
                 if (string.IsNullOrWhiteSpace(responseText))
                 {
@@ -492,7 +500,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(answers);
 
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -522,14 +530,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
-                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
                 if (string.IsNullOrWhiteSpace(responseText))
                 {
                     throw new LayoutTruncationException(outputCap, null);
                 }
 
-                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, JudgeModel());
             }
             catch (LayoutTruncationException ex) when (attempt == 0)
             {
@@ -561,7 +569,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         ArgumentNullException.ThrowIfNull(currentConfig);
         ArgumentException.ThrowIfNullOrWhiteSpace(instruction);
 
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -573,7 +581,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             "Refining layout for {Url} ({SectionCount} current sections) via {Model}: {Instruction}",
             pageUrl,
             currentConfig.Sections.Count,
-            _config.Model,
+            JudgeModel(),
             instruction.Length > 80 ? instruction[..80] : instruction);
 
         // workspace-i1lv: same reasoning-model headroom as infer-pattern.
@@ -594,14 +602,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                     maxOutputTokensOverride: outputCap);
 
                 var responseText = await _chatCompleter(
-                    apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
                 if (string.IsNullOrWhiteSpace(responseText))
                 {
                     throw new LayoutTruncationException(outputCap, null);
                 }
 
-                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, _config.Model);
+                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, JudgeModel());
             }
             catch (LayoutTruncationException ex) when (attempt == 0)
             {
@@ -632,7 +640,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             return SectionClassification.None;
         }
 
-        var apiKey = GetApiKey()
+        var apiKey = ResolveChatApiKey()
             ?? throw new InvalidOperationException(
                 "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
 
@@ -657,7 +665,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             reasoningEffortOverride: "minimal");
 
         var responseText = await _chatCompleter(
-            apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+            apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
 
         return ParseSectionClassification(responseText, candidateLabels);
     }
@@ -674,7 +682,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             return -1;
         }
 
-        var apiKey = GetApiKey();
+        var apiKey = ResolveChatApiKey();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             return -1;
@@ -706,7 +714,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 reasoningEffortOverride: _config.ReasoningEffort);
 
             var responseText = await _chatCompleter(
-                apiKey, _config.Model, messages, options, cancellationToken).ConfigureAwait(false);
+                apiKey, VerifyModel(), messages, options, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(responseText))
             {
                 return -1;
@@ -1315,9 +1323,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         string model,
         IEnumerable<ChatMessage> messages,
         ChatCompletionOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? baseUrl = null)
     {
-        var client = new ChatClient(model, new ApiKeyCredential(apiKey));
+        // workspace-r8on: an OpenAI-compatible base URL (e.g. a local Ollama) routes
+        // the call off the OpenAI API — same SDK, no new dependency.
+        var client = string.IsNullOrWhiteSpace(baseUrl)
+            ? new ChatClient(model, new ApiKeyCredential(apiKey))
+            : new ChatClient(model, new ApiKeyCredential(apiKey), new OpenAIClientOptions { Endpoint = new Uri(baseUrl) });
         var result = await client.CompleteChatAsync(messages, options, cancellationToken).ConfigureAwait(false);
         var completion = result.Value;
 
@@ -1350,6 +1363,32 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
         return sb.ToString();
     }
+
+    // ---- workspace-r8on: per-role model + endpoint resolution (settings store
+    // first, then config) so the Setup switch takes effect without a restart. ----
+    private string? Setting(string key)
+    {
+        var value = _settingsStore.Get(key);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private string JudgeModel() => Setting("LayoutModel") ?? _config.JudgeModel;
+
+    private string VerifyModel() => Setting("VerifyModel") ?? _config.VerifyModel;
+
+    private string? LayoutEndpoint() =>
+        Setting("LayoutEndpoint") ?? (string.IsNullOrWhiteSpace(_config.LayoutEndpoint) ? null : _config.LayoutEndpoint);
+
+    private string? LayoutApiKey() =>
+        Setting("LayoutApiKey") ?? (string.IsNullOrWhiteSpace(_config.LayoutApiKey) ? null : _config.LayoutApiKey);
+
+    /// <summary>
+    /// The credential for a chat call: when a local <see cref="LayoutEndpoint"/> is
+    /// configured, an OpenAI key is NOT required — use the (dummy) layout key. Else
+    /// the shared OpenAI key.
+    /// </summary>
+    private string? ResolveChatApiKey() =>
+        LayoutEndpoint() is not null ? (LayoutApiKey() ?? "ollama") : GetApiKey();
 
     private string? GetApiKey()
     {
