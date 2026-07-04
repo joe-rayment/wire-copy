@@ -16,7 +16,7 @@ A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers,
 - **Read articles in a focused reader view** — pick a comfortable width, search inside the page, tune the extraction visually when a site misbehaves, and turn on speed-reading when you want to skim.
 - **Save articles to reading lists** for later, with read / unread tracking and per-item caching so everything still works after you've closed the tab.
 - **Turn a reading list into a narrated audiobook** — generate an M4B with chapter markers and (optionally) publish it as a podcast feed so you can subscribe in your podcast app. Generation runs in the background: back out of the progress screen any time and the run keeps going.
-- **Schedule recurring episodes** — recipes pull named sections from your sites on a schedule (headless), assemble an episode, and publish it, with a quality floor so you never get a near-empty one.
+- **Schedule recurring episodes** — recipes pull named sections from your sites on a schedule (unattended), assemble an episode, and publish it, with a quality floor so you never get a near-empty one.
 - *(advanced)* **Anti-detection browsing** via patched Playwright for sites that block bots, and **paste-once login cookies** (encrypted at rest) for paywalled sources you already pay for.
 
 <p align="center">
@@ -185,15 +185,16 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `OpenAiTts:ApiKey` | OpenAI API key (shared by TTS and the analyzer) | (required for audio + AI setup) |
-| `OpenAiTts:Model` | TTS model (`gpt-4o-mini-tts` also supported) | `tts-1` |
-| `OpenAiTts:Voice` | TTS voice | `nova` |
+| `OpenAiTts:Model` | TTS model — only the `gpt-4o-mini-tts` family honours `Instructions`; legacy `tts-1` / `tts-1-hd` still work but ignore it | `gpt-4o-mini-tts` |
+| `OpenAiTts:Voice` | TTS voice (`alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`) | `coral` |
+| `OpenAiTts:Instructions` | Style instruction sent to `gpt-4o-mini-tts` (empty = none) | `Speak like a playful but knowing news anchor` |
 | `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
 | `OpenAiHierarchy:Model` | Chat model for AI site setup / extraction | `gpt-5-mini` |
 | `OpenAiHierarchy:ReasoningEffort` | Reasoning tier for cheap revisit/classification calls (`minimal` / `low` / `medium`) | `minimal` |
 | `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `g l` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
-| `Browser:Visibility` | `Auto` (headed when a display + sidecar make sense, else headless), `Visible`, or `Headless` | `Auto` |
-| `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; `O` docks on demand) | `false` |
+| `Browser:Visibility` | Legacy — **ignored**. The browser is always headful (headless is bot-blocked on the sites this targets); display-less hosts run under a virtual display via the `run` script. Kept only so old settings files still bind | (ignored) |
+| `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; <code>&#124;</code> docks on demand) | `false` |
 | `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide (iPhone-SE width) | `Right` / `390` |
 | `Browser:TileTerminalWithSidecar` | macOS side-by-side: docking also resizes the terminal to the other half; dismiss restores it. Needs Accessibility permission | `false` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
