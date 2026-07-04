@@ -29,6 +29,11 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     // matters little as long as the leading promos fall below it and the first real story clears it.
     internal const int LeadImportanceFloor = 86;
 
+    // workspace-2k28: header for the trailing section that holds demoted null-titled chrome when
+    // SectionTitle sub-grouping is active (headerless links would otherwise render FIRST and
+    // re-hoist the chrome above the sectioned stories).
+    internal const string DemotedChromeSectionTitle = "More links";
+
     private readonly ILogger<NavigationTreeBuilder> _logger;
 
     public NavigationTreeBuilder(ILogger<NavigationTreeBuilder> logger)
@@ -238,9 +243,43 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
 
         // Move the stories to the front and the leading chrome block behind them; both keep their
         // original DOM order.
+        var stories = contentLinks.Skip(firstStory).ToList();
+        var chrome = contentLinks.Take(firstStory).ToList();
         var reordered = new List<LinkInfo>(contentLinks.Count);
-        reordered.AddRange(contentLinks.Skip(firstStory));
-        reordered.AddRange(contentLinks.Take(firstStory));
+        reordered.AddRange(stories);
+        reordered.AddRange(chrome);
+
+        // When SectionTitle sub-grouping kicks in, the tree renders every SectionTitle==null link
+        // FIRST (headerless / featured) — which would silently re-hoist demoted null-titled chrome
+        // ABOVE the sectioned stories, undoing this whole demotion. Park such chrome under a
+        // trailing synthetic section instead: its first occurrence is at the end of the list, so
+        // it renders last (or, if the stamp tips the sub-group heuristic off, the flat demoted
+        // order stands — also correct).
+        if (chrome.Any(l => l.SectionTitle is null) && NavigationTree.WouldSubGroupContent(reordered))
+        {
+            // Never merge into a REAL section of the same name (its earlier position would win) —
+            // suffix a counter until the title is unique on this page.
+            var existingTitles = reordered
+                .Where(l => l.SectionTitle is not null)
+                .Select(l => l.SectionTitle!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var title = DemotedChromeSectionTitle;
+            var suffix = 2;
+            while (existingTitles.Contains(title))
+            {
+                title = $"{DemotedChromeSectionTitle} ({suffix})";
+                suffix++;
+            }
+
+            for (var i = stories.Count; i < reordered.Count; i++)
+            {
+                if (reordered[i].SectionTitle is null)
+                {
+                    reordered[i] = reordered[i] with { SectionTitle = title };
+                }
+            }
+        }
+
         return reordered;
     }
 #pragma warning restore SA1204

@@ -27,21 +27,26 @@ internal static class PodcastSetupHelpers
     private const string Reset = PodcastCommandHandler.Reset;
 
     /// <summary>
-    /// OpenAI TTS voice catalogue used by the picker. Matches the values mapped in
-    /// OpenAiTtsService.MapVoice and ordered roughly alphabetically.
+    /// OpenAI TTS voice catalogue used by the picker, ordered roughly alphabetically.
+    /// OpenAiTtsService.MapVoice forwards the chosen value VERBATIM to the API, so this list
+    /// is presentation-only — keep it in sync with the API's supported voices (its 400 error
+    /// enumerates them; cedar/marin/verse were added after the original ten).
     /// </summary>
     private static readonly string[] AvailableVoices =
     {
         "alloy",
         "ash",
         "ballad",
+        "cedar",
         "coral",
         "echo",
         "fable",
-        "onyx",
+        "marin",
         "nova",
+        "onyx",
         "sage",
         "shimmer",
+        "verse",
     };
 
     /// <summary>

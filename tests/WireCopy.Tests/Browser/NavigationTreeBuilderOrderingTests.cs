@@ -94,6 +94,47 @@ public class NavigationTreeBuilderOrderingTests
     }
 
     [Fact]
+    public void Publisher_SectionedPage_DemotedHeaderlessChrome_IsNotReHoistedAboveSections()
+    {
+        // Audit finding (workspace-2k28 follow-up): when SectionTitle sub-grouping triggers,
+        // the tree renders SectionTitle==null links FIRST — which used to re-hoist the demoted
+        // (null-titled) leading chrome above every sectioned story, silently undoing the fix.
+        var links = new List<LinkInfo>
+        {
+            Content("promo chrome A", 40, external: false),               // leading, headerless
+            Content("promo chrome B", 40, external: false),               // leading, headerless
+            Content("World story 1", 90, external: false) with { SectionTitle = "World" },
+            Content("World story 2", 90, external: false) with { SectionTitle = "World" },
+            Content("Business story 1", 90, external: false) with { SectionTitle = "Business" },
+            Content("Business story 2", 90, external: false) with { SectionTitle = "Business" },
+        };
+
+        var tree = _builder.BuildGroupedTree(links);
+
+        // Walk the rendered tree depth-first: the first CONTENT leaf must be a story, and the
+        // chrome must come after every sectioned story.
+        var leaves = new List<string>();
+        void Walk(WireCopy.Domain.Entities.Browser.LinkNode n)
+        {
+            foreach (var c in n.Children)
+            {
+                if (!c.IsGroupHeader && c.Link.Type == LinkType.Content && c.Link.HeaderType == HeaderType.None)
+                {
+                    leaves.Add(c.Link.DisplayText);
+                }
+
+                Walk(c);
+            }
+        }
+
+        Walk(tree.Root);
+
+        leaves[0].Should().Be("World story 1", "the lead must be a story, not re-hoisted chrome");
+        leaves.IndexOf("promo chrome A").Should().BeGreaterThan(
+            leaves.IndexOf("Business story 2"), "demoted chrome renders after every sectioned story");
+    }
+
+    [Fact]
     public void Publisher_CuratedOnDomainRiver_KeepsEditorialDomOrder_NoImportanceResort()
     {
         // Regression guard (review finding): a curated/reverse-chron on-domain list (danluu.com

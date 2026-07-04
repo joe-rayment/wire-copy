@@ -36,9 +36,9 @@ public class OpenAiTtsConfigurationValidatorTests
     }
 
     [Theory]
-    [InlineData("invalid-voice")]
-    [InlineData("siri")]
-    public void Validate_InvalidVoice_Fails(string voice)
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Validate_BlankVoice_Fails(string voice)
     {
         var config = new OpenAiTtsConfiguration { Voice = voice };
 
@@ -52,6 +52,10 @@ public class OpenAiTtsConfigurationValidatorTests
     [InlineData("alloy")]
     [InlineData("nova")]
     [InlineData("shimmer")]
+    [InlineData("verse")]         // newer API voices post-dating the original ten must pass —
+    [InlineData("marin")]         // the whitelist made them unusable at options resolution
+    [InlineData("cedar")]
+    [InlineData("future-voice")]  // unknown values are the API's call, not ours (actionable 400)
     public void Validate_ValidVoice_Succeeds(string voice)
     {
         var config = new OpenAiTtsConfiguration { Voice = voice };

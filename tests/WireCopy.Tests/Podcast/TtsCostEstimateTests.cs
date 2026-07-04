@@ -41,12 +41,12 @@ public class TtsCostEstimateTests
     [Fact]
     public void EstimateCost_CorrectUsdCalculation()
     {
-        // $15 per 1M characters
+        // Default model gpt-4o-mini-tts is priced ~$20 per 1M characters (~$0.015/min)
         var text = new string('a', 1000);
         var estimate = _service.EstimateCost(text);
 
-        // 1000 * 15 / 1_000_000 = 0.015
-        estimate.EstimatedCostUsd.Should().Be(0.015m);
+        // 1000 * 20 / 1_000_000 = 0.02
+        estimate.EstimatedCostUsd.Should().Be(0.02m);
     }
 
     [Fact]

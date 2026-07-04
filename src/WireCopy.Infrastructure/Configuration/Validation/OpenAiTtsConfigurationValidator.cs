@@ -9,11 +9,6 @@ namespace WireCopy.Infrastructure.Configuration.Validation;
 /// </summary>
 public class OpenAiTtsConfigurationValidator : IValidateOptions<OpenAiTtsConfiguration>
 {
-    private static readonly HashSet<string> ValidVoices = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-    };
-
     private static readonly HashSet<string> ValidOutputFormats = new(StringComparer.OrdinalIgnoreCase)
     {
         "mp3", "opus", "aac", "flac", "wav", "pcm",
@@ -29,9 +24,14 @@ public class OpenAiTtsConfigurationValidator : IValidateOptions<OpenAiTtsConfigu
             errors.Add($"{nameof(OpenAiTtsConfiguration.Model)} cannot be empty.");
         }
 
-        if (!ValidVoices.Contains(options.Voice))
+        // Voice is deliberately NOT whitelisted: the API's catalogue evolves (verse/marin/cedar
+        // post-date the original ten) and OpenAiTtsService forwards the string VERBATIM, so a hard
+        // whitelist here made valid new voices unusable at options resolution. The API is the
+        // source of truth — a genuinely bad voice surfaces as an actionable 400 at key-validation
+        // or generation time. Only emptiness is rejected.
+        if (string.IsNullOrWhiteSpace(options.Voice))
         {
-            errors.Add($"{nameof(OpenAiTtsConfiguration.Voice)} must be one of: {string.Join(", ", ValidVoices)}. Got: '{options.Voice}'");
+            errors.Add($"{nameof(OpenAiTtsConfiguration.Voice)} cannot be empty.");
         }
 
         if (options.Speed < 0.25f || options.Speed > 4.0f)

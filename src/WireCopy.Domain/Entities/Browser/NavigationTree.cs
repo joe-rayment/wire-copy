@@ -187,6 +187,15 @@ public class NavigationTree
     }
 
     /// <summary>
+    /// True when <see cref="BuildWithGroups"/> would sub-group these Content links by
+    /// SectionTitle — in which case SectionTitle==null links render FIRST (headerless /
+    /// featured), ahead of every named section. Exposed so tree-shaping callers
+    /// (NavigationTreeBuilder's leading-chrome demotion, workspace-2k28) can predict the
+    /// rendered layout without duplicating this rule.
+    /// </summary>
+    public static bool WouldSubGroupContent(List<LinkInfo> links) => ShouldSubGroup(links);
+
+    /// <summary>
     /// Determines whether content links should be sub-grouped by SectionTitle.
     /// Requires 2+ distinct non-null SectionTitle values and 2+ links per section on average.
     /// </summary>

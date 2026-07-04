@@ -18,6 +18,31 @@ namespace WireCopy.Tests.Podcast;
 [Trait("Category", "Unit")]
 public class OpenAiTtsServiceUnitTests
 {
+    // ---- workspace-xott: MapVoice forwards the configured voice VERBATIM (extensible enum), ----
+    // ---- matching the removed raw-HTTP path — never silently coercing unknowns to Nova.     ----
+
+    [Theory]
+    [InlineData("nova", "nova")]
+    [InlineData("verse", "verse")]   // valid API voice absent from the SDK's named members
+    [InlineData("marin", "marin")]   // ditto (the API's own 400 message lists it as supported)
+    [InlineData("cedar", "cedar")]
+    [InlineData(" Coral ", "coral")] // trimmed + lowercased
+    [InlineData("SHIMMER", "shimmer")]
+    [InlineData("novaa", "novaa")]   // typos reach the API too — it rejects with an actionable 400
+    public void MapVoice_ForwardsTheVoiceStringVerbatim(string configured, string expected)
+    {
+        OpenAiTtsService.MapVoice(configured).ToString().Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MapVoice_BlankVoice_FallsBackToNova(string? voice)
+    {
+        OpenAiTtsService.MapVoice(voice!).ToString().Should().Be("nova");
+    }
+
     [Fact]
     public void IsConfigured_NoApiKey_ReturnsFalse()
     {
@@ -134,7 +159,8 @@ public class OpenAiTtsServiceUnitTests
 
         estimate.CharacterCount.Should().Be(10_000);
         estimate.ChunkCount.Should().Be(3, "10000 / 4096 rounds up to 3 chunks");
-        estimate.EstimatedCostUsd.Should().Be(0.15m, "10000 * $15/1M = $0.15");
+        // Default model is gpt-4o-mini-tts, priced ~$20/1M chars (~$0.015/min); tts-1 stays $15.
+        estimate.EstimatedCostUsd.Should().Be(0.20m, "10000 * $20/1M (gpt-4o-mini-tts default) = $0.20");
     }
 
     [Fact]
@@ -320,8 +346,11 @@ public class OpenAiTtsServiceUnitTests
     }
 
     [Fact]
-    public void GetEffectiveInstructions_SettingsStoreWhitespace_FallsBackToConfig()
+    public void GetEffectiveInstructions_SettingsStoreWhitespace_IsAnExplicitDisable()
     {
+        // Audit fix (workspace-xott follow-up): a PRESENT blank value is the ':set instructions
+        // none' disable sentinel — it must yield null (omit the field), NOT fall back to the
+        // config default. 'reset' works by DELETING the key (Get returns null), tested above.
         var config = Options.Create(new OpenAiTtsConfiguration
         {
             Instructions = "From config",
@@ -331,8 +360,8 @@ public class OpenAiTtsServiceUnitTests
 
         var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
 
-        sut.GetEffectiveInstructions().Should().Be("From config",
-            "whitespace overrides must be treated as unset so 'reset' works");
+        sut.GetEffectiveInstructions().Should().BeNull(
+            "a present blank override is the disable sentinel and must not resurrect the default style");
     }
 
     [Fact]
@@ -371,12 +400,11 @@ public class OpenAiTtsServiceUnitTests
     }
 
     [Fact]
-    public void GetEffectiveInstructions_SettingsStoreEmptyString_StillReturnsConfig()
+    public void GetEffectiveInstructions_SettingsStoreEmptyString_DisablesInstructions()
     {
-        // An empty-string override (e.g. user typed "none" → handler stored "")
-        // counts as unset for the purposes of this resolver. The Setup screen
-        // surfaces "(none)" labelling separately; what matters here is that
-        // GetEffectiveInstructions() falls through to the bound config.
+        // Audit fix (workspace-xott follow-up): the ':set instructions none' flow persists ""
+        // precisely so the request omits the instructions field. Treating it as unset made the
+        // playful-news-anchor default impossible to turn off — every chunk was styled anyway.
         var config = Options.Create(new OpenAiTtsConfiguration
         {
             Instructions = "From config",
@@ -386,7 +414,8 @@ public class OpenAiTtsServiceUnitTests
 
         var sut = new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance, settingsStore);
 
-        sut.GetEffectiveInstructions().Should().Be("From config");
+        sut.GetEffectiveInstructions().Should().BeNull(
+            "'none' persists an empty string so no instructions are sent — never the config default");
     }
 
     #endregion

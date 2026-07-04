@@ -51,6 +51,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private bool _browsersInstalled;
     private long _lastRefocusTicks;
 
+    // workspace-fihe follow-up: 1 when RestoreWindowAsync brought the browser forward for a user
+    // interaction and no cleanup has handed keyboard focus back yet. Consumed by the next
+    // MinimizeWindowAsync (many restore flows have no dedicated cleanup and rely on the next
+    // background hide) and cleared whenever a weJustActivatedBrowser refocus actually runs.
+    private int _pendingInteractionHandback;
+
     // workspace-75ng: the terminal's frontmost-app bundle id, captured ONCE at the first
     // browser launch (while the terminal still owns focus) so RefocusTerminalAsync can
     // re-activate THAT exact app — terminal-agnostic, fixing Ghostty. Null until captured
@@ -329,6 +335,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        // workspace-fihe follow-up: several restore-for-interaction flows (manual login,
+        // ':cred test', the podcast provider's bot-challenge) have NO dedicated cleanup call —
+        // the window is eventually hidden by the NEXT background MinimizeWindowAsync. Record
+        // that WE brought the browser forward so that next hide — whoever triggers it — hands
+        // keyboard focus back instead of stranding it on the invisible parked browser. Safe
+        // against the focus-war: the hand-back is still gated on OUR browser being frontmost.
+        Interlocked.Exchange(ref _pendingInteractionHandback, 1);
+
         try
         {
             // Un-minimize via CDP first (BringToFrontAsync alone doesn't restore
@@ -370,6 +384,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        // workspace-fihe follow-up: fold in any pending hand-back recorded by RestoreWindowAsync.
+        // Restore-for-interaction flows without a dedicated cleanup rely on the NEXT hide (often a
+        // background prefetch park) to return focus; consuming the latch here restores the pre-fihe
+        // self-heal without reintroducing the focus-war (the refocus stays frontmost-gated).
+        var handBack = weJustActivatedBrowser
+            || Interlocked.Exchange(ref _pendingInteractionHandback, 0) == 1;
+
         // Sidecar mode (workspace-exbz): "get out of the way" never hides a dock the
         // user wants and never SUMMONS a window they closed (workspace-wo4q). One
         // exception (workspace-mctt): a window RESTORED for interaction (captcha /
@@ -382,20 +403,28 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // call must never re-dock a parked window — raising the browser over the app the user
             // switched to is the focus-war via the re-dock path. Its parked window simply stays
             // parked until the user's next 'O' / dock action re-summons it.
-            if (weJustActivatedBrowser
+            if (handBack
                 && !_isDocked
                 && await GetWindowStateAsync().ConfigureAwait(false) == "normal")
             {
-                await DockWindowAsync().ConfigureAwait(false);
+                await DockWindowAsync().ConfigureAwait(false); // force-refocuses on success
+            }
+            else if (handBack)
+            {
+                // Already docked (or in a non-normal state): the interaction happened in the
+                // docked window itself — e.g. the user clicked a captcha in the sidecar — so
+                // no re-dock runs and nothing else hands focus back. Do it here, gated on the
+                // browser actually being frontmost (workspace-fihe audit F2).
+                await RefocusTerminalAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
             }
 
             return;
         }
 
-        // Non-sidecar park. Forward the intent: an interaction-cleanup park (weJustActivatedBrowser)
-        // hands keyboard focus back to the terminal (else it would strand on the now-invisible
-        // browser the user was interacting with); a routine background park stays focus-neutral.
-        await ParkWindowOffScreenAsync(weJustActivatedBrowser).ConfigureAwait(false);
+        // Non-sidecar park. Forward the intent: an interaction-cleanup park (handBack) returns
+        // keyboard focus to the terminal (else it would strand on the now-invisible browser the
+        // user was interacting with); a routine background park stays focus-neutral.
+        await ParkWindowOffScreenAsync(handBack).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -872,6 +901,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // cadence was the reported focus-war that fought the user switching to another app.
     private async Task RefocusTerminalAsync(bool weJustActivatedBrowser, bool force = false)
     {
+        // Any hand-back attempt satisfies a pending RestoreWindowAsync latch — clear it here (the
+        // single consumer chokepoint) so a stale latch can't fire a second, later hand-back.
+        if (weJustActivatedBrowser)
+        {
+            Interlocked.Exchange(ref _pendingInteractionHandback, 0);
+        }
+
         if (!OperatingSystem.IsMacOS())
         {
             return;

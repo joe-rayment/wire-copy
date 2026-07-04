@@ -17,7 +17,13 @@ namespace WireCopy.Infrastructure.Podcast;
 /// </summary>
 internal sealed class OpenAiTtsService : ITtsService
 {
-    private const decimal CostPerMillionChars = 15.00m;
+    // Per-model $/1M input characters. tts-1-hd is documented at ~2x tts-1 (the model picker's
+    // own copy says so); gpt-4o-mini-tts (the default) is priced ≈$0.015/min of audio, which at
+    // ~150 wpm * 5 chars/word = 750 chars/min works out to ≈$20/1M chars. A flat $15 under-gated
+    // the MaxBudgetUsd check by 2x for tts-1-hd and under-reported the default model.
+    private const decimal CostPerMillionCharsTts1 = 15.00m;
+    private const decimal CostPerMillionCharsTts1Hd = 30.00m;
+    private const decimal CostPerMillionCharsMiniTts = 20.00m;
     private const double WordsPerMinute = 150.0;
     private const double AverageCharsPerWord = 5.0;
 
@@ -51,7 +57,7 @@ internal sealed class OpenAiTtsService : ITtsService
 
         var charCount = text.Length;
         var chunkCount = (int)Math.Ceiling((double)charCount / _config.MaxChunkSize);
-        var costUsd = charCount * CostPerMillionChars / 1_000_000m;
+        var costUsd = charCount * GetEffectiveCostPerMillionChars() / 1_000_000m;
         var estimatedMinutes = charCount / (WordsPerMinute * AverageCharsPerWord);
 
         return new TtsCostEstimate
@@ -222,6 +228,17 @@ internal sealed class OpenAiTtsService : ITtsService
             return TtsValidationResult.Invalid(
                 "API key lacks permissions or account has insufficient credits.", "insufficient_credits");
         }
+        catch (ClientResultException ex) when (ex.Status == 400)
+        {
+            // workspace-xott follow-up: the validation call now carries the user's real voice /
+            // model / instructions through the SDK (the voice is forwarded VERBATIM), so a typo'd
+            // voice or bad combination surfaces here as a 400. The key itself is fine — point the
+            // user at their TTS settings and include the API's message (it names the bad value and
+            // lists the supported ones) instead of mislabelling this a key/network failure.
+            _logger.LogWarning("API key validation: bad request (HTTP 400) — TTS settings invalid, key likely valid: {Message}", ex.Message);
+            return TtsValidationResult.Invalid(
+                $"Key looks valid, but the TTS settings were rejected (check voice/model): {ex.Message}", "bad_request");
+        }
         catch (ClientResultException ex) when (ex.Status == 429)
         {
             _logger.LogWarning("API key validation: rate limited (HTTP 429) — key is likely valid");
@@ -254,7 +271,6 @@ internal sealed class OpenAiTtsService : ITtsService
         _apiKeyOverride = apiKey;
     }
 
-    #pragma warning disable OPENAI001 // Experimental voices
     /// <summary>
     /// workspace-rz1c: builds the <see cref="TtsProgress"/> emitted just
     /// before each backoff sleep so the consumer can render a "rate-limited,
@@ -302,13 +318,15 @@ internal sealed class OpenAiTtsService : ITtsService
     // workspace-xott: GeneratedSpeechVoice is an extensible enum, so we forward the configured
     // voice string to the SDK VERBATIM (falling back to a sane default only when blank). This
     // matches the removed raw-HTTP path, which POSTed the raw voice string — so voices the SDK's
-    // named members don't enumerate (e.g. newer ones like "marin") still reach the API instead of
-    // being silently coerced to Nova. The API validates the value (a bad voice surfaces as 400).
-    private static GeneratedSpeechVoice MapVoice(string voice) =>
+    // named members don't enumerate (e.g. "marin"/"cedar", valid per the API's own 400 message)
+    // still reach the API instead of being silently coerced to Nova. The API validates the value
+    // (a bad voice surfaces as 400). Internal for tests, like the GetEffective* seams.
+#pragma warning disable OPENAI001 // GeneratedSpeechVoice members/ctor are an experimental OpenAI API surface — scoped to exactly this helper
+    internal static GeneratedSpeechVoice MapVoice(string voice) =>
         string.IsNullOrWhiteSpace(voice)
             ? GeneratedSpeechVoice.Nova
             : new GeneratedSpeechVoice(voice.Trim().ToLowerInvariant());
-    #pragma warning restore OPENAI001
+#pragma warning restore OPENAI001
 
     private static GeneratedSpeechFormat MapFormat(string format)
     {
@@ -394,14 +412,19 @@ internal sealed class OpenAiTtsService : ITtsService
                 return ChunkGenerationResult.Fail(
                     $"Bad request for chunk {chunkNumber}/{totalChunks}: {ex.Message}");
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == null)
+            catch (Exception ex) when (IsSdkTransportFailure(ex))
             {
                 // workspace-roab: transport-layer transients (DNS lookup
-                // failed, connection refused, TLS handshake error) — the
-                // SDK propagates these as a bare HttpRequestException with
-                // no StatusCode. Retry with the same backoff as 429/5xx,
-                // surface "Network issue" copy via onRetry(0) so the user
-                // sees connectivity-specific messaging instead of frozen.
+                // failed, connection refused, TLS handshake error). The SDK
+                // (System.ClientModel) never lets HttpRequestException escape:
+                // its transport rethrows ClientResultException with Status 0,
+                // and its internal retry policy throws AggregateException when
+                // it exhausts its own attempts — so those are the shapes we
+                // must handle here; the old bare-HttpRequestException filter
+                // was dead code, so network blips used to fall through to the
+                // generic no-retry handler. Retry with the same backoff as 429/5xx, surface
+                // "Network issue" copy via onRetry(0) so the user sees
+                // connectivity-specific messaging instead of frozen.
                 if (attempt == _config.MaxRetries)
                 {
                     _logger.LogError(
@@ -444,6 +467,24 @@ internal sealed class OpenAiTtsService : ITtsService
         return ChunkGenerationResult.Fail(
             $"Failed to generate audio for chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries.");
     }
+
+    /// <summary>
+    /// True when <paramref name="ex"/> is a connectivity-shaped failure from the OpenAI SDK —
+    /// never an HTTP status from the API. System.ClientModel's transport catches
+    /// <see cref="HttpRequestException"/> and rethrows <see cref="ClientResultException"/> with
+    /// Status 0, and its internal retry policy throws <see cref="AggregateException"/> on
+    /// exhaustion ("Retry failed after N tries"). The bare HttpRequestException arm is kept as
+    /// a defensive net only. Cancellation inside an aggregate is NOT retryable.
+    /// </summary>
+#pragma warning disable SA1204 // static helper kept adjacent to its sole caller (GenerateChunkWithRetryAsync)
+    private static bool IsSdkTransportFailure(Exception ex) => ex switch
+    {
+        ClientResultException { Status: 0 } => true,
+        HttpRequestException { StatusCode: null } => true,
+        AggregateException agg => !agg.Flatten().InnerExceptions.Any(e => e is OperationCanceledException),
+        _ => false,
+    };
+#pragma warning restore SA1204
 
     private AudioClient CreateAudioClient()
     {
@@ -500,14 +541,27 @@ internal sealed class OpenAiTtsService : ITtsService
     /// </summary>
     internal string? GetEffectiveInstructions()
     {
+        // A PRESENT saved value always wins — including the EMPTY string, which is the
+        // ":set instructions none" disable sentinel (SettingsCommandHandler: "persists an empty
+        // string so the request omits instructions"). Treating empty as unset made 'none' fall
+        // back to the bound default, so the playful-news-anchor style could never be turned off.
         var saved = _settingsStore?.Get("OpenAiTtsInstructions");
-        if (!string.IsNullOrWhiteSpace(saved))
+        if (saved is not null)
         {
-            return saved;
+            return string.IsNullOrWhiteSpace(saved) ? null : saved;
         }
 
         return string.IsNullOrWhiteSpace(_config.Instructions) ? null : _config.Instructions;
     }
+
+    /// <summary>Rate for the EFFECTIVE model (settings override wins), so the budget gate
+    /// and the confirmation screen's estimate track the model the run will actually use.</summary>
+    internal decimal GetEffectiveCostPerMillionChars() => GetEffectiveModel().Trim().ToLowerInvariant() switch
+    {
+        "tts-1" => CostPerMillionCharsTts1,
+        "tts-1-hd" => CostPerMillionCharsTts1Hd,
+        _ => CostPerMillionCharsMiniTts, // gpt-4o-mini-tts family (the shipped default)
+    };
 #pragma warning restore SA1202
 
     /// <summary>
