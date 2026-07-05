@@ -175,6 +175,100 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         return false;
     }
 
+    /// <summary>
+    /// workspace-cn2g.5: order links by a rank encoded in their URL (a small numeric
+    /// path segment like /1 /2 /3, or a rank/order/pos/position/page/p query param),
+    /// when the signal is CLEAN — enough links carry a rank, the ranks are mostly
+    /// distinct, and they stay in a plausible 1..N band (not scattered ids). Returns
+    /// null when there's no such structure, so the caller falls back to DOM/importance
+    /// order. Ranked links come first (ascending); any unranked keep their relative order.
+    /// </summary>
+    internal static List<LinkInfo>? TryOrderByUrlRank(IReadOnlyList<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(links);
+        var stories = links.Where(l => !l.IsGroupHeader && !string.IsNullOrEmpty(l.Url)).ToList();
+        if (stories.Count < 3)
+        {
+            return null;
+        }
+
+        var ranked = stories.Select(l => (Link: l, Rank: ExtractUrlRank(l.Url))).ToList();
+        var withRank = ranked.Where(r => r.Rank is not null).ToList();
+
+        // Need most links to carry a rank, and the ranks to be MOSTLY DISTINCT (a
+        // shared id/category number repeated across links is not a rank).
+        if (withRank.Count < Math.Max(3, (int)(stories.Count * 0.6)))
+        {
+            return null;
+        }
+
+        var ranks = withRank.Select(r => r.Rank!.Value).ToList();
+        if (ranks.Distinct().Count() < (int)(withRank.Count * 0.8))
+        {
+            return null;
+        }
+
+        // A real rank list starts at 1 (allow 1 or 2), stays in a plausible band, and
+        // is reasonably CONTIGUOUS — this rejects date segments (/2026/06/12 -> 12) and
+        // sparse ids, which look small-and-distinct but never form a 1..N sequence.
+        var min = ranks.Min();
+        var max = ranks.Max();
+        if (min > 2 || max > Math.Max(20, stories.Count * 3))
+        {
+            return null;
+        }
+
+        if (ranks.Distinct().Count() < 0.7 * (max - min + 1))
+        {
+            return null;
+        }
+
+        return withRank.OrderBy(r => r.Rank!.Value).Select(r => r.Link)
+            .Concat(ranked.Where(r => r.Rank is null).Select(r => r.Link))
+            .ToList();
+    }
+
+    /// <summary>workspace-cn2g.5: a rank integer from a URL — a rank-ish query param, else a small numeric path segment.</summary>
+    internal static int? ExtractUrlRank(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        // A rank-bearing query param wins (?rank=2, ?order=3, ?pos=1, ?position=4, ?page=2, ?p=5).
+        if (uri.Query.Length > 1)
+        {
+            foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = pair.Split('=', 2);
+                if (kv.Length == 2
+                    && (kv[0].Equals("rank", StringComparison.OrdinalIgnoreCase)
+                        || kv[0].Equals("order", StringComparison.OrdinalIgnoreCase)
+                        || kv[0].Equals("pos", StringComparison.OrdinalIgnoreCase)
+                        || kv[0].Equals("position", StringComparison.OrdinalIgnoreCase)
+                        || kv[0].Equals("page", StringComparison.OrdinalIgnoreCase)
+                        || kv[0].Equals("p", StringComparison.OrdinalIgnoreCase))
+                    && int.TryParse(kv[1], out var q) && q >= 1)
+                {
+                    return q;
+                }
+            }
+        }
+
+        // Else the last small purely-numeric path segment (/news/3, /2, /story/1).
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = segments.Length - 1; i >= 0; i--)
+        {
+            if (int.TryParse(segments[i], out var n) && n >= 1 && n <= 999)
+            {
+                return n;
+            }
+        }
+
+        return null;
+    }
+
     // workspace-frpl.3: MatchesSection is factored into three per-criterion
     // predicates so the scheduling SectionResolver can both MATCH and CLASSIFY
     // the match tier (Selector / UrlPattern / HeadingName) using the EXACT same
@@ -212,19 +306,33 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     /// </summary>
     private List<LinkInfo> OrderAndCapContentLinks(List<LinkInfo> contentLinks)
     {
+        // workspace-cn2g.5: some sites make it EASY — their URLs encode the article
+        // rank (/1, /2, /3, ?rank=N). When that signal is present and clean, it is the
+        // most reliable order there is, so use it as the default before any heuristic.
+        var byUrlRank = TryOrderByUrlRank(contentLinks);
+        if (byUrlRank != null)
+        {
+            _logger.LogInformation("Ordered {Count} content links by structured URL rank", byUrlRank.Count);
+            return Cap(byUrlRank, "URL rank");
+        }
+
         var externalFraction = contentLinks.Count(l => l.IsExternal) / (double)contentLinks.Count;
         var isAggregator = externalFraction >= AggregatorExternalContentFraction;
 
         var ordered = isAggregator ? contentLinks : DemoteLeadingChrome(contentLinks);
+        return Cap(ordered, isAggregator ? "DOM rank" : "leading chrome demoted");
+    }
 
+    private List<LinkInfo> Cap(List<LinkInfo> ordered, string ordering)
+    {
         if (ordered.Count > MaxContentLinks)
         {
             _logger.LogInformation(
                 "Capped content links from {Total} to {Max} ({Ordering})",
                 ordered.Count,
                 MaxContentLinks,
-                isAggregator ? "DOM rank" : "leading chrome demoted");
-            ordered = ordered.Take(MaxContentLinks).ToList();
+                ordering);
+            return ordered.Take(MaxContentLinks).ToList();
         }
 
         return ordered;
