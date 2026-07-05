@@ -28,6 +28,18 @@ internal static class LeadOverrideDerivation
     internal const int MinStoryTextLength = 25;
 
     /// <summary>
+    /// workspace-5vqk.2: a token may only JOIN the river union if the union's
+    /// combined precision (story matches ÷ all matches) stays at/above this floor.
+    /// High on purpose: a single pick teaches ONE repeating pattern, so the union
+    /// captures co-equal siblings of the SAME cluster (a river split across
+    /// containers/prominence tiers) but never a DIFFERENT cluster — on Techmeme
+    /// the news river (div.ii) stays clean because pulling in the podcast/event
+    /// rails would sink precision below this bar. Those rails are separate picks
+    /// (workspace-5vqk.6), not noise swept into "Stories".
+    /// </summary>
+    internal const double UnionPrecisionFloor = 0.9;
+
+    /// <summary>
     /// Returns a river derivation, or null when <paramref name="lead"/> has no
     /// usable selector or no discriminating token matches any story (the caller
     /// then falls back or fails honestly — never presents a 0-link section).
@@ -99,23 +111,95 @@ internal static class LeadOverrideDerivation
             return null;
         }
 
-        // Any non-story the river token still sweeps in: exclude its distinctive
+        // workspace-5vqk.2: a single token UNDER-COVERS when the story river is
+        // split across sibling containers or prominence tiers (e.g. cluster leads
+        // under div.ii AND a sibling div.ij, or strong.L1/L2/L3 that don't share
+        // one container). Greedily UNION further discriminating tokens — each must
+        // add new story coverage AND keep the union's combined precision at/above
+        // UnionPrecisionFloor — so the river captures co-equal siblings of the SAME
+        // cluster without pulling in a different one. On Techmeme the news river
+        // stays div.ii alone (24 headlines, 0 leak): adding a podcast/event token
+        // would sink precision below the floor, so those rails stay OUT (they are
+        // separate picks, workspace-5vqk.6).
+        var river = new List<string> { best };
+        var covered = stories.Where(l => Matches(l, best)).ToHashSet();
+        var leaked = nonStory.Where(l => Matches(l, best)).ToHashSet();
+
+        // The union pool is drawn ONLY from tokens that co-occur with `best` in the
+        // pick's own cluster (the stories it already matches) — so a union can widen
+        // the river across prominence tiers of the SAME cluster (strong.L1/L2/L3
+        // under div.ii) but can never annex a structurally SEPARATE cluster that
+        // merely happens to be clean (e.g. techmeme's featured-events div.featured.ne,
+        // precision 1.0 but a different river). Those are separate picks (5vqk.6).
+        var pool = covered
+            .SelectMany(l => SelectorDerivation.DiscriminatingTokens(l.ParentSelector))
+            .Distinct(StringComparer.Ordinal)
+            .Where(t => !river.Contains(t, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        while (true)
+        {
+            string? pick = null;
+            var pickNew = 0;
+            foreach (var token in pool)
+            {
+                var newStories = stories.Count(l => Matches(l, token) && !covered.Contains(l));
+                if (newStories == 0)
+                {
+                    continue; // must widen story coverage to earn a place
+                }
+
+                var addedLeak = nonStory.Count(l => Matches(l, token) && !leaked.Contains(l));
+                var s = covered.Count + newStories;
+                var n = leaked.Count + addedLeak;
+                if ((double)s / (s + n) < UnionPrecisionFloor)
+                {
+                    continue; // would dilute the river with a different cluster
+                }
+
+                // Most new coverage wins; tie-break to the more specific (longer) token.
+                if (newStories > pickNew || (newStories == pickNew && token.Length > (pick?.Length ?? 0)))
+                {
+                    pick = token;
+                    pickNew = newStories;
+                }
+            }
+
+            if (pick is null)
+            {
+                break;
+            }
+
+            river.Add(pick);
+            foreach (var l in stories.Where(l => Matches(l, pick)))
+            {
+                covered.Add(l);
+            }
+
+            foreach (var l in nonStory.Where(l => Matches(l, pick)))
+            {
+                leaked.Add(l);
+            }
+
+            pool.Remove(pick);
+        }
+
+        // Any non-story the FINAL river still sweeps in: exclude its distinctive
         // tokens, but ONLY tokens that match no story (so an exclude can never
         // erase the river).
-        var leaked = nonStory.Where(l => Matches(l, best)).ToList();
         var excludes = leaked
             .SelectMany(l => SelectorDerivation.DiscriminatingTokens(l.ParentSelector))
             .Distinct(StringComparer.Ordinal)
-            .Where(t => !string.Equals(t, best, StringComparison.OrdinalIgnoreCase))
+            .Where(t => !river.Contains(t, StringComparer.OrdinalIgnoreCase))
             .Where(t => stories.All(s => !Matches(s, t)))
             .Take(4)
             .ToList();
 
         return new Result
         {
-            RiverSelectors = new List<string> { best },
+            RiverSelectors = river,
             ExcludeSelectors = excludes,
-            StoryMatchCount = bestHits,
+            StoryMatchCount = covered.Count,
         };
     }
 

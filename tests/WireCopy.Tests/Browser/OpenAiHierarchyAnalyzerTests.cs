@@ -190,10 +190,13 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
-    public void ParsePatternFromAnswers_BroadLead_PinnedToOne_WhenOverflowCoveredElsewhere()
+    public void ParsePatternFromAnswers_BroadLead_KeepsSiblings_NotPinnedToOne()
     {
-        // Lead selector matches all 3 headlines; the Feed section also matches them,
-        // so the overflow is safe to shed — pin the lead to the single top story.
+        // workspace-5vqk.2: a pick teaches a REPEATING pattern, so the first section
+        // is never force-collapsed to one story. Even though the lead selector
+        // matches all 3 headlines and a later Feed section also claims the overflow,
+        // the parser no longer pins MaxLinks=1 — the co-equal siblings stay in the
+        // lead section (the flat-aggregator "one story instead of many" fix).
         var links = StoryLinks(3, score: 85, parent: "div.col > div.item > strong");
         var json =
             "{\"sections\":[" +
@@ -203,7 +206,7 @@ public class OpenAiHierarchyAnalyzerTests
 
         var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
 
-        result.Config.Sections[0].MaxLinks.Should().Be(1);
+        result.Config.Sections[0].MaxLinks.Should().BeNull("a pick seeds a co-equal river, never a single pinned lead");
     }
 
     [Fact]

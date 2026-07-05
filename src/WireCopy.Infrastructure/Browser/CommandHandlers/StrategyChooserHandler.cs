@@ -263,8 +263,8 @@ internal static class StrategyChooserHandler
         var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var field = new UI.Components.FormFieldConfig
         {
-            Label = "Paste the main story's URL",
-            Subtitle = "The link that should lead the page — copy it from the browser or the list",
+            Label = "Paste a story's URL",
+            Subtitle = "Any story teaches the repeating layout — copy it from the browser or the list",
             Placeholder = "https://…  ·  Enter to set · Esc to go back",
         };
 
@@ -710,8 +710,8 @@ internal static class StrategyChooserHandler
         // Visibly distinct footer so the pick mode is unmistakable.
         ClearOverlay(ctx);
         var hint = lensPage != null
-            ? "Pick the main story — click it in the browser window, or j/k + Enter here · Esc cancel"
-            : "Pick the main story — j/k move · Enter set · Esc cancel";
+            ? "Pick a story to teach the layout — click it in the browser window, or j/k + Enter here · Esc cancel"
+            : "Pick a story to teach the layout — j/k move · Enter set · Esc cancel";
         ctx.NavigationService.SetStatusMessage(hint, TimeSpan.FromMinutes(2));
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 

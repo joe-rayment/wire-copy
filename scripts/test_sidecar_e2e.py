@@ -38,7 +38,7 @@ DISPLAY = ":99"
 SCREEN_W, SCREEN_H = 1600, 900
 OUT_DIR = "/workspace/output/sidecar-e2e"
 TERM_W = 150
-DOCK_W = 430  # Browser:DockWidthPx default
+DOCK_W = 390  # Browser:DockWidthPx default (workspace-jq7x: was a stale 430)
 
 
 SLOW_STORIES = {"enabled": False}
@@ -106,6 +106,57 @@ def strip_luma(png, x, w):
     return float(m.group(1))
 
 
+def column_luma(png):
+    """Per-column average luma (0..255) across the full screenshot height, in
+    ONE ffmpeg pass: vertical-average to a 1px-tall gray row, then read raw bytes.
+    workspace-jq7x: the old checks assumed the docked window was flush to the
+    screen's right edge (x=1600); under the Xvfb devicePixelRatio it docked
+    short, so a fixed [1600-DOCK_W, 1600) crop straddled window+black and read a
+    misleadingly dim ~48. Scanning a luma PROFILE instead finds the window
+    wherever it actually docked, independent of the exact right edge."""
+    out = subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-i", png, "-vf",
+         f"scale={SCREEN_W}:1,format=gray", "-f", "rawvideo", "-"],
+        capture_output=True)
+    return list(out.stdout[:SCREEN_W])
+
+
+def brightest_strip(profile, w):
+    """(x, mean_luma) of the brightest w-wide vertical strip in a column profile."""
+    if len(profile) < w:
+        return 0, (sum(profile) / len(profile) if profile else 0.0)
+    s = sum(profile[:w])
+    best_sum, best_x = s, 0
+    for x in range(1, len(profile) - w + 1):
+        s += profile[x + w - 1] - profile[x - 1]
+        if s > best_sum:
+            best_sum, best_x = s, x
+    return best_x, best_sum / w
+
+
+def mean_outside(profile, x, w):
+    """Mean luma of everything OUTSIDE the strip [x, x+w)."""
+    outside = profile[:x] + profile[x + w:]
+    return sum(outside) / len(outside) if outside else 0.0
+
+
+def assert_docked_edge(shot, side, label, failures):
+    """The phone-shaped window is the single bright block; assert it exists, is
+    brighter than the rest of the screen, and hugs the expected screen edge —
+    without hard-coding where under the current devicePixelRatio it lands."""
+    profile = column_luma(shot)
+    x, win = brightest_strip(profile, DOCK_W)
+    rest = mean_outside(profile, x, DOCK_W)
+    center = x + DOCK_W / 2
+    on_side = (center <= SCREEN_W / 2) if side == "Left" else (center >= SCREEN_W / 2)
+    print(f"{label}: brightest strip x={x} win={win:.1f} rest={rest:.1f} side_ok={on_side}")
+    if not (win > 60 and win > rest + 30):
+        failures.append(f"{label}: phone window not visible as a bright edge strip (win={win:.1f}, rest={rest:.1f})")
+    elif not on_side:
+        failures.append(f"{label}: bright window strip is not on the {side} edge (center col {center:.0f})")
+    return win
+
+
 def content_right_edge(lines):
     return max((len(line.rstrip()) for line in lines), default=0)
 
@@ -126,6 +177,12 @@ def main():
     data_home = tempfile.mkdtemp(prefix="wirecopy-sidecar-e2e-")
     os.environ["XDG_DATA_HOME"] = data_home
     app_data = os.path.join(data_home, "WireCopy")
+
+    # workspace-jq7x: the sidecar default flipped to FALSE (workspace-75ng), so
+    # this gate — which waits for the 'docked' affordance — hung 90s at step 1
+    # until the sidecar was opted in explicitly. Bound as Browser:Sidecar via the
+    # .NET double-underscore env convention; survives every TermTest relaunch.
+    os.environ["Browser__Sidecar"] = "true"
 
     # The app appends to a SHARED per-day log; earlier runs today (including
     # legitimately-headless unit harnesses) would pollute string checks. Only
@@ -181,11 +238,7 @@ def main():
 
             # --- 3. Phone-shaped window pinned to the RIGHT edge ---
             shot = x_screenshot("01-docked.png")
-            win = strip_luma(shot, SCREEN_W - DOCK_W, DOCK_W)
-            rest = strip_luma(shot, 0, SCREEN_W - DOCK_W)
-            print(f"luma: window strip={win:.1f} rest={rest:.1f}  ({shot})")
-            if not (win > 60 and win > rest + 30):
-                failures.append(f"phone window not on right edge (win={win:.1f}, rest={rest:.1f})")
+            assert_docked_edge(shot, "Right", "docked", failures)
 
             # --- 4. Selection follow (visual artifact) ---
             t.send_keys("j", "j", "j")
@@ -229,9 +282,7 @@ def main():
             if "docked" not in screen.lower():
                 failures.append("cache revisit lost the dock affordance")
             shot = x_screenshot("04-cached-revisit.png")
-            win = strip_luma(shot, SCREEN_W - DOCK_W, DOCK_W)
-            if win < 60:
-                failures.append(f"browser window gone after cached revisit (win={win:.1f})")
+            assert_docked_edge(shot, "Right", "cached revisit", failures)
 
             # --- 7b. workspace-u4o9 regression: consecutive article opens while
             #         docked must ALL load (follow-nav used to break fetches) ---
@@ -299,7 +350,10 @@ def main():
             t.send_keys("?")
             time.sleep(1.5)
             screen = t.capture()
-            if not any("toggle expand" in l.lower() for l in screen.split("\n")):
+            # workspace-jq7x: assert a keybinding line that actually exists in the
+            # Hierarchical-mode popup ('collapse / expand group'); the old canary
+            # 'toggle expand' was renamed and made this a false failure.
+            if not any("expand group" in l.lower() for l in screen.split("\n")):
                 failures.append("'?' help popup did not render")
             t.send_keys("Escape")
             time.sleep(0.5)
@@ -317,11 +371,7 @@ def main():
                 if edge <= TERM_W // 2 + 8:
                     failures.append(f"left dock: app squeezed (edge col {edge})")
                 shot = x_screenshot("05-left-docked.png")
-                win = strip_luma(shot, 0, DOCK_W)
-                rest = strip_luma(shot, DOCK_W, SCREEN_W - DOCK_W)
-                print(f"left dock luma: window strip={win:.1f} rest={rest:.1f}")
-                if not (win > 60 and win > rest + 30):
-                    failures.append(f"left dock: window not on left edge (win={win:.1f}, rest={rest:.1f})")
+                assert_docked_edge(shot, "Left", "left dock", failures)
         finally:
             os.environ.pop("Browser__DockSide", None)
 

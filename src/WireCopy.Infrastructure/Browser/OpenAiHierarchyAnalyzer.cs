@@ -799,8 +799,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         if (hasScreenshot)
         {
             sb.AppendLine("A SCREENSHOT of the page is attached — treat it as ground truth for");
-            sb.AppendLine("visual hierarchy. The lead story is the large-type item in the main");
-            sb.AppendLine("column near the top. Sponsor posts, event calendars, job boards, and");
+            sb.AppendLine("visual hierarchy. The lead stories are the large-type items in the main");
+            sb.AppendLine("column near the top — a flat aggregator may have several co-equal ones");
+            sb.AppendLine("rather than one hero. Sponsor posts, event calendars, job boards, and");
             sb.AppendLine("other promo slots sit in narrow side rails or visually separate boxes");
             sb.AppendLine("even when their markup mimics stories — they must NEVER lead the");
             sb.AppendLine("layout or sit above real stories. If the screenshot carries small");
@@ -822,11 +823,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("You are analyzing webpage screenshots for a terminal-based news reader.");
         sb.AppendLine("Group the content links provided in the user message by visual section, ordered by editorial prominence.");
         sb.AppendLine();
-        sb.AppendLine("Group links into sections by editorial prominence:");
-        sb.AppendLine("- Hero/lead stories at top (most prominent, largest on page)");
-        sb.AppendLine("- Main content feed (primary article list)");
-        sb.AppendLine("- Secondary sections (opinion, trending, below-fold areas)");
-        sb.AppendLine("- Sidebar content last (least prominent)");
+        sb.AppendLine("Identify the REPEATING story unit and group its instances into sections. Some");
+        sb.AppendLine("homepages have one dominant story, but many — especially aggregators — are a set");
+        sb.AppendLine("of CO-EQUAL story clusters with no single lead; do not invent a hero when the page");
+        sb.AppendLine("is flat. Order sections by editorial prominence:");
+        sb.AppendLine("- The most prominent story group first (a genuine lead when one dominates, else");
+        sb.AppendLine("  the first co-equal cluster of stories)");
+        sb.AppendLine("- Further co-equal / secondary story groups (opinion, trending, other clusters)");
+        sb.AppendLine("- Below-fold or sidebar story groups last (least prominent)");
         sb.AppendLine();
         sb.AppendLine("Each section should contain ONLY article/story links. Exclude navigation, ads, newsletter signups, and utility links.");
         sb.AppendLine();
@@ -897,9 +901,10 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("   that ARE stories just to pad the list.");
         sb.AppendLine();
         sb.AppendLine("2. RANK: of the REMAINING links (the actual stories), order them by");
-        sb.AppendLine("   editorial prominence. The single most prominent lead/hero story first,");
-        sb.AppendLine("   then the main feed, then secondary, then sidebar. Prefer higher-`score`");
-        sb.AppendLine("   items near the top. Return indices in `stories`. This ordering should");
+        sb.AppendLine("   editorial prominence. Lead with the most prominent stories — a genuine");
+        sb.AppendLine("   single lead when one dominates, otherwise the top cluster of co-equal");
+        sb.AppendLine("   stories — then further story groups, then secondary, then sidebar. Prefer");
+        sb.AppendLine("   higher-`score` items near the top. Return indices in `stories`. This ordering should");
         sb.AppendLine("   reflect a human editor's front page — it will usually DIFFER from the");
         sb.AppendLine("   raw input order.");
         sb.AppendLine();
@@ -1004,8 +1009,11 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("Return TWO things:");
         sb.AppendLine();
         sb.AppendLine("1. proposed_pattern: your best initial reading —");
-        sb.AppendLine("   - top_story: the single most prominent lead story;");
-        sb.AppendLine("   - tiers: ordered groups of remaining stories (most prominent first);");
+        sb.AppendLine("   - top_story: ONE representative story of the main repeating unit — a seed");
+        sb.AppendLine("     the app extrapolates across its siblings, NOT necessarily the single most");
+        sb.AppendLine("     important item. On a flat aggregator, any story in the top cluster serves;");
+        sb.AppendLine("   - tiers: the remaining CO-EQUAL or secondary story groups (most prominent");
+        sb.AppendLine("     first) — aggregator clusters are co-equal sections, not one lead + one feed;");
         sb.AppendLine("   - exclude: links that are NOT stories (subscribe/newsletter CTAs, section");
         sb.AppendLine("     hub/index pages, author/tag pages, video hubs, sign-in, social/nav,");
         sb.AppendLine("     sponsor/advertiser slots, podcast episodes and 'featured podcasts' /");
@@ -1043,7 +1051,9 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine(VisionGuidance(hasScreenshot));
         sb.AppendLine();
         sb.AppendLine("Group the STORY links into sections (most prominent first):");
-        sb.AppendLine("- name: short label (the first/lead section is the single top story — one index);");
+        sb.AppendLine("- name: short neutral label. The first section leads with the most prominent");
+        sb.AppendLine("  stories — it may be a single dominant lead OR the top cluster of co-equal");
+        sb.AppendLine("  stories; do NOT force it down to one index when the page is flat;");
         sb.AppendLine("- story_indices: the link numbers that belong in this section;");
         sb.AppendLine("- start_collapsed: true for lower-priority STORY sections (real stories that");
         sb.AppendLine("  belong below the fold) — NOT a way to bury non-stories.");
@@ -1060,7 +1070,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine();
         sb.AppendLine("Also return `confidence` (0..1, how sure you are this matches the page's");
         sb.AppendLine("editorial hierarchy) and `confirm_question`: null when confident, or ONE");
-        sb.AppendLine("targeted question (e.g. 'Which of these is the main story?') with 2-4 options");
+        sb.AppendLine("targeted question (e.g. 'Which container holds the story headlines?') with 2-4 options");
         sb.AppendLine("when genuinely torn. Each option needs a label plus a durable parent_selector");
         sb.AppendLine("and/or url_pattern pointing at real elements. The user can ignore the question");
         sb.Append("and save as-is, so never gate the layout on it.");
@@ -1274,11 +1284,14 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         // workspace-5oe9.4: a per-call override lets the one-time AI setup
         // request a higher effort (e.g. "low") for genuine reordering while the
         // config default stays "minimal" for cheap revisits.
+        // workspace-r8on: reasoning_effort is an OpenAI-only request field — a
+        // local OpenAI-compatible endpoint (Ollama) rejects it with HTTP 400. When
+        // the layout judge is routed to a local endpoint, omit it entirely.
         var effort = string.IsNullOrWhiteSpace(reasoningEffortOverride)
             ? _config.ReasoningEffort
             : reasoningEffortOverride;
 #pragma warning disable OPENAI001 // Experimental API
-        if (TryMapReasoningEffort(effort, out var level))
+        if (LayoutEndpoint() is null && TryMapReasoningEffort(effort, out var level))
         {
             options.ReasoningEffortLevel = level;
         }
@@ -1765,30 +1778,13 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             droppedExcludeRules = beforeGuard - (excludeSelectors.Count + excludeUrlPatterns.Count);
         }
 
-        // workspace-9wm6: a "lead" section is the SINGLE top story. When the
-        // model's first section has a too-broad selector that matches several
-        // headlines, pin it to one — but ONLY when every overflow link is also
-        // claimed by a later section, so tightening the lead never hides a story
-        // (the capped section re-offers its overflow downstream in the builder).
-        if (sections.Count >= 2)
-        {
-            bool Excluded(LinkInfo l) =>
-                excludeSelectors.Any(sel => !string.IsNullOrEmpty(l.ParentSelector)
-                    && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase))
-                || excludeUrlPatterns.Any(pat => l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase));
-
-            var visible = contentLinks.Where(l => !l.IsGroupHeader && !Excluded(l)).ToList();
-            var leadMatches = visible
-                .Where(l => NavigationTreeBuilder.MatchesSection(l, sections[0]))
-                .ToList();
-            if (leadMatches.Count > 1
-                && leadMatches.Skip(1).All(l =>
-                    sections.Skip(1).Any(sec => NavigationTreeBuilder.MatchesSection(l, sec))))
-            {
-                sections[0] = sections[0] with { MaxLinks = 1 };
-            }
-        }
-
+        // workspace-5vqk.2: the first section is NOT forced to a single lead story.
+        // The old workspace-9wm6 rule pinned the lead section to MaxLinks=1 whenever
+        // its selector matched several headlines that were re-claimed downstream —
+        // which collapsed a flat aggregator's co-equal top cluster to one story. A
+        // pick teaches a REPEATING pattern, so the lead section keeps every sibling
+        // it matches; MaxLinks stays null. (The MaxLinks cap remains available for a
+        // section that explicitly needs it, but the parser no longer auto-applies it.)
         var domain = SafeHost(pageUrl);
         var config = new SiteHierarchyConfig
         {

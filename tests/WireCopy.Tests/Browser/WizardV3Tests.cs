@@ -441,8 +441,9 @@ public class WizardV3Tests
 
         var card = SetupWizard.BuildPreviewCard(config, links, previousCovered: null, confirmQuestion: question);
 
-        card.Options.Should().HaveCount(3, "one section row + two answer rows");
-        card.Options[1].Label.Should().StartWith("AI asks ·");
+        // workspace-5vqk.3: one section header + its one matched headline + two answer rows.
+        card.Options.Should().HaveCount(4, "section header + one headline row + two answer rows");
+        card.Options[2].Label.Should().StartWith("AI asks ·");
         card.Cursor.Should().Be(0, "Enter must quick-accept without touching the question");
         card.Prompt.Should().Contain("Is this the main story?");
     }
@@ -463,7 +464,9 @@ public class WizardV3Tests
         var card = SetupWizard.BuildPreviewCard(config, ParseLinks());
 
         card.Prompt.Should().NotContain("AI is unsure");
-        card.Options.Should().HaveCount(1);
+        // workspace-5vqk.3: section header + its one matched headline row.
+        card.Options.Should().HaveCount(2);
+        card.Options[1].Label.Should().Contain("Lead story headline");
     }
 
     // ---- workspace-romy.10: volatile-id selector sanitization ----
@@ -574,12 +577,12 @@ public class WizardV3Tests
         var answersLog = new List<IReadOnlyList<SetupAnswer>>();
         var analyzer = AnalyzerWithQuestionThenClean(config, answersLog);
 
-        // Preview rows: [0]=Top, [1]=Feed, [2]=answer 1, [3]=answer 2.
-        // Down Down Enter lands on the first answer row; then Enter saves the
-        // re-previewed config.
+        // workspace-5vqk.3: preview rows are now [0]=Top header, [1]=Top's headline,
+        // [2]=Feed header, [3]=Feed's headline, [4]=answer 1, [5]=answer 2. Four
+        // Downs land on the first answer row; then Enter saves the re-previewed config.
         var input = InputSequence(
-            CommandType.MoveDown, CommandType.MoveDown, CommandType.ActivateLink,
-            CommandType.ActivateLink);
+            CommandType.MoveDown, CommandType.MoveDown, CommandType.MoveDown, CommandType.MoveDown,
+            CommandType.ActivateLink, CommandType.ActivateLink);
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(

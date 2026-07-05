@@ -738,9 +738,11 @@ public class SetupWizardTests
 
         var card = SetupWizard.BuildPreviewCard(config, links);
 
-        card.Options.Should().HaveCount(1);
-        card.Options[0].Label.Should().Contain("1 link(s)");
+        // workspace-5vqk.3: one section header row + one row per matched headline.
+        card.Options.Should().HaveCount(2);
+        card.Options[0].Label.Should().Contain("1 story");
         card.Options[0].HighlightSelector.Should().Be("section.lead a[href]");
+        card.Options[1].Label.Should().Contain("A", "the real extracted headline text is rendered as a row");
         card.Footnote.Should().Be("1 of 2 story links covered");
     }
 
@@ -811,7 +813,7 @@ public class SetupWizardTests
         // The preview card lit the saved section's links and was rendered with
         // its real match count before Enter saved.
         highlighted.Should().Contain("section.lead a[href]");
-        cards.SelectMany(c => c).Should().Contain(l => l.Contains("Top Story — 1 link(s)", StringComparison.Ordinal));
+        cards.SelectMany(c => c).Should().Contain(l => l.Contains("Top Story — 1 story", StringComparison.Ordinal));
         cleared.Should().BeGreaterThan(0, "highlights are cleared after the preview step");
     }
 
@@ -929,5 +931,226 @@ public class SetupWizardTests
             var picked = SetupWizard.ResolveLeadByUrl(typed, UrlLinks());
             (picked == null || !string.IsNullOrEmpty(picked.Url)).Should().BeTrue();
         }
+    }
+
+    // ---- workspace-5vqk.4: deterministic per-item exclude ('x' on a row) ----
+
+    private static LinkInfo Story(string url, string text, string parent, int score = 90) => new()
+    {
+        Url = url, DisplayText = text, Type = LinkType.Content, ImportanceScore = score, ParentSelector = parent,
+    };
+
+    private static LinkInfo Sponsor(string url, string text, string parent) => new()
+    {
+        Url = url, DisplayText = text, Type = LinkType.Content, ImportanceScore = 60, ParentSelector = parent, IsSponsored = true,
+    };
+
+    private static SiteHierarchyConfig ConfigOf(params HierarchySection[] sections) => new()
+    {
+        Domain = "x.com", UrlPattern = "^x$", Sections = sections.ToList(),
+        CreatedAt = DateTime.UtcNow, ModelVersion = "test",
+    };
+
+    private static HierarchySection Sec(string name, string selector, int order = 0) =>
+        new() { Name = name, SortOrder = order, ParentSelectors = new List<string> { selector } };
+
+    [Fact]
+    public void ExcludeItem_DropsSponsorRowAndTokenSiblings_KeepsEveryStory()
+    {
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/a", "Alpha real story headline text", "section.river > article.story"),
+            Story("https://x.com/b", "Beta real story headline text", "section.river > article.story"),
+            Sponsor("https://ad.co/1", "Sponsored promo number one text", "aside.promos > div.promo"),
+            Sponsor("https://ad.co/2", "Sponsored promo number two text", "aside.promos > div.promo"),
+        };
+        var config = ConfigOf(Sec("Stories", "section.river"), Sec("Promos", "div.promo", 1));
+
+        var result = SetupWizard.ExcludeItem(config, links[2], links);
+
+        result.Should().NotBeNull("a sponsor row is safely excludable");
+        result!.ExcludeSelectors.Should().Contain("div.promo");
+        // The item AND its token-sibling sponsor vanish; both real stories remain.
+        NavigationTreeBuilder.IsExcluded(links[2], result).Should().BeTrue();
+        NavigationTreeBuilder.IsExcluded(links[3], result).Should().BeTrue("the token-sibling sponsor is dropped too");
+        NavigationTreeBuilder.IsExcluded(links[0], result).Should().BeFalse();
+        NavigationTreeBuilder.IsExcluded(links[1], result).Should().BeFalse();
+        // The input config is untouched (so 'z' can restore it by reference).
+        config.ExcludeSelectors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ExcludeItem_RefusedWhenEveryDistinctiveTokenAlsoMatchesAKeptStory()
+    {
+        // Two stories share the ONLY discriminating token AND their URL segments —
+        // excluding one would erase the other, so the river is protected: REFUSED.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/news/2026/01/01", "First river story headline text", "div.col > div.ii"),
+            Story("https://x.com/news/2026/01/02", "Second river story headline text", "div.col > div.ii"),
+        };
+        var config = ConfigOf(Sec("Stories", "div.ii"));
+
+        SetupWizard.ExcludeItem(config, links[0], links)
+            .Should().BeNull("no token/pattern separates the item from the other kept story");
+    }
+
+    [Fact]
+    public async Task Preview_ExcludeKey_DropsItem_WithZeroAnalyzerCalls()
+    {
+        // Re-entry (existingConfig) goes straight to the preview loop — no propose/
+        // infer. Pressing 'x' on a sponsor row excludes it via ZERO model calls.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/a", "Alpha real story headline text", "section.river > article.story"),
+            Sponsor("https://ad.co/1", "Sponsored promo number one text", "aside.promos > div.promo"),
+        };
+        var config = ConfigOf(Sec("Stories", "section.river"), Sec("Promos", "div.promo", 1));
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+
+        // Rows: [0]=Stories header, [1]=Alpha, [2]=Promos header, [3]=promo. Down x3
+        // to the promo row, 'x' to drop it, then Enter to save.
+        var input = InputCommands(
+            new NavigationCommand { Type = CommandType.MoveDown },
+            new NavigationCommand { Type = CommandType.MoveDown },
+            new NavigationCommand { Type = CommandType.MoveDown },
+            new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' }, // real 'x' key
+            new NavigationCommand { Type = CommandType.ActivateLink });
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            links, "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null,
+            CancellationToken.None, existingConfig: config);
+
+        result.Config.Should().NotBeNull();
+        NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeTrue("the promo was dropped by 'x'");
+        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeFalse("the story survives");
+        await analyzer.DidNotReceive().RefineLayoutAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Any<SiteHierarchyConfig>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await analyzer.DidNotReceive().InferPatternFromAnswersAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
+    }
+
+    private static IInputHandler InputCommands(params NavigationCommand[] commands)
+    {
+        var input = Substitute.For<IInputHandler>();
+        input.WaitForInputAsync(Arg.Any<CancellationToken>())
+            .Returns(commands[0], commands.Skip(1).ToArray());
+        return input;
+    }
+
+    [Fact]
+    public async Task Preview_ExcludeKey_Refused_ShowsAReasonNotSilentNoOp()
+    {
+        // Two stories share their ONLY identifier (div.ii + /news/ segment), so 'x'
+        // on one is REFUSED (can't erase it without the other). The user must see a
+        // reason, not a dead key — assert the rendered card explains the refusal.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/news/2026/01/01", "First river story headline text", "div.col > div.ii"),
+            Story("https://x.com/news/2026/01/02", "Second river story headline text", "div.col > div.ii"),
+        };
+        var config = ConfigOf(Sec("Stories", "div.ii"));
+
+        var footnotes = new List<string>();
+        var overlay = new SetupWizardOverlay.State();
+        Task Render(CancellationToken _)
+        {
+            if (overlay.Card is { } c && overlay.Mode == SetupWizardOverlay.Mode.Card && c.Footnote != null)
+            {
+                footnotes.Add(c.Footnote);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        // Rows: [0]=Stories header, [1]=story1, [2]=story2. Down to story1, 'x' (refused), Enter.
+        var input = InputCommands(
+            new NavigationCommand { Type = CommandType.MoveDown },
+            new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' },
+            new NavigationCommand { Type = CommandType.ActivateLink });
+
+        var result = await SetupWizard.RunAsync(
+            Substitute.For<IHierarchyAnalyzer>(), input, Render, overlay, links, "https://x.com/",
+            null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null,
+            CancellationToken.None, existingConfig: config);
+
+        result.Config.Should().NotBeNull();
+        footnotes.Should().Contain(f => f.Contains("Can't drop", StringComparison.Ordinal),
+            "a refused 'x' must explain why instead of doing nothing");
+        // Both stories survived (nothing was actually excluded).
+        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeFalse();
+        NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse();
+    }
+
+    // ---- workspace-5vqk.5: gate the vision lead-tiebreak on a GENUINE contest ----
+
+    private static IHierarchyAnalyzer AnalyzerWithVision(SiteHierarchyConfig config, int visionIndex = -1)
+    {
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SiteSetupProposal { ProposedPattern = new ProposedPattern() });
+        analyzer.InferPatternFromAnswersAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(new InferredPattern { Config = config });
+        analyzer.VerifyLeadWithVisionAsync(Arg.Any<byte[]>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(visionIndex);
+        return analyzer;
+    }
+
+    [Fact]
+    public async Task FlatCoEqualPage_SkipsVisionTiebreak_ZeroVisionCalls()
+    {
+        // Eight co-equal top stories (a flat aggregator river): there is no single
+        // lead to elect, so the vision tiebreak must NOT be spent.
+        var links = Enumerable.Range(0, 8)
+            .Select(i => Story($"https://x.com/{i}", $"Co-equal story headline number {i}", "section.river > article", 90))
+            .ToList();
+        var config = ConfigOf(Sec("Stories", "section.river"));
+        var analyzer = AnalyzerWithVision(config);
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, InputCommands(new NavigationCommand { Type = CommandType.ActivateLink }),
+            _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
+            screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        await analyzer.DidNotReceive().VerifyLeadWithVisionAsync(
+            Arg.Any<byte[]>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GenuineLeadContest_InvokesVisionTiebreakExactlyOnce()
+    {
+        // A real 2-way lead contest (100 vs 98) standing above a pack (70): the
+        // deterministic order can't decide, so ONE vision call is warranted.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/lead", "Dominant lead story headline one", "section.river > article", 100),
+            Story("https://x.com/runner", "Close runner-up story headline two", "section.river > article", 98),
+        };
+        links.AddRange(Enumerable.Range(0, 6)
+            .Select(i => Story($"https://x.com/p{i}", $"Lesser pack story headline {i}", "section.river > article", 70)));
+        var config = ConfigOf(Sec("Stories", "section.river"));
+        var analyzer = AnalyzerWithVision(config, visionIndex: -1);
+
+        await SetupWizard.RunAsync(
+            analyzer, InputCommands(new NavigationCommand { Type = CommandType.ActivateLink }),
+            _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
+            screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        await analyzer.Received(1).VerifyLeadWithVisionAsync(
+            Arg.Any<byte[]>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

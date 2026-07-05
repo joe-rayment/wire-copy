@@ -38,6 +38,14 @@ internal static class SetupWizard
     /// </summary>
     internal const int LeadAmbiguityMargin = 5;
 
+    /// <summary>
+    /// workspace-5vqk.5: the largest near-top band that still reads as a genuine LEAD
+    /// CONTEST (a few candidates competing for the top). Above this the top band is a
+    /// flat CO-EQUAL river — an aggregator's normal state — where electing one lead is
+    /// meaningless, so the vision tiebreak is skipped.
+    /// </summary>
+    internal const int MaxLeadContestants = 4;
+
     /// <summary>Card-loop sentinel: Esc/quit (a chosen option is &gt;= 0).</summary>
     private const int CancelChoice = -1;
 
@@ -46,6 +54,9 @@ internal static class SetupWizard
 
     /// <summary>Card-loop sentinel: 'z' (Undo) on the preview — revert the last refine.</summary>
     private const int UndoChoice = -3;
+
+    /// <summary>workspace-5vqk.4: card-loop sentinel: 'x' on the preview — exclude the focused item.</summary>
+    private const int ExcludeChoice = -4;
 
     /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
@@ -413,7 +424,7 @@ internal static class SetupWizard
                     Answer = $"Sanity check failed: your sections cover only {covered} of the page's {highScore.Count} " +
                              $"high-importance links (score 80+), e.g. \"{Truncate(missed.DisplayText, 60)}\" " +
                              $"(parent: {missed.ParentSelector ?? "-"}) is not matched by any section. These are the " +
-                             "page's main stories — broaden the section identifiers so the main story list is covered.",
+                             "page's top stories — broaden the section identifiers so the top-story river is covered.",
                 };
             }
         }
@@ -445,14 +456,34 @@ internal static class SetupWizard
     }
 
     /// <summary>
-    /// The layout has a LEAD the deterministic ranking can't decide: a config with
-    /// sections plus at least two near-equally-prominent candidates. A screenshot
-    /// tiebreak (workspace-45ji.3) can help here; otherwise the deterministic lead stands.
+    /// workspace-5vqk.5: the layout has a genuine LEAD CONTEST the deterministic
+    /// ranking can't decide — a FEW near-equally-prominent candidates competing for
+    /// the top, worth ONE screenshot tiebreak (workspace-45ji.3). Critically it is
+    /// FALSE on a flat aggregator, where a broad band of stories share the top score:
+    /// there is no single lead to elect, so the old "≥2 within margin" test fired the
+    /// vision call on Techmeme's normal co-equal state and mis-promoted an arbitrary
+    /// story. A contest is a SMALL near-top band (≤ <see cref="MaxLeadContestants"/>);
+    /// a broad band is co-equal and the deterministic order stands.
     /// </summary>
     internal static bool LeadIsAmbiguous(SiteHierarchyConfig config, List<LinkInfo> links)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return config.Sections.Count > 0 && LeadCandidates(config, links).Count >= 2;
+        if (config.Sections.Count == 0)
+        {
+            return false;
+        }
+
+        var stories = links
+            .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader && !l.IsSponsored)
+            .ToList();
+        if (stories.Count == 0)
+        {
+            return false;
+        }
+
+        var max = stories.Max(l => l.ImportanceScore);
+        var nearTop = stories.Count(l => max - l.ImportanceScore <= LeadAmbiguityMargin);
+        return nearTop >= 2 && nearTop <= MaxLeadContestants;
     }
 
     /// <summary>
@@ -518,19 +549,19 @@ internal static class SetupWizard
         List<LinkInfo> links,
         int? previousCovered = null,
         SetupQuestion? confirmQuestion = null,
-        bool canUndo = false)
+        bool canUndo = false,
+        string? notice = null)
     {
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
-        var options = config.Sections.Select(section => new SetupWizardOverlay.CardOption
-        {
-            Label = $"{section.Name} — {contentLinks.Count(l => NavigationTreeBuilder.MatchesSection(l, section))} link(s)",
-            Identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns)),
-            HighlightSelector = CssForSection(section),
-        }).ToList();
+
+        // workspace-5vqk.3/.4: render the REAL extracted headlines per section (built
+        // by BuildPreviewRows, which is exclude-aware so an 'x'-excluded item vanishes
+        // from the list). The confirm-question rows are appended AFTER the layout rows.
+        var options = BuildPreviewRows(config, links).Select(r => r.Option).ToList();
 
         // workspace-romy.8: the confirm question's options render as answerable
-        // rows after the sections; the prompt line carries the question. The
-        // cursor stays on row 0 (a section), so Enter still saves as-is.
+        // rows after the layout rows; the prompt line carries the question. The
+        // cursor stays on row 0 (a section header), so Enter still saves as-is.
         if (confirmQuestion != null)
         {
             options.AddRange(confirmQuestion.Options.Select(o => new SetupWizardOverlay.CardOption
@@ -541,7 +572,7 @@ internal static class SetupWizard
             }));
         }
 
-        var covered = contentLinks.Count(l => config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+        var covered = CoveredCount(config, contentLinks);
         var footnote = covered == 0 && contentLinks.Count > 0
             ? "⚠ No links on this page match this layout"
             : $"{covered} of {contentLinks.Count} story links covered";
@@ -560,18 +591,202 @@ internal static class SetupWizard
             footnote += $" · ⚠ {config.DroppedExcludeRuleCount} exclusion(s) skipped — too broad, would hide real stories";
         }
 
+        // workspace-5vqk.5: SURFACE — never silently pass — a substantial population
+        // of same-shaped stories left uncovered (a second cluster the layout doesn't
+        // reach yet), inviting another seed pick (5vqk.6). Relativized so a
+        // fully-covered single-pattern page is never nagged.
+        var uncovered = UncoveredStoryShaped(config, contentLinks);
+        if (uncovered >= Math.Max(5, covered / 5))
+        {
+            footnote += $" · {uncovered} more story-shaped link(s) uncovered — Space to add another pattern";
+        }
+
+        // workspace-r8on: a transient notice (a refused 'x', a wrong-row press) rides
+        // the footnote for one render so a no-op key never leaves the user guessing.
+        if (!string.IsNullOrEmpty(notice))
+        {
+            footnote = $"⚠ {notice}";
+        }
+
+        // workspace-5vqk.3: the count-as-header line the user reads first.
+        string headline;
+        if (confirmQuestion != null)
+        {
+            headline = $"AI is unsure: {confirmQuestion.Prompt} Answer below — or save as shown.";
+        }
+        else if (covered > 0)
+        {
+            headline = $"Learned this pattern — {covered} {(covered == 1 ? "story" : "stories")} across {config.Sections.Count} section(s)";
+        }
+        else
+        {
+            headline = "No stories matched this layout yet";
+        }
+
         return new SetupWizardOverlay.WizardCard
         {
             Title = "Your new layout",
-            Prompt = confirmQuestion != null
-                ? $"AI is unsure: {confirmQuestion.Prompt} Answer below — or save as shown."
-                : "The page now shows the layout that will be saved.",
+            Prompt = headline,
             Options = options,
             Footnote = footnote,
             Hint = canUndo
-                ? "↑/↓ preview · Enter save · Space refine · z undo last change · Esc discard"
-                : "↑/↓ preview a section · Enter save · Space adjust · Esc discard",
+                ? "↑/↓ browse · Enter save · Space refine · x drop item · z undo · Esc discard"
+                : "↑/↓ browse · Enter save · Space adjust · x drop item · Esc discard",
         };
+    }
+
+    /// <summary>
+    /// workspace-5vqk.3/.4: the ordered preview rows — one header per section
+    /// followed by one row per matched, NON-EXCLUDED link (carrying that link so an
+    /// 'x' on the row can exclude it). The same source of truth the preview card and
+    /// the item-exclude handler both read, so the rows the user sees are exactly the
+    /// links that will save.
+    /// </summary>
+    internal static List<PreviewRow> BuildPreviewRows(SiteHierarchyConfig config, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+        var rows = new List<PreviewRow>();
+        foreach (var section in config.Sections)
+        {
+            var matched = contentLinks
+                .Where(l => NavigationTreeBuilder.MatchesSection(l, section) && !NavigationTreeBuilder.IsExcluded(l, config))
+                .ToList();
+            rows.Add(new PreviewRow(
+                new SetupWizardOverlay.CardOption
+                {
+                    Label = $"{section.Name} — {matched.Count} {(matched.Count == 1 ? "story" : "stories")}",
+                    Identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns)),
+                    HighlightSelector = CssForSection(section),
+                },
+                null));
+            foreach (var link in matched)
+            {
+                rows.Add(new PreviewRow(
+                    new SetupWizardOverlay.CardOption
+                    {
+                        Label = $"   • {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
+                        HighlightSelector = CssForLink(link),
+                    },
+                    link));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>Content links a config actually shows: matched by a section AND not excluded.</summary>
+    internal static int CoveredCount(SiteHierarchyConfig config, List<LinkInfo> contentLinks) =>
+        contentLinks.Count(l => !NavigationTreeBuilder.IsExcluded(l, config)
+            && config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+
+    /// <summary>
+    /// workspace-5vqk.5: story-shaped content links (real headline text, not
+    /// sponsored) that NO section covers and no rule excludes — a same-shaped cluster
+    /// the current pattern misses. Drives the preview's "add another pattern" nudge.
+    /// </summary>
+    internal static int UncoveredStoryShaped(SiteHierarchyConfig config, List<LinkInfo> contentLinks) =>
+        contentLinks.Count(l =>
+            !l.IsSponsored
+            && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength
+            && !NavigationTreeBuilder.IsExcluded(l, config)
+            && !config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
+
+    /// <summary>
+    /// workspace-5vqk.4: deterministically excludes ONE previewed item (an 'x' on a
+    /// row) and its token-siblings, WITHOUT a model round-trip. Derives distinctive
+    /// exclude tokens from the item's parent selector, keeping only tokens that match
+    /// NO other kept story (the <see cref="LeadOverrideDerivation"/> guard, so a real
+    /// story is never erased); falls back to a distinctive URL segment when no token
+    /// qualifies. Honors the 25% high-importance cap via
+    /// <see cref="NavigationTreeBuilder.GuardExcludeRules"/>. Returns null (REFUSED)
+    /// when the item can't be excluded without also hiding a real story, or when the
+    /// exclusion would be a net no-op.
+    /// </summary>
+    internal static SiteHierarchyConfig? ExcludeItem(SiteHierarchyConfig config, LinkInfo item, List<LinkInfo> links)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(item);
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+
+        bool Covered(LinkInfo l) => config.Sections.Any(s => NavigationTreeBuilder.MatchesSection(l, s));
+        bool IsStory(LinkInfo l) =>
+            l.Type == LinkType.Content && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength;
+
+        // Every real story still on the page EXCEPT the item — an exclude token/pattern
+        // may never match one of these (that would erase a kept story).
+        var keptStories = contentLinks
+            .Where(l => Covered(l) && IsStory(l)
+                && !ReferenceEquals(l, item)
+                && !string.Equals(l.Url, item.Url, StringComparison.Ordinal))
+            .ToList();
+
+        bool SafeToken(string t) =>
+            keptStories.All(s => string.IsNullOrEmpty(s.ParentSelector)
+                || !s.ParentSelector.Contains(t, StringComparison.OrdinalIgnoreCase));
+        bool SafePattern(string p) =>
+            keptStories.All(s => !s.Url.Contains(p, StringComparison.OrdinalIgnoreCase));
+
+        var tokens = SelectorDerivation.DiscriminatingTokens(item.ParentSelector)
+            .Where(SafeToken)
+            .Distinct(StringComparer.Ordinal)
+            .Where(t => !config.ExcludeSelectors.Contains(t, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        var urlPatterns = new List<string>();
+        if (tokens.Count == 0)
+        {
+            // No selector token separates the item from the kept stories — try a
+            // distinctive URL segment that hits no kept story instead.
+            urlPatterns = SelectorDerivation.MeaningfulPathSegments(item.Url)
+                .Select(seg => $"/{seg}/")
+                .Where(SafePattern)
+                .Where(p => !config.ExcludeUrlPatterns.Contains(p, StringComparer.OrdinalIgnoreCase))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .ToList();
+        }
+
+        if (tokens.Count == 0 && urlPatterns.Count == 0)
+        {
+            return null; // REFUSED — nothing distinctive that spares the kept stories
+        }
+
+        var candidate = config with
+        {
+            ExcludeSelectors = config.ExcludeSelectors.Concat(tokens).Distinct(StringComparer.Ordinal).ToList(),
+            ExcludeUrlPatterns = config.ExcludeUrlPatterns.Concat(urlPatterns).Distinct(StringComparer.Ordinal).ToList(),
+        };
+
+        // Backstop: the 25% high-importance cap drops any rule that turns out to be
+        // too broad on THIS page (belt-and-suspenders over the per-token guard).
+        var guarded = NavigationTreeBuilder.GuardExcludeRules(candidate, contentLinks);
+        var dropped = (candidate.ExcludeSelectors.Count - guarded.ExcludeSelectors.Count)
+            + (candidate.ExcludeUrlPatterns.Count - guarded.ExcludeUrlPatterns.Count);
+
+        // If the guard vetoed everything we added, the item is still shown — refuse.
+        if (!NavigationTreeBuilder.IsExcluded(item, guarded))
+        {
+            return null;
+        }
+
+        return guarded with { DroppedExcludeRuleCount = config.DroppedExcludeRuleCount + dropped };
+    }
+
+    /// <summary>workspace-5vqk.3: highlights ONE specific link on the lens by an href substring.</summary>
+    internal static string CssForLink(LinkInfo link)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        var url = link.Url ?? string.Empty;
+        if (url.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var fragment = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.AbsolutePath.Length > 1
+            ? uri.AbsolutePath
+            : url;
+        return $"a[href*=\"{EscapeAttrValue(fragment)}\"]";
     }
 
     /// <summary>
@@ -760,6 +975,15 @@ internal static class SetupWizard
             Hint: "↑/↓ choose · Enter select · Esc leave unconfigured");
     }
 
+    /// <summary>
+    /// workspace-5vqk.2: test seam for the deterministic pick→river builder so the
+    /// merge/neutral-name/no-MaxLinks contract can be asserted against the real
+    /// techmeme fixture without a model round-trip.
+    /// </summary>
+    internal static InferredPattern? DeriveLeadOverrideForTest(
+        LinkInfo lead, List<LinkInfo> links, SiteHierarchyConfig currentConfig) =>
+        BuildDeterministicLeadOverride(lead, links, currentConfig);
+
     /// <summary>workspace-9k27.4: minimal proposal for re-entry seeding — the
     /// repair/confirm paths need one, but a saved config has no round-1 output.</summary>
     private static SiteSetupProposal EmptyProposal() => new()
@@ -802,6 +1026,11 @@ internal static class SetupWizard
         // can undo a tweak that made things worse without losing the
         // almost-perfect version (or starting the whole wizard over).
         SiteHierarchyConfig? undoConfig = null;
+
+        // workspace-r8on: a one-render notice (e.g. an 'x' that was refused because
+        // the item shares its only identifier with real stories) so a no-op key
+        // press is never silent — the user gets a reason instead of nothing.
+        string? notice = null;
         while (!ct.IsCancellationRequested)
         {
             if (IsDegenerate(config, links))
@@ -848,19 +1077,25 @@ internal static class SetupWizard
             var askable = confirmQuestion != null && IsDiscriminating(confirmQuestion) && !budget.Exhausted
                 ? confirmQuestion
                 : null;
-            var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null);
-            previousCovered = Coverage(config, links).Covered;
+            var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null, notice: notice);
+            notice = null; // transient — shown for exactly one render
+            previousCovered = CoveredCount(config, links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList());
             var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.ClearAsync(ct).ConfigureAwait(false);
             }
 
-            if (askable != null && choice >= config.Sections.Count)
+            // workspace-5vqk.3: the layout now renders section headers AND their
+            // headline rows, so the confirm-question rows are the LAST
+            // askable.Options.Count entries — detect them by that offset, not by
+            // config.Sections.Count (which no longer equals the layout-row count).
+            var layoutRowCount = preview.Options.Count - (askable?.Options.Count ?? 0);
+            if (askable != null && choice >= layoutRowCount)
             {
                 // The user answered the confirm question — one more inference
                 // round with the answer grounded in its durable identifier.
-                var optIndex = Math.Clamp(choice - config.Sections.Count, 0, askable.Options.Count - 1);
+                var optIndex = Math.Clamp(choice - layoutRowCount, 0, askable.Options.Count - 1);
                 var chosenOption = askable.Options[optIndex];
                 var identifier = FormatIdentifier(chosenOption.ParentSelector, chosenOption.UrlPattern);
                 confirmQuestion = null;
@@ -905,6 +1140,33 @@ internal static class SetupWizard
                         undoConfig = null;
                         confirmQuestion = null;
                         previousCovered = null;
+                    }
+
+                    continue;
+                case ExcludeChoice:
+                    // workspace-5vqk.4: 'x' on a headline row drops that item and its
+                    // token-siblings deterministically — NO model call, NO budget.
+                    // workspace-r8on: a header/confirm row or a REFUSED exclusion is a
+                    // no-op, but now says WHY instead of silently doing nothing.
+                    var rows = BuildPreviewRows(config, links);
+                    if (preview.Cursor >= 0 && preview.Cursor < rows.Count && rows[preview.Cursor].Link is { } item)
+                    {
+                        var pruned = ExcludeItem(config, item, links);
+                        if (pruned != null)
+                        {
+                            undoConfig = config; // 'z' restores the item
+                            config = pruned;
+                            confirmQuestion = null;
+                        }
+                        else
+                        {
+                            notice = $"Can't drop \"{Truncate(CollapseWhitespace(item.DisplayText), 44)}\" on its own — it shares " +
+                                     "its only identifier with real stories. Use Space → \"Tell the AI what to change…\" instead.";
+                        }
+                    }
+                    else
+                    {
+                        notice = "Move to a story row (not a section header), then press x to drop it.";
                     }
 
                     continue;
@@ -990,13 +1252,21 @@ internal static class SetupWizard
 
         var allowPick = pickLeadFromTree != null;
         var allowUrl = promptLeadUrl != null;
+
+        // workspace-5vqk.6: once the layout already carries a pick-derived river, a
+        // further pick adds a SECOND co-equal pattern — say so, so the user knows they
+        // can teach podcasts/events as their own sections rather than replacing news.
+        var addsAnother = currentConfig.Sections.Any(s => IsPickRiverName(s.Name));
         var options = new List<SetupWizardOverlay.CardOption>();
         var pickIndex = -1;
         var urlIndex = -1;
         if (allowPick)
         {
             pickIndex = options.Count;
-            options.Add(new SetupWizardOverlay.CardOption { Label = "Point at the main story" });
+            options.Add(new SetupWizardOverlay.CardOption
+            {
+                Label = addsAnother ? "Pick another story — adds a co-equal section" : "Pick a story to teach the layout",
+            });
         }
 
         // workspace-cbjx.2: let the user name the lead by URL instead of scrolling
@@ -1005,7 +1275,10 @@ internal static class SetupWizard
         if (allowUrl)
         {
             urlIndex = options.Count;
-            options.Add(new SetupWizardOverlay.CardOption { Label = "Enter the main story's URL" });
+            options.Add(new SetupWizardOverlay.CardOption
+            {
+                Label = addsAnother ? "Paste another story's URL — adds a co-equal section" : "Paste a story's URL",
+            });
         }
 
         options.Add(new SetupWizardOverlay.CardOption { Label = "Tell the AI what to change…" });
@@ -1067,8 +1340,9 @@ internal static class SetupWizard
                 else
                 {
                     // No link matched the URL — still steer the model with it.
-                    instruction = $"Make the story whose URL is \"{Truncate(urlText.Trim(), 200)}\" the single " +
-                                  "lead (top) story, keeping every other section unchanged.";
+                    instruction = $"Use the story whose URL is \"{Truncate(urlText.Trim(), 200)}\" as the seed of " +
+                                  "the main repeating pattern — extrapolate its sibling stories into one co-equal " +
+                                  "section, keeping every other section unchanged.";
                     adjustment = new SetupAnswer { QuestionId = "lead-url", Answer = instruction };
                 }
             }
@@ -1148,18 +1422,70 @@ internal static class SetupWizard
             return null;
         }
 
+        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
+
+        // workspace-5vqk.2/.6: a pick teaches ONE repeating pattern — a co-equal river
+        // of sibling stories, NOT a single lead. The FIRST pick names its river
+        // "Stories" and LEADS (SortOrder 0), merging with the model's other real
+        // sections instead of blanket-replacing them. A SECOND/THIRD pick (the config
+        // already carries a "Stories" river) defines an ADDITIONAL co-equal section:
+        // it is APPENDED (SortOrder by pick order) with a distinct name, so a
+        // genuinely multi-pattern page (news + podcasts + events) is representable
+        // without electing one lead. Never MaxLinks; never "Top stories".
+        var priorPicks = currentConfig.Sections.Count(s => IsPickRiverName(s.Name));
+        var isFirstPick = priorPicks == 0;
+        var river = new HierarchySection
+        {
+            Name = isFirstPick ? "Stories" : $"Stories {priorPicks + 1}",
+            SortOrder = 0,
+            ParentSelectors = deriv.RiverSelectors,
+        };
+
+        // The deterministic shortcut is only trustworthy when the PICK actually
+        // EXTRAPOLATED — the river must be sound on its OWN links, not merely rescued
+        // by the sections we are about to merge in. A pick that generalizes to almost
+        // nothing (its selector doesn't repeat) falls back to the model instead of
+        // saving a 1-story "Stories" section — the very "one story" failure we fight.
+        var riverOnly = currentConfig with { Sections = new List<HierarchySection> { river } };
+        if (IsDegenerate(riverOnly, links))
+        {
+            return null;
+        }
+
+        var riverLinks = contentLinks.Where(l => NavigationTreeBuilder.MatchesSection(l, river)).ToHashSet();
+
+        // An additional pick that covers nothing the current layout doesn't already
+        // show is a redundant re-pick — return the layout unchanged (no duplicate
+        // section, no model call) instead of stacking an overlapping "Stories 2".
+        if (!isFirstPick && riverLinks.All(l => currentConfig.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec))))
+        {
+            return new InferredPattern { Config = currentConfig, Confidence = 1.0 };
+        }
+
+        // Preserve every prior section that still covers a story the river does NOT
+        // (a genuinely distinct co-equal cluster); drop empty/subsumed ones so the
+        // merge never surfaces a duplicate or a 0-link row.
+        var preserved = currentConfig.Sections
+            .Where(sec => contentLinks.Any(l => !riverLinks.Contains(l) && NavigationTreeBuilder.MatchesSection(l, sec)))
+            .ToList();
+
+        // First pick leads the page; an additional pick appends AFTER the existing
+        // sections (co-equal, SortOrder by pick order) so the first-taught river stays on top.
+        var sections = isFirstPick
+            ? new List<HierarchySection> { river }.Concat(preserved).ToList()
+            : preserved.Concat(new[] { river }).ToList();
+        for (var i = 0; i < sections.Count; i++)
+        {
+            sections[i] = sections[i] with { SortOrder = i };
+        }
+
         var config = currentConfig with
         {
-            Sections = new List<HierarchySection>
-            {
-                new()
-                {
-                    Name = "Top stories",
-                    SortOrder = 0,
-                    ParentSelectors = deriv.RiverSelectors,
-                },
-            },
-            ExcludeSelectors = deriv.ExcludeSelectors,
+            Sections = sections,
+            ExcludeSelectors = currentConfig.ExcludeSelectors
+                .Concat(deriv.ExcludeSelectors)
+                .Distinct(StringComparer.Ordinal)
+                .ToList(),
             ModelVersion = string.IsNullOrEmpty(currentConfig.ModelVersion)
                 ? "lead-derived"
                 : currentConfig.ModelVersion + "+lead-derived",
@@ -1208,12 +1534,22 @@ internal static class SetupWizard
     private static string EscapeAttrValue(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 
+    /// <summary>workspace-5vqk.3: collapses whitespace runs (headline text may carry DOM newlines/indent).</summary>
+    private static string CollapseWhitespace(string text) =>
+        string.Join(' ', (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    /// <summary>workspace-5vqk.6: true for a section name a deterministic pick produced ("Stories", "Stories 2", …).</summary>
+    private static bool IsPickRiverName(string name) =>
+        string.Equals(name, "Stories", StringComparison.Ordinal)
+        || name.StartsWith("Stories ", StringComparison.Ordinal);
+
     private static string Truncate(string text, int max) =>
         text.Length <= max ? text : text[..max] + "…";
 
-    /// <summary>The refine instruction that pins <paramref name="lead"/> as the single top story.</summary>
+    /// <summary>workspace-5vqk.2: the refine instruction that seeds the repeating story pattern from <paramref name="lead"/>.</summary>
     private static string LeadInstruction(LinkInfo lead) =>
-        $"Make this the single lead (top) story, keeping every other section " +
+        $"Use this story as the SEED of the main repeating pattern — extrapolate its sibling " +
+        $"stories into one co-equal section, keeping every other section " +
         $"unchanged: \"{Truncate(lead.DisplayText, 90)}\"" +
         (string.IsNullOrWhiteSpace(lead.ParentSelector) ? string.Empty : $" (parent {lead.ParentSelector}).");
 
@@ -1241,6 +1577,14 @@ internal static class SetupWizard
         while (!ct.IsCancellationRequested)
         {
             var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            // workspace-5vqk.4: 'x' on the preview drops the focused item. It has no
+            // dedicated CommandType, so match the raw key (as the schedule picker does).
+            if (adjustable && command.RawKeyChar is 'x' or 'X')
+            {
+                return ExcludeChoice;
+            }
+
             switch (command.Type)
             {
                 case CommandType.MoveDown or CommandType.ExpandNode:
@@ -1398,4 +1742,7 @@ internal static class SetupWizard
 
         public bool Cancelled { get; init; }
     }
+
+    /// <summary>workspace-5vqk.3/.4: one preview row — its rendered option plus the link it stands for (null for a section header).</summary>
+    internal sealed record PreviewRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link);
 }
