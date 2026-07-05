@@ -1661,7 +1661,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
             sections.Add(new HierarchySection
             {
-                Name = string.IsNullOrWhiteSpace(s.Name) ? $"Section {sections.Count + 1}" : s.Name!,
+                Name = HumanizeSectionName(s.Name, sections.Count),
                 SortOrder = sections.Count,
                 ParentSelectors = selectors,
                 UrlPatterns = urlPatterns,
@@ -1869,6 +1869,35 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// workspace-r8on: turn a model's section name into a reader-facing label. A
+    /// small local model (qwen2.5:3b) echoes the SCHEMA vocabulary — "top_story",
+    /// "second_tier" — straight into the name, which then showed as the link-list
+    /// section header. Snake_case / schema-key / empty names become a positional
+    /// default ("Top stories" / "More stories"); a lone lowercase word is
+    /// title-cased ("opinion" → "Opinion"); a genuine label is kept as-is.
+    /// </summary>
+    private static string HumanizeSectionName(string? name, int index)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        var schemaKeyLike = trimmed.Length == 0
+            || trimmed.Contains('_', StringComparison.Ordinal)
+            || trimmed.Equals("tiers", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("tier", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("section", StringComparison.OrdinalIgnoreCase);
+        if (schemaKeyLike)
+        {
+            return index == 0 ? "Top stories" : "More stories";
+        }
+
+        if (char.IsLower(trimmed[0]) && !trimmed.Contains(' ', StringComparison.Ordinal))
+        {
+            return char.ToUpperInvariant(trimmed[0]) + trimmed[1..];
+        }
+
+        return trimmed;
     }
 
     private static SetupOption MapOption(OptionResponse o, IReadOnlyList<LinkInfo>? contentLinks)

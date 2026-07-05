@@ -209,6 +209,44 @@ public class OpenAiHierarchyAnalyzerTests
         result.Config.Sections[0].MaxLinks.Should().BeNull("a pick seeds a co-equal river, never a single pinned lead");
     }
 
+    [Theory]
+    [InlineData("top_story", "Top stories")]      // schema-key at index 0 -> positional default
+    [InlineData("", "Top stories")]               // empty -> positional default
+    [InlineData("opinion", "Opinion")]            // lone lowercase word -> title-cased
+    [InlineData("Lead cluster", "Lead cluster")]  // a real label is kept
+    public void ParsePatternFromAnswers_HumanizesSchemaKeySectionNames(string modelName, string expected)
+    {
+        // workspace-r8on: qwen2.5:3b named its sections 'top_story'/'second_tier'
+        // (the schema vocabulary), which then showed as the link-list header. The
+        // parser must produce a reader-facing label regardless of the model.
+        var links = StoryLinks(3, score: 85, parent: "div.ii");
+        var json =
+            "{\"sections\":[" +
+            $"{{\"name\":\"{modelName}\",\"parent_selectors\":[\"div.ii\"],\"url_patterns\":[],\"story_indices\":[0,1,2],\"start_collapsed\":false}}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Should().ContainSingle().Which.Name.Should().Be(expected);
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_SecondSchemaKeySection_BecomesMoreStories()
+    {
+        // Two schema-key sections -> positional labels 'Top stories' + 'More stories'.
+        var links = StoryLinks(3, score: 85, parent: "div.col");
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"top_story\",\"parent_selectors\":[\"div.ii\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+            "{\"name\":\"second_tier\",\"parent_selectors\":[\"div.ed\"],\"url_patterns\":[],\"story_indices\":[1,2],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Select(s => s.Name).Should().Equal("Top stories", "More stories");
+        result.Config.Sections.Should().NotContain(s => s.Name.Contains('_'), "no schema-key name reaches the link list");
+    }
+
     [Fact]
     public void ParsePatternFromAnswers_DropsSubsumedDuplicateSection()
     {
