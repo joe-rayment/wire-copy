@@ -1466,7 +1466,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var hierarchySections = sections
             .Select((s, i) => new HierarchySection
             {
-                Name = s.Name ?? $"Section {i + 1}",
+                Name = HumanizeSectionName(s.Name, i),
                 SortOrder = i,
                 ParentSelectors = s.ParentSelectors ?? new List<string>(),
                 UrlPatterns = s.UrlPatterns ?? new List<string>(),
@@ -1533,7 +1533,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
 
                 sectionsOut.Add(new AiCuratedSection
                 {
-                    Name = string.IsNullOrWhiteSpace(s.Name) ? "Stories" : s.Name!,
+                    Name = HumanizeSectionName(s.Name, sectionsOut.Count),
                     StoryLinkKeys = sectionKeys,
                     StartCollapsed = s.StartCollapsed,
                 });
@@ -1897,8 +1897,7 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var schemaKeyLike = trimmed.Length == 0
             || trimmed.Contains('_', StringComparison.Ordinal)
             || trimmed.Equals("tiers", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("tier", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("section", StringComparison.OrdinalIgnoreCase);
+            || trimmed.Equals("tier", StringComparison.OrdinalIgnoreCase);
         if (schemaKeyLike)
         {
             return index == 0 ? "Top stories" : "More stories";
