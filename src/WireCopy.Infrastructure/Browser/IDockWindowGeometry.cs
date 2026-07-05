@@ -15,6 +15,17 @@ internal interface IDockWindowGeometry
     /// <summary>Take the window out of any minimized/parked state (windowState = normal).</summary>
     Task NormalizeAsync();
 
+    /// <summary>
+    /// Put the window into the truly-hidden state — the inverse of <see cref="NormalizeAsync"/>
+    /// (workspace-ynn9). macOS: an off-screen park (move to the park coordinate) that keeps the
+    /// window painting and never animates/steals focus. Non-macOS: the off-screen move AND
+    /// <c>windowState=minimized</c>, so the move hides it under bare Xvfb (no WM to honor an
+    /// iconify) while the minimize hides it under a real clamping window manager (which pulls the
+    /// off-screen coordinate back on-screen — the stray-tile bug). One primitive, hidden on every
+    /// environment.
+    /// </summary>
+    Task HideAsync();
+
     /// <summary>Move the window's top-left to the given point (used to anchor it on-screen).</summary>
     Task MoveAsync(int left, int top);
 

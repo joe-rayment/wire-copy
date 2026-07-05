@@ -39,10 +39,32 @@ public class SidecarDockerTests
 
         public int SetCount { get; private set; }
 
-        public Task NormalizeAsync() => Task.CompletedTask;
+        /// <summary>True while the window is in the truly-hidden state (workspace-ynn9).</summary>
+        public bool Hidden { get; private set; } = true;
+
+        /// <summary>Ordered log of geometry calls, so tests can assert un-hide-before-place.</summary>
+        public List<string> Calls { get; } = [];
+
+        public Task NormalizeAsync()
+        {
+            Calls.Add("Normalize");
+            Hidden = false;
+            return Task.CompletedTask;
+        }
+
+        public Task HideAsync()
+        {
+            Calls.Add("Hide");
+            Hidden = true;
+            // Model the real hide: the window leaves the visible work area (off-screen move) and,
+            // on non-macOS, is also iconified — either way it is no longer on-screen.
+            Current = Current with { X = -32000, Y = -32000 };
+            return Task.CompletedTask;
+        }
 
         public Task MoveAsync(int left, int top)
         {
+            Calls.Add("Move");
             _onMove?.Invoke(left, top);
             Current = Current with { X = left, Y = top };
             return Task.CompletedTask;
@@ -67,6 +89,7 @@ public class SidecarDockerTests
         public Task SetWindowAsync(TerminalTiling.WindowRect rect)
         {
             SetCount++;
+            Calls.Add("Set");
 
             // Chromium refuses to make the window narrower than its platform minimum.
             var clampedWidth = System.Math.Max(rect.Width, _minWidthClamp);
@@ -179,6 +202,47 @@ public class SidecarDockerTests
             b.X.Should().BeGreaterThanOrEqualTo(display.AvailLeft);
             b.Y.Should().Be(display.AvailTop);
         }
+    }
+
+    [Fact]
+    public async Task Place_FromHiddenState_UnHidesAndLandsOnScreen()
+    {
+        // workspace-ynn9: the window starts truly hidden (HideAsync — off-screen + iconified).
+        // Docking must UN-hide it AND land it fully inside the work area. Asserts the STATE
+        // TRANSITION (hidden → visible-on-screen), not just an initial condition.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 500);
+        await geo.HideAsync();
+        geo.Hidden.Should().BeTrue("precondition: the parked window is hidden");
+        geo.Current.X.Should().BeLessThan(0, "precondition: hidden window sits off-screen");
+
+        var result = await SidecarDocker.PlaceAsync(geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5);
+
+        result.Should().NotBeNull();
+        geo.Hidden.Should().BeFalse("docking un-hides the window (NormalizeAsync)");
+        var b = result!.Value.Browser;
+        b.X.Should().BeGreaterThanOrEqualTo(0, "un-hidden window is on-screen (not off the left)");
+        (b.X + b.Width).Should().BeLessThanOrEqualTo(1280, "and fully inside the work area (not off the right)");
+        geo.Current.Should().Be(b, "the final applied bounds match the returned rect");
+    }
+
+    [Fact]
+    public async Task Place_FromHiddenState_NormalizesBeforeMovingOrSizing()
+    {
+        // The un-hide (Normalize) must come FIRST — CDP forbids combining windowState with bounds,
+        // and a still-iconified window can't be positioned. Assert the ORDERING of the seam calls.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 500);
+        await geo.HideAsync();
+        geo.Calls.Clear(); // ignore the setup Hide; observe only the placement flow
+
+        await SidecarDocker.PlaceAsync(geo, DockSide.Right, 390, 0.5);
+
+        geo.Calls.Should().NotBeEmpty();
+        geo.Calls[0].Should().Be("Normalize", "placement un-hides before touching geometry");
+        var firstNormalize = geo.Calls.IndexOf("Normalize");
+        var firstMove = geo.Calls.IndexOf("Move");
+        var firstSet = geo.Calls.IndexOf("Set");
+        firstMove.Should().BeGreaterThan(firstNormalize, "the anchor Move happens after the un-hide");
+        firstSet.Should().BeGreaterThan(firstNormalize, "the window is sized/placed after the un-hide");
     }
 
     [Fact]
