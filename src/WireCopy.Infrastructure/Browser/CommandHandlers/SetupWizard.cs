@@ -318,6 +318,16 @@ internal static class SetupWizard
     internal static bool IsDegenerate(SiteHierarchyConfig config, List<LinkInfo> links)
     {
         ArgumentNullException.ThrowIfNull(config);
+
+        // workspace-cn2g.1: a DocumentOrder config is the INTENTIONAL flat ordered
+        // article list (the never-block fallback), not a failed AI layout — valid as
+        // long as the page has any story-shaped articles to show in order.
+        if (config.Kind == LayoutKind.DocumentOrder)
+        {
+            return !links.Any(l => l.Type == LinkType.Content && !l.IsGroupHeader
+                && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength);
+        }
+
         if (config.Sections.Count == 0)
         {
             return true;
@@ -575,10 +585,23 @@ internal static class SetupWizard
             }));
         }
 
-        var covered = CoveredCount(config, contentLinks);
-        var footnote = covered == 0 && contentLinks.Count > 0
-            ? "⚠ No links on this page match this layout"
-            : $"{covered} of {contentLinks.Count} story links covered";
+        // workspace-cn2g.1: rows-based count works for both sectioned and the flat
+        // DocumentOrder fallback (whose article rows aren't matched by any section).
+        var isFlat = config.Kind == LayoutKind.DocumentOrder;
+        var covered = previewRows.Count(r => r.Link != null);
+        string footnote;
+        if (isFlat)
+        {
+            footnote = $"Showing all {covered} articles in page order — no reliable ad/section pattern found, but the articles are all here";
+        }
+        else if (covered == 0 && contentLinks.Count > 0)
+        {
+            footnote = "⚠ No links on this page match this layout";
+        }
+        else
+        {
+            footnote = $"{covered} of {contentLinks.Count} story links covered";
+        }
 
         // workspace-romy.7: after an adjustment, show the coverage delta so the
         // user can see whether the round actually changed anything.
@@ -598,7 +621,7 @@ internal static class SetupWizard
         // of same-shaped stories left uncovered (a second cluster the layout doesn't
         // reach yet), inviting another seed pick (5vqk.6). Relativized so a
         // fully-covered single-pattern page is never nagged.
-        var uncovered = UncoveredStoryShaped(config, contentLinks);
+        var uncovered = isFlat ? 0 : UncoveredStoryShaped(config, contentLinks);
         if (uncovered >= Math.Max(5, covered / 5))
         {
             footnote += $" · {uncovered} more story-shaped link(s) uncovered — Space to add another pattern";
@@ -616,6 +639,10 @@ internal static class SetupWizard
         if (confirmQuestion != null)
         {
             headline = $"AI is unsure: {confirmQuestion.Prompt} Answer below — or save as shown.";
+        }
+        else if (isFlat)
+        {
+            headline = $"All articles, in order — {covered} {(covered == 1 ? "story" : "stories")}";
         }
         else if (covered > 0)
         {
@@ -650,6 +677,39 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(config);
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
         var rows = new List<PreviewRow>();
+
+        // workspace-cn2g.1: the never-block fallback. A DocumentOrder config is the
+        // flat ordered article list — render EVERY story-shaped, non-excluded content
+        // link in page order under one "All articles" group. No sectioning needed:
+        // when we can't confidently categorize, the ordered article list is a valid,
+        // useful result, not a failure.
+        if (config.Kind == LayoutKind.DocumentOrder)
+        {
+            var articles = contentLinks
+                .Where(l => !l.IsSponsored
+                    && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength
+                    && !NavigationTreeBuilder.IsExcluded(l, config))
+                .ToList();
+            rows.Add(new PreviewRow(
+                new SetupWizardOverlay.CardOption
+                {
+                    Label = $"All articles, in order — {articles.Count} {(articles.Count == 1 ? "story" : "stories")}",
+                    HighlightSelector = string.Empty,
+                },
+                null));
+            foreach (var link in articles)
+            {
+                rows.Add(new PreviewRow(
+                    new SetupWizardOverlay.CardOption
+                    {
+                        Label = $"   • {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
+                        HighlightSelector = CssForLink(link),
+                    },
+                    link));
+            }
+
+            return rows;
+        }
 
         // workspace-r8on: mirror NavigationTreeBuilder's FIRST-MATCH-WINS assignment
         // (each link belongs to the first section that matches it), so the preview is
@@ -1085,6 +1145,26 @@ internal static class SetupWizard
         {
             if (IsDegenerate(config, links))
             {
+                // workspace-cn2g.1: the never-block guardrail. If the AI couldn't
+                // find a reliable sectioned/curated pattern but the page HAS articles,
+                // do NOT dead-end on the "no reliable pattern" card — default to the
+                // FLAT ORDERED ARTICLE LIST (a valid, useful result). Article-ID +
+                // order is robust regardless of how weird the HTML is; sectioning is a
+                // refinement, never a prerequisite. Excludes ('x'-dropped ads) carry
+                // over. Only a page with NO articles falls through to the honest card.
+                var hasArticles = links.Any(l => l.Type == LinkType.Content && !l.IsGroupHeader
+                    && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength);
+                if (hasArticles && config.Kind != LayoutKind.DocumentOrder)
+                {
+                    config = config with
+                    {
+                        Kind = LayoutKind.DocumentOrder,
+                        Sections = new List<HierarchySection>(),
+                        AiResult = null,
+                    };
+                    continue; // IsDegenerate(DocumentOrder w/ articles) == false → previews the flat list
+                }
+
                 // Honest failure: no fake-confident preview, no savable empty
                 // config. The user can point at a story (one more budget-guarded
                 // re-inference) or Esc to leave the page unconfigured.

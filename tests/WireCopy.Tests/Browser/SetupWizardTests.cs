@@ -1010,6 +1010,53 @@ public class SetupWizardTests
     }
 
     [Fact]
+    public void Guardrail_DocumentOrderConfig_NotDegenerate_PreviewsAllArticlesInOrder()
+    {
+        // workspace-cn2g.1: a DocumentOrder config is the valid flat ordered article
+        // list, not a failure — every article renders, in order.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/1", "First article headline here now", "div.a"),
+            Story("https://x.com/2", "Second article headline here now", "div.b"),
+            Story("https://x.com/3", "Third article headline here now", "div.c"),
+        };
+        var flat = ConfigOf() with { Kind = LayoutKind.DocumentOrder };
+
+        SetupWizard.IsDegenerate(flat, links).Should().BeFalse("a DocumentOrder config with articles is the valid flat list");
+
+        var card = SetupWizard.BuildPreviewCard(flat, links);
+        var rendered = SetupWizardOverlay.DescribeCard(card, maxContentLines: int.MaxValue);
+        rendered.Count(l => l.Contains("•", StringComparison.Ordinal)).Should().Be(3, "every article is listed in order");
+        card.Prompt.Should().Contain("All articles, in order");
+    }
+
+    [Fact]
+    public async Task Guardrail_DegenerateModelLayout_FallsBackToFlatOrderedArticles()
+    {
+        // workspace-cn2g.1: when the model can't produce a reliable pattern (its
+        // sections match nothing) but the page HAS articles, the wizard must NOT
+        // dead-end — it defaults to the flat ordered article list, savable.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/1", "First article headline here now", "div.a"),
+            Story("https://x.com/2", "Second article headline here now", "div.b"),
+            Story("https://x.com/3", "Third article headline here now", "div.c"),
+        };
+        var degenerate = ConfigOf(Sec("Nope", "div.doesnotmatch"));
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), degenerate);
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, InputSequence(CommandType.ActivateLink), _ => Task.CompletedTask,
+            new SetupWizardOverlay.State(), links, "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+
+        result.Config.Should().NotBeNull();
+        result.Config!.Kind.Should().Be(LayoutKind.DocumentOrder, "the never-block guardrail saved the flat ordered list");
+        result.Config.Sections.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ExcludeItem_AdUnderSponsorHeading_ExcludesTheWholeHeading_Durably()
     {
         // workspace-rpop.4: the DURABLE "remove one ad, extrapolate to the rest"
