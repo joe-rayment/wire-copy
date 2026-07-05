@@ -308,15 +308,11 @@ public class NavigationTreeSubGroupTests
         rootChildren[1].Link.DisplayText.Should().Be("Sports");
         rootChildren[1].Link.HeaderType.Should().Be(HeaderType.SubSection);
 
-        // Navigation group header
-        rootChildren[2].Link.DisplayText.Should().Be("Navigation");
+        // workspace-cn2g.3: navigation + footer consolidate into one "More" sub-menu.
+        rootChildren[2].Link.DisplayText.Should().Be("More");
         rootChildren[2].Link.HeaderType.Should().Be(HeaderType.TopLevelGroup);
-        rootChildren[2].Children.Should().HaveCount(2);
-
-        // Footer group header
-        rootChildren[3].Link.DisplayText.Should().Be("Footer");
-        rootChildren[3].Link.HeaderType.Should().Be(HeaderType.TopLevelGroup);
-        rootChildren[3].Children.Should().HaveCount(1);
+        rootChildren[2].Children.Should().HaveCount(3, "2 nav + 1 footer link");
+        rootChildren.Should().HaveCount(3, "no separate Navigation/Footer groups anymore");
     }
 
     #endregion

@@ -303,8 +303,9 @@ public class NavigationTreeBuilderHierarchyTests
 
         var tree = await _builder.BuildTreeAsync(links, config);
 
+        // workspace-cn2g.3: navigation links now live under the consolidated "More" sub-menu.
         var navHeader = tree.GetAllNodes()
-            .FirstOrDefault(n => n.IsGroupHeader && n.Link.DisplayText == "Navigation");
+            .FirstOrDefault(n => n.IsGroupHeader && n.Link.DisplayText == "More");
         navHeader.Should().NotBeNull();
 
         var extHeader = tree.GetAllNodes()

@@ -121,6 +121,19 @@ public record LinkInfo
     /// <summary>
     /// Creates a LinkInfo for a group header.
     /// </summary>
+    /// <summary>
+    /// workspace-cn2g.3: a top-level group header with a custom reader-facing label
+    /// (e.g. the consolidated "More" sub-menu for navigation + utility links).
+    /// </summary>
+    public static LinkInfo CreateNamedGroupHeader(string displayText, LinkType type) => new()
+    {
+        Url = string.Empty,
+        DisplayText = displayText,
+        Type = type,
+        ImportanceScore = 100,
+        HeaderType = HeaderType.TopLevelGroup,
+    };
+
     public static LinkInfo CreateGroupHeader(LinkType type)
     {
         var displayText = type switch

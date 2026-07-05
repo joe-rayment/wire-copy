@@ -82,31 +82,43 @@ public class NavigationTree
     {
         var root = LinkNode.CreateRoot();
 
-        // Define the order of groups: Content first (most important), then others
-        var groupOrder = new[] { LinkType.Content, LinkType.Navigation, LinkType.External, LinkType.Footer };
-
-        foreach (var linkType in groupOrder)
+        // Content first (most important), then External (on aggregators these can be
+        // story-ish, so keep them a distinct group).
+        if (groupedLinks.TryGetValue(LinkType.Content, out var content) && content.Count > 0)
         {
-            if (!groupedLinks.TryGetValue(linkType, out var links) || links.Count == 0)
-            {
-                continue;
-            }
+            AddContentLinks(root, content);
+        }
 
-            if (linkType == LinkType.Content)
+        if (groupedLinks.TryGetValue(LinkType.External, out var external) && external.Count > 0)
+        {
+            var externalNode = root.AddChild(LinkInfo.CreateGroupHeader(LinkType.External));
+            foreach (var link in external)
             {
-                // Content links may be sub-grouped by SectionTitle
-                AddContentLinks(root, links);
+                externalNode.AddChild(link);
             }
-            else
-            {
-                // Non-content groups get a collapsible group header
-                var groupHeader = LinkInfo.CreateGroupHeader(linkType);
-                var groupNode = root.AddChild(groupHeader);
+        }
 
-                foreach (var link in links)
-                {
-                    groupNode.AddChild(link);
-                }
+        // workspace-cn2g.3: navigation + footer/utility links are the site's chrome —
+        // we don't want them in the reader's article flow. Consolidate them into ONE
+        // low-priority, collapsed "More" sub-menu at the BOTTOM: reachable, out of the
+        // way, and distinct from ads (which are excluded entirely).
+        var more = new List<LinkInfo>();
+        if (groupedLinks.TryGetValue(LinkType.Navigation, out var nav))
+        {
+            more.AddRange(nav);
+        }
+
+        if (groupedLinks.TryGetValue(LinkType.Footer, out var footer))
+        {
+            more.AddRange(footer);
+        }
+
+        if (more.Count > 0)
+        {
+            var moreNode = root.AddChild(LinkInfo.CreateNamedGroupHeader("More", LinkType.Navigation));
+            foreach (var link in more)
+            {
+                moreNode.AddChild(link);
             }
         }
 
