@@ -210,6 +210,25 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public void ParsePatternFromAnswers_DropsSubsumedDuplicateSection()
+    {
+        // workspace-r8on: two sections with the SAME selector match the same
+        // stories — the second is subsumed (first-match) and must NOT be saved as a
+        // dead section (the techmeme judge's duplicate 'Lead cluster' + 'co-equal').
+        var links = StoryLinks(3, score: 85, parent: "div.col > div.ii");
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"Lead cluster\",\"parent_selectors\":[\"div.ii\"],\"url_patterns\":[],\"story_indices\":[0,1,2],\"start_collapsed\":false}," +
+            "{\"name\":\"Top stories - co-equal\",\"parent_selectors\":[\"div.ii\"],\"url_patterns\":[],\"story_indices\":[0,1,2],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Should().ContainSingle("the subsumed duplicate section is dropped");
+        result.Config.Sections[0].Name.Should().Be("Lead cluster");
+    }
+
+    [Fact]
     public void ParsePatternFromAnswers_BroadLead_NotPinned_WhenOverflowWouldBeLost()
     {
         // Lead matches all 3; the Feed section matches none of them, so capping the

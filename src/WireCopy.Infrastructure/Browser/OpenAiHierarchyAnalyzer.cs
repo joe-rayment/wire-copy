@@ -1785,6 +1785,15 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         // pick teaches a REPEATING pattern, so the lead section keeps every sibling
         // it matches; MaxLinks stays null. (The MaxLinks cap remains available for a
         // section that explicitly needs it, but the parser no longer auto-applies it.)
+
+        // workspace-r8on: drop a section fully SUBSUMED by an earlier one, where
+        // every story it matches is already claimed first-match. The tree renders
+        // such a section empty, so saving it is dead weight — the techmeme judge saw
+        // the model return two near-identical selectors saved as two sections that
+        // both listed the same river. A section matching nothing stays, for
+        // durability; only a genuine overlap with no fresh story is removed.
+        sections = DropSubsumedSections(sections, contentLinks);
+
         var domain = SafeHost(pageUrl);
         var config = new SiteHierarchyConfig
         {
@@ -1824,6 +1833,42 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
             Confidence = Math.Clamp(parsed.Confidence ?? 1.0, 0.0, 1.0),
             ConfirmQuestion = confirmQuestion,
         };
+    }
+
+    /// <summary>
+    /// workspace-r8on: removes a section whose stories are ALL already claimed by an
+    /// earlier section (first-match-wins, mirroring NavigationTreeBuilder). A section
+    /// that matches nothing on this page is KEPT (it may match after a revisit — the
+    /// durability contract); only a genuine overlap that renders no fresh story is
+    /// dropped, so the saved section count matches what the tree and preview show.
+    /// </summary>
+    private static List<HierarchySection> DropSubsumedSections(
+        List<HierarchySection> sections, List<LinkInfo> contentLinks)
+    {
+        var stories = contentLinks.Where(l => !l.IsGroupHeader).ToList();
+        var kept = new List<HierarchySection>();
+        var claimed = new HashSet<LinkInfo>(ReferenceEqualityComparer.Instance);
+        foreach (var section in sections)
+        {
+            var matched = stories.Where(l => NavigationTreeBuilder.MatchesSection(l, section)).ToList();
+            if (matched.Count > 0 && matched.All(claimed.Contains))
+            {
+                continue; // fully subsumed by an earlier section
+            }
+
+            kept.Add(section);
+            foreach (var l in matched)
+            {
+                claimed.Add(l);
+            }
+        }
+
+        for (var i = 0; i < kept.Count; i++)
+        {
+            kept[i] = kept[i] with { SortOrder = i };
+        }
+
+        return kept;
     }
 
     private static SetupOption MapOption(OptionResponse o, IReadOnlyList<LinkInfo>? contentLinks)

@@ -955,6 +955,36 @@ public class SetupWizardTests
         new() { Name = name, SortOrder = order, ParentSelectors = new List<string> { selector } };
 
     [Fact]
+    public void BuildPreviewCard_OverlappingSections_ListEachStoryOnce_FirstMatchWins()
+    {
+        // workspace-r8on: the model sometimes returns two near-identical selectors
+        // matching the SAME river. The preview must mirror the saved tree's
+        // first-match-wins assignment — list each story ONCE under the first
+        // section, drop the subsumed duplicate — not double-list the whole river
+        // (the techmeme judge showed 20 stories rendered twice while the tree saved
+        // them once).
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/a", "Alpha river story headline text", "div.col > div.ii"),
+            Story("https://x.com/b", "Beta river story headline text", "div.col > div.ii"),
+            Story("https://x.com/c", "Gamma river story headline text", "div.col > div.ii"),
+        };
+        var config = ConfigOf(
+            Sec("Lead cluster", "div.ii", 0),
+            Sec("Top stories - co-equal", "div.ii", 1)); // subsumed duplicate selector
+
+        var card = SetupWizard.BuildPreviewCard(config, links);
+        var rendered = SetupWizardOverlay.DescribeCard(card, maxContentLines: int.MaxValue);
+
+        rendered.Count(l => l.Contains("•", StringComparison.Ordinal)).Should().Be(3,
+            "each of the 3 stories is listed exactly once, not 6");
+        rendered.Count(l => l.Contains("Lead cluster", StringComparison.Ordinal)).Should().Be(1);
+        rendered.Should().NotContain(l => l.Contains("co-equal", StringComparison.Ordinal),
+            "the subsumed duplicate section is dropped from the preview");
+        card.Prompt.Should().Contain("1 section");
+    }
+
+    [Fact]
     public void ExcludeItem_DropsSponsorRowAndTokenSiblings_KeepsEveryStory()
     {
         var links = new List<LinkInfo>

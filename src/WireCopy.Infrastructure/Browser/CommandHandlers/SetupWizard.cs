@@ -555,9 +555,12 @@ internal static class SetupWizard
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
 
         // workspace-5vqk.3/.4: render the REAL extracted headlines per section (built
-        // by BuildPreviewRows, which is exclude-aware so an 'x'-excluded item vanishes
-        // from the list). The confirm-question rows are appended AFTER the layout rows.
-        var options = BuildPreviewRows(config, links).Select(r => r.Option).ToList();
+        // by BuildPreviewRows, which is exclude-aware AND first-match-wins so an
+        // 'x'-excluded or already-claimed link vanishes). The confirm-question rows
+        // are appended AFTER the layout rows.
+        var previewRows = BuildPreviewRows(config, links);
+        var options = previewRows.Select(r => r.Option).ToList();
+        var sectionCount = previewRows.Count(r => r.Link == null);
 
         // workspace-romy.8: the confirm question's options render as answerable
         // rows after the layout rows; the prompt line carries the question. The
@@ -616,7 +619,7 @@ internal static class SetupWizard
         }
         else if (covered > 0)
         {
-            headline = $"Learned this pattern — {covered} {(covered == 1 ? "story" : "stories")} across {config.Sections.Count} section(s)";
+            headline = $"Learned this pattern — {covered} {(covered == 1 ? "story" : "stories")} across {sectionCount} section(s)";
         }
         else
         {
@@ -647,11 +650,31 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(config);
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
         var rows = new List<PreviewRow>();
+
+        // workspace-r8on: mirror NavigationTreeBuilder's FIRST-MATCH-WINS assignment
+        // (each link belongs to the first section that matches it), so the preview is
+        // exactly what saves. The model sometimes returns two near-identical
+        // selectors (div.ii vs div.ii+div.item); counting each section independently
+        // listed the SAME river twice while the real tree shows it once. A section
+        // left empty after claiming is subsumed — skip it (it adds no rows to save).
+        var claimed = new HashSet<LinkInfo>();
         foreach (var section in config.Sections)
         {
             var matched = contentLinks
-                .Where(l => NavigationTreeBuilder.MatchesSection(l, section) && !NavigationTreeBuilder.IsExcluded(l, config))
+                .Where(l => !NavigationTreeBuilder.IsExcluded(l, config)
+                    && !claimed.Contains(l)
+                    && NavigationTreeBuilder.MatchesSection(l, section))
                 .ToList();
+            if (matched.Count == 0)
+            {
+                continue; // subsumed by an earlier section (or empty on this page)
+            }
+
+            foreach (var l in matched)
+            {
+                claimed.Add(l);
+            }
+
             rows.Add(new PreviewRow(
                 new SetupWizardOverlay.CardOption
                 {
