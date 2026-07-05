@@ -478,6 +478,33 @@ internal static class StrategyChooserHandler
         var buildCache = ctx.PageCache.TryGetBuildCache(page.Url);
         var links = buildCache?.Links ?? new List<LinkInfo>();
 
+        // workspace-r8on debug: dump the extracted links (with parentSelector +
+        // sponsor flag) so an ad's real markup can be inspected when tuning the
+        // remove-an-ad-and-extrapolate workflow. Off unless WIRECOPY_LINKS_DEBUG set.
+        var linksDebugPath = Environment.GetEnvironmentVariable("WIRECOPY_LINKS_DEBUG");
+        if (!string.IsNullOrEmpty(linksDebugPath))
+        {
+            try
+            {
+                var payload = System.Text.Json.JsonSerializer.Serialize(links.Select(l => new
+                {
+                    l.Url,
+                    l.DisplayText,
+                    Type = (int)l.Type,
+                    l.ImportanceScore,
+                    l.ParentSelector,
+                    l.IsSponsored,
+                    l.IsExternal,
+                }));
+                await System.IO.File.WriteAllTextAsync(linksDebugPath, payload, ct).ConfigureAwait(false);
+                ctx.Logger.LogInformation("Links dumped to {Path} ({Count})", linksDebugPath, links.Count);
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogDebug(ex, "Links debug dump failed");
+            }
+        }
+
         // workspace-romy.1: kick the capture off FIRST so it runs while the
         // overlay/lens wiring happens below. The old flow awaited a 750ms cap
         // against a 0.5-3s capture, so the wizard almost always ran text-only —

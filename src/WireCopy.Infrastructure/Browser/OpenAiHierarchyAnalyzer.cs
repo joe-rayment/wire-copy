@@ -1025,20 +1025,24 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine("   sublinks) map naturally to tiers: leads in a top tier, secondary coverage in a");
         sb.AppendLine("   lower (or excluded) tier.");
         sb.AppendLine();
-        sb.AppendLine($"2. questions: AT MOST {maxQuestions} questions, and ONLY where you are genuinely");
-        sb.AppendLine("   torn between concrete alternatives. A question must DISCRIMINATE: each");
-        sb.AppendLine("   answer must produce a materially different layout (different lead, different");
-        sb.AppendLine("   grouping, something hidden or kept). The user answers by LOOKING at the");
-        sb.AppendLine("   page — every option is highlighted live — so every option MUST list the");
-        sb.AppendLine("   example_link_indices of the real links it points at (a hide-or-keep pair may");
-        sb.AppendLine("   reference the same links). Never ask 'does this");
-        sb.AppendLine("   look right?', never offer a lone yes/no, never ask anything whose answer");
-        sb.AppendLine("   would not change the sections you output. Set default_answer to your best");
-        sb.AppendLine("   guess. Use kind: pick_main (which of these is the lead), confirm_exclude");
-        sb.AppendLine("   (hide this group or keep it), confirm_order (which section comes first),");
-        sb.AppendLine("   group_by (group by these containers or those).");
+        sb.AppendLine($"2. questions: AT MOST {maxQuestions}, and ONLY where a concrete choice would");
+        sb.AppendLine("   change what the READER sees. By far the most useful question on a real");
+        sb.AppendLine("   homepage is confirm_exclude: surface a SUSPECTED ad / sponsor / promo /");
+        sb.AppendLine("   podcast-or-events rail and ask 'hide this, or keep it?'. Ads are often");
+        sb.AppendLine("   CAMOUFLAGED as stories — a sponsor post styled exactly like a headline,");
+        sb.AppendLine("   sitting inside the news markup; when you suspect one, ASK rather than");
+        sb.AppendLine("   silently keep OR silently drop it. AVOID purely structural questions (which");
+        sb.AppendLine("   container, which is THE single lead): the user curates the result directly");
+        sb.AppendLine("   in the preview — they can drop any row and its ad-siblings with one key —");
+        sb.AppendLine("   so structural questions rarely earn a card. A question must DISCRIMINATE:");
+        sb.AppendLine("   each answer produces a materially different layout, and every option MUST");
+        sb.AppendLine("   list the example_link_indices of the real links it points at (a hide-or-keep");
+        sb.AppendLine("   pair may reference the same links). Never ask 'does this look right?', never");
+        sb.AppendLine("   a lone yes/no. Set default_answer to your best guess. Kinds: confirm_exclude");
+        sb.AppendLine("   (hide an ad/rail group — PREFER THIS), pick_main, confirm_order, group_by.");
         sb.AppendLine();
-        sb.Append("If the pattern is obvious, return an EMPTY questions array — that is the best outcome.");
+        sb.Append("If the layout is obvious, return an EMPTY questions array — that is the best "
+            + "outcome; the user removes any ads/rails you missed in the preview.");
         return sb.ToString();
     }
 

@@ -732,14 +732,19 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(item);
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
 
-        bool Covered(LinkInfo l) => config.Sections.Any(s => NavigationTreeBuilder.MatchesSection(l, s));
         bool IsStory(LinkInfo l) =>
             l.Type == LinkType.Content && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength;
 
-        // Every real story still on the page EXCEPT the item — an exclude token/pattern
-        // may never match one of these (that would erase a kept story).
+        // workspace-r8on: EVERY story-shaped link on the page except the item — an
+        // exclude token/pattern may never match one of these. Protecting ALL story-
+        // shaped links (not just the ones a section currently COVERS) is what makes
+        // "remove an ad, extrapolate to other ads" precise: an ad camouflaged inside
+        // the news markup (techmeme's sponsor block div#culylwihx sits under div.ii)
+        // has only its sponsor-block container as a story-free token, so 'x' excludes
+        // exactly the ad class — NOT the whole column (div#topcol2 also matches the
+        // podcast/event clusters, which are uncovered-but-real, so it stays protected).
         var keptStories = contentLinks
-            .Where(l => Covered(l) && IsStory(l)
+            .Where(l => IsStory(l)
                 && !ReferenceEquals(l, item)
                 && !string.Equals(l.Url, item.Url, StringComparison.Ordinal))
             .ToList();

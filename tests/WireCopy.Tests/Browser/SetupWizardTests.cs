@@ -1010,6 +1010,42 @@ public class SetupWizardTests
     }
 
     [Fact]
+    public void ExcludeItem_CamouflagedAd_ExtrapolatesToTheAdClass_KeepsNewsAndUncoveredRails()
+    {
+        // workspace-r8on — the core "remove an ad, extrapolate to other ads" flow,
+        // mirroring techmeme: sponsor posts sit INSIDE the news markup (div.ii) in a
+        // sponsor block, and podcasts are a real but UNCOVERED story-shaped cluster.
+        // Removing one ad must exclude the whole sponsor block (every ad) while
+        // keeping the news AND the uncovered podcasts.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/a", "Real news story headline one here", "div#topcol1 > div.item > div.ii"),
+            Story("https://x.com/b", "Real news story headline two here", "div#topcol1 > div.item > div.ii"),
+            Story("https://pod.co/1", "A podcast episode about tech things", "div#topcol2 > div.podcast"),
+            Story("https://pod.co/2", "Another podcast episode discussion", "div#topcol2 > div.podcast"),
+            Story("https://ad.co/zoho", "Zoho named an overall leader in BI", "div#topcol2 > div#sponsorblk > div.item > div.ii"),
+            new() { Url = "https://ad.co/soxton", DisplayText = "Soxton", Type = LinkType.Navigation, ImportanceScore = 30, ParentSelector = "div#topcol2 > div#sponsorblk > div.item > cite" },
+            new() { Url = "https://ad.co/idrive", DisplayText = "IDrive", Type = LinkType.Navigation, ImportanceScore = 30, ParentSelector = "div#topcol2 > div#sponsorblk > div.item > cite" },
+        };
+        var config = ConfigOf(Sec("Stories", "div.ii")); // covers the news AND the camouflaged ad
+        var ad = links[4];
+
+        var result = SetupWizard.ExcludeItem(config, ad, links);
+
+        result.Should().NotBeNull();
+        result!.ExcludeSelectors.Should().Contain("div#sponsorblk");
+        result.ExcludeSelectors.Should().NotContain("div#topcol2", "excluding the whole column would hide the real podcasts");
+        // The whole ad class is gone.
+        NavigationTreeBuilder.IsExcluded(links[4], result).Should().BeTrue("the ad headline");
+        NavigationTreeBuilder.IsExcluded(links[5], result).Should().BeTrue("Soxton brand link");
+        NavigationTreeBuilder.IsExcluded(links[6], result).Should().BeTrue("IDrive brand link");
+        // News and (uncovered) podcasts survive.
+        NavigationTreeBuilder.IsExcluded(links[0], result).Should().BeFalse();
+        NavigationTreeBuilder.IsExcluded(links[2], result).Should().BeFalse("uncovered podcast stays");
+        NavigationTreeBuilder.IsExcluded(links[3], result).Should().BeFalse();
+    }
+
+    [Fact]
     public void ExcludeItem_RefusedWhenEveryDistinctiveTokenAlsoMatchesAKeptStory()
     {
         // Two stories share the ONLY discriminating token AND their URL segments —
