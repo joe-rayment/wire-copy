@@ -163,6 +163,15 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             return true;
         }
 
+        // workspace-rpop.4: durable ad/rail exclusion by section heading.
+        if (link.SectionTitle != null && config.ExcludeSectionTitles.Count > 0 &&
+            config.ExcludeSectionTitles.Any(t =>
+                !string.IsNullOrEmpty(t) &&
+                string.Equals(link.SectionTitle, t, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
         return false;
     }
 

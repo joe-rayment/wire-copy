@@ -66,6 +66,15 @@ public record SiteHierarchyConfig
     public List<string> ExcludeUrlPatterns { get; init; } = new();
 
     /// <summary>
+    /// workspace-rpop.4: durable exclusion by SECTION HEADING — content links whose
+    /// <see cref="LinkInfo.SectionTitle"/> equals one of these (e.g. "Sponsor Posts")
+    /// are dropped. This is the DURABLE way to hide an ad/rail class on a messy
+    /// aggregator: the heading text is stable across visits even when the block's
+    /// markup uses a per-day random id, so an ad the user removes stays removed.
+    /// </summary>
+    public List<string> ExcludeSectionTitles { get; init; } = new();
+
+    /// <summary>
     /// workspace-5oe9.5/.6: set when this config cannot be trusted to curate
     /// durably on a revisit — either a legacy per-URL snapshot (Version&lt;3,
     /// empty Sections, AiResult present) or a fresh analysis whose derived

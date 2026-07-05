@@ -663,8 +663,26 @@ public class LinkExtractor : ILinkExtractor
                     return ariaLabel.Trim();
                 }
 
-                // Check direct child headings (h1-h6)
-                var heading = FindDirectChildHeading(current);
+                var containerHeading = FindDirectChildHeading(current);
+                if (containerHeading != null)
+                {
+                    return containerHeading;
+                }
+            }
+            else if (!current.Name.Equals("article", StringComparison.OrdinalIgnoreCase)
+                && GroupsMultipleLinks(current))
+            {
+                // workspace-rpop.1: a heading child of a plain <div> that GROUPS
+                // MULTIPLE links is a SECTION label — even without a <section>/
+                // role=region wrapper. Techmeme wraps <h2>Sponsor Posts</h2>/
+                // <h2>Top News</h2>/<h2>Featured Podcasts</h2> in <div id="{random}">
+                // over many items, so gating on IsSectionContainer threw away the
+                // strongest ad/rail signal on exactly the messy aggregators AI layout
+                // is for. The multi-link guard keeps a lone item's OWN title (a plain
+                // div or <article> with one link) from masquerading as a section, and
+                // the IMMEDIATE-child search keeps a sibling section's heading from
+                // leaking onto headerless links.
+                var heading = FindImmediateChildHeading(current);
                 if (heading != null)
                 {
                     return heading;
@@ -729,6 +747,28 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// workspace-rpop.1: true when a node groups MORE THAN ONE link (a section holds
+    /// many items). A single-link container is one item, so a heading inside it is
+    /// that item's own title, not a section label.
+    /// </summary>
+    private static bool GroupsMultipleLinks(HtmlNode node) =>
+        node.Descendants("a").Skip(1).Any();
+
+    /// <summary>
+    /// workspace-rpop.1: an IMMEDIATE-child heading only (depth 1). Used for the
+    /// plain-div section path, where a section's own label is a direct child (e.g.
+    /// techmeme's div &gt; h2 Sponsor Posts). A depth-2 search would reach into a
+    /// SIBLING section's heading and mislabel headerless links with it.
+    /// </summary>
+    private static string? FindImmediateChildHeading(HtmlNode container)
+    {
+        string? best = null;
+        var bestDepth = int.MaxValue;
+        SearchHeadingsAtDepth(container, 1, 1, ref best, ref bestDepth);
+        return best;
     }
 
     private static string? FindDirectChildHeading(HtmlNode container)

@@ -71,4 +71,29 @@ public class TechmemeExtractionTests
         storyShaped.Count.Should().BeGreaterThanOrEqualTo(20,
             "techmeme's river stories must be promoted to Content for the default tree");
     }
+
+    [Fact]
+    public async Task SectionHeadings_AreCaptured_ForAds_News_AndPodcasts()
+    {
+        // workspace-rpop.1: the <h2> section labels (Sponsor Posts / Top News /
+        // Featured Podcasts) sit in plain <div id="{random}"> wrappers, so they
+        // used to be dropped. They are the strongest, DURABLE ad/rail signal — an
+        // ad under "Sponsor Posts" is an ad regardless of its (volatile) markup.
+        var html = await File.ReadAllTextAsync(FixturePath);
+        var extractor = new LinkExtractor(Substitute.For<Microsoft.Extensions.Logging.ILogger<LinkExtractor>>());
+
+        var links = await extractor.ExtractLinksAsync(html, "https://www.techmeme.com/");
+
+        // The Sponsor Posts <h2> now labels the ad block (the durable ad signal).
+        var sponsorLinks = links.Where(l => l.SectionTitle == "Sponsor Posts").ToList();
+        sponsorLinks.Should().NotBeEmpty("the Sponsor Posts heading now labels the ad block");
+        sponsorLinks.Should().Contain(
+            l => l.DisplayText.Contains("Agentic AI", StringComparison.Ordinal) || l.DisplayText.Contains("Soxton", StringComparison.Ordinal),
+            "the sponsor block's links carry sect=Sponsor Posts");
+
+        links.Should().Contain(l => l.SectionTitle == "Top News", "the news column carries its Top News heading");
+        links.Should().Contain(l => l.SectionTitle == "Featured Podcasts", "the podcast rail carries its heading");
+        links.Count(l => l.SectionTitle != null).Should().BeGreaterThan(20,
+            "headings are now captured broadly, not left empty as before");
+    }
 }

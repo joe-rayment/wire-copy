@@ -1010,6 +1010,38 @@ public class SetupWizardTests
     }
 
     [Fact]
+    public void ExcludeItem_AdUnderSponsorHeading_ExcludesTheWholeHeading_Durably()
+    {
+        // workspace-rpop.4: the DURABLE "remove one ad, extrapolate to the rest"
+        // path — when the item sits under a recognized ad heading, hide the whole
+        // heading (stable across revisits) instead of a volatile selector token,
+        // catching every ad in that section (incl a 2nd camouflaged sponsor headline).
+        LinkInfo Sect(string url, string text, string sect, LinkType type = LinkType.Content) => new()
+        {
+            Url = url, DisplayText = text, Type = type, ImportanceScore = 90,
+            ParentSelector = "div#topcol2 > div#RANDOM > div.item > div.ii", SectionTitle = sect,
+        };
+        var links = new List<LinkInfo>
+        {
+            new() { Url = "https://x.com/a", DisplayText = "Real news story headline one here", Type = LinkType.Content, ImportanceScore = 90, ParentSelector = "div#topcol1 > div.ii", SectionTitle = "Top News" },
+            Sect("https://ad.co/zoho", "Zoho named an overall leader in BI", "Sponsor Posts"),
+            Sect("https://ad.co/f5", "Agentic AI: the need for a data layer", "Sponsor Posts"),
+            Sect("https://ad.co/soxton", "Soxton", "Sponsor Posts", LinkType.Navigation),
+        };
+        var config = ConfigOf(Sec("Stories", "div.ii"));
+
+        var result = SetupWizard.ExcludeItem(config, links[1], links);
+
+        result.Should().NotBeNull();
+        result!.ExcludeSectionTitles.Should().Contain("Sponsor Posts");
+        result.ExcludeSelectors.Should().BeEmpty("the durable heading path is preferred over a volatile token");
+        NavigationTreeBuilder.IsExcluded(links[1], result).Should().BeTrue("the removed ad");
+        NavigationTreeBuilder.IsExcluded(links[2], result).Should().BeTrue("the 2nd sponsor headline, caught by the heading");
+        NavigationTreeBuilder.IsExcluded(links[3], result).Should().BeTrue("the sponsor brand link");
+        NavigationTreeBuilder.IsExcluded(links[0], result).Should().BeFalse("Top News survives");
+    }
+
+    [Fact]
     public void ExcludeItem_CamouflagedAd_ExtrapolatesToTheAdClass_KeepsNewsAndUncoveredRails()
     {
         // workspace-r8on — the core "remove an ad, extrapolate to other ads" flow,

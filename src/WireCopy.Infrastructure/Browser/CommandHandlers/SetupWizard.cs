@@ -732,6 +732,28 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(item);
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
 
+        // workspace-rpop.4: the DURABLE, class-level exclude. If the removed item sits
+        // under a recognized ad/rail heading ("Sponsor Posts", "Featured Podcasts", …
+        // captured by rpop.1), hide the WHOLE heading. The heading text is stable
+        // across revisits, so — unlike a selector token that on techmeme resolves to
+        // a per-day RANDOM sponsor-block id — the ad stays removed, and it catches
+        // EVERY ad in that section regardless of its markup. This is exactly "remove
+        // one ad, extrapolate to the rest", keyed on what the page SHOWS (a heading),
+        // not on brittle HTML structure.
+        var heading = item.SectionTitle?.Trim();
+        if (!string.IsNullOrEmpty(heading)
+            && !config.ExcludeSectionTitles.Contains(heading, StringComparer.OrdinalIgnoreCase)
+            && OpenAiHierarchyAnalyzer.IsNonStoryRailSectionName(heading))
+        {
+            return config with
+            {
+                ExcludeSectionTitles = config.ExcludeSectionTitles
+                    .Append(heading!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+            };
+        }
+
         bool IsStory(LinkInfo l) =>
             l.Type == LinkType.Content && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength;
 
