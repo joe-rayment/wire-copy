@@ -495,6 +495,10 @@ internal static class StrategyChooserHandler
                     l.ParentSelector,
                     l.IsSponsored,
                     l.IsExternal,
+                    l.SectionTitle,
+                    Geometry = l.Geometry is { } g
+                        ? new { g.X, g.Y, g.Width, g.Height, g.FontSize, g.IsBold, g.AboveFold }
+                        : null,
                 }));
                 await System.IO.File.WriteAllTextAsync(linksDebugPath, payload, ct).ConfigureAwait(false);
                 ctx.Logger.LogInformation("Links dumped to {Path} ({Count})", linksDebugPath, links.Count);
